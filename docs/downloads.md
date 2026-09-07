@@ -38,10 +38,16 @@ Concurrency is 1–3, default 2. YouTube requests have a random 0.3–0.8 second
 
 The server acknowledges pause immediately and finishes stopping its process group asynchronously. Cancellation after publication completes reconciliation instead of deleting a file that has already landed. Paused state survives restart. Abruptly stopped running jobs return to the queue and resume through yt-dlp.
 
+Repeated pause/cancel commands preserve the cleanup already in progress. Resume also accepts a job that is still stopping for pause; it queues the job after the old worker stops. Global and batch resume use the same behavior. Cancelling a stopping job changes its final intent without interrupting process termination.
+
+An album with an incomplete catalog track list returns an error before creating any jobs. Retry after the catalog recovers. Download publication waits for any current library scan to finish pruning old entries before adding the finished file to the index.
+
 ## Verification and remaining gates
 
-Automated tests cover Windows and Docker Python 3.12. They cover prior search/settings behavior plus queue identity, restart state, actual worker termination, protected publication, disk failure and tag round trips for all four output choices.
+Automated tests cover Python 3.12 compatibility and Windows/Docker Python 3.14. They cover prior search/settings behavior plus queue identity, restart state, actual worker termination, protected publication, disk failure and tag round trips for all four output choices.
 
 The live public-domain fixture took 2.852 seconds from download through local indexing and appeared in Navidrome. Its transport is Wikimedia, feeding the regular resumed worker; it does not validate YouTube matching. The separate YouTube open-film fixture completed through the actual worker, paused in 26.4 ms, preserved paused state across restart, then recovered after the container was killed during download.
 
 The 100 independently labelled music-match precision gate remains unmeasured. Browser review belongs to the separate UI task. Native arm64, custom quality, imports, cookie management, source update controls and notifications remain open. See [measurements](measurements.md) and the original [brief](brief.md).
+
+The 7 September reliability checks exercised a generated 12-track album with real workers on Windows and Linux: pause, durable queue reopen, automatic retry, tags, immediate indexing and duplicate prevention. A separate Docker SIGKILL interrupted three workers during an MP3 batch; the same 12 jobs completed after restart with matching file hashes and no duplicates. The public-domain music fixture also passed through the worker into an isolated Windows Navidrome instance, whose watcher imported the written tags. These generated batches do not measure provider throughput or music-match accuracy. Commands and fixture boundaries are in [Testing and CI](testing.md#reliability-and-indexing-checks).

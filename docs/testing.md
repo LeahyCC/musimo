@@ -1,6 +1,10 @@
 # Testing and CI
 
-Run these commands from the repository root. Python 3.12 is the container runtime; CI also tests Python 3.14. Node 24 builds the frontend. Install FFmpeg and ffprobe for the generated-audio tests. CI installs them so those tests cannot silently disappear from its coverage.
+Run these commands from the repository root. Python 3.14 is the container runtime; CI also tests Python 3.12 compatibility. Node 26 builds the frontend. Install FFmpeg and ffprobe for the generated-audio tests. CI installs them so those tests cannot silently disappear from its coverage.
+
+PRs [#1](https://github.com/LeahyCC/musimo/pull/1) and [#2](https://github.com/LeahyCC/musimo/pull/2) were integrated into `fix/download-reliability` on 7 September 2026. Their original CI failures were the Firefox playback check on an older base; the branch includes the subsequent fixture-path and Linux audio-output fixes. Node 26 is currently the Current release, with LTS scheduled for October ([Node release note](https://nodejs.org/en/blog/release/v26.0.0)). It is used for building the frontend and running CI tools; the final server image runs Python.
+
+The combined image built successfully and ran Python 3.14.7. All 41 container tests and 60 browser checks passed, as did HTTP/SSE restart, the generated album pause/retry check and the disposable-container SIGKILL recovery check. Both worker checks completed all twelve jobs with no duplicate files. Earlier Python 3.12 measurements remain historical results for that runtime.
 
 ## Local checks
 
@@ -48,6 +52,24 @@ npm run test:e2e:report --prefix frontend
 ```
 
 The report links screenshots, video and traces. CI also retains JUnit output, container logs, API benchmarks and coverage XML for 14 days. Linux CI starts PulseAudio with a virtual output so Firefox can decode and play audio without physical speakers. The benchmark's release gate remains deliberately incomplete; ordinary CI checks only measurements the script implements.
+
+## Reliability and indexing checks
+
+Run these opt-in checks from the repository root. They create temporary fixtures and remove their own files afterward. FFmpeg is required. The recovery check also needs Docker and the `musimo:ci` image built with the isolated Compose file above.
+
+```sh
+uv run python -m scripts.reliability_smoke --output runtime/batch-check.json
+uv run python -m scripts.recovery_smoke --output runtime/recovery-check.json
+uv run python -m scripts.index_benchmark --files 50000 --output runtime/index-check.json
+```
+
+The batch check uses generated audio and mock catalog metadata with real worker processes. It verifies duplicate album requests, pause/termination, saved state after reopening SQLite, a transient failure followed by automatic retry, written tags, artifact hashes and ownership after all 12 files finish. Its elapsed time excludes provider downloads.
+
+The recovery check creates its own Docker container, temporary database/music mounts and a random loopback port. It seeds twelve generated 30-second clips, kills the container while work is active, and verifies that the same jobs finish as MP3 after restart, without duplicate files or missing index entries. It removes only its own container and temporary mounts. `--image` can select a separately built test image.
+
+The index benchmark generates distinct title tags in 50,000 short WAVs, in folders of 50 files. It measures one cold tag scan, two unchanged-file scans and 50 batched ownership lookups. This exercises actual files, Mutagen and SQLite, but is not representative of a mixed personal library or a Windows bind mount. `--directory` selects the parent for the temporary library. To reproduce Linux timings, mount `scripts` read-only into a disposable image, set `PYTHONPATH=/app`, and run `/checks/index_benchmark.py` with an output mount.
+
+The existing `scripts/download_smoke.py` remains the opt-in Wikimedia public-domain transport fixture. Give it a dedicated writable test root. To verify Navidrome's watcher, run a separate Navidrome instance watching that root with its own data directory and loopback port, then confirm the written title/artist in that instance's index. Do not point these checks at the live library or restart its services.
 
 ## GitHub checks
 

@@ -132,16 +132,37 @@ p {
 }
 .sidebar-bottom {
   margin: auto 7px 0;
+  color: #a1afa7;
+  font-size: 12px;
+}
+.sidebar-note {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: #a1afa7;
-  font-size: 12px;
 }
 .sidebar-bottom small {
   display: block;
   color: #74847b;
   margin-top: 5px;
+}
+.sidebar-actions {
+  display: grid;
+  gap: 6px;
+  margin-top: 14px;
+}
+.sidebar-actions a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: #a1afa7;
+  font-size: 11px;
+}
+.sidebar-actions a:hover {
+  border-color: #536258;
+  color: var(--accent);
 }
 .workspace {
   margin-left: 215px;

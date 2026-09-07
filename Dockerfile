@@ -1,4 +1,4 @@
-FROM node:24-bookworm-slim AS frontend
+FROM node:26-bookworm-slim AS frontend
 WORKDIR /build
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
@@ -6,7 +6,7 @@ COPY frontend/ ./
 RUN npm run build
 
 FROM denoland/deno:bin-2.9.6 AS deno
-FROM python:3.12-slim-bookworm
+FROM python:3.14-slim-bookworm
 ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 MUSIMO_DATA_DIR=/data
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg libchromaprint-tools gosu ca-certificates \
     && rm -rf /var/lib/apt/lists/*

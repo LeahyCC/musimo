@@ -25,12 +25,14 @@ import {
   ArrowDownToLine,
   ArrowRight,
   Check,
+  Coffee,
   Folder,
   LockKeyhole,
   Radio,
   RefreshCw,
   Search,
   SlidersHorizontal,
+  Star,
 } from 'lucide-react'
 
 import { api, diagnosticsSchema, settingsSchema, snapshotSchema, sourceSchema } from './api'
@@ -206,12 +208,24 @@ function Shell() {
             </Link>
           ))}
         </nav>
-        <div className="sidebar-bottom">
-          <Radio size={18} />
-          <div>
-            Made for your library<small>Self-hosted music</small>
+        <footer className="sidebar-bottom">
+          <div className="sidebar-note">
+            <Radio size={18} />
+            <div>
+              Made for your library<small>Self-hosted music</small>
+            </div>
           </div>
-        </div>
+          <div className="sidebar-actions">
+            <a href="https://ko-fi.com/colinleahy" target="_blank" rel="noopener noreferrer">
+              <Coffee size={14} />
+              Buy me a coffee
+            </a>
+            <a href="https://github.com/LeahyCC/musimo" target="_blank" rel="noopener noreferrer">
+              <Star size={14} />
+              Star on GitHub
+            </a>
+          </div>
+        </footer>
       </aside>
       <div className="workspace">
         <header className="topbar">

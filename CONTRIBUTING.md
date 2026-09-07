@@ -10,7 +10,7 @@ Useful contributions include reproducible bug reports, keyboard/touch accessibil
 
 ## Develop locally
 
-Fork the repository, clone your fork, and make a focused branch such as `fix/preview-volume`. Install Python 3.12, Node 24 and uv. Then:
+Fork the repository, clone your fork, and make a focused branch such as `fix/preview-volume`. Install Python 3.14, Node 26 and uv. Then:
 
 ```sh
 uv sync --locked
