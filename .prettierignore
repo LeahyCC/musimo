@@ -1,0 +1,12 @@
+node_modules
+frontend/dist
+.research
+.venv
+runtime
+compose.override.yaml
+docs/brief.md
+uv.lock
+frontend/playwright-report
+frontend/test-results
+htmlcov
+coverage.xml

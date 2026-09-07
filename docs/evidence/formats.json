@@ -1,0 +1,124 @@
+{
+  "selected": {
+    "format_id": "251",
+    "ext": "webm",
+    "acodec": "opus",
+    "abr": 128.612,
+    "duration": 635,
+    "filesize": 10202210
+  },
+  "audio_only": [
+    {
+      "format_id": "sb3",
+      "ext": "mhtml",
+      "acodec": "none",
+      "abr": 0,
+      "filesize": null
+    },
+    {
+      "format_id": "sb2",
+      "ext": "mhtml",
+      "acodec": "none",
+      "abr": 0,
+      "filesize": null
+    },
+    {
+      "format_id": "sb1",
+      "ext": "mhtml",
+      "acodec": "none",
+      "abr": 0,
+      "filesize": null
+    },
+    {
+      "format_id": "sb0",
+      "ext": "mhtml",
+      "acodec": "none",
+      "abr": 0,
+      "filesize": null
+    },
+    {
+      "format_id": "233",
+      "ext": "mp4",
+      "acodec": null,
+      "abr": null,
+      "filesize": null
+    },
+    {
+      "format_id": "234",
+      "ext": "mp4",
+      "acodec": null,
+      "abr": null,
+      "filesize": null
+    },
+    {
+      "format_id": "139-drc",
+      "ext": "m4a",
+      "acodec": "mp4a.40.5",
+      "abr": 48.792,
+      "filesize": 3871021
+    },
+    {
+      "format_id": "249-drc",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 49.814,
+      "filesize": 3951579
+    },
+    {
+      "format_id": "250-drc",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 65.75,
+      "filesize": 5215640
+    },
+    {
+      "format_id": "139",
+      "ext": "m4a",
+      "acodec": "mp4a.40.5",
+      "abr": 48.792,
+      "filesize": 3871021
+    },
+    {
+      "format_id": "249",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 49.561,
+      "filesize": 3931453
+    },
+    {
+      "format_id": "250",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 65.377,
+      "filesize": 5186043
+    },
+    {
+      "format_id": "140-drc",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129.481,
+      "filesize": 10271496
+    },
+    {
+      "format_id": "251-drc",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 129.327,
+      "filesize": 10258925
+    },
+    {
+      "format_id": "140",
+      "ext": "m4a",
+      "acodec": "mp4a.40.2",
+      "abr": 129.481,
+      "filesize": 10271496
+    },
+    {
+      "format_id": "251",
+      "ext": "webm",
+      "acodec": "opus",
+      "abr": 128.612,
+      "filesize": 10202210
+    }
+  ]
+}

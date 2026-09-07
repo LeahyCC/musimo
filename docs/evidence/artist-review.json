@@ -1,0 +1,12 @@
+{
+  "artist": "The Weeknd",
+  "artist_id": 4050205,
+  "albums_checked": 17,
+  "catalog_track_entries": 316,
+  "unavailable_albums": 0,
+  "observed_seconds": 0.471,
+  "download_jobs_submitted": 0,
+  "backend_tests_passed": 32,
+  "assets": ["index-Dgrs7eS6.js", "index-CyFqoOsp.css"],
+  "notes": "Read-only request against the running app and its existing catalog cache. Card and artist browser checks are owned by the CI task."
+}

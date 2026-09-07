@@ -1,0 +1,20 @@
+[
+  {
+    "i": 0,
+    "seconds": 0.963,
+    "ok": false,
+    "tail": "ERROR: [youtube] BaW_jenozKc: This video is unavailable\n"
+  },
+  {
+    "i": 1,
+    "seconds": 1.026,
+    "ok": false,
+    "tail": "ERROR: [youtube] BaW_jenozKc: This video is unavailable\n"
+  },
+  {
+    "i": 2,
+    "seconds": 1.06,
+    "ok": false,
+    "tail": "ERROR: [youtube] BaW_jenozKc: This video is unavailable\n"
+  }
+]

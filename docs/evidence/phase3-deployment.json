@@ -1,0 +1,14 @@
+{
+  "health": {
+    "status": "ok",
+    "version": "0.3.0",
+    "uptime_seconds": 26.93,
+    "phase": 3
+  },
+  "assets": ["/assets/index-DtkiO1jk.js", "/assets/index-CpdAVhjw.css"],
+  "destination": "/library",
+  "navidrome_mode": "watcher",
+  "docker_tests": 19,
+  "backup": "/data/backups/pre-phase3-20260907-081523.sqlite3",
+  "temporary_music_fixture_removed": true
+}

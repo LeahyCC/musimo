@@ -1,0 +1,29 @@
+{
+  "cold_search": {
+    "note": "Already cached; no cold samples"
+  },
+  "cached_search": {
+    "samples": 50,
+    "median_ms": 2.01,
+    "p95_ms": 2.69
+  },
+  "library_badges_50_tracks": {
+    "samples": 50,
+    "median_ms": 0.24,
+    "p95_ms": 0.51
+  },
+  "preview": {
+    "source": "Deezer",
+    "http_status": 206
+  },
+  "library": {
+    "status": "scanning",
+    "walked": 2230,
+    "indexed": 2230,
+    "errors": 0,
+    "elapsed": 30.8,
+    "detail": "Reading library tags",
+    "total_files": 2232,
+    "roots": ["/music", "/library"]
+  }
+}
