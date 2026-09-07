@@ -61,6 +61,8 @@ CI verifies that the Python runtime export matches the uv lock:
 uv export --locked --no-header --no-dev --no-emit-project --format requirements-txt --output-file requirements.lock
 ```
 
+Main requires a pull request, an up-to-date branch, `CI required`, all three CodeQL jobs and resolved review conversations. Its ruleset blocks deletion, force pushes and new CodeQL errors or high/critical security findings. No actor has a bypass. A second maintainer's approval is optional while the project has one maintainer.
+
 Dependency changes include manifests, locks and exports in the same PR. Required status names and protection are maintained on GitHub; update those settings before renaming a required job. There is no automatic merge, release or container publication workflow.
 
 The initial CodeQL review led to allowlisted static filenames and download destinations. Requests cannot select files outside the built frontend or cause arbitrary destination paths to be resolved. Root public files are discovered at startup; dynamic assets remain under `/assets`.
