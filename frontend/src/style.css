@@ -2125,11 +2125,14 @@ meter::-webkit-meter-optimum-value {
 }
 
 .download-options {
-  position: absolute;
-  top: 100%;
-  right: 0;
-  z-index: 8;
+  position: fixed;
+  inset: auto;
+  margin: 0;
   width: 240px;
+  max-width: calc(100vw - 16px);
+  max-height: calc(100dvh - 16px);
+  overflow: auto;
+  color: inherit;
   padding: 14px;
   border: 1px solid #414a38;
   border-radius: 8px;

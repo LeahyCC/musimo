@@ -17,6 +17,8 @@ These checks inspect browser state and rendered layout. They do not establish au
 
 ## Automated checks
 
+The download-options regression runs two-song and 30-song fixtures across Chromium, Firefox, WebKit and a mobile viewport. All eight cases passed on 7 September 2026. It checks popup hit testing above virtual rows, viewport bounds, keyboard focus, Escape and outside dismissal, switching between song popups, scrolling dismissal and access from the final row. The popup uses the browser's top layer so scrolling containers cannot clip it. No download requests are submitted.
+
 `tests/test_activity.py` checks persistent clearing, preserved SSE replay, events arriving after the observed cursor, invalid inputs and cross-origin rejection. The search regression covers background album detail parity and refreshed ownership after changing the index while catalog data stays cached.
 
 The frontend production build and focused backend tests pass. The separate testing task owns broader browser regression automation and CI. [Download verification](downloads.md) records worker/publication/recovery checks, including the permitted fixture that appeared in Navidrome.

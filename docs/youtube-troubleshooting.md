@@ -1,6 +1,6 @@
 # Why is YouTube failing?
 
-Phase 1 includes the tools but does not expose a download API. These are the diagnostic rules for the upcoming worker.
+The download worker includes the required tools in the image. Start the optional helper with `docker compose --profile youtube up -d --build --wait`, then inspect the failed job's stage and error alongside Diagnostics.
 
 - **Video unavailable:** check a second known accessible video. A removed test fixture is not evidence that your setup is broken.
 - **POT_MISSING or SABR warnings:** check the bgutil helper and that its version matches the installed plugin. Preserve warnings; they can explain missing audio formats even when extraction does not throw an exception.
