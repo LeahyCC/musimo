@@ -1,0 +1,14 @@
+.git
+.research
+.venv
+**/node_modules
+**/dist
+**/__pycache__
+**/.mypy_cache
+runtime
+.env
+.coverage*
+coverage.xml
+htmlcov
+frontend/playwright-report
+frontend/test-results

@@ -1,0 +1,72 @@
+[
+  {
+    "pair": 0,
+    "downloader": "native",
+    "seconds": 5.914,
+    "ok": true,
+    "tail": ""
+  },
+  {
+    "pair": 0,
+    "downloader": "aria2c",
+    "seconds": 12.933,
+    "ok": true,
+    "tail": ""
+  },
+  {
+    "pair": 1,
+    "downloader": "aria2c",
+    "seconds": 14.16,
+    "ok": true,
+    "tail": ""
+  },
+  {
+    "pair": 1,
+    "downloader": "native",
+    "seconds": 4.049,
+    "ok": true,
+    "tail": ""
+  },
+  {
+    "pair": 2,
+    "downloader": "native",
+    "seconds": 4.073,
+    "ok": true,
+    "tail": ""
+  },
+  {
+    "pair": 2,
+    "downloader": "aria2c",
+    "seconds": 12.871,
+    "ok": true,
+    "tail": ""
+  },
+  {
+    "pair": 3,
+    "downloader": "aria2c",
+    "seconds": 12.946,
+    "ok": true,
+    "tail": ""
+  },
+  {
+    "pair": 3,
+    "downloader": "native",
+    "seconds": 4.563,
+    "ok": true,
+    "tail": ""
+  },
+  {
+    "pair": 4,
+    "downloader": "native",
+    "seconds": 4.201,
+    "ok": true,
+    "tail": ""
+  },
+  {
+    "pair": 4,
+    "downloader": "aria2c",
+    "seconds": 12.822,
+    "ok": true,
+    "tail": ""
+  }
+]

@@ -1,0 +1,6 @@
+{
+  "active_child_sigterm_ms": 7.351,
+  "running_future_cancel_refused": true,
+  "thread_cooperative_cancel_ms": 42.849,
+  "note": "One sample each, throttled live transfer; cooperative hooks cannot interrupt a blocked network read."
+}

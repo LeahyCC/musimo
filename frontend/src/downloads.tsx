@@ -1,0 +1,736 @@
+import { useRef, useState } from 'react'
+
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import type { QueryClient } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import {
+  ArrowDownToLine,
+  Check,
+  ChevronUp,
+  Disc3,
+  MoreHorizontal,
+  Pause,
+  Play,
+  RotateCcw,
+  X,
+} from 'lucide-react'
+
+import {
+  api,
+  commandSchema,
+  diagnosticsSchema,
+  historySchema,
+  jobSchema,
+  jobsSchema,
+  settingsSchema,
+} from './api'
+import type { DownloadJob, MusicResult } from './api'
+
+type QueueData = { jobs: DownloadJob[]; controls: { paused: boolean; source_paused: boolean } }
+export const activeJob = (job: DownloadJob) => !['done', 'failed', 'cancelled'].includes(job.stage)
+export function updateJob(client: QueryClient, job: DownloadJob) {
+  client.setQueryData<QueueData>(['jobs'], (old) => {
+    const previous = old?.jobs.find((item) => item.id === job.id)
+    if (previous && previous.updated_at > job.updated_at) return old
+    return {
+      controls: old?.controls ?? { paused: false, source_paused: false },
+      jobs: [job, ...(old?.jobs ?? []).filter((item) => item.id !== job.id)],
+    }
+  })
+}
+
+export function useJobs() {
+  const client = useQueryClient()
+  return useQuery({
+    queryKey: ['jobs'],
+    queryFn: async ({ signal }) => {
+      const data = await api('jobs', jobsSchema, { signal })
+      const live = client.getQueryData<QueueData>(['jobs'])
+      const rows = new Map(data.jobs.map((job) => [job.id, job]))
+      for (const job of live?.jobs ?? [])
+        if ((rows.get(job.id)?.updated_at ?? 0) < job.updated_at) rows.set(job.id, job)
+      return { ...data, jobs: [...rows.values()] }
+    },
+    staleTime: Infinity,
+  })
+}
+const bytes = (value: number) =>
+  value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.round(value / 1024)} KB`
+
+export function DownloadButton({ item }: { item: MusicResult }) {
+  const client = useQueryClient()
+  const owned = item.ownership === 'owned'
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
+  })
+  const [format, setFormat] = useState<string>()
+  const [target, setTarget] = useState('')
+  const [options, setOptions] = useState(false)
+  const mounts = useQuery({
+    queryKey: ['diagnostics'],
+    queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
+    enabled: options,
+  })
+  const queue = useJobs()
+  const selected = format ?? settings.data?.output_format.value ?? 'original'
+  const existing = queue.data?.jobs.find(
+    (job) =>
+      job.track_id === item.id &&
+      job.format === selected &&
+      job.target === (target || settings.data?.destination.value) &&
+      activeJob(job),
+  )
+  const mutation = useMutation({
+    mutationFn: () =>
+      api('jobs', jobSchema, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          track_id: item.id,
+          format: selected,
+          ...(target ? { target } : {}),
+        }),
+      }),
+    onSuccess: (job) => updateJob(client, job),
+  })
+  return (
+    <div className="download-action">
+      <select
+        aria-label={`Format for ${item.title}`}
+        value={selected}
+        onChange={(e) => setFormat(e.target.value)}
+      >
+        <option value="original">Original</option>
+        <option value="m4a">M4A</option>
+        <option value="opus">Opus</option>
+        <option value="mp3">MP3</option>
+      </select>
+      <button
+        className="icon-button"
+        aria-label={
+          owned
+            ? `${item.title} is in your library`
+            : existing
+              ? `${item.title} is ${existing.stage}`
+              : `Download ${item.title}`
+        }
+        title={owned ? 'Already in your library' : (existing?.stage ?? 'Download track')}
+        disabled={owned || Boolean(existing) || mutation.isPending}
+        onClick={() => mutation.mutate()}
+      >
+        {owned || existing ? <Check size={17} /> : <ArrowDownToLine size={17} />}
+      </button>
+      <button
+        className="icon-button"
+        aria-label={`Download options for ${item.title}`}
+        aria-expanded={options}
+        onClick={() => setOptions(!options)}
+      >
+        <MoreHorizontal size={16} />
+      </button>
+      {options && (
+        <div className="download-options">
+          <label>
+            Download to
+            <select value={target} onChange={(e) => setTarget(e.target.value)}>
+              <option value="">Default folder</option>
+              {mounts.data?.disks
+                .slice(1)
+                .filter((disk) => disk.writable)
+                .map((disk) => (
+                  <option key={disk.path} value={disk.path}>
+                    {disk.path}
+                  </option>
+                ))}
+            </select>
+          </label>
+          <small>Original keeps source quality. Conversion does not improve it.</small>
+        </div>
+      )}
+      {mutation.data?.stage === 'done' && (
+        <span className="download-error" role="status">
+          Already downloaded. The existing file was kept.
+        </span>
+      )}
+      {mutation.isError && (
+        <span className="download-error" role="alert">
+          {mutation.error.message}
+          <button
+            disabled={owned || Boolean(existing) || mutation.isPending}
+            onClick={() => mutation.mutate()}
+          >
+            Retry
+          </button>
+        </span>
+      )}
+    </div>
+  )
+}
+
+function JobCard({ job }: { job: DownloadJob }) {
+  const client = useQueryClient()
+  const [copied, setCopied] = useState(false)
+  const action = useMutation({
+    mutationFn: (name: string) => api(`jobs/${job.id}/${name}`, jobSchema, { method: 'POST' }),
+    onSuccess: (row) => updateJob(client, row),
+  })
+  const pick = useMutation({
+    mutationFn: (id: string) =>
+      api(`jobs/${job.id}/pick`, jobSchema, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ candidate_id: id }),
+      }),
+    onSuccess: (row) => updateJob(client, row),
+  })
+  const busy = action.isPending || pick.isPending
+  const running = activeJob(job)
+  const canPick = ['queued', 'paused', 'failed', 'cancelled', 'done'].includes(job.stage)
+  return (
+    <article className={`job-card ${job.stage}`}>
+      <div className="job-heading">
+        {job.meta.art ? <img src={job.meta.art} alt="" /> : <Disc3 size={38} />}
+        <div>
+          <strong>{job.meta.title}</strong>
+          <span>
+            {job.meta.artist} · {job.meta.album}
+          </span>
+        </div>
+        <span className="job-state">{job.stage.replaceAll('_', ' ')}</span>
+        <div className="job-buttons">
+          {running && !['paused', 'pausing', 'cancelling'].includes(job.stage) && (
+            <button
+              title="Pause"
+              aria-label={`Pause ${job.meta.title}`}
+              disabled={busy}
+              onClick={() => action.mutate('pause')}
+            >
+              <Pause size={16} />
+            </button>
+          )}
+          {job.stage === 'paused' && (
+            <button
+              title="Resume"
+              aria-label={`Resume ${job.meta.title}`}
+              disabled={busy}
+              onClick={() => action.mutate('resume')}
+            >
+              <Play size={16} />
+            </button>
+          )}
+          {running && (
+            <button
+              title="Cancel"
+              aria-label={`Cancel ${job.meta.title}`}
+              disabled={busy || job.stage === 'cancelling'}
+              onClick={() => action.mutate('cancel')}
+            >
+              <X size={16} />
+            </button>
+          )}
+          {['failed', 'cancelled'].includes(job.stage) && (
+            <button
+              title="Retry"
+              aria-label={`Retry ${job.meta.title}`}
+              disabled={busy}
+              onClick={() => action.mutate('retry')}
+            >
+              <RotateCcw size={16} />
+            </button>
+          )}
+        </div>
+      </div>
+      <div className="job-steps" aria-label={`Current stage: ${job.stage}`}>
+        {[
+          'queued',
+          'matching',
+          'downloading',
+          'converting',
+          'tagging',
+          'moving',
+          'scanning',
+          'done',
+        ].map((stage) => (
+          <span key={stage} className={job.stage === stage ? 'current' : ''}>
+            {stage}
+          </span>
+        ))}
+      </div>
+      {job.stage === 'downloading' && (
+        <progress
+          aria-label={`${job.meta.title} download progress`}
+          max={1}
+          value={job.total ? job.progress : undefined}
+        />
+      )}
+      <div className="job-stats">
+        <span>
+          {job.format === 'original'
+            ? 'Original source quality'
+            : job.format.toUpperCase() + ' · conversion if needed'}
+        </span>
+        {job.stage === 'downloading' && (
+          <span>
+            {bytes(job.downloaded)}
+            {job.total ? ` / ${bytes(job.total)}` : ''} · {bytes(job.speed)}/s
+            {job.eta !== null ? ` · ${Math.ceil(job.eta)}s left` : ''}
+          </span>
+        )}
+        {job.stage === 'done' && (
+          <span>
+            {job.codec} · {Math.round(job.actual_bitrate / 1000)} kbps
+          </span>
+        )}
+        <span>Attempt {job.attempts}</span>
+      </div>
+      {job.stage === 'retry_wait' && (
+        <p className="small">
+          Retry scheduled for {new Date(job.retry_at * 1000).toLocaleTimeString()}
+        </p>
+      )}
+      {job.error && (
+        <p className="error" role="alert">
+          {job.error_code}: {job.error}
+        </p>
+      )}
+      {job.check_match && (
+        <p className="match-warning">Check match: the selected recording needs a listen.</p>
+      )}
+      {job.final_path && (
+        <div className="job-path">
+          <code>{job.final_path}</code>
+          <button
+            onClick={() => {
+              void navigator.clipboard
+                .writeText(job.final_path)
+                .then(() => setCopied(true))
+                .catch(() => setCopied(false))
+            }}
+          >
+            {copied ? 'Copied' : 'Copy path'}
+          </button>
+        </div>
+      )}
+      {job.warnings.length > 0 && (
+        <details>
+          <summary>{job.warnings.length} metadata or scanning notes</summary>
+          <ul>
+            {job.warnings.map((warning, index) => (
+              <li key={index}>{warning}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {job.candidates.length > 0 && (
+        <details>
+          <summary>
+            Recording matches ·{' '}
+            {job.candidates.find((candidate) => candidate.id === job.selected)?.score.toFixed(2) ??
+              'unselected'}
+          </summary>
+          {!canPick && <p className="small">Pause the job to change its recording.</p>}
+          {job.candidates.map((candidate) => (
+            <div className="candidate" key={candidate.id}>
+              <div>
+                <strong>{candidate.title}</strong>
+                <small>
+                  {candidate.artist} · {Math.round(candidate.score * 100)}% · {candidate.reason}
+                </small>
+              </div>
+              <a
+                href={`https://www.youtube.com/watch?v=${candidate.id}`}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Listen ↗
+              </a>
+              <button
+                className="button"
+                disabled={!canPick || busy || candidate.id === job.selected}
+                onClick={() => pick.mutate(candidate.id)}
+              >
+                {candidate.id === job.selected ? 'Selected' : 'Use this'}
+              </button>
+            </div>
+          ))}
+        </details>
+      )}
+      {job.tool_tail && (
+        <details>
+          <summary>Tool details · yt-dlp {job.tool_version}</summary>
+          <pre>{job.tool_tail}</pre>
+        </details>
+      )}
+      {(action.isError || pick.isError) && (
+        <p className="error" role="alert">
+          {action.error?.message ?? pick.error?.message}
+        </p>
+      )}
+    </article>
+  )
+}
+
+function JobList({ jobs }: { jobs: DownloadJob[] }) {
+  const parent = useRef<HTMLDivElement>(null)
+  const virtual = useVirtualizer({
+    count: jobs.length,
+    getScrollElement: () => parent.current,
+    estimateSize: () => 190,
+    overscan: 3,
+  })
+  if (jobs.length <= 6)
+    return (
+      <div className="jobs-list">
+        {jobs.map((job) => (
+          <JobCard key={job.id} job={job} />
+        ))}
+      </div>
+    )
+  return (
+    <div
+      ref={parent}
+      className="virtual-list"
+      role="region"
+      aria-label="Download jobs"
+      tabIndex={0}
+    >
+      <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>
+        {virtual.getVirtualItems().map((row) => {
+          const job = jobs[row.index]
+          return job ? (
+            <div
+              key={job.id}
+              ref={virtual.measureElement}
+              data-index={row.index}
+              style={{
+                position: 'absolute',
+                top: 0,
+                left: 0,
+                width: '100%',
+                transform: `translateY(${row.start}px)`,
+                paddingBottom: 12,
+              }}
+            >
+              <JobCard job={job} />
+            </div>
+          ) : null
+        })}
+      </div>
+    </div>
+  )
+}
+
+function BatchSummary({ jobs }: { jobs: DownloadJob[] }) {
+  const client = useQueryClient()
+  const groups = jobs
+    .filter((job) => job.batch_id)
+    .reduce(
+      (map, job) => map.set(job.batch_id, [...(map.get(job.batch_id) ?? []), job]),
+      new Map<string, DownloadJob[]>(),
+    )
+  const action = useMutation({
+    mutationFn: ({ id, command }: { id: string; command: string }) =>
+      api(`batches/${id}/${command}`, commandSchema, { method: 'POST' }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['jobs'] }),
+  })
+  return (
+    <>
+      {[...groups]
+        .filter(([, rows]) => rows.some(activeJob))
+        .map(([id, rows]) => (
+          <div key={id} className="batch-summary">
+            <strong>
+              {rows.find((job) => job.batch_label)?.batch_label ||
+                rows.find((job) => job.meta.album)?.meta.album ||
+                'Album download'}
+            </strong>
+            <span>
+              {rows.filter((job) => job.stage === 'done').length}/{rows.length} complete
+            </span>
+            <progress
+              max={rows.length}
+              value={rows.reduce(
+                (total, job) => total + (job.stage === 'done' ? 1 : job.progress),
+                0,
+              )}
+              aria-label="Batch progress"
+            />
+            {['pause', 'resume', 'cancel'].map((command) => (
+              <button
+                key={command}
+                className="button"
+                disabled={action.isPending}
+                onClick={() => action.mutate({ id, command })}
+              >
+                {command === 'pause'
+                  ? 'Pause group'
+                  : command === 'resume'
+                    ? 'Resume group'
+                    : 'Cancel group'}
+              </button>
+            ))}
+          </div>
+        ))}
+      {action.isError && <p className="error">{action.error.message}</p>}
+    </>
+  )
+}
+
+function QueueControls() {
+  const client = useQueryClient()
+  const queue = useJobs()
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
+  })
+  const concurrency = useMutation({
+    mutationFn: (value: number) =>
+      api('settings', settingsSchema, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ concurrency: value }),
+      }),
+    onSuccess: (data) => client.setQueryData(['settings'], data),
+  })
+  const command = useMutation({
+    mutationFn: (action: string) => api(`queue/${action}`, commandSchema, { method: 'POST' }),
+    onSuccess: (data) => {
+      client.setQueryData<QueueData>(['jobs'], (old) => ({
+        jobs: old?.jobs ?? [],
+        controls: data.controls,
+      }))
+      void client.invalidateQueries({ queryKey: ['jobs'] })
+    },
+  })
+  return (
+    <>
+      <div className="queue-actions">
+        <label className="queue-concurrency">
+          Parallel{' '}
+          <select
+            aria-label="Parallel downloads"
+            value={settings.data?.concurrency.value ?? 2}
+            disabled={settings.data?.concurrency.locked || concurrency.isPending}
+            onChange={(e) => concurrency.mutate(Number(e.target.value))}
+          >
+            {[1, 2, 3].map((n) => (
+              <option key={n} value={n}>
+                {n}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className="button"
+          disabled={command.isPending}
+          onClick={() => command.mutate(queue.data?.controls.paused ? 'resume' : 'pause')}
+        >
+          {queue.data?.controls.paused ? 'Resume all' : 'Pause all'}
+        </button>
+        <button
+          className="button"
+          disabled={command.isPending}
+          onClick={() => command.mutate('cancel-queued')}
+        >
+          Cancel queued
+        </button>
+        <button
+          className="button"
+          disabled={command.isPending}
+          onClick={() => command.mutate('retry-failed')}
+        >
+          Retry failed
+        </button>
+        <button
+          className="button"
+          disabled={command.isPending}
+          onClick={() => command.mutate('clear-finished')}
+        >
+          Clear finished
+        </button>
+      </div>
+      {queue.data?.controls.source_paused && (
+        <div className="error" role="alert">
+          YouTube paused after repeated blocking errors.{' '}
+          <Link to="/diagnostics">Check diagnostics</Link>
+          <button onClick={() => command.mutate('resume-source')}>Try source again</button>
+        </div>
+      )}
+      {(command.isError || Boolean(command.data?.errors.length)) && (
+        <p className="error" role="alert">
+          {command.error?.message ?? command.data?.errors.join(' · ')}
+        </p>
+      )}
+    </>
+  )
+}
+
+function History() {
+  const [q, setQ] = useState(''),
+    [from, setFrom] = useState(''),
+    [until, setUntil] = useState('')
+  const query = useInfiniteQuery({
+    queryKey: ['history', q, from, until],
+    initialPageParam: 0,
+    queryFn: ({ signal, pageParam }) =>
+      api(
+        `history?${new URLSearchParams({ q, since: from ? String(new Date(from).getTime() / 1000) : '0', until: until ? String(new Date(until + 'T23:59:59').getTime() / 1000) : '1000000000000', offset: String(pageParam) })}`,
+        historySchema,
+        { signal },
+      ),
+    getNextPageParam: (page, pages) =>
+      pages.reduce((count, item) => count + item.jobs.length, 0) < page.total
+        ? pages.length * 100
+        : undefined,
+  })
+  return (
+    <>
+      <div className="history-filters">
+        <input
+          aria-label="Search download history"
+          placeholder="Search history"
+          value={q}
+          onChange={(e) => setQ(e.target.value)}
+        />
+        <label>
+          From
+          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+        </label>
+        <label>
+          To
+          <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+        </label>
+      </div>
+      {query.isPending && <p>Loading history…</p>}
+      {query.isError && (
+        <p className="error">
+          {query.error.message}
+          <button onClick={() => void query.refetch()}>Retry</button>
+        </p>
+      )}
+      <JobList jobs={query.data?.pages.flatMap((page) => page.jobs) ?? []} />
+      {query.hasNextPage && (
+        <button
+          className="button"
+          disabled={query.isFetchingNextPage}
+          onClick={() => void query.fetchNextPage()}
+        >
+          Load older jobs
+        </button>
+      )}
+    </>
+  )
+}
+
+export function DownloadsPage() {
+  const queue = useJobs()
+  const [tab, setTab] = useState('queue')
+  const all = (queue.data?.jobs ?? []).filter((job) => !job.hidden)
+  const jobs = all
+    .filter((job) =>
+      tab === 'queue'
+        ? activeJob(job)
+        : tab === 'done'
+          ? job.stage === 'done'
+          : job.stage === 'failed',
+    )
+    .sort((a, b) => (tab === 'queue' ? a.created_at - b.created_at : b.updated_at - a.updated_at))
+  return (
+    <>
+      <div className="page-heading">
+        <div>
+          <div className="eyebrow">YOUR COLLECTION, IN MOTION</div>
+          <h1>Downloads</h1>
+        </div>
+        <Link className="button" to="/settings">
+          Download settings
+        </Link>
+      </div>
+      <QueueControls />
+      <BatchSummary jobs={queue.data?.jobs ?? []} />
+      <div className="result-tabs download-tabs">
+        {['queue', 'done', 'failed', 'history'].map((value) => (
+          <button
+            key={value}
+            className={tab === value ? 'selected' : ''}
+            aria-pressed={tab === value}
+            onClick={() => setTab(value)}
+          >
+            {value[0]?.toUpperCase()}
+            {value.slice(1)}
+            {value === 'queue' ? ` (${all.filter(activeJob).length})` : ''}
+          </button>
+        ))}
+      </div>
+      {queue.isError && (
+        <p className="error">
+          {queue.error.message}
+          <button onClick={() => void queue.refetch()}>Retry</button>
+        </p>
+      )}
+      {tab === 'history' ? (
+        <History />
+      ) : jobs.length ? (
+        <JobList jobs={jobs} />
+      ) : (
+        <section className="empty-panel">
+          <ArrowDownToLine size={36} />
+          <h2>
+            {queue.isPending
+              ? 'Loading queue…'
+              : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
+          </h2>
+          <Link to="/search" className="button primary">
+            Find a track
+          </Link>
+        </section>
+      )}
+    </>
+  )
+}
+
+export function QueueDock() {
+  const dialog = useRef<HTMLDialogElement>(null)
+  const queue = useJobs()
+  const active = (queue.data?.jobs ?? []).filter(activeJob)
+  const speed = active.reduce((total, job) => total + job.speed, 0)
+  return (
+    <>
+      <button
+        className="queue-dock"
+        onClick={() => dialog.current?.showModal()}
+        aria-label={`Open queue, ${active.length} active downloads`}
+      >
+        <ArrowDownToLine size={16} />
+        {active.length} · {speed ? `${bytes(speed)}/s` : 'Queue'}
+        <ChevronUp size={14} />
+      </button>
+      <dialog
+        className="queue-sheet"
+        ref={dialog}
+        aria-label="Download queue"
+        onClick={(event) => {
+          if (event.target === dialog.current) dialog.current?.close()
+        }}
+      >
+        <header>
+          <h2>Download queue</h2>
+          <Link to="/downloads" onClick={() => dialog.current?.close()}>
+            Full page
+          </Link>
+          <button aria-label="Close queue" onClick={() => dialog.current?.close()}>
+            <X size={20} />
+          </button>
+        </header>
+        <QueueControls />
+        {active.length ? (
+          <JobList jobs={active} />
+        ) : (
+          <p className="empty-results">Nothing queued. Add a track from search.</p>
+        )}
+      </dialog>
+    </>
+  )
+}

@@ -1,0 +1,45 @@
+name: Bug report
+description: Report a reproducible problem with Musimo
+body:
+  - type: markdown
+    attributes:
+      value: 'For vulnerabilities, use SECURITY.md. Remove credentials, signed URLs and private paths from all examples.'
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Include the Docker image tag if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Host OS, browser, Docker/Compose versions, mount type and Navidrome version if relevant.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Start from the screen or configuration needed to see the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: Include the affected job stage or visible error when applicable.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Redacted logs or screenshots
+      description: Short excerpts only. Do not attach your database, credentials or music collection.

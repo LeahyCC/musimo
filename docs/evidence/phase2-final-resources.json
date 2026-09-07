@@ -1,0 +1,7 @@
+{
+  "poll_interval_seconds": 60,
+  "healthcheck_interval_seconds": 30,
+  "sample_seconds": 60.000161541000125,
+  "mean_cpu_percent": 1.463,
+  "rss_anon_mib": 53.51
+}

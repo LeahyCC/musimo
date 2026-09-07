@@ -1,0 +1,79 @@
+{
+  "samples": 50,
+  "rows": [
+    {
+      "metric": "Health HTTP",
+      "p50_ms": 1.09,
+      "p95_ms": 1.58,
+      "status": "BASELINE"
+    },
+    {
+      "metric": "Snapshot HTTP",
+      "p50_ms": 1.07,
+      "p95_ms": 1.34,
+      "status": "PASS"
+    },
+    {
+      "metric": "Settings HTTP",
+      "p50_ms": 1.04,
+      "p95_ms": 1.24,
+      "status": "BASELINE"
+    },
+    {
+      "metric": "Cached/cold typeahead",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Multi-source first/complete",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Album prefetch/cold",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Ownership lookup",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Click to progress",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "First media byte",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Track and album completion",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Pause/stop acknowledgement",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Active worker termination",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Scheduler dispatch",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Browser reconnect/reload",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Immediate/full library index",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Idle RSS/CPU",
+      "status": "NOT MEASURED"
+    },
+    {
+      "metric": "Startup to healthy",
+      "status": "NOT MEASURED"
+    }
+  ]
+}

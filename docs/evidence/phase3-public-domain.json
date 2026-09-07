@@ -1,0 +1,13 @@
+{
+  "seconds": 2.852,
+  "codec": {
+    "codec": "vorbis",
+    "bitrate": 342624,
+    "duration": 78.262857
+  },
+  "navidrome_indexed": true,
+  "source": "https://commons.wikimedia.org/wiki/File:Star_Spangled_Banner_instrumental.ogg",
+  "sha256": "e180dd84e8ad97427310e46732ac1f29839cc04454e8ad86b96e3fc50183113b",
+  "transport": "Wikimedia public-domain fixture feeding normal resumed worker",
+  "youtube_precision_measured": false
+}

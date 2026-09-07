@@ -1,0 +1,32 @@
+{
+  "cold_search": {
+    "samples": 7,
+    "median_ms": 399.43,
+    "p95_ms": 559.34
+  },
+  "cached_search": {
+    "samples": 50,
+    "median_ms": 2.2,
+    "p95_ms": 2.81
+  },
+  "library_badges_50_tracks": {
+    "samples": 50,
+    "median_ms": 0.24,
+    "p95_ms": 0.48
+  },
+  "preview": {
+    "source": "Deezer",
+    "http_status": 206
+  },
+  "library": {
+    "status": "done",
+    "walked": 2770,
+    "indexed": 2770,
+    "errors": 0,
+    "elapsed": 23.8,
+    "detail": "Scan complete",
+    "total_files": 2770,
+    "roots": ["/music", "/library"],
+    "watch_mode": "poll"
+  }
+}

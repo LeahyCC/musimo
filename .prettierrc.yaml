@@ -1,0 +1,36 @@
+semi: false
+trailingComma: 'all'
+bracketSpacing: true
+arrowParens: 'always'
+singleQuote: true
+printWidth: 100
+tabWidth: 2
+endOfLine: 'lf'
+experimentalTernaries: false
+experimentalOperatorPosition: 'end'
+
+# Vite + React. No Next, Mantine, or @/ alias in this repo.
+# Plugin path is relative to this file. The package lives in frontend/node_modules.
+importOrder:
+  - '^react$'
+  - '^react-dom'
+  - '<THIRD_PARTY_MODULES>'
+  - '^[./]'
+importOrderSeparation: true
+importOrderSortSpecifiers: true
+importOrderGroupNamespaceSpecifiers: true
+importOrderCaseInsensitive: true
+importOrderSideEffects: false
+
+quoteProps: 'consistent'
+jsxSingleQuote: false
+bracketSameLine: false
+singleAttributePerLine: false
+
+proseWrap: 'preserve'
+htmlWhitespaceSensitivity: 'css'
+
+embeddedLanguageFormatting: 'auto'
+
+plugins:
+  - './frontend/node_modules/@trivago/prettier-plugin-sort-imports/lib/src/index.js'

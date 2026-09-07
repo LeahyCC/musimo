@@ -1,0 +1,22 @@
+name: Feature proposal
+description: Describe a user problem and a proposed flow
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe the problem with the current flow.
+    validations:
+      required: true
+  - type: textarea
+    id: flow
+    attributes:
+      label: Proposed behavior
+      description: Explain what the user does and sees, including failure or empty states.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives and integration requirements
+      description: Mention provider permissions, credentials, rate limits or dependencies if relevant.

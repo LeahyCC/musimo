@@ -1,0 +1,7 @@
+{
+  "import_ms": 311.78997199458536,
+  "child_import_median_ms": 215.72005950292805,
+  "warm_constructor_mean_ms": 27.570129399828147,
+  "idle_child_sigterm_ms": 3.279894997831434,
+  "note": "SIGTERM measured on idle imported child, not active media. Python threads cannot be forcibly cancelled safely."
+}

@@ -1,0 +1,26 @@
+{
+  "cold_search": {
+    "samples": 10,
+    "median_ms": 504.25,
+    "p95_ms": 823.69
+  },
+  "cached_search": {
+    "samples": 50,
+    "median_ms": 69.8,
+    "p95_ms": 72.75
+  },
+  "preview": {
+    "source": "Deezer",
+    "http_status": 206
+  },
+  "library": {
+    "status": "scanning",
+    "walked": 1323,
+    "indexed": 1323,
+    "errors": 0,
+    "elapsed": 95.4,
+    "detail": "Reading library tags",
+    "total_files": 1331,
+    "roots": ["/music", "/library"]
+  }
+}

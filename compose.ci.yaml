@@ -1,0 +1,19 @@
+# Separate project and volumes keep test writes away from a running installation.
+services:
+  musimo:
+    build: .
+    image: musimo:ci
+    init: true
+    ports:
+      - '127.0.0.1:18765:8765'
+    environment:
+      MUSIMO_LIBRARY_ROOTS: /music
+    volumes:
+      - test-data:/data
+      - test-music:/music
+    stop_grace_period: 10s
+    security_opt:
+      - no-new-privileges:true
+volumes:
+  test-data:
+  test-music:
