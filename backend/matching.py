@@ -6,7 +6,14 @@ from backend.library import normalize
 
 
 class Matcher:
-    def rank(self, meta: Metadata, candidates: list[Candidate]) -> list[Candidate]:
+    def rank(
+        self,
+        meta: Metadata,
+        candidates: list[Candidate],
+        *,
+        min_score: float = 0.55,
+        min_title: float = 0.5,
+    ) -> list[Candidate]:
         ranked: list[Candidate] = []
         wanted_title, wanted_artist = normalize(meta.title), normalize(meta.artist)
         for candidate in candidates:
@@ -46,6 +53,6 @@ class Matcher:
                 f"duration difference {delta:.0f}s"
                 + ("; version differs" if version_mismatch else "")
             )
-            if candidate.score >= 0.55 and title_score >= 0.5:
+            if candidate.score >= min_score and title_score >= min_title:
                 ranked.append(candidate)
         return sorted(ranked, key=lambda row: row.score, reverse=True)[:3]

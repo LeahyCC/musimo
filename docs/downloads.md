@@ -8,7 +8,7 @@ Choose a track format, then its download arrow. Songs already in the library hav
 
 The default is Original. AAC stays M4A and Opus is remuxed into an Opus container without re-encoding. Other requested formats convert only when needed: AAC/Opus at 160 kbps, MP3 at 320 kbps. Conversion cannot improve a lossy source. Finished jobs show the measured audio packet bitrate and codec. Custom quality presets are not implemented yet.
 
-A lower-confidence recording gets a “check match” flag. Its top three candidates link to YouTube for listening. Pause before choosing another match. A correction after completion writes a new file and keeps the previous file. Copy path is available; opening a folder on a remote Docker host is not implemented.
+A lower-confidence recording gets a “check match” flag. Its top three candidates link to YouTube for listening. If automatic matching rejects every candidate, the job now keeps up to three duration-valid rejected candidates for review instead of discarding them. Nothing downloads until the user selects one. Pause before choosing another match. A correction after completion writes a new file and keeps the previous file. Copy path is available; opening a folder on a remote Docker host is not implemented.
 
 ## Storage and safety
 
@@ -48,6 +48,6 @@ Automated tests cover Python 3.12 compatibility and Windows/Docker Python 3.14. 
 
 The live public-domain fixture took 2.852 seconds from download through local indexing and appeared in Navidrome. Its transport is Wikimedia, feeding the regular resumed worker; it does not validate YouTube matching. The separate YouTube open-film fixture completed through the actual worker, paused in 26.4 ms, preserved paused state across restart, then recovered after the container was killed during download.
 
-The 100 independently labelled music-match precision gate remains unmeasured. Browser review belongs to the separate UI task. Native arm64, custom quality, imports, cookie management, source update controls and notifications remain open. See [measurements](measurements.md) and the original [brief](brief.md).
+A 100-recording public review corpus is prepared, including live, cover, remix, instrumental, karaoke and ambiguous-title risks. Independent listening labels are still missing, so match precision remains NOT MEASURED. See [Music match review](match-review.md). The ARM64 image builds, boots and passes 41 backend tests under emulation; native ARM hardware remains unmeasured. Custom quality, imports, cookie management, source update controls and notifications remain open. See [measurements](measurements.md) and the original [brief](brief.md).
 
 The 7 September reliability checks exercised a generated 12-track album with real workers on Windows and Linux: pause, durable queue reopen, automatic retry, tags, immediate indexing and duplicate prevention. A separate Docker SIGKILL interrupted three workers during an MP3 batch; the same 12 jobs completed after restart with matching file hashes and no duplicates. The public-domain music fixture also passed through the worker into an isolated Windows Navidrome instance, whose watcher imported the written tags. These generated batches do not measure provider throughput or music-match accuracy. Commands and fixture boundaries are in [Testing and CI](testing.md#reliability-and-indexing-checks).
