@@ -64,6 +64,8 @@ docker compose up -d --build --wait
 
 Open [Musimo](http://127.0.0.1:8765). The initial build can take several minutes.
 
+If Musimo is useful, [star it on GitHub](https://github.com/LeahyCC/musimo).
+
 1. Search for an artist or track. Catalog access needs no credentials.
 2. Open Settings and inspect the library paths and download destination.
 3. Mount your collection using the instructions below, then scan it.
