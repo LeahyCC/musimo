@@ -204,7 +204,7 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
 test('preview playback, volume and navigation remain usable', async ({ page }) => {
   await page.route('**/api/preview/101?*', (route) =>
     route.fulfill({
-      json: { url: '/e2e-silence.wav', source: 'Generated' },
+      json: { url: '/assets/e2e-silence.wav', source: 'Generated' },
     }),
   )
 
