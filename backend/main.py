@@ -279,17 +279,22 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     if (static / "assets").exists():
         app.mount("/assets", StaticFiles(directory=static / "assets"), name="assets")
 
+    # Public files come from the build, never from a path assembled from request input.
+    public_files = {
+        file.name: file
+        for file in (static.iterdir() if static.is_dir() else [])
+        if file.is_file() and file.resolve().is_relative_to(static.resolve())
+    }
+
     @app.api_route("/{path:path}", methods=["GET", "HEAD"])
     async def spa(path: str) -> FileResponse:
-        if path and "/" not in path and "\\" not in path:
-            candidate = static / path
-            if candidate.is_file():
-                return FileResponse(
-                    candidate,
-                    media_type="application/manifest+json"
-                    if candidate.suffix == ".webmanifest"
-                    else None,
-                )
+        if candidate := public_files.get(path):
+            return FileResponse(
+                candidate,
+                media_type="application/manifest+json"
+                if candidate.suffix == ".webmanifest"
+                else None,
+            )
         if (
             path not in ("", "search", "downloads", "settings", "diagnostics")
             and not (path.startswith(("albums/", "artists/")) and path.split("/")[-1].isdigit())

@@ -104,10 +104,12 @@ class Downloads:
         self.notify()
 
     def target(self, raw: str) -> Path:
-        path = Path(raw).resolve()
-        if path not in self.library.roots:
-            raise ValueError("Choose a configured library mount")
-        return path
+        # Select a trusted mount without probing a client-supplied filesystem path.
+        requested = os.path.normcase(os.path.normpath(raw))
+        for root in self.library.roots:
+            if os.path.normcase(str(root)) == requested:
+                return root
+        raise ValueError("Choose a configured library mount")
 
     def folder(self, job: Job) -> Path:
         root = self.target(job.target)
@@ -372,6 +374,8 @@ class Downloads:
             if not isinstance(raw, dict):
                 raise ValueError("Invalid credentials")
             salt = os.urandom(12).hex()
+            # Subsonic requires MD5(password + salt) for its wire token, not password storage.
+            # https://www.subsonic.org/pages/api.jsp (authentication since API 1.13.0)
             token = hashlib.md5(
                 (str(raw.get("password", "")) + salt).encode(), usedforsecurity=False
             ).hexdigest()

@@ -10,6 +10,49 @@ from backend.store import LockedSetting, Store
 
 
 class FoundationTests(unittest.TestCase):
+    def test_destination_selects_configured_roots_without_resolving_input(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            music = data / "music"
+            music.mkdir()
+            with (
+                patch.dict("os.environ", {"MUSIMO_LIBRARY_ROOTS": str(music)}),
+                TestClient(create_app(data)) as client,
+                patch("backend.downloads.Path", side_effect=AssertionError("Untrusted path probe")),
+            ):
+                for path in (str(data), "../outside", "//untrusted.invalid/share"):
+                    self.assertEqual(
+                        client.patch("/api/settings", json={"destination": path}).status_code, 422
+                    )
+                self.assertEqual(
+                    client.patch("/api/settings", json={"destination": str(music)}).status_code, 200
+                )
+
+    def test_static_routes_reject_paths_outside_the_build(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            static = data / "static"
+            static.mkdir()
+            (static / "index.html").write_text("<html>App</html>", encoding="utf-8")
+            outside = data / "outside.txt"
+            outside.write_text("private", encoding="utf-8")
+            try:
+                (static / "escape.txt").symlink_to(outside)
+            except OSError:
+                pass  # Windows can deny symlink creation without Developer Mode.
+            with TestClient(create_app(data, static)) as client:
+                self.assertEqual(client.get("/index.html").status_code, 200)
+                for path in (
+                    "/%2e%2e%2foutside.txt",
+                    "/%2e%2e%5coutside.txt",
+                    "/C:outside.txt",
+                    "/index.html:secret",
+                    "/escape.txt",
+                    "/outside.txt",
+                ):
+                    with self.subTest(path=path):
+                        self.assertEqual(client.get(path).status_code, 404)
+
     def test_settings_are_atomic_persisted_and_bootstrap_locked(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "db.sqlite3"
