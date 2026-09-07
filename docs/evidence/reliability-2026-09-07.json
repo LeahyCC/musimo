@@ -1,0 +1,277 @@
+{
+  "date": "2026-09-07 HST",
+  "base_revision": "6c3b1fd",
+  "environment": "Windows desktop; Docker Desktop Linux amd64; approximately 3.82 GiB available to Docker",
+  "automated_checks": {
+    "windows_python": "3.14",
+    "windows_tests": 41,
+    "linux_python": "3.12.14",
+    "linux_tests": 41,
+    "branch_coverage_percent": 74.47,
+    "browser_checks": 60,
+    "browser_projects": ["Chromium", "Firefox", "WebKit", "mobile Chromium"],
+    "strict_typing_lint_build": "PASS",
+    "dependency_audits": "No known vulnerabilities",
+    "container_smoke": "PASS",
+    "restart_with_open_sse_seconds": 0.98
+  },
+  "index_baseline": {
+    "scans": [
+      {
+        "kind": "cold_tags",
+        "seconds": 208.913,
+        "files": 50000,
+        "errors": 0
+      },
+      {
+        "kind": "unchanged",
+        "seconds": 28.775,
+        "files": 50000,
+        "errors": 0
+      },
+      {
+        "kind": "unchanged",
+        "seconds": 29.36,
+        "files": 50000,
+        "errors": 0
+      }
+    ],
+    "ownership": "FAILED: WAV tags were read as empty",
+    "method": "Same generated corpus and Linux /tmp storage. One cold run and two unchanged runs; not a latency distribution."
+  },
+  "index_fixed_first_run": {
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.36",
+    "python": "3.12.14",
+    "corpus": "Generated 0.1-second WAVs with distinct title tags; 50 files per folder",
+    "storage": "Temporary directory under /tmp",
+    "scans": [
+      {
+        "kind": "cold_tags",
+        "seconds": 45.363,
+        "files": 50000,
+        "errors": 0
+      },
+      {
+        "kind": "unchanged",
+        "seconds": 28.099,
+        "files": 50000,
+        "errors": 0
+      },
+      {
+        "kind": "unchanged",
+        "seconds": 29.585,
+        "files": 50000,
+        "errors": 0
+      }
+    ],
+    "ownership_50_tracks": {
+      "samples": 50,
+      "median_ms": 0.3,
+      "p95_ms": 0.4
+    },
+    "limitations": "Synthetic small WAVs; excludes watcher startup, real mixed formats and host bind-mount performance"
+  },
+  "index_fixed_final_run": {
+    "platform": "Linux-6.18.33.2-microsoft-standard-WSL2-x86_64-with-glibc2.36",
+    "python": "3.12.14",
+    "corpus": "Generated 0.1-second WAVs with distinct title tags; 50 files per folder",
+    "storage": "Temporary directory under /tmp",
+    "scans": [
+      {
+        "kind": "cold_tags",
+        "seconds": 44.668,
+        "files": 50000,
+        "errors": 0
+      },
+      {
+        "kind": "unchanged",
+        "seconds": 31.359,
+        "files": 50000,
+        "errors": 0
+      },
+      {
+        "kind": "unchanged",
+        "seconds": 29.102,
+        "files": 50000,
+        "errors": 0
+      }
+    ],
+    "ownership_50_tracks": {
+      "samples": 50,
+      "median_ms": 0.28,
+      "p95_ms": 0.35
+    },
+    "limitations": "Synthetic small WAVs; excludes watcher startup, real mixed formats and host bind-mount performance"
+  },
+  "batch_windows": {
+    "fixture": "One-second generated tone, 12 distinct track tags, original Opus",
+    "concurrency": 3,
+    "provider_downloads": false,
+    "pause_ack_ms": 8.55,
+    "pause_settled_ms": 15.64,
+    "paused_state_survived_reopen": true,
+    "resumed_batch_seconds": 4.333,
+    "completed": 12,
+    "indexed": 12,
+    "duplicate_files": 0,
+    "transient_retry_recovered": true,
+    "completed_batch_skipped": true
+  },
+  "batch_linux": {
+    "fixture": "One-second generated tone, 12 distinct track tags, original Opus",
+    "concurrency": 3,
+    "provider_downloads": false,
+    "pause_ack_ms": 21.35,
+    "pause_settled_ms": 27.31,
+    "paused_state_survived_reopen": true,
+    "resumed_batch_seconds": 3.691,
+    "completed": 12,
+    "indexed": 12,
+    "duplicate_files": 0,
+    "transient_retry_recovered": true,
+    "completed_batch_skipped": true
+  },
+  "container_recovery": {
+    "fixture": "12 generated 30-second tones converted to MP3",
+    "completed": 12,
+    "interrupted_jobs": 3,
+    "same_job_ids": true,
+    "indexed": 12,
+    "duplicate_files": 0,
+    "restart_to_finished_seconds": 6.163,
+    "provider_downloads": false
+  },
+  "public_domain": {
+    "file": "/music/Musimo Integration Test/Public domain smoke 7e4cd12d/01 - The Star-Spangled Banner.ogg",
+    "sha256": "cfdcb57c5233d9c6989eb38f9c8590e7bc1d99ce18b0e63affa86147feda9a22",
+    "seconds": 3.349,
+    "codec": {
+      "codec": "vorbis",
+      "bitrate": 342624,
+      "duration": 78.262857
+    },
+    "index_title": "The Star-Spangled Banner",
+    "source": "https://upload.wikimedia.org/wikipedia/commons/6/65/Star_Spangled_Banner_instrumental.ogg",
+    "credit": "https://commons.wikimedia.org/wiki/File:Star_Spangled_Banner_instrumental.ogg",
+    "warnings": []
+  },
+  "navidrome": {
+    "mode": "isolated Windows Navidrome watcher",
+    "tracks": [
+      {
+        "title": "The Star-Spangled Banner",
+        "artist": "United States Navy Band",
+        "album": "Public domain smoke 7e4cd12d",
+        "duration": 78.26000213623047
+      }
+    ]
+  },
+  "search": {
+    "cold_search": {
+      "samples": 10,
+      "median_ms": 407.61,
+      "p95_ms": 597.71
+    },
+    "cached_search": {
+      "samples": 50,
+      "median_ms": 2.83,
+      "p95_ms": 3.52
+    },
+    "library_badges_50_tracks": {
+      "samples": 50,
+      "median_ms": 0.32,
+      "p95_ms": 0.43
+    },
+    "preview": {
+      "source": "Deezer",
+      "http_status": 206
+    }
+  },
+  "search_method": "Live Deezer HTTP against isolated app with empty library before fixes; ten distinct uncached queries, then fifty cached queries. Excludes browser debounce and rendering. Catalog implementation is unchanged.",
+  "foundation": {
+    "samples": 50,
+    "rows": [
+      {
+        "metric": "Health HTTP",
+        "p50_ms": 1.24,
+        "p95_ms": 1.92,
+        "status": "BASELINE"
+      },
+      {
+        "metric": "Snapshot HTTP",
+        "p50_ms": 1.19,
+        "p95_ms": 1.42,
+        "status": "PASS"
+      },
+      {
+        "metric": "Settings HTTP",
+        "p50_ms": 1.17,
+        "p95_ms": 1.42,
+        "status": "BASELINE"
+      },
+      {
+        "metric": "Cached/cold typeahead",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Multi-source first/complete",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Album prefetch/cold",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Ownership lookup",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Click to progress",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "First media byte",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Track and album completion",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Pause/stop acknowledgement",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Active worker termination",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Scheduler dispatch",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Browser reconnect/reload",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Immediate/full library index",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Idle RSS/CPU",
+        "status": "NOT MEASURED"
+      },
+      {
+        "metric": "Startup to healthy",
+        "status": "NOT MEASURED"
+      }
+    ]
+  },
+  "remaining": [
+    "Cold search exceeded 400 ms p95 in the ten-query sample",
+    "100 independently labelled music-match precision cases",
+    "50 distinct permitted music downloads and provider album throughput",
+    "Real mixed-format 50k library on host bind mounts",
+    "Sustained idle CPU/RSS and native arm64 acceptance"
+  ]
+}

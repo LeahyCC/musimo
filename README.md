@@ -64,6 +64,8 @@ docker compose up -d --build --wait
 
 Open [Musimo](http://127.0.0.1:8765). The initial build can take several minutes.
 
+If Musimo is useful, [star it on GitHub](https://github.com/LeahyCC/musimo).
+
 1. Search for an artist or track. Catalog access needs no credentials.
 2. Open Settings and inspect the library paths and download destination.
 3. Mount your collection using the instructions below, then scan it.
@@ -295,7 +297,7 @@ Include version/revision, OS, Docker/Compose versions, screen, reproduction step
 
 ## Development and checks
 
-CI uses Python 3.12 and 3.14, Node 24 and uv. Dependencies are locked in `uv.lock` and `frontend/package-lock.json`. See [Testing and CI](docs/testing.md) for isolated browser tests, coverage and required checks.
+CI uses Python 3.12 and 3.14, Node 26 and uv. Dependencies are locked in `uv.lock` and `frontend/package-lock.json`. See [Testing and CI](docs/testing.md) for isolated browser tests, coverage and required checks.
 
 ```sh
 uv sync --locked
