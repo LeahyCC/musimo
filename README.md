@@ -295,7 +295,7 @@ Include version/revision, OS, Docker/Compose versions, screen, reproduction step
 
 ## Development and checks
 
-CI uses Python 3.12 and 3.14, Node 24 and uv. Dependencies are locked in `uv.lock` and `frontend/package-lock.json`. See [Testing and CI](docs/testing.md) for isolated browser tests, coverage and required checks.
+CI uses Python 3.12 and 3.14, Node 26 and uv. Dependencies are locked in `uv.lock` and `frontend/package-lock.json`. See [Testing and CI](docs/testing.md) for isolated browser tests, coverage and required checks.
 
 ```sh
 uv sync --locked

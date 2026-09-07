@@ -44,7 +44,7 @@ An album with an incomplete catalog track list returns an error before creating 
 
 ## Verification and remaining gates
 
-Automated tests cover Windows and Docker Python 3.12. They cover prior search/settings behavior plus queue identity, restart state, actual worker termination, protected publication, disk failure and tag round trips for all four output choices.
+Automated tests cover Python 3.12 compatibility and Windows/Docker Python 3.14. They cover prior search/settings behavior plus queue identity, restart state, actual worker termination, protected publication, disk failure and tag round trips for all four output choices.
 
 The live public-domain fixture took 2.852 seconds from download through local indexing and appeared in Navidrome. Its transport is Wikimedia, feeding the regular resumed worker; it does not validate YouTube matching. The separate YouTube open-film fixture completed through the actual worker, paused in 26.4 ms, preserved paused state across restart, then recovered after the container was killed during download.
 

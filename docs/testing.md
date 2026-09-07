@@ -1,6 +1,10 @@
 # Testing and CI
 
-Run these commands from the repository root. Python 3.12 is the container runtime; CI also tests Python 3.14. Node 24 builds the frontend. Install FFmpeg and ffprobe for the generated-audio tests. CI installs them so those tests cannot silently disappear from its coverage.
+Run these commands from the repository root. Python 3.14 is the container runtime; CI also tests Python 3.12 compatibility. Node 26 builds the frontend. Install FFmpeg and ffprobe for the generated-audio tests. CI installs them so those tests cannot silently disappear from its coverage.
+
+PRs [#1](https://github.com/LeahyCC/musimo/pull/1) and [#2](https://github.com/LeahyCC/musimo/pull/2) were integrated into `fix/download-reliability` on 7 September 2026. Their original CI failures were the Firefox playback check on an older base; the branch includes the subsequent fixture-path and Linux audio-output fixes. Node 26 is currently the Current release, with LTS scheduled for October ([Node release note](https://nodejs.org/en/blog/release/v26.0.0)). It is used for building the frontend and running CI tools; the final server image runs Python.
+
+The combined image built successfully and ran Python 3.14.7. All 41 container tests and 60 browser checks passed, as did HTTP/SSE restart, the generated album pause/retry check and the disposable-container SIGKILL recovery check. Both worker checks completed all twelve jobs with no duplicate files. Earlier Python 3.12 measurements remain historical results for that runtime.
 
 ## Local checks
 
