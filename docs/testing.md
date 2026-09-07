@@ -49,6 +49,24 @@ npm run test:e2e:report --prefix frontend
 
 The report links screenshots, video and traces. CI also retains JUnit output, container logs, API benchmarks and coverage XML for 14 days. Linux CI starts PulseAudio with a virtual output so Firefox can decode and play audio without physical speakers. The benchmark's release gate remains deliberately incomplete; ordinary CI checks only measurements the script implements.
 
+## Reliability and indexing checks
+
+Run these opt-in checks from the repository root. They create temporary fixtures and remove their own files afterward. FFmpeg is required. The recovery check also needs Docker and the `musimo:ci` image built with the isolated Compose file above.
+
+```sh
+uv run python -m scripts.reliability_smoke --output runtime/batch-check.json
+uv run python -m scripts.recovery_smoke --output runtime/recovery-check.json
+uv run python -m scripts.index_benchmark --files 50000 --output runtime/index-check.json
+```
+
+The batch check uses generated audio and mock catalog metadata with real worker processes. It verifies duplicate album requests, pause/termination, saved state after reopening SQLite, a transient failure followed by automatic retry, written tags, artifact hashes and ownership after all 12 files finish. Its elapsed time excludes provider downloads.
+
+The recovery check creates its own Docker container, temporary database/music mounts and a random loopback port. It seeds twelve generated 30-second clips, kills the container while work is active, and verifies that the same jobs finish as MP3 after restart, without duplicate files or missing index entries. It removes only its own container and temporary mounts. `--image` can select a separately built test image.
+
+The index benchmark generates distinct title tags in 50,000 short WAVs, in folders of 50 files. It measures one cold tag scan, two unchanged-file scans and 50 batched ownership lookups. This exercises actual files, Mutagen and SQLite, but is not representative of a mixed personal library or a Windows bind mount. `--directory` selects the parent for the temporary library. To reproduce Linux timings, mount `scripts` read-only into a disposable image, set `PYTHONPATH=/app`, and run `/checks/index_benchmark.py` with an output mount.
+
+The existing `scripts/download_smoke.py` remains the opt-in Wikimedia public-domain transport fixture. Give it a dedicated writable test root. To verify Navidrome's watcher, run a separate Navidrome instance watching that root with its own data directory and loopback port, then confirm the written title/artist in that instance's index. Do not point these checks at the live library or restart its services.
+
 ## GitHub checks
 
 `CI required` is the stable merge gate. It fails if Python, frontend, Docker/browser or dependency checks fail or are cancelled. Workflows run on pull requests, main pushes and manual dispatch. Fork PRs run without repository secrets, with read-only default permissions and without persistent Git credentials. Actions are pinned to upstream commit SHAs; Dependabot opens update PRs. See [GitHub's workflow security guidance](https://docs.github.com/en/actions/reference/security/secure-use).
