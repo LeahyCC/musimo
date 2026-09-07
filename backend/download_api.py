@@ -80,6 +80,8 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             raise HTTPException(422, str(exc)) from exc
         service.check_destination(target)
         album = await service.catalog.album_detail(request.album_id)
+        if album.get("complete") is not True:
+            raise HTTPException(409, "Album track list is incomplete. Retry before downloading.")
         raw = album.get("tracks", [])
         tracks = [Result.model_validate(row) for row in raw] if isinstance(raw, list) else []
         service.library.annotate(tracks)
@@ -109,7 +111,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             eligible = (
                 job.stage in {"failed", "cancelled"}
                 if action == "retry"
-                else job.stage == "paused"
+                else job.stage in {"paused", "pausing"}
                 if action == "resume"
                 else job.stage not in TERMINAL
             )
@@ -192,7 +194,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             try:
                 if action == "pause" and job.stage not in TERMINAL and job.stage != "paused":
                     service.command(job.id, "pause")
-                elif action == "resume" and job.stage == "paused":
+                elif action == "resume" and job.stage in {"paused", "pausing"}:
                     service.command(job.id, "resume")
                 elif action == "cancel-queued" and job.stage in {"queued", "retry_wait", "paused"}:
                     service.command(job.id, "cancel")
