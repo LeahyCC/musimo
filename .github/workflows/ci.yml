@@ -96,6 +96,12 @@ jobs:
       - run: uv sync --locked
       - run: npm ci --prefix frontend
       - run: npx --prefix frontend playwright install --with-deps chromium firefox webkit
+      - name: Provide an audio output for headless Firefox
+        run: |
+          sudo apt-get install -y pulseaudio
+          pulseaudio --start --exit-idle-time=-1
+          pactl load-module module-null-sink sink_name=ci_audio
+          pactl set-default-sink ci_audio
       - run: docker compose -f compose.ci.yaml -p musimo-ci up -d --build --wait --wait-timeout 120
       - name: Persistence and event replay across restart
         run: uv run python scripts/smoke.py --url http://127.0.0.1:18765 --restart --compose-file compose.ci.yaml --project-name musimo-ci
