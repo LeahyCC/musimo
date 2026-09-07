@@ -71,6 +71,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
   const optionsId = useId()
   const optionsButton = useRef<HTMLButtonElement>(null)
   const optionsPanel = useRef<HTMLDivElement>(null)
+  const optionsAnchor = useRef<DOMRect | null>(null)
   useLayoutEffect(() => {
     const panel = optionsPanel.current
     const button = optionsButton.current
@@ -87,8 +88,26 @@ export function DownloadButton({ item }: { item: MusicResult }) {
     panel.style.top = `${Math.max(gap, Math.min(top, window.innerHeight - panel.offsetHeight - gap))}px`
     panel.style.left = `${Math.max(gap, Math.min(anchor.right - panel.offsetWidth, window.innerWidth - panel.offsetWidth - gap))}px`
     panel.querySelector('select')?.focus({ preventScroll: true })
+  }, [options])
+
+  useLayoutEffect(() => {
+    const panel = optionsPanel.current
+    if (!panel) return
+    // Native toggle events are deferred; scrolling can happen before React sees
+    // the open state, so dismissal must already be listening.
     const dismiss = (event: Event) => {
       if (event.target instanceof Node && panel.contains(event.target)) return
+      const anchor = optionsAnchor.current
+      const current = optionsButton.current?.getBoundingClientRect()
+      // Ignore a queued scroll event from bringing the trigger into view.
+      if (
+        event.type === 'scroll' &&
+        anchor &&
+        current &&
+        anchor.top === current.top &&
+        anchor.left === current.left
+      )
+        return
       if (panel.matches(':popover-open')) panel.hidePopover()
     }
     window.addEventListener('scroll', dismiss, true)
@@ -97,7 +116,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
       window.removeEventListener('scroll', dismiss, true)
       window.removeEventListener('resize', dismiss)
     }
-  }, [options])
+  }, [])
   const mounts = useQuery({
     queryKey: ['diagnostics'],
     queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
@@ -171,6 +190,10 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         popover="auto"
         role="dialog"
         aria-label={`Download options for ${item.title}`}
+        onBeforeToggle={(event) => {
+          if (event.newState === 'open')
+            optionsAnchor.current = optionsButton.current?.getBoundingClientRect() ?? null
+        }}
         onToggle={(event) => setOptions(event.newState === 'open')}
       >
         <label>
