@@ -54,6 +54,8 @@ The main image includes Python, FFmpeg, Deno, Chromaprint tools and Python depen
 
 ## Quick start
 
+Want help with the whole installation? Copy the [setup handoff prompt](docs/setup-handoff.md) into an LLM with access to your computer. It covers music folders, verification, optional Navidrome and private remote access.
+
 ```sh
 git clone https://github.com/LeahyCC/musimo.git
 cd musimo
