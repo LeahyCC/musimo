@@ -1,0 +1,20 @@
+{
+  "date": "2026-09-07",
+  "method": "Docker Buildx linux/arm64 under Docker Desktop QEMU emulation",
+  "image": "sha256:a85cabcc171f6e56768ac51d30fe15f52d7220b88605e791b74cc9606718b647",
+  "architecture": "aarch64",
+  "build": "PASS",
+  "health": "PASS",
+  "backend_tests": {
+    "result": "PASS",
+    "passed": 41,
+    "python": "3.14.7"
+  },
+  "runtime": {
+    "ffmpeg": "5.1.9-0+deb12u1",
+    "deno": "2.9.6 aarch64-unknown-linux-gnu",
+    "api_version": "0.3.0"
+  },
+  "native_hardware": "NOT MEASURED",
+  "notes": "The isolated container used tmpfs data and music roots. It mounted the repository read-only for tests and was removed after validation. Emulation does not establish native ARM performance or device-specific behavior."
+}
