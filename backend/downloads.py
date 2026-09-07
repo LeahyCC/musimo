@@ -150,7 +150,8 @@ class Downloads:
         self.stopping = True
         self.wake.set()
         for task in list(self.running.values()):
-            task.cancel()
+            if not task.cancelling():
+                task.cancel()
         await asyncio.gather(*list(self.running.values()), return_exceptions=True)
         if self.task:
             await self.task
@@ -189,7 +190,14 @@ class Downloads:
             if job.stage in {"pausing", "cancelling"}:
                 if job.desired == "cancel":
                     self.cleanup(job)
-                self.jobs.update(job_id, stage="cancelled" if job.desired == "cancel" else "paused")
+                self.jobs.update(
+                    job_id,
+                    stage="cancelled"
+                    if job.desired == "cancel"
+                    else "queued"
+                    if job.desired == "run"
+                    else "paused",
+                )
         self.wake.set()
 
     def command(self, job_id: str, action: str) -> Job:
@@ -209,11 +217,18 @@ class Downloads:
                 hidden=False,
             )
         if action == "resume":
-            if job.stage != "paused":
-                raise ValueError("Only paused jobs can be resumed")
-            return self.jobs.update(job_id, stage="queued", desired="run", retry_at=0)
+            if job.stage not in {"paused", "pausing"}:
+                raise ValueError("Only paused or pausing jobs can be resumed")
+            return self.jobs.update(
+                job_id,
+                stage="pausing" if job_id in self.running else "queued",
+                desired="run",
+                retry_at=0,
+            )
         if action not in {"pause", "cancel"} or job.stage in TERMINAL:
             raise ValueError("This action is not available for the job")
+        if action == "pause" and job.desired == "cancel":
+            raise ValueError("Cancellation is already in progress")
         active = job_id in self.running
         stage = (
             ("pausing" if action == "pause" else "cancelling")
@@ -222,7 +237,10 @@ class Downloads:
         )
         result = self.jobs.update(job_id, stage=stage, desired=action, speed=0, eta=None)
         if active:
-            self.running[job_id].cancel()
+            # Repeated controls change intent without cancelling the cleanup already in flight.
+            task = self.running[job_id]
+            if not task.cancelling():
+                task.cancel()
         elif action == "cancel":
             self.cleanup(job)
         return result
@@ -443,8 +461,7 @@ class Downloads:
                     publish_file(source, destination)
                 except FileExistsError:
                     pass
-        await asyncio.to_thread(self.library.index, target, root, self.library.generation)
-        self.library.publish()
+        await asyncio.to_thread(self.library.index_published, target, root)
         warning = await self.navidrome(job, target)
         current = self.jobs.get(job.id)
         warnings = current.warnings + ([warning] if warning else [])
@@ -519,7 +536,7 @@ class Downloads:
             else:
                 self.jobs.update(
                     job_id,
-                    stage="queued" if self.stopping and job.desired == "run" else "paused",
+                    stage="queued" if job.desired == "run" else "paused",
                     speed=0,
                     eta=None,
                 )

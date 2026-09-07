@@ -4,7 +4,7 @@ The phase sections below record the implementation sequence. For current behavio
 
 ## Stack
 
-Python 3.12, FastAPI, one uvicorn process, SQLite WAL, React 19 with TypeScript strict and Vite. TanStack Router owns page and query URL state; TanStack Query owns server data and cancellation. Tailwind supplies styling. Native form controls and a native modal dialog cover settings and the command palette. TanStack Virtual renders long track lists; React context owns the single preview player. This is a smaller dependency set than the brief: cmdk, shadcn/Base UI and Zustand are not needed for this phase. Mobile queue sheets and Apprise remain later work. A custom Python service is needed for processes and mounted files; the fixed self-hosted Docker requirement rules out a hosted Workers backend.
+Python 3.14, FastAPI, one uvicorn process, SQLite WAL, React 19 with TypeScript strict and Vite. TanStack Router owns page and query URL state; TanStack Query owns server data and cancellation. Tailwind supplies styling. Native form controls and a native modal dialog cover settings and the command palette. TanStack Virtual renders long track lists; React context owns the single preview player. This is a smaller dependency set than the brief: cmdk, shadcn/Base UI and Zustand are not needed for this phase. Mobile queue sheets and Apprise remain later work. A custom Python service is needed for processes and mounted files; the fixed self-hosted Docker requirement rules out a hosted Workers backend.
 
 The main image builds the frontend, serves it from FastAPI, and includes FFmpeg, Chromaprint, Deno, yt-dlp and the matching bgutil plugin. Vite copies `frontend/public` (favicon, manifest) to the dist root. FastAPI serves those files as-is, then `/assets` for the JS/CSS bundle. Only the listed SPA paths fall back to `index.html`. The only helper is a pinned bgutil service with no published port. SQLite lives in a named volume. Music mounts are separately configured. The initial test mount contains no real library files. PUID/PGID ownership changes apply only to application data; never recursively chown music.
 
@@ -80,7 +80,7 @@ On mobile, navigation moves to a bottom bar; the queue opens as a sheet. Search 
 - **Settings:** “Where will files go, and how will they sound?” Sticky section index for library, audio, queue, sources and advanced. Explicit save state, inline errors, locked values with env origin. Format text explains source quality. Destination choice returns to the same search or queue context.
 - **Diagnostics:** “What broke, and what fixes it?” App/database readiness, runtime versions, source latency, disk free and recent errors. Test now, refresh and export. Source not yet tested is neither healthy nor broken. The path back to settings is one click.
 
-The Phase 1 journey is open app -> inspect readiness -> change unlocked settings -> see save acknowledgement -> refresh/restart -> observe the same values -> test Deezer -> export diagnostics. Search and previews now work. Acquisition remains visibly unavailable until Phase 3.
+The Phase 1 journey is open app -> inspect readiness -> change unlocked settings -> see save acknowledgement -> refresh/restart -> observe the same values -> test Deezer -> export diagnostics. Search, previews and the Phase 3 download flow now work; the verification limits are recorded in [measurements](measurements.md).
 
 ## Phase 1 tasks and exit gate
 
@@ -96,7 +96,7 @@ Later phases retain the order in the original brief. A passing skeleton is not a
 
 ## Phase 2 implementation
 
-See [search and indexing](search.md) for API contracts, cache limits, ownership matching, watcher behaviour and the tested journey. Phase 2 uses independent concurrent track/album/artist HTTP requests. Each section paints when its request completes; catalog results do not need an additional SSE protocol. The existing SSE stream carries durable library updates. Version 0.3 enables track downloads and album batches; artist batches and imports remain later work.
+See [search and indexing](search.md) for API contracts, cache limits, ownership matching, watcher behaviour and the tested journey. Phase 2 uses independent concurrent track/album/artist HTTP requests. Each section paints when its request completes; catalog results do not need an additional SSE protocol. The existing SSE stream carries durable library updates. Version 0.3 enables track downloads, album batches and reviewed artist album selections; URL imports remain later work.
 
 ## Phase 3 implementation
 

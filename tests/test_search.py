@@ -236,6 +236,15 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
             ).fetchone()[0],
             "One More Time",
         )
+        path.write_bytes(b"changed fixture")
+        audio["title"] = ["Replacement title"]
+        with patch("backend.library.mutagen.File", return_value=audio):
+            self.library.refresh({str(path)})
+        self.assertEqual(self.store.db.execute("SELECT count(*) FROM library_fts").fetchone()[0], 1)
+        self.assertEqual(
+            self.store.db.execute("SELECT title FROM library_fts").fetchone()[0],
+            "Replacement title",
+        )
         self.store.db.execute("UPDATE library_roots SET enabled=0")
         item = Result(id=1, kind="track", title="One More Time", artist="Daft Punk", duration=320)
         self.assertEqual(self.library.annotate([item])[0].ownership, "missing")

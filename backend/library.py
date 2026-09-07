@@ -55,10 +55,11 @@ class Changes(FileSystemEventHandler):
         if event.event_type in {"opened", "closed_no_write"}:
             return
         if not event.is_directory or event.event_type in {"created", "deleted", "moved"}:
-            self.notify(os.fsdecode(event.src_path))
-            dest = getattr(event, "dest_path", "")
-            if isinstance(dest, (str, bytes)) and dest:
-                self.notify(os.fsdecode(dest))
+            for raw in (event.src_path, getattr(event, "dest_path", "")):
+                if isinstance(raw, (str, bytes)) and raw:
+                    path = os.fsdecode(raw)
+                    if event.is_directory or Path(path).suffix.lower() in AUDIO_EXTENSIONS:
+                        self.notify(path)
 
 
 class Library:
@@ -129,7 +130,8 @@ class Library:
 
     def start(self) -> None:
         def notify(path: str) -> None:
-            self.loop.call_soon_threadsafe(self.pending.add, path)
+            if self.visible_root(Path(path)) is not None:
+                self.loop.call_soon_threadsafe(self.pending.add, path)
 
         handler = Changes(notify)
         for root in self.roots:
@@ -193,12 +195,26 @@ class Library:
         with self.work_lock:
             self._refresh(paths)
 
+    def visible_root(self, path: Path) -> Path | None:
+        for root in self.roots:
+            if path.is_relative_to(root):
+                # Staging files must never become ownership evidence or trigger scans.
+                if not any(part.startswith(".") for part in path.relative_to(root).parts):
+                    return root
+        return None
+
+    def index_published(self, path: Path, root: Path) -> None:
+        # Wait for generation pruning before adding a download that the scan may not have seen.
+        with self.work_lock:
+            self.index(path, root, self.generation)
+        self.publish()
+
     def _refresh(self, paths: set[str]) -> None:
         for raw in paths:
             path = Path(raw)
             if path.suffix.lower() not in AUDIO_EXTENSIONS:
                 continue
-            root = next((r for r in self.roots if path.is_relative_to(r)), None)
+            root = self.visible_root(path)
             if root is None or path.is_symlink():
                 continue
             try:
@@ -245,7 +261,11 @@ class Library:
                         if self.cancelled.is_set():
                             break
                         path = Path(directory) / name
-                        if path.suffix.lower() not in AUDIO_EXTENSIONS or path.is_symlink():
+                        if (
+                            name.startswith(".")
+                            or path.suffix.lower() not in AUDIO_EXTENSIONS
+                            or path.is_symlink()
+                        ):
                             continue
                         walked += 1
                         try:
@@ -300,9 +320,12 @@ class Library:
         stat = path.stat()
         with self.store.lock:
             old = self.store.db.execute(
-                "SELECT mtime_ns,size FROM library_files WHERE path=?", (str(path),)
+                "SELECT mtime_ns,size,title,artist,album FROM library_files WHERE path=?",
+                (str(path),),
             ).fetchone()
-            if old and old[0] == stat.st_mtime_ns and old[1] == stat.st_size:
+            # Earlier versions cached blank ID3 metadata for WAV/AIFF. Repair it on rescan.
+            missing_id3 = old and path.suffix.lower() in {".wav", ".aiff"} and not any(old[2:])
+            if old and old[0] == stat.st_mtime_ns and old[1] == stat.st_size and not missing_id3:
                 self.store.db.execute(
                     "UPDATE library_files SET generation=? WHERE path=?", (generation, str(path))
                 )
@@ -310,9 +333,16 @@ class Library:
         audio = cast(AudioFile | None, mutagen.File(path, easy=True))
         if audio is None:
             raise ValueError("Unsupported or invalid audio")
-        title, artist, album = (tag_text(audio.get(key)) for key in ("title", "artist", "album"))
-        isrc = tag_text(audio.get("isrc")).upper().replace("-", "")
-        mbid = tag_text(audio.get("musicbrainz_trackid"))
+        # WAV and AIFF expose native ID3 frames even when Mutagen is asked for easy tags.
+        title, artist, album = (
+            tag_text(audio.get(key) or audio.get(frame))
+            for key, frame in (("title", "TIT2"), ("artist", "TPE1"), ("album", "TALB"))
+        )
+        isrc = tag_text(audio.get("isrc") or audio.get("TSRC")).upper().replace("-", "")
+        mbid = tag_text(audio.get("musicbrainz_trackid") or audio.get("TXXX:MusicBrainz Track Id"))
+        identifier = getattr(audio.get("UFID:http://musicbrainz.org"), "data", b"")
+        if not mbid and isinstance(identifier, bytes):
+            mbid = identifier.decode("ascii", errors="ignore")
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
@@ -335,7 +365,10 @@ class Library:
                         mbid,
                     ),
                 )
-                self.store.db.execute("DELETE FROM library_fts WHERE path=?", (str(path),))
+                # New paths cannot have old text rows. FTS cannot index its path column,
+                # so deleting before every first insert makes a cold scan quadratic.
+                if old is not None:
+                    self.store.db.execute("DELETE FROM library_fts WHERE path=?", (str(path),))
                 self.store.db.execute(
                     "INSERT INTO library_fts VALUES (?,?,?,?)", (str(path), title, artist, album)
                 )
