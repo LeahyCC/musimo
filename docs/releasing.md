@@ -13,7 +13,8 @@ This separates files present in the repository from GitHub settings, legal revie
 - [ ] Confirm maintainer contact addresses and moderation/security arrangements before inviting public reports.
 - [x] Enable private vulnerability reporting on GitHub and verify the reporting route. Verified through the repository API. Reports go through the repository Security page.
 - [x] Enable Dependabot security updates and require SHA-pinned Actions. Secret scanning and push protection are enabled.
-- [ ] Set default-branch protection/rulesets: passing checks, review where appropriate, no accidental force-push, and restricted release permissions.
+- [x] Protect main with pull requests, passing CI and CodeQL checks, resolved conversations, a security finding gate, and no force pushes, deletion or bypass actors. Verified through the repository ruleset API.
+- [ ] Restrict release permissions when release publishing is configured.
 - [ ] Review repository description/topics, visibility and Discussions/Issues settings deliberately. This task does not change repository visibility or publish a release.
 
 ## Legal and distribution review

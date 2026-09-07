@@ -47,7 +47,7 @@ Tests use one worker because settings and queue controls belong to the installat
 npm run test:e2e:report --prefix frontend
 ```
 
-The report links screenshots, video and traces. CI also retains JUnit output, container logs, API benchmarks and coverage XML for 14 days. The benchmark's release gate remains deliberately incomplete; ordinary CI checks only measurements the script implements.
+The report links screenshots, video and traces. CI also retains JUnit output, container logs, API benchmarks and coverage XML for 14 days. Linux CI starts PulseAudio with a virtual output so Firefox can decode and play audio without physical speakers. The benchmark's release gate remains deliberately incomplete; ordinary CI checks only measurements the script implements.
 
 ## GitHub checks
 
@@ -61,4 +61,10 @@ CI verifies that the Python runtime export matches the uv lock:
 uv export --locked --no-header --no-dev --no-emit-project --format requirements-txt --output-file requirements.lock
 ```
 
+Main requires a pull request, an up-to-date branch, `CI required`, all three CodeQL jobs and resolved review conversations. Its ruleset blocks deletion, force pushes and new CodeQL errors or high/critical security findings. No actor has a bypass. A second maintainer's approval is optional while the project has one maintainer.
+
 Dependency changes include manifests, locks and exports in the same PR. Required status names and protection are maintained on GitHub; update those settings before renaming a required job. There is no automatic merge, release or container publication workflow.
+
+The initial CodeQL review led to allowlisted static filenames and download destinations. Requests cannot select files outside the built frontend or cause arbitrary destination paths to be resolved. Root public files are discovered at startup; dynamic assets remain under `/assets`.
+
+The Navidrome scan integration has one documented hashing exception: [Subsonic authentication](https://www.subsonic.org/pages/api.jsp) requires `MD5(password + salt)` for its request token. Musimo uses a fresh random salt for each call and does not store that token as a password hash. Replacing the algorithm would break the protocol. This exception applies only to that token calculation, not other hashing or password storage.
