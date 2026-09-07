@@ -32,6 +32,8 @@ For explicit scanning, select `api`, set the Navidrome URL and library ID, and m
 
 ## Controls and failures
 
+Each song's three-dot button opens download options above the track list, including in scrolling lists. The popup stays inside the viewport and opens above the button when space below is tight. Click outside, press Escape, or scroll the list to dismiss it. Opening another song's options closes the previous popup.
+
 Concurrency is 1–3, default 2. YouTube requests have a random 0.3–0.8 second delay. Retryable network and rate-limit failures use capped full-jitter backoff, up to four total attempts. Disk, permission, tagging, conversion and match failures require intervention. Three consecutive blocking source errors pause new work from YouTube.
 
 The server acknowledges pause immediately and finishes stopping its process group asynchronously. Cancellation after publication completes reconciliation instead of deleting a file that has already landed. Paused state survives restart. Abruptly stopped running jobs return to the queue and resume through yt-dlp.

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useId, useLayoutEffect, useRef, useState } from 'react'
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
@@ -68,6 +68,55 @@ export function DownloadButton({ item }: { item: MusicResult }) {
   const [format, setFormat] = useState<string>()
   const [target, setTarget] = useState('')
   const [options, setOptions] = useState(false)
+  const optionsId = useId()
+  const optionsButton = useRef<HTMLButtonElement>(null)
+  const optionsPanel = useRef<HTMLDivElement>(null)
+  const optionsAnchor = useRef<DOMRect | null>(null)
+  useLayoutEffect(() => {
+    const panel = optionsPanel.current
+    const button = optionsButton.current
+    if (!options || !panel || !button) return
+    // Virtual rows create stacking and clipping boundaries. The native popover
+    // escapes those boundaries; viewport coordinates keep it beside its trigger.
+    const anchor = button.getBoundingClientRect()
+    const gap = 8
+    const below = window.innerHeight - anchor.bottom - gap
+    const top =
+      below < panel.offsetHeight && anchor.top > below
+        ? anchor.top - panel.offsetHeight - gap
+        : anchor.bottom + gap
+    panel.style.top = `${Math.max(gap, Math.min(top, window.innerHeight - panel.offsetHeight - gap))}px`
+    panel.style.left = `${Math.max(gap, Math.min(anchor.right - panel.offsetWidth, window.innerWidth - panel.offsetWidth - gap))}px`
+    panel.querySelector('select')?.focus({ preventScroll: true })
+  }, [options])
+
+  useLayoutEffect(() => {
+    const panel = optionsPanel.current
+    if (!panel) return
+    // Native toggle events are deferred; scrolling can happen before React sees
+    // the open state, so dismissal must already be listening.
+    const dismiss = (event: Event) => {
+      if (event.target instanceof Node && panel.contains(event.target)) return
+      const anchor = optionsAnchor.current
+      const current = optionsButton.current?.getBoundingClientRect()
+      // Ignore a queued scroll event from bringing the trigger into view.
+      if (
+        event.type === 'scroll' &&
+        anchor &&
+        current &&
+        anchor.top === current.top &&
+        anchor.left === current.left
+      )
+        return
+      if (panel.matches(':popover-open')) panel.hidePopover()
+    }
+    window.addEventListener('scroll', dismiss, true)
+    window.addEventListener('resize', dismiss)
+    return () => {
+      window.removeEventListener('scroll', dismiss, true)
+      window.removeEventListener('resize', dismiss)
+    }
+  }, [])
   const mounts = useQuery({
     queryKey: ['diagnostics'],
     queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
@@ -123,32 +172,46 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         {owned || existing ? <Check size={17} /> : <ArrowDownToLine size={17} />}
       </button>
       <button
+        ref={optionsButton}
+        type="button"
         className="icon-button"
         aria-label={`Download options for ${item.title}`}
         aria-expanded={options}
-        onClick={() => setOptions(!options)}
+        aria-haspopup="dialog"
+        popoverTarget={optionsId}
+        onClick={(event) => event.currentTarget.focus({ preventScroll: true })}
       >
         <MoreHorizontal size={16} />
       </button>
-      {options && (
-        <div className="download-options">
-          <label>
-            Download to
-            <select value={target} onChange={(e) => setTarget(e.target.value)}>
-              <option value="">Default folder</option>
-              {mounts.data?.disks
-                .slice(1)
-                .filter((disk) => disk.writable)
-                .map((disk) => (
-                  <option key={disk.path} value={disk.path}>
-                    {disk.path}
-                  </option>
-                ))}
-            </select>
-          </label>
-          <small>Original keeps source quality. Conversion does not improve it.</small>
-        </div>
-      )}
+      <div
+        ref={optionsPanel}
+        id={optionsId}
+        className="download-options"
+        popover="auto"
+        role="dialog"
+        aria-label={`Download options for ${item.title}`}
+        onBeforeToggle={(event) => {
+          if (event.newState === 'open')
+            optionsAnchor.current = optionsButton.current?.getBoundingClientRect() ?? null
+        }}
+        onToggle={(event) => setOptions(event.newState === 'open')}
+      >
+        <label>
+          Download to
+          <select value={target} onChange={(e) => setTarget(e.target.value)}>
+            <option value="">Default folder</option>
+            {mounts.data?.disks
+              .slice(1)
+              .filter((disk) => disk.writable)
+              .map((disk) => (
+                <option key={disk.path} value={disk.path}>
+                  {disk.path}
+                </option>
+              ))}
+          </select>
+        </label>
+        <small>Original keeps source quality. Conversion does not improve it.</small>
+      </div>
       {mutation.data?.stage === 'done' && (
         <span className="download-error" role="status">
           Already downloaded. The existing file was kept.
