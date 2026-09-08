@@ -28,14 +28,14 @@ This separates files present in the repository from GitHub settings, legal revie
 
 ## Build and runtime evidence
 
-- [ ] Run lint, format, strict typing, backend tests and frontend build on the final revision.
+- [x] Run lint, format, strict typing, backend tests and frontend build on the final revision. The 7 September release-validation branch passed 41 backend tests, 60 browser checks, 74.84% branch-inclusive coverage, both dependency audits and the isolated HTTP/SSE restart smoke.
 - [ ] Build from a clean clone using committed locks and check the image on supported platforms.
 - [ ] Run install, persistence/restart, scan, event replay and proxy checks against isolated test data.
 - [ ] Verify a permitted track downloads, matches correctly, receives tags/artwork/lyrics where available, and appears in Navidrome.
 - [ ] Verify album missing-only batches, repeated clicks, partial failures and batch controls.
 - [ ] Exercise pause/resume/cancel/retry, source failure, low disk space, mount loss and restart recovery.
 - [ ] Visually check desktop/mobile search, player, queue and Settings, including keyboard operation and error states.
-- [ ] Record cold/warm search, accuracy, throughput, large-library scan and idle CPU measurements. Keep incomplete benchmark gates failing.
+- [ ] Record cold/warm search, accuracy, throughput, large-library scan and idle CPU measurements. Cold/warm search and sustained idle resources are recorded. Match accuracy, permitted-music throughput and a representative mixed-format 50k library remain NOT MEASURED, and the incomplete match gate still fails.
 - [ ] Test backup restoration and upgrade compatibility, not just backup creation.
 
 ## Publish

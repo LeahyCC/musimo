@@ -1,0 +1,60 @@
+{
+  "cold_search": {
+    "samples": 10,
+    "median_ms": 416.95,
+    "p95_ms": 496.56
+  },
+  "cold_search_breakdown": {
+    "cache": {
+      "samples": 10,
+      "median_ms": 2.4,
+      "p95_ms": 7.43
+    },
+    "queue": {
+      "samples": 10,
+      "median_ms": 0.01,
+      "p95_ms": 0.02
+    },
+    "provider": {
+      "samples": 10,
+      "median_ms": 410.3,
+      "p95_ms": 479.55
+    },
+    "catalog": {
+      "samples": 10,
+      "median_ms": 0.89,
+      "p95_ms": 1.16
+    },
+    "library": {
+      "samples": 10,
+      "median_ms": 0.39,
+      "p95_ms": 0.81
+    }
+  },
+  "cached_search": {
+    "samples": 50,
+    "median_ms": 2.32,
+    "p95_ms": 3.05
+  },
+  "library_badges_50_tracks": {
+    "samples": 50,
+    "median_ms": 0.25,
+    "p95_ms": 0.35
+  },
+  "preview": {
+    "source": "Deezer",
+    "http_status": 206
+  },
+  "library": {
+    "status": "done",
+    "walked": 0,
+    "indexed": 0,
+    "errors": 0,
+    "elapsed": 0.0,
+    "detail": "Scan complete",
+    "total_files": 0,
+    "roots": ["/music"],
+    "watch_mode": "native",
+    "poll_interval_seconds": null
+  }
+}

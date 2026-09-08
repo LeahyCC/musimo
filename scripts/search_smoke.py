@@ -18,6 +18,15 @@ def summary(values: list[float]) -> dict[str, float | int]:
     }
 
 
+def server_timing(response: httpx.Response) -> dict[str, float]:
+    result: dict[str, float] = {}
+    for item in response.headers.get("server-timing", "").split(","):
+        name, _, raw = item.strip().partition(";dur=")
+        if name and raw:
+            result[name] = float(raw)
+    return result
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--url", default="http://127.0.0.1:8765")
@@ -26,6 +35,9 @@ def main() -> None:
     report: dict[str, object] = {}
     with httpx.Client(base_url=args.url, timeout=18) as client:
         samples: list[float] = []
+        breakdown: dict[str, list[float]] = {
+            name: [] for name in ("cache", "queue", "provider", "catalog", "library")
+        }
         for query in [
             "Aphex Twin",
             "Boards of Canada",
@@ -45,9 +57,15 @@ def main() -> None:
             assert page["items"], query
             if not page["cached"]:
                 samples.append((time.perf_counter() - started) * 1000)
+                timing = server_timing(response)
+                for name, values in breakdown.items():
+                    values.append(timing[name])
         report["cold_search"] = (
             summary(samples) if samples else {"note": "Already cached; no cold samples"}
         )
+        report["cold_search_breakdown"] = {
+            name: summary(values) for name, values in breakdown.items() if values
+        }
         cached: list[float] = []
         library: list[float] = []
         client.get("/api/search", params={"q": "Nina Simone", "kind": "track"}).raise_for_status()
@@ -57,9 +75,9 @@ def main() -> None:
             response.raise_for_status()
             assert response.json()["cached"]
             cached.append((time.perf_counter() - started) * 1000)
-            timing = response.headers.get("server-timing", "")
-            if timing.startswith("library;dur="):
-                library.append(float(timing.split("=")[1]))
+            timing = server_timing(response)
+            if "library" in timing:
+                library.append(timing["library"])
         report["cached_search"] = summary(cached)
         if library:
             report["library_badges_50_tracks"] = summary(library)

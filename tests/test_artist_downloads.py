@@ -6,7 +6,7 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI
 
-from backend.artist_downloads import install_artist_download_routes
+from backend.artist_downloads import ArtistDownloads, install_artist_download_routes
 from backend.catalog import Catalog, Result
 from backend.download_api import install_download_routes
 from backend.downloads import Downloads
@@ -72,13 +72,13 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
     ) -> None:
         requests: list[str] = []
 
-        def track(track_id: int) -> dict[str, object]:
+        def track(track_id: int, isrc: str | None = None) -> dict[str, object]:
             return {
                 "id": track_id,
                 "title": f"Song {track_id}",
                 "artist": {"id": 7, "name": "Artist"},
                 "duration": 180,
-                "isrc": f"USFIX260000{track_id}",
+                "isrc": isrc or f"USFIX260000{track_id}",
             }
 
         def album(album_id: int) -> dict[str, object]:
@@ -111,13 +111,26 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
                 return httpx.Response(200, json={"data": []})
             if request.url.path in {"/album/1", "/album/2", "/album/3"}:
                 album_id = int(request.url.path.rsplit("/", 1)[1])
-                ids = [1, 2, 3] if album_id == 1 else [3, 4] if album_id == 2 else []
+                ids = [1, 2, 3] if album_id == 1 else [6, 4] if album_id == 2 else []
                 return httpx.Response(
                     200,
                     json={
                         **album(album_id),
                         "nb_tracks": 3 if album_id == 3 else len(ids),
-                        "tracks": {"data": [track(n) for n in ids]},
+                        "tracks": {
+                            "data": [track(n, "USFIX2600003" if n == 6 else None) for n in ids]
+                        },
+                    },
+                )
+            if request.url.path.startswith("/album/"):
+                album_id = int(request.url.path.rsplit("/", 1)[1])
+                return httpx.Response(
+                    200,
+                    json={
+                        **album(album_id),
+                        "record_type": "single",
+                        "nb_tracks": 1,
+                        "tracks": {"data": [track(5 if album_id == 100 else album_id + 1000)]},
                     },
                 )
             return httpx.Response(200, json={"data": []})
@@ -163,6 +176,13 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
                     self.assertTrue(result["albums"][2]["error"])
                     self.assertTrue(any("index=50" in url for url in requests))
                     self.assertEqual(len(downloads.jobs.list()), 1)
+                    all_plan = (
+                        await client.get("/api/artists/7/download-plan?all_music=true")
+                    ).json()
+                    self.assertEqual(len(all_plan["albums"]), 52)
+                    all_releases = await ArtistDownloads(downloads).albums(7, all_music=True)
+                    self.assertEqual(len(all_releases), 52)
+                    self.assertIn(100, {release.id for release in all_releases})
                     failed = await client.post(
                         "/api/artist-batches", json={"artist_id": 7, "album_ids": [1, 3]}
                     )
@@ -186,6 +206,18 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(repeated["jobs"], [])
                     self.assertEqual(repeated["albums"], 0)
                     self.assertEqual(repeated["skipped_queued"], 3)
+                    single = (
+                        await client.post(
+                            "/api/artist-batches",
+                            json={
+                                "artist_id": 7,
+                                "album_ids": [100],
+                                "all_music": True,
+                                "format": "m4a",
+                            },
+                        )
+                    ).json()
+                    self.assertEqual([row["track_id"] for row in single["jobs"]], [5])
                     all_tracks = (
                         await client.post(
                             "/api/artist-batches",
@@ -200,6 +232,7 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(len(all_tracks["jobs"]), 3)
                     for body in [
                         {"artist_id": 7, "album_ids": []},
+                        {"artist_id": 7, "album_ids": [100]},
                         {"artist_id": 7, "album_ids": [999]},
                         {"artist_id": 7, "album_ids": [1], "target": str(root.parent)},
                         {"artist_id": 7, "album_ids": [True]},

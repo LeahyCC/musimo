@@ -6,6 +6,7 @@ export const jobSchema = z.object({
   id: z.string(),
   batch_id: z.string().default(''),
   batch_label: z.string().default(''),
+  album_id: z.number().default(0),
   track_id: z.number(),
   format: z.enum(['original', 'm4a', 'opus', 'mp3']),
   target: z.string(),
@@ -101,6 +102,7 @@ export const artistSchema = z.object({
   items: z.array(resultSchema),
   next_index: z.number().nullable(),
 })
+export const artistTopSchema = z.object({ tracks: z.array(resultSchema) })
 export const yearsSchema = z.record(z.string(), z.number().nullable())
 export const previewSchema = z.object({ url: z.string(), source: z.string() })
 export const librarySchema = z.object({

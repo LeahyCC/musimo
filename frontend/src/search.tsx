@@ -6,7 +6,14 @@ import { useVirtualizer } from '@tanstack/react-virtual'
 import { Check, Disc3, Headphones, Music2, Pause, Play, Search } from 'lucide-react'
 
 import { AlbumDownloadButton } from './album-download'
-import { albumSchema, api, artistSchema, searchPageSchema, yearsSchema } from './api'
+import {
+  albumSchema,
+  api,
+  artistSchema,
+  artistTopSchema,
+  searchPageSchema,
+  yearsSchema,
+} from './api'
 import type { MusicResult } from './api'
 import { ArtistDownloadButton } from './artist-download'
 import { DownloadButton } from './downloads'
@@ -16,6 +23,8 @@ const tabs = ['top', 'track', 'album', 'artist'] as const
 type Tab = (typeof tabs)[number]
 const sorts = ['relevance', 'title', 'artist', 'year', 'duration', 'popularity'] as const
 type Sort = (typeof sorts)[number]
+const artistReleaseTypes = ['albums-eps', 'album', 'ep', 'single', 'all'] as const
+const artistSorts = ['newest', 'oldest', 'title', 'title-desc'] as const
 export type SearchState = {
   q?: string
   tab?: Tab
@@ -27,6 +36,10 @@ export type SearchState = {
   preview?: boolean
   library?: 'all' | 'missing' | 'owned'
   sort?: Sort
+}
+export type ArtistSearch = {
+  type?: (typeof artistReleaseTypes)[number]
+  sort?: (typeof artistSorts)[number]
 }
 export function validateSearch(search: Record<string, unknown>): SearchState {
   const number = (value: unknown) =>
@@ -48,7 +61,18 @@ export function validateSearch(search: Record<string, unknown>): SearchState {
     max: number(search.max),
   }
 }
+
+export function validateArtistSearch(search: Record<string, unknown>): ArtistSearch {
+  return {
+    type: artistReleaseTypes.find((type) => type === search.type),
+    sort: artistSorts.find((sort) => sort === search.sort),
+  }
+}
 const labels = { top: 'Top', track: 'Tracks', album: 'Albums', artist: 'Artists' }
+
+function normalizedText(value: string) {
+  return value.normalize('NFKC').trim().toLocaleLowerCase()
+}
 
 export function Badge({ item }: { item: MusicResult }) {
   if (item.kind === 'artist') return null
@@ -371,12 +395,20 @@ function ResultsSection({
         return true
       })
     const sort = state.sort
-    if (sort && sort !== 'relevance')
-      filtered.sort((a, b) =>
-        sort === 'title' || sort === 'artist'
+    if (sort && sort !== 'relevance') {
+      const queryName = normalizedText(state.q ?? '')
+      filtered.sort((a, b) => {
+        if (kind === 'artist' && sort === 'popularity') {
+          const exactMatch =
+            Number(normalizedText(b.title) === queryName) -
+            Number(normalizedText(a.title) === queryName)
+          if (exactMatch) return exactMatch
+        }
+        return sort === 'title' || sort === 'artist'
           ? a[sort].localeCompare(b[sort])
-          : (b[sort] ?? -1) - (a[sort] ?? -1),
-      )
+          : (b[sort] ?? -1) - (a[sort] ?? -1)
+      })
+    }
     return compact ? filtered.slice(0, kind === 'track' ? 5 : 6) : filtered
   }, [raw, yearQuery.data, state, kind, compact, coverage])
   return (
@@ -759,6 +791,9 @@ export function AlbumPage() {
 
 export function ArtistPage() {
   const { artistId } = useParams({ from: '/artists/$artistId' })
+  const location = useRouterState({ select: (state) => state.location })
+  const state = validateArtistSearch(Object.fromEntries(new URLSearchParams(location.searchStr)))
+  const navigate = useNavigate()
   const query = useInfiniteQuery({
     queryKey: ['artist', artistId],
     initialPageParam: 0,
@@ -766,6 +801,25 @@ export function ArtistPage() {
       api(`artists/${artistId}?index=${pageParam}`, artistSchema, { signal }),
     getNextPageParam: (page) => page.next_index ?? undefined,
     staleTime: 86_400_000,
+  })
+  const top = useQuery({
+    queryKey: ['artist-top', artistId],
+    queryFn: ({ signal }) => api(`artists/${artistId}/top`, artistTopSchema, { signal }),
+    staleTime: 3_600_000,
+    retry: false,
+  })
+  const popularAlbumIds = useMemo(
+    () => [...new Set((top.data?.tracks ?? []).map((track) => track.album_id).filter(Boolean))],
+    [top.data],
+  )
+  const popularAlbumQueries = useQueries({
+    queries: popularAlbumIds.map((albumId) => ({
+      queryKey: ['album', albumId],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        api(`albums/${albumId}?background=true`, albumSchema, { signal }),
+      staleTime: 60_000,
+      retry: false,
+    })),
   })
   if (query.isError)
     return (
@@ -781,7 +835,37 @@ export function ArtistPage() {
       query.data.pages.flatMap((page) => page.items).map((item) => [item.id, item]),
     ).values(),
   ]
-  const groups = [...new Set(items.map((item) => item.record_type))]
+  const topTracks = top.data?.tracks.slice(0, 5) ?? []
+  const popularAlbums = popularAlbumQueries
+    .map((result) => result.data?.album)
+    .filter(
+      (album): album is MusicResult =>
+        album?.record_type === 'album' && album.artist_id === Number(artistId),
+    )
+    .slice(0, 6)
+  const releaseType = state.type ?? 'albums-eps'
+  const releaseSort = state.sort ?? 'newest'
+  const releases = items
+    .filter(
+      (item) =>
+        releaseType === 'all' ||
+        item.record_type === releaseType ||
+        (releaseType === 'albums-eps' && ['album', 'ep'].includes(item.record_type)),
+    )
+    .sort((a, b) =>
+      releaseSort === 'title' || releaseSort === 'title-desc'
+        ? a.title.localeCompare(b.title) * (releaseSort === 'title-desc' ? -1 : 1)
+        : releaseSort === 'oldest'
+          ? (a.year ?? Number.MAX_SAFE_INTEGER) - (b.year ?? Number.MAX_SAFE_INTEGER)
+          : (b.year ?? -1) - (a.year ?? -1),
+    )
+  const change = (patch: ArtistSearch) => {
+    void navigate({
+      to: '/artists/$artistId',
+      params: { artistId },
+      search: { ...state, ...patch },
+    })
+  }
   return (
     <>
       <div className="artist-header">
@@ -797,14 +881,88 @@ export function ArtistPage() {
           />
         </div>
       </div>
-      {groups.map((group) => (
-        <section className="results-section" key={group}>
-          <h2>{group === 'ep' ? 'EPs' : group.charAt(0).toUpperCase() + group.slice(1) + 's'}</h2>
-          <CardGrid items={items.filter((item) => item.record_type === group)} />
-        </section>
-      ))}
+      <section className="results-section" aria-labelledby="popular-songs-title">
+        <div className="section-heading">
+          <h2 id="popular-songs-title">Popular songs</h2>
+        </div>
+        {top.isPending && <p role="status">Loading popular songs…</p>}
+        {top.isError && (
+          <p className="error" role="alert">
+            {top.error.message} <button onClick={() => void top.refetch()}>Retry</button>
+          </p>
+        )}
+        {topTracks.length > 0 && <TrackList items={topTracks} />}
+        {top.isSuccess && !topTracks.length && <p className="muted">No popular songs found.</p>}
+      </section>
+      <section className="results-section" aria-labelledby="popular-albums-title">
+        <div className="section-heading">
+          <h2 id="popular-albums-title">Popular albums</h2>
+        </div>
+        {(top.isPending || popularAlbumQueries.some((result) => result.isPending)) && (
+          <p role="status">Finding popular albums…</p>
+        )}
+        {popularAlbumQueries.some((result) => result.isError) && (
+          <p className="error" role="alert">
+            Some popular albums could not be checked.{' '}
+            <button
+              onClick={() =>
+                void Promise.all(popularAlbumQueries.map((result) => result.refetch()))
+              }
+            >
+              Retry
+            </button>
+          </p>
+        )}
+        {popularAlbums.length > 0 && <CardGrid items={popularAlbums} />}
+        {top.isSuccess &&
+          popularAlbumQueries.every((result) => !result.isPending) &&
+          !popularAlbums.length && <p className="muted">No popular albums found.</p>}
+      </section>
+      <section className="results-section" aria-labelledby="discography-title">
+        <div className="section-heading artist-release-heading">
+          <div>
+            <h2 id="discography-title">Discography</h2>
+            <small>
+              {releases.length} shown · {items.length} releases loaded
+            </small>
+          </div>
+          <div className="artist-release-controls">
+            <label>
+              Show
+              <select
+                value={releaseType}
+                onChange={(event) => change({ type: event.target.value as ArtistSearch['type'] })}
+              >
+                <option value="albums-eps">Albums and EPs</option>
+                <option value="album">Albums</option>
+                <option value="ep">EPs</option>
+                <option value="single">Singles</option>
+                <option value="all">All releases</option>
+              </select>
+            </label>
+            <label>
+              Sort
+              <select
+                value={releaseSort}
+                onChange={(event) => change({ sort: event.target.value as ArtistSearch['sort'] })}
+              >
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="title">Title A to Z</option>
+                <option value="title-desc">Title Z to A</option>
+              </select>
+            </label>
+          </div>
+        </div>
+        {releases.length > 0 ? (
+          <CardGrid items={releases} />
+        ) : (
+          <p className="muted">No releases match this view.</p>
+        )}
+      </section>
       <p className="muted small">
-        Release types come from Deezer. Review alternative editions before downloading all albums.
+        Popular songs come from Deezer. Popular albums are the albums behind those songs. Review
+        alternative editions before downloading an artist.
       </p>
       {query.hasNextPage && (
         <button

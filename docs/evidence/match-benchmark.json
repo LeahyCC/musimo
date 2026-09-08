@@ -1,0 +1,24 @@
+{
+  "cases": 100,
+  "distinct_recordings": 100,
+  "risk_counts": {
+    "ambiguous-title": 63,
+    "cover-decoy": 6,
+    "instrumental-decoy": 9,
+    "karaoke-decoy": 3,
+    "live-decoy": 13,
+    "remix-decoy": 6,
+    "target-version": 7
+  },
+  "resolver_acceptance": 79,
+  "reference_video": {
+    "search_recall": 69,
+    "ranked_top_1": 28,
+    "ranked_top_3": 36,
+    "note": "Retrieval check only; other uploads may contain the same recording"
+  },
+  "accuracy": {
+    "status": "NOT MEASURED",
+    "reviewed_cases": 0
+  }
+}
