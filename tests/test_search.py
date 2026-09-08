@@ -142,6 +142,14 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
                 refreshed = (await client.get("/api/albums/302127?background=true")).json()
                 self.assertEqual(refreshed["album"]["owned_count"], 0)
                 self.assertEqual(refreshed["album"]["ownership"], "missing")
+                top = (await client.get("/api/artists/27/top")).json()
+                self.assertEqual([track["id"] for track in top["tracks"]], [1])
+                self.assertEqual((await client.get("/api/artists/0/top")).status_code, 422)
+                search = await client.get("/api/search?q=timed")
+                self.assertEqual(search.status_code, 200)
+                timing = search.headers["server-timing"]
+                for metric in ("cache", "queue", "provider", "catalog", "library"):
+                    self.assertIn(metric + ";dur=", timing)
                 catalog.blocked_until = time.monotonic() + 30
                 started = time.monotonic()
                 response = await client.get("/api/search?q=hello")

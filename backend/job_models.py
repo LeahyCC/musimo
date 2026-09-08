@@ -74,6 +74,7 @@ class Job(BaseModel):
     id: str
     batch_id: str = ""
     batch_label: str = ""
+    album_id: int = 0
     catalog: str = "deezer"
     track_id: int
     format: Format = "original"

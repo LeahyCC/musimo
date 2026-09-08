@@ -87,6 +87,33 @@ test('keyboard search, tab and sort survive navigation and refresh', async ({ pa
   )
 })
 
+test('popularity keeps an exact artist name ahead of larger fuzzy matches', async ({ page }) => {
+  const exact: MusicResult = {
+    ...album,
+    id: 11270,
+    kind: 'artist',
+    title: 'Tipper',
+    artist: 'Tipper',
+    artist_id: 11270,
+    popularity: 4248,
+  }
+  const larger: MusicResult = {
+    ...exact,
+    id: 7004075,
+    title: 'Bryson Tiller',
+    artist: 'Bryson Tiller',
+    artist_id: 7004075,
+    popularity: 994430,
+  }
+  await page.route('**/api/search?*', (route) =>
+    route.fulfill({
+      json: { items: [larger, exact], total: 2, next_index: null, cached: false },
+    }),
+  )
+  await page.goto('/search?q=tipper&tab=artist&sort=popularity')
+  await expect(page.getByRole('article').first()).toContainText('Tipper')
+})
+
 test('catalog failure offers retry and recovers', async ({ page }) => {
   await page.route(
     '**/api/search?*',
@@ -249,18 +276,79 @@ test('preview playback, volume and navigation remain usable', async ({ page }) =
 test('artist review counts selections, excludes failed albums and retries submission', async ({
   page,
 }) => {
+  const ep: MusicResult = {
+    ...album,
+    id: 43,
+    album_id: 43,
+    title: 'Fixture EP',
+    album: 'Fixture EP',
+    year: 2022,
+    record_type: 'ep',
+  }
+  const single: MusicResult = {
+    ...album,
+    id: 44,
+    album_id: 44,
+    title: 'Fixture single',
+    album: 'Fixture single',
+    year: 2023,
+    record_type: 'single',
+  }
+
   await page.route(/\/api\/artists\/7(?:\?.*)?$/, (route) =>
     route.fulfill({
       json: {
         artist: { id: 7, name: 'Fixture artist', art: '' },
-        items: [album],
+        items: [album, ep, single],
         next_index: null,
       },
     }),
   )
 
-  await page.route('**/api/artists/7/download-plan', (route) =>
+  await page.route('**/api/artists/7/top', (route) =>
     route.fulfill({
+      json: {
+        tracks: [
+          {
+            ...track,
+            id: 103,
+            title: 'Guest appearance',
+            artist: 'Another artist',
+            artist_id: 8,
+            album: 'Another artist album',
+            album_id: 99,
+            popularity: 110,
+          },
+          { ...track, title: 'Most popular song', popularity: 100 },
+          { ...track, id: 102, title: 'Second popular song', popularity: 90 },
+        ],
+      },
+    }),
+  )
+  const foreignAlbum: MusicResult = {
+    ...album,
+    id: 99,
+    album_id: 99,
+    title: 'Another artist album',
+    album: 'Another artist album',
+    artist: 'Another artist',
+    artist_id: 8,
+  }
+  await page.route('**/api/albums/99*', (route) =>
+    route.fulfill({
+      json: {
+        album: foreignAlbum,
+        tracks: [],
+        label: 'Fixture label',
+        duration: 180,
+        complete: true,
+      },
+    }),
+  )
+
+  await page.route('**/api/artists/7/download-plan*', (route) => {
+    const allMusic = new URL(route.request().url()).searchParams.get('all_music') === 'true'
+    return route.fulfill({
       json: {
         albums: [
           {
@@ -270,8 +358,8 @@ test('artist review counts selections, excludes failed albums and retries submis
             year: '2020',
             error: '',
             tracks: [
-              { id: 101, duration: 180, owned: true },
-              { id: 102, duration: 180, owned: false },
+              { id: 101, duration: 180, owned: true, identity: 'isrc:one' },
+              { id: 102, duration: 180, owned: false, identity: 'isrc:two' },
             ],
           },
           {
@@ -280,7 +368,7 @@ test('artist review counts selections, excludes failed albums and retries submis
             art: '',
             year: '2021',
             error: '',
-            tracks: [{ id: 103, duration: 180, owned: false }],
+            tracks: [{ id: 103, duration: 180, owned: false, identity: 'isrc:three' }],
           },
           {
             id: 44,
@@ -290,16 +378,29 @@ test('artist review counts selections, excludes failed albums and retries submis
             error: 'Lookup failed',
             tracks: [],
           },
+          ...(allMusic
+            ? [
+                {
+                  id: 45,
+                  title: 'Fixture single',
+                  art: '',
+                  year: '2022',
+                  error: '',
+                  tracks: [{ id: 104, duration: 180, owned: false, identity: 'isrc:four' }],
+                },
+              ]
+            : []),
         ],
       },
-    }),
-  )
+    })
+  })
   let attempts = 0
   await page.route('**/api/artist-batches', async (route) => {
     const body: unknown = route.request().postDataJSON()
     expect(body).toEqual({
       artist_id: 7,
       album_ids: [42, 43],
+      all_music: false,
       missing_only: true,
       format: 'mp3',
       target: '/music',
@@ -320,6 +421,31 @@ test('artist review counts selections, excludes failed albums and retries submis
     )
   })
   await page.goto('/artists/7')
+  await expect(page.locator('main section > .section-heading h2')).toHaveText([
+    'Popular songs',
+    'Popular albums',
+    'Discography',
+  ])
+  await expect(page.getByText('Most popular song', { exact: true })).toBeVisible()
+  const popularAlbums = page.getByRole('region', { name: 'Popular albums' })
+  await expect(popularAlbums.getByRole('article')).toHaveCount(1)
+  await expect(popularAlbums).not.toContainText('Another artist album')
+  const discography = page.getByRole('region', { name: 'Discography' })
+  await expect(discography.getByRole('article')).toHaveCount(2)
+  await expect(discography.getByRole('article').first()).toContainText('Fixture EP')
+  await discography.getByRole('combobox', { name: 'Show' }).selectOption('album')
+  await expect(page).toHaveURL(/type=album/)
+  await expect(discography.getByRole('article')).toHaveCount(1)
+  await discography.getByRole('combobox', { name: 'Sort' }).selectOption('title-desc')
+  await expect(page).toHaveURL(/sort=title-desc/)
+  await page.reload()
+  await expect(discography.getByRole('combobox', { name: 'Show' })).toHaveValue('album')
+  await expect(discography.getByRole('combobox', { name: 'Sort' })).toHaveValue('title-desc')
+  await page.getByRole('button', { name: 'Download all music' }).click()
+  const musicDialog = page.getByRole('dialog', { name: 'Choose music to download' })
+  await expect(musicDialog.getByText('3 releases · 3 songs', { exact: true })).toBeVisible()
+  await expect(musicDialog.getByRole('checkbox', { name: /Fixture single/ })).toBeChecked()
+  await musicDialog.getByRole('button', { name: 'Close download selection' }).click()
   await page.getByRole('button', { name: 'Download all albums' }).click()
   const dialog = page.getByRole('dialog', { name: 'Choose albums to download' })
   await expect(dialog.getByText('2 albums · 2 songs', { exact: true })).toBeVisible()

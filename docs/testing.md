@@ -61,6 +61,7 @@ Run these opt-in checks from the repository root. They create temporary fixtures
 uv run python -m scripts.reliability_smoke --output runtime/batch-check.json
 uv run python -m scripts.recovery_smoke --output runtime/recovery-check.json
 uv run python -m scripts.index_benchmark --files 50000 --output runtime/index-check.json
+uv run python -m scripts.match_benchmark --output runtime/match-benchmark.json
 ```
 
 The batch check uses generated audio and mock catalog metadata with real worker processes. It verifies duplicate album requests, pause/termination, saved state after reopening SQLite, a transient failure followed by automatic retry, written tags, artifact hashes and ownership after all 12 files finish. Its elapsed time excludes provider downloads.
@@ -68,6 +69,8 @@ The batch check uses generated audio and mock catalog metadata with real worker 
 The recovery check creates its own Docker container, temporary database/music mounts and a random loopback port. It seeds twelve generated 30-second clips, kills the container while work is active, and verifies that the same jobs finish as MP3 after restart, without duplicate files or missing index entries. It removes only its own container and temporary mounts. `--image` can select a separately built test image.
 
 The index benchmark generates distinct title tags in 50,000 short WAVs, in folders of 50 files. It measures one cold tag scan, two unchanged-file scans and 50 batched ownership lookups. This exercises actual files, Mutagen and SQLite, but is not representative of a mixed personal library or a Windows bind mount. `--directory` selects the parent for the temporary library. To reproduce Linux timings, mount `scripts` read-only into a disposable image, set `PYTHONPATH=/app`, and run `/checks/index_benchmark.py` with an output mount.
+
+The match benchmark evaluates the current resolver against the saved [public review corpus](evidence/match-review-corpus.json). It reports linked-reference retrieval separately from accuracy because another upload may contain the same recording. Accuracy stays NOT MEASURED until an independent listener labels every case using the [review method](match-review.md). Add `--release` to make missing labels, fewer than 100 cases or duplicate recording IDs fail the command.
 
 The existing `scripts/download_smoke.py` remains the opt-in Wikimedia public-domain transport fixture. Give it a dedicated writable test root. To verify Navidrome's watcher, run a separate Navidrome instance watching that root with its own data directory and loopback port, then confirm the written title/artist in that instance's index. Do not point these checks at the live library or restart its services.
 

@@ -142,13 +142,21 @@ class Catalog:
             await asyncio.sleep(delay)
 
     async def get(
-        self, path: str, ttl: int = 600, fresh: bool = False, background: bool = False
+        self,
+        path: str,
+        ttl: int = 600,
+        fresh: bool = False,
+        background: bool = False,
+        timing: dict[str, float] | None = None,
     ) -> tuple[dict[str, object], bool]:
+        cache_started = time.perf_counter()
         now = time.time()
         if not fresh:
             hit = self.memory.get(path)
             if hit and hit[0] > now:
                 self.memory.move_to_end(path)
+                if timing is not None:
+                    timing["cache"] = (time.perf_counter() - cache_started) * 1000
                 return hit[1], True
             with self.store.lock:
                 row = self.store.db.execute(
@@ -160,10 +168,18 @@ class Catalog:
                 if isinstance(parsed, dict):
                     payload = {str(k): v for k, v in parsed.items()}
                     self.remember(path, float(row["expires"]), payload)
+                    if timing is not None:
+                        timing["cache"] = (time.perf_counter() - cache_started) * 1000
                     return payload, True
+        if timing is not None:
+            timing["cache"] = (time.perf_counter() - cache_started) * 1000
         try:
+            queued = time.perf_counter()
             async with self.slots:
                 await self.budget(background=background)
+                requested = time.perf_counter()
+                if timing is not None:
+                    timing["queue"] = (requested - queued) * 1000
                 response = await self.client.get("https://api.deezer.com/" + path)
             if response.status_code == 429:
                 try:
@@ -174,6 +190,8 @@ class Catalog:
                 raise CatalogError("Deezer is rate limited. Try again shortly.", 429)
             response.raise_for_status()
             raw: object = response.json()
+            if timing is not None:
+                timing["provider"] = (time.perf_counter() - requested) * 1000
             if not isinstance(raw, dict):
                 raise CatalogError("Deezer returned an invalid response.")
             payload = {str(k): v for k, v in raw.items()}
@@ -188,6 +206,7 @@ class Catalog:
         except (httpx.HTTPError, ValueError) as exc:
             raise CatalogError("Cannot reach the Deezer catalog. Try again.") from exc
         expires = time.time() + ttl
+        cache_started = time.perf_counter()
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
@@ -204,6 +223,8 @@ class Catalog:
             except Exception:
                 self.store.db.rollback()
                 raise
+        if timing is not None:
+            timing["cache"] += (time.perf_counter() - cache_started) * 1000
         self.remember(path, expires, payload)
         return payload, False
 
@@ -252,7 +273,11 @@ class Catalog:
         )
 
     async def search(
-        self, query: str, kind: Literal["track", "album", "artist"], index: int
+        self,
+        query: str,
+        kind: Literal["track", "album", "artist"],
+        index: int,
+        timing: dict[str, float] | None = None,
     ) -> SearchPage:
         path = (
             "search/"
@@ -260,7 +285,8 @@ class Catalog:
             + "?"
             + str(httpx.QueryParams({"q": query, "limit": 50, "index": index}))
         )
-        payload, cached = await self.get(path)
+        payload, cached = await self.get(path, timing=timing)
+        parsed = time.perf_counter()
         rows = payload.get("data", [])
         if not isinstance(rows, list):
             raise CatalogError("Invalid search results")
@@ -287,12 +313,15 @@ class Catalog:
         except ValidationError as exc:
             raise CatalogError("Deezer's result format changed.") from exc
         total = payload.get("total", len(results))
-        return SearchPage(
+        page = SearchPage(
             items=results,
             total=int(total) if isinstance(total, (int, float)) else len(results),
             next_index=index + len(rows) if payload.get("next") and rows else None,
             cached=cached,
         )
+        if timing is not None:
+            timing["catalog"] = (time.perf_counter() - parsed) * 1000
+        return page
 
     async def album_detail(self, album_id: int, *, background: bool = False) -> dict[str, object]:
         payload, _ = await self.get(f"album/{album_id}", 86400, background=background)

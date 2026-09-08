@@ -49,11 +49,15 @@ def install_search_routes(
             raise HTTPException(422, "Enter at least two characters")
         try:
             async with asyncio.timeout(2.5):
-                page = await get_catalog().search(q.strip(), kind, index)
+                timing: dict[str, float] = {}
+                page = await get_catalog().search(q.strip(), kind, index, timing)
                 started = time.perf_counter()
                 page.items = get_library().annotate(page.items)
-                elapsed = (time.perf_counter() - started) * 1000
-                response.headers["Server-Timing"] = f"library;dur={elapsed:.3f}"
+                timing["library"] = (time.perf_counter() - started) * 1000
+                response.headers["Server-Timing"] = ", ".join(
+                    f"{name};dur={timing.get(name, 0):.3f}"
+                    for name in ("cache", "queue", "provider", "catalog", "library")
+                )
                 return page
         except TimeoutError as exc:
             raise HTTPException(504, "Search timed out. Retry this tab.") from exc
@@ -116,6 +120,21 @@ def install_search_routes(
             "album": item.model_dump(),
             "tracks": [track.model_dump() for track in tracks],
         }
+
+    @app.get("/api/artists/{artist_id}/top")
+    async def artist_top(artist_id: int) -> dict[str, object]:
+        if artist_id <= 0:
+            raise HTTPException(422, "Invalid artist ID")
+        catalog = get_catalog()
+        async with asyncio.timeout(10):
+            payload, _ = await catalog.get(f"artist/{artist_id}/top?limit=10", 3600)
+        rows = payload.get("data", [])
+        tracks = (
+            [catalog.track(Track.model_validate(row)) for row in rows]
+            if isinstance(rows, list)
+            else []
+        )
+        return {"tracks": [track.model_dump() for track in get_library().annotate(tracks)]}
 
     @app.get("/api/artists/{artist_id}")
     async def artist(

@@ -48,7 +48,7 @@ import { LibraryPanel } from './library-panel'
 import { CommandPalette } from './palette'
 import { PlayerProvider } from './player'
 import { RecentActivity } from './recent-activity'
-import { AlbumPage, ArtistPage, SearchPage, validateSearch } from './search'
+import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
 
 import './style.css'
 
@@ -809,6 +809,7 @@ const albumRoute = createRoute({
 const artistRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/artists/$artistId',
+  validateSearch: validateArtistSearch,
   component: ArtistPage,
 })
 const downloadsRoute = createRoute({

@@ -1,0 +1,106 @@
+{
+  "browser": "Chromium",
+  "samples": 10,
+  "debounce_to_request": {
+    "samples": 10,
+    "median_ms": 217.5,
+    "p95_ms": 228.1
+  },
+  "request": {
+    "samples": 10,
+    "median_ms": 455.6,
+    "p95_ms": 543.3
+  },
+  "response_to_paint": {
+    "samples": 10,
+    "median_ms": 38.3,
+    "p95_ms": 61.1
+  },
+  "input_to_paint": {
+    "samples": 10,
+    "median_ms": 710.8,
+    "p95_ms": 792
+  },
+  "rows": [
+    {
+      "query": "Massive Attack",
+      "server_timing": "cache;dur=2.977, queue;dur=0.013, provider;dur=484.700, catalog;dur=0.971, library;dur=0.389",
+      "debounce_to_request_ms": 228.09999999403954,
+      "request_ms": 492.40000000596046,
+      "response_to_paint_ms": 61.099999994039536,
+      "input_to_paint_ms": 781.5999999940395
+    },
+    {
+      "query": "Portishead",
+      "server_timing": "cache;dur=2.660, queue;dur=0.012, provider;dur=363.974, catalog;dur=0.934, library;dur=0.352",
+      "debounce_to_request_ms": 217.5,
+      "request_ms": 370.79999999701977,
+      "response_to_paint_ms": 29.799999997019768,
+      "input_to_paint_ms": 618.0999999940395
+    },
+    {
+      "query": "A Tribe Called Quest",
+      "server_timing": "cache;dur=2.399, queue;dur=0.007, provider;dur=536.197, catalog;dur=0.887, library;dur=0.441",
+      "debounce_to_request_ms": 211.5,
+      "request_ms": 543.2999999970198,
+      "response_to_paint_ms": 37.20000000298023,
+      "input_to_paint_ms": 792
+    },
+    {
+      "query": "Fela Kuti",
+      "server_timing": "cache;dur=2.924, queue;dur=0.012, provider;dur=446.899, catalog;dur=1.015, library;dur=0.426",
+      "debounce_to_request_ms": 219.20000000298023,
+      "request_ms": 455.59999999403954,
+      "response_to_paint_ms": 36,
+      "input_to_paint_ms": 710.7999999970198
+    },
+    {
+      "query": "Ryuichi Sakamoto",
+      "server_timing": "cache;dur=9.774, queue;dur=0.010, provider;dur=472.277, catalog;dur=1.017, library;dur=0.397",
+      "debounce_to_request_ms": 218.09999999403954,
+      "request_ms": 487.40000000596046,
+      "response_to_paint_ms": 38.29999999701977,
+      "input_to_paint_ms": 743.7999999970198
+    },
+    {
+      "query": "Janelle Monae",
+      "server_timing": "cache;dur=2.682, queue;dur=0.009, provider;dur=406.177, catalog;dur=0.946, library;dur=0.453",
+      "debounce_to_request_ms": 208.79999999701977,
+      "request_ms": 414.3999999910593,
+      "response_to_paint_ms": 37.6000000089407,
+      "input_to_paint_ms": 660.7999999970198
+    },
+    {
+      "query": "Khruangbin",
+      "server_timing": "cache;dur=2.390, queue;dur=0.013, provider;dur=304.219, catalog;dur=1.062, library;dur=0.396",
+      "debounce_to_request_ms": 207.30000001192093,
+      "request_ms": 311.5,
+      "response_to_paint_ms": 43.29999999701977,
+      "input_to_paint_ms": 562.1000000089407
+    },
+    {
+      "query": "Nujabes",
+      "server_timing": "cache;dur=2.101, queue;dur=0.011, provider;dur=417.441, catalog;dur=0.907, library;dur=0.339",
+      "debounce_to_request_ms": 207.20000000298023,
+      "request_ms": 424.79999999701977,
+      "response_to_paint_ms": 43,
+      "input_to_paint_ms": 675
+    },
+    {
+      "query": "Rosalia",
+      "server_timing": "cache;dur=2.366, queue;dur=0.011, provider;dur=358.309, catalog;dur=0.880, library;dur=0.367",
+      "debounce_to_request_ms": 221,
+      "request_ms": 365.6000000089407,
+      "response_to_paint_ms": 41.70000000298023,
+      "input_to_paint_ms": 628.3000000119209
+    },
+    {
+      "query": "Stereolab",
+      "server_timing": "cache;dur=2.375, queue;dur=0.010, provider;dur=475.303, catalog;dur=0.893, library;dur=0.427",
+      "debounce_to_request_ms": 207.79999999701977,
+      "request_ms": 483,
+      "response_to_paint_ms": 36.79999999701977,
+      "input_to_paint_ms": 727.5999999940395
+    }
+  ]
+}
