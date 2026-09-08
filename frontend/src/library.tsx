@@ -428,11 +428,9 @@ export function LibraryPage({
   const artistTracks = useQuery({
     queryKey: ['library-artist-tracks', artistId],
     queryFn: ({ signal }) =>
-      api(
-        `library/artists/${encodeURIComponent(artistId)}/tracks`,
-        libraryArtistTracksSchema,
-        { signal },
-      ),
+      api(`library/artists/${encodeURIComponent(artistId)}/tracks`, libraryArtistTracksSchema, {
+        signal,
+      }),
     enabled: capabilities.data?.available === true && Boolean(artistId),
   })
   const createPlaylist = useMutation({
@@ -1001,7 +999,9 @@ export function LibraryPage({
             <div>
               <h2>{detailTitle}</h2>
               <span>
-                {artistSongsMode ? `${artistTracks.data?.items.length ?? 0} SONGS` : `${artistAlbums.length} ALBUMS`}
+                {artistSongsMode
+                  ? `${artistTracks.data?.items.length ?? 0} SONGS`
+                  : `${artistAlbums.length} ALBUMS`}
               </span>
             </div>
             <div className="button-row">
@@ -1010,14 +1010,18 @@ export function LibraryPage({
                   <button
                     className="button primary"
                     onClick={() => player.playLibrary(artistTracks.data?.items ?? [])}
-                    disabled={loadingDetail || artistTracks.isLoading || !artistTracks.data?.items.length}
+                    disabled={
+                      loadingDetail || artistTracks.isLoading || !artistTracks.data?.items.length
+                    }
                   >
                     <Play size={15} fill="currentColor" /> Play all
                   </button>
                   <button
                     className="button"
                     onClick={() => player.shuffleLibrary(artistTracks.data?.items ?? [])}
-                    disabled={loadingDetail || artistTracks.isLoading || !artistTracks.data?.items.length}
+                    disabled={
+                      loadingDetail || artistTracks.isLoading || !artistTracks.data?.items.length
+                    }
                   >
                     <Shuffle size={15} /> Shuffle
                   </button>
@@ -1057,7 +1061,9 @@ export function LibraryPage({
                         params: { artistId: activeArtist.id },
                       })
                     }
-                    disabled={loadingDetail || artistTracks.isLoading || !artistTracks.data?.items.length}
+                    disabled={
+                      loadingDetail || artistTracks.isLoading || !artistTracks.data?.items.length
+                    }
                   >
                     <ListMusic size={15} /> All songs
                   </button>
