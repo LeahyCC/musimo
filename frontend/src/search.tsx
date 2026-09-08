@@ -17,6 +17,7 @@ import {
 import type { DownloadJob, MusicResult } from './api'
 import { ArtistDownloadButton } from './artist-download'
 import { DownloadButton, failureMessage, useJobs } from './downloads'
+import { InfiniteScroll } from './infinite-scroll'
 import { durationText, usePlayer } from './player'
 
 const tabs = ['top', 'track', 'album', 'artist'] as const
@@ -492,13 +493,11 @@ function ResultsSection({
         </p>
       )}
       {!compact && query.hasNextPage && (
-        <button
-          className="button load-more"
-          disabled={query.isFetchingNextPage}
-          onClick={() => void query.fetchNextPage()}
-        >
-          {query.isFetchingNextPage ? 'Loading…' : 'Load 50 more'}
-        </button>
+        <InfiniteScroll
+          hasMore={query.hasNextPage}
+          loading={query.isFetchingNextPage}
+          onLoadMore={() => void query.fetchNextPage()}
+        />
       )}
       {compact && kind === 'track' && items[0] && (
         <div className="best-result">
@@ -994,13 +993,11 @@ export function ArtistPage() {
         alternative editions before downloading an artist.
       </p>
       {query.hasNextPage && (
-        <button
-          className="button"
-          disabled={query.isFetchingNextPage}
-          onClick={() => void query.fetchNextPage()}
-        >
-          Load more releases
-        </button>
+        <InfiniteScroll
+          hasMore={query.hasNextPage}
+          loading={query.isFetchingNextPage}
+          onLoadMore={() => void query.fetchNextPage()}
+        />
       )}
     </>
   )
