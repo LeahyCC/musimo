@@ -125,8 +125,17 @@ def main() -> None:
                                 topic=artist.endswith(" - Topic"),
                             )
                         )
-                ranked = Matcher().rank(job.meta, candidates)
+                matcher = Matcher()
+                ranked = matcher.rank(job.meta, candidates)
                 if not ranked:
+                    review = matcher.rank(job.meta, candidates, min_score=0, min_title=0)
+                    if review:
+                        emit(
+                            "candidates",
+                            items=[row.model_dump() for row in review],
+                            selected="",
+                            check_match=True,
+                        )
                     emit(
                         "error",
                         code="NO_MATCH",

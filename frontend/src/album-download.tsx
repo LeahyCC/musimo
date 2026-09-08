@@ -5,7 +5,7 @@ import { z } from 'zod'
 
 import { api, jobSchema } from './api'
 import type { MusicResult } from './api'
-import { updateJob } from './downloads'
+import { activeJob, updateJob, useJobs } from './downloads'
 
 const batchSchema = z.object({ id: z.string(), jobs: z.array(jobSchema), skipped: z.number() })
 
@@ -21,6 +21,10 @@ export function AlbumDownloadButton({
   label?: string
 }) {
   const client = useQueryClient()
+  const queue = useJobs()
+  const queued = (queue.data?.jobs ?? []).filter(
+    (job) => job.album_id === item.id && activeJob(job),
+  ).length
   const complete = item.coverage_verified && item.ownership === 'owned'
   const download = useMutation({
     mutationFn: () =>
@@ -33,6 +37,7 @@ export function AlbumDownloadButton({
       for (const job of batch.jobs) updateJob(client, job)
     },
   })
+  const result = download.data
   return (
     <div className="album-card-download">
       <button
@@ -65,11 +70,15 @@ export function AlbumDownloadButton({
         {label}
       </button>
 
-      {download.isSuccess && (
+      {(queued > 0 || result) && (
         <span role="status">
           <Link to="/downloads" className="album-download-status">
-            {download.data.jobs.length ? `${download.data.jobs.length} queued` : 'Nothing missing'}
-            {download.data.skipped > 0 ? ` · ${download.data.skipped} skipped` : ''}
+            {queued > 0
+              ? `${queued} queued`
+              : result?.jobs.length
+                ? `${result.jobs.length} queued`
+                : 'Nothing missing'}
+            {result?.skipped ? ` · ${result.skipped} skipped` : ''}
           </Link>
         </span>
       )}
