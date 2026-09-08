@@ -55,7 +55,16 @@ export const jobSchema = z.object({
 })
 export type DownloadJob = z.infer<typeof jobSchema>
 export const controlsSchema = z.object({ paused: z.boolean(), source_paused: z.boolean() })
-export const jobsSchema = z.object({ jobs: z.array(jobSchema), controls: controlsSchema })
+export const jobSummarySchema = z.object({
+  active: z.number(),
+  failed: z.number(),
+  failure_reasons: z.array(z.object({ code: z.string(), message: z.string(), count: z.number() })),
+})
+export const jobsSchema = z.object({
+  jobs: z.array(jobSchema),
+  controls: controlsSchema,
+  summary: jobSummarySchema,
+})
 export const historySchema = z.object({ jobs: z.array(jobSchema), total: z.number() })
 export const commandSchema = z.object({ controls: controlsSchema, errors: z.array(z.string()) })
 
@@ -268,6 +277,7 @@ export const snapshotSchema = z.object({
   cursor: z.number(),
   jobs: z.array(jobSchema),
   controls: controlsSchema,
+  summary: jobSummarySchema,
 })
 
 export async function api<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
