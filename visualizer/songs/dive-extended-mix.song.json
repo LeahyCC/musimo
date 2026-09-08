@@ -1,0 +1,98 @@
+{
+  "schemaVersion": 1,
+  "title": "Dive (Extended Mix)",
+  "artist": "Ben Böhmer",
+  "recording": {
+    "id": "lM32EZpWF7jIOn7k9bWKWR",
+    "sha256": "6d93fe771f69c6c903fdc228b99966607f49725db8daafcd0f30470ec6194889",
+    "duration": 380.9275,
+    "sourceSampleRate": 48000,
+    "analysisSampleRate": 44100,
+    "timingOffsetSeconds": 0
+  },
+  "seed": 1801723,
+  "reviewed": false,
+  "reviewNotes": "Provisional visual score based on measured level and texture changes. Colin selected the recording. The section times and returning motif still need listening and visual review; they are not claims of detected musical structure.",
+  "cues": [
+    {
+      "time": 0,
+      "label": "First light",
+      "motif": "orbit",
+      "transition": 0,
+      "intensity": 0.25,
+      "variation": 0
+    },
+    {
+      "time": 58,
+      "label": "Opening out",
+      "motif": "current",
+      "transition": 16,
+      "intensity": 0.48,
+      "variation": 0.1
+    },
+    {
+      "time": 94,
+      "label": "In full colour",
+      "motif": "bloom",
+      "transition": 8,
+      "intensity": 0.86,
+      "variation": 0.2
+    },
+    {
+      "time": 154,
+      "label": "Below the surface",
+      "motif": "current",
+      "transition": 7,
+      "intensity": 0.18,
+      "variation": 0.35
+    },
+    {
+      "time": 186,
+      "label": "Gathering",
+      "motif": "orbit",
+      "transition": 16,
+      "intensity": 0.45,
+      "variation": 0.45
+    },
+    {
+      "time": 216,
+      "label": "The return",
+      "motif": "bloom",
+      "transition": 8,
+      "intensity": 0.95,
+      "variation": 0.55
+    },
+    {
+      "time": 280,
+      "label": "Afterglow",
+      "motif": "orbit",
+      "transition": 12,
+      "intensity": 0.68,
+      "variation": 0.6
+    },
+    {
+      "time": 300,
+      "label": "Still moving",
+      "motif": "bloom",
+      "transition": 12,
+      "intensity": 0.75,
+      "variation": 0.7
+    },
+    {
+      "time": 344,
+      "label": "Drifting home",
+      "motif": "orbit",
+      "transition": 16,
+      "intensity": 0.35,
+      "variation": 0.8
+    },
+    {
+      "time": 369,
+      "label": "Last light",
+      "motif": "current",
+      "transition": 8,
+      "intensity": 0.05,
+      "variation": 0.85
+    }
+  ]
+}

@@ -1,4 +1,5 @@
 node_modules
+.git
 frontend/dist
 .research
 .venv
@@ -10,3 +11,6 @@ frontend/playwright-report
 frontend/test-results
 htmlcov
 coverage.xml
+visualizer/dist
+visualizer/public/local
+visualizer/songs/*.analysis.json

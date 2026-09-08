@@ -1,0 +1,73 @@
+{
+  "firstHash": "28f35be3f2862b7f29c6a6a5516f7172ee385e9158c7ea601a3e1072adbd3a07",
+  "pausedHash": "28f35be3f2862b7f29c6a6a5516f7172ee385e9158c7ea601a3e1072adbd3a07",
+  "secondHash": "28f35be3f2862b7f29c6a6a5516f7172ee385e9158c7ea601a3e1072adbd3a07",
+  "otherHash": "ad9db2f147390c8235f72a11b0f9bca65aa7b4f6ec9594ee12d5ce3d612910cc",
+  "restartedHash": "28f35be3f2862b7f29c6a6a5516f7172ee385e9158c7ea601a3e1072adbd3a07",
+  "exactClock": true,
+  "seeks": [
+    {
+      "position": 222,
+      "frames": 120,
+      "ms": 1246.5999999996275,
+      "hash": "c152b425bafcb690f45f1a551cccb762716937a0a009849839a89cdc85612877",
+      "state": {
+        "label": "The return",
+        "motif": "bloom",
+        "orbit": 0.15625,
+        "current": 0,
+        "bloom": 0.84375,
+        "intensity": 0.871875,
+        "variation": 0.534375,
+        "energy": 0.9578014956430864,
+        "onset": 0.6237252147426721,
+        "texture": 0.7660173115945708,
+        "progress": 0.5827880633453872
+      }
+    },
+    {
+      "position": 164,
+      "frames": 120,
+      "ms": 1225.2000000011176,
+      "hash": "762318ee0cab9d6e7ee218c8c8082a557dc4fbd4e470affdc40a2172593a6fc5",
+      "state": {
+        "label": "Below the surface",
+        "motif": "current",
+        "orbit": 0,
+        "current": 1,
+        "bloom": 0,
+        "intensity": 0.18000000000000005,
+        "variation": 0.35,
+        "energy": 0.659899049492355,
+        "onset": 0.1752485140703391,
+        "texture": 0.07844064587991771,
+        "progress": 0.43052811886776354
+      }
+    },
+    {
+      "position": 222,
+      "frames": 120,
+      "ms": 1264.5,
+      "hash": "c152b425bafcb690f45f1a551cccb762716937a0a009849839a89cdc85612877",
+      "state": {
+        "label": "The return",
+        "motif": "bloom",
+        "orbit": 0.15625,
+        "current": 0,
+        "bloom": 0.84375,
+        "intensity": 0.871875,
+        "variation": 0.534375,
+        "energy": 0.9578014956430864,
+        "onset": 0.6237252147426721,
+        "texture": 0.7660173115945708,
+        "progress": 0.5827880633453872
+      }
+    }
+  ],
+  "jumped": true,
+  "landed": true,
+  "aborted": true,
+  "noLeakedRealms": true,
+  "hostUnchanged": true,
+  "renderSubmissionP95": 11.299999998882413
+}

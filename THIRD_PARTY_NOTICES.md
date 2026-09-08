@@ -19,3 +19,9 @@ Before publishing binary/container releases, complete the dependency and source-
 Deezer, YouTube, Apple/iTunes, MusicBrainz, LRCLIB and Navidrome names identify integrations or external services. They do not imply affiliation or endorsement. Their APIs, data, trademarks and media have their own terms and rights.
 
 Fixtures and screenshots contributed to the repository must be generated or used with permission, with provenance recorded where needed. Do not include an audio recording simply because its title appears in a test. See [Terms](TERMS.md) for responsible use.
+
+## Independent visualizer preview
+
+The `visualizer/` package pins Butterchurn 3.0.0-beta.5 and butterchurn-presets 2.4.7. Its [distributed notice](visualizer/public/THIRD_PARTY_NOTICES.txt) preserves the upstream MIT notice and preset authors. Dive's authored study adapts Sherwin Maxawow by Flexi, martin and geiss. The separate Witchcraft audition credits martin. Engine use remains an experiment and does not establish MilkDrop3 shader compatibility.
+
+The preview's selected recording is Ben Böhmer's “Dive (Extended Mix)” from the user's local library. Audio stays under the ignored `visualizer/public/local/` directory. The tracked analysis stores its recording hash, timing and numerical features. Playback clips are generated locally and retain the recording's rights.

@@ -1,0 +1,132 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#090b10" />
+    <title>Musimo • Visualizer studio</title>
+  </head>
+  <body>
+    <main>
+      <header>
+        <a class="brand" href="/">musimo<span>visualizer studio</span></a>
+        <span class="stage"><i></i> Independent preview · 01</span>
+      </header>
+      <section class="viewer" aria-label="Music visualization">
+        <canvas id="visual" aria-label="Live Butterchurn output"></canvas>
+        <div class="viewer-top">
+          <span>DIVE · LIQUID STUDY</span>
+          <div class="view-actions">
+            <button id="record" title="Record 20 seconds of playback" disabled>Record clip</button
+            ><button id="fullscreen" title="Full screen">Expand ↗</button>
+          </div>
+        </div>
+        <div class="welcome" id="welcome">
+          <span class="eyebrow">THE FIRST STUDY</span>
+          <h1>A place for<br />music to unfold.</h1>
+          <p>One recording. Light, detail and room to breathe.</p>
+          <button id="start" disabled>Preparing recording…</button>
+        </div>
+        <div class="viewer-bottom">
+          <span id="render-state">Preparing the first frame</span
+          ><span id="quality-label">1080p</span>
+        </div>
+      </section>
+      <section class="transport" aria-label="Playback">
+        <div class="track">
+          <span class="eyebrow" id="fixture-label">ONE-SONG STUDY</span>
+          <h2 id="title">Dive (Extended Mix)</h2>
+          <p id="artist">Ben Böhmer · Dive EP</p>
+        </div>
+        <div class="player">
+          <div class="player-buttons">
+            <button id="restart" aria-label="Restart recording" disabled>↺</button
+            ><button id="play" class="play" aria-label="Play" disabled>▶</button
+            ><span id="status" role="status">Loading audio and renderer…</span>
+          </div>
+          <div class="scrub">
+            <time id="position">0:00</time
+            ><input
+              id="seek"
+              type="range"
+              min="0"
+              max="1"
+              step="0.1"
+              value="0"
+              aria-label="Playback position"
+              disabled
+            /><time id="duration">0:00</time>
+          </div>
+        </div>
+        <div class="volume">
+          <label for="volume">Volume</label
+          ><input id="volume" type="range" min="0" max="1" step="0.01" value="0.65" />
+        </div>
+      </section>
+      <section id="journey" class="journey" aria-label="Song map">
+        <div class="map-heading">
+          <span class="eyebrow">DIVE · PROVISIONAL SONG MAP</span
+          ><span id="current-cue">First light</span>
+        </div>
+        <svg
+          id="waveform"
+          viewBox="0 0 1200 44"
+          preserveAspectRatio="none"
+          role="img"
+          aria-label="Measured volume across the complete recording"
+        ></svg>
+        <div id="cue-list" class="cue-list"></div>
+      </section>
+      <section id="capture" class="capture" hidden aria-label="Playback recording">
+        <div>
+          <span class="eyebrow">ACTUAL PLAYBACK</span
+          ><a id="save-capture" download="dive-visualizer.webm">Save clip ↓</a>
+        </div>
+        <video id="recording" controls playsinline preload="metadata"></video>
+      </section>
+      <section class="studio" aria-label="Study settings">
+        <div>
+          <span class="eyebrow">THE SONG'S VISUAL JOURNEY</span>
+          <p>
+            A slow-moving family of forms, opening, dissolving and returning with Dive. The song map
+            is ready for your review.
+          </p>
+        </div>
+        <label
+          >Visual study<select id="preset">
+            <option value="dive">Dive · liquid journey</option>
+            <option value="witchcraft">Witchcraft reloaded</option>
+            <option value="sherwin">Sherwin Maxawow</option>
+          </select></label
+        >
+        <label
+          >Render size<select id="quality">
+            <option value="1920">1080p</option>
+            <option value="1280">720p</option>
+            <option value="960">540p</option>
+          </select></label
+        >
+        <label class="file-button"
+          >Open your song<input id="file" type="file" accept="audio/*"
+        /></label>
+      </section>
+      <details class="measurements">
+        <summary>Playback checks</summary>
+        <p id="metrics">Render measurements appear during playback.</p>
+        <p>Seeking rebuilds the visual history. The song map is awaiting review.</p>
+      </details>
+      <footer>
+        <span id="credit">Visual: martin · Butterchurn 3.0.0-beta.5</span
+        ><a
+          href="http://127.0.0.1:8765/library/albums/6dyk46CcyFRoIcNTMw4BPQ"
+          id="source"
+          target="_blank"
+          rel="noreferrer"
+          >Open album in Musimo ↗</a
+        >
+      </footer>
+      <audio id="audio" preload="auto"></audio>
+    </main>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

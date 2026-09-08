@@ -1,0 +1,15 @@
+{
+  "singleStart": true,
+  "rebuildStopsCapture": {
+    "stopped": true,
+    "audioContinues": true,
+    "hasClip": true
+  },
+  "production": {
+    "realms": 1,
+    "width": 1920,
+    "ready": true,
+    "rendererAsset": "http://127.0.0.1:58145/assets/butterchurn.min-DiLGrKSZ.js"
+  },
+  "errors": []
+}
