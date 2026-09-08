@@ -51,6 +51,7 @@ class Navidrome:
             raise NavidromeError("Navidrome credentials are invalid")
         salt = secrets.token_hex(12)
         # Subsonic specifies MD5(password + salt) for its wire token, not password storage.
+        # codeql[py/weak-sensitive-data-hashing]
         token = hashlib.md5((password + salt).encode(), usedforsecurity=False).hexdigest()
         return {"u": username, "t": token, "s": salt, "v": "1.16.1", "c": "Musimo", "f": "json"}
 
