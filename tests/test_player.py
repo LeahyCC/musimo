@@ -358,6 +358,52 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual((await client.get("/api/library/albums")).status_code, 503)
             store.close()
 
+    async def test_linked_playlist_route_creates_and_reuses_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+            requests = {"created": 0}
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                path = request.url.path
+                if path.endswith("/ping"):
+                    return subsonic(serverVersion="0.63.0")
+                if path.endswith("/getPlaylists"):
+                    return subsonic(playlists={"playlist": []})
+                if path.endswith("/createPlaylist"):
+                    requests["created"] += 1
+                    return subsonic(
+                        playlist={"id": f"liked-{requests['created']}", "name": "Liked", "entry": []}
+                    )
+                if path.endswith("/getPlaylist"):
+                    return subsonic(
+                        playlist={"id": request.url.params.get("id"), "name": "Liked", "entry": []}
+                    )
+                return subsonic()
+
+            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    app = FastAPI()
+                    install_player_routes(app, lambda: navidrome)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app), base_url="http://test"
+                    ) as client:
+                        first = (await client.get("/api/library/playlists/liked")).json()
+                        second = (await client.get("/api/library/playlists/liked")).json()
+                        self.assertEqual(first["id"], second["id"])
+                        self.assertEqual(first["name"], "Liked")
+                        self.assertEqual(requests["created"], 1)
+            store.close()
+
     def test_navidrome_url_rejects_credentials_and_non_http_schemes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "musimo.sqlite3")

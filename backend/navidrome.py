@@ -19,6 +19,8 @@ class NavidromeError(RuntimeError):
 
 
 LRC_LINE = re.compile(r"^\[(\d+):(\d+(?:\.\d+)?)\](.*)$")
+LIKED_PLAYLIST_KEY = "liked"
+LIKED_PLAYLIST_NAME = "Liked"
 
 
 def lyric_lines(synced: str, plain: str) -> tuple[list[dict[str, object]], bool]:
@@ -243,6 +245,26 @@ class Navidrome:
         container = body.get("playlists")
         items = container.get("playlist", []) if isinstance(container, dict) else []
         return [cast(dict[str, object], item) for item in items if isinstance(item, dict)]
+
+    async def linked_playlist(self) -> dict[str, object]:
+        playlist_id = self.store.linked_playlist(LIKED_PLAYLIST_KEY)
+        if playlist_id:
+            try:
+                return await self.playlist(playlist_id)
+            except NavidromeError:
+                self.store.clear_linked_playlist(LIKED_PLAYLIST_KEY)
+
+        for playlist in await self.playlists():
+            playlist_id = playlist.get("id")
+            if str(playlist.get("name", "")) == LIKED_PLAYLIST_NAME and isinstance(playlist_id, str):
+                self.store.set_linked_playlist(LIKED_PLAYLIST_KEY, playlist_id)
+                return await self.playlist(playlist_id)
+
+        playlist = await self.create_playlist(LIKED_PLAYLIST_NAME, [])
+        playlist_id = playlist.get("id")
+        if isinstance(playlist_id, str) and playlist_id:
+            self.store.set_linked_playlist(LIKED_PLAYLIST_KEY, playlist_id)
+        return playlist
 
     async def album(self, album_id: str) -> dict[str, object]:
         body = await self.response("getAlbum", {"id": album_id})

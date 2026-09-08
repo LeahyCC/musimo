@@ -83,6 +83,10 @@ class Store:
                 blocking_failures INTEGER NOT NULL DEFAULT 0
             );
             INSERT OR IGNORE INTO queue_control(id) VALUES (1);
+            CREATE TABLE IF NOT EXISTS linked_playlists (
+                key TEXT PRIMARY KEY,
+                playlist_id TEXT NOT NULL
+            );
             PRAGMA user_version=3;
             COMMIT;
         """)
@@ -149,6 +153,33 @@ class Store:
         event_id = int(cur.lastrowid or 0)
         self.db.execute("DELETE FROM job_events WHERE id <= ?", (event_id - RETAIN_EVENTS,))
         return event_id
+
+    def linked_playlist(self, key: str) -> str | None:
+        with self.lock:
+            row = self.db.execute(
+                "SELECT playlist_id FROM linked_playlists WHERE key=?", (key,)
+            ).fetchone()
+            return str(row[0]) if row else None
+
+    def set_linked_playlist(self, key: str, playlist_id: str) -> None:
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                self.db.execute(
+                    """
+                    INSERT INTO linked_playlists VALUES (?, ?)
+                    ON CONFLICT(key) DO UPDATE SET playlist_id=excluded.playlist_id
+                    """,
+                    (key, playlist_id),
+                )
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def clear_linked_playlist(self, key: str) -> None:
+        with self.lock:
+            self.db.execute("DELETE FROM linked_playlists WHERE key=?", (key,))
 
     def update(self, changes: dict[str, object]) -> dict[str, object]:
         with self.lock:
