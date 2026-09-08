@@ -379,7 +379,11 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 if path.endswith("/createPlaylist"):
                     requests["created"] += 1
                     return subsonic(
-                        playlist={"id": f"liked-{requests['created']}", "name": "Liked", "entry": []}
+                        playlist={
+                            "id": f"liked-{requests['created']}",
+                            "name": "Liked",
+                            "entry": [],
+                        }
                     )
                 if path.endswith("/getPlaylist"):
                     return subsonic(
