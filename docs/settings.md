@@ -20,10 +20,10 @@ Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGI
 - `destination`: a writable root already listed in `MUSIMO_LIBRARY_ROOTS`, default `/music`.
 - `naming_template`: relative path tokens, default `{album_artist}/{album}/{track:02d} - {title}`.
 - `navidrome_mode`: `off`, `watcher` or `api`, default `off`.
-- `navidrome_url`: server URL for API scanning.
+- `navidrome_url`: server URL for API scanning and library playback. It must be HTTP or HTTPS and cannot contain credentials, a query or fragment.
 - `navidrome_library_id`: positive library number, default 1.
 
-See [downloads](downloads.md) for staging, formats, metadata and scan credentials.
+See [downloads](downloads.md) for staging, formats and metadata. See [library player](player.md) for playback and shared Navidrome credentials.
 
 ## Later phases
 
@@ -31,7 +31,7 @@ Destination selection, naming templates and Navidrome watcher/API modes are impl
 
 Settings now includes a library scan panel with live counts, elapsed time, rescan and cancel. A cancelled scan retains the prior index.
 
-The diagnostics export contains runtime versions, mount paths, library scan status, source test status and recent events. Navidrome API credentials may be mounted as a separate JSON file. ZIP log export and a secret-redaction layer are hardening tasks.
+The diagnostics export contains runtime versions, mount paths, library scan status, source test status and recent events. Navidrome API credentials are mounted as a separate JSON file and are shared by scan and player calls. ZIP log export and a secret-redaction layer are hardening tasks.
 
 ## Recent activity
 

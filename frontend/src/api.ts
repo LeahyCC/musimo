@@ -114,6 +114,94 @@ export const librarySchema = z.object({
   roots: z.array(z.string()),
 })
 
+export const libraryTrackSchema = z.object({
+  id: z.string(),
+  title: z.string().default('Unknown track'),
+  artist: z.string().default('Unknown artist'),
+  artistId: z.string().optional(),
+  album: z.string().default(''),
+  albumId: z.string().optional(),
+  coverArt: z.string().optional(),
+  duration: z.number().default(0),
+  track: z.number().optional(),
+  year: z.number().optional(),
+  genre: z.string().optional(),
+  created: z.string().optional(),
+})
+export type LibraryTrack = z.infer<typeof libraryTrackSchema>
+export const playerQueueSchema = z.object({
+  current: z.string().default(''),
+  position: z.number().default(0),
+  entry: z.array(libraryTrackSchema).default([]),
+})
+
+export const libraryAlbumSchema = z.object({
+  id: z.string(),
+  name: z.string().default('Unknown album'),
+  artist: z.string().default('Unknown artist'),
+  artistId: z.string().optional(),
+  coverArt: z.string().optional(),
+  songCount: z.number().default(0),
+  year: z.number().optional(),
+  genre: z.string().optional(),
+  created: z.string().optional(),
+})
+export type LibraryAlbum = z.infer<typeof libraryAlbumSchema>
+export const libraryArtistSchema = z.object({
+  id: z.string(),
+  name: z.string().default('Unknown artist'),
+  coverArt: z.string().optional(),
+  albumCount: z.number().optional(),
+})
+export type LibraryArtist = z.infer<typeof libraryArtistSchema>
+export const libraryPlaylistSchema = z.object({
+  id: z.string(),
+  name: z.string().default('Untitled playlist'),
+  coverArt: z.string().optional(),
+  songCount: z.number().optional(),
+  duration: z.number().optional(),
+})
+export type LibraryPlaylist = z.infer<typeof libraryPlaylistSchema>
+const page = <T extends z.ZodType>(item: T) =>
+  z.object({ items: z.array(item), next_offset: z.number().nullable().optional() })
+export const libraryAlbumsSchema = page(libraryAlbumSchema)
+export const libraryArtistsSchema = page(libraryArtistSchema)
+export const libraryTracksSchema = page(libraryTrackSchema)
+export const libraryPlaylistsSchema = page(libraryPlaylistSchema)
+export const libraryAlbumDetailSchema = libraryAlbumSchema.extend({
+  song: z.array(libraryTrackSchema).default([]),
+})
+export const libraryArtistDetailSchema = libraryArtistSchema.extend({
+  album: z.array(libraryAlbumSchema).default([]),
+})
+export const libraryPlaylistDetailSchema = libraryPlaylistSchema.extend({
+  entry: z.array(libraryTrackSchema).default([]),
+})
+export const emptySchema = z.null()
+export const playerCapabilitiesSchema = z.object({
+  configured: z.boolean(),
+  available: z.boolean(),
+  version: z.string(),
+  extensions: z.array(z.string()),
+  sonic_similarity: z.boolean(),
+  detail: z.string(),
+})
+export const lyricsSchema = z.object({
+  items: z.array(
+    z.object({
+      displayArtist: z.string().optional(),
+      displayTitle: z.string().optional(),
+      synced: z.boolean().optional(),
+      line: z
+        .array(z.object({ start: z.number().optional(), value: z.string().default('') }))
+        .default([]),
+    }),
+  ),
+})
+export const sonicMatchesSchema = z.object({
+  items: z.array(z.object({ entry: libraryTrackSchema, similarity: z.number().optional() })),
+})
+
 const field = <T extends z.ZodType>(value: T) =>
   z.object({ value, origin: z.string(), locked: z.boolean() })
 
@@ -182,7 +270,7 @@ export const snapshotSchema = z.object({
 
 export async function api<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/${path}`, init)
-  const data: unknown = await response.json()
+  const data: unknown = response.status === 204 ? null : await response.json()
   if (!response.ok) {
     const problem = z.object({ detail: z.string() }).safeParse(data)
     throw new Error(problem.success ? problem.data.detail : `Request failed (${response.status})`)

@@ -34,7 +34,9 @@ Search and library features:
 - Album pages and artist discographies grouped by catalog release type.
 - Automatic album coverage checks, with a count and progress bar.
 - A persistent index of audio tags. Search does not reopen music files to check coverage.
-- One preview player across navigation, with song/artist links, seek, volume, mute, restart and close.
+- One player across navigation for catalog previews and full Navidrome tracks.
+- Navidrome library browsing for albums, artists, tracks and playlists, with playlist CRUD, a saved queue, media controls, lyrics, scrobbling, shuffle and repeat.
+- Optional AudioMuse radio through Navidrome's `sonicSimilarity` extension.
 - Background scans, scan cancellation, native or polling watchers and diagnostics.
 - A bounded activity feed in Settings and Diagnostics, with persistent clearing.
 
@@ -206,7 +208,7 @@ The backend supports three modes:
 
 Navidrome must be reachable **from inside the container**. There, `localhost` means Musimo, not the host or another container.
 
-API mode reads a mounted JSON credentials file identified by `MUSIMO_NAVIDROME_CREDENTIALS_FILE`. It contains `username` and `password`. Store it outside the checkout, restrict permissions, mount it read-only and prefer a dedicated account. Configure `navidrome_url` and `navidrome_library_id` for the actual server. Never paste credentials into issues or screenshots.
+API mode and the player foundation read a mounted JSON credentials file identified by `MUSIMO_NAVIDROME_CREDENTIALS_FILE`. It contains `username` and `password`. Store it outside the checkout, restrict permissions, mount it read-only and prefer a dedicated account. Configure `navidrome_url` and `navidrome_library_id` for the actual server. Never paste credentials into issues or screenshots. See [library player](docs/player.md).
 
 A file can save successfully while a scan request fails. Read its warning and scan Navidrome separately. Watcher-mode visibility has been verified locally with a public-domain fixture. API mode has fixture coverage but still needs a live credentialed check against the chosen server.
 
@@ -376,6 +378,7 @@ API groups:
 - Health/settings: `/api/health`, `/api/settings`, `/api/snapshot`.
 - Search: `/api/search`, `/api/albums/{id}`, `/api/artists/{id}`, `/api/preview/{id}`.
 - Index: `/api/library`, `/api/library/scan`, `/api/library/cancel`.
+- Player foundation: `/api/player/capabilities`, Navidrome-backed `/api/library/*`, `/api/player/stream/{id}` and `/api/player/art/{id}`.
 - Jobs/batches: `/api/jobs`, job commands, `/api/queue/{action}`, `/api/history`, `/api/batches`.
 - Activity: GET/DELETE `/api/activity`; deletion takes the observed `through` cursor.
 - Operations: `/api/events`, `/api/diagnostics`, catalog probe and export.
