@@ -32,6 +32,7 @@ type Playback = {
   repeat: RepeatMode
   play: (track: MusicResult) => void
   playLibrary: (tracks: LibraryTrack[], index?: number) => void
+  shuffleLibrary: (tracks: LibraryTrack[]) => void
   next: () => void
   previous: () => void
 }
@@ -47,6 +48,7 @@ const PlayerContext = createContext<Playback>({
   repeat: 'off',
   play: () => undefined,
   playLibrary: () => undefined,
+  shuffleLibrary: () => undefined,
   next: () => undefined,
   previous: () => undefined,
 })
@@ -180,6 +182,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     queueRef.current = items
     setQueue(items)
     loadLibrary(Math.max(0, Math.min(index, items.length - 1)))
+  }
+
+  function shuffleLibrary(items: LibraryTrack[]) {
+    if (!items.length) return
+    setShuffle(true)
+    playLibrary(items, Math.floor(Math.random() * items.length))
   }
 
   function toggle() {
@@ -339,6 +347,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         repeat,
         play,
         playLibrary,
+        shuffleLibrary,
         next: () => next(),
         previous,
       }}
