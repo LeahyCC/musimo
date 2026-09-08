@@ -164,7 +164,7 @@ Read-only mounts contribute to coverage but cannot receive downloads. Diagnostic
 
 Enter at least two characters. Search waits about 200 ms after typing and cancels superseded browser requests. Top requests tracks, albums and artists independently.
 
-Filters and sorting apply to **loaded results**, not the entire provider catalog. Load more to expand the set. Unknown years cannot satisfy a year filter. Duration and preview filters apply only to tracks. Long track lists are virtualized; album and artist card grids scroll with the page.
+Filters and sorting apply to **loaded results**, not the entire provider catalog. More results load as you scroll. Unknown years cannot satisfy a year filter. Duration and preview filters apply only to tracks. Long track lists are virtualized; album and artist card grids scroll with the page.
 
 Cards automatically check album details against the local index. Loading shows checking or estimated coverage; complete track lists permit verified counts. Incomplete provider lists stay partial. Failed checks show Retry coverage.
 
