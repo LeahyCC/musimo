@@ -1,8 +1,25 @@
 from typing import Literal
+from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from backend.naming import Naming
+
+
+def clean_navidrome_url(value: str) -> str:
+    if not value:
+        return value
+    parsed = urlsplit(value)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError("Use a plain http or https Navidrome URL without credentials or a query")
+    return value.rstrip("/")
 
 
 class Settings(BaseModel):
@@ -25,6 +42,11 @@ class Settings(BaseModel):
     def template(cls, value: str) -> str:
         return Naming.validate(value)
 
+    @field_validator("navidrome_url")
+    @classmethod
+    def navidrome_address(cls, value: str) -> str:
+        return clean_navidrome_url(value)
+
 
 class SettingsPatch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -40,3 +62,8 @@ class SettingsPatch(BaseModel):
     navidrome_url: str | None = None
     navidrome_mode: Literal["off", "watcher", "api"] | None = None
     navidrome_library_id: int | None = Field(default=None, ge=1)
+
+    @field_validator("navidrome_url")
+    @classmethod
+    def navidrome_address(cls, value: str | None) -> str | None:
+        return clean_navidrome_url(value) if value is not None else None
