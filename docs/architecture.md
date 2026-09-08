@@ -10,6 +10,8 @@ The main image builds the frontend, serves it from FastAPI, and includes FFmpeg,
 
 ## Storage
 
+The [music visualizer](visualizer.md) adds a lazy Three.js renderer and a player-owned Web Audio graph. A separate, bounded Python process uses FFmpeg and librosa for song maps. Its private SQLite index and compressed features live under `visualizer/` in the data directory; its work queue is independent of downloads. Playback never waits for analysis.
+
 Phase 1 creates `settings` and `job_events`. Schema versions use SQLite user_version. One writer connection is protected by a lock; write transactions use BEGIN IMMEDIATE. Snapshot data and event cursor are read under the same lock. Settings and source-health mutations commit with their corresponding events. Library scan status also commits with its event; file-index writes are grouped into throttled progress notifications. This prevents missing state between a snapshot and SSE subscription.
 
 Phase 2 adds `library_roots`, `library_files`, `library_state`, FTS5 and `search_cache`. Preserve multiple paths for the same recording. Cache by Deezer request path, query, result kind and page; L1 LRU with TTL, L2 SQLite. Local filters and sort operate on loaded provider results, so they do not create separate upstream cache entries. No market selection is implemented. Use lightweight batched ownership joins, never file reads from result rendering.

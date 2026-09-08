@@ -30,6 +30,7 @@ from backend.navidrome import Navidrome
 from backend.player_api import install_player_routes
 from backend.search_api import install_search_routes
 from backend.store import LockedSetting, Store
+from backend.visualizer_api import VisualizerAnalysis, install_visualizer_routes
 
 VERSION = "0.3.0"
 
@@ -69,10 +70,11 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     library: Library
     downloads: Downloads
     navidrome: Navidrome
+    visualizer: VisualizerAnalysis
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        nonlocal store, versions, catalog, library, downloads, navidrome
+        nonlocal store, versions, catalog, library, downloads, navidrome, visualizer
         store = Store(data / "musimo.sqlite3")
         versions = await asyncio.to_thread(runtime_versions)
         async with (
@@ -87,6 +89,8 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         ):
             catalog = Catalog(store, client)
             navidrome = Navidrome(store, navidrome_http)
+            visualizer = VisualizerAnalysis(data, lambda: navidrome)
+            visualizer.start()
             roots = [
                 Path(root).resolve()
                 for root in os.getenv("MUSIMO_LIBRARY_ROOTS", "/music").split(os.pathsep)
@@ -99,6 +103,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             try:
                 yield
             finally:
+                await visualizer.close()
                 await downloads.close()
                 await library.close()
                 store.close()
@@ -109,6 +114,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_download_routes(app, lambda: downloads)
     install_artist_download_routes(app, lambda: downloads)
     install_player_routes(app, lambda: navidrome)
+    install_visualizer_routes(app, lambda: visualizer)
 
     @app.middleware("http")
     async def same_origin(request: Request, call_next: RequestResponseEndpoint) -> Response:

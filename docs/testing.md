@@ -30,6 +30,10 @@ Coverage includes branches and every backend module, including unexecuted module
 
 ## Browser and container checks
 
+Visualizer checks are documented in [Music visualizer](visualizer.md). They use generated sound and isolated API responses, and can run against the hot development preview. They cover real audio playback through entry, seek, pause, saved settings and repeated entry, plus analysis failure. They do not establish instrument recognition, calibrated beat accuracy or display latency.
+
+CI runs the director tests in the frontend job and a separate visualizer suite after the main browser suite. The visualizer suite covers Chromium, a mobile viewport and forced WebGL. Its traces and JUnit output are stored under `frontend/test-results/` with the other browser artifacts.
+
 ```sh
 npx --prefix frontend playwright install --with-deps chromium firefox webkit
 docker compose -f compose.ci.yaml -p musimo-ci up -d --build --wait --wait-timeout 120

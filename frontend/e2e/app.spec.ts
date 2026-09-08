@@ -44,10 +44,13 @@ async function catalogFixtures(page: Page) {
   )
 }
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, info) => {
   // A provider outage or remote asset must never determine a browser test result.
   await page.route('**/*', async (route) => {
-    if (new URL(route.request().url()).origin !== 'http://127.0.0.1:18765') {
+    if (
+      new URL(route.request().url()).origin !==
+      new URL(info.project.use.baseURL ?? 'http://127.0.0.1:18765').origin
+    ) {
       await route.abort()
     } else {
       await route.fallback()
@@ -229,6 +232,13 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
 })
 
 test('preview playback, volume and navigation remain usable', async ({ page }) => {
+  await page.route('**/api/preview/101/stream*', async (route) => {
+    const response = await route.fetch({
+      url: new URL('/assets/e2e-silence.wav', route.request().url()).href,
+    })
+    await route.fulfill({ response })
+  })
+
   await page.route('**/api/preview/101?*', (route) =>
     route.fulfill({
       json: { url: '/assets/e2e-silence.wav', source: 'Generated' },

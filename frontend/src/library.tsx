@@ -989,16 +989,21 @@ export function NowPlayingPage() {
             {track.artist}
             {track.album ? ` · ${track.album}` : ''}
           </p>
-          {capabilities.data?.sonic_similarity && (
-            <button
-              className="button primary"
-              onClick={() => audioMuse.mutate()}
-              disabled={audioMuse.isPending}
-            >
-              <RadioIcon size={16} />{' '}
-              {audioMuse.isPending ? 'Building radio…' : 'Start AudioMuse radio'}
+          <div className="now-actions">
+            {capabilities.data?.sonic_similarity && (
+              <button
+                className="button primary"
+                onClick={() => audioMuse.mutate()}
+                disabled={audioMuse.isPending}
+              >
+                <RadioIcon size={16} />{' '}
+                {audioMuse.isPending ? 'Building radio…' : 'Start AudioMuse radio'}
+              </button>
+            )}
+            <button className="button primary now-visualize" onClick={player.visualize}>
+              <Disc3 size={18} /> Visualize
             </button>
-          )}
+          </div>
           {audioMuse.isError && <p className="error">{audioMuse.error.message}</p>}
         </div>
       </section>

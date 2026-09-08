@@ -2,6 +2,7 @@ import asyncio
 import time
 from collections.abc import Callable
 from typing import Literal
+from urllib.parse import urljoin, urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Query, Response
@@ -207,6 +208,48 @@ def install_search_routes(
                     if url:
                         return {"url": url, "source": "iTunes"}
         return {"url": "", "source": "No preview"}
+
+    @app.get("/api/preview/{track_id}/stream")
+    async def preview_stream(track_id: int, fallback: bool = False) -> Response:
+        # Web Audio silences cross-origin media without CORS, including later previews
+        # on a previously connected element. Resolve IDs here instead of proxying user URLs.
+        resolved = await preview(track_id, fallback)
+        url = resolved["url"]
+        if not url:
+            raise HTTPException(404, "No preview available")
+        try:
+            async with (
+                asyncio.timeout(25),
+                httpx.AsyncClient(
+                    timeout=httpx.Timeout(15, connect=5), follow_redirects=False
+                ) as client,
+            ):
+                for _ in range(4):
+                    parsed = urlsplit(url)
+                    if (
+                        not safe_media(url)
+                        or parsed.username
+                        or parsed.password
+                        or parsed.port not in (None, 443)
+                    ):
+                        raise HTTPException(502, "Preview source is unavailable")
+                    async with client.stream("GET", url) as response:
+                        if response.is_redirect:
+                            url = urljoin(url, response.headers.get("location", ""))
+                            continue
+                        response.raise_for_status()
+                        mime = response.headers.get("content-type", "audio/mpeg").split(";")[0]
+                        if not (mime.startswith("audio/") or mime == "application/octet-stream"):
+                            raise HTTPException(502, "Preview source did not return audio")
+                        content = bytearray()
+                        async for chunk in response.aiter_bytes():
+                            if len(content) + len(chunk) > 10 * 1024 * 1024:
+                                raise HTTPException(502, "Preview is too large")
+                            content.extend(chunk)
+                        return Response(bytes(content), media_type=mime)
+        except (httpx.HTTPError, TimeoutError, ValueError) as exc:
+            raise HTTPException(502, "Preview could not be loaded") from exc
+        raise HTTPException(502, "Preview source redirected too many times")
 
     @app.get("/api/library")
     async def library_status() -> dict[str, object]:
