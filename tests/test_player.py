@@ -110,7 +110,11 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         return subsonic(
                             status="failed",
                             error={
-                                "message": "plugin call failed: AudioMuse-AI returned status 503"
+                                "message": (
+                                    "plugin call failed: AudioMuse-AI HTTP request failed: "
+                                    'Get "http://127.0.0.1:8000/api/similar_tracks": '
+                                    "connectex: No connection could be made"
+                                )
                             },
                         )
                     return subsonic(
@@ -288,7 +292,11 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         )
                         radio_error = await client.get("/api/player/radio/radio-not-ready?count=12")
                         self.assertEqual(radio_error.status_code, 503)
-                        self.assertIn("still analysing", radio_error.json()["detail"])
+                        self.assertEqual(
+                            radio_error.json()["detail"],
+                            "AudioMuse is not ready. Check that it is running, then wait for its "
+                            "similarity index to finish building.",
+                        )
                         audio = await client.get(
                             "/api/player/stream/song-1", headers={"Range": "bytes=2-5"}
                         )
