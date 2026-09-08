@@ -1,0 +1,32 @@
+{
+  "measured_at": "2026-09-07T23:25:21.9645782Z",
+  "method": "Read-only sampling of the live container with zero active jobs",
+  "container": "musimo-musimo-1",
+  "watcher": {
+    "mode": "poll",
+    "interval_seconds": 60,
+    "indexed_files_checked_after_sample": 3681
+  },
+  "cpu": {
+    "duration_seconds": 737.9,
+    "samples": 120,
+    "nominal_interval_seconds": 5,
+    "mean_percent_of_one_core": 2.349,
+    "p95_percent_of_one_core": 12.56,
+    "max_percent_of_one_core": 21.26,
+    "under_one_percent_target": false
+  },
+  "memory": {
+    "docker_stats_mean_mib": 109.8,
+    "docker_stats_p95_mib": 117.6,
+    "docker_stats_max_mib": 117.7,
+    "cgroup_anon_duration_seconds": 308.2,
+    "cgroup_anon_samples": 60,
+    "cgroup_anon_mean_mib": 82.77,
+    "cgroup_anon_p95_mib": 82.97,
+    "cgroup_anon_max_mib": 82.98,
+    "under_150_mib_target": true
+  },
+  "result": "CPU FAIL; MEMORY PASS",
+  "notes": "Sampling and API checks were read-only. No deployment, service restart, settings change or library mutation was performed. Docker stats calls add about 1.2 seconds to each nominal five-second CPU interval."
+}

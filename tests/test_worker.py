@@ -2,6 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 from backend.job_models import Job, Metadata
@@ -21,22 +22,37 @@ class WorkerTests(unittest.TestCase):
                 meta=Metadata(id=1, title="Test song", artist="Test artist", duration=180),
             )
             (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
+            events: list[dict[str, object]] = []
+
+            def record(kind: str, **values: object) -> None:
+                events.append({"kind": kind, **values})
+
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.emit") as emit,
+                patch("backend.worker.emit", side_effect=record),
                 patch("backend.worker.Tagger") as tagger,
             ):
                 downloader.return_value.extract_info.return_value = {
                     "entries": [
                         {"id": "https://untrusted.test", "title": "Test song", "duration": 180},
                         {"id": "abcdefghijk", "title": "Unrelated song", "duration": 900},
+                        {
+                            "id": "cover000001",
+                            "title": "Test song cover",
+                            "channel": "Cover Band",
+                            "duration": 180,
+                        },
                     ]
                 }
                 main()
                 downloader.return_value.extract_info.assert_called_once()
                 self.assertFalse(downloader.return_value.extract_info.call_args.kwargs["download"])
-                self.assertEqual(emit.call_args.kwargs["code"], "NO_MATCH")
+                self.assertEqual(events[-1]["code"], "NO_MATCH")
+                self.assertEqual(events[-2]["kind"], "candidates")
+                self.assertEqual(events[-2]["selected"], "")
+                items = cast(list[dict[str, object]], events[-2]["items"])
+                self.assertEqual(items[0]["id"], "cover000001")
                 tagger.assert_not_called()
 
     def test_logs_redact_urls_and_bound_output(self) -> None:

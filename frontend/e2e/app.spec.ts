@@ -259,8 +259,9 @@ test('artist review counts selections, excludes failed albums and retries submis
     }),
   )
 
-  await page.route('**/api/artists/7/download-plan', (route) =>
-    route.fulfill({
+  await page.route('**/api/artists/7/download-plan*', (route) => {
+    const allMusic = new URL(route.request().url()).searchParams.get('all_music') === 'true'
+    return route.fulfill({
       json: {
         albums: [
           {
@@ -270,8 +271,8 @@ test('artist review counts selections, excludes failed albums and retries submis
             year: '2020',
             error: '',
             tracks: [
-              { id: 101, duration: 180, owned: true },
-              { id: 102, duration: 180, owned: false },
+              { id: 101, duration: 180, owned: true, identity: 'isrc:one' },
+              { id: 102, duration: 180, owned: false, identity: 'isrc:two' },
             ],
           },
           {
@@ -280,7 +281,7 @@ test('artist review counts selections, excludes failed albums and retries submis
             art: '',
             year: '2021',
             error: '',
-            tracks: [{ id: 103, duration: 180, owned: false }],
+            tracks: [{ id: 103, duration: 180, owned: false, identity: 'isrc:three' }],
           },
           {
             id: 44,
@@ -290,16 +291,29 @@ test('artist review counts selections, excludes failed albums and retries submis
             error: 'Lookup failed',
             tracks: [],
           },
+          ...(allMusic
+            ? [
+                {
+                  id: 45,
+                  title: 'Fixture single',
+                  art: '',
+                  year: '2022',
+                  error: '',
+                  tracks: [{ id: 104, duration: 180, owned: false, identity: 'isrc:four' }],
+                },
+              ]
+            : []),
         ],
       },
-    }),
-  )
+    })
+  })
   let attempts = 0
   await page.route('**/api/artist-batches', async (route) => {
     const body: unknown = route.request().postDataJSON()
     expect(body).toEqual({
       artist_id: 7,
       album_ids: [42, 43],
+      all_music: false,
       missing_only: true,
       format: 'mp3',
       target: '/music',
@@ -320,6 +334,11 @@ test('artist review counts selections, excludes failed albums and retries submis
     )
   })
   await page.goto('/artists/7')
+  await page.getByRole('button', { name: 'Download all music' }).click()
+  const musicDialog = page.getByRole('dialog', { name: 'Choose music to download' })
+  await expect(musicDialog.getByText('3 releases · 3 songs', { exact: true })).toBeVisible()
+  await expect(musicDialog.getByRole('checkbox', { name: /Fixture single/ })).toBeChecked()
+  await musicDialog.getByRole('button', { name: 'Close download selection' }).click()
   await page.getByRole('button', { name: 'Download all albums' }).click()
   const dialog = page.getByRole('dialog', { name: 'Choose albums to download' })
   await expect(dialog.getByText('2 albums · 2 songs', { exact: true })).toBeVisible()
