@@ -1884,6 +1884,9 @@ meter::-webkit-meter-optimum-value {
   .now-playing .playback-notice {
     max-width: 100%;
   }
+  .playlist-picker-sheet {
+    width: calc(100% - 16px);
+  }
   main {
     padding-bottom: 260px;
   }
@@ -3023,6 +3026,98 @@ meter::-webkit-meter-optimum-value {
   flex-shrink: 0;
   text-decoration: none;
   place-items: center;
+}
+.playlist-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.playlist-picker-sheet {
+  position: fixed;
+  inset: auto;
+  margin: 0 auto;
+  width: min(520px, calc(100% - 32px));
+  max-height: 78dvh;
+  overflow: auto;
+  border: 1px solid #414a38;
+  border-radius: 16px;
+  padding: 18px;
+  background: #171b16;
+  color: #e8ece8;
+}
+.playlist-picker-sheet::backdrop {
+  background: #0008;
+}
+.playlist-picker-sheet header {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+.playlist-picker-sheet header h2 {
+  flex: 1;
+}
+.playlist-picker-search {
+  display: flex;
+  padding: 0 11px;
+  color: var(--muted);
+  background: #151c19;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.playlist-picker-search input {
+  width: 100%;
+  padding: 10px 2px;
+  background: transparent;
+  border: 0;
+  color: inherit;
+}
+.playlist-picker-list {
+  display: grid;
+  gap: 8px;
+  margin-top: 8px;
+  margin-bottom: 10px;
+}
+.playlist-picker-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+  border: 1px solid var(--line);
+  background: #17201c;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.playlist-picker-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.playlist-picker-empty {
+  margin: 6px 0 2px;
+  color: var(--muted);
+}
+.playlist-picker-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  align-items: end;
+}
+.playlist-picker-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+  min-width: min(260px, 100%);
+}
+.playlist-picker-form input {
+  min-height: 39px;
+  padding: 0 10px;
+  color: inherit;
+  background: #101613;
+  border: 1px solid var(--line);
+  border-radius: 6px;
 }
 .live-player .icon-button small {
   position: absolute;
