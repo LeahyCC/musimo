@@ -6,7 +6,7 @@ Phase 2 runs in the same Docker service as Phase 1. The music folder is read-onl
 
 Type two or more characters in the top bar. Search waits 200 ms after typing and cancels superseded browser requests. Top starts track, album and artist requests together and shows each section as it returns. Each search request has a 2.5-second server deadline, including rate-limit waits. Failed sections have their own Retry action.
 
-Query, tab, filters and sort live in the URL. Refresh restores them and Back returns to previous searches. Filters apply to the loaded page set, not every result in Deezer. Load more retrieves another 50 results. The displayed loaded count makes this limit visible. Track lists and album/artist grids longer than 12 items use TanStack Virtual.
+Query, tab, filters and sort live in the URL. Refresh restores them and Back returns to previous searches. Filters apply to the loaded page set, not every result in Deezer. More results load automatically as you scroll. The displayed loaded count makes the current loaded set visible. Track lists and album/artist grids longer than 12 items use TanStack Virtual.
 
 Deezer search omits release years. Album details fill them asynchronously without delaying initial results. Year filters exclude unknown years. Duration and preview filters apply only to tracks; artist results are unaffected by track filters. The preview filter uses known Deezer clip availability, not speculative iTunes matches. Text sorts are ascending; year, duration and popularity sort descending. An exact artist name remains first when sorting artists by popularity, ahead of larger fuzzy matches.
 

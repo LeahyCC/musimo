@@ -30,6 +30,7 @@ import {
   sonicMatchesSchema,
 } from './api'
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from './api'
+import { InfiniteScroll } from './infinite-scroll'
 import { durationText, usePlayer } from './player'
 
 type Tab = 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
@@ -747,11 +748,7 @@ export function LibraryPage() {
           <p className="library-no-results">No {tab === 'home' ? 'albums' : tab} found.</p>
         )}
       {showBrowser && hasMore && (
-        <div className="library-more">
-          <button className="button" onClick={loadMore} disabled={loadingMore}>
-            {loadingMore ? 'Loading…' : 'Load more'}
-          </button>
-        </div>
+        <InfiniteScroll hasMore={hasMore} loading={loadingMore} onLoadMore={loadMore} />
       )}
     </>
   )

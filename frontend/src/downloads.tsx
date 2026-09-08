@@ -26,6 +26,7 @@ import {
   settingsSchema,
 } from './api'
 import type { DownloadJob, MusicResult } from './api'
+import { InfiniteScroll } from './infinite-scroll'
 
 export type QueueData = {
   jobs: DownloadJob[]
@@ -752,13 +753,11 @@ function History() {
       )}
       <JobList jobs={query.data?.pages.flatMap((page) => page.jobs) ?? []} />
       {query.hasNextPage && (
-        <button
-          className="button"
-          disabled={query.isFetchingNextPage}
-          onClick={() => void query.fetchNextPage()}
-        >
-          Load older jobs
-        </button>
+        <InfiniteScroll
+          hasMore={query.hasNextPage}
+          loading={query.isFetchingNextPage}
+          onLoadMore={() => void query.fetchNextPage()}
+        />
       )}
     </>
   )
