@@ -393,10 +393,10 @@ class Navidrome:
         try:
             body = await self.response("getSonicSimilarTracks", {"id": song_id, "count": count})
         except NavidromeError as exc:
-            if "AudioMuse-AI returned status 503" in str(exc):
+            if "AudioMuse-AI" in str(exc):
                 raise NavidromeError(
-                    "AudioMuse is still analysing the library or building its "
-                    "similarity index. Try again later."
+                    "AudioMuse is not ready. Check that it is running, then wait for its "
+                    "similarity index to finish building."
                 ) from exc
             raise
         items = body.get("sonicMatch", [])
