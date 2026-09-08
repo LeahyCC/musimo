@@ -2819,11 +2819,7 @@ meter::-webkit-meter-optimum-value {
   margin: 8px 0;
   font-size: clamp(36px, 6vw, 72px);
 }
-.now-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 12px;
+.now-hero .button {
   margin-top: 20px;
 }
 .now-art {
@@ -2906,10 +2902,4 @@ meter::-webkit-meter-optimum-value {
   .library-collection-actions {
     gap: 0;
   }
-}
-
-.now-visualize {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
 }

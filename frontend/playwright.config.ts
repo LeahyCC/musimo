@@ -2,7 +2,6 @@ import { defineConfig, devices } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
-  testIgnore: 'visualizer.spec.ts',
   globalSetup: './e2e/setup.ts',
   // Settings and queue controls belong to the installation, so tests share one writer.
   workers: 1,

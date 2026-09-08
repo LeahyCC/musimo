@@ -10,8 +10,6 @@ Major components include React, TanStack Query/Router/Virtual, Vite, TypeScript,
 
 Keep upstream copyright and licence files when redistributing packages. Python distributions contain their metadata/licence files; npm packages contain their own licence metadata; Debian packages generally place copyright information under `/usr/share/doc/<package>/copyright`. Inspect the exact build you ship, including transitive dependencies and executables.
 
-The custom music visualizer adds Three.js, librosa and their pinned dependencies, including NumPy, SciPy, Numba and llvmlite. It does not bundle Winamp, MilkDrop, MilkDrop presets or model weights. The dependency lockfiles record the versions used.
-
 FFmpeg's applicable licence depends on its build configuration. The project's [licensing page](https://ffmpeg.org/legal.html) explains the LGPL/GPL distinction. Do not label a bundled FFmpeg build MIT or assume every build has identical obligations. Publishing an image or binary can require corresponding source and notices beyond linking to upstream projects.
 
 Before publishing binary/container releases, complete the dependency and source-distribution steps in [Releasing](docs/releasing.md). A source repository and a redistributed container are different distribution artifacts.

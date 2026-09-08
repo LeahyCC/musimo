@@ -1,81 +1,35 @@
-# Visualizer handoff
+# Visualizer discovery handoff
 
-## Next task
+## Start here
 
-Check out `feature/music-visualizer` in the normal Musimo checkout and continue the custom music visualizer there. Colin rejected the current visual appearance because it does not match the supplied concept. Rebuild the visual layer toward that reference while preserving the working audio/player integration. Show actual rendered progress in the local preview. Do not treat the current renderer as an accepted visual design.
+Start a fresh discovery for Musimo's next-generation music visualizer. Use [MilkDrop3](https://github.com/milkdrop2077/MilkDrop3) as the main reference. The previous custom ribbon and membrane renderers were rejected. Their implementation has been removed from this checkout. Do not revive them or treat their architecture as a requirement.
 
-Colin wants a next-generation psychedelic visualizer that develops with the music. Pure visuals fill the screen, with controls revealed by movement or tap. The ambition is musical anticipation and memory, not a collection of unrelated presets. His latest feedback: the implementation looks nothing like the mock, and he asked whether a fresh context would help. The previous implementation did not deliver the visual target. Be candid about that and demonstrate progress before claiming a match.
+The old visualizer system must stay removed, including its frontend integration, audio analysis code and backend service. This is a replacement from scratch, not a refactor of that system. Preserve Musimo's normal music player. Develop the new engine independently and integrate it through a small adapter only after the discovery and visual direction are established.
 
-## Visual target
+The goal is a medium in which songs come to life. Each song should have a characteristic visual journey. Forms grow, morph, dissolve and return as its rhythm, texture, tension and structure develop. Spacious tracks, heavy bass, liquid DnB and death metal should produce different experiences without reducing them to fixed genre templates. We are not bound to one shape. Returning musical ideas should recall recognisable visual ideas, changed by what happened between.
 
-![Colin's visual reference](assets/visualizer-reference.png)
+Build the visualizer as an independent engine with its own development preview. Musimo should bring it into the frontend through a small adapter. Discover the right package or process boundary; a separate engine does not automatically require a network service. Keep playback ownership clear and preserve normal playback through entry, exit, pause and seek.
 
-This is the exact image Colin supplied. Original: `C:/Users/cclea/OneDrive/Desktop/musimo-vis.png`. It is concept art, not a screenshot of a functioning renderer. Exact reproduction in real time has not been established.
+## Discovery work
 
-The current renderer has broad, mostly opaque metallic ribbons. It lacks the reference's thin translucent membranes, intricate luminous strands, layered depth, bright internal structure and large changes of composition. Adjusting colour and bloom alone will not supply those missing structures.
+Research the strongest parts of MilkDrop3, [Butterchurn](https://github.com/jberg/butterchurn) and [projectM](https://github.com/projectM-visualizer/projectm): shader quality, feedback, preset authoring, transitions, audio input and reuse. Inspect real running examples and specific presets. Verify current compatibility, licensing, browser support and performance rather than assuming these engines support the same effects. MilkDrop3's README identifies newer features and some shaders exclusive to that application. Butterchurn is a browser implementation of MilkDrop 2, not proof of full MilkDrop3 compatibility.
 
-![Current implementation, below the visual target](assets/visualizer-current.png)
+Recommend how immediate audio response, whole-song analysis and visual memory should work together. Distinguish what can be inferred from frequency bands from what needs structure analysis or source separation. Live input cannot anticipate unheard music. Investigate seeking and deterministic replay explicitly, since feedback rendering depends on prior frames.
 
-Build against the four visible compositions:
+Produce a short recommendation grounded in visible examples, an independent-engine integration proposal, the main open risks and a first milestone: one real song with a compelling, continuous visual journey. Choose a small set of strong visual references before building. Do not start another full renderer during discovery. Ask for reference songs when needed, while continuing independent research.
 
-1. Emerge: a small suspended open knot, extensive dark space, thin refractive surfaces and delicate orbiting strands. The current object is too large and solid.
-2. Build: a complex radial structure gathering around a warm luminous centre. Multiple scales of detail and fine connecting threads provide depth.
-3. Release: the view enters or unfolds the structure into a frame-filling interior. Preserve continuity through the transformation.
-4. Return: recall the original knot with additional fine traces. Preserve its recognisable shape while reflecting the intervening music.
+The original mock at `docs/assets/visualizer-reference.png` remains inspiration for crispness, depth and fine detail. Its four phases and ribbon shape are not requirements. Do not use generated stills as evidence of an implemented renderer's quality.
 
-First reproduce the Emerge composition in actual code with a fixed seed/time. Compare a real screenshot to the reference. Then develop Build and Release. Keep camera composition, thin-surface optics, filament structure and light distribution as separate visual problems. The flat grey material backs were fixed, but the underlying appearance remains far from the target. Do not present another generated illustration as proof that the renderer can achieve it.
+## Workspace after reset
 
-## Workspace and preview
+- Repository: `C:/Users/cclea/projects/musimo`.
+- Branch: `feature/music-visualizer`. No new branch or task is needed unless requested.
+- The old prototype is recoverable in Git at `4a5331e` for historical inspection only. The cleanup is recorded by the commit containing this handoff. Do not restore the old prototype or reset the whole repository. If starting a new branch from `main`, carry this discovery brief with you and verify that the old system is absent there too.
+- Removed from the active source: both renderer experiments, studies, visualizer UI, audio analyser/worklet/director, backend analysis worker/routes, preview proxy introduced for Web Audio, feature-specific dependencies, tests and CI entries.
+- Normal music playback remains. The queue-restoration race fix is preserved: a late saved queue must not replace playback the user has already started.
+- Main backend: `http://127.0.0.1:8765`. Development frontend: `http://127.0.0.1:5174`. Existing running main and CI containers were not rebuilt by the reset.
+- No visualizer engine has been selected or integrated. There is no working visualizer page after cleanup.
+- The old detached `musimo-visualizer` worktree and its stopped preview container were removed. The separate analysis data volume was retained. It is not used by the current source.
+- Verification: frontend build, lint and browser-test type checks pass; nine search/player backend tests pass; the existing Chromium player navigation and AudioMuse radio test passes against port 5174. That browser test mocks its audio response and does not prove audible playback. Dependencies were reinstalled from the restored lockfile. The build still reports the existing large main-chunk warning.
 
-- The implementation, references and handoff are saved on `feature/music-visualizer`. Colin requested an ordinary branch checkout for further work.
-- Previous development worktree: `C:/Users/cclea/projects/musimo-visualizer`. It can remain detached while serving the existing preview.
-- Branch: `feature/music-visualizer`, base `c3566550dd00e6f78afc85491746743d9abb8619`.
-- Main checkout: `C:/Users/cclea/projects/musimo`. Check its current branch and working changes before switching; preserve unrelated work.
-- Live hot preview: `http://127.0.0.1:5174/now-playing`. Vite is running from the worktree's `frontend` directory.
-- Main library backend: existing container `musimo-musimo-1` at port 8765.
-- Separate analysis/preview backend: container `musimo-visualizer` at port 8768. Its backend code is a read-only bind mount of this worktree, with uvicorn reload. It has a separate `musimo-visualizer-data` volume and uses the existing Navidrome credentials mount. Do not expose credential contents.
-- Ignored `frontend/.env` routes ordinary APIs to 8765 and analysis/preview APIs to 8768. Committed Vite config defaults all APIs to 8765. Preserve `changeOrigin: false` or same-origin POST checks fail.
-- A local `musimo:visualizer` image was built successfully. Its last build precedes the latest button-spacing change. The hot preview includes that change.
-- To preview changes made in a normal checkout, stop the existing Vite process on 5174 and run `npm run dev -- --port 5174 --strictPort` from that checkout's `frontend` directory. Set up its ignored `.env` as described above. The existing server will otherwise keep serving the previous worktree. The analysis backend also reads the previous worktree; update its bind mount if changing backend code in the normal checkout.
-
-## Working pieces to preserve
-
-- `frontend/src/player.tsx`: one persistent audio element, a persistent Web Audio graph, full-screen entry, transport actions, volume through a gain node after analysis, and guarded queue restoration.
-- `visualizer-audio.ts` and `visualizer-meter.ts`: native FFT/onset analysis plus an AudioWorklet for block energy and stereo width. The analyser remains available when worklets fail. Closing visuals must keep the audio connection alive.
-- `visualizer-director.ts`: musical state, gradual adoption of completed maps, anticipated energy rises, repeated section identities, seek reconstruction and Hold. Section identity comes from coarse harmonic similarity, not melody or instrument recognition.
-- `visualizer.tsx`: overlay, transport, settings, saved seeds, Remix, Save, Hold, timing offset, map polling and lifecycle. Preserve these interfaces while replacing rendering.
-- `visualizer-renderer.ts`: the rejected visual implementation. Three.js WebGPURenderer, TSL geometry/materials, WebGL fallback, bloom and adaptive resolution. It can be substantially replaced. `WorldState` and `VisualSettings` describe its input contract.
-- `backend/visualizer_api.py` and `visualizer_worker.py`: one queued analysis worker using authenticated Navidrome audio, FFmpeg and librosa in a separate process. Private compressed cache, bounded jobs, timeouts, source cleanup and restart recovery.
-- `backend/search_api.py`: ID-based preview streaming proxy with validated provider redirects and bounded responses. Foreign preview URLs must use it after the shared element enters Web Audio. Already same-origin preview URLs can play directly. This also preserves the existing generated-audio browser fixture flow.
-
-The latest small UX request is implemented: Start AudioMuse radio and Visualize now sit in a wrapping `.now-actions` flex row with a 12px gap. This is live at port 5174 and the gap was verified in 1440px and 390px viewports.
-
-## Verification and unresolved failure
-
-The complete Python suite passed: 52 tests, 77.98% branch coverage. All six analysis tests also passed inside the Python 3.14 Docker image. Five director tests passed. Type checking, lint, formatting, workflow validation, dependency audits and the Docker build passed. The frontend production build, lint and formatting were checked again after the button-spacing edit. A fresh real-library render had no browser errors and audio continued playing. The temporary packaged-app test container was stopped; the live preview and its analysis backend remain running.
-
-Browser tests have passed the full playback/seek/pause/save/exit/reentry flow on desktop Chromium, mobile Chromium emulation and forced WebGL. The latest packaged run was **5 passed, 1 failed**, not fully green. The analysis-failure test intermittently cannot click Visual settings: the canvas intercepts the click, then controls become hidden. It has occurred on both desktop and mobile in different runs. Extending timeouts did not solve it. Keeping controls visible during startup and restarting the idle timer after renderer readiness helped but did not eliminate it. Diagnose hit testing, control visibility and input timing. Do not claim the bug is fixed based on a single passing retry.
-
-Latest failing trace: `frontend/test-results/visualizer/visualizer-analysis-failur-f7307-ring-and-playback-available-chromium/trace.zip`. Read its sibling `error-context.md`. A separate existing preview playback regression passed against the packaged app. Firefox and real iOS/Safari visualizer operation remain unverified.
-
-Useful commands from the worktree:
-
-```sh
-npm run dev --prefix frontend -- --port 5174 --strictPort
-npm run test:director --prefix frontend
-npm run test:visualizer --prefix frontend
-npm run test:e2e:types --prefix frontend
-npm run lint --prefix frontend
-npm run build --prefix frontend
-uv run python -m unittest tests.test_visualizer tests.test_search tests.test_player
-```
-
-`MUSIMO_TEST_URL` selects another server for the visualizer tests. Avoid editing served frontend files or running another graphics-heavy browser while those tests run. Vite refreshes can interrupt playback and parallel graphics loads distort timing.
-
-Runtime dependencies are exported with `uv export --locked --no-header --no-dev --no-emit-project --format requirements-txt --output-file requirements.lock`. Do not replace this with a platform-specific `uv pip compile`: that omitted Python 3.14 transitive dependencies and broke the image build.
-
-## Remaining scope
-
-The visual match is the immediate priority. The controls race above remains open. The broader plan also includes instrument separation, stronger phrase recognition, additional visual techniques, next-track preparation, automatic graphics recovery and measured audio/display sync. Those are not delivered. There is no established 60 fps or millisecond sync guarantee. See [current behaviour](visualizer.md) and [broader plan](visualizer-plan.md).
-
-Keep Colin's replies short, show actual renders, and keep the local preview current. Follow his existing repository/global instructions. Do not use a long test report as a substitute for visible artistic progress.
+Keep replies short. Show actual visual results early. Colin wants the hardest architectural and graphics work identified so he can choose when to use Ultra.

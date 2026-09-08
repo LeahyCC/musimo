@@ -14,7 +14,7 @@ Library has Home, Albums, Artists, Tracks and Playlists views. One search field 
 
 Now Playing shows large artwork, the queue and synced lyrics. Start AudioMuse radio replaces the queue with the current song followed by sonic matches when Navidrome advertises the required extension. Catalog previews still use the same audio element, so a preview and a library track cannot play at once.
 
-**Visualize** opens a custom full-screen music world with controls on movement or tap. It combines live audio features with optional local song analysis. Playback continues through entry and exit. See [Music visualizer](visualizer.md) for controls, caching and the current limits.
+Restoring a saved queue does not replace playback started while that request was pending.
 
 ## API
 

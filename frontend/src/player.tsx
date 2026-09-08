@@ -1,4 +1,4 @@
-import { createContext, lazy, Suspense, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { Link } from '@tanstack/react-router'
@@ -18,9 +18,6 @@ import {
 
 import { api, playerQueueSchema, previewSchema } from './api'
 import type { LibraryTrack, MusicResult } from './api'
-import { VisualizerAudio } from './visualizer-audio'
-
-const Visualizer = lazy(() => import('./visualizer'))
 
 type RepeatMode = 'off' | 'all' | 'one'
 type Playback = {
@@ -38,13 +35,6 @@ type Playback = {
   shuffleLibrary: (tracks: LibraryTrack[]) => void
   next: () => void
   previous: () => void
-  toggle: () => void
-  seek: (seconds: number) => void
-  volume: number
-  changeVolume: (value: number) => void
-  visualize: () => void
-  audioElement: () => HTMLAudioElement | null
-  visualAudio: VisualizerAudio
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -61,13 +51,6 @@ const PlayerContext = createContext<Playback>({
   shuffleLibrary: () => undefined,
   next: () => undefined,
   previous: () => undefined,
-  toggle: () => undefined,
-  seek: () => undefined,
-  volume: 0.7,
-  changeVolume: () => undefined,
-  visualize: () => undefined,
-  audioElement: () => null,
-  visualAudio: new VisualizerAudio(),
 })
 export const usePlayer = () => useContext(PlayerContext)
 
@@ -77,7 +60,7 @@ export const durationText = (seconds: number) =>
 const artUrl = (track: LibraryTrack) =>
   track.coverArt ? `/api/player/art/${encodeURIComponent(track.coverArt)}` : ''
 
-export function stored(key: string, fallback: string) {
+function stored(key: string, fallback: string) {
   try {
     return localStorage.getItem(key) ?? fallback
   } catch {
@@ -85,7 +68,7 @@ export function stored(key: string, fallback: string) {
   }
 }
 
-export function remember(key: string, value: string) {
+function remember(key: string, value: string) {
   try {
     localStorage.setItem(key, value)
   } catch {
@@ -95,8 +78,6 @@ export function remember(key: string, value: string) {
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const audio = useRef<HTMLAudioElement>(null)
-  const [visualAudio] = useState(() => new VisualizerAudio())
-  const [visualOpen, setVisualOpen] = useState(false)
   const request = useRef<AbortController | null>(null)
   const previewCurrent = useRef<MusicResult | null>(null)
   const libraryCurrent = useRef<LibraryTrack | null>(null)
@@ -138,12 +119,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return
       }
       setNotice(`${clip.source} preview`)
-      const source = new URL(clip.url, location.href)
-      startAudio(
-        source.origin === location.origin
-          ? source.href
-          : `/api/preview/${item.id}/stream?fallback=${fallback}`,
-      )
+      startAudio(clip.url)
     } catch (error) {
       if (!controller.signal.aborted)
         setNotice(error instanceof Error ? error.message : 'Preview unavailable')
@@ -153,8 +129,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function startAudio(url: string, autoplay = true) {
     const element = audio.current
     if (!element) return
-    visualAudio.reset()
-    void visualAudio.resume()?.catch(() => undefined)
     element.src = url
     setReady(false)
     if (autoplay) void element.play().catch(() => setNotice('Press play when you are ready.'))
@@ -220,7 +194,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const element = audio.current
     const hasItem = mode.current === 'library' ? libraryCurrent.current : previewCurrent.current
     if (!element || !hasItem) return
-    void visualAudio.resume()?.catch(() => undefined)
     if (!element.paused) element.pause()
     else if (element.getAttribute('src'))
       void element.play().catch(() => setNotice('Cannot play this track.'))
@@ -231,7 +204,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   function play(item: MusicResult) {
-    closeVisuals()
     if (
       mode.current === 'preview' &&
       previewCurrent.current?.id === item.id &&
@@ -252,7 +224,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     previewStage.current = item.preview ? 0 : 1
     if (item.preview) {
       setNotice('Deezer preview')
-      startAudio(`/api/preview/${item.id}/stream`)
+      startAudio(item.preview)
     } else void loadPreview(item, false)
   }
 
@@ -277,7 +249,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   function stop() {
-    closeVisuals()
     request.current?.abort()
     saveQueue()
     previewCurrent.current = null
@@ -321,7 +292,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const value = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 0.7
     if (audio.current) {
-      visualAudio.setVolume(audio.current, value, muted)
+      audio.current.volume = value
+      audio.current.muted = muted
     }
     remember('musimo.player-volume', String(value))
   }, [volume, muted])
@@ -370,20 +342,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const activeArt = libraryTrack ? artUrl(libraryTrack) : track?.art
   const isLibrary = Boolean(libraryTrack)
 
-  function visualize() {
-    if (!libraryCurrent.current || !audio.current) return
-    // Connect during the click so browser audio activation survives the lazy renderer import.
-    void visualAudio.connect(audio.current).catch(() => setNotice('Press play to reconnect audio.'))
-    setVisualOpen(true)
-    void document.documentElement.requestFullscreen?.().catch(() => undefined)
-  }
-
-  function closeVisuals() {
-    setVisualOpen(false)
-    if (visualOpen && document.fullscreenElement)
-      void document.exitFullscreen().catch(() => undefined)
-  }
-
   return (
     <PlayerContext.Provider
       value={{
@@ -401,28 +359,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         shuffleLibrary,
         next: () => next(),
         previous,
-        toggle,
-        seek: (seconds) => {
-          if (audio.current) audio.current.currentTime = Math.max(0, Math.min(seconds, length))
-          setPosition(seconds)
-          visualAudio.reset()
-        },
-        volume: muted ? 0 : volume,
-        changeVolume: (value) => {
-          setVolume(value)
-          setMuted(false)
-        },
-        visualize,
-        audioElement: () => audio.current,
-        visualAudio,
       }}
     >
       {children}
-      {visualOpen && libraryTrack && (
-        <Suspense fallback={null}>
-          <Visualizer onClose={closeVisuals} />
-        </Suspense>
-      )}
       <footer className="player live-player">
         <div className="now-playing">
           {activeArt ? <img src={activeArt} alt="" /> : <Disc3 size={30} />}
