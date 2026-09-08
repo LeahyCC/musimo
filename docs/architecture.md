@@ -101,3 +101,9 @@ See [search and indexing](search.md) for API contracts, cache limits, ownership 
 ## Phase 3 implementation
 
 See [downloads](downloads.md) for durable job state, worker control, publication and verification. Each job owns a child process group. SQLite records the full state and replay event in one transaction; completed audio is published without overwriting existing files. The local Docker Desktop mount uses the tested hard-link fallback because it rejects Linux no-replace rename flags.
+
+## Library player
+
+See [library player](player.md). Navidrome is the playback data plane rather than duplicating streaming, artwork and playable IDs in Musimo. One backend client owns Subsonic authentication, capability discovery, library browsing, media proxying, queue persistence, lyrics, scrobbles and selective scans. Browser code never receives Navidrome credentials. One browser audio element switches explicitly between catalog preview and library playback.
+
+AudioMuse-AI remains optional. Standard sonic radio and path features route through Navidrome's advertised OpenSubsonic `sonicSimilarity` extension. AudioMuse-specific natural-language and alchemy features remain behind a later adapter.

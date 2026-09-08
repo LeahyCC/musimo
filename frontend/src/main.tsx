@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useDeferredValue, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { createRoot } from 'react-dom/client'
@@ -27,6 +27,8 @@ import {
   Check,
   Coffee,
   Folder,
+  Heart,
+  Library,
   LockKeyhole,
   Radio,
   RefreshCw,
@@ -50,11 +52,19 @@ import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch
 
 import './style.css'
 
+const LibraryPage = lazy(() =>
+  import('./library').then((module) => ({ default: module.LibraryPage })),
+)
+const NowPlayingPage = lazy(() =>
+  import('./library').then((module) => ({ default: module.NowPlayingPage })),
+)
+
 const queryClient = new QueryClient({
   defaultOptions: { queries: { staleTime: 30_000, retry: 1 } },
 })
 const navItems = [
   { to: '/search', label: 'Search', icon: Search },
+  { to: '/library', label: 'Library', icon: Library },
   { to: '/downloads', label: 'Downloads', icon: ArrowDownToLine },
   { to: '/settings', label: 'Settings', icon: SlidersHorizontal },
   { to: '/diagnostics', label: 'Diagnostics', icon: Activity },
@@ -216,6 +226,14 @@ function Shell() {
             </div>
           </div>
           <div className="sidebar-actions">
+            <a
+              href="https://www.musicares.org/donations/"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <Heart size={14} fill="#ef4444" stroke="#ef4444" />
+              Donate
+            </a>
             <a href="https://ko-fi.com/colinleahy" target="_blank" rel="noopener noreferrer">
               <Coffee size={14} />
               Buy me a coffee
@@ -325,13 +343,13 @@ const controls: {
   {
     key: 'navidrome_mode',
     label: 'Navidrome scanning',
-    help: 'Watcher uses Navidrome’s existing file watcher. API requests a selective scan with a mounted credentials file.',
+    help: 'Watcher uses Navidrome’s file watcher. API requests a selective scan with the same credentials file used by the player.',
     section: 'library',
   },
   {
     key: 'navidrome_url',
     label: 'Navidrome address',
-    help: 'Required only for API scanning, for example http://navidrome:4533.',
+    help: 'Used for playback and API scans. Playback also needs MUSIMO_NAVIDROME_CREDENTIALS_FILE mounted in Compose.',
     section: 'library',
   },
   {
@@ -799,6 +817,24 @@ const downloadsRoute = createRoute({
   path: '/downloads',
   component: DownloadsPage,
 })
+const libraryRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library',
+  component: () => (
+    <Suspense fallback={<p role="status">Opening your library…</p>}>
+      <LibraryPage />
+    </Suspense>
+  ),
+})
+const nowPlayingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/now-playing',
+  component: () => (
+    <Suspense fallback={<p role="status">Opening the player…</p>}>
+      <NowPlayingPage />
+    </Suspense>
+  ),
+})
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
@@ -815,6 +851,8 @@ const router = createRouter({
     searchRoute,
     albumRoute,
     artistRoute,
+    libraryRoute,
+    nowPlayingRoute,
     downloadsRoute,
     settingsRoute,
     diagnosticsRoute,
