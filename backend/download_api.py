@@ -46,6 +46,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         return {
             "jobs": [job.public() for job in get().jobs.visible()],
             "controls": get().controls(),
+            "summary": get().store.job_summary(),
         }
 
     @app.get("/api/history")
@@ -202,7 +203,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
                     service.command(job.id, "resume")
                 elif action == "cancel-queued" and job.stage in {"queued", "retry_wait", "paused"}:
                     service.command(job.id, "cancel")
-                elif action == "retry-failed" and job.stage == "failed":
+                elif action == "retry-failed" and job.stage == "failed" and not job.hidden:
                     service.command(job.id, "retry")
                 elif action == "clear-finished" and job.stage in TERMINAL:
                     service.jobs.update(job.id, hidden=True)

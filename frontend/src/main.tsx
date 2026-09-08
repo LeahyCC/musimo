@@ -42,8 +42,8 @@ import type { SettingKey } from './api'
 import { librarySchema } from './api'
 import { namingSchema } from './api'
 import { controlsSchema, jobSchema } from './api'
-import type { DownloadJob } from './api'
 import { DownloadsPage, QueueDock, updateJob } from './downloads'
+import type { QueueData } from './downloads'
 import { LibraryPanel } from './library-panel'
 import { CommandPalette } from './palette'
 import { PlayerProvider } from './player'
@@ -86,7 +86,11 @@ function useLiveEvents() {
         })
         if (disposed) return
         client.setQueryData(['settings'], snapshot.settings)
-        client.setQueryData(['jobs'], { jobs: snapshot.jobs, controls: snapshot.controls })
+        client.setQueryData(['jobs'], {
+          jobs: snapshot.jobs,
+          controls: snapshot.controls,
+          summary: snapshot.summary,
+        })
         stream = new EventSource(`/api/events?after=${snapshot.cursor}`)
         stream.onopen = () => setStatus('Live')
         stream.onerror = () => setStatus('Reconnecting')
@@ -108,9 +112,10 @@ function useLiveEvents() {
           if (raw.kind === 'queue.updated' && 'payload' in raw) {
             const parsed = controlsSchema.safeParse(raw.payload)
             if (parsed.success)
-              client.setQueryData(['jobs'], (old: { jobs: DownloadJob[] } | undefined) => ({
+              client.setQueryData(['jobs'], (old: QueueData | undefined) => ({
                 jobs: old?.jobs ?? [],
                 controls: parsed.data,
+                summary: old?.summary ?? { active: 0, failed: 0, failure_reasons: [] },
               }))
             return
           }
