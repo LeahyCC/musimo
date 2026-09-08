@@ -83,15 +83,20 @@ test('card links and download controls work independently in a natural-height gr
     return route.fulfill({ json: { album, tracks: [], label: '', duration: 180, complete: true } })
   })
 
-  await page.route('**/api/artists/7*', (route) =>
-    route.fulfill({
-      json: {
-        artist: { id: 7, name: 'Fixture artist', art: '' },
-        items: [],
-        next_index: null,
-      },
-    }),
-  )
+  await page.route('**/api/artists/7*', (route) => {
+    const top = new URL(route.request().url()).pathname.endsWith('/top')
+    return route.fulfill(
+      top
+        ? { json: { tracks: [] } }
+        : {
+            json: {
+              artist: { id: 7, name: 'Fixture artist', art: '' },
+              items: [],
+              next_index: null,
+            },
+          },
+    )
+  })
 
   await page.route('**/api/batches', (route) =>
     route.fulfill({

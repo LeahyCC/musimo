@@ -1575,6 +1575,37 @@ meter::-webkit-meter-optimum-value {
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
+.artist-release-heading {
+  align-items: end;
+}
+.artist-release-heading > div:first-child {
+  display: grid;
+  gap: 5px;
+}
+.artist-release-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+.artist-release-controls label {
+  display: grid;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.artist-release-controls select {
+  min-width: 145px;
+  padding: 8px 30px 8px 10px;
+  color: var(--text);
+  background: #151e19;
+  border: 1px solid #344238;
+  border-radius: 7px;
+  font-size: 12px;
+  letter-spacing: normal;
+  text-transform: none;
+}
 .library-panel {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -1725,6 +1756,15 @@ meter::-webkit-meter-optimum-value {
   }
   .artist-header img {
     width: 95px;
+  }
+  .artist-release-heading {
+    align-items: start;
+    flex-direction: column;
+  }
+  .artist-release-controls,
+  .artist-release-controls label,
+  .artist-release-controls select {
+    width: 100%;
   }
   .best-result {
     padding: 18px;

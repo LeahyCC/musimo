@@ -249,12 +249,42 @@ test('preview playback, volume and navigation remain usable', async ({ page }) =
 test('artist review counts selections, excludes failed albums and retries submission', async ({
   page,
 }) => {
+  const ep: MusicResult = {
+    ...album,
+    id: 43,
+    album_id: 43,
+    title: 'Fixture EP',
+    album: 'Fixture EP',
+    year: 2022,
+    record_type: 'ep',
+  }
+  const single: MusicResult = {
+    ...album,
+    id: 44,
+    album_id: 44,
+    title: 'Fixture single',
+    album: 'Fixture single',
+    year: 2023,
+    record_type: 'single',
+  }
+
   await page.route(/\/api\/artists\/7(?:\?.*)?$/, (route) =>
     route.fulfill({
       json: {
         artist: { id: 7, name: 'Fixture artist', art: '' },
-        items: [album],
+        items: [album, ep, single],
         next_index: null,
+      },
+    }),
+  )
+
+  await page.route('**/api/artists/7/top', (route) =>
+    route.fulfill({
+      json: {
+        tracks: [
+          { ...track, title: 'Most popular song', popularity: 100 },
+          { ...track, id: 102, title: 'Second popular song', popularity: 90 },
+        ],
       },
     }),
   )
@@ -334,6 +364,23 @@ test('artist review counts selections, excludes failed albums and retries submis
     )
   })
   await page.goto('/artists/7')
+  await expect(page.locator('main section > .section-heading h2')).toHaveText([
+    'Popular songs',
+    'Popular albums',
+    'Discography',
+  ])
+  await expect(page.getByText('Most popular song', { exact: true })).toBeVisible()
+  const discography = page.getByRole('region', { name: 'Discography' })
+  await expect(discography.getByRole('article')).toHaveCount(2)
+  await expect(discography.getByRole('article').first()).toContainText('Fixture EP')
+  await discography.getByRole('combobox', { name: 'Show' }).selectOption('album')
+  await expect(page).toHaveURL(/type=album/)
+  await expect(discography.getByRole('article')).toHaveCount(1)
+  await discography.getByRole('combobox', { name: 'Sort' }).selectOption('title-desc')
+  await expect(page).toHaveURL(/sort=title-desc/)
+  await page.reload()
+  await expect(discography.getByRole('combobox', { name: 'Show' })).toHaveValue('album')
+  await expect(discography.getByRole('combobox', { name: 'Sort' })).toHaveValue('title-desc')
   await page.getByRole('button', { name: 'Download all music' }).click()
   const musicDialog = page.getByRole('dialog', { name: 'Choose music to download' })
   await expect(musicDialog.getByText('3 releases · 3 songs', { exact: true })).toBeVisible()
