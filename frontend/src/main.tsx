@@ -26,6 +26,7 @@ import {
   ArrowRight,
   Check,
   Coffee,
+  Heart,
   Folder,
   LockKeyhole,
   Radio,
@@ -216,6 +217,10 @@ function Shell() {
             </div>
           </div>
           <div className="sidebar-actions">
+            <a href="https://www.musicares.org/donations/" target="_blank" rel="noopener noreferrer">
+              <Heart size={14} fill="#ef4444" stroke="#ef4444" />
+              Donate
+            </a>
             <a href="https://ko-fi.com/colinleahy" target="_blank" rel="noopener noreferrer">
               <Coffee size={14} />
               Buy me a coffee
