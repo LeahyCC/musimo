@@ -10,7 +10,7 @@ Query, tab, filters and sort live in the URL. Refresh restores them and Back ret
 
 Deezer search omits release years. Album details fill them asynchronously without delaying initial results. Year filters exclude unknown years. Duration and preview filters apply only to tracks; artist results are unaffected by track filters. The preview filter uses known Deezer clip availability, not speculative iTunes matches. Text sorts are ascending; year, duration and popularity sort descending.
 
-Album cards fetch details automatically as they mount, in the paginated, naturally sized grid. Background requests share four slots and reserve provider capacity for interactive search. Opening an album reuses the same query cache. Cards show checking/estimated coverage until verification, or Retry coverage after failure. Year/library filters hydrate the loaded album set and use verified counts, so hidden results do not depend on hovering. Album pages show year, label, tracks, time, estimated size and coverage. Artist pages group available catalog release types and paginate their discography. MusicBrainz secondary-type filtering remains planned.
+Album cards fetch details automatically as they mount, in the paginated, naturally sized grid. Background requests share four slots and reserve provider capacity for interactive search. Opening an album reuses the same query cache. Cards show checking/estimated coverage until verification, or Retry coverage after failure. Year/library filters hydrate the loaded album set and use verified counts, so hidden results do not depend on hovering. Album pages show year, label, tracks, time, estimated size and coverage. Artist pages show five popular songs, the albums behind those songs, then a paginated discography. The discography defaults to albums and EPs and can be filtered by release type or sorted by year and title. Filter and sort choices stay in the URL. MusicBrainz secondary-type filtering remains planned.
 
 `/` focuses search. Ctrl/Cmd+K opens a native modal command palette; Tab selects commands, Enter opens one, Escape closes it. Space toggles the preview when focus is outside text fields and interactive controls. There is one audio element across navigation. Failed Deezer clips refresh their URL, then try iTunes. The fallback requires matching normalized artist/title and duration within three seconds. The mini player reports when no preview is available. iTunes is used only for previews.
 
@@ -48,6 +48,7 @@ Search cache TTL is ten minutes; album and artist TTL is 24 hours. The memory ca
 - `GET /api/album-years?ids=...`: up to 50 album years under a separate 12-second deadline.
 - `GET /api/albums/{id}`: album, track list, label, total duration and coverage completeness. `background=true` shares the background request budget for automatic card hydration.
 - `GET /api/artists/{id}?index=0`: artist and a page of releases.
+- `GET /api/artists/{id}/top`: the artist's ten most popular catalog songs.
 - `GET /api/preview/{id}?fallback=false`: refreshed preview URL or explicit unavailable state.
 - `GET /api/library`, `POST /api/library/scan`, `POST /api/library/cancel`: index status and commands.
 
