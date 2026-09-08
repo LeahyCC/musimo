@@ -14,9 +14,9 @@ import {
   searchPageSchema,
   yearsSchema,
 } from './api'
-import type { MusicResult } from './api'
+import type { DownloadJob, MusicResult } from './api'
 import { ArtistDownloadButton } from './artist-download'
-import { DownloadButton } from './downloads'
+import { DownloadButton, failureMessage, useJobs } from './downloads'
 import { durationText, usePlayer } from './player'
 
 const tabs = ['top', 'track', 'album', 'artist'] as const
@@ -74,16 +74,25 @@ function normalizedText(value: string) {
   return value.normalize('NFKC').trim().toLocaleLowerCase()
 }
 
-export function Badge({ item }: { item: MusicResult }) {
+export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
   if (item.kind === 'artist') return null
+  const failed = item.ownership !== 'owned' && job?.stage === 'failed'
+  const jobLabel =
+    job?.stage === 'failed'
+      ? 'Download failed'
+      : job?.stage === 'retry_wait'
+        ? 'Retry scheduled'
+        : job?.stage.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
   return (
     <span
-      className={`ownership ${item.ownership}`}
+      className={`ownership ${failed ? 'failed' : item.ownership}`}
       title={
-        item.matched_paths.join('\n') ||
-        (item.kind === 'album' && !item.coverage_verified
-          ? 'Coverage is still being checked against the library index.'
-          : 'No matching file in the current library index')
+        failed
+          ? failureMessage(job)
+          : item.matched_paths.join('\n') ||
+            (item.kind === 'album' && !item.coverage_verified
+              ? 'Coverage is still being checked against the library index.'
+              : 'No matching file in the current library index')
       }
     >
       {item.ownership === 'owned' && <Check size={12} />}
@@ -93,7 +102,7 @@ export function Badge({ item }: { item: MusicResult }) {
           : 'Checking coverage…'
         : item.ownership === 'owned'
           ? 'In library'
-          : 'Missing'}
+          : (jobLabel ?? 'Missing')}
     </span>
   )
 }
@@ -186,7 +195,15 @@ export function MusicCard({ item }: { item: MusicResult }) {
   )
 }
 
-export function TrackRow({ item, selected = false }: { item: MusicResult; selected?: boolean }) {
+export function TrackRow({
+  item,
+  selected = false,
+  job,
+}: {
+  item: MusicResult
+  selected?: boolean
+  job?: DownloadJob
+}) {
   const player = usePlayer()
   return (
     <div
@@ -217,7 +234,7 @@ export function TrackRow({ item, selected = false }: { item: MusicResult; select
       </Link>
       <span className="track-year">{item.year ?? '…'}</span>
       <span className="track-duration">{durationText(item.duration)}</span>
-      <Badge item={item} />
+      <Badge item={item} job={job} />
       <button className="text-preview" onClick={() => player.play(item)}>
         {item.preview ? 'Preview' : 'Find preview'}
       </button>
@@ -238,6 +255,13 @@ function CardGrid({ items }: { items: MusicResult[] }) {
 
 export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTrack?: number }) {
   const parent = useRef<HTMLDivElement>(null)
+  const queue = useJobs()
+  const jobs = new Map<number, DownloadJob>()
+  for (const job of queue.data?.jobs ?? []) {
+    if (job.hidden || ['done', 'cancelled'].includes(job.stage)) continue
+    const current = jobs.get(job.track_id)
+    if (!current || current.updated_at < job.updated_at) jobs.set(job.track_id, job)
+  }
   const virtual = useVirtualizer({
     count: items.length,
     getScrollElement: () => parent.current,
@@ -254,7 +278,12 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
     return (
       <div className="track-list">
         {items.map((item) => (
-          <TrackRow key={item.id} item={item} selected={item.id === focusTrack} />
+          <TrackRow
+            key={item.id}
+            item={item}
+            selected={item.id === focusTrack}
+            job={jobs.get(item.id)}
+          />
         ))}
       </div>
     )
@@ -282,7 +311,7 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
                 transform: `translateY(${row.start}px)`,
               }}
             >
-              <TrackRow item={item} selected={item.id === focusTrack} />
+              <TrackRow item={item} selected={item.id === focusTrack} job={jobs.get(item.id)} />
             </div>
           ) : null
         })}

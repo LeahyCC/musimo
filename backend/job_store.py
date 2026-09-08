@@ -41,7 +41,11 @@ class Jobs:
                 "json_extract(payload,'$.batch_id') IN (SELECT json_extract(payload,'$.batch_id') "
                 "FROM jobs WHERE active=1 AND json_extract(payload,'$.batch_id')!='') OR id IN "
                 "(SELECT id FROM jobs WHERE active=0 AND json_extract(payload,'$.hidden')=0 "
-                "ORDER BY created_at DESC LIMIT 50) ORDER BY created_at DESC"
+                "AND json_extract(payload,'$.stage')='failed' ORDER BY created_at DESC LIMIT 50) "
+                "OR id IN (SELECT id FROM jobs WHERE active=0 "
+                "AND json_extract(payload,'$.hidden')=0 "
+                "AND json_extract(payload,'$.stage')!='failed' ORDER BY created_at DESC LIMIT 50) "
+                "ORDER BY created_at DESC"
             ).fetchall()
         return [Job.model_validate_json(row[0]) for row in rows]
 
