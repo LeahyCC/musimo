@@ -21,6 +21,7 @@ from backend.job_store import Jobs
 from backend.library import Library
 from backend.models import Settings
 from backend.naming import Naming
+from backend.navidrome import Navidrome, NavidromeError
 from backend.store import Store
 
 
@@ -56,9 +57,15 @@ def publish_file(source: Path, target: Path) -> None:
 
 class Downloads:
     def __init__(
-        self, store: Store, catalog: Catalog, library: Library, changed: asyncio.Event
+        self,
+        store: Store,
+        catalog: Catalog,
+        library: Library,
+        changed: asyncio.Event,
+        navidrome: Navidrome | None = None,
     ) -> None:
         self.store, self.catalog, self.library, self.changed = store, catalog, library, changed
+        self.navidrome_client = navidrome or Navidrome(store, catalog.client)
         self.wake = asyncio.Event()
         self.jobs = Jobs(store, self.notify)
         self.enrichment = Enrichment(catalog)
@@ -384,42 +391,13 @@ class Downloads:
                     ]
                 )
             )
-        credentials = os.getenv("MUSIMO_NAVIDROME_CREDENTIALS_FILE", "")
-        if not credentials or not settings.navidrome_url:
-            return "Navidrome API credentials are not configured; file is saved"
         try:
-            raw: object = json.loads(Path(credentials).read_text(encoding="utf-8"))
-            if not isinstance(raw, dict):
-                raise ValueError("Invalid credentials")
-            salt = os.urandom(12).hex()
-            # Subsonic requires MD5(password + salt) for its wire token, not password storage.
-            # https://www.subsonic.org/pages/api.jsp (authentication since API 1.13.0)
-            token = hashlib.md5(
-                (str(raw.get("password", "")) + salt).encode(), usedforsecurity=False
-            ).hexdigest()
             relative = scan_folder.relative_to(self.target(job.target)).as_posix()
             if relative == ".":
                 relative = ""
             target = f"{settings.navidrome_library_id}:{relative}"
-            response = await self.catalog.client.get(
-                settings.navidrome_url.rstrip("/") + "/rest/startScan",
-                params={
-                    "u": str(raw.get("username", "")),
-                    "t": token,
-                    "s": salt,
-                    "v": "1.16.1",
-                    "c": "Musimo",
-                    "f": "json",
-                    "target": target,
-                },
-                timeout=4,
-            )
-            response.raise_for_status()
-            data: object = response.json()
-            body = data.get("subsonic-response", {}) if isinstance(data, dict) else {}
-            if not isinstance(body, dict) or body.get("status") != "ok":
-                raise ValueError("Scan refused")
-        except (OSError, ValueError, httpx.HTTPError):
+            await self.navidrome_client.start_scan(target)
+        except (OSError, ValueError, NavidromeError):
             return "Navidrome scan failed; file is saved. Check integration settings."
         return None
 

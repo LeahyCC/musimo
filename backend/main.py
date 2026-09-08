@@ -26,6 +26,8 @@ from backend.download_api import install_download_routes
 from backend.downloads import Downloads
 from backend.library import Library
 from backend.models import SettingsPatch
+from backend.navidrome import Navidrome
+from backend.player_api import install_player_routes
 from backend.search_api import install_search_routes
 from backend.store import LockedSetting, Store
 
@@ -66,16 +68,25 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     catalog: Catalog
     library: Library
     downloads: Downloads
+    navidrome: Navidrome
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        nonlocal store, versions, catalog, library, downloads
+        nonlocal store, versions, catalog, library, downloads, navidrome
         store = Store(data / "musimo.sqlite3")
         versions = await asyncio.to_thread(runtime_versions)
-        async with httpx.AsyncClient(
-            timeout=2.2, follow_redirects=False, headers={"User-Agent": f"Musimo/{VERSION}"}
-        ) as client:
+        async with (
+            httpx.AsyncClient(
+                timeout=2.2, follow_redirects=False, headers={"User-Agent": f"Musimo/{VERSION}"}
+            ) as client,
+            httpx.AsyncClient(
+                timeout=httpx.Timeout(connect=5, read=30, write=5, pool=5),
+                follow_redirects=False,
+                headers={"User-Agent": f"Musimo/{VERSION}"},
+            ) as navidrome_http,
+        ):
             catalog = Catalog(store, client)
+            navidrome = Navidrome(store, navidrome_http)
             roots = [
                 Path(root).resolve()
                 for root in os.getenv("MUSIMO_LIBRARY_ROOTS", "/music").split(os.pathsep)
@@ -83,7 +94,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             ]
             library = Library(store, roots, changed)
             library.start()
-            downloads = Downloads(store, catalog, library, changed)
+            downloads = Downloads(store, catalog, library, changed, navidrome)
             downloads.start()
             try:
                 yield
@@ -97,6 +108,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_activity_routes(app, lambda: store, changed.set)
     install_download_routes(app, lambda: downloads)
     install_artist_download_routes(app, lambda: downloads)
+    install_player_routes(app, lambda: navidrome)
 
     @app.middleware("http")
     async def same_origin(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -296,7 +308,16 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 else None,
             )
         if (
-            path not in ("", "search", "downloads", "settings", "diagnostics")
+            path
+            not in (
+                "",
+                "search",
+                "library",
+                "now-playing",
+                "downloads",
+                "settings",
+                "diagnostics",
+            )
             and not (path.startswith(("albums/", "artists/")) and path.split("/")[-1].isdigit())
         ) or not (static / "index.html").is_file():
             raise HTTPException(404, "Not found")
