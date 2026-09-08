@@ -255,7 +255,7 @@ class Navidrome:
                 self.store.clear_linked_playlist(LIKED_PLAYLIST_KEY)
 
         for playlist in await self.playlists():
-            playlist_id = playlist.get("id")
+            playlist_id = cast(str | None, playlist.get("id"))
             if str(playlist.get("name", "")) == LIKED_PLAYLIST_NAME and isinstance(
                 playlist_id, str
             ):
@@ -263,7 +263,7 @@ class Navidrome:
                 return await self.playlist(playlist_id)
 
         playlist = await self.create_playlist(LIKED_PLAYLIST_NAME, [])
-        playlist_id = playlist.get("id")
+        playlist_id = cast(str | None, playlist.get("id"))
         if isinstance(playlist_id, str) and playlist_id:
             self.store.set_linked_playlist(LIKED_PLAYLIST_KEY, playlist_id)
         return playlist
