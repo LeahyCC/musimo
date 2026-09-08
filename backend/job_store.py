@@ -79,6 +79,7 @@ class Jobs:
         batch_id: str = "",
         batch_label: str = "",
         *,
+        album_id: int = 0,
         replace_match: bool = False,
     ) -> builtins.list[Job]:
         jobs: builtins.list[Job] = []
@@ -118,6 +119,7 @@ class Jobs:
                         id=uuid.uuid4().hex,
                         batch_id=batch_id,
                         batch_label=batch_label,
+                        album_id=album_id,
                         track_id=track_id,
                         format=format,
                         target=target,

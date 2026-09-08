@@ -804,7 +804,7 @@ export function ArtistPage() {
         </section>
       ))}
       <p className="muted small">
-        Release types come from Deezer. Review alternative editions before downloading all albums.
+        Release types come from Deezer. Review alternative editions before downloading an artist.
       </p>
       {query.hasNextPage && (
         <button

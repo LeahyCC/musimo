@@ -6,6 +6,7 @@ export const jobSchema = z.object({
   id: z.string(),
   batch_id: z.string().default(''),
   batch_label: z.string().default(''),
+  album_id: z.number().default(0),
   track_id: z.number(),
   format: z.enum(['original', 'm4a', 'opus', 'mp3']),
   target: z.string(),

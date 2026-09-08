@@ -2,7 +2,7 @@ import { useRef, useState } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowDownToLine, X } from 'lucide-react'
+import { Disc3, ListMusic, X } from 'lucide-react'
 import { z } from 'zod'
 
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from './api'
@@ -16,7 +16,14 @@ const planSchema = z.object({
       art: z.string(),
       year: z.string(),
       error: z.string(),
-      tracks: z.array(z.object({ id: z.number(), duration: z.number(), owned: z.boolean() })),
+      tracks: z.array(
+        z.object({
+          id: z.number(),
+          duration: z.number(),
+          owned: z.boolean(),
+          identity: z.string(),
+        }),
+      ),
     }),
   ),
 })
@@ -32,6 +39,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
   const dialog = useRef<HTMLDialogElement>(null)
   const client = useQueryClient()
   const [opened, setOpened] = useState(false)
+  const [allMusic, setAllMusic] = useState(false)
   const [excluded, setExcluded] = useState<Set<number>>(new Set())
   const [missingOnly, setMissingOnly] = useState(true)
   const [format, setFormat] = useState('')
@@ -47,8 +55,9 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
     enabled: opened,
   })
   const plan = useQuery({
-    queryKey: ['artist-download-plan', artistId],
-    queryFn: ({ signal }) => api(`artists/${artistId}/download-plan`, planSchema, { signal }),
+    queryKey: ['artist-download-plan', artistId, allMusic],
+    queryFn: ({ signal }) =>
+      api(`artists/${artistId}/download-plan?all_music=${allMusic}`, planSchema, { signal }),
     enabled: opened,
     staleTime: 0,
     retry: false,
@@ -62,7 +71,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
   )
   const albums = plan.data?.albums ?? []
   const selected = albums.filter((album) => !album.error && !excluded.has(album.id))
-  const seen = new Set<number>()
+  const seen = new Set<string>()
   const counts = new Map<number, number>()
   let songs = 0,
     owned = 0,
@@ -71,8 +80,8 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
   for (const album of selected) {
     let count = 0
     for (const track of album.tracks) {
-      if (seen.has(track.id)) continue
-      seen.add(track.id)
+      if (seen.has(track.identity)) continue
+      seen.add(track.identity)
       if (missingOnly && track.owned) owned++
       else if (active.has(track.id)) queued++
       else {
@@ -93,6 +102,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
         body: JSON.stringify({
           artist_id: artistId,
           album_ids: selected.map((album) => album.id),
+          all_music: allMusic,
           missing_only: missingOnly,
           format: chosenFormat,
           target: chosenTarget,
@@ -104,17 +114,34 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
   })
   return (
     <>
-      <button
-        className="button primary"
-        onClick={() => {
-          download.reset()
-          setOpened(true)
-          dialog.current?.showModal()
-        }}
-      >
-        <ArrowDownToLine size={17} />
-        Download all albums
-      </button>
+      <div className="artist-download-actions" role="group" aria-label={`Download ${name}`}>
+        {(
+          [
+            [false, Disc3, 'Albums only'],
+            [true, ListMusic, 'All music'],
+          ] as const
+        ).map(([includeAll, Icon, label]) => (
+          <button
+            type="button"
+            className="artist-download-action"
+            aria-label={includeAll ? 'Download all music' : 'Download all albums'}
+            key={label}
+            onClick={() => {
+              download.reset()
+              setExcluded(new Set())
+              setAllMusic(includeAll)
+              setOpened(true)
+              dialog.current?.showModal()
+            }}
+          >
+            <Icon aria-hidden="true" />
+            <span>
+              <small>Download</small>
+              {label}
+            </span>
+          </button>
+        ))}
+      </div>
       <dialog
         ref={dialog}
         className="artist-download-sheet"
@@ -124,11 +151,13 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
         <header>
           <div>
             <p className="eyebrow">{name}</p>
-            <h2 id="artist-download-title">Choose albums to download</h2>
+            <h2 id="artist-download-title">
+              {allMusic ? 'Choose music to download' : 'Choose albums to download'}
+            </h2>
           </div>
           <button
             className="icon-button"
-            aria-label="Close album selection"
+            aria-label="Close download selection"
             disabled={download.isPending}
             onClick={() => dialog.current?.close()}
           >
@@ -146,7 +175,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
           <>
             <div className="artist-download-stats" aria-live="polite">
               <strong>
-                {albumCount} albums · {songs} songs
+                {albumCount} {allMusic ? 'releases' : 'albums'} · {songs} songs
               </strong>
               <span>
                 About {megabytes.toLocaleString()} MB · estimated at{' '}
@@ -196,8 +225,9 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               </label>
             </div>
             <p className="small muted">
-              Includes albums and alternative editions. Singles and EPs are excluded. Uncheck
-              editions you don’t want.
+              {allMusic
+                ? 'Includes every release type and alternative edition. Uncheck releases you don’t want.'
+                : 'Includes albums and alternative editions. Singles and EPs are excluded. Uncheck editions you don’t want.'}
             </p>
             {albums.some((album) => album.error) && (
               <p className="error">
@@ -253,13 +283,16 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
                 </label>
               ))}
             </fieldset>
-            {!albums.length && <p>No albums found in this artist’s catalog.</p>}
+            {!albums.length && (
+              <p>No {allMusic ? 'releases' : 'albums'} found in this artist’s catalog.</p>
+            )}
           </>
         )}
         <footer>
           {download.isSuccess ? (
             <p role="status">
-              {download.data.jobs.length} songs queued from {download.data.albums} albums.{' '}
+              {download.data.jobs.length} songs queued from {download.data.albums}{' '}
+              {allMusic ? 'releases' : 'albums'}.{' '}
               <Link to="/downloads" onClick={() => dialog.current?.close()}>
                 Open downloads
               </Link>
@@ -273,8 +306,8 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               onClick={() => download.mutate()}
             >
               {download.isPending
-                ? 'Adding albums…'
-                : `Download ${albumCount} albums (${songs} songs)`}
+                ? `Adding ${allMusic ? 'music' : 'albums'}…`
+                : `Download ${albumCount} ${allMusic ? 'releases' : 'albums'} (${songs} songs)`}
             </button>
           )}
           {download.isError && (

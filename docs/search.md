@@ -61,12 +61,12 @@ The player lives within the root router and persists while routes change. Song l
 
 Volume, mute, seeking, restart and close remain available on narrow screens. Volume is stored under `musimo.preview-volume`, default 70%; blocked storage does not prevent playback. Seeking is disabled until media metadata is ready. Closing pauses audio, removes its source, cancels lookups and clears the track. Playback errors retain the provider fallback behavior.
 
-## Artist album downloads
+## Artist downloads
 
-Download all albums opens a review sheet. It checks every catalog page, loads complete album track lists and compares them with the library index. Singles and EPs are excluded. Alternative album editions remain visible for manual selection; no unverified “main release” classification is applied.
+Download all albums opens a review sheet containing albums and alternative album editions. Singles and EPs are excluded. Download all music opens the same sheet with every release type, including singles, EPs and compilations. Both choices load complete track lists, compare them with the library index and select every valid release by default.
 
-The sheet shows the albums and unique catalog songs that will be added, songs skipped as owned or already queued, and an estimated size. Skip-owned is enabled by default. Album checkboxes, select all/none, format and destination can change the plan. Incomplete albums are excluded with an error and retry action. Closing without submitting writes no jobs.
+The sheet shows the releases and unique catalog songs that will be added, songs skipped as owned or already queued, and an estimated size. Songs sharing an ISRC across releases are counted and queued once. Skip-owned is enabled by default. Release checkboxes, select all/none, format and destination can change the plan. Incomplete releases are excluded with an error and retry action. Closing without submitting writes no jobs.
 
 Confirmation rechecks membership and ownership before creating one durable group. All selected track lists must resolve before the transaction, so a catalog failure cannot leave a half-created selection. Existing active jobs with the same format and target are excluded. Download counts may decrease if another task queues a song while the sheet is open; the success message reports actual additions.
 
-`GET /api/artists/{id}/download-plan` returns the checked album list. `POST /api/artist-batches` accepts artist ID, selected album IDs, missing-only, format and target. The existing group pause/resume/cancel controls apply to the result. Grouped metadata release types, playlist imports and automatic exclusion of live/remix editions remain separate work.
+`GET /api/artists/{id}/download-plan` returns the checked release list. `all_music=true` includes every release type; the default remains albums only. `POST /api/artist-batches` accepts the same `all_music` flag with artist ID, selected release IDs, missing-only, format and target. The existing group pause/resume/cancel controls apply to the result. Playlist imports and automatic exclusion of live/remix editions remain separate work.
