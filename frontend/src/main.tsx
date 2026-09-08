@@ -830,12 +830,14 @@ function LibraryScreen({
   artistId,
   playlistId,
   parentArtistId,
+  artistSection,
 }: {
   view?: 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
   albumId?: string
   artistId?: string
   playlistId?: string
   parentArtistId?: string
+  artistSection?: 'albums' | 'songs'
 }) {
   return (
     <Suspense fallback={<p role="status">Opening your library…</p>}>
@@ -845,6 +847,7 @@ function LibraryScreen({
         artistId={artistId}
         playlistId={playlistId}
         parentArtistId={parentArtistId}
+        artistSection={artistSection}
       />
     </Suspense>
   )
@@ -879,6 +882,14 @@ const libraryArtistRoute = createRoute({
   component: function LibraryArtistRoute() {
     const { artistId } = useParams({ from: '/library/artists/$artistId' })
     return <LibraryScreen view="artists" artistId={artistId} />
+  },
+})
+const libraryArtistSongsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/artists/$artistId/songs',
+  component: function LibraryArtistSongsRoute() {
+    const { artistId } = useParams({ from: '/library/artists/$artistId/songs' })
+    return <LibraryScreen view="artists" artistId={artistId} artistSection="songs" />
   },
 })
 const libraryArtistAlbumRoute = createRoute({
@@ -939,6 +950,7 @@ const router = createRouter({
     libraryAlbumRoute,
     libraryArtistsRoute,
     libraryArtistRoute,
+    libraryArtistSongsRoute,
     libraryArtistAlbumRoute,
     libraryTracksRoute,
     libraryPlaylistsRoute,
