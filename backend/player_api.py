@@ -147,6 +147,10 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
     async def playlists() -> dict[str, object]:
         return {"items": await get().playlists()}
 
+    @app.get("/api/library/playlists/liked")
+    async def liked_playlist() -> dict[str, object]:
+        return await get().linked_playlist()
+
     @app.get("/api/library/playlists/{playlist_id}")
     async def playlist(playlist_id: str) -> dict[str, object]:
         return await get().playlist(checked_id(playlist_id))
