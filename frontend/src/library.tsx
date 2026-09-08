@@ -41,6 +41,7 @@ import { durationText, remember, stored, usePlayer } from './player'
 export type LibraryTab = 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
 type Tab = LibraryTab
 type Layout = 'grid' | 'list'
+type ArtistSection = 'albums' | 'songs'
 
 type LibraryPageProps = {
   view?: Tab
@@ -48,6 +49,7 @@ type LibraryPageProps = {
   artistId?: string
   playlistId?: string
   parentArtistId?: string
+  artistSection?: ArtistSection
 }
 
 const SORTS: Record<Tab, { value: string; label: string }[]> = {
@@ -332,6 +334,7 @@ export function LibraryPage({
   artistId = '',
   playlistId: routePlaylistId = '',
   parentArtistId = '',
+  artistSection = 'albums',
 }: LibraryPageProps = {}) {
   const player = usePlayer()
   const client = useQueryClient()
@@ -361,6 +364,7 @@ export function LibraryPage({
   const [activeArtist, setActiveArtist] = useState<LibraryArtist | null>(null)
   const [albumParent, setAlbumParent] = useState<{ id: string; name: string } | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
+  const artistSongsMode = artistSection === 'songs'
   const sort = sorts[tab]
   const capabilities = useQuery({
     queryKey: ['player-capabilities'],
@@ -420,6 +424,16 @@ export function LibraryPage({
       capabilities.data?.available === true &&
       Boolean(playlistId) &&
       Boolean(playlistTrackQuery.trim()),
+  })
+  const artistTracks = useQuery({
+    queryKey: ['library-artist-tracks', artistId],
+    queryFn: ({ signal }) =>
+      api(
+        `library/artists/${encodeURIComponent(artistId)}/tracks`,
+        libraryArtistTracksSchema,
+        { signal },
+      ),
+    enabled: capabilities.data?.available === true && Boolean(artistId),
   })
   const createPlaylist = useMutation({
     mutationFn: (name: string) =>
@@ -634,7 +648,7 @@ export function LibraryPage({
     return () => {
       current = false
     }
-  }, [albumId, artistId, parentArtistId, routePlaylistId, view])
+  }, [albumId, artistId, parentArtistId, routePlaylistId, view, artistSection])
 
   async function playAlbum(id: string, shuffled = false) {
     setLoadingDetail(true)
@@ -986,43 +1000,99 @@ export function LibraryPage({
             </span>
             <div>
               <h2>{detailTitle}</h2>
-              <span>{artistAlbums.length} ALBUMS</span>
+              <span>
+                {artistSongsMode ? `${artistTracks.data?.items.length ?? 0} SONGS` : `${artistAlbums.length} ALBUMS`}
+              </span>
             </div>
             <div className="button-row">
-              <button
-                className="button primary"
-                onClick={() => void playArtist(activeArtist.id)}
-                disabled={loadingDetail || !artistAlbums.length}
-              >
-                <Play size={15} fill="currentColor" /> Play all
-              </button>
-              <button
-                className="button"
-                onClick={() => void playArtist(activeArtist.id, true)}
-                disabled={loadingDetail || !artistAlbums.length}
-              >
-                <Shuffle size={15} /> Shuffle
-              </button>
+              {artistSongsMode ? (
+                <>
+                  <button
+                    className="button primary"
+                    onClick={() => player.playLibrary(artistTracks.data?.items ?? [])}
+                    disabled={loadingDetail || artistTracks.isLoading || !artistTracks.data?.items.length}
+                  >
+                    <Play size={15} fill="currentColor" /> Play all
+                  </button>
+                  <button
+                    className="button"
+                    onClick={() => player.shuffleLibrary(artistTracks.data?.items ?? [])}
+                    disabled={loadingDetail || artistTracks.isLoading || !artistTracks.data?.items.length}
+                  >
+                    <Shuffle size={15} /> Shuffle
+                  </button>
+                  <button
+                    className="button"
+                    onClick={() =>
+                      void navigate({
+                        to: '/library/artists/$artistId',
+                        params: { artistId: activeArtist.id },
+                      })
+                    }
+                  >
+                    <ListMusic size={15} /> Albums
+                  </button>
+                </>
+              ) : (
+                <>
+                  <button
+                    className="button primary"
+                    onClick={() => void playArtist(activeArtist.id)}
+                    disabled={loadingDetail || !artistAlbums.length}
+                  >
+                    <Play size={15} fill="currentColor" /> Play all
+                  </button>
+                  <button
+                    className="button"
+                    onClick={() => void playArtist(activeArtist.id, true)}
+                    disabled={loadingDetail || !artistAlbums.length}
+                  >
+                    <Shuffle size={15} /> Shuffle
+                  </button>
+                  <button
+                    className="button"
+                    onClick={() =>
+                      void navigate({
+                        to: '/library/artists/$artistId/songs',
+                        params: { artistId: activeArtist.id },
+                      })
+                    }
+                    disabled={loadingDetail || artistTracks.isLoading || !artistTracks.data?.items.length}
+                  >
+                    <ListMusic size={15} /> All songs
+                  </button>
+                </>
+              )}
             </div>
           </div>
-          <div className={layout === 'grid' ? 'library-grid' : 'library-collection-list'}>
-            {artistAlbums.map((album) => (
-              <AlbumItem
-                album={album}
-                key={album.id}
-                layout={layout}
-                loading={loadingDetail}
-                onOpen={() =>
-                  void navigate({
-                    to: '/library/artists/$artistId/albums/$albumId',
-                    params: { artistId: activeArtist.id, albumId: album.id },
-                  })
-                }
-                onPlay={() => void playAlbum(album.id)}
-                onShuffle={() => void playAlbum(album.id, true)}
-              />
-            ))}
-          </div>
+          {artistSongsMode && artistTracks.isError && (
+            <p className="error" role="alert">
+              {artistTracks.error.message}
+            </p>
+          )}
+          {artistSongsMode && artistTracks.isLoading && <p role="status">Loading songs…</p>}
+          {artistSongsMode ? (
+            <TrackList tracks={artistTracks.data?.items ?? []} />
+          ) : (
+            <div className={layout === 'grid' ? 'library-grid' : 'library-collection-list'}>
+              {artistAlbums.map((album) => (
+                <AlbumItem
+                  album={album}
+                  key={album.id}
+                  layout={layout}
+                  loading={loadingDetail}
+                  onOpen={() =>
+                    void navigate({
+                      to: '/library/artists/$artistId/albums/$albumId',
+                      params: { artistId: activeArtist.id, albumId: album.id },
+                    })
+                  }
+                  onPlay={() => void playAlbum(album.id)}
+                  onShuffle={() => void playAlbum(album.id, true)}
+                />
+              ))}
+            </div>
+          )}
         </section>
       )}
       {(tab === 'home' || tab === 'albums') && showBrowser && (
