@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { Link } from '@tanstack/react-router'
 import {
   Disc3,
+  Maximize2,
   Pause,
   Play,
   Repeat,
@@ -32,6 +33,7 @@ type Playback = {
   repeat: RepeatMode
   play: (track: MusicResult) => void
   playLibrary: (tracks: LibraryTrack[], index?: number) => void
+  shuffleLibrary: (tracks: LibraryTrack[]) => void
   next: () => void
   previous: () => void
 }
@@ -47,6 +49,7 @@ const PlayerContext = createContext<Playback>({
   repeat: 'off',
   play: () => undefined,
   playLibrary: () => undefined,
+  shuffleLibrary: () => undefined,
   next: () => undefined,
   previous: () => undefined,
 })
@@ -58,7 +61,7 @@ export const durationText = (seconds: number) =>
 const artUrl = (track: LibraryTrack) =>
   track.coverArt ? `/api/player/art/${encodeURIComponent(track.coverArt)}` : ''
 
-function stored(key: string, fallback: string) {
+export function stored(key: string, fallback: string) {
   try {
     return localStorage.getItem(key) ?? fallback
   } catch {
@@ -66,11 +69,11 @@ function stored(key: string, fallback: string) {
   }
 }
 
-function remember(key: string, value: string) {
+export function remember(key: string, value: string) {
   try {
     localStorage.setItem(key, value)
   } catch {
-    /* Playback still works when browser storage is blocked. */
+    /* Browser storage is optional. */
   }
 }
 
@@ -180,6 +183,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     queueRef.current = items
     setQueue(items)
     loadLibrary(Math.max(0, Math.min(index, items.length - 1)))
+  }
+
+  function shuffleLibrary(items: LibraryTrack[]) {
+    if (!items.length) return
+    setShuffle(true)
+    playLibrary(items, Math.floor(Math.random() * items.length))
   }
 
   function toggle() {
@@ -322,6 +331,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const activeTitle = libraryTrack?.title ?? track?.title
   const activeArtist = libraryTrack?.artist ?? track?.artist
+  const activeAlbum = libraryTrack?.album ?? track?.album
   const activeArt = libraryTrack ? artUrl(libraryTrack) : track?.art
   const isLibrary = Boolean(libraryTrack)
 
@@ -339,6 +349,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         repeat,
         play,
         playLibrary,
+        shuffleLibrary,
         next: () => next(),
         previous,
       }}
@@ -363,12 +374,57 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 (activeTitle ?? 'A little listening goes a long way.')
               )}
             </strong>
-            {activeArtist && <small>{activeArtist}</small>}
+            {activeArtist && (
+              <small className="player-byline">
+                {libraryTrack?.artistId ? (
+                  <Link
+                    to="/library/artists/$artistId"
+                    params={{ artistId: libraryTrack.artistId }}
+                  >
+                    {activeArtist}
+                  </Link>
+                ) : track?.artist_id ? (
+                  <Link to="/artists/$artistId" params={{ artistId: String(track.artist_id) }}>
+                    {activeArtist}
+                  </Link>
+                ) : (
+                  activeArtist
+                )}
+                {activeAlbum && (
+                  <>
+                    {' · '}
+                    {libraryTrack?.albumId ? (
+                      <Link
+                        to="/library/albums/$albumId"
+                        params={{ albumId: libraryTrack.albumId }}
+                      >
+                        {activeAlbum}
+                      </Link>
+                    ) : track?.album_id ? (
+                      <Link to="/albums/$albumId" params={{ albumId: String(track.album_id) }}>
+                        {activeAlbum}
+                      </Link>
+                    ) : (
+                      activeAlbum
+                    )}
+                  </>
+                )}
+              </small>
+            )}
             <small className="playback-notice" role="status">
               {notice}
             </small>
           </span>
         </div>
+        {isLibrary && (
+          <Link
+            className="icon-button open-now-playing"
+            aria-label="Open Now Playing"
+            to="/now-playing"
+          >
+            <Maximize2 size={17} />
+          </Link>
+        )}
         <div className="playback-controls">
           {isLibrary ? (
             <button className="icon-button" aria-label="Previous track" onClick={previous}>
