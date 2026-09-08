@@ -74,9 +74,11 @@ test('failed downloads show a count, cause and retry state', async ({ page }) =>
     if (new URL(route.request().url()).origin !== 'http://127.0.0.1:18765') await route.abort()
     else await route.fallback()
   })
+
   await page.route('**/api/snapshot', (route) =>
     route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
   )
+
   await page.route('**/api/jobs*', (route) =>
     route.fulfill({
       json: {
@@ -96,6 +98,7 @@ test('failed downloads show a count, cause and retry state', async ({ page }) =>
       },
     }),
   )
+
   await page.route('**/api/albums/42*', (route) =>
     route.fulfill({
       json: {
@@ -107,6 +110,7 @@ test('failed downloads show a count, cause and retry state', async ({ page }) =>
       },
     }),
   )
+
   await page.route('**/api/jobs/failed-job/retry', (route) =>
     route.fulfill({
       json: { ...failed, stage: 'queued', error_code: '', error: '', updated_at: 2 },
