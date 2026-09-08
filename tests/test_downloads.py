@@ -209,6 +209,7 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                     response = await api.post("/api/batches", json={"album_id": 9})
                     self.assertEqual(response.status_code, 200)
                     payload = response.json()
+                    self.assertEqual({job["album_id"] for job in payload["jobs"]}, {9})
                     again = (await api.post("/api/batches", json={"album_id": 9})).json()
                     self.assertEqual(
                         [row["id"] for row in payload["jobs"]], [row["id"] for row in again["jobs"]]

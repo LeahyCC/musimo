@@ -1,10 +1,12 @@
 # Downloads
 
-Version 0.3 adds durable single-track jobs, album batches, queue controls and download history. Artist album batches use a review sheet with complete catalog counts, album selection and skip-owned defaults. Pasted-link imports remain later work.
+Version 0.3 adds durable single-track jobs, album batches, queue controls and download history. Artist pages can prepare albums only or every release type in one review sheet with complete catalog counts, release selection and skip-owned defaults. Pasted-link imports remain later work.
 
 ## User flow
 
 Choose a track format, then its download arrow. Songs already in the library have a disabled download arrow. Album cards download missing tracks. The album page has one button: Download album for an unowned album, Download missing (x) for a partial album, or a disabled Download album for a fully owned album. The bottom queue and Downloads page share live state. Pause stops the worker process; resume keeps usable partial files. Cancel removes that job’s staging folder. Retry restarts a failed or cancelled job. History retains cleared jobs and supports text and date filters.
+
+Album-card queued counts come from the shared queue, so they remain visible after opening a card and returning to the results page.
 
 The default is Original. AAC stays M4A and Opus is remuxed into an Opus container without re-encoding. Other requested formats convert only when needed: AAC/Opus at 160 kbps, MP3 at 320 kbps. Conversion cannot improve a lossy source. Finished jobs show the measured audio packet bitrate and codec. Custom quality presets are not implemented yet.
 

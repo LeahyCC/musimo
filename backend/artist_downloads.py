@@ -16,6 +16,7 @@ class ArtistBatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     artist_id: int = Field(gt=0)
     album_ids: list[int] = Field(min_length=1, max_length=1000)
+    all_music: bool = False
     missing_only: bool = True
     format: Format | None = None
     target: str | None = None
@@ -25,7 +26,7 @@ class ArtistDownloads:
     def __init__(self, downloads: Downloads) -> None:
         self.downloads = downloads
 
-    async def albums(self, artist_id: int) -> list[Album]:
+    async def albums(self, artist_id: int, all_music: bool = False) -> list[Album]:
         catalog = self.downloads.catalog
         albums: dict[int, Album] = {}
         for index in range(0, 10000, 50):
@@ -37,7 +38,7 @@ class ArtistDownloads:
                 raise CatalogError("Artist album list unavailable")
             for entry in entries:
                 album = Album.model_validate(entry)
-                if album.record_type == "album":
+                if all_music or album.record_type == "album":
                     albums[album.id] = album
             if not raw.get("next"):
                 return list(albums.values())
@@ -60,14 +61,19 @@ class ArtistDownloads:
             "art": safe_media(album.cover_medium),
             "year": album.release_date[:4],
             "tracks": [
-                {"id": track.id, "duration": track.duration, "owned": track.ownership == "owned"}
+                {
+                    "id": track.id,
+                    "duration": track.duration,
+                    "owned": track.ownership == "owned",
+                    "identity": f"isrc:{track.isrc}" if track.isrc else f"id:{track.id}",
+                }
                 for track in tracks
             ],
             "error": "",
         }
 
-    async def plan(self, artist_id: int) -> dict[str, object]:
-        albums = await self.albums(artist_id)
+    async def plan(self, artist_id: int, all_music: bool = False) -> dict[str, object]:
+        albums = await self.albums(artist_id, all_music)
         slots = asyncio.Semaphore(4)
 
         async def one(album: Album) -> dict[str, object]:
@@ -93,12 +99,15 @@ class ArtistDownloads:
         settings = service.settings()
         target = service.target(request.target or settings.destination)
         service.check_destination(target)
-        available = {album.id: album for album in await self.albums(request.artist_id)}
+        available = {
+            album.id: album for album in await self.albums(request.artist_id, request.all_music)
+        }
         selected = list(dict.fromkeys(request.album_ids))
         if any(album_id not in available for album_id in selected):
-            raise ValueError("Choose albums from this artist's catalog")
+            noun = "releases" if request.all_music else "albums"
+            raise ValueError(f"Choose {noun} from this artist's catalog")
         # Resolve every selected album first: a failed lookup must not enqueue half a selection.
-        ids: set[int] = set()
+        identities: set[str] = set()
         wanted: list[int] = []
         album_tracks: dict[int, list[int]] = {}
         owned = 0
@@ -117,9 +126,10 @@ class ArtistDownloads:
             for raw in tracks:
                 assert isinstance(raw, dict)
                 track_id = int(raw["id"])
-                if track_id in ids:
+                identity = str(raw["identity"])
+                if identity in identities:
                     continue
-                ids.add(track_id)
+                identities.add(identity)
                 if request.missing_only and raw["owned"]:
                     owned += 1
                 elif track_id in active:
@@ -138,7 +148,8 @@ class ArtistDownloads:
         queued += sum(track_id in active for track_id in wanted)
         wanted = [track_id for track_id in wanted if track_id not in active]
         batch_id = uuid.uuid4().hex
-        jobs = service.jobs.enqueue_many(wanted, format, str(target), batch_id, f"{name} · albums")
+        label = f"{name} · {'all music' if request.all_music else 'albums'}"
+        jobs = service.jobs.enqueue_many(wanted, format, str(target), batch_id, label)
         owned += sum(job.stage == "done" for job in jobs)
         jobs = [job for job in jobs if job.stage != "done"]
         remaining = {job.track_id for job in jobs}
@@ -154,12 +165,12 @@ class ArtistDownloads:
 
 def install_artist_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
     @app.get("/api/artists/{artist_id}/download-plan")
-    async def plan(artist_id: int) -> dict[str, object]:
+    async def plan(artist_id: int, all_music: bool = False) -> dict[str, object]:
         if artist_id <= 0:
             raise HTTPException(422, "Invalid artist ID")
         try:
             async with asyncio.timeout(120):
-                return await ArtistDownloads(get()).plan(artist_id)
+                return await ArtistDownloads(get()).plan(artist_id, all_music)
         except TimeoutError as exc:
             raise HTTPException(
                 504, "Album checks timed out. Retry to continue from cached results."

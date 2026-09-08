@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import type { MusicResult } from '../src/api'
+import type { DownloadJob, MusicResult } from '../src/api'
 
 test('card links and download controls work independently in a natural-height grid', async ({
   page,
@@ -30,6 +30,47 @@ test('card links and download controls work independently in a natural-height gr
     disc: 1,
     position: 1,
   }))
+  const queuedJob: DownloadJob = {
+    id: 'queued-album-track',
+    batch_id: 'fixture',
+    batch_label: '',
+    album_id: 42,
+    track_id: 101,
+    format: 'original',
+    target: '/music',
+    stage: 'queued',
+    desired: 'run',
+    meta: {
+      id: 101,
+      title: 'Queued track',
+      artist: 'Fixture artist',
+      album: 'Album 1',
+      art: '',
+      duration: 180,
+    },
+    candidates: [],
+    selected: '',
+    check_match: false,
+    attempts: 0,
+    retry_at: 0,
+    progress: 0,
+    downloaded: 0,
+    total: 0,
+    speed: 0,
+    eta: null,
+    error_code: '',
+    error: '',
+    retryable: false,
+    tool_tail: '',
+    tool_version: '',
+    warnings: [],
+    final_path: '',
+    codec: '',
+    actual_bitrate: 0,
+    created_at: 1,
+    updated_at: 1,
+    hidden: false,
+  }
   await page.route('**/api/search?*', (route) =>
     route.fulfill({
       json: { items: albums, total: albums.length, next_index: null, cached: false },
@@ -54,7 +95,7 @@ test('card links and download controls work independently in a natural-height gr
 
   await page.route('**/api/batches', (route) =>
     route.fulfill({
-      json: { id: 'fixture', jobs: [], skipped: 0 },
+      json: { id: 'fixture', jobs: [queuedJob], skipped: 0 },
     }),
   )
   await page.goto('/search?q=Fixture&tab=album')
@@ -69,11 +110,13 @@ test('card links and download controls work independently in a natural-height gr
   await expect(download).toHaveCSS('opacity', '1')
   await download.click()
   await expect(page).toHaveURL(/\/search\?/)
-  await expect(cards.first().getByText('Nothing missing')).toBeVisible()
+  await expect(cards.first().getByText('1 queued')).toBeVisible()
   await cards.first().getByRole('link', { name: 'Fixture artist' }).click()
   await expect(page).toHaveURL(/\/artists\/7$/)
   await page.goBack()
   await expect(cards).toHaveCount(13)
+  await expect(cards.first().getByText('1 queued')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open queue, 1 active downloads' })).toBeVisible()
   await cards.first().click({ position: { x: 12, y: 60 } })
   await expect(page).toHaveURL(/\/albums\/42$/)
 })

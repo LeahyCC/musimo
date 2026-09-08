@@ -88,7 +88,11 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         wanted = [row.id for row in tracks if not request.missing_only or row.ownership != "owned"]
         batch_id = uuid.uuid4().hex
         jobs = service.jobs.enqueue_many(
-            wanted, request.format or settings.output_format, str(target), batch_id
+            wanted,
+            request.format or settings.output_format,
+            str(target),
+            batch_id,
+            album_id=request.album_id,
         )
         completed = sum(job.stage == "done" for job in jobs)
         jobs = [job for job in jobs if job.stage != "done"]
