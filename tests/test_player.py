@@ -31,6 +31,14 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
 
             def upstream(request: httpx.Request) -> httpx.Response:
                 requests.append(request)
+                if request.url.host == "lrclib.net":
+                    return httpx.Response(
+                        200,
+                        json={
+                            "plainLyrics": "First line\nSecond line",
+                            "syncedLyrics": "[00:01.25]First line\n[00:03.00]Second line",
+                        },
+                    )
                 path = request.url.path
                 if path.endswith("/ping"):
                     return subsonic(serverVersion="0.63.0")
@@ -68,7 +76,15 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 if path.endswith("/getArtist"):
                     return subsonic(artist={"id": "artist-1", "album": [{"id": "album-1"}]})
                 if path.endswith("/getSong"):
-                    return subsonic(song={"id": "song-1", "title": "Track"})
+                    return subsonic(
+                        song={
+                            "id": request.url.params.get("id"),
+                            "title": "Track",
+                            "artist": "Artist",
+                            "album": "One",
+                            "duration": 180,
+                        }
+                    )
                 if path.endswith("/getPlayQueue"):
                     return subsonic(
                         playQueue={
@@ -80,10 +96,23 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 if path.endswith("/savePlayQueue") or path.endswith("/scrobble"):
                     return subsonic()
                 if path.endswith("/getLyricsBySongId"):
+                    if request.url.params.get("id") == "no-lyrics":
+                        return subsonic(lyricsList={"structuredLyrics": []})
                     return subsonic(
-                        lyricsList={"structuredLyrics": [{"displayArtist": "Artist", "line": []}]}
+                        lyricsList={
+                            "structuredLyrics": [
+                                {"displayArtist": "Artist", "line": [{"value": "Words"}]}
+                            ]
+                        }
                     )
                 if path.endswith("/getSonicSimilarTracks") or path.endswith("/findSonicPath"):
+                    if request.url.params.get("id") == "radio-not-ready":
+                        return subsonic(
+                            status="failed",
+                            error={
+                                "message": "plugin call failed: AudioMuse-AI returned status 503"
+                            },
+                        )
                     return subsonic(
                         sonicMatch=[{"entry": {"id": "song-2", "title": "Next"}, "similarity": 0.9}]
                     )
@@ -195,6 +224,12 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             "artist-1",
                         )
                         self.assertEqual(
+                            (await client.get("/api/library/artists/artist-1/tracks")).json()[
+                                "items"
+                            ][0]["id"],
+                            "song-1",
+                        )
+                        self.assertEqual(
                             (await client.get("/api/player/song/song-1")).json()["id"], "song-1"
                         )
                         self.assertEqual(
@@ -234,6 +269,11 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             len((await client.get("/api/player/lyrics/song-1")).json()["items"]), 1
                         )
+                        fallback_lyrics = (await client.get("/api/player/lyrics/no-lyrics")).json()[
+                            "items"
+                        ][0]
+                        self.assertTrue(fallback_lyrics["synced"])
+                        self.assertEqual(fallback_lyrics["line"][0]["start"], 1250)
                         self.assertEqual(
                             (await client.get("/api/player/radio/song-1?count=12")).json()["items"][
                                 0
@@ -246,6 +286,9 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             ][0]["entry"]["id"],
                             "song-2",
                         )
+                        radio_error = await client.get("/api/player/radio/radio-not-ready?count=12")
+                        self.assertEqual(radio_error.status_code, 503)
+                        self.assertIn("still analysing", radio_error.json()["detail"])
                         audio = await client.get(
                             "/api/player/stream/song-1", headers={"Range": "bytes=2-5"}
                         )
@@ -270,6 +313,8 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(requests)
             for request in requests:
+                if request.url.host == "lrclib.net":
+                    continue
                 self.assertEqual(request.url.params["u"], "listener")
                 self.assertNotIn("private password", str(request.url))
             save_request = next(

@@ -185,6 +185,9 @@ export const libraryAlbumDetailSchema = libraryAlbumSchema.extend({
 export const libraryArtistDetailSchema = libraryArtistSchema.extend({
   album: z.array(libraryAlbumSchema).default([]),
 })
+export const libraryArtistTracksSchema = z.object({
+  items: z.array(libraryTrackSchema).default([]),
+})
 export const libraryPlaylistDetailSchema = libraryPlaylistSchema.extend({
   entry: z.array(libraryTrackSchema).default([]),
 })
