@@ -189,7 +189,13 @@ class Store:
                     "(SELECT json_extract(payload,'$.batch_id') FROM jobs WHERE active=1 "
                     "AND json_extract(payload,'$.batch_id')!='') "
                     "OR id IN (SELECT id FROM jobs WHERE active=0 "
-                    "AND json_extract(payload,'$.hidden')=0 ORDER BY created_at DESC LIMIT 50) "
+                    "AND json_extract(payload,'$.hidden')=0 "
+                    "AND json_extract(payload,'$.stage')='failed' "
+                    "ORDER BY created_at DESC LIMIT 50) "
+                    "OR id IN (SELECT id FROM jobs WHERE active=0 "
+                    "AND json_extract(payload,'$.hidden')=0 "
+                    "AND json_extract(payload,'$.stage')!='failed' "
+                    "ORDER BY created_at DESC LIMIT 50) "
                     "ORDER BY created_at DESC"
                 )
             ]
@@ -199,9 +205,39 @@ class Store:
             return {
                 "settings": self.settings(),
                 "jobs": jobs,
+                "summary": self.job_summary(),
                 "cursor": self.bounds()[1],
                 "controls": {"paused": bool(control[0]), "source_paused": bool(control[1])},
             }
+
+    def job_summary(self) -> dict[str, object]:
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT json_extract(payload,'$.stage') stage,"
+                "json_extract(payload,'$.error_code') error_code,"
+                "json_extract(payload,'$.error') error,count(*) amount FROM jobs "
+                "WHERE coalesce(json_extract(payload,'$.hidden'),0)=0 "
+                "GROUP BY stage,error_code,error ORDER BY amount DESC"
+            ).fetchall()
+        active = sum(
+            int(row["amount"])
+            for row in rows
+            if row["stage"] not in {"done", "failed", "cancelled"}
+        )
+        failures = [
+            {
+                "code": str(row["error_code"] or ""),
+                "message": str(row["error"] or ""),
+                "count": int(row["amount"]),
+            }
+            for row in rows
+            if row["stage"] == "failed"
+        ]
+        return {
+            "active": active,
+            "failed": sum(int(row["amount"]) for row in rows if row["stage"] == "failed"),
+            "failure_reasons": failures,
+        }
 
     def bounds(self) -> tuple[int, int]:
         with self.lock:

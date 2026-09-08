@@ -53,7 +53,13 @@ for (const count of [2, 30]) {
     )
 
     await page.route('**/api/jobs', (route) =>
-      route.fulfill({ json: { jobs: [], controls: { paused: false, source_paused: false } } }),
+      route.fulfill({
+        json: {
+          jobs: [],
+          controls: { paused: false, source_paused: false },
+          summary: { active: 0, failed: 0, failure_reasons: [] },
+        },
+      }),
     )
     await page.route('**/api/events*', (route) => route.abort())
     await page.goto('/albums/42')

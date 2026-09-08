@@ -26,15 +26,51 @@ import {
   settingsSchema,
 } from './api'
 import type { DownloadJob, MusicResult } from './api'
+import { InfiniteScroll } from './infinite-scroll'
 
-type QueueData = { jobs: DownloadJob[]; controls: { paused: boolean; source_paused: boolean } }
+export type QueueData = {
+  jobs: DownloadJob[]
+  controls: { paused: boolean; source_paused: boolean }
+  summary: {
+    active: number
+    failed: number
+    failure_reasons: { code: string; message: string; count: number }[]
+  }
+}
 export const activeJob = (job: DownloadJob) => !['done', 'failed', 'cancelled'].includes(job.stage)
 export function updateJob(client: QueryClient, job: DownloadJob) {
   client.setQueryData<QueueData>(['jobs'], (old) => {
     const previous = old?.jobs.find((item) => item.id === job.id)
     if (previous && previous.updated_at > job.updated_at) return old
+    const summary = {
+      active: old?.summary.active ?? 0,
+      failed: old?.summary.failed ?? 0,
+      failure_reasons: [...(old?.summary.failure_reasons ?? [])],
+    }
+    // The server supplies totals beyond the 50 visible finished jobs. Adjust those totals as SSE
+    // updates arrive so a large queue stays accurate without refetching after every completion.
+    for (const [item, delta] of [
+      [previous, -1],
+      [job, 1],
+    ] as const) {
+      if (!item) continue
+      if (activeJob(item)) summary.active = Math.max(0, summary.active + delta)
+      if (item.stage !== 'failed') continue
+      summary.failed = Math.max(0, summary.failed + delta)
+      const index = summary.failure_reasons.findIndex(
+        (reason) => reason.code === item.error_code && reason.message === item.error,
+      )
+      if (index >= 0) {
+        const reason = summary.failure_reasons[index]
+        if (reason) summary.failure_reasons[index] = { ...reason, count: reason.count + delta }
+        if (summary.failure_reasons[index]?.count === 0) summary.failure_reasons.splice(index, 1)
+      } else if (delta > 0) {
+        summary.failure_reasons.push({ code: item.error_code, message: item.error, count: 1 })
+      }
+    }
     return {
       controls: old?.controls ?? { paused: false, source_paused: false },
+      summary,
       jobs: [job, ...(old?.jobs ?? []).filter((item) => item.id !== job.id)],
     }
   })
@@ -57,6 +93,11 @@ export function useJobs() {
 }
 const bytes = (value: number) =>
   value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.round(value / 1024)} KB`
+
+export const failureMessage = (job: Pick<DownloadJob, 'error_code' | 'error'>) =>
+  job.error_code === 'NO_MATCH'
+    ? 'No matching recording was found on YouTube. Nothing was downloaded.'
+    : job.error || 'The download stopped without an error message.'
 
 export function DownloadButton({ item }: { item: MusicResult }) {
   const client = useQueryClient()
@@ -131,17 +172,28 @@ export function DownloadButton({ item }: { item: MusicResult }) {
       job.target === (target || settings.data?.destination.value) &&
       activeJob(job),
   )
+  const failed = existing
+    ? undefined
+    : queue.data?.jobs.find(
+        (job) =>
+          job.track_id === item.id &&
+          job.format === selected &&
+          job.target === (target || settings.data?.destination.value) &&
+          job.stage === 'failed',
+      )
   const mutation = useMutation({
     mutationFn: () =>
-      api('jobs', jobSchema, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          track_id: item.id,
-          format: selected,
-          ...(target ? { target } : {}),
-        }),
-      }),
+      failed
+        ? api(`jobs/${failed.id}/retry`, jobSchema, { method: 'POST' })
+        : api('jobs', jobSchema, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              track_id: item.id,
+              format: selected,
+              ...(target ? { target } : {}),
+            }),
+          }),
     onSuccess: (job) => updateJob(client, job),
   })
   return (
@@ -163,13 +215,29 @@ export function DownloadButton({ item }: { item: MusicResult }) {
             ? `${item.title} is in your library`
             : existing
               ? `${item.title} is ${existing.stage}`
-              : `Download ${item.title}`
+              : failed
+                ? `Retry ${item.title}. ${failureMessage(failed)}`
+                : `Download ${item.title}`
         }
-        title={owned ? 'Already in your library' : (existing?.stage ?? 'Download track')}
+        title={
+          owned
+            ? 'Already in your library'
+            : existing?.stage
+              ? existing.stage
+              : failed
+                ? failureMessage(failed)
+                : 'Download track'
+        }
         disabled={owned || Boolean(existing) || mutation.isPending}
         onClick={() => mutation.mutate()}
       >
-        {owned || existing ? <Check size={17} /> : <ArrowDownToLine size={17} />}
+        {owned || existing ? (
+          <Check size={17} />
+        ) : failed ? (
+          <RotateCcw size={17} />
+        ) : (
+          <ArrowDownToLine size={17} />
+        )}
       </button>
       <button
         ref={optionsButton}
@@ -346,7 +414,9 @@ function JobCard({ job }: { job: DownloadJob }) {
             {job.codec} · {Math.round(job.actual_bitrate / 1000)} kbps
           </span>
         )}
-        <span>Attempt {job.attempts}</span>
+        <span>
+          {job.attempts} {job.attempts === 1 ? 'attempt' : 'attempts'}
+        </span>
       </div>
       {job.stage === 'retry_wait' && (
         <p className="small">
@@ -355,7 +425,7 @@ function JobCard({ job }: { job: DownloadJob }) {
       )}
       {job.error && (
         <p className="error" role="alert">
-          {job.error_code}: {job.error}
+          {failureMessage(job)} {job.error_code && <small>({job.error_code})</small>}
         </p>
       )}
       {job.check_match && (
@@ -511,6 +581,12 @@ function BatchSummary({ jobs }: { jobs: DownloadJob[] }) {
             </strong>
             <span>
               {rows.filter((job) => job.stage === 'done').length}/{rows.length} complete
+              {rows.some((job) => job.stage === 'failed')
+                ? ` · ${rows.filter((job) => job.stage === 'failed').length} failed`
+                : ''}
+              {rows.some((job) => job.stage === 'cancelled')
+                ? ` · ${rows.filter((job) => job.stage === 'cancelled').length} cancelled`
+                : ''}
             </span>
             <progress
               max={rows.length}
@@ -563,10 +639,12 @@ function QueueControls() {
       client.setQueryData<QueueData>(['jobs'], (old) => ({
         jobs: old?.jobs ?? [],
         controls: data.controls,
+        summary: old?.summary ?? { active: 0, failed: 0, failure_reasons: [] },
       }))
       void client.invalidateQueries({ queryKey: ['jobs'] })
     },
   })
+  const failed = queue.data?.summary.failed ?? 0
   return (
     <>
       <div className="queue-actions">
@@ -601,10 +679,10 @@ function QueueControls() {
         </button>
         <button
           className="button"
-          disabled={command.isPending}
+          disabled={command.isPending || failed === 0}
           onClick={() => command.mutate('retry-failed')}
         >
-          Retry failed
+          Retry failed ({failed})
         </button>
         <button
           className="button"
@@ -675,13 +753,11 @@ function History() {
       )}
       <JobList jobs={query.data?.pages.flatMap((page) => page.jobs) ?? []} />
       {query.hasNextPage && (
-        <button
-          className="button"
-          disabled={query.isFetchingNextPage}
-          onClick={() => void query.fetchNextPage()}
-        >
-          Load older jobs
-        </button>
+        <InfiniteScroll
+          hasMore={query.hasNextPage}
+          loading={query.isFetchingNextPage}
+          onLoadMore={() => void query.fetchNextPage()}
+        />
       )}
     </>
   )
@@ -700,6 +776,17 @@ export function DownloadsPage() {
           : job.stage === 'failed',
     )
     .sort((a, b) => (tab === 'queue' ? a.created_at - b.created_at : b.updated_at - a.updated_at))
+  const counts = {
+    queue: queue.data?.summary.active ?? all.filter(activeJob).length,
+    done: all.filter((job) => job.stage === 'done').length,
+    failed: queue.data?.summary.failed ?? all.filter((job) => job.stage === 'failed').length,
+  }
+  const failureReasons = new Map(
+    (queue.data?.summary.failure_reasons ?? []).map((reason) => [
+      failureMessage({ error_code: reason.code, error: reason.message }),
+      reason.count,
+    ]),
+  )
   return (
     <>
       <div className="page-heading">
@@ -723,7 +810,7 @@ export function DownloadsPage() {
           >
             {value[0]?.toUpperCase()}
             {value.slice(1)}
-            {value === 'queue' ? ` (${all.filter(activeJob).length})` : ''}
+            {value in counts ? ` (${counts[value as keyof typeof counts]})` : ''}
           </button>
         ))}
       </div>
@@ -732,6 +819,19 @@ export function DownloadsPage() {
           {queue.error.message}
           <button onClick={() => void queue.refetch()}>Retry</button>
         </p>
+      )}
+      {tab === 'failed' && counts.failed > 0 && (
+        <section className="failure-summary" aria-label="Failure summary">
+          <strong>
+            {counts.failed} {counts.failed === 1 ? 'download' : 'downloads'} failed
+          </strong>
+          {[...failureReasons].map(([message, count]) => (
+            <span key={message}>
+              {count} · {message}
+            </span>
+          ))}
+          {jobs.length < counts.failed && <small>Showing the latest {jobs.length} below.</small>}
+        </section>
       )}
       {tab === 'history' ? (
         <History />
