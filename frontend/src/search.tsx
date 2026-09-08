@@ -70,6 +70,10 @@ export function validateArtistSearch(search: Record<string, unknown>): ArtistSea
 }
 const labels = { top: 'Top', track: 'Tracks', album: 'Albums', artist: 'Artists' }
 
+function normalizedText(value: string) {
+  return value.normalize('NFKC').trim().toLocaleLowerCase()
+}
+
 export function Badge({ item }: { item: MusicResult }) {
   if (item.kind === 'artist') return null
   return (
@@ -391,12 +395,20 @@ function ResultsSection({
         return true
       })
     const sort = state.sort
-    if (sort && sort !== 'relevance')
-      filtered.sort((a, b) =>
-        sort === 'title' || sort === 'artist'
+    if (sort && sort !== 'relevance') {
+      const queryName = normalizedText(state.q ?? '')
+      filtered.sort((a, b) => {
+        if (kind === 'artist' && sort === 'popularity') {
+          const exactMatch =
+            Number(normalizedText(b.title) === queryName) -
+            Number(normalizedText(a.title) === queryName)
+          if (exactMatch) return exactMatch
+        }
+        return sort === 'title' || sort === 'artist'
           ? a[sort].localeCompare(b[sort])
-          : (b[sort] ?? -1) - (a[sort] ?? -1),
-      )
+          : (b[sort] ?? -1) - (a[sort] ?? -1)
+      })
+    }
     return compact ? filtered.slice(0, kind === 'track' ? 5 : 6) : filtered
   }, [raw, yearQuery.data, state, kind, compact, coverage])
   return (
@@ -826,7 +838,10 @@ export function ArtistPage() {
   const topTracks = top.data?.tracks.slice(0, 5) ?? []
   const popularAlbums = popularAlbumQueries
     .map((result) => result.data?.album)
-    .filter((album): album is MusicResult => album?.record_type === 'album')
+    .filter(
+      (album): album is MusicResult =>
+        album?.record_type === 'album' && album.artist_id === Number(artistId),
+    )
     .slice(0, 6)
   const releaseType = state.type ?? 'albums-eps'
   const releaseSort = state.sort ?? 'newest'

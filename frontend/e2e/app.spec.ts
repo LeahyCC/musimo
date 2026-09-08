@@ -87,6 +87,33 @@ test('keyboard search, tab and sort survive navigation and refresh', async ({ pa
   )
 })
 
+test('popularity keeps an exact artist name ahead of larger fuzzy matches', async ({ page }) => {
+  const exact: MusicResult = {
+    ...album,
+    id: 11270,
+    kind: 'artist',
+    title: 'Tipper',
+    artist: 'Tipper',
+    artist_id: 11270,
+    popularity: 4248,
+  }
+  const larger: MusicResult = {
+    ...exact,
+    id: 7004075,
+    title: 'Bryson Tiller',
+    artist: 'Bryson Tiller',
+    artist_id: 7004075,
+    popularity: 994430,
+  }
+  await page.route('**/api/search?*', (route) =>
+    route.fulfill({
+      json: { items: [larger, exact], total: 2, next_index: null, cached: false },
+    }),
+  )
+  await page.goto('/search?q=tipper&tab=artist&sort=popularity')
+  await expect(page.getByRole('article').first()).toContainText('Tipper')
+})
+
 test('catalog failure offers retry and recovers', async ({ page }) => {
   await page.route(
     '**/api/search?*',
@@ -282,9 +309,39 @@ test('artist review counts selections, excludes failed albums and retries submis
     route.fulfill({
       json: {
         tracks: [
+          {
+            ...track,
+            id: 103,
+            title: 'Guest appearance',
+            artist: 'Another artist',
+            artist_id: 8,
+            album: 'Another artist album',
+            album_id: 99,
+            popularity: 110,
+          },
           { ...track, title: 'Most popular song', popularity: 100 },
           { ...track, id: 102, title: 'Second popular song', popularity: 90 },
         ],
+      },
+    }),
+  )
+  const foreignAlbum: MusicResult = {
+    ...album,
+    id: 99,
+    album_id: 99,
+    title: 'Another artist album',
+    album: 'Another artist album',
+    artist: 'Another artist',
+    artist_id: 8,
+  }
+  await page.route('**/api/albums/99*', (route) =>
+    route.fulfill({
+      json: {
+        album: foreignAlbum,
+        tracks: [],
+        label: 'Fixture label',
+        duration: 180,
+        complete: true,
       },
     }),
   )
@@ -370,6 +427,9 @@ test('artist review counts selections, excludes failed albums and retries submis
     'Discography',
   ])
   await expect(page.getByText('Most popular song', { exact: true })).toBeVisible()
+  const popularAlbums = page.getByRole('region', { name: 'Popular albums' })
+  await expect(popularAlbums.getByRole('article')).toHaveCount(1)
+  await expect(popularAlbums).not.toContainText('Another artist album')
   const discography = page.getByRole('region', { name: 'Discography' })
   await expect(discography.getByRole('article')).toHaveCount(2)
   await expect(discography.getByRole('article').first()).toContainText('Fixture EP')
