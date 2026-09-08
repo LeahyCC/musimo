@@ -128,6 +128,12 @@ class FoundationTests(unittest.TestCase):
                 self.assertEqual(icon.status_code, 200)
                 self.assertEqual(icon.content, b"ico")
                 self.assertEqual(client.get("/search").status_code, 200)
+                self.assertEqual(client.get("/library/artists/artist-1").status_code, 200)
+                self.assertEqual(
+                    client.get("/library/artists/artist-1/albums/album-1").status_code,
+                    200,
+                )
+                self.assertEqual(client.get("/library/artists/bad!id").status_code, 404)
                 self.assertEqual(client.get("/nope").status_code, 404)
 
 

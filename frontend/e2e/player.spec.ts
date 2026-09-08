@@ -58,10 +58,60 @@ test('library playback opens the full player and starts AudioMuse radio', async 
             genre: 'Ambient',
             year: 2026,
           },
+          {
+            id: 'album-2',
+            name: 'Stone Lines',
+            artist: 'Harbor Static',
+            coverArt: 'cover-2',
+            songCount: 1,
+            genre: 'Rock',
+            year: 2025,
+          },
         ],
         next_offset: null,
       },
     }),
+  )
+
+  await page.route('**/api/library/artists?**', (route) =>
+    route.fulfill({
+      json: {
+        items: [
+          {
+            id: 'artist-1',
+            name: 'Harbor Static',
+            coverArt: 'artist-cover-1',
+            albumCount: 1,
+          },
+        ],
+        next_offset: null,
+      },
+    }),
+  )
+
+  await page.route('**/api/library/artists/artist-1', (route) =>
+    route.fulfill({
+      json: {
+        id: 'artist-1',
+        name: 'Harbor Static',
+        coverArt: 'artist-cover-1',
+        albumCount: 1,
+        album: [
+          {
+            id: 'album-1',
+            name: 'Clear Water',
+            artist: 'Harbor Static',
+            artistId: 'artist-1',
+            coverArt: 'cover-1',
+            songCount: 1,
+          },
+        ],
+      },
+    }),
+  )
+
+  await page.route('**/api/library/artists/artist-1/tracks', (route) =>
+    route.fulfill({ json: { items: [song] } }),
   )
 
   await page.route('**/api/library/albums/album-1', (route) =>
@@ -98,22 +148,51 @@ test('library playback opens the full player and starts AudioMuse radio', async 
 
   await page.goto('/library')
   await expect(page.getByRole('heading', { name: 'Library', exact: true })).toBeVisible()
-  await expect(page.getByText('AUDIOMUSE READY')).toBeVisible()
+  await expect(page.getByText('AUDIOMUSE CONNECTED')).toBeVisible()
   await page.getByLabel('Search albums').fill('clear water')
-  await expect(page.getByRole('button', { name: /Clear Water/ })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open Clear Water' })).toBeVisible()
   await page.getByLabel('Sort home').selectOption('title')
-  await page.getByLabel('Filter by genre').selectOption('Ambient')
-  await page.getByLabel('Filter by year').selectOption('2026')
+  await page.getByText('All genres', { exact: true }).click()
+  await page.getByLabel('Ambient').check()
+  await expect(page.getByLabel('Rock')).toBeVisible()
+  await page.getByLabel('Rock').check()
+  await page.getByText('All years', { exact: true }).click()
+  await page.getByLabel('2026').check()
+  await page.getByRole('button', { name: 'Clear filters' }).click()
   await page.getByRole('button', { name: 'List view' }).click()
   await expect(page.getByRole('button', { name: 'Play Clear Water' })).toBeVisible()
-  await page.getByRole('button', { name: 'Shuffle Clear Water' }).click()
-  await expect(page.locator('.live-player')).toContainText('First Light')
+  await page.reload()
+  await expect(page.getByRole('button', { name: 'List view' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
   await page.getByRole('button', { name: 'Grid view' }).click()
-  await page.getByRole('button', { name: /Clear Water/ }).click()
+  await page.getByRole('button', { name: 'Play Clear Water' }).click()
+  await expect(page).toHaveURL(/\/library$/)
+  await page.getByRole('button', { name: 'Open Clear Water' }).click()
+  await expect(page).toHaveURL(/\/library\/albums\/album-1$/)
   await page.getByRole('button', { name: 'Play all' }).click()
   await expect(page.locator('.live-player')).toContainText('First Light')
 
-  await page.locator('.live-player').getByRole('link', { name: 'First Light' }).click()
+  await page.getByRole('button', { name: 'artists', exact: true }).click()
+  await expect(page).toHaveURL(/\/library\/artists$/)
+  await expect(page.locator('.library-artist-card img')).toBeVisible()
+  await page.locator('.live-player').getByRole('link', { name: 'Harbor Static' }).click()
+  await expect(page).toHaveURL(/\/library\/artists\/artist-1$/)
+  await expect(page.locator('.library-artist-heading img')).toBeVisible()
+  await page.getByRole('button', { name: 'Open Clear Water' }).click()
+  await expect(page).toHaveURL(/\/library\/artists\/artist-1\/albums\/album-1$/)
+  await page.goBack()
+  await expect(page).toHaveURL(/\/library\/artists\/artist-1$/)
+  await page.getByRole('button', { name: 'Open Clear Water' }).click()
+  await page.getByRole('button', { name: 'Back to Harbor Static' }).click()
+  await expect(page).toHaveURL(/\/library\/artists\/artist-1$/)
+  await page.locator('.library-artist-heading').getByRole('button', { name: 'Shuffle' }).click()
+  await expect(page.locator('.live-player')).toContainText('First Light')
+  await page.locator('.live-player').getByRole('link', { name: 'Clear Water' }).click()
+  await expect(page).toHaveURL(/\/library\/albums\/album-1$/)
+
+  await page.getByRole('link', { name: 'Open Now Playing' }).click()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
   await expect(page.getByText('Morning finds the water')).toBeVisible()
   await page.getByRole('button', { name: 'Start AudioMuse radio' }).click()

@@ -182,6 +182,10 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
     async def artist(artist_id: str) -> dict[str, object]:
         return await get().artist(checked_id(artist_id))
 
+    @app.get("/api/library/artists/{artist_id}/tracks")
+    async def artist_tracks(artist_id: str) -> dict[str, object]:
+        return {"items": await get().artist_tracks(checked_id(artist_id))}
+
     @app.get("/api/player/song/{song_id}")
     async def song(song_id: str) -> dict[str, object]:
         return await get().song(checked_id(song_id))
