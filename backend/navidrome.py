@@ -256,7 +256,10 @@ class Navidrome:
 
         for playlist in await self.playlists():
             playlist_id = playlist.get("id")
-            if str(playlist.get("name", "")) == LIKED_PLAYLIST_NAME and isinstance(playlist_id, str):
+            if (
+                str(playlist.get("name", "")) == LIKED_PLAYLIST_NAME
+                and isinstance(playlist_id, str)
+            ):
                 self.store.set_linked_playlist(LIKED_PLAYLIST_KEY, playlist_id)
                 return await self.playlist(playlist_id)
 
