@@ -1,10 +1,23 @@
-# Musimo
+<div align="center">
 
-Musimo is a self-hosted music library companion for Navidrome. Search tracks, albums and artists, hear previews, check your local collection, and queue permitted downloads into your music folders.
+# musimo
 
-React provides the interface, FastAPI runs the backend, and SQLite stores settings, the library index and jobs. Docker Compose builds the app from this repository. No Musimo account or hosted Musimo service is required.
+### Your music, at home.
 
-**Early development:** search, indexing, download workers, queue controls and album batches are implemented. A permitted public-domain fixture has been downloaded, tagged, indexed and found in Navidrome; separate worker checks cover pause/restart recovery. This is not a stable release or a measured guarantee of music-match accuracy. Read [download verification](docs/downloads.md) and [measurements](docs/measurements.md). The original [brief](docs/brief.md) describes ambitions, not shipped capability.
+A self-hosted music library companion for Navidrome.
+
+Search tracks, albums, and artists. Hear previews, check your local collection, and queue permitted downloads into your music folders.
+
+[Quick start](#quick-start) · [Features and limits](#features-and-limits) · [Architecture](#architecture-and-api) · [Contributing](#contributing-and-support)
+
+<img src="docs/assets/musimo.png" alt="Musimo search screen with library-aware search and the preview player" width="100%" />
+
+</div>
+
+Musimo keeps discovery close to the library you already own. React provides the interface, FastAPI runs the backend, and SQLite stores settings, the library index, and jobs. Docker Compose builds the app from this repository. No Musimo account or hosted Musimo service is required.
+
+> [!WARNING]
+> Musimo is in early development. Search, indexing, download workers, queue controls, and album batches are implemented, but the project is not a stable release. Read [download verification](docs/downloads.md) and [measurements](docs/measurements.md). The original [brief](docs/brief.md) describes ambitions, not shipped capability.
 
 ## Contents
 
