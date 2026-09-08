@@ -2637,10 +2637,15 @@ meter::-webkit-meter-optimum-value {
   border: 0;
 }
 .library-count {
-  margin-left: auto;
   color: var(--muted);
   font-size: 12px;
   white-space: nowrap;
+}
+.library-toolbar-end {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  margin-left: auto;
 }
 .library-layout-toggle {
   display: flex;
@@ -2883,7 +2888,7 @@ meter::-webkit-meter-optimum-value {
   .library-track-play > time {
     display: none;
   }
-  .library-tools .library-count {
+  .library-toolbar-end {
     margin-left: 0;
   }
   .library-collection-row {
