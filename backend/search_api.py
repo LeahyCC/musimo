@@ -121,6 +121,21 @@ def install_search_routes(
             "tracks": [track.model_dump() for track in tracks],
         }
 
+    @app.get("/api/artists/{artist_id}/top")
+    async def artist_top(artist_id: int) -> dict[str, object]:
+        if artist_id <= 0:
+            raise HTTPException(422, "Invalid artist ID")
+        catalog = get_catalog()
+        async with asyncio.timeout(10):
+            payload, _ = await catalog.get(f"artist/{artist_id}/top?limit=10", 3600)
+        rows = payload.get("data", [])
+        tracks = (
+            [catalog.track(Track.model_validate(row)) for row in rows]
+            if isinstance(rows, list)
+            else []
+        )
+        return {"tracks": [track.model_dump() for track in get_library().annotate(tracks)]}
+
     @app.get("/api/artists/{artist_id}")
     async def artist(
         artist_id: int, index: int = Query(default=0, ge=0, le=10000)
