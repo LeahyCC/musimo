@@ -3,13 +3,16 @@ import { useDeferredValue, useMemo, useState } from 'react'
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   Disc3,
+  Grid2X2,
   Library,
+  List,
   ListMusic,
   Pencil,
   Play,
   Plus,
   Radio as RadioIcon,
   Search,
+  Shuffle,
   SlidersHorizontal,
   Trash2,
   X,
@@ -34,6 +37,7 @@ import { InfiniteScroll } from './infinite-scroll'
 import { durationText, usePlayer } from './player'
 
 type Tab = 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
+type Layout = 'grid' | 'list'
 
 const SORTS: Record<Tab, { value: string; label: string }[]> = {
   home: [
@@ -72,9 +76,85 @@ const cover = (coverArt?: string) =>
 const textCompare = (left = '', right = '') =>
   left.localeCompare(right, undefined, { numeric: true })
 
-function AlbumCard({ album, play }: { album: LibraryAlbum; play: () => void }) {
+function LayoutToggle({
+  layout,
+  onChange,
+}: {
+  layout: Layout
+  onChange: (layout: Layout) => void
+}) {
   return (
-    <button className="library-card" onClick={play}>
+    <div className="library-layout-toggle" role="group" aria-label="Library layout">
+      <button
+        className="icon-button"
+        aria-label="Grid view"
+        aria-pressed={layout === 'grid'}
+        onClick={() => onChange('grid')}
+      >
+        <Grid2X2 size={17} />
+      </button>
+      <button
+        className="icon-button"
+        aria-label="List view"
+        aria-pressed={layout === 'list'}
+        onClick={() => onChange('list')}
+      >
+        <List size={18} />
+      </button>
+    </div>
+  )
+}
+
+function AlbumItem({
+  album,
+  layout,
+  loading,
+  onOpen,
+  onPlay,
+  onShuffle,
+}: {
+  album: LibraryAlbum
+  layout: Layout
+  loading: boolean
+  onOpen: () => void
+  onPlay: () => void
+  onShuffle: () => void
+}) {
+  if (layout === 'list')
+    return (
+      <div className="library-collection-row">
+        <span className="library-collection-art">
+          {album.coverArt ? <img src={cover(album.coverArt)} alt="" loading="lazy" /> : <Disc3 />}
+        </span>
+        <button className="library-collection-open" onClick={onOpen}>
+          <strong>{album.name}</strong>
+          <small>
+            {album.artist} · {album.songCount} tracks
+          </small>
+        </button>
+        <div className="library-collection-actions">
+          <button
+            className="icon-button"
+            aria-label={`Play ${album.name}`}
+            onClick={onPlay}
+            disabled={loading}
+          >
+            <Play size={17} fill="currentColor" />
+          </button>
+          <button
+            className="icon-button"
+            aria-label={`Shuffle ${album.name}`}
+            onClick={onShuffle}
+            disabled={loading}
+          >
+            <Shuffle size={17} />
+          </button>
+        </div>
+      </div>
+    )
+
+  return (
+    <button className="library-card" onClick={onOpen}>
       <span className="library-cover">
         {album.coverArt ? <img src={cover(album.coverArt)} alt="" loading="lazy" /> : <Disc3 />}
         <i>
@@ -131,6 +211,7 @@ export function LibraryPage() {
   const player = usePlayer()
   const client = useQueryClient()
   const [tab, setTab] = useState<Tab>('home')
+  const [layout, setLayout] = useState<Layout>('grid')
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query.trim())
   const [sorts, setSorts] = useState<Record<Tab, string>>({
@@ -401,6 +482,31 @@ export function LibraryPage() {
     }
   }
 
+  async function playAlbum(id: string, shuffled = false) {
+    setLoadingDetail(true)
+    try {
+      const album = await api(`library/albums/${encodeURIComponent(id)}`, libraryAlbumDetailSchema)
+      if (shuffled) player.shuffleLibrary(album.song)
+      else player.playLibrary(album.song)
+    } finally {
+      setLoadingDetail(false)
+    }
+  }
+
+  async function playPlaylist(id: string, shuffled = false) {
+    setLoadingDetail(true)
+    try {
+      const playlist = await api(
+        `library/playlists/${encodeURIComponent(id)}`,
+        libraryPlaylistDetailSchema,
+      )
+      if (shuffled) player.shuffleLibrary(playlist.entry)
+      else player.playLibrary(playlist.entry)
+    } finally {
+      setLoadingDetail(false)
+    }
+  }
+
   function changeTab(next: Tab) {
     setTab(next)
     setGenre('')
@@ -516,7 +622,10 @@ export function LibraryPage() {
               </label>
             </>
           )}
-          <span className="library-count">{currentItems.length} loaded</span>
+          <div className="library-toolbar-end">
+            <span className="library-count">{currentItems.length} loaded</span>
+            {tab !== 'tracks' && <LayoutToggle layout={layout} onChange={setLayout} />}
+          </div>
           {tab === 'playlists' && (
             <button className="button primary" onClick={() => setShowPlaylistForm(true)}>
               <Plus size={16} /> New playlist
@@ -680,9 +789,17 @@ export function LibraryPage() {
             <h2>{detailTitle}</h2>
             <span>{artistAlbums.length} ALBUMS</span>
           </div>
-          <div className="library-grid">
+          <div className={layout === 'grid' ? 'library-grid' : 'library-collection-list'}>
             {artistAlbums.map((album) => (
-              <AlbumCard album={album} key={album.id} play={() => void openAlbum(album.id)} />
+              <AlbumItem
+                album={album}
+                key={album.id}
+                layout={layout}
+                loading={loadingDetail}
+                onOpen={() => void openAlbum(album.id)}
+                onPlay={() => void playAlbum(album.id)}
+                onShuffle={() => void playAlbum(album.id, true)}
+              />
             ))}
           </div>
         </section>
@@ -698,15 +815,23 @@ export function LibraryPage() {
                   : 'Albums'}
             </h2>
           </div>
-          <div className="library-grid">
+          <div className={layout === 'grid' ? 'library-grid' : 'library-collection-list'}>
             {albumItems.map((album) => (
-              <AlbumCard album={album} key={album.id} play={() => void openAlbum(album.id)} />
+              <AlbumItem
+                album={album}
+                key={album.id}
+                layout={layout}
+                loading={loadingDetail}
+                onOpen={() => void openAlbum(album.id)}
+                onPlay={() => void playAlbum(album.id)}
+                onShuffle={() => void playAlbum(album.id, true)}
+              />
             ))}
           </div>
         </section>
       )}
       {tab === 'artists' && showBrowser && (
-        <div className="library-list">
+        <div className={`library-list ${layout === 'list' ? 'compact' : ''}`}>
           {artistItems.map((artist: LibraryArtist) => (
             <button key={artist.id} onClick={() => void openArtist(artist.id)}>
               <Disc3 size={20} />
@@ -716,27 +841,90 @@ export function LibraryPage() {
           ))}
         </div>
       )}
-      {tab === 'tracks' && showBrowser && <TrackList tracks={trackItems} />}
+      {tab === 'tracks' && showBrowser && (
+        <section className="library-detail">
+          <div className="library-list-actions">
+            <button
+              className="button primary"
+              onClick={() => player.playLibrary(trackItems)}
+              disabled={!trackItems.length}
+            >
+              <Play size={15} fill="currentColor" /> Play all
+            </button>
+            <button
+              className="button"
+              onClick={() => player.shuffleLibrary(trackItems)}
+              disabled={!trackItems.length}
+            >
+              <Shuffle size={15} /> Shuffle
+            </button>
+          </div>
+          <TrackList tracks={trackItems} />
+        </section>
+      )}
       {tab === 'playlists' && showBrowser && (
-        <div className="library-list">
+        <div className={layout === 'grid' ? 'library-list' : 'library-collection-list'}>
           {playlistItems.map((playlist: LibraryPlaylist) => (
-            <div className="library-list-row" key={playlist.id}>
-              <button className="library-list-open" onClick={() => void openPlaylist(playlist.id)}>
-                <ListMusic size={20} />
-                <strong>{playlist.name}</strong>
-                <small>{playlist.songCount ?? 0} tracks</small>
-              </button>
-              <button
-                className="icon-button library-list-delete"
-                aria-label={`Delete playlist ${playlist.name}`}
-                onClick={() => {
-                  if (window.confirm(`Delete playlist “${playlist.name}”?`))
-                    deletePlaylist.mutate(playlist.id)
-                }}
-                disabled={deletePlaylist.isPending}
-              >
-                <Trash2 size={16} />
-              </button>
+            <div
+              className={layout === 'grid' ? 'library-list-row' : 'library-collection-row'}
+              key={playlist.id}
+            >
+              {layout === 'grid' ? (
+                <button
+                  className="library-list-open"
+                  onClick={() => void openPlaylist(playlist.id)}
+                >
+                  <ListMusic size={20} />
+                  <strong>{playlist.name}</strong>
+                  <small>{playlist.songCount ?? 0} tracks</small>
+                </button>
+              ) : (
+                <>
+                  <span className="library-collection-art">
+                    <ListMusic size={20} />
+                  </span>
+                  <button
+                    className="library-collection-open"
+                    onClick={() => void openPlaylist(playlist.id)}
+                  >
+                    <strong>{playlist.name}</strong>
+                    <small>{playlist.songCount ?? 0} tracks</small>
+                  </button>
+                </>
+              )}
+              <div className={layout === 'grid' ? '' : 'library-collection-actions'}>
+                {layout === 'list' && (
+                  <>
+                    <button
+                      className="icon-button"
+                      aria-label={`Play ${playlist.name}`}
+                      onClick={() => void playPlaylist(playlist.id)}
+                      disabled={loadingDetail}
+                    >
+                      <Play size={17} fill="currentColor" />
+                    </button>
+                    <button
+                      className="icon-button"
+                      aria-label={`Shuffle ${playlist.name}`}
+                      onClick={() => void playPlaylist(playlist.id, true)}
+                      disabled={loadingDetail}
+                    >
+                      <Shuffle size={17} />
+                    </button>
+                  </>
+                )}
+                <button
+                  className={`icon-button ${layout === 'grid' ? 'library-list-delete' : ''}`}
+                  aria-label={`Delete playlist ${playlist.name}`}
+                  onClick={() => {
+                    if (window.confirm(`Delete playlist “${playlist.name}”?`))
+                      deletePlaylist.mutate(playlist.id)
+                  }}
+                  disabled={deletePlaylist.isPending}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
