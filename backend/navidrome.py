@@ -1,6 +1,8 @@
+import asyncio
 import hashlib
 import json
 import os
+import re
 import secrets
 from collections.abc import Mapping, Sequence
 from pathlib import Path
@@ -14,6 +16,22 @@ from backend.store import Store
 
 class NavidromeError(RuntimeError):
     pass
+
+
+LRC_LINE = re.compile(r"^\[(\d+):(\d+(?:\.\d+)?)\](.*)$")
+
+
+def lyric_lines(synced: str, plain: str) -> tuple[list[dict[str, object]], bool]:
+    lines: list[dict[str, object]] = []
+    for raw in synced.splitlines():
+        match = LRC_LINE.match(raw)
+        if not match:
+            continue
+        start = round((int(match.group(1)) * 60 + float(match.group(2))) * 1000)
+        lines.append({"start": start, "value": match.group(3).strip()})
+    if lines:
+        return lines, True
+    return [{"value": line} for line in plain.splitlines() if line.strip()], False
 
 
 class Navidrome:
@@ -240,6 +258,36 @@ class Navidrome:
             raise NavidromeError("Navidrome did not return the artist")
         return cast(dict[str, object], artist)
 
+    async def artist_tracks(self, artist_id: str) -> list[dict[str, object]]:
+        artist = await self.artist(artist_id)
+        albums = artist.get("album", [])
+        if not isinstance(albums, list):
+            return []
+        limit = asyncio.Semaphore(6)
+
+        async def songs(album: object) -> list[dict[str, object]]:
+            if not isinstance(album, dict) or not album.get("id"):
+                return []
+            # Bound the fan-out so a large discography cannot flood Navidrome.
+            async with limit:
+                detail = await self.album(str(album["id"]))
+            rows = detail.get("song", [])
+            return (
+                [cast(dict[str, object], row) for row in rows if isinstance(row, dict)]
+                if isinstance(rows, list)
+                else []
+            )
+
+        seen: set[str] = set()
+        tracks: list[dict[str, object]] = []
+        for rows in await asyncio.gather(*(songs(album) for album in albums)):
+            for track in rows:
+                track_id = str(track.get("id", ""))
+                if track_id and track_id not in seen:
+                    seen.add(track_id)
+                    tracks.append(track)
+        return tracks
+
     async def playlist(self, playlist_id: str) -> dict[str, object]:
         body = await self.response("getPlaylist", {"id": playlist_id})
         playlist = body.get("playlist")
@@ -292,16 +340,65 @@ class Navidrome:
         await self.response("savePlayQueue", params)
 
     async def lyrics(self, song_id: str) -> list[dict[str, object]]:
-        body = await self.response("getLyricsBySongId", {"id": song_id})
-        container = body.get("lyricsList")
-        items = container.get("structuredLyrics", []) if isinstance(container, dict) else []
-        return [cast(dict[str, object], item) for item in items if isinstance(item, dict)]
+        try:
+            body = await self.response("getLyricsBySongId", {"id": song_id})
+            container = body.get("lyricsList")
+            items = container.get("structuredLyrics", []) if isinstance(container, dict) else []
+            existing = [cast(dict[str, object], item) for item in items if isinstance(item, dict)]
+            if any(item.get("line") for item in existing):
+                return existing
+        except NavidromeError:
+            existing = []
+
+        song = await self.song(song_id)
+        raw_duration = song.get("duration", 0)
+        duration = round(float(raw_duration)) if isinstance(raw_duration, (int, float, str)) else 0
+        try:
+            response = await self.client.get(
+                "https://lrclib.net/api/get",
+                params={
+                    "track_name": str(song.get("title", "")),
+                    "artist_name": str(song.get("artist", "")),
+                    "album_name": str(song.get("album", "")),
+                    "duration": duration,
+                },
+                timeout=4,
+            )
+            if response.status_code == 404:
+                return existing
+            response.raise_for_status()
+            raw: object = response.json()
+        except (httpx.HTTPError, ValueError, TypeError):
+            return existing
+        if not isinstance(raw, dict):
+            return existing
+        lines, synced = lyric_lines(
+            str(raw.get("syncedLyrics") or ""), str(raw.get("plainLyrics") or "")
+        )
+        if not lines:
+            return existing
+        return [
+            {
+                "displayArtist": str(song.get("artist", "")),
+                "displayTitle": str(song.get("title", "")),
+                "synced": synced,
+                "line": lines,
+            }
+        ]
 
     async def scrobble(self, song_id: str, submission: bool) -> None:
         await self.response("scrobble", {"id": song_id, "submission": submission})
 
     async def sonic_similar(self, song_id: str, count: int) -> list[dict[str, object]]:
-        body = await self.response("getSonicSimilarTracks", {"id": song_id, "count": count})
+        try:
+            body = await self.response("getSonicSimilarTracks", {"id": song_id, "count": count})
+        except NavidromeError as exc:
+            if "AudioMuse-AI returned status 503" in str(exc):
+                raise NavidromeError(
+                    "AudioMuse is still analysing the library or building its "
+                    "similarity index. Try again later."
+                ) from exc
+            raise
         items = body.get("sonicMatch", [])
         if not isinstance(items, list):
             return []

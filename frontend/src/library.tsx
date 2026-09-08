@@ -1,15 +1,19 @@
-import { useDeferredValue, useMemo, useState } from 'react'
+import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { Link, useNavigate } from '@tanstack/react-router'
 import {
   Disc3,
+  Grid2X2,
   Library,
+  List,
   ListMusic,
   Pencil,
   Play,
   Plus,
   Radio as RadioIcon,
   Search,
+  Shuffle,
   SlidersHorizontal,
   Trash2,
   X,
@@ -22,6 +26,7 @@ import {
   libraryAlbumsSchema,
   libraryArtistDetailSchema,
   libraryArtistsSchema,
+  libraryArtistTracksSchema,
   libraryPlaylistDetailSchema,
   libraryPlaylistsSchema,
   libraryTracksSchema,
@@ -31,9 +36,19 @@ import {
 } from './api'
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from './api'
 import { InfiniteScroll } from './infinite-scroll'
-import { durationText, usePlayer } from './player'
+import { durationText, remember, stored, usePlayer } from './player'
 
-type Tab = 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
+export type LibraryTab = 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
+type Tab = LibraryTab
+type Layout = 'grid' | 'list'
+
+type LibraryPageProps = {
+  view?: Tab
+  albumId?: string
+  artistId?: string
+  playlistId?: string
+  parentArtistId?: string
+}
 
 const SORTS: Record<Tab, { value: string; label: string }[]> = {
   home: [
@@ -72,18 +87,202 @@ const cover = (coverArt?: string) =>
 const textCompare = (left = '', right = '') =>
   left.localeCompare(right, undefined, { numeric: true })
 
-function AlbumCard({ album, play }: { album: LibraryAlbum; play: () => void }) {
+function LayoutToggle({
+  layout,
+  onChange,
+}: {
+  layout: Layout
+  onChange: (layout: Layout) => void
+}) {
   return (
-    <button className="library-card" onClick={play}>
-      <span className="library-cover">
-        {album.coverArt ? <img src={cover(album.coverArt)} alt="" loading="lazy" /> : <Disc3 />}
-        <i>
+    <div className="library-layout-toggle" role="group" aria-label="Library layout">
+      <button
+        className="icon-button"
+        aria-label="Grid view"
+        aria-pressed={layout === 'grid'}
+        onClick={() => onChange('grid')}
+      >
+        <Grid2X2 size={17} />
+      </button>
+      <button
+        className="icon-button"
+        aria-label="List view"
+        aria-pressed={layout === 'list'}
+        onClick={() => onChange('list')}
+      >
+        <List size={18} />
+      </button>
+    </div>
+  )
+}
+
+function FilterMenu({
+  label,
+  options,
+  selected,
+  onToggle,
+}: {
+  label: string
+  options: string[]
+  selected: string[]
+  onToggle: (value: string) => void
+}) {
+  const root = useRef<HTMLDetailsElement>(null)
+  const [open, setOpen] = useState(false)
+
+  useEffect(() => {
+    const closeOutside = (event: PointerEvent) => {
+      if (!(event.target instanceof Node) || !root.current?.contains(event.target)) {
+        setOpen(false)
+      }
+    }
+
+    document.addEventListener('pointerdown', closeOutside)
+    return () => document.removeEventListener('pointerdown', closeOutside)
+  }, [])
+
+  return (
+    <details
+      ref={root}
+      className="library-filter"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary>
+        {selected.length ? `${label} (${selected.length})` : `All ${label.toLowerCase()}`}
+      </summary>
+      <div>
+        {options.map((option) => (
+          <label key={option}>
+            <input
+              type="checkbox"
+              checked={selected.includes(option)}
+              onChange={() => onToggle(option)}
+            />
+            {option}
+          </label>
+        ))}
+      </div>
+    </details>
+  )
+}
+
+function AlbumItem({
+  album,
+  layout,
+  loading,
+  onOpen,
+  onPlay,
+  onShuffle,
+}: {
+  album: LibraryAlbum
+  layout: Layout
+  loading: boolean
+  onOpen: () => void
+  onPlay: () => void
+  onShuffle: () => void
+}) {
+  if (layout === 'list')
+    return (
+      <div className="library-collection-row">
+        <span className="library-collection-art">
+          {album.coverArt ? <img src={cover(album.coverArt)} alt="" loading="lazy" /> : <Disc3 />}
+        </span>
+        <button className="library-collection-open" onClick={onOpen}>
+          <strong>{album.name}</strong>
+          <small>
+            {album.artist} · {album.songCount} tracks
+          </small>
+        </button>
+        <div className="library-collection-actions">
+          <button
+            className="icon-button"
+            aria-label={`Play ${album.name}`}
+            onClick={onPlay}
+            disabled={loading}
+          >
+            <Play size={17} fill="currentColor" />
+          </button>
+          <button
+            className="icon-button"
+            aria-label={`Shuffle ${album.name}`}
+            onClick={onShuffle}
+            disabled={loading}
+          >
+            <Shuffle size={17} />
+          </button>
+        </div>
+      </div>
+    )
+
+  return (
+    <article className="library-card">
+      <div className="library-card-art">
+        <button className="library-cover" aria-label={`Open ${album.name}`} onClick={onOpen}>
+          {album.coverArt ? <img src={cover(album.coverArt)} alt="" loading="lazy" /> : <Disc3 />}
+        </button>
+        <button
+          className="library-card-play"
+          aria-label={`Play ${album.name}`}
+          onClick={onPlay}
+          disabled={loading}
+        >
           <Play size={19} fill="currentColor" />
-        </i>
-      </span>
-      <strong>{album.name}</strong>
-      <small>{album.artist}</small>
-    </button>
+        </button>
+      </div>
+      <button className="library-card-copy" onClick={onOpen}>
+        <strong>{album.name}</strong>
+        <small>{album.artist}</small>
+      </button>
+    </article>
+  )
+}
+
+function ArtistItem({
+  artist,
+  layout,
+  loading,
+  onOpen,
+  onPlay,
+  onShuffle,
+}: {
+  artist: LibraryArtist
+  layout: Layout
+  loading: boolean
+  onOpen: () => void
+  onPlay: () => void
+  onShuffle: () => void
+}) {
+  return (
+    <article className={`library-artist-card ${layout}`}>
+      <button className="library-artist-open" onClick={onOpen}>
+        <span className="library-artist-art">
+          {artist.coverArt ? <img src={cover(artist.coverArt)} alt="" loading="lazy" /> : <Disc3 />}
+        </span>
+        <span>
+          <strong>{artist.name}</strong>
+          <small>{artist.albumCount ?? 0} albums</small>
+        </span>
+      </button>
+      <div className="library-collection-actions">
+        <button
+          className="icon-button"
+          aria-label={`Play ${artist.name}`}
+          onClick={onPlay}
+          disabled={loading}
+        >
+          <Play size={17} fill="currentColor" />
+        </button>
+        <button
+          className="icon-button"
+          aria-label={`Shuffle ${artist.name}`}
+          onClick={onShuffle}
+          disabled={loading}
+        >
+          <Shuffle size={17} />
+        </button>
+      </div>
+    </article>
   )
 }
 
@@ -127,10 +326,20 @@ function TrackList({
   )
 }
 
-export function LibraryPage() {
+export function LibraryPage({
+  view = 'home',
+  albumId = '',
+  artistId = '',
+  playlistId: routePlaylistId = '',
+  parentArtistId = '',
+}: LibraryPageProps = {}) {
   const player = usePlayer()
   const client = useQueryClient()
-  const [tab, setTab] = useState<Tab>('home')
+  const navigate = useNavigate()
+  const [tab, setTab] = useState<Tab>(view)
+  const [layout, setLayout] = useState<Layout>(() =>
+    stored('musimo.library-layout', 'grid') === 'list' ? 'list' : 'grid',
+  )
   const [query, setQuery] = useState('')
   const deferredQuery = useDeferredValue(query.trim())
   const [sorts, setSorts] = useState<Record<Tab, string>>({
@@ -140,8 +349,8 @@ export function LibraryPage() {
     tracks: 'title',
     playlists: 'name',
   })
-  const [genre, setGenre] = useState('')
-  const [year, setYear] = useState('')
+  const [selectedGenres, setSelectedGenres] = useState<string[]>([])
+  const [selectedYears, setSelectedYears] = useState<string[]>([])
   const [detail, setDetail] = useState<LibraryTrack[]>([])
   const [detailTitle, setDetailTitle] = useState('')
   const [playlistId, setPlaylistId] = useState('')
@@ -149,6 +358,8 @@ export function LibraryPage() {
   const [showPlaylistForm, setShowPlaylistForm] = useState(false)
   const [playlistTrackQuery, setPlaylistTrackQuery] = useState('')
   const [artistAlbums, setArtistAlbums] = useState<LibraryAlbum[]>([])
+  const [activeArtist, setActiveArtist] = useState<LibraryArtist | null>(null)
+  const [albumParent, setAlbumParent] = useState<{ id: string; name: string } | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
   const sort = sorts[tab]
   const capabilities = useQuery({
@@ -221,7 +432,10 @@ export function LibraryPage() {
       void client.invalidateQueries({ queryKey: ['library-playlists'] })
       setShowPlaylistForm(false)
       setPlaylistName('')
-      void openPlaylist(playlist.id)
+      void navigate({
+        to: '/library/playlists/$playlistId',
+        params: { playlistId: playlist.id },
+      })
     },
   })
   const updatePlaylist = useMutation({
@@ -257,6 +471,7 @@ export function LibraryPage() {
       setPlaylistId('')
       setDetail([])
       setDetailTitle('')
+      void navigate({ to: '/library/playlists' })
       void client.invalidateQueries({ queryKey: ['library-playlists'] })
     },
   })
@@ -264,7 +479,9 @@ export function LibraryPage() {
   const albumItems = useMemo(() => {
     const items = albums.data?.pages.flatMap((page) => page.items) ?? []
     const filtered = items.filter(
-      (album) => (!genre || album.genre === genre) && (!year || album.year === Number(year)),
+      (album) =>
+        (!selectedGenres.length || (album.genre && selectedGenres.includes(album.genre))) &&
+        (!selectedYears.length || (album.year && selectedYears.includes(String(album.year)))),
     )
     if (sort === 'title') return [...filtered].sort((a, b) => textCompare(a.name, b.name))
     if (sort === 'artist')
@@ -276,7 +493,7 @@ export function LibraryPage() {
         (a, b) => (b.year ?? 0) - (a.year ?? 0) || textCompare(a.name, b.name),
       )
     return filtered
-  }, [albums.data, genre, sort, year])
+  }, [albums.data, selectedGenres, selectedYears, sort])
   const artistItems = useMemo(() => {
     const items = artists.data?.pages.flatMap((page) => page.items) ?? []
     return [...items].sort((a, b) =>
@@ -288,7 +505,9 @@ export function LibraryPage() {
   const trackItems = useMemo(() => {
     const items = tracks.data?.pages.flatMap((page) => page.items) ?? []
     const filtered = items.filter(
-      (track) => (!genre || track.genre === genre) && (!year || track.year === Number(year)),
+      (track) =>
+        (!selectedGenres.length || (track.genre && selectedGenres.includes(track.genre))) &&
+        (!selectedYears.length || (track.year && selectedYears.includes(String(track.year)))),
     )
     return [...filtered].sort((a, b) => {
       if (sort === 'artist') return textCompare(a.artist, b.artist) || textCompare(a.title, b.title)
@@ -297,7 +516,7 @@ export function LibraryPage() {
       if (sort === 'duration') return b.duration - a.duration || textCompare(a.title, b.title)
       return textCompare(a.title, b.title)
     })
-  }, [genre, sort, tracks.data, year])
+  }, [selectedGenres, selectedYears, sort, tracks.data])
   const playlistItems = useMemo(() => {
     const needle = deferredQuery.toLocaleLowerCase()
     const items = (playlists.data?.items ?? []).filter((item) =>
@@ -310,7 +529,10 @@ export function LibraryPage() {
     })
   }, [deferredQuery, playlists.data, sort])
 
-  const filterItems = tab === 'tracks' ? trackItems : albumItems
+  const filterItems =
+    tab === 'tracks'
+      ? (tracks.data?.pages.flatMap((page) => page.items) ?? [])
+      : (albums.data?.pages.flatMap((page) => page.items) ?? [])
   const genres = [
     ...new Set(
       filterItems.map((item) => item.genre).filter((item): item is string => Boolean(item)),
@@ -320,7 +542,9 @@ export function LibraryPage() {
     ...new Set(
       filterItems.map((item) => item.year).filter((item): item is number => item !== undefined),
     ),
-  ].sort((a, b) => b - a)
+  ]
+    .sort((a, b) => b - a)
+    .map(String)
   const currentItems =
     tab === 'artists'
       ? artistItems
@@ -353,64 +577,117 @@ export function LibraryPage() {
         : tab === 'playlists'
           ? false
           : albums.isFetchingNextPage
-  const showBrowser = !playlistId && detail.length === 0 && artistAlbums.length === 0
+  const showBrowser = !albumId && !artistId && !routePlaylistId
 
-  async function openAlbum(id: string) {
+  useEffect(() => remember('musimo.library-layout', layout), [layout])
+
+  useEffect(() => {
+    let current = true
+    setTab(view)
+    setDetail([])
+    setDetailTitle('')
+    setArtistAlbums([])
+    setActiveArtist(null)
+    setAlbumParent(null)
+    setPlaylistId('')
+    setPlaylistName('')
+    const hasDetail = Boolean(albumId || artistId || routePlaylistId)
+    setLoadingDetail(hasDetail)
+    if (!hasDetail) return () => undefined
+
+    const load = async () => {
+      try {
+        if (albumId) {
+          const album = await api(
+            `library/albums/${encodeURIComponent(albumId)}`,
+            libraryAlbumDetailSchema,
+          )
+          if (!current) return
+          setDetail(album.song)
+          setDetailTitle(album.name)
+          if (parentArtistId) setAlbumParent({ id: parentArtistId, name: album.artist || 'artist' })
+        } else if (artistId) {
+          const artist = await api(
+            `library/artists/${encodeURIComponent(artistId)}`,
+            libraryArtistDetailSchema,
+          )
+          if (!current) return
+          setDetailTitle(artist.name)
+          setArtistAlbums(artist.album)
+          setActiveArtist(artist)
+        } else if (routePlaylistId) {
+          const playlist = await api(
+            `library/playlists/${encodeURIComponent(routePlaylistId)}`,
+            libraryPlaylistDetailSchema,
+          )
+          if (!current) return
+          setDetail(playlist.entry)
+          setDetailTitle(playlist.name)
+          setPlaylistName(playlist.name)
+          setPlaylistId(routePlaylistId)
+        }
+      } finally {
+        if (current) setLoadingDetail(false)
+      }
+    }
+    void load()
+    return () => {
+      current = false
+    }
+  }, [albumId, artistId, parentArtistId, routePlaylistId, view])
+
+  async function playAlbum(id: string, shuffled = false) {
     setLoadingDetail(true)
     try {
       const album = await api(`library/albums/${encodeURIComponent(id)}`, libraryAlbumDetailSchema)
-      setArtistAlbums([])
-      setDetail(album.song)
-      setDetailTitle(`${album.name} · ${album.artist}`)
-      setPlaylistId('')
+      if (shuffled) player.shuffleLibrary(album.song)
+      else player.playLibrary(album.song)
     } finally {
       setLoadingDetail(false)
     }
   }
 
-  async function openArtist(id: string) {
-    setLoadingDetail(true)
-    try {
-      const artist = await api(
-        `library/artists/${encodeURIComponent(id)}`,
-        libraryArtistDetailSchema,
-      )
-      setDetail([])
-      setDetailTitle(artist.name)
-      setArtistAlbums(artist.album)
-      setPlaylistId('')
-    } finally {
-      setLoadingDetail(false)
-    }
-  }
-
-  async function openPlaylist(id: string) {
+  async function playPlaylist(id: string, shuffled = false) {
     setLoadingDetail(true)
     try {
       const playlist = await api(
         `library/playlists/${encodeURIComponent(id)}`,
         libraryPlaylistDetailSchema,
       )
-      setArtistAlbums([])
-      setDetail(playlist.entry)
-      setDetailTitle(playlist.name)
-      setPlaylistName(playlist.name)
-      setPlaylistId(id)
+      if (shuffled) player.shuffleLibrary(playlist.entry)
+      else player.playLibrary(playlist.entry)
+    } finally {
+      setLoadingDetail(false)
+    }
+  }
+
+  async function playArtist(id: string, shuffled = false) {
+    setLoadingDetail(true)
+    try {
+      const result = await api(
+        `library/artists/${encodeURIComponent(id)}/tracks`,
+        libraryArtistTracksSchema,
+      )
+      if (shuffled) player.shuffleLibrary(result.items)
+      else player.playLibrary(result.items)
     } finally {
       setLoadingDetail(false)
     }
   }
 
   function changeTab(next: Tab) {
-    setTab(next)
-    setGenre('')
-    setYear('')
-    setDetail([])
-    setArtistAlbums([])
-    setPlaylistId('')
-    setPlaylistName('')
+    setSelectedGenres([])
+    setSelectedYears([])
     setShowPlaylistForm(false)
     setPlaylistTrackQuery('')
+    const paths = {
+      home: '/library',
+      albums: '/library/albums',
+      artists: '/library/artists',
+      tracks: '/library/tracks',
+      playlists: '/library/playlists',
+    } as const
+    void navigate({ to: paths[next] })
   }
 
   function loadMore() {
@@ -440,7 +717,7 @@ export function LibraryPage() {
           <h1>Library</h1>
         </div>
         <span className={`tag ${capabilities.data.sonic_similarity ? 'good' : ''}`}>
-          {capabilities.data.sonic_similarity ? 'AUDIOMUSE READY' : 'NAVIDROME READY'}
+          {capabilities.data.sonic_similarity ? 'AUDIOMUSE CONNECTED' : 'NAVIDROME READY'}
         </span>
       </div>
       <nav className="library-tabs" aria-label="Library views">
@@ -486,37 +763,47 @@ export function LibraryPage() {
           </label>
           {(tab === 'home' || tab === 'albums' || tab === 'tracks') && (
             <>
-              <label className="library-select">
-                <select
-                  aria-label="Filter by genre"
-                  value={genre}
-                  onChange={(event) => setGenre(event.target.value)}
+              <FilterMenu
+                label="Genres"
+                options={genres}
+                selected={selectedGenres}
+                onToggle={(value) =>
+                  setSelectedGenres((current) =>
+                    current.includes(value)
+                      ? current.filter((item) => item !== value)
+                      : [...current, value],
+                  )
+                }
+              />
+              <FilterMenu
+                label="Years"
+                options={years}
+                selected={selectedYears}
+                onToggle={(value) =>
+                  setSelectedYears((current) =>
+                    current.includes(value)
+                      ? current.filter((item) => item !== value)
+                      : [...current, value],
+                  )
+                }
+              />
+              {(selectedGenres.length > 0 || selectedYears.length > 0) && (
+                <button
+                  className="text-link library-clear-filters"
+                  onClick={() => {
+                    setSelectedGenres([])
+                    setSelectedYears([])
+                  }}
                 >
-                  <option value="">All genres</option>
-                  {genres.map((item) => (
-                    <option value={item} key={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label className="library-select">
-                <select
-                  aria-label="Filter by year"
-                  value={year}
-                  onChange={(event) => setYear(event.target.value)}
-                >
-                  <option value="">All years</option>
-                  {years.map((item) => (
-                    <option value={item} key={item}>
-                      {item}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  Clear filters
+                </button>
+              )}
             </>
           )}
-          <span className="library-count">{currentItems.length} loaded</span>
+          <div className="library-toolbar-end">
+            <span className="library-count">{currentItems.length} loaded</span>
+            {tab !== 'tracks' && <LayoutToggle layout={layout} onChange={setLayout} />}
+          </div>
           {tab === 'playlists' && (
             <button className="button primary" onClick={() => setShowPlaylistForm(true)}>
               <Plus size={16} /> New playlist
@@ -572,8 +859,18 @@ export function LibraryPage() {
         <section className="library-detail">
           <div className="section-heading">
             <div>
-              <button className="text-link" onClick={() => changeTab(tab)}>
-                ← Back to {tab}
+              <button
+                className="text-link"
+                onClick={() => {
+                  if (albumParent)
+                    void navigate({
+                      to: '/library/artists/$artistId',
+                      params: { artistId: albumParent.id },
+                    })
+                  else changeTab(playlistId ? 'playlists' : 'albums')
+                }}
+              >
+                ← Back to {albumParent?.name ?? (playlistId ? 'playlists' : 'albums')}
               </button>
               <h2>{detailTitle}</h2>
             </div>
@@ -674,15 +971,56 @@ export function LibraryPage() {
           )}
         </section>
       )}
-      {artistAlbums.length > 0 && (
+      {activeArtist && (
         <section className="library-detail">
-          <div className="section-heading">
-            <h2>{detailTitle}</h2>
-            <span>{artistAlbums.length} ALBUMS</span>
+          <button className="text-link" onClick={() => changeTab('artists')}>
+            ← Back to artists
+          </button>
+          <div className="library-artist-heading">
+            <span className="library-artist-art large">
+              {activeArtist.coverArt ? (
+                <img src={cover(activeArtist.coverArt)} alt="" />
+              ) : (
+                <Disc3 />
+              )}
+            </span>
+            <div>
+              <h2>{detailTitle}</h2>
+              <span>{artistAlbums.length} ALBUMS</span>
+            </div>
+            <div className="button-row">
+              <button
+                className="button primary"
+                onClick={() => void playArtist(activeArtist.id)}
+                disabled={loadingDetail || !artistAlbums.length}
+              >
+                <Play size={15} fill="currentColor" /> Play all
+              </button>
+              <button
+                className="button"
+                onClick={() => void playArtist(activeArtist.id, true)}
+                disabled={loadingDetail || !artistAlbums.length}
+              >
+                <Shuffle size={15} /> Shuffle
+              </button>
+            </div>
           </div>
-          <div className="library-grid">
+          <div className={layout === 'grid' ? 'library-grid' : 'library-collection-list'}>
             {artistAlbums.map((album) => (
-              <AlbumCard album={album} key={album.id} play={() => void openAlbum(album.id)} />
+              <AlbumItem
+                album={album}
+                key={album.id}
+                layout={layout}
+                loading={loadingDetail}
+                onOpen={() =>
+                  void navigate({
+                    to: '/library/artists/$artistId/albums/$albumId',
+                    params: { artistId: activeArtist.id, albumId: album.id },
+                  })
+                }
+                onPlay={() => void playAlbum(album.id)}
+                onShuffle={() => void playAlbum(album.id, true)}
+              />
             ))}
           </div>
         </section>
@@ -698,45 +1036,140 @@ export function LibraryPage() {
                   : 'Albums'}
             </h2>
           </div>
-          <div className="library-grid">
+          <div className={layout === 'grid' ? 'library-grid' : 'library-collection-list'}>
             {albumItems.map((album) => (
-              <AlbumCard album={album} key={album.id} play={() => void openAlbum(album.id)} />
+              <AlbumItem
+                album={album}
+                key={album.id}
+                layout={layout}
+                loading={loadingDetail}
+                onOpen={() =>
+                  void navigate({
+                    to: '/library/albums/$albumId',
+                    params: { albumId: album.id },
+                  })
+                }
+                onPlay={() => void playAlbum(album.id)}
+                onShuffle={() => void playAlbum(album.id, true)}
+              />
             ))}
           </div>
         </section>
       )}
       {tab === 'artists' && showBrowser && (
-        <div className="library-list">
+        <div className={layout === 'grid' ? 'library-artist-grid' : 'library-collection-list'}>
           {artistItems.map((artist: LibraryArtist) => (
-            <button key={artist.id} onClick={() => void openArtist(artist.id)}>
-              <Disc3 size={20} />
-              <strong>{artist.name}</strong>
-              <small>{artist.albumCount ?? 0} albums</small>
-            </button>
+            <ArtistItem
+              artist={artist}
+              key={artist.id}
+              layout={layout}
+              loading={loadingDetail}
+              onOpen={() =>
+                void navigate({
+                  to: '/library/artists/$artistId',
+                  params: { artistId: artist.id },
+                })
+              }
+              onPlay={() => void playArtist(artist.id)}
+              onShuffle={() => void playArtist(artist.id, true)}
+            />
           ))}
         </div>
       )}
-      {tab === 'tracks' && showBrowser && <TrackList tracks={trackItems} />}
+      {tab === 'tracks' && showBrowser && (
+        <section className="library-detail">
+          <div className="library-list-actions">
+            <button
+              className="button primary"
+              onClick={() => player.playLibrary(trackItems)}
+              disabled={!trackItems.length}
+            >
+              <Play size={15} fill="currentColor" /> Play all
+            </button>
+            <button
+              className="button"
+              onClick={() => player.shuffleLibrary(trackItems)}
+              disabled={!trackItems.length}
+            >
+              <Shuffle size={15} /> Shuffle
+            </button>
+          </div>
+          <TrackList tracks={trackItems} />
+        </section>
+      )}
       {tab === 'playlists' && showBrowser && (
-        <div className="library-list">
+        <div className={layout === 'grid' ? 'library-list' : 'library-collection-list'}>
           {playlistItems.map((playlist: LibraryPlaylist) => (
-            <div className="library-list-row" key={playlist.id}>
-              <button className="library-list-open" onClick={() => void openPlaylist(playlist.id)}>
-                <ListMusic size={20} />
-                <strong>{playlist.name}</strong>
-                <small>{playlist.songCount ?? 0} tracks</small>
-              </button>
-              <button
-                className="icon-button library-list-delete"
-                aria-label={`Delete playlist ${playlist.name}`}
-                onClick={() => {
-                  if (window.confirm(`Delete playlist “${playlist.name}”?`))
-                    deletePlaylist.mutate(playlist.id)
-                }}
-                disabled={deletePlaylist.isPending}
-              >
-                <Trash2 size={16} />
-              </button>
+            <div
+              className={layout === 'grid' ? 'library-list-row' : 'library-collection-row'}
+              key={playlist.id}
+            >
+              {layout === 'grid' ? (
+                <button
+                  className="library-list-open"
+                  onClick={() =>
+                    void navigate({
+                      to: '/library/playlists/$playlistId',
+                      params: { playlistId: playlist.id },
+                    })
+                  }
+                >
+                  <ListMusic size={20} />
+                  <strong>{playlist.name}</strong>
+                  <small>{playlist.songCount ?? 0} tracks</small>
+                </button>
+              ) : (
+                <>
+                  <span className="library-collection-art">
+                    <ListMusic size={20} />
+                  </span>
+                  <button
+                    className="library-collection-open"
+                    onClick={() =>
+                      void navigate({
+                        to: '/library/playlists/$playlistId',
+                        params: { playlistId: playlist.id },
+                      })
+                    }
+                  >
+                    <strong>{playlist.name}</strong>
+                    <small>{playlist.songCount ?? 0} tracks</small>
+                  </button>
+                </>
+              )}
+              <div className={layout === 'grid' ? '' : 'library-collection-actions'}>
+                {layout === 'list' && (
+                  <>
+                    <button
+                      className="icon-button"
+                      aria-label={`Play ${playlist.name}`}
+                      onClick={() => void playPlaylist(playlist.id)}
+                      disabled={loadingDetail}
+                    >
+                      <Play size={17} fill="currentColor" />
+                    </button>
+                    <button
+                      className="icon-button"
+                      aria-label={`Shuffle ${playlist.name}`}
+                      onClick={() => void playPlaylist(playlist.id, true)}
+                      disabled={loadingDetail}
+                    >
+                      <Shuffle size={17} />
+                    </button>
+                  </>
+                )}
+                <button
+                  className={`icon-button ${layout === 'grid' ? 'library-list-delete' : ''}`}
+                  aria-label={`Delete playlist ${playlist.name}`}
+                  onClick={() => {
+                    if (window.confirm(`Delete playlist “${playlist.name}”?`))
+                      deletePlaylist.mutate(playlist.id)
+                  }}
+                  disabled={deletePlaylist.isPending}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
             </div>
           ))}
         </div>
@@ -797,9 +1230,26 @@ export function NowPlayingPage() {
         <div>
           <p className="eyebrow">NOW PLAYING</p>
           <h1>{track.title}</h1>
-          <p>
-            {track.artist}
-            {track.album ? ` · ${track.album}` : ''}
+          <p className="now-byline">
+            {track.artistId ? (
+              <Link to="/library/artists/$artistId" params={{ artistId: track.artistId }}>
+                {track.artist}
+              </Link>
+            ) : (
+              track.artist
+            )}
+            {track.album && (
+              <>
+                {' · '}
+                {track.albumId ? (
+                  <Link to="/library/albums/$albumId" params={{ albumId: track.albumId }}>
+                    {track.album}
+                  </Link>
+                ) : (
+                  track.album
+                )}
+              </>
+            )}
           </p>
           {capabilities.data?.sonic_similarity && (
             <button
@@ -828,7 +1278,7 @@ export function NowPlayingPage() {
           </div>
           {lyrics.isLoading && <p>Loading lyrics…</p>}
           {!lyrics.isLoading && !words.length && (
-            <p className="muted">No synced lyrics for this track.</p>
+            <p className="muted">No lyrics found for this track.</p>
           )}
           {words.map((line, index) => (
             <p key={`${line.value}-${index}`}>{line.value || '♪'}</p>
