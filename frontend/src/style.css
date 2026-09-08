@@ -1320,6 +1320,10 @@ meter::-webkit-meter-optimum-value {
   color: #e4cc9c;
   background: #3a3224;
 }
+.ownership.failed {
+  color: #efbaa2;
+  background: #39251f;
+}
 .track-row {
   height: 76px;
   display: flex;
@@ -1884,7 +1888,7 @@ meter::-webkit-meter-optimum-value {
     max-width: 100%;
   }
   main {
-    padding-bottom: 190px;
+    padding-bottom: 260px;
   }
 }
 @media (max-width: 767px) {
@@ -2210,6 +2214,16 @@ meter::-webkit-meter-optimum-value {
   background: #252d1e;
   border-radius: 8px;
   font-size: 12px;
+}
+.failure-summary {
+  display: grid;
+  gap: 5px;
+  margin: 12px 0;
+  padding: 13px;
+  color: #efbaa2;
+  font-size: 12px;
+  background: #39251f;
+  border-radius: 5px;
 }
 @media (max-width: 700px) {
   .queue-dock {

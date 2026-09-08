@@ -51,12 +51,51 @@ class DurableJobsTests(unittest.TestCase):
             jobs.recover()
             self.assertEqual(jobs.get(first.id).stage, "queued")
             self.assertEqual(jobs.get(first.id).meta.lyrics, "private payload")
-            jobs.update(first.id, stage="failed", hidden=True)
+            jobs.update(
+                first.id,
+                stage="failed",
+                error_code="NO_MATCH",
+                error="No sufficiently close recording found",
+            )
+            self.assertEqual(
+                store.job_summary(),
+                {
+                    "active": 2,
+                    "failed": 1,
+                    "failure_reasons": [
+                        {
+                            "code": "NO_MATCH",
+                            "message": "No sufficiently close recording found",
+                            "count": 1,
+                        }
+                    ],
+                },
+            )
+            jobs.update(first.id, hidden=True)
+            self.assertEqual(store.job_summary(), {"active": 2, "failed": 0, "failure_reasons": []})
             replacement = jobs.enqueue(1, "original", directory)
             with self.assertRaises(JobConflict):
                 jobs.update(first.id, stage="queued")
             self.assertEqual(jobs.history("", 0, 1e12, 0)["total"], 1)
             self.assertNotEqual(first.id, replacement.id)
+            store.close()
+
+    def test_failure_summary_counts_jobs_beyond_visible_limit(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "jobs.sqlite3")
+            jobs = Jobs(store, lambda: None)
+            for track_id in range(55):
+                job = jobs.enqueue(track_id + 1, "original", directory)
+                jobs.update(
+                    job.id,
+                    stage="failed",
+                    error_code="NO_MATCH",
+                    error="No sufficiently close recording found",
+                )
+
+            visible_failures = [job for job in jobs.visible() if job.stage == "failed"]
+            self.assertEqual(len(visible_failures), 50)
+            self.assertEqual(store.job_summary()["failed"], 55)
             store.close()
 
     def test_recording_rank_rejects_wrong_duration_and_prefers_topic(self) -> None:
