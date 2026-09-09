@@ -12,7 +12,12 @@ const song = {
   track: 1,
 }
 
-test('library playback opens the full player and starts AudioMuse radio', async ({ page }) => {
+test('library playback opens the full player and starts AudioMuse radio', async ({
+  page,
+  isMobile,
+}) => {
+  if (isMobile) await page.setViewportSize({ width: 360, height: 844 })
+
   await page.route('**/api/player/capabilities', (route) =>
     route.fulfill({
       json: {
@@ -167,7 +172,64 @@ test('library playback opens the full player and starts AudioMuse radio', async 
     'true',
   )
   await page.getByRole('button', { name: 'Grid view' }).click()
-  await page.getByRole('button', { name: 'Play Clear Water' }).click()
+  const grid = page.locator('.library-grid')
+  const gridTop = await grid.evaluate((element) => element.getBoundingClientRect().top + scrollY)
+  const idleOpacity = await page.evaluate(() => (matchMedia('(hover: none)').matches ? 1 : 0))
+  let releasePlayback: () => void = () => undefined
+  const pendingPlayback = new Promise<void>((resolve) => {
+    releasePlayback = resolve
+  })
+  await page.route(
+    '**/api/library/albums/album-1',
+    async (route) => {
+      await pendingPlayback
+      await route.fallback()
+    },
+    { times: 1 },
+  )
+  try {
+    await page.getByRole('button', { name: 'Play Clear Water' }).click()
+    await expect(page.getByRole('button', { name: 'Play Clear Water' })).toBeDisabled()
+    // Sample the whole loading transition so a brief flash cannot pass between assertions.
+    const movement = await grid.evaluate(
+      async (element, baseline) => {
+        const idleButton = element.querySelector('[aria-label="Play Stone Lines"]')
+        if (!idleButton) throw new Error('Missing second album play button')
+        let positionChange = 0
+        let opacityChange = 0
+        const start = performance.now()
+        await new Promise<void>((resolve) => {
+          const sample = () => {
+            positionChange = Math.max(
+              positionChange,
+              Math.abs(element.getBoundingClientRect().top + scrollY - baseline.top),
+            )
+
+            opacityChange = Math.max(
+              opacityChange,
+              Math.abs(Number(getComputedStyle(idleButton).opacity) - baseline.opacity),
+            )
+
+            if (performance.now() - start >= 350) resolve()
+            else requestAnimationFrame(sample)
+          }
+          sample()
+        })
+
+        return { positionChange, opacityChange }
+      },
+      { top: gridTop, opacity: idleOpacity },
+    )
+    expect(movement.positionChange).toBeLessThan(1)
+    expect(movement.opacityChange).toBe(0)
+  } finally {
+    releasePlayback()
+  }
+  await expect(page.getByRole('button', { name: 'Play Clear Water' })).toBeEnabled()
+  await expect(page.locator('.live-player')).toContainText('First Light')
+  expect(
+    await grid.evaluate((element) => element.getBoundingClientRect().top + scrollY),
+  ).toBeCloseTo(gridTop)
   await expect(page).toHaveURL(/\/library$/)
   await page.getByRole('button', { name: 'Open Clear Water' }).click()
   await expect(page).toHaveURL(/\/library\/albums\/album-1$/)
