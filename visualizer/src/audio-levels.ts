@@ -28,6 +28,13 @@ const SAMPLE_RATE = 44100
 const SIMULATION_FPS = 60
 const BASE_FPS = 30
 const FAST_AVERAGE_FRAMES = 50
+const FRAME_SECONDS = 1 / SIMULATION_FPS
+// Already quoted at 60 fps, unlike the band rates above, so it is used as-is.
+const ONSET_LONG_RATE = 0.992
+// Matches JourneyController's onset feature smoothing, so the native path's
+// onset rises and falls on the same timescale as the score's.
+const ONSET_ATTACK_SECONDS = 0.16
+const ONSET_RELEASE_SECONDS = 0.65
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -129,6 +136,9 @@ export class AudioLevelAnalyser {
   private readonly longAvg = new Float32Array(3)
   private readonly val = new Float32Array(3)
   private readonly att = new Float32Array(3)
+  private readonly prevSpectrum = new Float32Array(SAMPLES_OUT)
+  private fluxAvg = 1
+  private onsetValue = 0
   private frames = 0
 
   constructor() {
@@ -145,11 +155,22 @@ export class AudioLevelAnalyser {
     this.longAvg.fill(1)
     this.val.fill(1)
     this.att.fill(1)
+    this.prevSpectrum.fill(0)
+    this.fluxAvg = 1
+    this.onsetValue = 0
+  }
+
+  // Smoothed 0..1 spectral-flux onset for the frame most recently passed to
+  // update(). The engine multiplies this by sensitivity before it becomes a
+  // uniform; this module has no opinion on studio options.
+  get onset(): number {
+    return this.onsetValue
   }
 
   update(input: AudioFrame): BandLevels {
     for (let i = 0; i < NFREQ; i++) this.samples[i] = input.timeByteArray[i] - 128
     const spectrum = this.fft.transform(this.samples)
+    this.updateOnset(spectrum)
     // Accumulate into the Float32Array rather than a float64 local: Butterchurn
     // rounds to single precision on every addition, and matching that keeps the
     // two implementations bit-for-bit identical.
@@ -182,5 +203,22 @@ export class AudioLevelAnalyser {
       trebAtt: this.att[2],
       volAtt: (this.att[0] + this.att[1] + this.att[2]) / 3,
     }
+  }
+
+  // Half-wave-rectified spectral flux, normalised by its own slow average so a
+  // click reads the same whether the mix around it is quiet or loud, then
+  // clamped and run through an attack/release smoother.
+  private updateOnset(spectrum: Float32Array) {
+    let flux = 0
+    for (let bin = 0; bin < SAMPLES_OUT; bin++) {
+      const delta = spectrum[bin] - this.prevSpectrum[bin]
+      if (delta > 0) flux += delta
+      this.prevSpectrum[bin] = spectrum[bin]
+    }
+    this.fluxAvg = this.fluxAvg * ONSET_LONG_RATE + flux * (1 - ONSET_LONG_RATE)
+    const ratio = this.fluxAvg < 1e-6 ? 0 : clamp(flux / this.fluxAvg, 0, 1)
+    const tau = ratio > this.onsetValue ? ONSET_ATTACK_SECONDS : ONSET_RELEASE_SECONDS
+    const kept = Math.exp(-FRAME_SECONDS / tau)
+    this.onsetValue = ratio * (1 - kept) + this.onsetValue * kept
   }
 }

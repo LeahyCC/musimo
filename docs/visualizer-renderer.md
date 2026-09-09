@@ -41,7 +41,7 @@ The GLSL body follows Butterchurn's `shader_body` convention, so preset GLSL por
 | `texsize`                                 | vec4  | `w, h, 1/w, 1/h` of **this pass's** target, which differs from `resolution` on a scaled pass                                     |
 | `bass` `mid` `treb` `vol`                 | float | band levels                                                                                                                      |
 | `bass_att` `mid_att` `treb_att` `vol_att` | float | their attack-smoothed companions                                                                                                 |
-| `onset`                                   | float | currently always 0; a later card defines it                                                                                      |
+| `onset`                                   | float | spectral-flux onset, 0..1, scaled by sensitivity                                                                                 |
 | `seed`                                    | float | the resolved seed, reduced modulo 2²⁴ so it stays exact in a single-precision uniform                                            |
 | `motion` `trails` `sensitivity` `desat`   | float | the studio options, live                                                                                                         |
 | `tintA` `tintB` `tintC`                   | vec3  | the theme's motif tints                                                                                                          |
@@ -88,12 +88,26 @@ Persistent buffers are RGBA16F ping-pong pairs through `EXT_color_buffer_float`.
 
 ## Band levels
 
-`visualizer/src/audio-levels.ts` is a port of Butterchurn's `FFT`, `AudioProcessor.processAudio` and `AudioLevels`: a 1024-point FFT of the window `samplePcm` produces, 512 magnitudes, the equalize table `-0.02 * ln((512 - i) / 512)`, and bands split at 20, 320, 2800 and 11025 Hz. It is pure and DOM-free. Verified against the pinned Butterchurn build on the same synthetic frames: identical to the bit.
+`visualizer/src/audio-levels.ts` is a port of Butterchurn's `FFT`, `AudioProcessor.processAudio` and `AudioLevels`: a 1024-point FFT of the window `samplePcm` produces, 512 magnitudes, the equalize table `-0.02 * ln((512 - i) / 512)`, and bands split at 20, 320, 2800 and 11025 Hz. It is pure and DOM-free.
+
+Each band edge is `clamp(round(hz / bucketHz) - 1, 0, 511)`, with `bucketHz = 44100 / 1024 ≈ 43.07 Hz`. That puts bass on bins `[0, 6)`, mid on `[6, 64)` and treble on `[64, 255)`. A band's `val` is its immediate magnitude sum divided by a long-run average of itself (rate 0.9 for the first 50 frames, 0.992 after, both quoted at 30 fps and adjusted for the renderer's fixed 60 fps step); `att` divides a short-run average (rate 0.2 rising, 0.5 falling, same adjustment) by that same long average.
 
 Two properties of that design are worth knowing before writing a study against these numbers:
 
 - `val` is a **ratio**, not a level: each band is divided by its own long-run average. A steady tone therefore drives every band back towards 1.0 within a few seconds, and 1.0 means "normal for this band", not "loud". Silence reads as exactly 1.0 once the long average falls under its floor.
 - The equalize curve multiplies the lowest bins by nearly zero and the top of the treble band by 0.12, and `samplePcm` hands over 8-bit bytes. The quantisation floor of any loud sound outweighs a pure low fundamental in the treble sum, so a 60 Hz test tone does _not_ read as `bass > treb`. It does read as `bass > mid`, and the bass band tracks bass content far more than treble content does. Real broadband music is unaffected.
+
+`visualizer/tests/levels.browser.mjs` drives a Butterchurn `sherwin` engine and a native `tunnel` engine on the same Dive recording from `startAt(0)`, steps both through the first 20 seconds at 60 Hz and compares every frame after the first 50 (once both analysers are past the fast/slow long-average switch). The worst relative difference across `bass`, `mid`, `treb` and their `_att` companions was 0: the port is bit-identical to Butterchurn's own analyser on real audio, not only on synthetic test frames.
+
+## Onset
+
+`AudioLevelAnalyser` also tracks onset, a 0..1 measure of how much louder the spectrum just got. Each frame:
+
+1. Half-wave-rectified spectral flux: `sum(max(0, spectrum[bin] - previousSpectrum[bin]))` over all 512 equalized bins, so a drop in level contributes nothing.
+2. That flux is divided by its own slow average (rate 0.992, already quoted at the renderer's 60 fps so it needs no adjustment, seeded at 1 like the band long averages), then clamped to 0..1.
+3. The clamped value is smoothed with an attack constant of 0.16 s when it is rising and a release constant of 0.65 s when it is falling: the same two constants `JourneyController` uses for its own onset feature, so the native path's transients move on the same timescale as the score's.
+
+The module has no opinion on studio options: the engine reads `AudioLevelAnalyser.onset` and multiplies it by `sensitivity` before setting the `onset` uniform. `visualizer/tests/audio-levels.test.ts` checks silence holds it at exactly 0, a 2 Hz click train produces a clear peak at each click that settles low before the next one, and the value never leaves 0..1.
 
 ## Adding a study
 
