@@ -2400,6 +2400,12 @@ meter::-webkit-meter-optimum-value {
 .library-heading {
   margin-bottom: 24px;
 }
+.library-status {
+  display: grid;
+}
+.library-status > span {
+  grid-area: 1 / 1;
+}
 .library-tabs {
   display: flex;
   gap: 6px;
@@ -2471,7 +2477,7 @@ meter::-webkit-meter-optimum-value {
   height: 100%;
   object-fit: cover;
 }
-.library-card-play {
+button.library-card-play {
   position: absolute;
   right: 10px;
   bottom: 10px;
@@ -2485,7 +2491,9 @@ meter::-webkit-meter-optimum-value {
   place-items: center;
   opacity: 0;
   transform: translateY(5px);
-  transition: 140ms ease;
+  transition:
+    opacity 140ms ease,
+    transform 140ms ease;
 }
 .library-card:hover .library-card-play,
 .library-card:focus-within .library-card-play {
@@ -2493,7 +2501,7 @@ meter::-webkit-meter-optimum-value {
   transform: none;
 }
 @media (hover: none) {
-  .library-card-play {
+  button.library-card-play {
     opacity: 1;
     transform: none;
   }

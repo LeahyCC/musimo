@@ -14,6 +14,8 @@ Library has Home, Albums, Artists, Tracks and Playlists views. Each view and det
 
 Now Playing shows large artwork, the queue and lyrics. Musimo asks Navidrome first, then checks LRCLIB when the library track has no imported lyrics. Start AudioMuse radio replaces the queue with the current song followed by sonic matches when Navidrome advertises the required extension. The Library badge says AudioMuse is connected because an advertised extension does not prove its analysis and similarity index are ready. AudioMuse connection and index failures receive a short not-ready message instead of exposing the plugin error or its local address. Catalog previews still use the same audio element, so a preview and a library track cannot play at once.
 
+Starting playback keeps the collection in place. Loading feedback appears in the Library header, and other cards keep their play buttons hidden until hovered or focused. Touch layouts keep the buttons visible.
+
 ## API
 
 - `GET /api/player/capabilities`: connection, server version and advertised OpenSubsonic extensions. `sonic_similarity` is true when Navidrome advertises the `sonicSimilarity` extension.
