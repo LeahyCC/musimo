@@ -115,6 +115,9 @@ async function prepareRenderer(token: number) {
       next.dispose()
       return
     }
+    // Before the reconstruction, not after: the frame hook reads the settings,
+    // so the history it rebuilds has to be the one the panel is showing.
+    applyStoredStudySettings(next)
     await next.startAt(audio.currentTime, () => audio.currentTime)
     if (token !== generation || unloaded) {
       next.dispose()
@@ -146,6 +149,7 @@ async function prepareRenderer(token: number) {
         ? `Visual: ${study.author} · Native renderer`
         : `Visual: ${study.author} · Butterchurn 3.0.0-beta.5`
     element('quality-label').textContent = quality.selectedOptions[0].text
+    renderStudyPanel()
     renderState.textContent = audio.paused ? 'Ready · press play' : 'Live · audio clock'
     record.disabled = loading
   } catch (error) {
@@ -367,6 +371,95 @@ seedScore.onclick = () => {
   void rebuild()
 }
 studioLabels()
+
+// Per-study settings. The loaded manifest declares them and this panel
+// generates one slider each, hidden for a study that declares none. They are
+// engine uniforms, so a change applies without a rebuild, and they are inputs
+// to the deterministic frame, so they go into the engine before startAt and a
+// seek reconstructs with the same values.
+const studySettingsSection = element('study-settings')
+const studySettingsControls = element('study-settings-controls')
+const studyReset = element<HTMLButtonElement>('study-reset')
+
+const studySettingsKey = (id: string) => `musimo.studio.study.${id}`
+
+function storedStudySettings(id: string): Record<string, number> {
+  const values: Record<string, number> = {}
+  try {
+    const stored: unknown = JSON.parse(localStorage.getItem(studySettingsKey(id)) ?? 'null')
+    if (!stored || typeof stored !== 'object' || Array.isArray(stored)) return values
+    for (const [name, value] of Object.entries(stored as Record<string, unknown>))
+      if (typeof value === 'number' && Number.isFinite(value)) values[name] = value
+  } catch {
+    /* Settings fall back to the study's own defaults when storage is unreadable. */
+  }
+  return values
+}
+
+function persistStudySettings(target: VisualizerEngine) {
+  const manifest = target.studyManifest
+  if (!manifest) return
+  try {
+    localStorage.setItem(studySettingsKey(manifest.id), JSON.stringify(target.studySettings ?? {}))
+  } catch {
+    /* Settings still work for this session when storage is disabled. */
+  }
+}
+
+// Stored values are untrusted: an earlier build's range or a hand-edited entry
+// must never reach a shader, so each one is clamped to the manifest's bounds.
+function applyStoredStudySettings(target: VisualizerEngine) {
+  const manifest = target.studyManifest
+  if (!manifest?.settings) return
+  const stored = storedStudySettings(manifest.id)
+  for (const setting of manifest.settings) {
+    const value = stored[setting.name]
+    if (value === undefined) continue
+    target.setSetting(setting.name, Math.min(setting.max, Math.max(setting.min, value)))
+  }
+}
+
+const settingLabel = (value: number) => String(Number(value.toFixed(3)))
+
+function renderStudyPanel() {
+  studySettingsControls.replaceChildren()
+  const settings = engine?.studyManifest?.settings ?? []
+  studySettingsSection.hidden = !engine || settings.length === 0
+  if (!engine || !settings.length) return
+  const values = engine.studySettings ?? {}
+  for (const setting of settings) {
+    const label = document.createElement('label')
+    label.className = 'slider'
+    const output = document.createElement('output')
+    const input = document.createElement('input')
+    const current = values[setting.name] ?? setting.default
+    output.textContent = settingLabel(current)
+    input.type = 'range'
+    input.min = String(setting.min)
+    input.max = String(setting.max)
+    input.step = String(setting.step)
+    input.value = String(current)
+    input.setAttribute('aria-label', setting.label)
+    input.oninput = () => {
+      if (!engine) return
+      const value = Number(input.value)
+      engine.setSetting(setting.name, value)
+      output.textContent = settingLabel(value)
+      persistStudySettings(engine)
+    }
+    label.append(`${setting.label} `, output, input)
+    studySettingsControls.append(label)
+  }
+}
+
+studyReset.onclick = () => {
+  if (!engine) return
+  for (const setting of engine.studyManifest?.settings ?? [])
+    engine.setSetting(setting.name, setting.default)
+  persistStudySettings(engine)
+  renderStudyPanel()
+}
+
 element<HTMLInputElement>('file').onchange = (event) => {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (file) void loadRecording(file)

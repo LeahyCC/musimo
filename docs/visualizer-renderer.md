@@ -73,6 +73,31 @@ This replaces Butterchurn's frame equations and its `q` variables. Every number 
 
 The renderer discovers the hook's uniform names by calling it once at load with idle inputs and a scratch state, because the shader preamble has to declare them before the first frame. The keys of that first result are the contract: a key returned only on later frames is ignored.
 
+## Live settings
+
+A `settings` entry becomes a float uniform of that name in every pass and an
+entry in the `settings` object the frame hook receives.
+
+```ts
+settings: [{ name: 'folds', label: 'Folds', min: 4, max: 16, step: 1, default: 8 }]
+```
+
+`engine.setSetting(name, value)` writes one. Nothing rebuilds: the value is set
+on the next `render`, so a slider can follow a drag. `engine.studySettings`
+reads them all back and `engine.studyManifest` hands out the declarations, which
+is what the studio page generates its "This study" panel from.
+
+Settings are part of the deterministic frame, not a display-only grade. The hook
+reads them, so the accumulators a reconstruction rebuilds depend on them. An
+owner that persists settings therefore has to put them into the engine **before**
+`startAt`, or the rebuilt history belongs to the values the study started with.
+The studio page does this in `prepareRenderer`, between `load` and `startAt`.
+
+Values arriving from storage or a query string are untrusted. `setSetting`
+rejects a name the manifest never declared and a non-finite number, but it does
+not clamp: the owner clamps to the declared `min` and `max`, because those are
+the bounds the shader was written against.
+
 ## Determinism
 
 - The hook must be pure. It must never read `Math.random`, `Date` or `performance`; a seek replays frames and would otherwise not reproduce.
@@ -111,9 +136,26 @@ The module has no opinion on studio options: the engine reads `AudioLevelAnalyse
 
 ## Adding a study
 
-1. Write `visualizer/src/studies/<id>.ts` exporting a `StudyManifest`.
+1. Write `visualizer/src/studies/<id>.ts` exporting a `StudyManifest`. `studies/common.ts` holds what the existing studies share: the relief lighting snippet, a seed-derived phase, the band smoother and the accumulator wrap.
 2. Register it in `visualizer/src/studies/index.ts`.
-3. Add an entry to `studies` in `visualizer/src/engine.ts` with `renderer: 'native'`.
-4. Add an `<option>` to the picker in `visualizer/index.html`.
+3. Add an entry to `studies` in `visualizer/src/engine.ts` with `renderer: 'native'`, keeping `name` and `author` the same as the manifest's.
+4. Add an `<option>` to the picker in `visualizer/index.html`. The settings panel needs nothing: it reads the manifest.
+5. Add the id to `STUDIES` in `visualizer/tests/native.browser.mjs`, which then asks it the determinism, seek and settings questions along with the rest.
+6. Look at it. `node tests/soak.browser.mjs <id> <seekSeconds> <soakSeconds> <name>` seeks, simulates without real-time playback and screenshots the canvas into `test-results/`. A study can look right at twenty seconds and be a grey field at a hundred, so soak it well past the first minute.
 
-The loader rejects a pass, setting or hook key that is not a plain GLSL identifier or that collides with a built-in uniform, so a name clash fails at load with a readable message rather than inside a shader compile.
+The loader rejects a pass, setting or hook key that is not a plain GLSL identifier or that collides with a built-in uniform, so a name clash fails at load with a readable message rather than inside a shader compile. Two names it cannot catch: a setting or hook key that shadows a GLSL built-in function, `step` or `mix` for example, compiles into an error at the call site instead.
+
+### Notes from the studies written so far
+
+- Do not import from `effects-presets.ts`. It pulls a Butterchurn preset JSON in at module scope, so one string costs the whole package. The relief snippet lives in `studies/common.ts` for that reason, with its attribution.
+- Every study must respond to the seed, or the seed assertion in the native check fails. Studies that sample the noise textures get this for free; a study that does not, such as `kaleidoscope3` or `julia`, uses `SEED_PHASE` from `studies/common.ts` to turn the `seed` uniform into a drift phase.
+- Watch the feature size a fractal lands at. Kaleidoscope V3's IFS scale sets how quickly an orbit runs away and so how coarse its cells are; the preset's drift took it low enough that the whole tile fell under a pixel and the mandala read as grey noise. Its drift now stays above that floor.
+
+## The studies
+
+| Study           | id              | Passes                            | Settings                 |
+| --------------- | --------------- | --------------------------------- | ------------------------ |
+| Native tunnel   | `tunnel`        | persistent feedback, blur, screen | pull, folds, glow        |
+| Kaleidoscope V3 | `kaleidoscope3` | persistent fractal, blur, screen  | folds, depth, spin, glow |
+| Julia spiral    | `julia`         | screen                            | zoom, spiral, bands      |
+| Liquid contours | `contours`      | persistent field, screen          | lines, flow              |

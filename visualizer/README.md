@@ -26,9 +26,22 @@ butterchurn                        native
   options baked in, one rebuild      options are uniforms, live
 ```
 
-**Native tunnel** is the first native study. The manifest format, the uniforms and samplers every pass gets, the per-frame hook and the determinism rules are in [the renderer note](../docs/visualizer-renderer.md), which also covers adding a study. Band levels come from `src/audio-levels.ts`, a port of Butterchurn's FFT and `AudioLevels` that is pure, DOM-free and unit tested.
+Four studies run natively today.
+
+- **Native tunnel**: one persistent feedback pass zooming and rotating into itself, tinted and glowed on the way out.
+- **Kaleidoscope V3**: a kaleidoscopic IFS evaluated per pixel, twelve generations of fold, rotate, scale and offset, coloured from orbit traps and the generation the orbit runs away at, seen through a log-polar tunnel with two drifting Möbius centres. Nothing grows in a feedback loop, so detail stays crisp at every scale. Settings: folds, depth, spin, glow.
+- **Julia spiral**: an escape-time Julia set in hard posterised bands, falling into its own repelling fixed point. The set is invariant under that point's multiplier, so zooming in by it lands on the same picture and the dive never ends or runs out of float precision; the multiplier's argument is what winds the arms into a spiral. Settings: zoom, spiral, bands.
+- **Liquid contours**: a scalar field carried by a divergence-free curl-noise flow and drawn as iso-contour lines with relief lighting. Settings: lines, flow.
+
+The manifest format, the uniforms and samplers every pass gets, the per-frame hook, live settings and the determinism rules are in [the renderer note](../docs/visualizer-renderer.md), which also covers adding a study. Band levels come from `src/audio-levels.ts`, a port of Butterchurn's FFT and `AudioLevels` that is pure, DOM-free and unit tested.
 
 Both paths keep the same engine contract: fixed 60 media steps per second, a seek rebuilding up to 120 frames from the seed, and the same `costs`, `loadMs`, `warmMs` and `reconstructionMs` reporting. On the native path the Customize sliders take effect while you drag them, with no "Preparing visual" rebuild; re-rolling the seed still rebuilds, because the seed generates the noise textures at load.
+
+## This study
+
+Under Customize sits a second panel holding the controls a study declares for itself. It is generated from the loaded manifest's `settings`, one slider each with its label and current value, plus a Reset that returns the study to its authored values. Studies without settings, which is every Butterchurn study, hide the panel entirely.
+
+A setting is a uniform, so a change applies mid-drag with no rebuild. It is also an input to the deterministic frame: the frame hook reads the settings, so the studio hands the stored values to the engine before the seek reconstruction rather than after, and a seek with the same settings reproduces the same frame. Values persist per study in `localStorage` under `musimo.studio.study.<id>` and are clamped to the manifest's own bounds on the way back in, so a stale stored value cannot reach a shader.
 
 ## Song preparation
 
@@ -71,7 +84,7 @@ node visualizer/tests/native.browser.mjs
 node visualizer/tests/preview.browser.mjs
 ```
 
-`replay` covers the Butterchurn path and `native` the same questions for the native renderer, plus live option and setting updates. Set `PREVIEW_URL` when the preview is not on 5180, for example `PREVIEW_URL=http://127.0.0.1:5181` for a worktree running its own server.
+`replay` covers the Butterchurn path and `native` the same questions for every native study in turn, plus live option and setting updates and the part a setting plays in rebuilding history. Set `PREVIEW_URL` when the preview is not on 5180, for example `PREVIEW_URL=http://127.0.0.1:5181` for a worktree running its own server. `tests/soak.browser.mjs` reads the same variable, and takes a study, a seek time, a soak length and an output name.
 
 This checks short replay hashes, pause, restart, forward/backward reconstruction, transition state, cancellation and renderer isolation. It writes captures and results under ignored `visualizer/test-results/`. It does not compare every frame of the complete song or establish cross-GPU identity.
 

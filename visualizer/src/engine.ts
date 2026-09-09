@@ -12,7 +12,6 @@ import { createJourneyPreset } from './journey-preset.ts'
 import { JourneyController } from './journey.ts'
 import type { JourneyScore } from './journey.ts'
 import { createKaleidoscopeV2Preset } from './kaleidoscope-v2-preset.ts'
-import { createKaleidoscopeV3Preset } from './kaleidoscope-v3-preset.ts'
 import { createAudioFrame, samplePcm } from './pcm.ts'
 import type { AudioFrame, Pcm } from './pcm.ts'
 import { createRendererSandbox } from './renderer-sandbox.ts'
@@ -59,11 +58,6 @@ export const studies = {
     author: 'Musimo study · after Flexi’s log-polar kaleidoscope and fractal feedback',
     renderer: 'butterchurn',
   },
-  kaleidoscope3: {
-    name: 'Kaleidoscope V3',
-    author: 'Musimo study · kaleidoscopic IFS, evaluated per pixel',
-    renderer: 'butterchurn',
-  },
   prism: {
     name: 'Prism Fracture',
     author: 'Musimo study · relief lighting after Sherwin',
@@ -72,6 +66,21 @@ export const studies = {
   tunnel: {
     name: 'Native tunnel',
     author: 'Musimo study · feedback tunnel',
+    renderer: 'native',
+  },
+  kaleidoscope3: {
+    name: 'Kaleidoscope V3',
+    author: 'Musimo study · kaleidoscopic IFS, evaluated per pixel',
+    renderer: 'native',
+  },
+  julia: {
+    name: 'Julia spiral',
+    author: 'Musimo study · escape-time Julia, self-similar dive',
+    renderer: 'native',
+  },
+  contours: {
+    name: 'Liquid contours',
+    author: 'Musimo study · curl-noise field, drawn as contour lines',
     renderer: 'native',
   },
   witchcraft: { name: 'martin - witchcraft reloaded', author: 'martin', renderer: 'butterchurn' },
@@ -204,13 +213,11 @@ export class VisualizerEngine {
               ? createKaleidoscopePreset(baked)
               : study === 'kaleidoscope2'
                 ? createKaleidoscopeV2Preset(baked)
-                : study === 'kaleidoscope3'
-                  ? createKaleidoscopeV3Preset(baked)
-                  : study === 'prism'
-                    ? createPrismPreset(baked)
-                    : study === 'witchcraft'
-                      ? witchcraft
-                      : sherwin,
+                : study === 'prism'
+                  ? createPrismPreset(baked)
+                  : study === 'witchcraft'
+                    ? witchcraft
+                    : sherwin,
         0,
       )
       signal.throwIfAborted()
