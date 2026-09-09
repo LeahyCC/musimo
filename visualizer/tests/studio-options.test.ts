@@ -95,7 +95,10 @@ test('persistence round-trips through JSON and survives corruption', () => {
   // A score-seed default serializes without a seed key and restores as undefined.
   const noSeed = mergeStudioOptions({ theme: 'mono' })
   assert(!serializeStudioOptions(noSeed).includes('seed'))
-  assert.equal(mergeStudioOptions(parseStudioOptions(serializeStudioOptions(noSeed))).seed, undefined)
+  assert.equal(
+    mergeStudioOptions(parseStudioOptions(serializeStudioOptions(noSeed))).seed,
+    undefined,
+  )
   assert.deepEqual(parseStudioOptions(null), {})
   assert.deepEqual(parseStudioOptions('{not json'), {})
   assert.deepEqual(parseStudioOptions('[1,2]'), {})
