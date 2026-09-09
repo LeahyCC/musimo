@@ -123,11 +123,24 @@ try {
   await production.waitForFunction(() => !document.querySelector('#record').disabled, {
     timeout: 30000,
   })
+  // Dive is a native study, so the first frame creates no realm. The pinned
+  // Butterchurn asset only has to serve when a Butterchurn study is chosen, so
+  // that is what this checks: pick one and wait for its realm to appear.
   results.production = await production.evaluate(() => ({
-    realms: document.querySelectorAll('iframe').length,
+    nativeRealms: document.querySelectorAll('iframe').length,
     width: document.querySelector('#visual').width,
     ready: !document.querySelector('#play').disabled,
   }))
+  await production.locator('#preset').selectOption('sherwin')
+  // The credit line only changes once the realm's module has loaded and the
+  // preset is prepared, so this also means the pinned asset has been served.
+  await production.waitForFunction(
+    () => document.querySelector('#credit').textContent.includes('Butterchurn'),
+    { timeout: 60000 },
+  )
+  results.production.realms = await production.evaluate(
+    () => document.querySelectorAll('iframe').length,
+  )
   results.production.rendererAsset = rendererAsset
   results.errors = errors
   await writeFile(
@@ -141,7 +154,12 @@ try {
       results.rebuildStopsCapture.audioContinues &&
       results.rebuildStopsCapture.hasClip,
   )
-  assert(results.production.ready && results.production.realms === 1 && rendererAsset)
+  assert(
+    results.production.ready &&
+      results.production.nativeRealms === 0 &&
+      results.production.realms === 1 &&
+      rendererAsset,
+  )
   assert.deepEqual(errors, [])
 } finally {
   await browser.close()

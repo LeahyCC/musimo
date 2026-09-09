@@ -8,7 +8,6 @@ import {
   createPhosphorPreset,
   createPrismPreset,
 } from './effects-presets.ts'
-import { createJourneyPreset } from './journey-preset.ts'
 import { JourneyController } from './journey.ts'
 import type { JourneyScore } from './journey.ts'
 import { createKaleidoscopeV2Preset } from './kaleidoscope-v2-preset.ts'
@@ -41,7 +40,7 @@ export const studies = {
   dive: {
     name: 'Dive journey',
     author: 'Based on Flexi, martin + geiss’s Sherwin Maxawow',
-    renderer: 'butterchurn',
+    renderer: 'native',
   },
   phosphor: {
     name: 'Phosphor Memory',
@@ -165,8 +164,12 @@ export class VisualizerEngine {
     this.study = study
     const start = performance.now()
     if (studies[study].renderer === 'native') {
-      this.loadNative(study, start)
+      // A native study builds synchronously. Yield once first so an owner that
+      // disposes or reloads in the same turn wins, rather than this spending
+      // the canvas's single WebGL context on a load nobody is waiting for.
+      await Promise.resolve()
       signal.throwIfAborted()
+      this.loadNative(study, start)
       return
     }
     const sandbox = await createRendererSandbox(signal)
@@ -205,46 +208,20 @@ export class VisualizerEngine {
         clock.blending = clock.blendProgress < 1
       }
       await this.renderer.loadPreset(
-        study === 'dive'
-          ? createJourneyPreset(this.options)
-          : study === 'phosphor'
-            ? createPhosphorPreset(baked)
-            : study === 'kaleidoscope'
-              ? createKaleidoscopePreset(baked)
-              : study === 'kaleidoscope2'
-                ? createKaleidoscopeV2Preset(baked)
-                : study === 'prism'
-                  ? createPrismPreset(baked)
-                  : study === 'witchcraft'
-                    ? witchcraft
-                    : sherwin,
+        study === 'phosphor'
+          ? createPhosphorPreset(baked)
+          : study === 'kaleidoscope'
+            ? createKaleidoscopePreset(baked)
+            : study === 'kaleidoscope2'
+              ? createKaleidoscopeV2Preset(baked)
+              : study === 'prism'
+                ? createPrismPreset(baked)
+                : study === 'witchcraft'
+                  ? witchcraft
+                  : sherwin,
         0,
       )
       signal.throwIfAborted()
-      if (study === 'dive' && this.controller) {
-        const controller = this.controller
-        // Sensitivity scales the onset signal where the score is injected into
-        // the preset's q variables; every other state passes through untouched.
-        const sensitivity = this.options.sensitivity
-        const runner = clock.presetEquationRunner
-        const evaluate = runner.runFrameEquations.bind(runner)
-        runner.runFrameEquations = (variables) => {
-          const state = controller.sample(this.position)
-          return evaluate({
-            ...variables,
-            q21: state.orbit,
-            q22: state.current,
-            q23: state.bloom,
-            q24: state.intensity,
-            q25: state.onset * sensitivity,
-            q26: state.energy,
-            q27: state.texture,
-            q28: state.variation,
-            q29: state.progress,
-            q30: state.transitionActivity,
-          })
-        }
-      }
       this.loadMs = performance.now() - start
       const warming = performance.now()
       // All three forms share these programs. Complete preparation before audio
@@ -297,9 +274,9 @@ export class VisualizerEngine {
   }
   get journeyState() {
     if (!this.controller) return undefined
-    return this.study === 'dive' || this.isNative
-      ? this.controller.sample(this.position)
-      : undefined
+    // Only a native study reads the score; the remaining Butterchurn presets
+    // are auditions and run on their own equations.
+    return this.isNative ? this.controller.sample(this.position) : undefined
   }
 
   // Live studio options on the native path. These are uniforms, so nothing

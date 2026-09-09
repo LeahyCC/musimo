@@ -3,6 +3,11 @@ import { mkdir, writeFile } from 'node:fs/promises'
 
 import { chromium } from '../../frontend/node_modules/playwright-core/index.mjs'
 
+// The acceptance check for the Dive journey, which now runs on the native
+// renderer. Every question it asks is the same as when Dive was a Butterchurn
+// preset: batching, seed, restart, pause, the seek into the return at 222
+// seconds and back, clock jumps, a moving landing, a cancelled load, no
+// renderer realm and an untouched host realm.
 // Run with the independent preview serving on 5180, or point PREVIEW_URL at
 // another port when a worktree runs its own server. This uses the existing
 // frontend browser-test dependency and never touches the visible preview tab.
@@ -50,18 +55,19 @@ try {
       await engine.startAt(0)
       return { canvas, engine }
     }
-    async function hash(canvas) {
-      const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
-      const digest = await crypto.subtle.digest('SHA-256', pixels)
+    // The native path draws to the default framebuffer, so the pixels come back
+    // through the renderer rather than a 2D context.
+    async function hash(engine) {
+      const digest = await crypto.subtle.digest('SHA-256', engine.readPixels())
       return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
         '',
       )
     }
     const first = await create()
     for (let frame = 1; frame <= 180; frame++) first.engine.advance((frame + 0.01) / 60)
-    const firstHash = await hash(first.canvas)
+    const firstHash = await hash(first.engine)
     await new Promise((resolve) => setTimeout(resolve, 250))
-    const pausedHash = await hash(first.canvas)
+    const pausedHash = await hash(first.engine)
     const hostUnchangedAfterFirst =
       Math.random === hostRandom && globalNames().join('|') === hostGlobals.join('|')
     const second = await create()
@@ -70,12 +76,12 @@ try {
       second.engine.advance((frame + 0.01) / 60)
       other.engine.advance((frame + 0.01) / 60)
     }
-    const secondHash = await hash(second.canvas)
-    const otherHash = await hash(other.canvas)
+    const secondHash = await hash(second.engine)
+    const otherHash = await hash(other.engine)
     const exactClock = second.engine.position === 3
     await second.engine.startAt(0)
     for (let frame = 1; frame <= 180; frame++) second.engine.advance((frame + 0.01) / 60)
-    const restartedHash = await hash(second.canvas)
+    const restartedHash = await hash(second.engine)
     first.engine.dispose()
     first.canvas.remove()
     other.engine.dispose()
@@ -88,7 +94,7 @@ try {
         position: second.engine.position,
         frames: second.engine.reconstructedFrames,
         ms: second.engine.reconstructionMs,
-        hash: await hash(second.canvas),
+        hash: await hash(second.engine),
         state: second.engine.journeyState,
       })
       if (images.length < 2) images.push(second.canvas.toDataURL())
@@ -99,6 +105,8 @@ try {
     const costs = [...second.engine.costs].sort((a, b) => a - b)
     second.engine.dispose()
     second.canvas.remove()
+    // A native load builds synchronously once it starts, so the engine yields
+    // before it takes the canvas. Disposing in the same turn must still cancel.
     const cancelled = new VisualizerEngine(document.createElement('canvas'), pcm, 640, score)
     const loading = cancelled.load('dive')
     cancelled.dispose()
