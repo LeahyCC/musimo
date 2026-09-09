@@ -3,6 +3,7 @@ import importlib.metadata
 import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import time
@@ -31,6 +32,11 @@ from backend.player_api import install_player_routes
 from backend.search_api import install_search_routes
 from backend.store import LockedSetting, Store
 
+LIBRARY_ITEM = r"[A-Za-z0-9._:-]{1,200}"
+LIBRARY_SPA_PATH = re.compile(
+    rf"^library/(?:(?:albums|playlists)(?:/{LIBRARY_ITEM})?|tracks|"
+    rf"artists(?:/{LIBRARY_ITEM}(?:/albums/{LIBRARY_ITEM})?)?)$"
+)
 VERSION = "0.3.0"
 
 
@@ -319,6 +325,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 "diagnostics",
             )
             and not (path.startswith(("albums/", "artists/")) and path.split("/")[-1].isdigit())
+            and not LIBRARY_SPA_PATH.fullmatch(path)
         ) or not (static / "index.html").is_file():
             raise HTTPException(404, "Not found")
         return FileResponse(static / "index.html")

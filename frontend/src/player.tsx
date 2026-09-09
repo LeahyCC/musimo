@@ -1,22 +1,32 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, type FormEvent, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   Disc3,
+  Maximize2,
   Pause,
   Play,
+  Plus,
   Repeat,
   RotateCcw,
   Shuffle,
   SkipBack,
   SkipForward,
+  ThumbsUp,
   Volume2,
   VolumeX,
   X,
 } from 'lucide-react'
 
-import { api, playerQueueSchema, previewSchema } from './api'
+import {
+  api,
+  libraryPlaylistDetailSchema,
+  libraryPlaylistsSchema,
+  playerQueueSchema,
+  previewSchema,
+} from './api'
 import type { LibraryTrack, MusicResult } from './api'
 
 type RepeatMode = 'off' | 'all' | 'one'
@@ -60,7 +70,7 @@ export const durationText = (seconds: number) =>
 const artUrl = (track: LibraryTrack) =>
   track.coverArt ? `/api/player/art/${encodeURIComponent(track.coverArt)}` : ''
 
-function stored(key: string, fallback: string) {
+export function stored(key: string, fallback: string) {
   try {
     return localStorage.getItem(key) ?? fallback
   } catch {
@@ -68,11 +78,11 @@ function stored(key: string, fallback: string) {
   }
 }
 
-function remember(key: string, value: string) {
+export function remember(key: string, value: string) {
   try {
     localStorage.setItem(key, value)
   } catch {
-    /* Playback still works when browser storage is blocked. */
+    /* Browser storage is optional. */
   }
 }
 
@@ -103,6 +113,85 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return value === 'all' || value === 'one' ? value : 'off'
   })
   const [notice, setNotice] = useState('Choose a track to start listening.')
+  const [playlistSearch, setPlaylistSearch] = useState('')
+  const [newPlaylistName, setNewPlaylistName] = useState('')
+  const playlistDialog = useRef<HTMLDialogElement>(null)
+  const queryClient = useQueryClient()
+
+  const isLibraryTrack = Boolean(libraryTrack)
+  const likedPlaylist = useQuery({
+    queryKey: ['library-playlist-liked'],
+    queryFn: ({ signal }) =>
+      api('library/playlists/liked', libraryPlaylistDetailSchema, { signal }),
+    enabled: isLibraryTrack,
+  })
+  const allPlaylists = useQuery({
+    queryKey: ['library-playlists'],
+    queryFn: ({ signal }) => api('library/playlists', libraryPlaylistsSchema, { signal }),
+    enabled: isLibraryTrack,
+  })
+  const selectedPlaylistIndex = isLibraryTrack
+    ? (likedPlaylist.data?.entry ?? []).findIndex((item) => item.id === libraryTrack?.id)
+    : -1
+  const isLiked = selectedPlaylistIndex >= 0
+  const addToLiked = useMutation({
+    mutationFn: ({ trackId, shouldAdd }: { trackId: string; shouldAdd: boolean }) => {
+      const playlist = likedPlaylist.data
+      if (!playlist) throw new Error('Liked playlist is not loaded.')
+      if (!shouldAdd && selectedPlaylistIndex < 0) {
+        throw new Error('Track is not in the liked playlist.')
+      }
+      const body = shouldAdd
+        ? { song_id_to_add: trackId }
+        : { song_index_to_remove: selectedPlaylistIndex }
+      return api(
+        `library/playlists/${encodeURIComponent(playlist.id)}/songs`,
+        libraryPlaylistDetailSchema,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        },
+      )
+    },
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['library-playlist-liked'] })
+      void queryClient.invalidateQueries({ queryKey: ['library-playlists'] })
+    },
+  })
+  const addToPlaylist = useMutation({
+    mutationFn: ({ playlistId, songId }: { playlistId: string; songId: string }) =>
+      api(
+        `library/playlists/${encodeURIComponent(playlistId)}/songs`,
+        libraryPlaylistDetailSchema,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ song_id_to_add: songId }),
+        },
+      ),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['library-playlists'] })
+      void queryClient.invalidateQueries({ queryKey: ['library-playlist-liked'] })
+    },
+  })
+  const createPlaylist = useMutation({
+    mutationFn: (name: string) =>
+      api('library/playlists', libraryPlaylistDetailSchema, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name,
+          song_ids: libraryTrack ? [libraryTrack.id] : [],
+        }),
+      }),
+    onSuccess: (playlist) => {
+      void queryClient.invalidateQueries({ queryKey: ['library-playlists'] })
+      if (playlist.id) setNotice(`Created playlist ${playlist.name}.`)
+      setNewPlaylistName('')
+      playlistDialog.current?.close()
+    },
+  })
 
   async function loadPreview(item: MusicResult, fallback: boolean) {
     request.current?.abort()
@@ -339,8 +428,46 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const activeTitle = libraryTrack?.title ?? track?.title
   const activeArtist = libraryTrack?.artist ?? track?.artist
+  const activeAlbum = libraryTrack?.album ?? track?.album
   const activeArt = libraryTrack ? artUrl(libraryTrack) : track?.art
   const isLibrary = Boolean(libraryTrack)
+  const playlistSearchTerms = playlistSearch.trim().toLocaleLowerCase()
+  const availablePlaylists = (allPlaylists.data?.items ?? [])
+    .filter((playlist) => playlist.id !== likedPlaylist.data?.id)
+    .filter((playlist) =>
+      playlistSearchTerms ? playlist.name.toLocaleLowerCase().includes(playlistSearchTerms) : true,
+    )
+
+  function openPlaylistDialog() {
+    setPlaylistSearch('')
+    setNewPlaylistName('')
+    playlistDialog.current?.showModal()
+  }
+
+  const canToggleLiked = likedPlaylist.data && libraryTrack ? true : false
+  const likedActionBusy = addToLiked.isPending
+  const addActionBusy = addToPlaylist.isPending
+  const createBusy = createPlaylist.isPending
+
+  function toggleLikedTrack() {
+    const trackId = libraryTrack?.id
+    if (!trackId || !likedPlaylist.data) return
+    addToLiked.mutate({ trackId, shouldAdd: !isLiked })
+  }
+
+  function addTrackToPlaylist(playlistId: string) {
+    if (!libraryTrack) return
+    addToPlaylist.mutate({ playlistId, songId: libraryTrack.id })
+  }
+
+  function submitNewPlaylist(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    if (!libraryTrack) return
+    const name = newPlaylistName.trim()
+    if (name.length < 1) return
+    if (name.length > 200) return
+    createPlaylist.mutate(name)
+  }
 
   return (
     <PlayerContext.Provider
@@ -381,12 +508,77 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 (activeTitle ?? 'A little listening goes a long way.')
               )}
             </strong>
-            {activeArtist && <small>{activeArtist}</small>}
+            {activeArtist && (
+              <small className="player-byline">
+                {libraryTrack?.artistId ? (
+                  <Link
+                    to="/library/artists/$artistId"
+                    params={{ artistId: libraryTrack.artistId }}
+                  >
+                    {activeArtist}
+                  </Link>
+                ) : track?.artist_id ? (
+                  <Link to="/artists/$artistId" params={{ artistId: String(track.artist_id) }}>
+                    {activeArtist}
+                  </Link>
+                ) : (
+                  activeArtist
+                )}
+                {activeAlbum && (
+                  <>
+                    {' · '}
+                    {libraryTrack?.albumId ? (
+                      <Link
+                        to="/library/albums/$albumId"
+                        params={{ albumId: libraryTrack.albumId }}
+                      >
+                        {activeAlbum}
+                      </Link>
+                    ) : track?.album_id ? (
+                      <Link to="/albums/$albumId" params={{ albumId: String(track.album_id) }}>
+                        {activeAlbum}
+                      </Link>
+                    ) : (
+                      activeAlbum
+                    )}
+                  </>
+                )}
+              </small>
+            )}
             <small className="playback-notice" role="status">
               {notice}
             </small>
           </span>
         </div>
+        {isLibrary && (
+          <div className="playlist-actions">
+            <button
+              className={`icon-button ${isLiked ? 'active' : ''}`}
+              aria-label={
+                isLiked ? `Remove ${activeTitle} from liked` : `Add ${activeTitle} to liked`
+              }
+              disabled={!canToggleLiked || likedActionBusy}
+              onClick={() => toggleLikedTrack()}
+            >
+              <ThumbsUp size={16} fill={isLiked ? 'currentColor' : 'none'} />
+            </button>
+            <button
+              className="icon-button"
+              aria-label={`Add ${activeTitle} to a playlist`}
+              disabled={!isLibrary}
+              onClick={() => openPlaylistDialog()}
+            >
+              <Plus size={16} />
+            </button>
+            <Link
+              className="icon-button open-now-playing"
+              aria-label="Open Now Playing"
+              to="/now-playing"
+            >
+              <Maximize2 size={17} />
+            </Link>
+          </div>
+        )}
         <div className="playback-controls">
           {isLibrary ? (
             <button className="icon-button" aria-label="Previous track" onClick={previous}>
@@ -491,6 +683,81 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           >
             <X size={16} />
           </button>
+        )}
+        {isLibrary && (
+          <dialog
+            ref={playlistDialog}
+            className="playlist-picker-sheet"
+            aria-label="Add track to playlist"
+            onClick={(event) => {
+              if (event.target === playlistDialog.current) playlistDialog.current?.close()
+            }}
+          >
+            <header>
+              <h2>Add to playlist</h2>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label="Close playlist picker"
+                onClick={() => playlistDialog.current?.close()}
+              >
+                <X size={16} />
+              </button>
+            </header>
+            <label className="playlist-picker-search">
+              <input
+                aria-label="Filter playlists"
+                value={playlistSearch}
+                placeholder="Filter playlists"
+                onChange={(event) => setPlaylistSearch(event.target.value)}
+              />
+            </label>
+            {allPlaylists.isLoading && <p role="status">Loading playlists…</p>}
+            {allPlaylists.isError && <p className="error">{allPlaylists.error.message}</p>}
+            <div className="playlist-picker-list">
+              {availablePlaylists.map((playlist) => (
+                <div key={playlist.id} className="playlist-picker-row">
+                  <span>{playlist.name}</span>
+                  <button
+                    type="button"
+                    className="button"
+                    disabled={addActionBusy || createBusy}
+                    onClick={() => addTrackToPlaylist(playlist.id)}
+                  >
+                    {addActionBusy ? 'Saving…' : 'Add'}
+                  </button>
+                </div>
+              ))}
+              {!allPlaylists.isLoading && !availablePlaylists.length && (
+                <p className="playlist-picker-empty">No playlists yet.</p>
+              )}
+            </div>
+            <form className="playlist-picker-form" onSubmit={submitNewPlaylist}>
+              <label>
+                New playlist
+                <input
+                  value={newPlaylistName}
+                  placeholder="Create and add this track"
+                  maxLength={200}
+                  onChange={(event) => setNewPlaylistName(event.target.value)}
+                />
+              </label>
+              <button
+                className="button"
+                type="submit"
+                disabled={createBusy || !newPlaylistName.trim()}
+              >
+                {createBusy ? 'Creating…' : 'Create'}
+              </button>
+            </form>
+            {(addToPlaylist.isError || addToLiked.isError || createPlaylist.isError) && (
+              <p className="error">
+                {addToPlaylist.error?.message ||
+                  addToLiked.error?.message ||
+                  createPlaylist.error?.message}
+              </p>
+            )}
+          </dialog>
         )}
         <audio
           ref={audio}

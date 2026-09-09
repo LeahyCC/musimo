@@ -18,6 +18,7 @@ import {
   Outlet,
   RouterProvider,
   useNavigate,
+  useParams,
   useRouterState,
 } from '@tanstack/react-router'
 import {
@@ -822,14 +823,102 @@ const downloadsRoute = createRoute({
   path: '/downloads',
   component: DownloadsPage,
 })
+
+function LibraryScreen({
+  view,
+  albumId,
+  artistId,
+  playlistId,
+  parentArtistId,
+  artistSection,
+}: {
+  view?: 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
+  albumId?: string
+  artistId?: string
+  playlistId?: string
+  parentArtistId?: string
+  artistSection?: 'albums' | 'songs'
+}) {
+  return (
+    <Suspense fallback={<p role="status">Opening your library…</p>}>
+      <LibraryPage
+        view={view}
+        albumId={albumId}
+        artistId={artistId}
+        playlistId={playlistId}
+        parentArtistId={parentArtistId}
+        artistSection={artistSection}
+      />
+    </Suspense>
+  )
+}
+
 const libraryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library',
-  component: () => (
-    <Suspense fallback={<p role="status">Opening your library…</p>}>
-      <LibraryPage />
-    </Suspense>
-  ),
+  component: () => <LibraryScreen />,
+})
+const libraryAlbumsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/albums',
+  component: () => <LibraryScreen view="albums" />,
+})
+const libraryAlbumRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/albums/$albumId',
+  component: function LibraryAlbumRoute() {
+    const { albumId } = useParams({ from: '/library/albums/$albumId' })
+    return <LibraryScreen view="albums" albumId={albumId} />
+  },
+})
+const libraryArtistsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/artists',
+  component: () => <LibraryScreen view="artists" />,
+})
+const libraryArtistRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/artists/$artistId',
+  component: function LibraryArtistRoute() {
+    const { artistId } = useParams({ from: '/library/artists/$artistId' })
+    return <LibraryScreen view="artists" artistId={artistId} />
+  },
+})
+const libraryArtistSongsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/artists/$artistId/songs',
+  component: function LibraryArtistSongsRoute() {
+    const { artistId } = useParams({ from: '/library/artists/$artistId/songs' })
+    return <LibraryScreen view="artists" artistId={artistId} artistSection="songs" />
+  },
+})
+const libraryArtistAlbumRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/artists/$artistId/albums/$albumId',
+  component: function LibraryArtistAlbumRoute() {
+    const { albumId, artistId } = useParams({
+      from: '/library/artists/$artistId/albums/$albumId',
+    })
+    return <LibraryScreen view="artists" albumId={albumId} parentArtistId={artistId} />
+  },
+})
+const libraryTracksRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/tracks',
+  component: () => <LibraryScreen view="tracks" />,
+})
+const libraryPlaylistsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/playlists',
+  component: () => <LibraryScreen view="playlists" />,
+})
+const libraryPlaylistRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/playlists/$playlistId',
+  component: function LibraryPlaylistRoute() {
+    const { playlistId } = useParams({ from: '/library/playlists/$playlistId' })
+    return <LibraryScreen view="playlists" playlistId={playlistId} />
+  },
 })
 const nowPlayingRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -857,6 +946,15 @@ const router = createRouter({
     albumRoute,
     artistRoute,
     libraryRoute,
+    libraryAlbumsRoute,
+    libraryAlbumRoute,
+    libraryArtistsRoute,
+    libraryArtistRoute,
+    libraryArtistSongsRoute,
+    libraryArtistAlbumRoute,
+    libraryTracksRoute,
+    libraryPlaylistsRoute,
+    libraryPlaylistRoute,
     nowPlayingRoute,
     downloadsRoute,
     settingsRoute,

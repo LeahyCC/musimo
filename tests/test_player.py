@@ -31,6 +31,14 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
 
             def upstream(request: httpx.Request) -> httpx.Response:
                 requests.append(request)
+                if request.url.host == "lrclib.net":
+                    return httpx.Response(
+                        200,
+                        json={
+                            "plainLyrics": "First line\nSecond line",
+                            "syncedLyrics": "[00:01.25]First line\n[00:03.00]Second line",
+                        },
+                    )
                 path = request.url.path
                 if path.endswith("/ping"):
                     return subsonic(serverVersion="0.63.0")
@@ -68,7 +76,15 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 if path.endswith("/getArtist"):
                     return subsonic(artist={"id": "artist-1", "album": [{"id": "album-1"}]})
                 if path.endswith("/getSong"):
-                    return subsonic(song={"id": "song-1", "title": "Track"})
+                    return subsonic(
+                        song={
+                            "id": request.url.params.get("id"),
+                            "title": "Track",
+                            "artist": "Artist",
+                            "album": "One",
+                            "duration": 180,
+                        }
+                    )
                 if path.endswith("/getPlayQueue"):
                     return subsonic(
                         playQueue={
@@ -80,10 +96,27 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 if path.endswith("/savePlayQueue") or path.endswith("/scrobble"):
                     return subsonic()
                 if path.endswith("/getLyricsBySongId"):
+                    if request.url.params.get("id") == "no-lyrics":
+                        return subsonic(lyricsList={"structuredLyrics": []})
                     return subsonic(
-                        lyricsList={"structuredLyrics": [{"displayArtist": "Artist", "line": []}]}
+                        lyricsList={
+                            "structuredLyrics": [
+                                {"displayArtist": "Artist", "line": [{"value": "Words"}]}
+                            ]
+                        }
                     )
                 if path.endswith("/getSonicSimilarTracks") or path.endswith("/findSonicPath"):
+                    if request.url.params.get("id") == "radio-not-ready":
+                        return subsonic(
+                            status="failed",
+                            error={
+                                "message": (
+                                    "plugin call failed: AudioMuse-AI HTTP request failed: "
+                                    'Get "http://127.0.0.1:8000/api/similar_tracks": '
+                                    "connectex: No connection could be made"
+                                )
+                            },
+                        )
                     return subsonic(
                         sonicMatch=[{"entry": {"id": "song-2", "title": "Next"}, "similarity": 0.9}]
                     )
@@ -195,6 +228,12 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             "artist-1",
                         )
                         self.assertEqual(
+                            (await client.get("/api/library/artists/artist-1/tracks")).json()[
+                                "items"
+                            ][0]["id"],
+                            "song-1",
+                        )
+                        self.assertEqual(
                             (await client.get("/api/player/song/song-1")).json()["id"], "song-1"
                         )
                         self.assertEqual(
@@ -234,6 +273,11 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             len((await client.get("/api/player/lyrics/song-1")).json()["items"]), 1
                         )
+                        fallback_lyrics = (await client.get("/api/player/lyrics/no-lyrics")).json()[
+                            "items"
+                        ][0]
+                        self.assertTrue(fallback_lyrics["synced"])
+                        self.assertEqual(fallback_lyrics["line"][0]["start"], 1250)
                         self.assertEqual(
                             (await client.get("/api/player/radio/song-1?count=12")).json()["items"][
                                 0
@@ -245,6 +289,13 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                                 "items"
                             ][0]["entry"]["id"],
                             "song-2",
+                        )
+                        radio_error = await client.get("/api/player/radio/radio-not-ready?count=12")
+                        self.assertEqual(radio_error.status_code, 503)
+                        self.assertEqual(
+                            radio_error.json()["detail"],
+                            "AudioMuse is not ready. Check that it is running, then wait for its "
+                            "similarity index to finish building.",
                         )
                         audio = await client.get(
                             "/api/player/stream/song-1", headers={"Range": "bytes=2-5"}
@@ -270,6 +321,8 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
 
             self.assertTrue(requests)
             for request in requests:
+                if request.url.host == "lrclib.net":
+                    continue
                 self.assertEqual(request.url.params["u"], "listener")
                 self.assertNotIn("private password", str(request.url))
             save_request = next(
@@ -311,6 +364,56 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         "Mount a Navidrome credentials file to enable library playback",
                     )
                     self.assertEqual((await client.get("/api/library/albums")).status_code, 503)
+            store.close()
+
+    async def test_linked_playlist_route_creates_and_reuses_default(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+            requests = {"created": 0}
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                path = request.url.path
+                if path.endswith("/ping"):
+                    return subsonic(serverVersion="0.63.0")
+                if path.endswith("/getPlaylists"):
+                    return subsonic(playlists={"playlist": []})
+                if path.endswith("/createPlaylist"):
+                    requests["created"] += 1
+                    return subsonic(
+                        playlist={
+                            "id": f"liked-{requests['created']}",
+                            "name": "Liked",
+                            "entry": [],
+                        }
+                    )
+                if path.endswith("/getPlaylist"):
+                    return subsonic(
+                        playlist={"id": request.url.params.get("id"), "name": "Liked", "entry": []}
+                    )
+                return subsonic()
+
+            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    app = FastAPI()
+                    install_player_routes(app, lambda: navidrome)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app), base_url="http://test"
+                    ) as client:
+                        first = (await client.get("/api/library/playlists/liked")).json()
+                        second = (await client.get("/api/library/playlists/liked")).json()
+                        self.assertEqual(first["id"], second["id"])
+                        self.assertEqual(first["name"], "Liked")
+                        self.assertEqual(requests["created"], 1)
             store.close()
 
     def test_navidrome_url_rejects_credentials_and_non_http_schemes(self) -> None:
