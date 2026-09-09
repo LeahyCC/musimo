@@ -7,6 +7,8 @@ import {
   createPrismPreset,
 } from './effects-presets.ts'
 import { createJourneyPreset } from './journey-preset.ts'
+import { createKaleidoscopeV2Preset } from './kaleidoscope-v2-preset.ts'
+import { createKaleidoscopeV3Preset } from './kaleidoscope-v3-preset.ts'
 import { JourneyController } from './journey.ts'
 import type { JourneyScore } from './journey.ts'
 import { createAudioFrame, samplePcm } from './pcm.ts'
@@ -26,9 +28,20 @@ export type { StudioOptions, Theme } from './studio-options.ts'
 
 export const studies = {
   dive: { name: 'Dive journey', author: 'Based on Flexi, martin + geiss’s Sherwin Maxawow' },
-  phosphor: { name: 'Phosphor Memory', author: 'Musimo study · Sherwin lineage' },
-  kaleidoscope: { name: 'Kaleidoscope Tides', author: 'Musimo study · Sherwin lineage' },
-  prism: { name: 'Prism Fracture', author: 'Musimo study · Sherwin lineage' },
+  phosphor: { name: 'Phosphor Memory', author: 'Musimo study · relief lighting after Sherwin' },
+  kaleidoscope: {
+    name: 'Kaleidoscope Tides',
+    author: 'Musimo study · relief lighting after Sherwin',
+  },
+  kaleidoscope2: {
+    name: 'Kaleidoscope V2',
+    author: 'Musimo study · after Flexi’s log-polar kaleidoscope and fractal feedback',
+  },
+  kaleidoscope3: {
+    name: 'Kaleidoscope V3',
+    author: 'Musimo study · kaleidoscopic IFS, evaluated per pixel',
+  },
+  prism: { name: 'Prism Fracture', author: 'Musimo study · relief lighting after Sherwin' },
   witchcraft: { name: 'martin - witchcraft reloaded', author: 'martin' },
   sherwin: {
     name: 'Flexi, martin + geiss - dedicated to the sherwin maxawow',
@@ -114,6 +127,9 @@ export class VisualizerEngine {
         deterministic: true,
         seed: resolveSeed(this.options, this.controller?.score.seed),
       })
+      // The effect studies bake the seed into their drift phases, so they get
+      // the same resolved seed the renderer was created with.
+      const baked = { ...this.options, seed: resolveSeed(this.options, this.controller?.score.seed) }
       const clock = this.renderer.renderer
       // Upstream elapsedTime still passes through an FPS smoother. Set the clock
       // directly from the integer media frame, never by repeated floating additions.
@@ -131,11 +147,15 @@ export class VisualizerEngine {
         study === 'dive'
           ? createJourneyPreset(this.options)
           : study === 'phosphor'
-            ? createPhosphorPreset(this.options)
+            ? createPhosphorPreset(baked)
             : study === 'kaleidoscope'
-              ? createKaleidoscopePreset(this.options)
-              : study === 'prism'
-                ? createPrismPreset(this.options)
+              ? createKaleidoscopePreset(baked)
+              : study === 'kaleidoscope2'
+                ? createKaleidoscopeV2Preset(baked)
+                : study === 'kaleidoscope3'
+                  ? createKaleidoscopeV3Preset(baked)
+                  : study === 'prism'
+                ? createPrismPreset(baked)
                 : study === 'witchcraft'
                   ? witchcraft
                   : sherwin,
