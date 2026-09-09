@@ -77,12 +77,31 @@ Checks that ran on this machine, against a worktree preview on port 5183 under h
 
 These ran under software rendering on one machine. They do not establish cross-GPU identity, and they do not replace artistic review with sound.
 
+## Dive on the native renderer, 9 September 2026
+
+The Dive journey moved off Butterchurn. `visualizer/src/studies/dive.ts` is a two-pass native study: a persistent RGBA16F liquid pass carrying Sherwin Maxawow's warp body, its three vortices and its inner border, and a screen pass carrying its comp body with the journey grade, zoom-through and noise dissolve. The `dive` entry in `studies` is `renderer: 'native'` and the engine's Butterchurn `runFrameEquations` override is gone; the score reaches the shaders as `q21` to `q30` returned by the study's own frame hook. The mapping and what moved where are in [the renderer note](visualizer-renderer.md). `journey-preset.ts` is no longer imported but stays on disk with `kaleidoscope-v3-preset.ts` until the card that removes Butterchurn. The raw `sherwin` and `witchcraft` presets are still selectable, so the pinned renderer asset now loads only when one of them is chosen.
+
+Butterchurn computed the warp source coordinate once per vertex on a 48 by 36 mesh; the study evaluates the same arithmetic per pixel. That was checked numerically rather than by eye: at 110 seconds the study's formula, evaluated in JavaScript at all 49 by 37 mesh points, differed from the running Butterchurn renderer's own `warpUVs` by at most 0.00025 in uv, about a quarter of a pixel at 1080p. The same comparison against a vertically flipped variant differed by 1.0, so the orientation is settled too.
+
+Checks that ran on this machine, against a worktree preview on port 5187 under headless Chromium with SwiftShader:
+
+- `npm run build --prefix visualizer` and `npm test --prefix visualizer`: 19 passing.
+- `node visualizer/tests/replay.browser.mjs`, the acceptance check, now on the native Dive. Same-seed playback matched between one-frame and three-frame batching, a different seed changed the image, restart and the paused frame held their hashes, the seek to 222 seconds then 164 then 222 reproduced the destination hash with its transition state (bloom 0.844, transition activity 0.527), each seek rebuilt 120 frames, a 300-second jump asked for a reconstruction, a moving landing arrived at 166.25 seconds, a cancelled load aborted, no iframe was created, `Math.random` and the window's global names were unchanged, and the browser reported no errors. Reconstruction cost about 1.0 s at 640 pixels wide under software rendering. Results in ignored `visualizer/test-results/replay-results.json`.
+- Its pixel hashes now come from `engine.readPixels()` rather than a 2D context, because the native path draws to the default framebuffer. To keep the cancelled-load question meaningful, `load` yields once before a native study takes the canvas, so an owner that disposes in the same turn still wins; without that a synchronous native load could spend the canvas's one WebGL context on a load nobody was waiting for.
+- `node visualizer/tests/native.browser.mjs`: `tunnel`, `kaleidoscope3`, `julia` and `contours` unchanged and passing. Dive is not in that list because its settings assertion needs a study that declares settings, and Dive declares none; the replay check covers it instead.
+- `node visualizer/tests/preview.browser.mjs`: passing. Its production assertion changed with the default study: the first frame now creates no realm, so the check picks `sherwin`, waits for the credit line to name Butterchurn, and then asserts one realm and the served `assets/butterchurn.min-*.js`.
+- The studio page was driven in a headless browser: Dive showed "Visual: Based on Flexi, martin + geiss's Sherwin Maxawow · Native renderer", created no iframe, kept the "This study" panel hidden (Dive declares no settings), reported RGBA16F buffers, and a theme change to Ember plus a motion drag to 2× moved the image on the same engine instance with no "Preparing visual" rebuild. The browser reported no errors.
+
+The visual comparison is against a fresh Butterchurn capture, not the [8 September surface capture](assets/visualizer-build/journey-developed-110s.png), which predates the theme tints and the current replacements and no longer shows what the Butterchurn Dive draws. `node tests/soak.browser.mjs dive 110 40` was run with the previous `engine.ts` restored and again with the new one, giving [the Butterchurn frame](assets/visualizer-build/journey-butterchurn-110s.png) and [the native frame](assets/visualizer-build/journey-native-110s.png). Side by side they are the same liquid: the same magenta and violet, the same brightness and vignette, the same fine relief striations combed along the flow, the same border ring smeared inward at the edges. The large forms are arranged differently, which is what a feedback loop does with a source coordinate that is a quarter of a pixel apart and then compounded over 2,400 frames. The quiet passage at 164 seconds and the return at 222 seconds were captured the same way on both paths and read the same: the deep violet crest and dark relief masses at 164, the magenta bloom with olive and gold speckle at 222.
+
+These ran under software rendering on one machine. They do not establish cross-GPU identity, and they do not replace artistic review with sound. Colin has not yet seen the native Dive.
+
 ## Still open
 
 - Colin's review of the complete authored journey and provisional musical map.
 - A small Musimo adapter after the independent journey is convincing, followed by the full playback integration checks.
 - Exact feedback checkpoints, ordinary-device measurements and non-Chromium verification.
-- Porting the remaining studies to the native renderer, and then removing Butterchurn, `kaleidoscope-v3-preset.ts` among them.
+- Porting the remaining studies to the native renderer, and then removing Butterchurn, `kaleidoscope-v3-preset.ts` and `journey-preset.ts` among them.
 - Colin's eye on the three native studies, in particular whether Kaleidoscope V3's grainy field between the jewels wants softening and whether Julia spiral should carry more of the reference's colour.
 
 Run instructions and analysis commands are in [the package README](../visualizer/README.md). The [build handoff](visualizer-build-handoff.md) remains the governing brief.

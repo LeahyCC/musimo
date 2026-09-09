@@ -134,13 +134,51 @@ Two properties of that design are worth knowing before writing a study against t
 
 The module has no opinion on studio options: the engine reads `AudioLevelAnalyser.onset` and multiplies it by `sensitivity` before setting the `onset` uniform. `visualizer/tests/audio-levels.test.ts` checks silence holds it at exactly 0, a 2 Hz click train produces a clear peak at each click that settles low before the next one, a sustained broadband signal settles near 0 within two seconds while a burst inside it still registers, and the value never leaves 0..1.
 
+## The Dive journey
+
+`visualizer/src/studies/dive.ts` is the port of the Butterchurn Dive study, and the only study the song score drives. Its GLSL comes from "Flexi, martin + geiss - dedicated to the sherwin maxawow" (butterchurn-presets 2.4.7, MIT), with the replacements `visualizer/src/journey-preset.ts` made to it. The file carries that attribution because the package goes away.
+
+### Where each piece went
+
+```
+Butterchurn                                   dive.ts
+  frame equations (ib_r, ib_g, ib_b)            the frame hook
+  pixel equations, run per mesh vertex          the liquid pass, per pixel
+  warp mesh UVs (zoom, warp, dx/dy)             the liquid pass, per pixel
+  warp shader body                              the liquid pass
+  Border geometry, ib_size .01, ib_a 1          a band at the end of the liquid pass
+  comp shader body                              the screen pass
+  q21..q30 injected into runFrameEquations      uniforms returned by the frame hook
+  studio options baked into preset text         uniforms, live
+```
+
+Butterchurn computed the warp source coordinate once per vertex on a 48 by 36 mesh and interpolated it across each cell. The study evaluates the same arithmetic per pixel, which is finer than the mesh rather than different from it: at 110 seconds the study's formula, evaluated in JavaScript at all 49 by 37 mesh points, differed from Butterchurn's own `warpUVs` by at most 0.00025 in uv, about a quarter of a pixel at 1080p. The feedback is a persistent RGBA16F pass rather than an 8-bit one, so the decay floor no longer quantises; the authored values are unchanged.
+
+Three base values were already inert and are gone. `gammaadj` 1.5 and `darken` only act inside Butterchurn's built-in comp shader (`butterchurn.js` line 8063) and Sherwin ships its own comp, so neither ever ran; `decay` 1 belongs to the built-in warp for the same reason. The wave at `wave_a` .002 and the preset's disabled shapes are dropped, which also leaves the `wave_*` frame equations without a consumer. `ob_size` is 0, so there is no outer border.
+
+### The score's uniforms
+
+The engine passes `ctx.journey`, the `JourneyState` from `JourneyController.sample(position)`, into the frame hook whenever it has a score. The Dive hook maps it exactly as the Butterchurn path used to map its q variables, and returns the result as uniforms.
+
+| Uniform | Score state         | Uniform | Score state         |
+| ------- | ------------------- | ------- | ------------------- |
+| `q21`   | orbit weight        | `q26`   | energy              |
+| `q22`   | current weight      | `q27`   | texture             |
+| `q23`   | bloom weight        | `q28`   | variation           |
+| `q24`   | intensity           | `q29`   | progress            |
+| `q25`   | onset × sensitivity | `q30`   | transition activity |
+
+The hook also returns `decay`, the feedback persistence the trails slider scales, and `ibR`, `ibG`, `ibB`, the inner border colour from Sherwin's frame equations. It keeps no accumulators: every value is a function of the media position, the score at that position and the studio options, so a seek reproduces its destination without replaying anything. `q25` and `q29` reach the shaders unused, kept so the mapping stays the one the Butterchurn path documented.
+
+Theme tints, `desat`, `motion` and `trails` are uniforms too, so the Customize panel is live for Dive with no rebuild. Only a seed re-roll rebuilds, because the seed generates the noise textures at load.
+
 ## Adding a study
 
 1. Write `visualizer/src/studies/<id>.ts` exporting a `StudyManifest`. `studies/common.ts` holds what the existing studies share: the relief lighting snippet, a seed-derived phase, the band smoother and the accumulator wrap.
 2. Register it in `visualizer/src/studies/index.ts`.
 3. Add an entry to `studies` in `visualizer/src/engine.ts` with `renderer: 'native'`, keeping `name` and `author` the same as the manifest's.
 4. Add an `<option>` to the picker in `visualizer/index.html`. The settings panel needs nothing: it reads the manifest.
-5. Add the id to `STUDIES` in `visualizer/tests/native.browser.mjs`, which then asks it the determinism, seek and settings questions along with the rest.
+5. Add the id to `STUDIES` in `visualizer/tests/native.browser.mjs`, which then asks it the determinism, seek and settings questions along with the rest. Its settings assertion needs the study to declare at least one setting. `dive` declares none and is checked by `visualizer/tests/replay.browser.mjs` instead, which asks the same questions at the score's own seek points.
 6. Look at it. `node tests/soak.browser.mjs <id> <seekSeconds> <soakSeconds> <name>` seeks, simulates without real-time playback and screenshots the canvas into `test-results/`. A study can look right at twenty seconds and be a grey field at a hundred, so soak it well past the first minute.
 
 The loader rejects a pass, setting or hook key that is not a plain GLSL identifier or that collides with a built-in uniform, so a name clash fails at load with a readable message rather than inside a shader compile. Two names it cannot catch: a setting or hook key that shadows a GLSL built-in function, `step` or `mix` for example, compiles into an error at the call site instead.
@@ -153,9 +191,10 @@ The loader rejects a pass, setting or hook key that is not a plain GLSL identifi
 
 ## The studies
 
-| Study           | id              | Passes                            | Settings                 |
-| --------------- | --------------- | --------------------------------- | ------------------------ |
-| Native tunnel   | `tunnel`        | persistent feedback, blur, screen | pull, folds, glow        |
-| Kaleidoscope V3 | `kaleidoscope3` | persistent fractal, blur, screen  | folds, depth, spin, glow |
-| Julia spiral    | `julia`         | screen                            | zoom, spiral, bands      |
-| Liquid contours | `contours`      | persistent field, screen          | lines, flow              |
+| Study           | id              | Passes                            | Settings                  |
+| --------------- | --------------- | --------------------------------- | ------------------------- |
+| Dive journey    | `dive`          | persistent liquid, screen         | none, the score drives it |
+| Native tunnel   | `tunnel`        | persistent feedback, blur, screen | pull, folds, glow         |
+| Kaleidoscope V3 | `kaleidoscope3` | persistent fractal, blur, screen  | folds, depth, spin, glow  |
+| Julia spiral    | `julia`         | screen                            | zoom, spiral, bands       |
+| Liquid contours | `contours`      | persistent field, screen          | lines, flow               |
