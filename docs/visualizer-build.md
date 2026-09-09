@@ -102,6 +102,10 @@ Butterchurn and its presets are gone. `visualizer/src/renderer-sandbox.ts`, `ven
 
 `npm ci --prefix visualizer` and `npm audit --prefix visualizer --audit-level=high` pass against the regenerated lock file. `npm run build --prefix visualizer` and `npm test --prefix visualizer` pass. The browser checks (`replay.browser.mjs`, `native.browser.mjs`, `preview.browser.mjs`) were already native-only except `preview.browser.mjs`'s production assertion, which no longer looks for a bundled Butterchurn asset and now expects zero iframes throughout.
 
+## Kaleidoscope V3 void, 9 September 2026
+
+Colin's reference for this study is a mandala around a single central void, so the log-polar tunnel no longer uses the Möbius map and its two singular points. The tunnel centre is a stack of up to four centres on the same point; a slow breath (about 48 seconds at 1× motion, leaned on by bass) spreads them onto a ring and draws them back, so one void opens into several and closes again. Depth is the mean of the log distances to the centres and the angle their sum, which keeps the merged void's ring density as it splits and puts the angle's branch cuts on the mirrored tile's own seams. `voids` and `spread` are settings beside the existing four. Checked with the native determinism set and captures at 20, 110 and 180 seconds.
+
 ## Still open
 
 - Colin's review of the complete authored journey and provisional musical map.

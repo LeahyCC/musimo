@@ -10,10 +10,17 @@ import { relief, SEED_PHASE, smoothBand, wrapAccumulator } from './common.ts'
 // from orbit traps, the way fractal-flame and KIFS renders are made, so detail
 // stays crisp at every scale instead of blurring one generation at a time.
 //
-// The screen reaches that fractal through the log-polar tunnel from V2: a
-// Möbius map with two drifting singular points (two tunnel centres), then
-// log-polar, so travel is a slide along one axis and the dive is endless in
-// both directions.
+// The screen reaches that fractal through a log-polar tunnel, so travel is a
+// slide along one axis and the dive is endless in both directions. The tunnel
+// has one void in the middle of the frame most of the time. Its centre is
+// really a stack of up to four centres sitting on the same point; a slow
+// breath spreads them onto a ring and draws them back, so one void opens into
+// several and closes again. Depth is the mean of the log distances to the
+// centres (the potential of that many point charges), which keeps the ring
+// density of the merged void as it splits, and the angle is the sum of their
+// arguments, whose branch cuts fall on the mirrored tile's own seams whenever
+// folds is a whole number, so they never show. A merged void therefore has
+// voids × folds wedges, and each void has folds of its own once they part.
 //
 // What the port changed:
 //   - The 8-bit Butterchurn feedback becomes an RGBA16F persistent pass, so the
@@ -33,9 +40,12 @@ export const kaleidoscopeStudy: StudyManifest = {
   name: 'Kaleidoscope V3',
   author: 'Musimo study · kaleidoscopic IFS, evaluated per pixel',
   settings: [
-    // The multiplier on the log-polar angle. The tile is mirrored, so this many
-    // wedges appear across a turn; 4 reproduces the original preset.
-    { name: 'folds', label: 'Folds', min: 4, max: 16, step: 1, default: 8 },
+    // Wedges around each void once the voids have parted. The merged void has
+    // voids × folds of them, so 6 with 3 voids is an 18-petal mandala.
+    { name: 'folds', label: 'Folds', min: 3, max: 12, step: 1, default: 6 },
+    // How many centres the void is made of, and how far the breath spreads them.
+    { name: 'voids', label: 'Voids', min: 1, max: 4, step: 1, default: 3 },
+    { name: 'spread', label: 'Spread', min: 0, max: 1, step: 0.05, default: 0.6 },
     { name: 'depthSpeed', label: 'Depth', min: 0.2, max: 3, step: 0.05, default: 1 },
     { name: 'spinRate', label: 'Spin', min: -2, max: 2, step: 0.05, default: 1 },
     { name: 'glow', label: 'Glow', min: 0, max: 2, step: 0.05, default: 1 },
@@ -70,6 +80,18 @@ export const kaleidoscopeStudy: StudyManifest = {
       (state.pulse ?? 0) * 0.9,
       Math.min(1, (audio.bass - audio.bassAtt) * 2 * options.sensitivity),
     )
+    // The breath that parts the voids: a slow cycle of about 48 seconds at 1×
+    // motion, with bass leaning on it. It runs on media time rather than an
+    // accumulator, so a seek lands on the phase the breath really has there
+    // instead of restarting it merged; the cost is a jump if motion changes
+    // mid-play, which is rare and harmless.
+    const breath = time * 0.132 * options.motion
+    const voidTurn = (time * 0.036 * options.motion * settings.spinRate) % (2 * Math.PI)
+    const spreadNow = Math.min(
+      1,
+      settings.spread *
+        (0.5 - 0.5 * Math.cos(breath) + 0.12 * Math.max(0, Math.min(1, bassSmooth - 0.5))),
+    )
     state.travel = travel
     state.spin = spin
     state.pulse = pulse
@@ -77,6 +99,8 @@ export const kaleidoscopeStudy: StudyManifest = {
       travel,
       spin,
       pulse,
+      spreadNow,
+      voidTurn,
       bassSmooth,
       midSmooth,
       // trailGapScale centres on the authored persistence: left keeps less of
@@ -96,17 +120,25 @@ export const kaleidoscopeStudy: StudyManifest = {
       glsl: `
   float t=time*motion;
   ${SEED_PHASE}
-  // Tunnel: Möbius zero at -A and pole at -B, both drifting, then log-polar.
-  vec2 A=vec2(1.+.35*sin(t*.023+ph),.3*cos(t*.031+ph));
-  vec2 B=vec2(-1.+.3*cos(t*.019+ph*1.3),.35*sin(t*.027+ph));
-  vec2 z=(uv_orig-.5)*2.*aspect.wz;
-  vec2 n=z+A;
-  vec2 d=z+B;
-  vec2 m=vec2(n.x*d.x+n.y*d.y,n.y*d.x-n.x*d.y)/max(dot(d,d),1e-6);
+  // Tunnel: up to four void centres on a ring of radius spreadNow around the
+  // middle of the frame, merged into one void when spreadNow is 0. A very slow
+  // wander keeps the figure from sitting dead still without leaving the centre.
+  vec2 z=(uv_orig-.5)*2.*aspect.wz-vec2(.05*sin(t*.021+ph),.04*cos(t*.017+ph));
+  int K=int(voids+.5);
+  float depth=0.;
+  float angle=0.;
+  for(int k=0;k<4;k++){
+    if(k>=K)break;
+    float va=voidTurn+6.28318*float(k)/float(K);
+    vec2 v=z-spreadNow*.75*vec2(cos(va),sin(va));
+    depth+=log(length(v)+1e-6);
+    angle+=atan(v.y,v.x);
+  }
   // The depth axis repeats every 2 units, so the log coefficient sets how many
   // tunnel rings cross the screen. The preset's .3 put barely half a ring in
-  // frame, which read as a flat field rather than a dive.
-  vec2 lp=vec2(atan(m.y,m.x)*.3183+spin*.3,1.1*log(length(m)+1e-6)-travel);
+  // frame, which read as a flat field rather than a dive. Depth is the mean over
+  // the centres and the angle their sum; see the note at the top of the file.
+  vec2 lp=vec2(angle*.3183+spin*.3,1.1*depth/float(K)-travel);
   // Mirrored wedges across, mirrored depth down: a tile in [-1,1]².
   vec2 c=abs(fract(vec2(lp.x*folds,lp.y)*.5)*2.-1.)*2.-1.;
   // Kaleidoscopic IFS. Bass swells the scale, mids turn the fold, the spin
