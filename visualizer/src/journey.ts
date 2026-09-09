@@ -34,6 +34,7 @@ export type JourneyState = {
   onset: number
   texture: number
   progress: number
+  transitionActivity: number
 }
 
 const motifs = ['orbit', 'current', 'bloom'] as const
@@ -133,6 +134,10 @@ export class JourneyController {
     const cue = cues[index]
     const previous = cues[Math.max(0, index - 1)]
     const amount = cue.transition > 0 ? smooth(clamp((time - cue.time) / cue.transition)) : 1
+    // 0 outside transition windows, peaking at 1 mid-transition: cue changes can
+    // drive visible events. Pure in media time, so a seek landing mid-transition
+    // samples the same activity as continuous playback.
+    const transitionActivity = amount * (1 - amount) * 4
     const weights = Object.fromEntries(
       motifs.map((motif) => [
         motif,
@@ -164,6 +169,7 @@ export class JourneyController {
       onset,
       texture,
       progress: time / this.score.recording.duration,
+      transitionActivity,
     }
   }
 }

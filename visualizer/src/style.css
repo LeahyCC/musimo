@@ -275,6 +275,39 @@ select {
   border-radius: 5px;
   font-size: 12px;
 }
+.customize {
+  grid-template-columns: 1fr auto auto auto auto auto;
+  border-top: 1px solid #ffffff12;
+}
+.customize .slider {
+  min-width: 150px;
+}
+.customize .slider output {
+  color: #c3ccd9;
+  font-variant-numeric: tabular-nums;
+}
+.customize .slider input[type='range'] {
+  margin: 4px 0 0;
+}
+.seed-control {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 10px;
+  color: #8f98a7;
+}
+.seed-control output {
+  color: #c3ccd9;
+  font-variant-numeric: tabular-nums;
+}
+.seed-buttons {
+  display: flex;
+  gap: 8px;
+}
+.seed-buttons button {
+  font-size: 11px;
+  padding: 8px 12px;
+}
 .file-button input {
   position: absolute;
   inset: 0;
@@ -335,6 +368,15 @@ footer a {
   .studio {
     grid-template-columns: 1fr 1fr;
     gap: 20px;
+  }
+  .customize {
+    grid-template-columns: 1fr 1fr;
+  }
+  .customize .slider {
+    min-width: 0;
+  }
+  .seed-control {
+    grid-column: 1/-1;
   }
   .studio > div {
     grid-column: 1/-1;

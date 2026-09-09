@@ -95,6 +95,9 @@
         <label
           >Visual study<select id="preset">
             <option value="dive">Dive · liquid journey</option>
+            <option value="phosphor">Phosphor Memory · new</option>
+            <option value="kaleidoscope">Kaleidoscope Tides · new</option>
+            <option value="prism">Prism Fracture · new</option>
             <option value="witchcraft">Witchcraft reloaded</option>
             <option value="sherwin">Sherwin Maxawow</option>
           </select></label
@@ -109,6 +112,65 @@
         <label class="file-button"
           >Open your song<input id="file" type="file" accept="audio/*"
         /></label>
+      </section>
+      <section class="studio customize" aria-label="Customize the visual">
+        <div>
+          <span class="eyebrow">CUSTOMIZE</span>
+          <p>
+            Tune the current study live. Theme, motion, trails and onset response apply to every
+            study and are remembered by this browser. Re-roll changes the liquid's starting seed.
+          </p>
+        </div>
+        <label
+          >Theme<select id="theme">
+            <option value="abyss">Abyss · blues</option>
+            <option value="ember">Ember · amber</option>
+            <option value="ultraviolet">Ultraviolet · violet</option>
+            <option value="mono">Mono · silver</option>
+          </select></label
+        >
+        <label class="slider"
+          >Motion <output id="motion-value">1×</output
+          ><input
+            id="motion"
+            type="range"
+            min="0.3"
+            max="3"
+            step="0.05"
+            value="1"
+            aria-label="Liquid clock speed"
+        /></label>
+        <label class="slider"
+          >Trails <output id="trails-value">50%</output
+          ><input
+            id="trails"
+            type="range"
+            min="0"
+            max="1"
+            step="0.01"
+            value="0.5"
+            aria-label="Feedback persistence"
+        /></label>
+        <label class="slider"
+          >Sensitivity <output id="sensitivity-value">1×</output
+          ><input
+            id="sensitivity"
+            type="range"
+            min="0.25"
+            max="2.5"
+            step="0.05"
+            value="1"
+            aria-label="Onset response"
+        /></label>
+        <div class="seed-control">
+          <span class="seed-label">Seed <output id="seed-value">score</output></span>
+          <div class="seed-buttons">
+            <button id="reroll" type="button" title="Pick a new random seed">Re-roll</button
+            ><button id="seed-score" type="button" title="Return to the journey score seed" hidden>
+              Use score seed
+            </button>
+          </div>
+        </div>
       </section>
       <details class="measurements">
         <summary>Playback checks</summary>

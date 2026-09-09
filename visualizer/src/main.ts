@@ -4,6 +4,14 @@ import { studies, VisualizerEngine } from './engine.ts'
 import type { Pcm } from './engine.ts'
 import type { Study } from './engine.ts'
 import type { JourneyScore } from './engine.ts'
+import type { StudioOptions, Theme } from './engine.ts'
+import {
+  mergeStudioOptions,
+  parseStudioOptions,
+  resolveSeed,
+  serializeStudioOptions,
+  STUDIO_STORAGE_KEY,
+} from './studio-options.ts'
 
 import './style.css'
 
@@ -99,6 +107,7 @@ async function prepareRenderer(token: number) {
       pcm,
       Number(quality.value),
       isDive ? journeyScore : undefined,
+      studioOptions,
     )
     preparingEngine = next
     await next.load(preset.value as Study)
@@ -127,6 +136,8 @@ async function prepareRenderer(token: number) {
       )
     canvas = nextCanvas
     engine = next
+    // Debug hook for soak checks and effect development.
+    ;(window as unknown as { __engine?: VisualizerEngine }).__engine = next
     const study = studies[preset.value as Study]
     document.querySelector('.viewer-top > span')!.textContent =
       preset.selectedOptions[0].text.toUpperCase()
@@ -191,6 +202,7 @@ async function loadRecording(source: string | File) {
       right: decoded.getChannelData(Math.min(1, decoded.numberOfChannels - 1)),
     }
     isDive = typeof source === 'string'
+    studioLabels()
     const diveOption = preset.querySelector<HTMLOptionElement>('option[value="dive"]')!
     diveOption.disabled = !isDive
     if (!isDive && preset.value === 'dive') preset.value = 'sherwin'
@@ -265,6 +277,76 @@ preset.onchange = () => {
 quality.onchange = () => {
   void rebuild()
 }
+
+// Customize panel: live tuning baked into the preset at rebuild time, persisted
+// in localStorage. Slider input updates the label only; the rebuild fires on
+// change (release), so dragging cannot storm shader recompiles.
+const studioOptions = mergeStudioOptions(
+  parseStudioOptions(
+    (() => {
+      try {
+        return localStorage.getItem(STUDIO_STORAGE_KEY)
+      } catch {
+        return null
+      }
+    })(),
+  ),
+)
+const theme = element<HTMLSelectElement>('theme')
+const motion = element<HTMLInputElement>('motion')
+const trails = element<HTMLInputElement>('trails')
+const sensitivity = element<HTMLInputElement>('sensitivity')
+const reroll = element<HTMLButtonElement>('reroll')
+const seedScore = element<HTMLButtonElement>('seed-score')
+
+function persistStudioOptions() {
+  try {
+    localStorage.setItem(STUDIO_STORAGE_KEY, serializeStudioOptions(studioOptions))
+  } catch {
+    /* Customization still works when storage is disabled. */
+  }
+}
+
+function studioLabels() {
+  element('motion-value').textContent = `${Number(motion.value).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}×`
+  element('trails-value').textContent = `${Math.round(Number(trails.value) * 100)}%`
+  element('sensitivity-value').textContent =
+    `${Number(sensitivity.value).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}×`
+  const activeSeed = resolveSeed(studioOptions, isDive ? journeyScore.seed : undefined)
+  element('seed-value').textContent =
+    studioOptions.seed === undefined
+      ? `${activeSeed} · ${isDive ? 'score' : 'default'}`
+      : String(activeSeed)
+  seedScore.hidden = studioOptions.seed === undefined
+}
+
+function applyStudioOptions(patch: StudioOptions) {
+  Object.assign(studioOptions, mergeStudioOptions({ ...studioOptions, ...patch }))
+  persistStudioOptions()
+  studioLabels()
+  void rebuild()
+}
+
+theme.value = studioOptions.theme
+motion.value = String(studioOptions.motion)
+trails.value = String(studioOptions.trails)
+sensitivity.value = String(studioOptions.sensitivity)
+theme.onchange = () => applyStudioOptions({ theme: theme.value as Theme })
+motion.oninput = () => studioLabels()
+trails.oninput = () => studioLabels()
+sensitivity.oninput = () => studioLabels()
+motion.onchange = () => applyStudioOptions({ motion: Number(motion.value) })
+trails.onchange = () => applyStudioOptions({ trails: Number(trails.value) })
+sensitivity.onchange = () => applyStudioOptions({ sensitivity: Number(sensitivity.value) })
+reroll.onclick = () =>
+  applyStudioOptions({ seed: Math.floor(Math.random() * (0x7fffffff + 1)) })
+seedScore.onclick = () => {
+  delete studioOptions.seed
+  persistStudioOptions()
+  studioLabels()
+  void rebuild()
+}
+studioLabels()
 element<HTMLInputElement>('file').onchange = (event) => {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (file) void loadRecording(file)

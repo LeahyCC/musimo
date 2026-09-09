@@ -1,6 +1,11 @@
 import sherwin from 'butterchurn-presets/presets/converted/Flexi, martin + geiss - dedicated to the sherwin maxawow.json'
 import witchcraft from 'butterchurn-presets/presets/converted/martin - witchcraft reloaded.json'
 
+import {
+  createKaleidoscopePreset,
+  createPhosphorPreset,
+  createPrismPreset,
+} from './effects-presets.ts'
 import { createJourneyPreset } from './journey-preset.ts'
 import { JourneyController } from './journey.ts'
 import type { JourneyScore } from './journey.ts'
@@ -8,15 +13,22 @@ import { createAudioFrame, samplePcm } from './pcm.ts'
 import type { Pcm } from './pcm.ts'
 import { createRendererSandbox } from './renderer-sandbox.ts'
 import type { Renderer, RendererSandbox } from './renderer-sandbox.ts'
+import { mergeStudioOptions, resolveSeed } from './studio-options.ts'
+import type { ResolvedStudioOptions, StudioOptions } from './studio-options.ts'
 
 export { samplePcm, createAudioFrame } from './pcm.ts'
 export type { Pcm, AudioFrame } from './pcm.ts'
 export { JourneyController } from './journey.ts'
 export type { JourneyScore, JourneyCue, JourneyState, Motif } from './journey.ts'
 export type { Renderer } from './renderer-sandbox.ts'
+export { THEMES, STUDIO_STORAGE_KEY } from './studio-options.ts'
+export type { StudioOptions, Theme } from './studio-options.ts'
 
 export const studies = {
   dive: { name: 'Dive journey', author: 'Based on Flexi, martin + geiss’s Sherwin Maxawow' },
+  phosphor: { name: 'Phosphor Memory', author: 'Musimo study · Sherwin lineage' },
+  kaleidoscope: { name: 'Kaleidoscope Tides', author: 'Musimo study · Sherwin lineage' },
+  prism: { name: 'Prism Fracture', author: 'Musimo study · Sherwin lineage' },
   witchcraft: { name: 'martin - witchcraft reloaded', author: 'martin' },
   sherwin: {
     name: 'Flexi, martin + geiss - dedicated to the sherwin maxawow',
@@ -41,13 +53,20 @@ export class VisualizerEngine {
   private started = false
   private preparing = false
   private study: Study | undefined
+  private options: ResolvedStudioOptions
   readonly costs: number[] = []
   loadMs = 0
   warmMs = 0
   reconstructionMs = 0
   reconstructedFrames = 0
 
-  constructor(canvas: HTMLCanvasElement, pcm: Pcm, width = 1920, score?: JourneyScore) {
+  constructor(
+    canvas: HTMLCanvasElement,
+    pcm: Pcm,
+    width = 1920,
+    score?: JourneyScore,
+    options: StudioOptions = {},
+  ) {
     if (pcm.sampleRate !== 44100 || !pcm.left.length || pcm.left.length !== pcm.right.length) {
       throw new Error('Visualizer PCM must be matching stereo channels decoded at 44.1 kHz.')
     }
@@ -56,6 +75,7 @@ export class VisualizerEngine {
     }
     this.pcm = pcm
     this.canvas = canvas
+    this.options = mergeStudioOptions(options)
     canvas.width = Math.round(width)
     canvas.height = Math.round((width * 9) / 16)
     if (score) {
@@ -92,7 +112,7 @@ export class VisualizerEngine {
         pixelRatio: 1,
         textureRatio: 1,
         deterministic: true,
-        seed: this.controller?.score.seed ?? 271828,
+        seed: resolveSeed(this.options, this.controller?.score.seed),
       })
       const clock = this.renderer.renderer
       // Upstream elapsedTime still passes through an FPS smoother. Set the clock
@@ -108,12 +128,25 @@ export class VisualizerEngine {
         clock.blending = clock.blendProgress < 1
       }
       await this.renderer.loadPreset(
-        study === 'dive' ? createJourneyPreset() : study === 'witchcraft' ? witchcraft : sherwin,
+        study === 'dive'
+          ? createJourneyPreset(this.options)
+          : study === 'phosphor'
+            ? createPhosphorPreset(this.options)
+            : study === 'kaleidoscope'
+              ? createKaleidoscopePreset(this.options)
+              : study === 'prism'
+                ? createPrismPreset(this.options)
+                : study === 'witchcraft'
+                  ? witchcraft
+                  : sherwin,
         0,
       )
       signal.throwIfAborted()
       if (study === 'dive' && this.controller) {
         const controller = this.controller
+        // Sensitivity scales the onset signal where the score is injected into
+        // the preset's q variables; every other state passes through untouched.
+        const sensitivity = this.options.sensitivity
         const runner = clock.presetEquationRunner
         const evaluate = runner.runFrameEquations.bind(runner)
         runner.runFrameEquations = (variables) => {
@@ -124,11 +157,12 @@ export class VisualizerEngine {
             q22: state.current,
             q23: state.bloom,
             q24: state.intensity,
-            q25: state.onset,
+            q25: state.onset * sensitivity,
             q26: state.energy,
             q27: state.texture,
             q28: state.variation,
             q29: state.progress,
+            q30: state.transitionActivity,
           })
         }
       }

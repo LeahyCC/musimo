@@ -17,6 +17,7 @@ const numeric = [
   'energy',
   'onset',
   'texture',
+  'transitionActivity',
 ] as const
 
 test('the authored recording returns to a recognisable form and crosses every cue continuously', () => {
@@ -52,6 +53,41 @@ test('the authored recording returns to a recognisable form and crosses every cu
     assert.deepEqual(controller.sample(time), state)
   score.cues[0].intensity = 0.99
   assert.equal(controller.sample(0).intensity, 0.25, 'score mutation changed a prepared controller')
+})
+
+test('transition activity peaks mid-transition and is silent elsewhere, including after seeks', () => {
+  const controller = new JourneyController(score)
+  assert.equal(controller.sample(0).transitionActivity, 0, 'the first cue never fires an event')
+  for (const cue of score.cues.slice(1)) {
+    const before = controller.sample(cue.time - 0.001)
+    const start = controller.sample(cue.time)
+    const middle = controller.sample(cue.time + cue.transition / 2)
+    const end = controller.sample(cue.time + cue.transition)
+    const after = controller.sample(cue.time + cue.transition + 0.001)
+    assert.equal(before.transitionActivity, 0, `${cue.label}: active before the window`)
+    assert.equal(start.transitionActivity, 0, `${cue.label}: active at the window start`)
+    assert(
+      Math.abs(middle.transitionActivity - 1) < 1e-9,
+      `${cue.label}: activity must peak at the midpoint`,
+    )
+    assert(end.transitionActivity < 1e-6, `${cue.label}: unsettled at the window end`)
+    assert(after.transitionActivity < 1e-6, `${cue.label}: unsettled after the window`)
+    // A seek landing mid-transition samples the same event as continuous playback.
+    const seeker = new JourneyController(structuredClone(score))
+    assert.equal(
+      seeker.sample(cue.time + cue.transition / 2).transitionActivity,
+      middle.transitionActivity,
+      `${cue.label}: seek mid-transition changed the event`,
+    )
+    // Activity rises towards the midpoint and falls after it.
+    const rising = controller.sample(cue.time + cue.transition * 0.25).transitionActivity
+    const falling = controller.sample(cue.time + cue.transition * 0.75).transitionActivity
+    assert(rising > 0.5 && rising < 1, `${cue.label}: rising edge too weak`)
+    assert(falling > 0.5 && falling < 1, `${cue.label}: falling edge too weak`)
+  }
+  for (const time of [30, 120, 170, 250, 330]) {
+    assert.equal(controller.sample(time).transitionActivity, 0, `mid-section at ${time}s`)
+  }
 })
 
 test('invalid feature grids and overlapping transitions cannot silently drive the renderer', () => {

@@ -12,6 +12,8 @@ Open `http://127.0.0.1:5180`. The preparation command reads the selected recordi
 
 The preview provides play, pause, seek, repeat from the start, volume, full screen and 1080p/720p/540p rendering. The song map jumps to provisional section starts. **Record clip** captures up to 20 seconds of the rendered canvas and native audio playback; the clip can be played or saved below the viewer. A pause or renderer replacement finishes the capture early. It requires a browser with media-element capture and WebM recording support. Choosing another recording switches to a preset audition and drops Dive's score.
 
+The **Customize** section tunes the current study live: a theme palette (Abyss, Ember, Ultraviolet, Mono), liquid clock speed, feedback persistence and onset response, plus a seed re-roll. Options bake into the preset shader at build time — one program per study per build, rebuilt on change — and persist in `localStorage` under `musimo.studio.visual`. Defaults reproduce the authored visuals exactly (Abyss, 1× motion, centred trails, 1× sensitivity, the journey score's seed).
+
 ## Song preparation
 
 The local command uses FFmpeg and ffprobe already installed on the machine. It measures RMS level, spectral centroid, flatness and flux in 2,048-sample windows at 44.1 kHz. It does not claim to detect instruments, beats or musical recurrence.
@@ -28,7 +30,7 @@ The command refuses to overwrite existing output. The separate [song score](song
 
 `@musimo/visualizer` exports the engine from `src/engine.ts`. A bundler such as Vite can import the package locally. The owner supplies a canvas, stereo PCM at 44.1 kHz, dimensions and optional song score. The engine receives media times; the owner retains its audio element and transport. The independent Vite build includes the pinned renderer asset and notices.
 
-Rendering advances at 60 fixed media steps per second, regardless of display refresh. The first implementation uses Butterchurn 3.0.0-beta.5 and presets 2.4.7 as an experiment. The renderer's global state lives in a separate browser realm per instance. The authored Dive study uses related forms within one preset program, so section changes need no shader compilation.
+Rendering advances at 60 fixed media steps per second, regardless of display refresh. The first implementation uses Butterchurn 3.0.0-beta.5 and presets 2.4.7 as an experiment. The renderer's global state lives in a separate browser realm per instance. The authored Dive study uses related forms within one preset program, so section changes need no shader compilation. Cue transitions are visible events inside that same program: the score's `transition` window drives a transition-activity signal (q30, peaking mid-window), which fires a threshold-noise dissolve — the outgoing look shatters into scattered fragments that settle into the incoming tint — and a zoom-through burst that dives into the frame and decelerates as the new motif settles. A cue with `transition: 0` fires no event. Both effects are display-path only and exact functions of media time, so seeks and pause behave as before.
 
 Pause holds the image. A seek rebuilds bounded feedback history from the seed at the destination, then the preview dissolves into it. This preserves the score's state and returning motifs; it does not restore historical pixels. Hidden-tab recovery uses the same policy. Repeat from zero uses the same seed and prepared input. Determinism and timing evidence belong in the [build record](../docs/visualizer-build.md), including the machine and limits of each check.
 
