@@ -289,6 +289,35 @@ select {
 .customize .slider input[type='range'] {
   margin: 4px 0 0;
 }
+.study-settings {
+  grid-template-columns: 1fr auto auto;
+  border-top: 1px solid #ffffff12;
+}
+.study-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 28px;
+}
+.study-controls .slider {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  font-size: 10px;
+  color: #8f98a7;
+  min-width: 150px;
+}
+.study-controls .slider output {
+  color: #c3ccd9;
+  font-variant-numeric: tabular-nums;
+}
+.study-controls .slider input[type='range'] {
+  margin: 4px 0 0;
+}
+#study-reset {
+  font-size: 11px;
+  padding: 8px 12px;
+}
 .seed-control {
   display: flex;
   flex-direction: column;
@@ -377,6 +406,17 @@ footer a {
   }
   .seed-control {
     grid-column: 1/-1;
+  }
+  .study-settings {
+    grid-template-columns: 1fr auto;
+  }
+  .study-controls {
+    grid-column: 1/-1;
+    gap: 20px;
+  }
+  .study-controls .slider {
+    min-width: 0;
+    flex: 1 1 130px;
   }
   .studio > div {
     grid-column: 1/-1;

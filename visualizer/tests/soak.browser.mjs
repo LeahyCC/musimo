@@ -3,7 +3,10 @@
 // Usage: node tests/soak.browser.mjs <study> <seekSeconds> <soakSeconds> <outname> [optionsJson]
 // optionsJson, when given, is written to the studio localStorage key before
 // page load, so customized themes/motion/trails/sensitivity/seed apply.
+// Set PREVIEW_URL when the preview is not on 5180, as a worktree's own server is.
 import { chromium } from '../../frontend/node_modules/playwright/index.mjs'
+
+const PREVIEW_URL = process.env.PREVIEW_URL ?? 'http://127.0.0.1:5180'
 
 const [, , study = 'phosphor', seekArg = '25', soakArg = '40', name = 'soak', optionsJson] =
   process.argv
@@ -21,7 +24,7 @@ if (optionsJson) {
     }
   }, optionsJson)
 }
-await page.goto('http://127.0.0.1:5180', { waitUntil: 'networkidle' })
+await page.goto(PREVIEW_URL, { waitUntil: 'networkidle' })
 await page.waitForFunction(() => !document.getElementById('play').disabled, null, {
   timeout: 90_000,
 })

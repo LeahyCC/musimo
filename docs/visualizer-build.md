@@ -58,11 +58,31 @@ The native `onset` uniform now carries a real value: half-wave-rectified spectra
 
 Unit tests in `visualizer/tests/audio-levels.test.ts` cover the onset feature directly: silence holds it at exactly 0, and a 2 Hz click train produces a clear peak at each click that settles to a low value before the next one, always inside 0..1.
 
+## Native studies and per-study settings, 9 September 2026
+
+Kaleidoscope V3 moved off Butterchurn onto the native renderer, and two cheaper studies joined it: Julia spiral and Liquid contours. The Butterchurn "Kaleidoscope V3" entry and its import are gone from `engine.ts`; `kaleidoscope-v3-preset.ts` itself stays until the card that removes Butterchurn. The three studies are described in [the package README](../visualizer/README.md) and the manifest, settings and study-writing steps in [the renderer note](visualizer-renderer.md).
+
+The V3 GLSL had never been compiled or viewed, and two things in it did not survive contact with a screen. Its log-polar depth coefficient of 0.3 put barely half a tunnel ring in frame, which read as a flat field rather than a dive; it is 1.1 now. Its IFS scale drifted between 1.65 and 2.15, and below about 1.9 the whole tile falls under a pixel, so the mandala turned to grey noise for stretches of a minute or more; the drift now sits between 2.3 and 2.6. The orbit traps alone also saturate across most of the tile, so the colour now leans on the generation the orbit runs away at, which is what makes the shells read as nested.
+
+The Julia study aims at Colin's reference gif, a hard-banded deep zoom with black cores and spiral arms. It dives into the set's own repelling fixed point β = 1 − μ/2, where the set is invariant under multiplication by λ = 2 − μ. Zooming by |λ| and turning by arg(λ) therefore lands on the same picture, so two levels a whole step apart cross-fade without a seam, the dive never ends, and no float ever runs out of precision. arg(λ) is where the spiral arms come from. c is parameterised by μ rather than directly, which keeps it near the main cardioid where the set has the interior the reference draws black.
+
+The studio page grew a "This study" panel below Customize, generated from the loaded manifest's `settings`. It is hidden for studies that declare none, which is every Butterchurn study.
+
+Checks that ran on this machine, against a worktree preview on port 5183 under headless Chromium with SwiftShader:
+
+- `npm run build --prefix visualizer` and `npm test --prefix visualizer`: 19 passing.
+- `node visualizer/tests/native.browser.mjs` now runs its full set for `tunnel`, `kaleidoscope3`, `julia` and `contours`. All four: same-seed playback matched between one-frame and three-frame batching, a different seed changed the image, restart and paused frames held their hashes, the seeks at 30 and 10 seconds reproduced their destination in 120 reconstructed frames each, a 300-second jump asked for a reconstruction, live options and settings changed the picture without a rebuild, no iframe was created, and the host realm was untouched. Each study also ran its seeks with one setting moved off its default and the same seek at the default gave a different picture, so a setting really does take part in rebuilding history. RGBA16F buffers were available throughout. Reconstruction cost 0.5 s for tunnel, julia and contours and 1.1 s for kaleidoscope3 at 640 pixels wide under software rendering. Results in ignored `visualizer/test-results/native-results.json`.
+- `node visualizer/tests/soak.browser.mjs kaleidoscope3 30 110 soak-kaleidoscope3` at 1080p: the mandala at 140 seconds shows nested self-similar rosettes receding into two tunnel centres, not a blur and not a flat field. The study was also probed at 40, 70, 100 and 140 seconds while the IFS scale floor was being set, because it can look right at one moment and be noise a minute later.
+- The studio page was driven in a headless browser for the settings panel: it is hidden for Dive and Sherwin, shows four labelled sliders for Kaleidoscope V3 and three for Julia spiral, a drag moved the engine's value and the label with no "Preparing visual" rebuild, the value was written to `musimo.studio.study.kaleidoscope3` and came back into both the engine and the slider after a reload, and Reset returned the study to its authored values. The browser reported no errors.
+
+These ran under software rendering on one machine. They do not establish cross-GPU identity, and they do not replace artistic review with sound.
+
 ## Still open
 
 - Colin's review of the complete authored journey and provisional musical map.
 - A small Musimo adapter after the independent journey is convincing, followed by the full playback integration checks.
 - Exact feedback checkpoints, ordinary-device measurements and non-Chromium verification.
-- Porting the remaining studies to the native renderer, and then removing Butterchurn.
+- Porting the remaining studies to the native renderer, and then removing Butterchurn, `kaleidoscope-v3-preset.ts` among them.
+- Colin's eye on the three native studies, in particular whether Kaleidoscope V3's grainy field between the jewels wants softening and whether Julia spiral should carry more of the reference's colour.
 
 Run instructions and analysis commands are in [the package README](../visualizer/README.md). The [build handoff](visualizer-build-handoff.md) remains the governing brief.
