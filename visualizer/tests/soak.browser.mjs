@@ -8,7 +8,7 @@ import { chromium } from '../../frontend/node_modules/playwright/index.mjs'
 
 const PREVIEW_URL = process.env.PREVIEW_URL ?? 'http://127.0.0.1:5180'
 
-const [, , study = 'phosphor', seekArg = '25', soakArg = '40', name = 'soak', optionsJson] =
+const [, , study = 'tunnel', seekArg = '25', soakArg = '40', name = 'soak', optionsJson] =
   process.argv
 const seekTo = Number(seekArg)
 const soakSeconds = Number(soakArg)

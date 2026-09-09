@@ -13,10 +13,6 @@
     "analyze": "node scripts/analyze.mjs",
     "prepare:dive": "node scripts/prepare-dive.mjs"
   },
-  "dependencies": {
-    "butterchurn": "3.0.0-beta.5",
-    "butterchurn-presets": "2.4.7"
-  },
   "devDependencies": {
     "@types/node": "26.4.1",
     "typescript": "7.0.2",

@@ -113,35 +113,26 @@ try {
   const address = server.address()
   assert(address && typeof address === 'object')
   const production = await browser.newPage()
-  let rendererAsset = ''
-  production.on('response', (response) => {
-    if (/\/assets\/butterchurn\.min-[^/]+\.js$/.test(response.url()) && response.status() === 200)
-      rendererAsset = response.url()
-  })
   production.on('pageerror', (error) => errors.push(error.message))
   await production.goto(`http://127.0.0.1:${address.port}`)
   await production.waitForFunction(() => !document.querySelector('#record').disabled, {
     timeout: 30000,
   })
-  // Dive is a native study, so the first frame creates no realm. The pinned
-  // Butterchurn asset only has to serve when a Butterchurn study is chosen, so
-  // that is what this checks: pick one and wait for its realm to appear.
+  // Every study is native, so the first frame creates no realm and switching
+  // studies never should either.
   results.production = await production.evaluate(() => ({
     nativeRealms: document.querySelectorAll('iframe').length,
     width: document.querySelector('#visual').width,
     ready: !document.querySelector('#play').disabled,
   }))
-  await production.locator('#preset').selectOption('sherwin')
-  // The credit line only changes once the realm's module has loaded and the
-  // preset is prepared, so this also means the pinned asset has been served.
+  await production.locator('#preset').selectOption('tunnel')
   await production.waitForFunction(
-    () => document.querySelector('#credit').textContent.includes('Butterchurn'),
+    () => document.querySelector('#credit').textContent.includes('Native renderer'),
     { timeout: 60000 },
   )
   results.production.realms = await production.evaluate(
     () => document.querySelectorAll('iframe').length,
   )
-  results.production.rendererAsset = rendererAsset
   results.errors = errors
   await writeFile(
     new URL('../test-results/preview-results.json', import.meta.url),
@@ -157,8 +148,7 @@ try {
   assert(
     results.production.ready &&
       results.production.nativeRealms === 0 &&
-      results.production.realms === 1 &&
-      rendererAsset,
+      results.production.realms === 0,
   )
   assert.deepEqual(errors, [])
 } finally {

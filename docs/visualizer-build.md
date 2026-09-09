@@ -96,12 +96,17 @@ The visual comparison is against a fresh Butterchurn capture, not the [8 Septemb
 
 These ran under software rendering on one machine. They do not establish cross-GPU identity, and they do not replace artistic review with sound. Colin has not yet seen the native Dive.
 
+## Butterchurn removed, 9 September 2026
+
+Butterchurn and its presets are gone. `visualizer/src/renderer-sandbox.ts`, `vendor.d.ts`, `effects-presets.ts`, `kaleidoscope-v2-preset.ts`, `kaleidoscope-v3-preset.ts` and `journey-preset.ts` are deleted, the `butterchurn` and `butterchurn-presets` dependencies are gone from `package.json`, and `engine.ts` no longer has a renderer switch: every entry in `studies` is native. The studio page's picker and Customize panel dropped the Butterchurn-only studies (Phosphor Memory, Kaleidoscope Tides, Kaleidoscope V2, Prism Fracture, Witchcraft Reloaded, Sherwin Maxawow); opening a local recording now falls back to Native tunnel instead of Sherwin Maxawow. `THIRD_PARTY_NOTICES.txt` keeps only the Sherwin Maxawow attribution and its MIT text, because Dive's GLSL still carries that lineage.
+
+`npm ci --prefix visualizer` and `npm audit --prefix visualizer --audit-level=high` pass against the regenerated lock file. `npm run build --prefix visualizer` and `npm test --prefix visualizer` pass. The browser checks (`replay.browser.mjs`, `native.browser.mjs`, `preview.browser.mjs`) were already native-only except `preview.browser.mjs`'s production assertion, which no longer looks for a bundled Butterchurn asset and now expects zero iframes throughout.
+
 ## Still open
 
 - Colin's review of the complete authored journey and provisional musical map.
 - A small Musimo adapter after the independent journey is convincing, followed by the full playback integration checks.
 - Exact feedback checkpoints, ordinary-device measurements and non-Chromium verification.
-- Porting the remaining studies to the native renderer, and then removing Butterchurn, `kaleidoscope-v3-preset.ts` and `journey-preset.ts` among them.
 - Colin's eye on the three native studies, in particular whether Kaleidoscope V3's grainy field between the jewels wants softening and whether Julia spiral should carry more of the reference's colour.
 
 Run instructions and analysis commands are in [the package README](../visualizer/README.md). The [build handoff](visualizer-build-handoff.md) remains the governing brief.

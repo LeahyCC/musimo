@@ -2,7 +2,9 @@
 import { chromium } from '../../frontend/node_modules/playwright/index.mjs'
 
 const studies =
-  process.argv.length > 2 ? process.argv.slice(2, -1) : ['phosphor', 'kaleidoscope', 'prism']
+  process.argv.length > 2
+    ? process.argv.slice(2, -1)
+    : ['tunnel', 'kaleidoscope3', 'julia', 'contours']
 const seekTo = process.argv.length > 2 ? Number(process.argv[process.argv.length - 1]) : 75
 const browser = await chromium.launch({
   headless: true,

@@ -12,21 +12,13 @@ Open `http://127.0.0.1:5180`. The preparation command reads the selected recordi
 
 The preview provides play, pause, seek, repeat from the start, volume, full screen and 1080p/720p/540p rendering. The song map jumps to provisional section starts. **Record clip** captures up to 20 seconds of the rendered canvas and native audio playback; the clip can be played or saved below the viewer. A pause or renderer replacement finishes the capture early. It requires a browser with media-element capture and WebM recording support. Choosing another recording switches to a preset audition and drops Dive's score.
 
-The **Customize** section tunes the current study live: a theme palette (Abyss, Ember, Ultraviolet, Mono), liquid clock speed, feedback persistence and onset response, plus a seed re-roll. On the native path every one of those is a uniform, so a slider moves the picture while you drag it and nothing is rebuilt. Only a seed re-roll still needs a rebuild, because the seed generates the noise textures at load. The remaining Butterchurn studies still bake their options into preset text, one program per study per build. Choices persist in `localStorage` under `musimo.studio.visual`, and the defaults reproduce the authored visuals exactly (Abyss, 1× motion, centred trails, 1× sensitivity, the journey score's seed).
+The **Customize** section tunes the current study live: a theme palette (Abyss, Ember, Ultraviolet, Mono), liquid clock speed, feedback persistence and onset response, plus a seed re-roll. Every one of those is a uniform, so a slider moves the picture while you drag it and nothing is rebuilt. Only a seed re-roll still needs a rebuild, because the seed generates the noise textures at load. Choices persist in `localStorage` under `musimo.studio.visual`, and the defaults reproduce the authored visuals exactly (Abyss, 1× motion, centred trails, 1× sensitivity, the journey score's seed).
 
-## Two renderers
+## The native renderer
 
-Studies run on one of two paths, chosen by the `renderer` field on each entry in `studies`.
+Every study is a manifest of WebGL2 passes, compiled onto the owner's canvas directly by `visualizer/src/study-renderer.ts`. There is no separate realm and nothing is compiled from preset text: RGBA16F ping-pong buffers carry feedback, and the studio's options and each study's own settings reach the shaders as live uniforms rather than baked constants.
 
-```
-butterchurn                        native
-  Butterchurn 3.0.0-beta.5           visualizer/src/study-renderer.ts
-  preset JSON in an iframe realm     a manifest of WebGL2 passes on the canvas
-  8-bit feedback, clamps at 1.0      RGBA16F ping-pong buffers
-  options baked in, one rebuild      options are uniforms, live
-```
-
-Five studies run natively today.
+Five studies exist today.
 
 - **Dive journey**: the song's own study. Sherwin Maxawow's liquid, ported per pixel: a persistent RGBA16F feedback pass carrying three drifting vortices and the preset's warp sinusoids, its inner border painted into the same buffer, then a display pass that lights the surface from its own gradient and grades it with the score. The journey reaches the shaders as `q21` to `q30`, so cue transitions stay visible events inside one program. No settings; the Customize panel is the whole of its live control.
 - **Native tunnel**: one persistent feedback pass zooming and rotating into itself, tinted and glowed on the way out.
@@ -36,7 +28,7 @@ Five studies run natively today.
 
 The manifest format, the uniforms and samplers every pass gets, the per-frame hook, live settings and the determinism rules are in [the renderer note](../docs/visualizer-renderer.md), which also covers adding a study. Band levels come from `src/audio-levels.ts`, a port of Butterchurn's FFT and `AudioLevels` that is pure, DOM-free and unit tested.
 
-Both paths keep the same engine contract: fixed 60 media steps per second, a seek rebuilding up to 120 frames from the seed, and the same `costs`, `loadMs`, `warmMs` and `reconstructionMs` reporting. On the native path the Customize sliders take effect while you drag them, with no "Preparing visual" rebuild; re-rolling the seed still rebuilds, because the seed generates the noise textures at load.
+The engine contract is fixed: 60 media steps per second, a seek rebuilding up to 120 frames from the seed, and `costs`, `loadMs`, `warmMs` and `reconstructionMs` reporting. The Customize sliders take effect while you drag them, with no "Preparing visual" rebuild; re-rolling the seed still rebuilds, because the seed generates the noise textures at load.
 
 ## This study
 
@@ -60,7 +52,7 @@ The command refuses to overwrite existing output. The separate [song score](song
 
 `@musimo/visualizer` exports the engine from `src/engine.ts`. A bundler such as Vite can import the package locally. The owner supplies a canvas, stereo PCM at 44.1 kHz, dimensions and optional song score. The engine receives media times; the owner retains its audio element and transport. The independent Vite build includes the pinned renderer asset and notices.
 
-Rendering advances at 60 fixed media steps per second, regardless of display refresh. Dive runs on the native renderer: two WebGL2 passes on the owner's canvas, no separate realm, and nothing compiled from preset text. The score and the studio options arrive as uniforms rather than baked constants, so a section change and a slider drag both cost one uniform write and no shader compilation. Cue transitions are visible events inside that one program: the score's `transition` window drives a transition-activity signal (q30, peaking mid-window), which fires a threshold-noise dissolve, where the outgoing look shatters into scattered fragments that settle into the incoming tint, and a zoom-through burst that dives into the frame and decelerates as the new motif settles. A cue with `transition: 0` fires no event. Both effects are display-path only and exact functions of media time, so seeks and pause behave as before. The remaining Butterchurn studies are auditions: they keep the pinned 3.0.0-beta.5 renderer in a separate browser realm per instance, and it loads only when one of them is chosen.
+Rendering advances at 60 fixed media steps per second, regardless of display refresh. Dive runs on the native renderer: two WebGL2 passes on the owner's canvas, no separate realm, and nothing compiled from preset text. The score and the studio options arrive as uniforms rather than baked constants, so a section change and a slider drag both cost one uniform write and no shader compilation. Cue transitions are visible events inside that one program: the score's `transition` window drives a transition-activity signal (q30, peaking mid-window), which fires a threshold-noise dissolve, where the outgoing look shatters into scattered fragments that settle into the incoming tint, and a zoom-through burst that dives into the frame and decelerates as the new motif settles. A cue with `transition: 0` fires no event. Both effects are display-path only and exact functions of media time, so seeks and pause behave as before.
 
 Pause holds the image. A seek rebuilds bounded feedback history from the seed at the destination, then the preview dissolves into it. This preserves the score's state and returning motifs; it does not restore historical pixels. Hidden-tab recovery uses the same policy. Repeat from zero uses the same seed and prepared input. Determinism and timing evidence belong in the [build record](../docs/visualizer-build.md), including the machine and limits of each check.
 

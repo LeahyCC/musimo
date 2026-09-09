@@ -1,5 +1,7 @@
 # Visualizer renderer handoff
 
+9 September 2026. The replacement described below is complete: Butterchurn is gone and every study runs on the native renderer.
+
 9 September 2026. Branch `feature/music-visualizer`. Continue from here in a fresh session. Colin decided to replace Butterchurn with a small WebGL2 renderer of our own so the visualizer can support a wide range of effects. The feature is not being scrapped: everything outside the renderer stays.
 
 ## Decision

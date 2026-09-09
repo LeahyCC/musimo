@@ -1,20 +1,8 @@
-import sherwin from 'butterchurn-presets/presets/converted/Flexi, martin + geiss - dedicated to the sherwin maxawow.json'
-import witchcraft from 'butterchurn-presets/presets/converted/martin - witchcraft reloaded.json'
-
 import { AudioLevelAnalyser } from './audio-levels.ts'
-import type { BandLevels } from './audio-levels.ts'
-import {
-  createKaleidoscopePreset,
-  createPhosphorPreset,
-  createPrismPreset,
-} from './effects-presets.ts'
 import { JourneyController } from './journey.ts'
 import type { JourneyScore } from './journey.ts'
-import { createKaleidoscopeV2Preset } from './kaleidoscope-v2-preset.ts'
 import { createAudioFrame, samplePcm } from './pcm.ts'
 import type { AudioFrame, Pcm } from './pcm.ts'
-import { createRendererSandbox } from './renderer-sandbox.ts'
-import type { Renderer, RendererSandbox } from './renderer-sandbox.ts'
 import { nativeStudies } from './studies/index.ts'
 import { mergeStudioOptions, resolveSeed } from './studio-options.ts'
 import type { ResolvedStudioOptions, StudioOptions } from './studio-options.ts'
@@ -27,84 +15,46 @@ export { AudioLevelAnalyser } from './audio-levels.ts'
 export type { BandLevels } from './audio-levels.ts'
 export { JourneyController } from './journey.ts'
 export type { JourneyScore, JourneyCue, JourneyState, Motif } from './journey.ts'
-export type { Renderer } from './renderer-sandbox.ts'
 export { nativeStudies } from './studies/index.ts'
 export type { StudyManifest, StudyPass, StudySetting, StudyFrameContext } from './study-manifest.ts'
 export { StudyRenderer } from './study-renderer.ts'
 export { THEMES, STUDIO_STORAGE_KEY } from './studio-options.ts'
 export type { StudioOptions, Theme } from './studio-options.ts'
 
-// `renderer` picks the path: Butterchurn presets keep the iframe realm, native
-// studies compile their manifest onto the owner's canvas through StudyRenderer.
+// Every study runs on the native WebGL2 renderer, compiled from its manifest
+// onto the owner's canvas through StudyRenderer.
 export const studies = {
   dive: {
     name: 'Dive journey',
     author: 'Based on Flexi, martin + geiss’s Sherwin Maxawow',
-    renderer: 'native',
-  },
-  phosphor: {
-    name: 'Phosphor Memory',
-    author: 'Musimo study · relief lighting after Sherwin',
-    renderer: 'butterchurn',
-  },
-  kaleidoscope: {
-    name: 'Kaleidoscope Tides',
-    author: 'Musimo study · relief lighting after Sherwin',
-    renderer: 'butterchurn',
-  },
-  kaleidoscope2: {
-    name: 'Kaleidoscope V2',
-    author: 'Musimo study · after Flexi’s log-polar kaleidoscope and fractal feedback',
-    renderer: 'butterchurn',
-  },
-  prism: {
-    name: 'Prism Fracture',
-    author: 'Musimo study · relief lighting after Sherwin',
-    renderer: 'butterchurn',
   },
   tunnel: {
     name: 'Native tunnel',
     author: 'Musimo study · feedback tunnel',
-    renderer: 'native',
   },
   kaleidoscope3: {
     name: 'Kaleidoscope V3',
     author: 'Musimo study · kaleidoscopic IFS, evaluated per pixel',
-    renderer: 'native',
   },
   julia: {
     name: 'Julia spiral',
     author: 'Musimo study · escape-time Julia, self-similar dive',
-    renderer: 'native',
   },
   contours: {
     name: 'Liquid contours',
     author: 'Musimo study · curl-noise field, drawn as contour lines',
-    renderer: 'native',
   },
-  witchcraft: { name: 'martin - witchcraft reloaded', author: 'martin', renderer: 'butterchurn' },
-  sherwin: {
-    name: 'Flexi, martin + geiss - dedicated to the sherwin maxawow',
-    author: 'Flexi, martin + geiss',
-    renderer: 'butterchurn',
-  },
-} as const satisfies Record<string, { name: string; author: string; renderer: RendererKind }>
-export type RendererKind = 'butterchurn' | 'native'
+} as const satisfies Record<string, { name: string; author: string }>
 export type Study = keyof typeof studies
 export const simulationFps = 60
 export const reconstructionFrames = 120
 
 // The owner supplies prepared PCM and media time. This class has no audio element or audio graph.
 export class VisualizerEngine {
-  private renderer: Renderer | undefined
-  private sandbox: RendererSandbox | undefined
   private studyRenderer: StudyRenderer | undefined
   private manifest: StudyManifest | undefined
   private studyState: StudyState = {}
   private levels = new AudioLevelAnalyser()
-  // Test hook only: the native path's band levels for the frame most recently
-  // rendered, so a check can compare them against Butterchurn's own analyser.
-  private lastNativeAudio: BandLevels | undefined
   // A native renderer loses its WebGL context when released, and a canvas only
   // ever yields one. Loading a second native study needs a fresh engine.
   private canvasSpent = false
@@ -163,78 +113,12 @@ export class VisualizerEngine {
     this.started = false
     this.study = study
     const start = performance.now()
-    if (studies[study].renderer === 'native') {
-      // A native study builds synchronously. Yield once first so an owner that
-      // disposes or reloads in the same turn wins, rather than this spending
-      // the canvas's single WebGL context on a load nobody is waiting for.
-      await Promise.resolve()
-      signal.throwIfAborted()
-      this.loadNative(study, start)
-      return
-    }
-    const sandbox = await createRendererSandbox(signal)
-    if (signal.aborted || this.disposed) {
-      sandbox.remove()
-      signal.throwIfAborted()
-      return
-    }
-    this.sandbox = sandbox
-    try {
-      this.renderer = sandbox.factory.createVisualizer(null, this.canvas, {
-        width: this.canvas.width,
-        height: this.canvas.height,
-        pixelRatio: 1,
-        textureRatio: 1,
-        deterministic: true,
-        seed: resolveSeed(this.options, this.controller?.score.seed),
-      })
-      // The effect studies bake the seed into their drift phases, so they get
-      // the same resolved seed the renderer was created with.
-      const baked = {
-        ...this.options,
-        seed: resolveSeed(this.options, this.controller?.score.seed),
-      }
-      const clock = this.renderer.renderer
-      // Upstream elapsedTime still passes through an FPS smoother. Set the clock
-      // directly from the integer media frame, never by repeated floating additions.
-      clock.calcTimeAndFPS = () => {
-        clock.fps = simulationFps
-        clock.time = this.position
-        clock.frameNum = this.frame - 1
-        clock.blendProgress =
-          clock.blendDuration > 0
-            ? Math.min(1, (clock.time - clock.blendStartTime) / clock.blendDuration)
-            : 1
-        clock.blending = clock.blendProgress < 1
-      }
-      await this.renderer.loadPreset(
-        study === 'phosphor'
-          ? createPhosphorPreset(baked)
-          : study === 'kaleidoscope'
-            ? createKaleidoscopePreset(baked)
-            : study === 'kaleidoscope2'
-              ? createKaleidoscopeV2Preset(baked)
-              : study === 'prism'
-                ? createPrismPreset(baked)
-                : study === 'witchcraft'
-                  ? witchcraft
-                  : sherwin,
-        0,
-      )
-      signal.throwIfAborted()
-      this.loadMs = performance.now() - start
-      const warming = performance.now()
-      // All three forms share these programs. Complete preparation before audio
-      // entry; no shader compilation or second renderer is needed at cue changes.
-      this.renderer.gl.finish()
-      this.warmMs = performance.now() - warming
-      const error = this.renderer.gl.getError()
-      if (error !== this.renderer.gl.NO_ERROR)
-        throw new Error(`Visualizer preparation failed (${error}).`)
-    } catch (error) {
-      if (this.sandbox === sandbox) this.releaseRenderer()
-      throw error
-    }
+    // A native study builds synchronously. Yield once first so an owner that
+    // disposes or reloads in the same turn wins, rather than this spending
+    // the canvas's single WebGL context on a load nobody is waiting for.
+    await Promise.resolve()
+    signal.throwIfAborted()
+    this.loadNative(study, start)
   }
 
   // Native studies build their programs synchronously; there is no realm to
@@ -265,18 +149,11 @@ export class VisualizerEngine {
     this.studyRenderer?.reset()
   }
 
-  private get isNative() {
-    return Boolean(this.study && studies[this.study].renderer === 'native')
-  }
-
   get position() {
     return this.frame / simulationFps
   }
   get journeyState() {
-    if (!this.controller) return undefined
-    // Only a native study reads the score; the remaining Butterchurn presets
-    // are auditions and run on their own equations.
-    return this.isNative ? this.controller.sample(this.position) : undefined
+    return this.controller?.sample(this.position)
   }
 
   // Live studio options on the native path. These are uniforms, so nothing
@@ -306,37 +183,16 @@ export class VisualizerEngine {
     return this.studyRenderer?.floatBuffers
   }
 
-  // Test hook only: the band levels for the frame most recently rendered, from
-  // whichever path is loaded. Used to compare the native analyser against
-  // Butterchurn's own on identical PCM.
-  get debugAudioLevels(): BandLevels | undefined {
-    if (this.studyRenderer) return this.lastNativeAudio
-    if (!this.renderer) return undefined
-    const levels = this.renderer.renderer.audioLevels
-    return {
-      bass: levels.bass,
-      mid: levels.mid,
-      treb: levels.treb,
-      vol: (levels.bass + levels.mid + levels.treb) / 3,
-      bassAtt: levels.bass_att,
-      midAtt: levels.mid_att,
-      trebAtt: levels.treb_att,
-      volAtt: (levels.bass_att + levels.mid_att + levels.treb_att) / 3,
-    }
-  }
-
   // Reconstruct at most two seconds of feedback and audio smoothing from a fresh
   // seed. The score is exact at the destination; historical pixels are not restored.
   // Yield between small batches so rebuilding cannot monopolize the media owner's UI.
   async startAt(seconds: number, currentMediaTime?: () => number) {
     if (!Number.isFinite(seconds)) throw new Error('The media position must be finite.')
-    if ((!this.renderer && !this.studyRenderer) || !this.study || this.disposed)
+    if (!this.studyRenderer || !this.study || this.disposed)
       throw new Error('Load the visualizer before starting it.')
-    // Butterchurn rebuilds its realm to get a clean feedback buffer. The native
-    // path clears its own buffers, analyser and study state instead, because a
-    // canvas cannot hand out a second WebGL context.
-    if (this.isNative) this.resetStudyState()
-    else if (this.started) await this.load(this.study)
+    // The native path clears its own buffers, analyser and study state to get
+    // a clean feedback buffer, because a canvas cannot hand out a second WebGL context.
+    this.resetStudyState()
     const signal = this.pending.signal
     this.preparing = true
     this.started = true
@@ -398,10 +254,7 @@ export class VisualizerEngine {
       this.input,
       this.controller?.score.recording.timingOffsetSeconds ?? 0,
     )
-    if (this.studyRenderer) this.renderNativeFrame(input)
-    else if (this.renderer)
-      this.renderer.render({ elapsedTime: 1 / simulationFps, audioLevels: input })
-    else throw new Error('The visualizer renderer is unavailable.')
+    this.renderNativeFrame(input)
     if (measure) {
       this.costs.push(performance.now() - start)
       if (this.costs.length > 3600) this.costs.shift()
@@ -414,7 +267,6 @@ export class VisualizerEngine {
   private renderNativeFrame(input: AudioFrame) {
     if (!this.studyRenderer) throw new Error('The visualizer renderer is unavailable.')
     const audio = this.levels.update(input)
-    this.lastNativeAudio = audio
     const frameUniforms = this.manifest?.frame
       ? this.manifest.frame({
           state: this.studyState,
@@ -443,10 +295,6 @@ export class VisualizerEngine {
   }
 
   private releaseRenderer() {
-    this.renderer?.loseGLContext()
-    this.renderer = undefined
-    this.sandbox?.remove()
-    this.sandbox = undefined
     this.studyRenderer?.dispose()
     this.studyRenderer = undefined
     this.manifest = undefined
