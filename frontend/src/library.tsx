@@ -728,8 +728,14 @@ export function LibraryPage({
           <p className="eyebrow">YOUR MUSIC, READY TO PLAY</p>
           <h1>Library</h1>
         </div>
-        <span className={`tag ${capabilities.data.sonic_similarity ? 'good' : ''}`}>
-          {capabilities.data.sonic_similarity ? 'AUDIOMUSE CONNECTED' : 'NAVIDROME READY'}
+        <span
+          className={`tag library-status ${capabilities.data.sonic_similarity ? 'good' : ''}`}
+          role="status"
+        >
+          <span style={{ visibility: loadingDetail ? 'hidden' : undefined }}>
+            {capabilities.data.sonic_similarity ? 'AUDIOMUSE CONNECTED' : 'NAVIDROME READY'}
+          </span>
+          {loadingDetail && <span>Opening music…</span>}
         </span>
       </div>
       <nav className="library-tabs" aria-label="Library views">
@@ -857,7 +863,6 @@ export function LibraryPage({
           {createPlaylist.isError && <p className="error">{createPlaylist.error.message}</p>}
         </form>
       )}
-      {loadingDetail && <p role="status">Opening music…</p>}
       {showBrowser && activeQuery.isLoading && <p role="status">Loading {tab}…</p>}
       {showBrowser && activeQuery.isError && (
         <div className="inline-error" role="alert">
