@@ -3,9 +3,10 @@ import { mkdir, writeFile } from 'node:fs/promises'
 
 import { chromium } from '../../frontend/node_modules/playwright-core/index.mjs'
 
+// The native renderer's counterpart to replay.browser.mjs: same determinism,
+// seek and isolation questions, asked of the WebGL2 path instead of Butterchurn.
 // Run with the independent preview serving on 5180, or point PREVIEW_URL at
-// another port when a worktree runs its own server. This uses the existing
-// frontend browser-test dependency and never touches the visible preview tab.
+// another port when a worktree runs its own server.
 const PREVIEW_URL = process.env.PREVIEW_URL ?? 'http://127.0.0.1:5180'
 const browser = await chromium.launch({ headless: true })
 const page = await browser.newPage({ viewport: { width: 1280, height: 720 } })
@@ -42,77 +43,81 @@ try {
       left: decoded.getChannelData(0),
       right: decoded.getChannelData(1),
     }
+    // A native engine keeps its canvas for the life of its WebGL context, so
+    // every case here gets its own canvas as the studio page already does.
     async function create(seed = score.seed, width = 640) {
       const canvas = document.createElement('canvas')
       document.body.append(canvas)
       const engine = new VisualizerEngine(canvas, pcm, width, { ...score, seed })
-      await engine.load('dive')
+      await engine.load('tunnel')
       await engine.startAt(0)
       return { canvas, engine }
     }
-    async function hash(canvas) {
-      const pixels = canvas.getContext('2d').getImageData(0, 0, canvas.width, canvas.height).data
-      const digest = await crypto.subtle.digest('SHA-256', pixels)
+    // The native path draws to the default framebuffer, so the pixels come back
+    // through the renderer rather than a 2D context.
+    async function hash(engine) {
+      const digest = await crypto.subtle.digest('SHA-256', engine.readPixels())
       return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, '0')).join(
         '',
       )
     }
+
     const first = await create()
     for (let frame = 1; frame <= 180; frame++) first.engine.advance((frame + 0.01) / 60)
-    const firstHash = await hash(first.canvas)
+    const firstHash = await hash(first.engine)
     await new Promise((resolve) => setTimeout(resolve, 250))
-    const pausedHash = await hash(first.canvas)
-    const hostUnchangedAfterFirst =
-      Math.random === hostRandom && globalNames().join('|') === hostGlobals.join('|')
+    const pausedHash = await hash(first.engine)
+    const floatBuffers = first.engine.floatBuffers
+    const settings = { ...first.engine.studySettings }
+
     const second = await create()
     const other = await create(score.seed + 1)
     for (let frame = 3; frame <= 180; frame += 3) {
       second.engine.advance((frame + 0.01) / 60)
       other.engine.advance((frame + 0.01) / 60)
     }
-    const secondHash = await hash(second.canvas)
-    const otherHash = await hash(other.canvas)
+    const secondHash = await hash(second.engine)
+    const otherHash = await hash(other.engine)
     const exactClock = second.engine.position === 3
+
     await second.engine.startAt(0)
     for (let frame = 1; frame <= 180; frame++) second.engine.advance((frame + 0.01) / 60)
-    const restartedHash = await hash(second.canvas)
+    const restartedHash = await hash(second.engine)
     first.engine.dispose()
     first.canvas.remove()
     other.engine.dispose()
     other.canvas.remove()
+
     const seeks = []
     const images = []
-    for (const position of [222, 164, 222]) {
+    for (const position of [30, 10, 30]) {
       await second.engine.startAt(position)
       seeks.push({
         position: second.engine.position,
         frames: second.engine.reconstructedFrames,
         ms: second.engine.reconstructionMs,
-        hash: await hash(second.canvas),
-        state: second.engine.journeyState,
+        hash: await hash(second.engine),
       })
       if (images.length < 2) images.push(second.canvas.toDataURL())
     }
     const jumped = second.engine.advance(300) === false
-    await second.engine.startAt(164, () => 166.25)
-    const landed = second.engine.position === 166.25
+
+    // Live option and setting updates must not need a rebuild, and must move
+    // the picture.
+    await second.engine.startAt(30)
+    const beforeTuning = await hash(second.engine)
+    second.engine.setOptions({ theme: 'ember', motion: 2 })
+    second.engine.setSetting('glow', 1.6)
+    second.engine.advance(30 + 1 / 60)
+    const afterTuning = await hash(second.engine)
+
     const costs = [...second.engine.costs].sort((a, b) => a - b)
     second.engine.dispose()
     second.canvas.remove()
-    const cancelled = new VisualizerEngine(document.createElement('canvas'), pcm, 640, score)
-    const loading = cancelled.load('dive')
-    cancelled.dispose()
-    let aborted = false
-    try {
-      await loading
-    } catch (error) {
-      aborted = error.name === 'AbortError'
-    }
+
     const noLeakedRealms = document.querySelectorAll('iframe').length === 0
     const hostUnchanged =
-      hostUnchangedAfterFirst &&
-      Math.random === hostRandom &&
-      globalNames().join('|') === hostGlobals.join('|')
+      Math.random === hostRandom && globalNames().join('|') === hostGlobals.join('|')
     return {
       firstHash,
       pausedHash,
@@ -122,10 +127,11 @@ try {
       exactClock,
       seeks,
       jumped,
-      landed,
-      aborted,
       noLeakedRealms,
       hostUnchanged,
+      floatBuffers,
+      settings,
+      tuningChangedTheImage: beforeTuning !== afterTuning,
       images,
       renderSubmissionP95: costs[Math.floor(costs.length * 0.95)],
     }
@@ -134,12 +140,12 @@ try {
   await mkdir(output, { recursive: true })
   for (const [index, image] of result.images.entries()) {
     await writeFile(
-      new URL(`journey-seek-${index}.png`, output),
+      new URL(`native-seek-${index}.png`, output),
       Buffer.from(image.split(',')[1], 'base64'),
     )
   }
   delete result.images
-  await writeFile(new URL('replay-results.json', output), JSON.stringify(result, null, 2) + '\n')
+  await writeFile(new URL('native-results.json', output), JSON.stringify(result, null, 2) + '\n')
   console.log(JSON.stringify(result, null, 2))
   assert.equal(result.firstHash, result.secondHash, 'display batching changed same-seed playback')
   assert.notEqual(result.firstHash, result.otherHash, 'different seeds did not change the material')
@@ -150,14 +156,11 @@ try {
     result.seeks.every((seek) => seek.frames <= 120),
     'seek work exceeded its bound',
   )
-  assert(
-    result.exactClock &&
-      result.jumped &&
-      result.landed &&
-      result.aborted &&
-      result.noLeakedRealms &&
-      result.hostUnchanged,
-  )
+  assert(result.exactClock, 'the media clock drifted')
+  assert(result.jumped, 'a large jump did not ask for a reconstruction')
+  assert(result.noLeakedRealms, 'the native path created a renderer realm')
+  assert(result.hostUnchanged, 'the native path changed the host realm')
+  assert(result.tuningChangedTheImage, 'live options and settings did not reach the shaders')
   assert.deepEqual(errors, [], 'browser reported errors')
 } finally {
   await browser.close()

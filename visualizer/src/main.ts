@@ -98,7 +98,7 @@ async function prepareRenderer(token: number) {
   record.disabled = true
   const nextCanvas = document.createElement('canvas')
   nextCanvas.id = 'visual'
-  nextCanvas.setAttribute('aria-label', 'Live Butterchurn output')
+  nextCanvas.setAttribute('aria-label', 'Live visualizer output')
   let next: VisualizerEngine | undefined
   try {
     renderState.textContent = 'Preparing visual…'
@@ -141,7 +141,10 @@ async function prepareRenderer(token: number) {
     const study = studies[preset.value as Study]
     document.querySelector('.viewer-top > span')!.textContent =
       preset.selectedOptions[0].text.toUpperCase()
-    element('credit').textContent = `Visual: ${study.author} · Butterchurn 3.0.0-beta.5`
+    element('credit').textContent =
+      study.renderer === 'native'
+        ? `Visual: ${study.author} · Native renderer`
+        : `Visual: ${study.author} · Butterchurn 3.0.0-beta.5`
     element('quality-label').textContent = quality.selectedOptions[0].text
     renderState.textContent = audio.paused ? 'Ready · press play' : 'Live · audio clock'
     record.disabled = loading
@@ -308,7 +311,8 @@ function persistStudioOptions() {
 }
 
 function studioLabels() {
-  element('motion-value').textContent = `${Number(motion.value).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}×`
+  element('motion-value').textContent =
+    `${Number(motion.value).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}×`
   element('trails-value').textContent = `${Math.round(Number(trails.value) * 100)}%`
   element('sensitivity-value').textContent =
     `${Number(sensitivity.value).toFixed(2).replace(/0+$/, '').replace(/\.$/, '')}×`
@@ -320,11 +324,28 @@ function studioLabels() {
   seedScore.hidden = studioOptions.seed === undefined
 }
 
+const isNativeStudy = () => studies[preset.value as Study].renderer === 'native'
+
 function applyStudioOptions(patch: StudioOptions) {
   Object.assign(studioOptions, mergeStudioOptions({ ...studioOptions, ...patch }))
   persistStudioOptions()
   studioLabels()
+  // A native study carries the options as uniforms, so only the seed, which
+  // generates the noise textures at load, still needs the rebuild.
+  if (engine && isNativeStudy() && !('seed' in patch)) {
+    engine.setOptions(studioOptions)
+    return
+  }
   void rebuild()
+}
+
+// Uniform updates are cheap enough to follow the drag rather than waiting for
+// the release a Butterchurn rebuild needs.
+function tuneLive(patch: StudioOptions) {
+  studioLabels()
+  if (!engine || !isNativeStudy()) return
+  Object.assign(studioOptions, mergeStudioOptions({ ...studioOptions, ...patch }))
+  engine.setOptions(studioOptions)
 }
 
 theme.value = studioOptions.theme
@@ -332,14 +353,13 @@ motion.value = String(studioOptions.motion)
 trails.value = String(studioOptions.trails)
 sensitivity.value = String(studioOptions.sensitivity)
 theme.onchange = () => applyStudioOptions({ theme: theme.value as Theme })
-motion.oninput = () => studioLabels()
-trails.oninput = () => studioLabels()
-sensitivity.oninput = () => studioLabels()
+motion.oninput = () => tuneLive({ motion: Number(motion.value) })
+trails.oninput = () => tuneLive({ trails: Number(trails.value) })
+sensitivity.oninput = () => tuneLive({ sensitivity: Number(sensitivity.value) })
 motion.onchange = () => applyStudioOptions({ motion: Number(motion.value) })
 trails.onchange = () => applyStudioOptions({ trails: Number(trails.value) })
 sensitivity.onchange = () => applyStudioOptions({ sensitivity: Number(sensitivity.value) })
-reroll.onclick = () =>
-  applyStudioOptions({ seed: Math.floor(Math.random() * (0x7fffffff + 1)) })
+reroll.onclick = () => applyStudioOptions({ seed: Math.floor(Math.random() * (0x7fffffff + 1)) })
 seedScore.onclick = () => {
   delete studioOptions.seed
   persistStudioOptions()
