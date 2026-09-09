@@ -14,6 +14,22 @@ The preview provides play, pause, seek, repeat from the start, volume, full scre
 
 The **Customize** section tunes the current study live: a theme palette (Abyss, Ember, Ultraviolet, Mono), liquid clock speed, feedback persistence and onset response, plus a seed re-roll. Options bake into the preset shader at build time — one program per study per build, rebuilt on change — and persist in `localStorage` under `musimo.studio.visual`. Defaults reproduce the authored visuals exactly (Abyss, 1× motion, centred trails, 1× sensitivity, the journey score's seed).
 
+## Two renderers
+
+Studies run on one of two paths, chosen by the `renderer` field on each entry in `studies`.
+
+```
+butterchurn                        native
+  Butterchurn 3.0.0-beta.5           visualizer/src/study-renderer.ts
+  preset JSON in an iframe realm     a manifest of WebGL2 passes on the canvas
+  8-bit feedback, clamps at 1.0      RGBA16F ping-pong buffers
+  options baked in, one rebuild      options are uniforms, live
+```
+
+**Native tunnel** is the first native study. The manifest format, the uniforms and samplers every pass gets, the per-frame hook and the determinism rules are in [the renderer note](../docs/visualizer-renderer.md), which also covers adding a study. Band levels come from `src/audio-levels.ts`, a port of Butterchurn's FFT and `AudioLevels` that is pure, DOM-free and unit tested.
+
+Both paths keep the same engine contract: fixed 60 media steps per second, a seek rebuilding up to 120 frames from the seed, and the same `costs`, `loadMs`, `warmMs` and `reconstructionMs` reporting. On the native path the Customize sliders take effect while you drag them, with no "Preparing visual" rebuild; re-rolling the seed still rebuilds, because the seed generates the noise textures at load.
+
 ## Song preparation
 
 The local command uses FFmpeg and ffprobe already installed on the machine. It measures RMS level, spectral centroid, flatness and flux in 2,048-sample windows at 44.1 kHz. It does not claim to detect instruments, beats or musical recurrence.
@@ -51,8 +67,11 @@ For the optional real-recording replay check, prepare Dive, keep the preview run
 npm ci --prefix frontend
 npx --prefix frontend playwright install chromium
 node visualizer/tests/replay.browser.mjs
+node visualizer/tests/native.browser.mjs
 node visualizer/tests/preview.browser.mjs
 ```
+
+`replay` covers the Butterchurn path and `native` the same questions for the native renderer, plus live option and setting updates. Set `PREVIEW_URL` when the preview is not on 5180, for example `PREVIEW_URL=http://127.0.0.1:5181` for a worktree running its own server.
 
 This checks short replay hashes, pause, restart, forward/backward reconstruction, transition state, cancellation and renderer isolation. It writes captures and results under ignored `visualizer/test-results/`. It does not compare every frame of the complete song or establish cross-GPU identity.
 

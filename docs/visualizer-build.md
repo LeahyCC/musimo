@@ -36,10 +36,26 @@ Two successive captures also started and finished in the desktop browser, with s
 
 The final bounded [preview regression](assets/visualizer-build/preview-results.json) passed duplicate-start protection and capture cleanup during a rebuild. It also served the production build on a temporary local port, loaded the bundled renderer asset successfully and prepared the first 1080p frame without browser errors. The temporary server was stopped. The visible development preview remains on port 5180.
 
+## Native renderer, 9 September 2026
+
+A second renderer now sits beside Butterchurn. `visualizer/src/study-renderer.ts` draws a study manifest with WebGL2 directly on the owner's canvas, with no iframe realm and no JavaScript compiled from preset text. Every entry in `studies` carries a `renderer` field and `load` branches on it; the Butterchurn studies are untouched. The first native study is `tunnel`, "Native tunnel". The manifest format, uniforms, samplers, frame hook and determinism rules are documented in [the renderer note](visualizer-renderer.md).
+
+Checks that ran on this machine, against a worktree preview on port 5181 under headless Chromium with SwiftShader:
+
+- `npm test --prefix visualizer`: 16 passing, including the new `audio-levels` tests.
+- `node visualizer/tests/native.browser.mjs`: same-seed playback matched between one-frame and three-frame batching, a different seed changed the image, restart and paused frames held their hashes, the seeks at 30 and 10 seconds reproduced their destination in 120 reconstructed frames each, a 300-second jump asked for a reconstruction, live options and settings changed the picture without a rebuild, no iframe was created, `Math.random` and the window's global names were unchanged, and the browser reported no errors. RGBA16F buffers were available. Results in ignored `visualizer/test-results/native-results.json`.
+- `node visualizer/tests/replay.browser.mjs`: passed. Its five hashes were then compared against the same check run with the previous `engine.ts` restored, and all five matched, so the Butterchurn output is byte-identical.
+- The band-level port was compared against the pinned Butterchurn build's own `FFT`, `AudioProcessor` and `AudioLevels` classes over 1,500 synthetic frames. The worst absolute difference was 0.
+- The studio page itself was driven in a headless browser: picking "Native tunnel" showed the "Native renderer" credit, created no iframe, kept the generic canvas label, and a motion-slider change moved the image on the same engine instance without the "Preparing visual" rebuild. Switching back to a Butterchurn study restored its own credit line.
+
+These ran under software rendering on one machine. They do not establish cross-GPU identity, and they do not replace artistic review with sound.
+
 ## Still open
 
 - Colin's review of the complete authored journey and provisional musical map.
 - A small Musimo adapter after the independent journey is convincing, followed by the full playback integration checks.
 - Exact feedback checkpoints, ordinary-device measurements and non-Chromium verification.
+- The `onset` uniform is wired through the native renderer but still reads 0; the next card defines it.
+- Porting the remaining studies to the native renderer, and then removing Butterchurn.
 
 Run instructions and analysis commands are in [the package README](../visualizer/README.md). The [build handoff](visualizer-build-handoff.md) remains the governing brief.
