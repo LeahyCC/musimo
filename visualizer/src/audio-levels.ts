@@ -28,6 +28,19 @@ const SAMPLE_RATE = 44100
 const SIMULATION_FPS = 60
 const BASE_FPS = 30
 const FAST_AVERAGE_FRAMES = 50
+const FRAME_SECONDS = 1 / SIMULATION_FPS
+// Already quoted at 60 fps, unlike the band rates above, so it is used as-is.
+const ONSET_LONG_RATE = 0.992
+// The flux peak the onset is measured against halves every two seconds, so a
+// loud hit sets the scale for the moments after it and then lets go.
+const ONSET_PEAK_DECAY = 0.5 ** (1 / (2 * SIMULATION_FPS))
+// A full onset needs flux at least this many baselines above the baseline when
+// no larger recent peak sets the scale.
+const ONSET_FLOOR_RATIO = 2
+// Matches JourneyController's onset feature smoothing, so the native path's
+// onset rises and falls on the same timescale as the score's.
+const ONSET_ATTACK_SECONDS = 0.16
+const ONSET_RELEASE_SECONDS = 0.65
 
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value))
 
@@ -129,6 +142,10 @@ export class AudioLevelAnalyser {
   private readonly longAvg = new Float32Array(3)
   private readonly val = new Float32Array(3)
   private readonly att = new Float32Array(3)
+  private readonly prevSpectrum = new Float32Array(SAMPLES_OUT)
+  private fluxAvg = 0
+  private fluxPeak = 0
+  private onsetValue = 0
   private frames = 0
 
   constructor() {
@@ -145,11 +162,23 @@ export class AudioLevelAnalyser {
     this.longAvg.fill(1)
     this.val.fill(1)
     this.att.fill(1)
+    this.prevSpectrum.fill(0)
+    this.fluxAvg = 0
+    this.fluxPeak = 0
+    this.onsetValue = 0
+  }
+
+  // Smoothed 0..1 spectral-flux onset for the frame most recently passed to
+  // update(). The engine multiplies this by sensitivity before it becomes a
+  // uniform; this module has no opinion on studio options.
+  get onset(): number {
+    return this.onsetValue
   }
 
   update(input: AudioFrame): BandLevels {
     for (let i = 0; i < NFREQ; i++) this.samples[i] = input.timeByteArray[i] - 128
     const spectrum = this.fft.transform(this.samples)
+    this.updateOnset(spectrum)
     // Accumulate into the Float32Array rather than a float64 local: Butterchurn
     // rounds to single precision on every addition, and matching that keeps the
     // two implementations bit-for-bit identical.
@@ -182,5 +211,37 @@ export class AudioLevelAnalyser {
       trebAtt: this.att[2],
       volAtt: (this.att[0] + this.att[1] + this.att[2]) / 3,
     }
+  }
+
+  // Half-wave-rectified spectral flux, read as where this frame sits between
+  // the flux's slow baseline and its decaying recent peak. Steady sound has
+  // flux near its own baseline and reads close to 0; a hit reaches the peak
+  // and reads 1; the same click reads the same whether the mix around it is
+  // quiet or loud. Dividing by the baseline alone would not work: the mean of
+  // that ratio is 1 by construction, so sustained music would sit at 1 and
+  // hide every hit. The result is then run through an attack/release smoother.
+  private updateOnset(spectrum: Float32Array) {
+    let flux = 0
+    for (let bin = 0; bin < SAMPLES_OUT; bin++) {
+      const delta = spectrum[bin] - this.prevSpectrum[bin]
+      if (delta > 0) flux += delta
+      this.prevSpectrum[bin] = spectrum[bin]
+    }
+    // The first frame has no previous spectrum, so its "flux" is the whole
+    // spectrum; a reconstruction would otherwise start every seek with a flash.
+    if (this.frames === 0) flux = 0
+    // Settle the baseline quickly after a reset, as the band long averages do,
+    // or the 120-frame seek reconstruction would end with onset still elevated.
+    const baselineRate = this.frames < FAST_AVERAGE_FRAMES ? 0.9 : ONSET_LONG_RATE
+    this.fluxAvg = this.fluxAvg * baselineRate + flux * (1 - baselineRate)
+    this.fluxPeak = Math.max(flux, this.fluxPeak * ONSET_PEAK_DECAY)
+    // The scale never drops below twice the baseline: without a recent hit to
+    // measure against, the ordinary jitter of a steady passage would otherwise
+    // be graded against itself and read as onsets.
+    const range = Math.max(this.fluxPeak - this.fluxAvg, ONSET_FLOOR_RATIO * this.fluxAvg)
+    const ratio = range < 1e-6 ? 0 : clamp((flux - this.fluxAvg) / range, 0, 1)
+    const tau = ratio > this.onsetValue ? ONSET_ATTACK_SECONDS : ONSET_RELEASE_SECONDS
+    const kept = Math.exp(-FRAME_SECONDS / tau)
+    this.onsetValue = ratio * (1 - kept) + this.onsetValue * kept
   }
 }

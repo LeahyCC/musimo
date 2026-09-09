@@ -18,6 +18,16 @@ export type Renderer = {
     blendDuration: number
     calcTimeAndFPS: (elapsed: number) => void
     presetEquationRunner: { runFrameEquations: (variables: Variables) => Variables }
+    // Butterchurn's own band analyser. Read only by the engine's debug hook,
+    // which compares it against the native path's port on the same PCM.
+    audioLevels: {
+      bass: number
+      mid: number
+      treb: number
+      bass_att: number
+      mid_att: number
+      treb_att: number
+    }
   }
 }
 type RendererFactory = {

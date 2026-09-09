@@ -107,3 +107,77 @@ test('vol averages the three bands and the analyser resets to its idle state', (
   }
   assert.deepEqual(replayed[40], levels)
 })
+
+test('onset stays at zero through silence', () => {
+  const analyser = new AudioLevelAnalyser()
+  fill(() => 0)
+  let onset = -1
+  for (let index = 0; index < 200; index++) {
+    analyser.update(frame)
+    onset = analyser.onset
+  }
+  assert.equal(onset, 0)
+})
+
+// A broadband burst every 30 frames is a 2 Hz click train at the renderer's
+// fixed 60 Hz step. Flux only fires on the rising edge, so each click reads as
+// a spike that then decays under the release constant until the next one.
+test('a click train peaks at each click and settles low between them', () => {
+  const analyser = new AudioLevelAnalyser()
+  const period = 30
+  const cycles = 5
+  const click = (index: number) =>
+    0.5 * (tone(220, 0)(index) + tone(2200, 0)(index) + tone(6000, 0)(index))
+  const values: number[] = []
+  for (let index = 0; index < period * cycles; index++) {
+    fill(index % period === 0 ? click : () => 0)
+    analyser.update(frame)
+    values.push(analyser.onset)
+  }
+  assert.ok(
+    values.every((value) => value >= 0 && value <= 1),
+    'onset left 0..1',
+  )
+  const lastCycle = values.slice((cycles - 1) * period, cycles * period)
+  const peak = Math.max(...lastCycle)
+  const trough = Math.min(...lastCycle.slice(5))
+  assert.ok(peak > 0.05, `a click should raise onset above baseline: ${peak}`)
+  assert.ok(peak > trough * 1.5, `peak ${peak} should clear the trough ${trough}`)
+})
+
+// Sustained sound is the case a flux-over-average design gets wrong: the mean
+// of that ratio is 1 by construction, so a steady mix reads as one long onset.
+// Grading flux between its baseline and recent peak has to settle near 0 on a
+// steady broadband signal and still register a burst inside it.
+test('a steady broadband signal settles near zero and a burst inside it still registers', () => {
+  const analyser = new AudioLevelAnalyser()
+  let state = 7
+  const noise = () => {
+    state = (Math.imul(state, 1664525) + 1013904223) >>> 0
+    return state / 4294967296 - 0.5
+  }
+  const bed = (offset: number, burst: boolean) => (index: number) => {
+    const t = (offset + index) / 44100
+    const mix =
+      0.25 * Math.sin(2 * Math.PI * 110 * t) +
+      0.15 * Math.sin(2 * Math.PI * 1500 * t) +
+      0.1 * Math.sin(2 * Math.PI * 5000 * t) +
+      0.15 * noise()
+    return burst ? mix + 0.5 * noise() : mix
+  }
+  const values: number[] = []
+  for (let index = 0; index < 260; index++) {
+    fill(bed(index * 735, index === 200))
+    analyser.update(frame)
+    values.push(analyser.onset)
+  }
+  assert.ok(values.every((value) => value >= 0 && value <= 1))
+  const steady = values.slice(120, 200).sort((a, b) => a - b)
+  const median = steady[Math.floor(steady.length / 2)]
+  const burst = Math.max(...values.slice(200, 212))
+  assert.ok(median < 0.1, `steady sound should read near zero, got median ${median}`)
+  assert.ok(
+    burst > median * 3 && burst > 0.1,
+    `burst ${burst} should clear the steady level ${median}`,
+  )
+})

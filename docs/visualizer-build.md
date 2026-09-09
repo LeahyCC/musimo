@@ -50,12 +50,19 @@ Checks that ran on this machine, against a worktree preview on port 5181 under h
 
 These ran under software rendering on one machine. They do not establish cross-GPU identity, and they do not replace artistic review with sound.
 
+## Band levels and onset, 9 September 2026
+
+The native `onset` uniform now carries a real value: half-wave-rectified spectral flux of the equalized spectrum, graded between a slow baseline and a decaying recent peak, clamped and run through the same attack/release smoothing `JourneyController` uses for its own onset feature. The engine multiplies it by the sensitivity option before it reaches the shader. Formulae and rates are in [the renderer note](visualizer-renderer.md). The first version divided the flux by its own average, which reads 1 through any sustained sound; a probe with a steady broadband signal and a burst every two seconds showed 0.96 to 1.00 throughout with the bursts invisible, and reads 0.02 between bursts after the change.
+
+`visualizer/tests/levels.browser.mjs` drives a Butterchurn `sherwin` engine and a native `tunnel` engine on the same Dive PCM, both from `startAt(0)`, and compares their band levels frame by frame for the first 20 seconds (after the first 50 frames, once both analysers are past the fast/slow long-average switch). The worst relative difference across `bass`, `mid`, `treb` and their attack-smoothed companions was 0: the native port is bit-identical to Butterchurn's own analyser on real audio, not only on the earlier synthetic frames. Results in ignored `visualizer/test-results/levels-results.json`.
+
+Unit tests in `visualizer/tests/audio-levels.test.ts` cover the onset feature directly: silence holds it at exactly 0, and a 2 Hz click train produces a clear peak at each click that settles to a low value before the next one, always inside 0..1.
+
 ## Still open
 
 - Colin's review of the complete authored journey and provisional musical map.
 - A small Musimo adapter after the independent journey is convincing, followed by the full playback integration checks.
 - Exact feedback checkpoints, ordinary-device measurements and non-Chromium verification.
-- The `onset` uniform is wired through the native renderer but still reads 0; the next card defines it.
 - Porting the remaining studies to the native renderer, and then removing Butterchurn.
 
 Run instructions and analysis commands are in [the package README](../visualizer/README.md). The [build handoff](visualizer-build-handoff.md) remains the governing brief.

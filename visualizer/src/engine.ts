@@ -2,6 +2,7 @@ import sherwin from 'butterchurn-presets/presets/converted/Flexi, martin + geiss
 import witchcraft from 'butterchurn-presets/presets/converted/martin - witchcraft reloaded.json'
 
 import { AudioLevelAnalyser } from './audio-levels.ts'
+import type { BandLevels } from './audio-levels.ts'
 import {
   createKaleidoscopePreset,
   createPhosphorPreset,
@@ -93,6 +94,9 @@ export class VisualizerEngine {
   private manifest: StudyManifest | undefined
   private studyState: StudyState = {}
   private levels = new AudioLevelAnalyser()
+  // Test hook only: the native path's band levels for the frame most recently
+  // rendered, so a check can compare them against Butterchurn's own analyser.
+  private lastNativeAudio: BandLevels | undefined
   // A native renderer loses its WebGL context when released, and a canvas only
   // ever yields one. Loading a second native study needs a fresh engine.
   private canvasSpent = false
@@ -318,6 +322,25 @@ export class VisualizerEngine {
     return this.studyRenderer?.floatBuffers
   }
 
+  // Test hook only: the band levels for the frame most recently rendered, from
+  // whichever path is loaded. Used to compare the native analyser against
+  // Butterchurn's own on identical PCM.
+  get debugAudioLevels(): BandLevels | undefined {
+    if (this.studyRenderer) return this.lastNativeAudio
+    if (!this.renderer) return undefined
+    const levels = this.renderer.renderer.audioLevels
+    return {
+      bass: levels.bass,
+      mid: levels.mid,
+      treb: levels.treb,
+      vol: (levels.bass + levels.mid + levels.treb) / 3,
+      bassAtt: levels.bass_att,
+      midAtt: levels.mid_att,
+      trebAtt: levels.treb_att,
+      volAtt: (levels.bass_att + levels.mid_att + levels.treb_att) / 3,
+    }
+  }
+
   // Reconstruct at most two seconds of feedback and audio smoothing from a fresh
   // seed. The score is exact at the destination; historical pixels are not restored.
   // Yield between small batches so rebuilding cannot monopolize the media owner's UI.
@@ -407,6 +430,7 @@ export class VisualizerEngine {
   private renderNativeFrame(input: AudioFrame) {
     if (!this.studyRenderer) throw new Error('The visualizer renderer is unavailable.')
     const audio = this.levels.update(input)
+    this.lastNativeAudio = audio
     const frameUniforms = this.manifest?.frame
       ? this.manifest.frame({
           state: this.studyState,
@@ -418,13 +442,11 @@ export class VisualizerEngine {
           journey: this.controller?.sample(this.position),
         })
       : {}
-    // Onset lands with the next card; the uniform exists so studies can be
-    // written against it now.
     this.studyRenderer.render({
       time: this.position,
       frame: this.frame,
       audio,
-      onset: 0,
+      onset: this.levels.onset * this.options.sensitivity,
       frameUniforms,
     })
   }
