@@ -6,6 +6,9 @@ import { fileURLToPath } from 'node:url'
 
 import { chromium } from '../../frontend/node_modules/playwright-core/index.mjs'
 
+// The running preview to check against. A worktree serving on another port sets
+// PREVIEW_URL; the production build below always uses its own temporary server.
+const PREVIEW_URL = process.env.PREVIEW_URL ?? 'http://127.0.0.1:5180'
 const browser = await chromium.launch({ headless: true })
 const server = createServer()
 const results = {}
@@ -23,7 +26,7 @@ try {
       }
     }
   })
-  await page.goto('http://127.0.0.1:5180')
+  await page.goto(PREVIEW_URL)
   await page.waitForFunction(() => !document.querySelector('#record').disabled)
   await page.locator('#quality').selectOption('1280')
   await page.waitForFunction(
