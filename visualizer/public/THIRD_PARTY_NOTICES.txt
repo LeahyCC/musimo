@@ -1,22 +1,14 @@
 Musimo visualizer preview
 
-Butterchurn 3.0.0-beta.5 and butterchurn-presets 2.4.7
-https://github.com/jberg/butterchurn
-https://github.com/jberg/butterchurn-presets
-
-The preview retains these preset authors:
-martin - witchcraft reloaded
-Flexi, martin + geiss - dedicated to the sherwin maxawow
-
-The Dive study adapts the Sherwin Maxawow preset. It now runs on this preview's
-own WebGL2 renderer, and visualizer/src/studies/dive.ts therefore contains GLSL
-ported from that preset: its warp and comp shader bodies, and its frame and
-pixel equations rewritten as shader code. That file is covered by the MIT
-licence reproduced below, and carries the same attribution in its header. The
-new motion controls and song score belong to this preview. The original preset
-authors retain credit.
-
-Both upstream packages include the following notice:
+The Dive study adapts the Sherwin Maxawow preset from butterchurn-presets
+2.4.7 (MIT), by Flexi, martin + geiss, dedicated to the sherwin maxawow.
+It runs on this preview's own WebGL2 renderer, and
+visualizer/src/studies/dive.ts therefore contains GLSL ported from that
+preset: its warp and comp shader bodies, and its frame and pixel equations
+rewritten as shader code. That file is covered by the MIT licence reproduced
+below, and carries the same attribution in its header. The new motion
+controls and song score belong to this preview. The original preset authors
+retain credit.
 
 MIT License
 

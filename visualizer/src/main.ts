@@ -144,10 +144,7 @@ async function prepareRenderer(token: number) {
     const study = studies[preset.value as Study]
     document.querySelector('.viewer-top > span')!.textContent =
       preset.selectedOptions[0].text.toUpperCase()
-    element('credit').textContent =
-      study.renderer === 'native'
-        ? `Visual: ${study.author} · Native renderer`
-        : `Visual: ${study.author} · Butterchurn 3.0.0-beta.5`
+    element('credit').textContent = `Visual: ${study.author} · Native renderer`
     element('quality-label').textContent = quality.selectedOptions[0].text
     renderStudyPanel()
     renderState.textContent = audio.paused ? 'Ready · press play' : 'Live · audio clock'
@@ -212,7 +209,7 @@ async function loadRecording(source: string | File) {
     studioLabels()
     const diveOption = preset.querySelector<HTMLOptionElement>('option[value="dive"]')!
     diveOption.disabled = !isDive
-    if (!isDive && preset.value === 'dive') preset.value = 'sherwin'
+    if (!isDive && preset.value === 'dive') preset.value = 'tunnel'
     element('journey').hidden = !isDive
     seek.max = String(decoded.duration)
     element('duration').textContent = time(decoded.duration)
@@ -328,15 +325,13 @@ function studioLabels() {
   seedScore.hidden = studioOptions.seed === undefined
 }
 
-const isNativeStudy = () => studies[preset.value as Study].renderer === 'native'
-
 function applyStudioOptions(patch: StudioOptions) {
   Object.assign(studioOptions, mergeStudioOptions({ ...studioOptions, ...patch }))
   persistStudioOptions()
   studioLabels()
-  // A native study carries the options as uniforms, so only the seed, which
+  // Every study carries the options as uniforms, so only the seed, which
   // generates the noise textures at load, still needs the rebuild.
-  if (engine && isNativeStudy() && !('seed' in patch)) {
+  if (engine && !('seed' in patch)) {
     engine.setOptions(studioOptions)
     return
   }
@@ -344,10 +339,10 @@ function applyStudioOptions(patch: StudioOptions) {
 }
 
 // Uniform updates are cheap enough to follow the drag rather than waiting for
-// the release a Butterchurn rebuild needs.
+// a rebuild.
 function tuneLive(patch: StudioOptions) {
   studioLabels()
-  if (!engine || !isNativeStudy()) return
+  if (!engine) return
   Object.assign(studioOptions, mergeStudioOptions({ ...studioOptions, ...patch }))
   engine.setOptions(studioOptions)
 }

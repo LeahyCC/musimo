@@ -8,6 +8,6 @@ Discovery starts with MilkDrop3 and compatible engines. No replacement engine ha
 
 The [first discovery recommendation](visualizer-discovery.md) proposes a browser package and a one-song experiment, with [measured preset evidence](visualizer-evidence.md). It leaves engine selection open until visual control and replay are proved.
 
-Next: Butterchurn is being replaced by a small WebGL2 renderer of our own so the engine can support a wide range of effects. Everything outside the renderer stays. See the [renderer handoff](visualizer-renderer-handoff.md).
+The engine renders with our own small WebGL2 renderer rather than a third-party engine, so it can support a wide range of effects. See the [renderer handoff](visualizer-renderer-handoff.md).
 
 Implementation has started in the independent [`visualizer/` package](../visualizer/README.md). Colin selected Ben Böhmer's “Dive (Extended Mix)” and asked for fluid, soothing motion after inspecting the first preset auditions. See the [build record](visualizer-build.md) for the current preview, song preparation, verification and remaining work. Musimo's normal player still has no Visualize action.
