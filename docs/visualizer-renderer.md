@@ -103,11 +103,11 @@ Two properties of that design are worth knowing before writing a study against t
 
 `AudioLevelAnalyser` also tracks onset, a 0..1 measure of how much louder the spectrum just got. Each frame:
 
-1. Half-wave-rectified spectral flux: `sum(max(0, spectrum[bin] - previousSpectrum[bin]))` over all 512 equalized bins, so a drop in level contributes nothing.
-2. That flux is divided by its own slow average (rate 0.992, already quoted at the renderer's 60 fps so it needs no adjustment, seeded at 1 like the band long averages), then clamped to 0..1.
-3. The clamped value is smoothed with an attack constant of 0.16 s when it is rising and a release constant of 0.65 s when it is falling: the same two constants `JourneyController` uses for its own onset feature, so the native path's transients move on the same timescale as the score's.
+1. Half-wave-rectified spectral flux: `sum(max(0, spectrum[bin] - previousSpectrum[bin]))` over all 512 equalized bins, so a drop in level contributes nothing. The first frame after a reset has no previous spectrum and counts as zero flux, so a seek reconstruction does not begin with a flash.
+2. The flux is placed between two running references: a slow baseline (rate 0.992 at the renderer's 60 fps, 0.9 for the first 50 frames after a reset so it settles inside the seek budget) and a recent peak that halves every two seconds. `ratio = clamp((flux - baseline) / max(peak - baseline, 2 * baseline), 0, 1)`. A steady passage has flux near its own baseline and reads close to 0; a hit reaches the recent peak and reads 1. The floor of twice the baseline stops the ordinary jitter of a steady passage grading itself as onsets when no hit has set the scale. Dividing by the baseline alone does not work: the mean of that ratio is 1 by construction, so sustained music sat at 1 and hid every hit.
+3. The ratio is smoothed with an attack constant of 0.16 s when it is rising and a release constant of 0.65 s when it is falling: the same two constants `JourneyController` uses for its own onset feature, so the native path's transients move on the same timescale as the score's.
 
-The module has no opinion on studio options: the engine reads `AudioLevelAnalyser.onset` and multiplies it by `sensitivity` before setting the `onset` uniform. `visualizer/tests/audio-levels.test.ts` checks silence holds it at exactly 0, a 2 Hz click train produces a clear peak at each click that settles low before the next one, and the value never leaves 0..1.
+The module has no opinion on studio options: the engine reads `AudioLevelAnalyser.onset` and multiplies it by `sensitivity` before setting the `onset` uniform. `visualizer/tests/audio-levels.test.ts` checks silence holds it at exactly 0, a 2 Hz click train produces a clear peak at each click that settles low before the next one, a sustained broadband signal settles near 0 within two seconds while a burst inside it still registers, and the value never leaves 0..1.
 
 ## Adding a study
 
