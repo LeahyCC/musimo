@@ -230,6 +230,7 @@ test('the picker keeps long names inside the sheet', async ({ page }) => {
     (url) => url.pathname === '/api/library/playlists',
     (route) => route.fulfill({ json: { items: [long], liked_id: 'liked' } }),
   )
+
   await page.route(
     (url) => url.pathname === '/api/library/playlists/long',
     (route) => route.fulfill({ json: { ...long, entry: [{ ...second, title: LONG_NAME }] } }),
