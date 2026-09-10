@@ -129,8 +129,9 @@ test('now playing shows the visualizer with hover controls and an artwork switch
   )
 
   // The controls rest while music plays and the pointer is still, and wake on movement.
+  // Software rendering also delays this timer, so give it the same room as the rebuild waits above.
   await stage.hover()
-  await expect(stage).toHaveClass(/idle/, { timeout: 10_000 })
+  await expect(stage).toHaveClass(/idle/, { timeout: 60_000 })
   await stage.hover({ position: { x: 40, y: 40 } })
   await expect(stage).not.toHaveClass(/idle/)
 
