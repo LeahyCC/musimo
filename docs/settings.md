@@ -25,7 +25,7 @@ Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGI
 - `navidrome_url`: server URL for API scanning and library playback. It must be HTTP or HTTPS and cannot contain credentials, a query or fragment. The help text names `MUSIMO_NAVIDROME_CREDENTIALS_FILE`.
 - `navidrome_library_id`: positive library number, default 1. The UI caps it at 100000; the backend requires 1 or more.
 
-Library's empty state links to `/settings#library`. The liked playlist link is persisted outside the settings table in `linked_playlists` and is untouched by settings saves.
+Library's empty state links to `/settings#library`. Any field id works as an anchor (`destination`, `naming_template`, `output_format` and the others); the page scrolls to and focuses it. Download failure links use these anchors. The liked playlist link is persisted outside the settings table in `linked_playlists` and is untouched by settings saves.
 
 ## Draft preservation
 
@@ -37,13 +37,13 @@ Navigation guards block in-app Link clicks and browser tab close/refresh while t
 
 See [downloads](downloads.md) for staging, formats and metadata. See [library player](player.md) for playback and shared Navidrome credentials.
 
-## Later phases
+## Not yet available
 
 Destination selection, naming templates and Navidrome watcher/API modes are implemented. Cookie uploads, notifications, source-specific budgets, proxy options and updater controls are not yet present. Paid providers remain unconfigured. Secrets will use dedicated files or encrypted storage, not this generic settings table.
 
 Settings now includes a library scan panel with live counts, elapsed time, rescan and cancel. A cancelled scan retains the prior index.
 
-The diagnostics export contains runtime versions, mount paths, library scan status, source test status and recent events. Navidrome API credentials are mounted as a separate JSON file and are shared by scan and player calls. ZIP log export and a secret-redaction layer are hardening tasks.
+The diagnostics export contains runtime versions, mount paths, library scan status, source test status, navidrome, last_download and recent events. Navidrome API credentials are mounted as a separate JSON file and are shared by scan and player calls. ZIP log export and a secret-redaction layer are hardening tasks.
 
 ## Recent activity
 

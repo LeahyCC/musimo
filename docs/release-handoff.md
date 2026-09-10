@@ -18,7 +18,7 @@ The first 0.4.0 release ships with these documented limitations (see CHANGELOG.m
 - Representative 50k mixed-format library not tested (synthetic scan passes)
 - Provider album throughput not measured
 
-Do not repeat already completed checks without reason: 41 Python tests, 112 browser checks, generated album pause/retry tests, container-crash recovery, isolated Navidrome watcher fixture, synthetic 50k scan (45 seconds), seven reliability regressions fixed, permitted public-domain download verified with tags/indexing. Synthetic and repeated-fixture results are not real-music throughput or match-accuracy evidence.
+Do not repeat already completed checks without reason: 57 Python tests, PR #44 browser run (59 passed and 1 skipped on Chromium, 38 on mobile project), generated album pause/retry tests, container-crash recovery, isolated Navidrome watcher fixture, synthetic 50k scan (45 seconds), seven reliability regressions fixed, permitted public-domain download verified with tags/indexing. Synthetic and repeated-fixture results are not real-music throughput or match-accuracy evidence.
 
 Work in this order:
 1. Restore pull request CI workflows and required status checks. Verify the main branch ruleset requires passing CI, CodeQL checks, resolved conversations and up-to-date branches. Document the restoration in docs/releasing.md.
