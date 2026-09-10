@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
+import { ORIGIN } from './env'
 
 // Invented catalog records. Settings, queue, diagnostics and events use the real API.
 const track: MusicResult = {
@@ -47,7 +48,7 @@ async function catalogFixtures(page: Page) {
 test.beforeEach(async ({ page }) => {
   // A provider outage or remote asset must never determine a browser test result.
   await page.route('**/*', async (route) => {
-    if (new URL(route.request().url()).origin !== 'http://127.0.0.1:18765') {
+    if (new URL(route.request().url()).origin !== ORIGIN) {
       await route.abort()
     } else {
       await route.fallback()
