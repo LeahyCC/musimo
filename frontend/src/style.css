@@ -1650,6 +1650,11 @@ meter::-webkit-meter-optimum-value {
   width: 100%;
   color: var(--muted);
 }
+/* The base reset makes svg a block, which put the warning icon on a line of its own. */
+.download-target svg {
+  display: inline-block;
+  vertical-align: -2px;
+}
 .artist-header {
   display: flex;
   gap: 25px;
