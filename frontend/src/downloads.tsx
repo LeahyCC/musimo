@@ -960,11 +960,7 @@ export function QueueDock() {
           </button>
         </header>
         <QueueControls />
-        {active.length ? (
-          <JobList jobs={active} />
-        ) : (
-          <p className="empty-results">Nothing queued. Add a track from search.</p>
-        )}
+        <JobList jobs={active} />
       </dialog>
     </>
   )
