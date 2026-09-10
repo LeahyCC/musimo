@@ -217,7 +217,7 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
     await route.fulfill(
       attempts === 1
         ? { status: 503, json: { detail: 'Queue temporarily unavailable' } }
-        : { json: { id: 'fixture', jobs: [], skipped: 1 } },
+        : { json: { id: 'fixture', jobs: [], skipped_owned: 1, skipped_queued: 0 } },
     )
   })
   await page.goto('/search?q=Fixture&tab=album')
@@ -226,7 +226,7 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
   const alert = page.getByRole('alert')
   await expect(alert).toContainText('Queue temporarily unavailable')
   await alert.getByRole('button', { name: 'Retry' }).click()
-  await page.getByText('Nothing missing · 1 skipped').click()
+  await page.getByText('Nothing missing · 1 owned').click()
   await expect(page.getByRole('heading', { name: 'Downloads', exact: true })).toBeVisible()
   expect(attempts).toBe(2)
 })

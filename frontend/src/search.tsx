@@ -332,7 +332,7 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
   const queue = useJobs()
   const jobs = new Map<number, DownloadJob>()
   for (const job of queue.data?.jobs ?? []) {
-    if (job.hidden || ['done', 'cancelled'].includes(job.stage)) continue
+    if (job.hidden) continue
     const current = jobs.get(job.track_id)
     if (!current || current.updated_at < job.updated_at) jobs.set(job.track_id, job)
   }
