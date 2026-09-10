@@ -3222,8 +3222,10 @@ button.library-card-play.active {
   .now-hero {
     grid-template-columns: 1fr;
   }
-  .now-art {
+  .now-art,
+  .stage-slot {
     width: min(320px, 100%);
+    margin-inline: auto;
   }
   .library-track-play {
     grid-template-columns: 24px minmax(0, 1fr) 24px;
@@ -3347,4 +3349,230 @@ button.library-card-play.active {
 /* Padding, not a gap: a gap sits outside the box the virtualizer measures. */
 .virtual-row {
   padding-bottom: 12px;
+}
+
+/* Now Playing stage: the artwork, full screen and the popout share it. */
+.stage-slot {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+}
+.stage {
+  position: relative;
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 14px;
+  background: #020305;
+  box-shadow: 0 20px 60px #0007;
+  outline: none;
+}
+.stage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.stage:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  aspect-ratio: auto;
+  border-radius: 0;
+  box-shadow: none;
+}
+.stage.idle {
+  cursor: none;
+}
+.stage-backdrop {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  color: #76867d;
+}
+.stage-backdrop img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.35;
+  filter: blur(6px) saturate(0.8);
+  transform: scale(1.05);
+}
+.stage-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.stage-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  pointer-events: none;
+  opacity: 1;
+  transition: opacity 0.25s;
+}
+.stage.idle .stage-overlay {
+  opacity: 0;
+}
+.stage-top,
+.stage-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  pointer-events: auto;
+}
+.stage.idle .stage-top,
+.stage.idle .stage-controls {
+  pointer-events: none;
+}
+.stage-top {
+  justify-content: space-between;
+  padding: 14px 16px 24px;
+  background: linear-gradient(#000a, #0000);
+}
+.stage-status {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  color: #b5bdca;
+  text-shadow: 0 1px 6px #000;
+}
+.stage-actions {
+  display: flex;
+  gap: 4px;
+}
+.stage-controls {
+  flex-wrap: wrap;
+  padding: 28px 16px 14px;
+  background: linear-gradient(#0000, #000c);
+  color: #e8ece8;
+}
+.stage-controls .icon-button,
+.stage-actions .icon-button {
+  min-width: 32px;
+  min-height: 36px;
+  color: #dfe6df;
+}
+.stage-controls .icon-button.active {
+  color: var(--accent);
+}
+.stage-controls .icon-button small {
+  margin-left: -4px;
+  font-size: 9px;
+}
+.stage-track {
+  display: flex;
+  flex: 1 1 160px;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.stage-track img {
+  flex-shrink: 0;
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+}
+.stage-track > span {
+  display: grid;
+  min-width: 0;
+}
+.stage-track strong,
+.stage-track small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.stage-track strong {
+  font-size: 13px;
+}
+.stage-track small {
+  font-size: 11px;
+  color: #b5bdca;
+}
+.stage-transport {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.stage-seek {
+  display: flex;
+  flex: 3 1 220px;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.stage-seek input {
+  flex: 1;
+  min-width: 0;
+}
+.stage-volume {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+.stage-volume input {
+  width: 80px;
+}
+.stage-popped {
+  display: grid;
+  place-items: center;
+}
+.stage-popped-art {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0.25;
+  filter: blur(6px);
+}
+.stage-popped-notice {
+  position: relative;
+  display: grid;
+  gap: 12px;
+  justify-items: center;
+  color: var(--muted);
+}
+.stage-notice {
+  font-size: 12px;
+}
+.popout-body {
+  margin: 0;
+  overflow: hidden;
+  background: #020305;
+}
+.popout-root {
+  position: fixed;
+  inset: 0;
+}
+.popout-root .stage {
+  width: 100%;
+  height: 100%;
+  max-height: none;
+  aspect-ratio: auto;
+  border-radius: 0;
+  box-shadow: none;
+}
+@media (max-width: 700px) {
+  .stage-controls {
+    gap: 4px;
+  }
+  .stage-seek {
+    flex-basis: 100%;
+    order: 1;
+  }
+  .stage-volume input {
+    display: none;
+  }
 }

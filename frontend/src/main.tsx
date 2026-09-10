@@ -46,6 +46,7 @@ import { controlsSchema, jobSchema } from './api'
 import { DownloadsPage, QueueDock, updateJob } from './downloads'
 import type { QueueData } from './downloads'
 import { LibraryPanel } from './library-panel'
+import { PopoutProvider } from './now-playing-popout'
 import { CommandPalette } from './palette'
 import { PlayerProvider } from './player'
 import { RecentActivity } from './recent-activity'
@@ -780,7 +781,9 @@ function DiagnosticsPage() {
 const rootRoute = createRootRoute({
   component: () => (
     <PlayerProvider>
-      <Shell />
+      <PopoutProvider>
+        <Shell />
+      </PopoutProvider>
     </PlayerProvider>
   ),
   notFoundComponent: () => (
