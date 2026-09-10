@@ -12,10 +12,12 @@ import {
   artistSchema,
   artistTopSchema,
   searchPageSchema,
+  settingsSchema,
   yearsSchema,
 } from './api'
 import type { DownloadJob, MusicResult } from './api'
 import { ArtistDownloadButton } from './artist-download'
+import { DownloadTarget } from './download-target'
 import { DownloadButton, failureMessage, useJobs } from './downloads'
 import { InfiniteScroll } from './infinite-scroll'
 import { durationText, usePlayer, usePreviewPlayback } from './player'
@@ -191,7 +193,12 @@ export function MusicCard({ item }: { item: MusicResult }) {
           aria-label={`${item.title} library coverage`}
         />
       )}
-      {item.kind === 'album' && <AlbumDownloadButton item={display} />}
+      {item.kind === 'album' && (
+        <>
+          <AlbumDownloadButton item={display} />
+          <DownloadTarget />
+        </>
+      )}
     </article>
   )
 }
@@ -756,7 +763,12 @@ export function AlbumPage() {
     queryFn: ({ signal }) => api(`albums/${albumId}`, albumSchema, { signal }),
     staleTime: 60_000,
   })
-  const [quality, setQuality] = useState('original')
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
+  })
+  const [quality, setQuality] = useState<string | undefined>(undefined)
+  const chosenQuality = quality ?? settings.data?.output_format.value ?? 'original'
   if (query.isError)
     return (
       <div className="error" role="alert">
@@ -768,7 +780,7 @@ export function AlbumPage() {
   const { album, tracks, label, duration, complete } = query.data
   const missingCount = tracks.filter((track) => track.ownership !== 'owned').length
   const hasOwnedTracks = tracks.some((track) => track.ownership === 'owned')
-  const bitrate = quality === 'mp3' ? 320 : 160
+  const bitrate = chosenQuality === 'mp3' ? 320 : 160
   return (
     <>
       <div className="album-header">
@@ -791,7 +803,7 @@ export function AlbumPage() {
       <div className="album-actions">
         <label>
           Quality{' '}
-          <select value={quality} onChange={(e) => setQuality(e.target.value)}>
+          <select value={chosenQuality} onChange={(e) => setQuality(e.target.value)}>
             <option value="original">Original</option>
             <option value="m4a">M4A</option>
             <option value="opus">Opus</option>
@@ -802,7 +814,8 @@ export function AlbumPage() {
           key={`${album.id}-${hasOwnedTracks ? 'missing' : 'all'}`}
           item={album}
           missingOnly={hasOwnedTracks}
-          format={quality}
+          format={chosenQuality}
+          target={settings.data?.destination.value}
           label={
             hasOwnedTracks && missingCount > 0
               ? `Download missing (${missingCount})`
@@ -810,6 +823,7 @@ export function AlbumPage() {
           }
         />
         <small>Size assumes {bitrate} kbps; actual source varies.</small>
+        <DownloadTarget format={chosenQuality} />
       </div>
       {!complete && (
         <p className="error">The catalog returned an incomplete track list. Coverage is partial.</p>

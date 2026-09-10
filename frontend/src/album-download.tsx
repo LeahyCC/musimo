@@ -13,11 +13,13 @@ export function AlbumDownloadButton({
   item,
   missingOnly = true,
   format,
+  target,
   label,
 }: {
   item: MusicResult
   missingOnly?: boolean
   format?: string
+  target?: string
   label?: string
 }) {
   const client = useQueryClient()
@@ -31,7 +33,12 @@ export function AlbumDownloadButton({
       api('batches', batchSchema, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ album_id: item.id, missing_only: missingOnly, format }),
+        body: JSON.stringify({
+          album_id: item.id,
+          missing_only: missingOnly,
+          format,
+          ...(target ? { target } : {}),
+        }),
       }),
     onSuccess: (batch) => {
       for (const job of batch.jobs) updateJob(client, job)
