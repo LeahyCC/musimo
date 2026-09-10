@@ -315,9 +315,7 @@ export async function api<T>(path: string, schema: z.ZodType<T>, init?: RequestI
   const response = await fetch(`/api/${path}`, init)
   const data: unknown = response.status === 204 ? null : await response.json()
   if (!response.ok) {
-    const problem = z
-      .object({ detail: z.string(), code: z.string().optional() })
-      .safeParse(data)
+    const problem = z.object({ detail: z.string(), code: z.string().optional() }).safeParse(data)
     if (problem.success) {
       throw new ApiError(problem.data.detail, problem.data.code)
     }

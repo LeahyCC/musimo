@@ -155,7 +155,10 @@ class FoundationTests(unittest.TestCase):
                 return original_access(path, mode)
 
             with (
-                patch.dict("os.environ", {"MUSIMO_LIBRARY_ROOTS": f"{str(readonly)}{os.pathsep}{str(writable)}"}),
+                patch.dict(
+                    "os.environ",
+                    {"MUSIMO_LIBRARY_ROOTS": f"{str(readonly)}{os.pathsep}{str(writable)}"},
+                ),
                 TestClient(create_app(data)) as client,
                 patch("backend.main.os.access", side_effect=mock_access),
             ):
