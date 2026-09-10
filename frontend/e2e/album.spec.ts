@@ -71,13 +71,19 @@ for (const ownedCount of [0, 1, 2]) {
     const action = page.locator('.album-actions').getByRole('button')
     await expect(action).toHaveCount(1)
     await expect(action).toHaveText(ownedCount === 1 ? 'Download missing (1)' : 'Download album')
+    await expect(page.locator('.album-actions').getByText('to /music · Original')).toBeVisible()
     if (ownedCount === 2) await expect(action).toBeDisabled()
     else {
       await expect(action).toBeEnabled()
       await action.click()
       await expect
         .poll(() => batch)
-        .toMatchObject({ album_id: 42, missing_only: ownedCount > 0, format: 'original' })
+        .toMatchObject({
+          album_id: 42,
+          missing_only: ownedCount > 0,
+          format: 'original',
+          target: '/music',
+        })
     }
 
     for (const item of tracks) {
@@ -85,8 +91,7 @@ for (const ownedCount of [0, 1, 2]) {
         name:
           item.ownership === 'owned'
             ? `${item.title} is in your library`
-            : `Download ${item.title}`,
-        exact: true,
+            : `Download ${item.title} to /music`,
       })
       if (item.ownership === 'owned') await expect(button).toBeDisabled()
       else await expect(button).toBeEnabled()
