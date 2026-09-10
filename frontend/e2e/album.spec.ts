@@ -48,6 +48,7 @@ test('an unavailable destination is flagged on one line', async ({ page }) => {
       },
     }),
   )
+
   await page.route('**/api/diagnostics', (route) =>
     route.fulfill({
       json: {

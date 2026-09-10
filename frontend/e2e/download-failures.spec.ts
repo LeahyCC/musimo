@@ -417,6 +417,7 @@ test('long titles and labels stay inside the page', async ({ page }) => {
     if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
     else await route.fallback()
   })
+
   await page.route('**/api/snapshot', (route) =>
     route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
   )
@@ -472,9 +473,11 @@ test('a queue that cannot be read shows the error, not an empty state', async ({
     if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
     else await route.fallback()
   })
+
   await page.route('**/api/snapshot', (route) =>
     route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
   )
+
   await page.route('**/api/jobs*', (route) =>
     route.fulfill({ status: 503, json: { detail: 'Queue database is locked' } }),
   )
