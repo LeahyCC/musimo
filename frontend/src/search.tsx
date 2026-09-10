@@ -148,7 +148,9 @@ function Art({ item }: { item: MusicResult }) {
     ? `Pause ${item.title}`
     : noPreview
       ? `No preview ${item.title}`
-      : `Preview ${item.title}`
+      : item.preview
+        ? `Preview ${item.title}`
+        : `Find preview ${item.title}`
   return (
     <div className={`result-art ${item.kind === 'artist' ? 'artist-art' : ''}`}>
       {item.art ? <img src={item.art} alt="" loading="lazy" /> : <Disc3 />}
@@ -258,7 +260,13 @@ export function TrackRow({
       <Art item={item} />
       <div className="track-title">
         <strong>
-          {item.title}{' '}
+          <Link
+            to="/albums/$albumId"
+            params={{ albumId: String(item.album_id) }}
+            search={{ track: item.id }}
+          >
+            {item.title}
+          </Link>{' '}
           {item.explicit && (
             <span className="explicit" title="Explicit">
               E
@@ -323,12 +331,12 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
     if (items.length > 12) {
       virtual.scrollToIndex(index, { align: 'center' })
       requestAnimationFrame(() => {
-        document.getElementById(`track-${focusTrack}`)?.focus()
+        document.getElementById(`track-${focusTrack}`)?.focus({ preventScroll: true })
       })
     } else {
       const element = document.getElementById(`track-${focusTrack}`)
       element?.scrollIntoView({ block: 'center' })
-      element?.focus()
+      element?.focus({ preventScroll: true })
     }
   }, [focusTrack, items, virtual])
   if (items.length <= 12)

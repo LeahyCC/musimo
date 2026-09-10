@@ -425,7 +425,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     } catch (error) {
       if (!controller.signal.aborted) {
         setNotice(error instanceof Error ? error.message : 'Preview unavailable')
-        setPreviewStates((prev) => new Map(prev).set(item.id, 'none'))
       }
     }
   }
