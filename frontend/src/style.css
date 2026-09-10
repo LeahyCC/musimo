@@ -3309,6 +3309,7 @@ button.library-card-play.active {
 }
 .playlist-picker-songs {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   max-height: 190px;
   margin-top: 8px;
