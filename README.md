@@ -16,8 +16,8 @@ Search tracks, albums, and artists. Hear previews, check your local collection, 
 
 Musimo keeps discovery close to the library you already own. React provides the interface, FastAPI runs the backend, and SQLite stores settings, the library index, and jobs. Docker Compose builds the app from this repository. No Musimo account or hosted Musimo service is required.
 
-> [!WARNING]
-> Musimo is in early development. Search, indexing, download workers, queue controls, album batches, library playback and playlists are implemented, but the project is not a stable release. Read [download verification](docs/downloads.md) and [measurements](docs/measurements.md). The original [brief](docs/brief.md) describes ambitions, not shipped capability.
+> [!NOTE]
+> Version 0.4.0 is Musimo's first tagged release. Search, library indexing, download workers, queue controls, album batches, Navidrome library playback and playlist management are working. The release is tested but still early. Known limitations are in the [changelog](CHANGELOG.md) and [measurements](docs/measurements.md). Read [download verification](docs/downloads.md) before use. The original [brief](docs/brief.md) describes future ambitions beyond shipped features.
 
 ## Contents
 
@@ -57,9 +57,9 @@ Search and library features:
 - Background scans, scan cancellation, native or polling watchers and diagnostics.
 - A bounded activity feed in Settings and Diagnostics, with persistent clearing.
 
-The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card and bulk Clear failed, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. External-source availability and the complete file-to-Navidrome journey still require validation for your setup.
+The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card and bulk Clear failed, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Download verification requires testing with your chosen provider and Navidrome setup.
 
-These are **not finished features**: personalized Discover, automatic release-edition filters, pasted links/playlists, paid audio sources, notifications, cookie management, built-in login, multiple users and the full release benchmark suite. See [Discover planning](docs/discover.md) and [the roadmap](docs/roadmap.md).
+These are **not finished features**: personalized Discover, automatic release-edition filters, pasted links/playlists, paid audio sources, notifications, cookie management, built-in login, multiple users and complete release benchmarks (cold search latency, match accuracy labeling, permitted-music throughput, representative 50k library, native arm64 performance). See [Discover planning](docs/discover.md), [the roadmap](docs/roadmap.md) and [known limitations](CHANGELOG.md#known-limitations).
 
 ## Requirements
 
@@ -295,6 +295,8 @@ docker compose up -d --build --wait
 ```
 
 Use the same Compose overrides and optional profiles as installation. Back up before schema changes. `git pull --ff-only` refuses divergence instead of silently merging local edits. A newer database schema may require a matching backup to roll back.
+
+Version 0.4.0 has no schema change from earlier development versions (user_version remains 3). Upgrades from any 0.3.x installation to 0.4.0 preserve existing data.
 
 Rebuilds retain named volumes. **Do not add `--volumes` or `-v` to `docker compose down` during an update.** Removing the data volume loses application state. To stop without removal, use `docker compose stop`. Music folders remain your files, not disposable application state.
 
