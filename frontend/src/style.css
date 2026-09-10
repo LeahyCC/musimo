@@ -1334,7 +1334,7 @@ meter::-webkit-meter-optimum-value {
 .track-row:hover {
   background: #19241d;
 }
-.track-row:focus-visible {
+.track-row:focus {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
