@@ -1169,10 +1169,12 @@ export function LibraryPage({
                 {playlistLiked && <Heart size={17} fill="currentColor" />}
                 {detailTitle}
               </h2>
-              <small className="library-count">
-                {songCount(detailTracks.length)}
-                {playlist?.duration ? ` · ${durationText(playlist.duration)}` : ''}
-              </small>
+              {!(albumDetail.isLoading || playlistDetail.isLoading) && (
+                <small className="library-count">
+                  {songCount(detailTracks.length)}
+                  {playlist?.duration ? ` · ${durationText(playlist.duration)}` : ''}
+                </small>
+              )}
             </div>
             <div className="button-row">
               <CollectionPlayButton
