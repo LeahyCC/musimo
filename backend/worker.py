@@ -27,6 +27,61 @@ def redact(text: str) -> str:
     return re.sub(r"https?://\S+", "[URL]", text)[-3000:]
 
 
+def error_guidance(code: str) -> tuple[str, str]:
+    """Map an error code to a plain hint and a fix target."""
+    hints: dict[str, tuple[str, str]] = {
+        "NO_MATCH": (
+            "No matching recording was found on YouTube.",
+            "card:pick",
+        ),
+        "DURATION_MISMATCH": (
+            "The downloaded audio length differs from the catalog.",
+            "card:pick",
+        ),
+        "SOURCE_BLOCKED": (
+            "YouTube is blocking requests. Check credentials and tools.",
+            "diagnostics:sources",
+        ),
+        "RATE_LIMITED": (
+            "YouTube rate limit reached. Wait before retrying.",
+            "diagnostics:sources",
+        ),
+        "POT_MISSING": (
+            "The PO token is required for YouTube downloads.",
+            "diagnostics:sources",
+        ),
+        "JS_RUNTIME_MISSING": (
+            "Deno is required for extracting YouTube metadata.",
+            "diagnostics:sources",
+        ),
+        "COOKIES_EXPIRED": (
+            "YouTube cookies have expired or are invalid.",
+            "diagnostics:sources",
+        ),
+        "DISK_FULL": (
+            "Less than 128 MB is free on the destination drive.",
+            "diagnostics:disk",
+        ),
+        "TIMEOUT": (
+            "The download stage timed out before completing.",
+            "retry",
+        ),
+        "DOWNLOAD_FAILED": (
+            "The download stopped without a specific cause.",
+            "retry",
+        ),
+        "TRANSCODE_FAILED": (
+            "FFmpeg could not convert the audio to the target format.",
+            "settings:audio",
+        ),
+        "TAG_FAILED": (
+            "The audio file could not be tagged with metadata.",
+            "settings:audio",
+        ),
+    }
+    return hints.get(code, ("", ""))
+
+
 def main() -> None:
     import yt_dlp  # type: ignore[import-untyped]
 
@@ -136,11 +191,14 @@ def main() -> None:
                             selected="",
                             check_match=True,
                         )
+                    hint, fix = error_guidance("NO_MATCH")
                     emit(
                         "error",
                         code="NO_MATCH",
                         message="No sufficiently close recording found",
                         retryable=False,
+                        hint=hint,
+                        fix=fix,
                         version=version,
                     )
                     return
@@ -169,11 +227,14 @@ def main() -> None:
             if job.meta.duration and abs(duration - job.meta.duration) > max(
                 15, job.meta.duration * 0.12
             ):
+                hint, fix = error_guidance("DURATION_MISMATCH")
                 emit(
                     "error",
                     code="DURATION_MISMATCH",
                     message="Downloaded audio duration differs from the catalog",
                     retryable=False,
+                    hint=hint,
+                    fix=fix,
                     version=version,
                 )
                 return
@@ -214,11 +275,14 @@ def main() -> None:
         )
         if code == "DOWNLOAD_FAILED" and stage in {"converting", "tagging"}:
             code = "TRANSCODE_FAILED" if stage == "converting" else "TAG_FAILED"
+        hint, fix = error_guidance(code)
         emit(
             "error",
             code=code,
             message=message,
             retryable=code in {"TIMEOUT", "RATE_LIMITED", "DOWNLOAD_FAILED"},
+            hint=hint,
+            fix=fix,
             version=version,
         )
 
