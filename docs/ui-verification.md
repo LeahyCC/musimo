@@ -68,6 +68,24 @@ Track navigation checks added on 10 September 2026 cover highlighted row focus (
 
 Settings draft preservation is implemented with conflict detection (row notices when a value changes elsewhere), navigation guards (blocker for in-app links and beforeunload for tab close), and separation from the live query cache so SSE events do not erase unsaved forms. `e2e/app.spec.ts` includes a test that edits library label and folder naming without saving, then injects library scan/cancel, a concurrency PATCH (waits for SSE round trip), and a library label PATCH, asserting drafts survive each event, the conflict notice appears under the patched field, and the saved state is not shown until the form is saved. A second test verifies the navigation guard blocks in-app link clicks (dismissing the dialog leaves the draft intact, accepting allows navigation). The Downloads concurrency select's save sends only the draft key to avoid interfering with a dirty Settings form.
 
+## Accessibility
+
+Checked 10 September 2026. Automated and manual accessibility checks cover keyboard navigation, touch targets, screen reader support, contrast and zoom.
+
+**Automated checks (e2e/a11y.spec.ts):** Run axe-core accessibility audits on every route (search, library, downloads, settings, diagnostics). Check player/queue/save-bar overlap at 200% zoom (640px viewport). All routes pass axe checks with no violations. No overlapping elements detected at zoom.
+
+**Keyboard navigation:** Virtual lists (tracks, download queue) maintain focus without remounting on filter changes, with deliberate scroll reset when filters actually change. Escape key closes FilterMenu popovers. All icon-only buttons have aria-label attributes. TrackList uses stable keys to avoid losing focus on filter keystrokes.
+
+**Touch targets:** Under `(pointer: coarse)` media query, all interactive elements meet 44px minimum: icon buttons, job buttons, text preview button, download action select, and row actions. Desktop density unchanged.
+
+**Screen reader:** Virtual lists announce with role="region" and aria-label. Queue count changes announce via aria-live="polite" live region. Library tabs carry aria-pressed state. TrackRow elements have aria-current when selected.
+
+**Contrast and text size:** Minimum text size raised from 9px to 10px for .nav-link and .connection at narrow widths to meet WCAG AA minimums.
+
+**Dynamic layout:** Player footer height tracked via ResizeObserver and published as --player-height CSS variable. Save bar, queue dock, and connection banner derive offsets from this variable to prevent overlap when footer height changes (library track playing, connection banner shown, error expanded).
+
+**Manual checks still needed:** Screen reader announcement quality across all flows (not just presence of ARIA attributes). Keyboard-only navigation completeness across all interactions. Focus visibility under different browser/OS high contrast modes. Touch target effectiveness on actual touch devices (automated check verifies size only).
+
 ## Further coverage
 
 Automate card success/retry against a fixture API, coverage loading/failure and filter reactivity, slider keyboard behavior, close during a pending lookup, activity clear racing with a new event, and the player/queue at small and tablet widths. Do not treat this targeted browser pass as the full release acceptance suite.

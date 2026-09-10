@@ -620,7 +620,7 @@ main {
 }
 .save-bar {
   position: sticky;
-  bottom: 90px;
+  bottom: calc(var(--player-height, 88px) + 2px);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1034,7 +1034,7 @@ meter::-webkit-meter-optimum-value {
     justify-content: center;
     flex-direction: column;
     gap: 5px;
-    font-size: 9px;
+    font-size: 10px;
     padding: 9px 2px;
     border-radius: 0;
   }
@@ -1058,7 +1058,7 @@ meter::-webkit-meter-optimum-value {
     display: none;
   }
   .connection {
-    font-size: 9px;
+    font-size: 10px;
   }
   main {
     padding: 28px 20px 150px;
@@ -1153,7 +1153,7 @@ meter::-webkit-meter-optimum-value {
     font-size: 11px;
   }
   .save-bar {
-    bottom: 226px;
+    bottom: calc(var(--player-height, 224px) + 2px);
     padding: 12px;
   }
   .save-bar > span {
@@ -2125,12 +2125,33 @@ meter::-webkit-meter-optimum-value {
     min-width: 44px;
     min-height: 44px;
   }
+  .icon-button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .job-buttons button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .text-preview {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 12px 6px;
+  }
+  .download-action select {
+    min-height: 44px;
+    padding: 12px 6px;
+  }
+  .track-row button,
+  .library-track-row button {
+    min-height: 44px;
+  }
 }
 
 /* The queue shares the bottom edge with the global preview player. */
 .queue-dock {
   position: fixed;
-  bottom: 88px;
+  bottom: var(--player-height, 88px);
   right: 24px;
   z-index: 45;
   display: flex;
@@ -2372,7 +2393,7 @@ meter::-webkit-meter-optimum-value {
 }
 @media (max-width: 700px) {
   .queue-dock {
-    bottom: 277px;
+    bottom: var(--player-height, 277px);
     right: 12px;
   }
   .queue-sheet {
@@ -2393,7 +2414,7 @@ meter::-webkit-meter-optimum-value {
 }
 @media (min-width: 701px) and (max-width: 767px) {
   .queue-dock {
-    bottom: 277px;
+    bottom: var(--player-height, 277px);
   }
 }
 
