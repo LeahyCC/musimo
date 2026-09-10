@@ -316,7 +316,7 @@ Check Docker, `docker compose ps`, bind/port settings and service logs. A loopba
 
 ### Search works but downloads fail
 
-Metadata and audio come from different systems. Read the job stage and error. Unavailable recordings, source restrictions, rate limits, missing tools and disk permissions need different remedies. Avoid repeatedly retrying a blocked source. See [YouTube troubleshooting](docs/youtube-troubleshooting.md). Use the destination write test in Diagnostics to verify write permissions.
+Metadata and audio come from different systems. Read the job stage and error. Unavailable recordings, source restrictions, rate limits, missing tools and disk permissions need different remedies. Each failed download displays a plain hint and links to the relevant setting, diagnostic or fix. Error codes and their recovery paths are documented in [Downloads](docs/downloads.md#error-codes-and-recovery). Avoid repeatedly retrying a blocked source. See [YouTube troubleshooting](docs/youtube-troubleshooting.md). Use the destination write test in Diagnostics to verify write permissions.
 
 ### Coverage is wrong or unknown
 

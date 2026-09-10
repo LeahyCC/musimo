@@ -102,6 +102,28 @@ export const failureMessage = (job: Pick<DownloadJob, 'error_code' | 'error'>) =
     ? 'No matching recording was found on YouTube. Nothing was downloaded.'
     : job.error || 'The download stopped without an error message.'
 
+function errorLink(fix: string): { href: string; text: string } | null {
+  if (!fix) return null
+  if (fix === 'retry') return null
+  if (fix === 'card:pick') return null
+  if (fix === 'report') return null
+  if (fix.startsWith('settings:')) {
+    const field = fix.slice(9)
+
+    return { href: `/settings#${field}`, text: 'Open Settings' }
+  }
+
+  if (fix === 'diagnostics:disk') {
+    return { href: '/diagnostics#disk', text: 'Check disk space' }
+  }
+
+  if (fix === 'diagnostics:sources') {
+    return { href: '/diagnostics#sources', text: 'Check sources' }
+  }
+
+  return null
+}
+
 export function DownloadButton({ item }: { item: MusicResult }) {
   const client = useQueryClient()
   const owned = item.ownership === 'owned'
@@ -428,6 +450,8 @@ function JobCard({ job }: { job: DownloadJob }) {
         {job.stage === 'done' && (
           <span>
             {job.codec} · {Math.round(job.actual_bitrate / 1000)} kbps
+            {job.warnings.length > 0 &&
+              ` · ${job.warnings.length} warning${job.warnings.length === 1 ? '' : 's'}`}
           </span>
         )}
         <span>
@@ -441,7 +465,29 @@ function JobCard({ job }: { job: DownloadJob }) {
       )}
       {job.error && (
         <p className="error" role="alert">
-          {failureMessage(job)} {job.error_code && <small>({job.error_code})</small>}
+          {job.error_hint || failureMessage(job)}{' '}
+          {job.error_code && <small>({job.error_code})</small>}
+          {job.error_fix &&
+            (() => {
+              const link = errorLink(job.error_fix)
+              if (link) {
+                const [to, hash] = link.href.split('#')
+                return (
+                  <>
+                    {' '}
+                    <Link to={to} hash={hash}>
+                      {link.text}
+                    </Link>
+                  </>
+                )
+              }
+
+              if (job.error_fix === 'report') {
+                return <> Report this with the tool output below.</>
+              }
+
+              return null
+            })()}
         </p>
       )}
       {job.check_match && (
@@ -836,12 +882,6 @@ export function DownloadsPage() {
     done: all.filter((job) => job.stage === 'done').length,
     failed: queue.data?.summary.failed ?? all.filter((job) => job.stage === 'failed').length,
   }
-  const failureReasons = new Map(
-    (queue.data?.summary.failure_reasons ?? []).map((reason) => [
-      failureMessage({ error_code: reason.code, error: reason.message }),
-      reason.count,
-    ]),
-  )
   return (
     <>
       <div className="page-heading">
@@ -880,11 +920,27 @@ export function DownloadsPage() {
           <strong>
             {counts.failed} {counts.failed === 1 ? 'download' : 'downloads'} failed
           </strong>
-          {[...failureReasons].map(([message, count]) => (
-            <span key={message}>
-              {count} · {message}
-            </span>
-          ))}
+          {queue.data?.summary.failure_reasons.map((reason) => {
+            const link = errorLink(reason.fix || '')
+            return (
+              <span key={reason.code + reason.message}>
+                {reason.count} · {reason.hint || reason.message}{' '}
+                {reason.code && <small>({reason.code})</small>}
+                {link &&
+                  (() => {
+                    const [to, hash] = link.href.split('#')
+                    return (
+                      <>
+                        {' '}
+                        <Link to={to} hash={hash}>
+                          {link.text}
+                        </Link>
+                      </>
+                    )
+                  })()}
+              </span>
+            )
+          })}
           {selectedGroup === null && jobs.length < counts.failed && (
             <small>Showing the latest {jobs.length} below.</small>
           )}

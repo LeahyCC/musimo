@@ -513,6 +513,17 @@ function SettingsPage() {
       setSaved(true)
     },
   })
+  useEffect(() => {
+    if (settings.isSuccess && window.location.hash) {
+      const fieldId = window.location.hash.slice(1)
+      const field = document.getElementById(fieldId)
+      if (field) {
+        field.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        field.focus({ preventScroll: true })
+      }
+    }
+  }, [settings.isSuccess])
+
   return (
     <>
       <PageTitle eyebrow="SET IT UP YOUR WAY" title="Settings">
@@ -775,6 +786,16 @@ function DiagnosticsPage() {
   const data = diagnostics.data
   const gb = (bytes: number | null) =>
     bytes === null ? 'Unknown' : `${(bytes / 1024 ** 3).toFixed(1)} GB`
+  useEffect(() => {
+    if (diagnostics.isSuccess && window.location.hash) {
+      const sectionId = window.location.hash.slice(1)
+      const section = document.getElementById(sectionId)
+      if (section) {
+        section.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      }
+    }
+  }, [diagnostics.isSuccess])
+
   return (
     <>
       <PageTitle eyebrow="KNOW WHAT IS HAPPENING" title="Diagnostics">
@@ -1009,7 +1030,7 @@ function DiagnosticsPage() {
               )}
             </div>
           </section>
-          <div className="diagnostic-grid">
+          <div className="diagnostic-grid" id="sources">
             {data.sources.map((source) => (
               <section className="panel" key={source.source}>
                 <div className="section-heading">
@@ -1051,7 +1072,7 @@ function DiagnosticsPage() {
                 )}
               </section>
             ))}
-            <section className="panel">
+            <section className="panel" id="disk">
               <div className="section-heading">
                 <h2>Persistent storage</h2>
                 <Folder size={18} />
