@@ -1137,7 +1137,9 @@ export function LibraryPage({
           {createPlaylist.isError && <p className="error">{createPlaylist.error.message}</p>}
         </form>
       )}
-      {showBrowser && activeQuery.isLoading && <p role="status">Loading {tab}…</p>}
+      {showBrowser && activeQuery.isLoading && (
+        <p role="status">Loading {tab === 'home' ? 'albums' : tab}…</p>
+      )}
       {showBrowser && activeQuery.isError && (
         <div className="inline-error" role="alert">
           <span>{activeQuery.error.message}</span>

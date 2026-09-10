@@ -90,6 +90,14 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
   await expect.poll(() => recorded.selection.at(-1)?.searchParams.get('shuffle')).toBe('true')
 })
 
+test('loading states name what is on the way and hold the counts back', async ({ page }) => {
+  await libraryFixtures(page)
+  await page.route('**/api/library/albums?**', () => new Promise(() => undefined))
+  await page.goto('/library')
+  // The home view loads albums, so that is what it says while waiting.
+  await expect(page.getByText('Loading albums…')).toBeVisible()
+})
+
 test('a filtered selection is its own queue, not the one already playing', async ({ page }) => {
   await libraryFixtures(page)
   await page.goto('/library/tracks')
