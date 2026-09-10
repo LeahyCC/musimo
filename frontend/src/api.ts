@@ -138,6 +138,7 @@ export const libraryTrackSchema = z.object({
   year: z.number().optional(),
   genre: z.string().optional(),
   created: z.string().optional(),
+  playCount: z.number().default(0),
 })
 export type LibraryTrack = z.infer<typeof libraryTrackSchema>
 export const playerQueueSchema = z.object({
@@ -153,6 +154,8 @@ export const libraryAlbumSchema = z.object({
   artistId: z.string().optional(),
   coverArt: z.string().optional(),
   songCount: z.number().default(0),
+  duration: z.number().default(0),
+  playCount: z.number().default(0),
   year: z.number().optional(),
   genre: z.string().optional(),
   created: z.string().optional(),
@@ -171,14 +174,30 @@ export const libraryPlaylistSchema = z.object({
   coverArt: z.string().optional(),
   songCount: z.number().optional(),
   duration: z.number().optional(),
+  public: z.boolean().default(false),
+  owner: z.string().default(''),
+  changed: z.string().default(''),
 })
 export type LibraryPlaylist = z.infer<typeof libraryPlaylistSchema>
 const page = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), next_offset: z.number().nullable().optional() })
 export const libraryAlbumsSchema = page(libraryAlbumSchema)
 export const libraryArtistsSchema = page(libraryArtistSchema)
-export const libraryTracksSchema = page(libraryTrackSchema)
-export const libraryPlaylistsSchema = page(libraryPlaylistSchema)
+export const libraryTracksSchema = page(libraryTrackSchema).extend({
+  total: z.number().default(0),
+  genres: z.array(z.string()).default([]),
+  years: z.array(z.number()).default([]),
+})
+export const librarySelectionSchema = z.object({
+  items: z.array(libraryTrackSchema).default([]),
+  total: z.number().default(0),
+})
+export const libraryTrackSearchSchema = z.object({
+  items: z.array(libraryTrackSchema).default([]),
+})
+export const libraryPlaylistsSchema = page(libraryPlaylistSchema).extend({
+  liked_id: z.string().default(''),
+})
 export const libraryAlbumDetailSchema = libraryAlbumSchema.extend({
   song: z.array(libraryTrackSchema).default([]),
 })

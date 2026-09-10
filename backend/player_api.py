@@ -1,13 +1,22 @@
 import re
 from collections.abc import AsyncIterator, Callable
+from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
-from backend.navidrome import Navidrome, NavidromeError
+from backend.navidrome import TRACK_SORTS, Navidrome, NavidromeError, PlaylistProtected
 
 ITEM_ID = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
+# Musimo's own ceiling on one saved play queue. Kept from the original queue validator.
+QUEUE_LIMIT = 500
+TrackQuery = Annotated[str, Query(max_length=200)]
+TrackSort = Annotated[str, Query(pattern=f"^({'|'.join(TRACK_SORTS)})$")]
+TrackGenres = Annotated[
+    list[Annotated[str, StringConstraints(max_length=120)]] | None, Query(max_length=60)
+]
+TrackYears = Annotated[list[int] | None, Query(max_length=200)]
 BYTE_RANGE = re.compile(r"^bytes=\d*-\d*$")
 MEDIA_HEADERS = {
     "accept-ranges",
@@ -20,7 +29,7 @@ MEDIA_HEADERS = {
 
 
 class QueueUpdate(BaseModel):
-    ids: list[str] = Field(max_length=500)
+    ids: list[str] = Field(max_length=QUEUE_LIMIT)
     current: str = ""
     position: int = Field(default=0, ge=0)
 
@@ -108,6 +117,10 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
     async def navidrome_error(_: Request, exc: NavidromeError) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=503)
 
+    @app.exception_handler(PlaylistProtected)
+    async def protected_playlist(_: Request, exc: PlaylistProtected) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+
     @app.get("/api/player/capabilities")
     async def capabilities() -> dict[str, object]:
         return await get().capabilities()
@@ -136,16 +149,37 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
 
     @app.get("/api/library/tracks")
     async def tracks(
-        q: str = Query(default="", max_length=200),
+        q: TrackQuery = "",
+        sort: TrackSort = "title",
+        genre: TrackGenres = None,
+        year: TrackYears = None,
         offset: int = Query(default=0, ge=0),
         size: int = Query(default=100, ge=1, le=200),
     ) -> dict[str, object]:
-        items = await get().tracks(q, offset, size)
-        return {"items": items, "next_offset": offset + size if len(items) == size else None}
+        return await get().browse_tracks(q.strip(), sort, genre or [], year or [], offset, size)
+
+    @app.get("/api/library/tracks/search")
+    async def track_search(
+        q: TrackQuery = "",
+        size: int = Query(default=20, ge=1, le=50),
+    ) -> dict[str, object]:
+        """One upstream page, for pickers that only need a handful of matches."""
+        return {"items": await get().tracks(q.strip(), 0, size)}
+
+    @app.get("/api/library/tracks/selection")
+    async def track_selection(
+        q: TrackQuery = "",
+        sort: TrackSort = "title",
+        genre: TrackGenres = None,
+        year: TrackYears = None,
+        shuffle: bool = Query(default=False),
+        limit: int = Query(default=QUEUE_LIMIT, ge=1, le=QUEUE_LIMIT),
+    ) -> dict[str, object]:
+        return await get().select_tracks(q.strip(), sort, genre or [], year or [], shuffle, limit)
 
     @app.get("/api/library/playlists")
     async def playlists() -> dict[str, object]:
-        return {"items": await get().playlists()}
+        return {"items": await get().playlists(), "liked_id": get().liked_id()}
 
     @app.get("/api/library/playlists/liked")
     async def liked_playlist() -> dict[str, object]:

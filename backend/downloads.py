@@ -209,6 +209,10 @@ class Downloads:
 
     def command(self, job_id: str, action: str) -> Job:
         job = self.jobs.get(job_id)
+        if action == "dismiss":
+            if job.stage not in TERMINAL:
+                raise ValueError("Cancel the job before clearing it")
+            return self.jobs.update(job_id, hidden=True)
         if action == "retry":
             if job.stage not in {"failed", "cancelled"}:
                 raise ValueError("Only failed or cancelled jobs can be retried")
