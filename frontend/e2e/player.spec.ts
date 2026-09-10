@@ -250,7 +250,7 @@ test('library playback opens the full player and starts AudioMuse radio', async 
   await playAll.click()
   await expect(page.locator('.live-player')).toContainText('First Light')
 
-  await page.getByRole('button', { name: 'artists', exact: true }).click()
+  await page.getByRole('button', { name: 'Artists', exact: true }).click()
   await expect(page).toHaveURL(/\/library\/artists$/)
   await expect(page.locator('.library-artist-card img')).toBeVisible()
   await expect(page.locator('.library-artist-card small')).toHaveText('1 album')
