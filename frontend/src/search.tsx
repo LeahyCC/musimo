@@ -110,33 +110,43 @@ function BackToSearch() {
 
 export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
   if (item.kind === 'artist') return null
-  const failed = item.ownership !== 'owned' && job?.stage === 'failed'
+  const failed =
+    item.ownership !== 'owned' && item.ownership !== 'edition' && job?.stage === 'failed'
   const jobLabel =
     job?.stage === 'failed'
       ? 'Download failed'
       : job?.stage === 'retry_wait'
         ? 'Retry scheduled'
-        : job?.stage.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
+        : job?.stage === 'done'
+          ? 'Downloaded earlier'
+          : job?.stage.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
+  const editionLabel = item.matched_album
+    ? `Another edition in library (${item.matched_album})`
+    : 'Another edition in library'
   return (
     <span
-      className={`ownership ${failed ? 'failed' : item.ownership}`}
+      className={`ownership ${failed ? 'failed' : item.ownership === 'edition' ? 'partial' : item.ownership}`}
       title={
         failed
           ? job.error_hint || failureMessage(job)
-          : item.matched_paths.join('\n') ||
-            (item.kind === 'album' && !item.coverage_verified
-              ? 'Coverage is still being checked against the library index.'
-              : 'No matching file in the current library index')
+          : item.ownership === 'edition'
+            ? `${editionLabel}\n${item.matched_paths.join('\n')}`
+            : item.matched_paths.join('\n') ||
+              (item.kind === 'album' && !item.coverage_verified
+                ? 'Coverage is still being checked against the library index.'
+                : 'No matching file in the current library index')
       }
     >
-      {item.ownership === 'owned' && <Check size={12} />}
+      {(item.ownership === 'owned' || item.ownership === 'edition') && <Check size={12} />}
       {item.kind === 'album'
         ? item.track_count > 0
           ? `${item.owned_count} of ${item.track_count}${item.coverage_verified ? '' : ' estimated'}`
           : 'Checking coverage…'
         : item.ownership === 'owned'
           ? 'In library'
-          : (jobLabel ?? 'Missing')}
+          : item.ownership === 'edition'
+            ? editionLabel
+            : (jobLabel ?? 'Missing')}
     </span>
   )
 }
@@ -322,7 +332,7 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
   const queue = useJobs()
   const jobs = new Map<number, DownloadJob>()
   for (const job of queue.data?.jobs ?? []) {
-    if (job.hidden || ['done', 'cancelled'].includes(job.stage)) continue
+    if (job.hidden) continue
     const current = jobs.get(job.track_id)
     if (!current || current.updated_at < job.updated_at) jobs.set(job.track_id, job)
   }
@@ -844,8 +854,13 @@ export function AlbumPage() {
     )
   if (!query.data) return <p role="status">Loading album…</p>
   const { album, tracks, label, duration, complete } = query.data
-  const missingCount = tracks.filter((track) => track.ownership !== 'owned').length
-  const hasOwnedTracks = tracks.some((track) => track.ownership === 'owned')
+  const editionCount = tracks.filter((track) => track.ownership === 'edition').length
+  const missingCount = tracks.filter(
+    (track) => track.ownership !== 'owned' && track.ownership !== 'edition',
+  ).length
+  const hasOwnedTracks = tracks.some(
+    (track) => track.ownership === 'owned' || track.ownership === 'edition',
+  )
   const bitrate = chosenQuality === 'mp3' ? 320 : 160
   return (
     <>
@@ -890,6 +905,12 @@ export function AlbumPage() {
           }
         />
         <small>Size assumes {bitrate} kbps; actual source varies.</small>
+        {editionCount > 0 && (
+          <small>
+            {editionCount} track{editionCount === 1 ? ' has' : 's have'} another edition in your
+            library
+          </small>
+        )}
         <DownloadTarget format={chosenQuality} />
       </div>
       {!complete && (
