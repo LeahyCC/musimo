@@ -57,6 +57,10 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
   await page.goto('/library/tracks')
 
   await expect(page.getByText('3 of 3 loaded')).toBeVisible()
+  // One note covers both buttons; it used to be printed under each of them.
+  await expect(page.getByText('Covers every matching song, not just the loaded ones.')).toHaveCount(
+    1,
+  )
   await page.getByLabel('Sort tracks').selectOption('duration')
   await page.getByLabel('Search tracks').fill('cinder')
   await expect
