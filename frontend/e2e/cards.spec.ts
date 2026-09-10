@@ -333,9 +333,21 @@ test('badge shows distinct states for owned, edition, queued, and downloaded', a
     }),
   )
 
-  await page.route('**/api/queue', (route) =>
+  await page.route('**/api/jobs', (route) =>
     route.fulfill({
       json: {
+        jobs,
+        controls: { paused: false, source_paused: false },
+        summary: { active: 1, failed: 0, failure_reasons: [] },
+      },
+    }),
+  )
+
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({
+      json: {
+        settings: {},
+        cursor: 0,
         jobs,
         controls: { paused: false, source_paused: false },
         summary: { active: 1, failed: 0, failure_reasons: [] },
@@ -347,22 +359,17 @@ test('badge shows distinct states for owned, edition, queued, and downloaded', a
   const rows = page.locator('.track-row')
   await expect(rows).toHaveCount(4)
 
-  // Wait for queue jobs to load and be applied
-  await page.waitForTimeout(500)
-
   // Owned track shows "In library"
-  await expect(rows.nth(0).getByText('In library')).toBeVisible()
-  await expect(rows.nth(0).locator('.ownership.owned')).toBeVisible()
+  await expect(rows.nth(0).locator('.ownership.owned')).toHaveText('In library')
 
   // Edition track shows "Another edition in library (Album Deluxe Edition)"
-  await expect(
-    rows.nth(1).getByText('Another edition in library (Album Deluxe Edition)'),
-  ).toBeVisible()
-  await expect(rows.nth(1).locator('.ownership.partial')).toBeVisible()
+  await expect(rows.nth(1).locator('.ownership.partial')).toHaveText(
+    'Another edition in library (Album Deluxe Edition)',
+  )
 
   // Queued track shows the job stage
-  await expect(rows.nth(2).getByText('Queued')).toBeVisible()
+  await expect(rows.nth(2).locator('.ownership.missing')).toHaveText('Queued')
 
   // Done track shows "Downloaded earlier"
-  await expect(rows.nth(3).getByText('Downloaded earlier')).toBeVisible()
+  await expect(rows.nth(3).locator('.ownership.missing')).toHaveText('Downloaded earlier')
 })
