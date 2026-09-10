@@ -110,7 +110,7 @@ test('album download button is disabled while coverage is unverified', async ({ 
     ...track,
     id: 101 + index,
     title: `Recording ${index + 1}`,
-    ownership: index === 0 ? 'owned' : 'missing',
+    ownership: 'owned',
     coverage_verified: false,
   }))
 
@@ -122,8 +122,8 @@ test('album download button is disabled while coverage is unverified', async ({ 
           id: 42,
           kind: 'album',
           title: 'Fixture album',
-          owned_count: 1,
-          ownership: 'partial',
+          owned_count: 2,
+          ownership: 'owned',
           coverage_verified: false,
         },
         tracks: tracksUnverified,

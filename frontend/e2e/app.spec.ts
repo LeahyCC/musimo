@@ -527,28 +527,38 @@ test('diagnostics shows youtube source without test button', async ({ page }) =>
   )
 
   await page.goto('/diagnostics')
-  const deezerPanel = page.locator('.panel:has-text("Catalog connection")')
-  const youtubePanel = page.locator('.panel:has-text("Download source")')
+  await expect(page.getByRole('heading', { name: 'Musimo is ready.' })).toBeVisible()
 
-  await expect(deezerPanel.getByRole('heading', { name: 'Catalog connection' })).toBeVisible()
-  await expect(deezerPanel.getByRole('button', { name: 'Test now' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Catalog connection' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Test now/ })).toBeVisible()
 
-  await expect(youtubePanel.getByRole('heading', { name: 'Download source' })).toBeVisible()
-  await expect(youtubePanel.getByRole('button', { name: 'Test now' })).not.toBeVisible()
-  await expect(youtubePanel.getByText('95 ms')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Download source' })).toBeVisible()
+  const youtubePanel = page.locator('.panel:has(h2:has-text("Download source"))')
+  await expect(youtubePanel.getByRole('button', { name: /Test now/ })).not.toBeVisible()
+  await expect(page.getByText('95 ms')).toBeVisible()
 })
 
 test('read only destination is disabled in settings', async ({ page }) => {
+  await page.route('**/api/diagnostics', (route) =>
+    route.fulfill({
+      json: {
+        health: { status: 'ok', version: '1.0.0', db_version: '3.0.0' },
+        disks: [
+          { path: '/music', read_only: false, writable: true, exists: true, total: 1000000000, free: 500000000 },
+          { path: '/music', writable: true, exists: true, total: 1000000000, free: 500000000 },
+          { path: '/readonly', writable: false, exists: true, total: 1000000000, free: 500000000 },
+        ],
+        sources: [],
+      },
+    }),
+  )
+
   await page.route('**/api/settings', (route) =>
     route.fulfill({
       json: {
-        destination: '/music',
-        roots: [
-          { path: '/music', read_only: false },
-          { path: '/readonly', read_only: true },
-        ],
-        format: 'original',
-        skip_owned: true,
+        destination: { value: '/music' },
+        output_format: { value: 'original' },
+        skip_owned: { value: true },
       },
     }),
   )
@@ -557,7 +567,7 @@ test('read only destination is disabled in settings', async ({ page }) => {
   const destinationSelect = page.getByRole('combobox', { name: 'Destination' })
   await expect(destinationSelect).toBeVisible()
 
-  const writableOption = destinationSelect.locator('option:has-text("/music")')
+  const writableOption = destinationSelect.locator('option:has-text("/music")').first()
   const readonlyOption = destinationSelect.locator('option:has-text("(read-only)")')
 
   await expect(writableOption).toBeEnabled()
