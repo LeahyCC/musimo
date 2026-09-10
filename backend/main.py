@@ -35,7 +35,7 @@ from backend.store import LockedSetting, Store
 LIBRARY_ITEM = r"[A-Za-z0-9._:-]{1,200}"
 LIBRARY_SPA_PATH = re.compile(
     rf"^library/(?:(?:albums|playlists)(?:/{LIBRARY_ITEM})?|tracks|"
-    rf"artists(?:/{LIBRARY_ITEM}(?:/albums/{LIBRARY_ITEM})?)?)$"
+    rf"artists(?:/{LIBRARY_ITEM}(?:/(?:albums/{LIBRARY_ITEM}|songs))?)?)$"
 )
 VERSION = "0.3.0"
 
