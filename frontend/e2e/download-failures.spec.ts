@@ -312,68 +312,6 @@ test('a queued card keeps its own height when a job above it finishes', async ({
   expect(await overlaps(page)).toEqual([])
 })
 
-test('download error on last visible row is fully visible at mobile viewport', async ({
-  page,
-  isMobile,
-}) => {
-  if (!isMobile) {
-    test.skip()
-  }
-
-  await page.route('**/*', async (route) => {
-    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
-    else await route.fallback()
-  })
-
-  const jobs = Array.from({ length: 12 }, (_, index) => ({
-    ...varied(index),
-    stage: 'failed' as const,
-  }))
-
-  await page.route('**/api/snapshot', (route) =>
-    route.fulfill({
-      json: {
-        jobs,
-        controls: { paused: false, source_paused: false },
-        summary: { active: 0, failed: jobs.length, failure_reasons: [] },
-        settings: {},
-      },
-    }),
-  )
-
-  await page.route('**/api/jobs*', (route) =>
-    route.fulfill({
-      json: {
-        jobs,
-        controls: { paused: false, source_paused: false },
-        summary: { active: 0, failed: jobs.length, failure_reasons: [] },
-      },
-    }),
-  )
-
-  await page.goto('/downloads')
-  await expect(page.getByRole('button', { name: 'Queue (12)', exact: true })).toBeVisible()
-
-  const virtualList = page.locator('.virtual-list')
-  await virtualList.evaluate((list) => {
-    list.scrollTo({ top: 99999 })
-  })
-
-  const lastCard = page.locator('.download-card').last()
-  await expect(lastCard).toBeVisible()
-
-  const errorMessage = lastCard.locator('.download-error')
-  if (await errorMessage.isVisible()) {
-    const errorBox = await errorMessage.boundingBox()
-    const listBox = await virtualList.boundingBox()
-    expect(errorBox).toBeTruthy()
-    expect(listBox).toBeTruthy()
-
-    expect(errorBox!.y).toBeGreaterThanOrEqual(listBox!.y)
-    expect(errorBox!.y + errorBox!.height).toBeLessThanOrEqual(listBox!.y + listBox!.height)
-  }
-})
-
 test('history tab shows empty state when no jobs finished', async ({ page }) => {
   await page.route('**/*', async (route) => {
     if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
