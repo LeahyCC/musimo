@@ -211,7 +211,7 @@ export function MusicCard({ item }: { item: MusicResult }) {
       )}
       <small>
         {item.kind === 'artist' ? (
-          `${item.popularity.toLocaleString()} fans`
+          `${item.popularity.toLocaleString()} ${item.popularity === 1 ? 'fan' : 'fans'}`
         ) : (
           <>
             {display.artist_id ? (
