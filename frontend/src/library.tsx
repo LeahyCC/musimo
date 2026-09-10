@@ -997,9 +997,10 @@ export function LibraryPage({
           <button
             className={tab === item ? 'active' : ''}
             key={item}
+            aria-pressed={tab === item}
             onClick={() => changeTab(item)}
           >
-            {item}
+            {item.charAt(0).toUpperCase() + item.slice(1)}
           </button>
         ))}
       </nav>
