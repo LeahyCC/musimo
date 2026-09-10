@@ -384,6 +384,7 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
             root = Path(directory).resolve()
             store = Store(root / "db.sqlite3")
             try:
+
                 def upstream(request: httpx.Request) -> httpx.Response:
                     if request.url.path == "/album/100":
                         return httpx.Response(
