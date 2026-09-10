@@ -304,12 +304,24 @@ export const snapshotSchema = z.object({
   summary: jobSummarySchema,
 })
 
+export class ApiError extends Error {
+  code?: string
+  constructor(message: string, code?: string) {
+    super(message)
+    this.code = code
+    this.name = 'ApiError'
+  }
+}
+
 export async function api<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
   const response = await fetch(`/api/${path}`, init)
   const data: unknown = response.status === 204 ? null : await response.json()
   if (!response.ok) {
-    const problem = z.object({ detail: z.string() }).safeParse(data)
-    throw new Error(problem.success ? problem.data.detail : `Request failed (${response.status})`)
+    const problem = z.object({ detail: z.string(), code: z.string().optional() }).safeParse(data)
+    if (problem.success) {
+      throw new ApiError(problem.data.detail, problem.data.code)
+    }
+    throw new Error(`Request failed (${response.status})`)
   }
   return schema.parse(data)
 }

@@ -163,3 +163,24 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await page.getByLabel('Sort songs').selectOption('plays')
   await expect(page.locator('.library-track-play strong').first()).toHaveText('Cinder')
 })
+
+test('library view tabs have aria-pressed state', async ({ page }) => {
+  await libraryFixtures(page)
+  await page.goto('/library')
+
+  const homeTab = page.getByRole('button', { name: 'Home', exact: true })
+  const albumsTab = page.getByRole('button', { name: 'Albums', exact: true })
+  const artistsTab = page.getByRole('button', { name: 'Artists', exact: true })
+  const tracksTab = page.getByRole('button', { name: 'Tracks', exact: true })
+  const playlistsTab = page.getByRole('button', { name: 'Playlists', exact: true })
+
+  await expect(homeTab).toHaveAttribute('aria-pressed', 'true')
+  await expect(albumsTab).toHaveAttribute('aria-pressed', 'false')
+  await expect(artistsTab).toHaveAttribute('aria-pressed', 'false')
+  await expect(tracksTab).toHaveAttribute('aria-pressed', 'false')
+  await expect(playlistsTab).toHaveAttribute('aria-pressed', 'false')
+
+  await albumsTab.click()
+  await expect(homeTab).toHaveAttribute('aria-pressed', 'false')
+  await expect(albumsTab).toHaveAttribute('aria-pressed', 'true')
+})

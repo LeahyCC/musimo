@@ -1,3 +1,4 @@
+import os
 import tempfile
 import unittest
 from pathlib import Path
@@ -133,8 +134,38 @@ class FoundationTests(unittest.TestCase):
                     client.get("/library/artists/artist-1/albums/album-1").status_code,
                     200,
                 )
+                self.assertEqual(client.get("/library/artists/artist-1/songs").status_code, 200)
                 self.assertEqual(client.get("/library/artists/bad!id").status_code, 404)
                 self.assertEqual(client.get("/nope").status_code, 404)
+
+    def test_read_only_destinations_are_rejected(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            readonly = data / "readonly"
+            readonly.mkdir()
+            writable = data / "writable"
+            writable.mkdir()
+
+            original_access = os.access
+
+            def mock_access(path: str, mode: int) -> bool:
+                if path == str(readonly) and mode == os.W_OK:
+                    return False
+                return original_access(path, mode)
+
+            with (
+                patch.dict(
+                    "os.environ",
+                    {"MUSIMO_LIBRARY_ROOTS": f"{str(readonly)}{os.pathsep}{str(writable)}"},
+                ),
+                TestClient(create_app(data)) as client,
+                patch("backend.main.os.access", side_effect=mock_access),
+            ):
+                response = client.patch("/api/settings", json={"destination": str(readonly)})
+                self.assertEqual(response.status_code, 422)
+                self.assertIn("writable", response.json()["detail"].lower())
+                response = client.patch("/api/settings", json={"destination": str(writable)})
+                self.assertEqual(response.status_code, 200)
 
 
 if __name__ == "__main__":
