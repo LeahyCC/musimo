@@ -258,10 +258,12 @@ export function TrackRow({
   item,
   selected = false,
   job,
+  focusable = false,
 }: {
   item: MusicResult
   selected?: boolean
   job?: DownloadJob
+  focusable?: boolean
 }) {
   const player = usePlayer()
   const playing = usePreviewPlayback(item.id).playing
@@ -272,7 +274,7 @@ export function TrackRow({
       className={`track-row${selected ? ' selected-track' : ''}`}
       id={`track-${item.id}`}
       aria-current={selected ? 'true' : undefined}
-      tabIndex={-1}
+      tabIndex={focusable ? 0 : -1}
     >
       <Art item={item} />
       <div className="track-title">
@@ -337,6 +339,7 @@ export function TrackList({
   resetScroll?: number
 }) {
   const parent = useRef<HTMLDivElement>(null)
+  const [focusedIndex, setFocusedIndex] = useState(0)
   const queue = useJobs()
   const jobs = new Map<number, DownloadJob>()
   for (const job of queue.data?.jobs ?? []) {
@@ -370,15 +373,43 @@ export function TrackList({
       element?.focus({ preventScroll: true })
     }
   }, [focusTrack, items, virtual])
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (!items.length) return
+    let newIndex = focusedIndex
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      newIndex = Math.min(focusedIndex + 1, items.length - 1)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      newIndex = Math.max(focusedIndex - 1, 0)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      newIndex = 0
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      newIndex = items.length - 1
+    } else {
+      return
+    }
+    setFocusedIndex(newIndex)
+    if (items.length > 12) {
+      virtual.scrollToIndex(newIndex, { align: 'center' })
+    }
+    requestAnimationFrame(() => {
+      document.getElementById(`track-${items[newIndex]?.id}`)?.focus({ preventScroll: true })
+    })
+  }
   if (items.length <= 12)
     return (
-      <div className="track-list">
-        {items.map((item) => (
+      <div className="track-list" onKeyDown={handleKeyDown}>
+        {items.map((item, index) => (
           <TrackRow
             key={item.id}
             item={item}
             selected={item.id === focusTrack}
             job={jobs.get(item.id)}
+            focusable={index === focusedIndex}
           />
         ))}
       </div>
@@ -390,6 +421,7 @@ export function TrackList({
       role="region"
       aria-label="Tracks"
       tabIndex={0}
+      onKeyDown={handleKeyDown}
     >
       <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>
         {virtual.getVirtualItems().map((row) => {
@@ -407,7 +439,12 @@ export function TrackList({
                 transform: `translateY(${row.start}px)`,
               }}
             >
-              <TrackRow item={item} selected={item.id === focusTrack} job={jobs.get(item.id)} />
+              <TrackRow
+                item={item}
+                selected={item.id === focusTrack}
+                job={jobs.get(item.id)}
+                focusable={row.index === focusedIndex}
+              />
             </div>
           ) : null
         })}

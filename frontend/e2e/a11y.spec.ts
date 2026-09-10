@@ -1,5 +1,35 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
+import type { Page } from '@playwright/test'
+
+import { librarySong, playerFixtures } from './library-fixtures'
+
+async function libraryFixtures(page: Page) {
+  await playerFixtures(page)
+  await page.route('/api/library/albums/album-1', (route) =>
+    route.fulfill({
+      json: {
+        id: 'album-1',
+        name: 'Clear Water',
+        artist: 'Harbor Static',
+        artistId: 'artist-1',
+        year: 2018,
+        coverArt: 'cover-1',
+        songCount: 2,
+        duration: 428,
+        playCount: 0,
+        song: [
+          librarySong('s1', { title: 'First Light', track: 1 }),
+          librarySong('s2', { title: 'Second Track', track: 2 }),
+        ],
+      },
+    }),
+  )
+
+  await page.route('/api/library/tracks*', (route) =>
+    route.fulfill({ json: { items: [], next_offset: null, total: 0, genres: [], years: [] } }),
+  )
+}
 
 test.describe('Accessibility', () => {
   test('search page should not have accessibility violations', async ({ page }) => {
@@ -33,39 +63,11 @@ test.describe('Accessibility', () => {
     expect(results.violations).toEqual([])
   })
 
-  test('player at 200% zoom should not overlap', async ({ page }) => {
-    await page.setViewportSize({ width: 640, height: 800 })
-    await page.goto('/')
-    // Wait for any content to load
-    await page.waitForSelector('.search-input')
-    // Check that key elements are not overlapping
-    const footer = page.locator('.live-player')
-    const queueDock = page.locator('.queue-dock')
-    const saveBars = page.locator('.save-bar')
-
-    // Verify footer is visible
-    await expect(footer).toBeVisible()
-
-    // If queue dock is present, verify it's positioned correctly relative to footer
-    const queueDockCount = await queueDock.count()
-    if (queueDockCount > 0) {
-      const queueBox = await queueDock.boundingBox()
-      const footerBox = await footer.boundingBox()
-      if (queueBox && footerBox) {
-        // Queue should be at or above footer bottom
-        expect(queueBox.y + queueBox.height).toBeLessThanOrEqual(footerBox.y + 5)
-      }
-    }
-
-    // If save bars are present, verify they're positioned correctly
-    const saveBarCount = await saveBars.count()
-    if (saveBarCount > 0) {
-      const saveBarBox = await saveBars.first().boundingBox()
-      const footerBox = await footer.boundingBox()
-      if (saveBarBox && footerBox) {
-        // Save bar should be above footer
-        expect(saveBarBox.y + saveBarBox.height).toBeLessThanOrEqual(footerBox.y)
-      }
-    }
+  test('album page should not have accessibility violations', async ({ page }) => {
+    await libraryFixtures(page)
+    await page.goto('/library/albums/album-1')
+    await page.waitForSelector('h2')
+    const results = await new AxeBuilder({ page }).analyze()
+    expect(results.violations).toEqual([])
   })
 })

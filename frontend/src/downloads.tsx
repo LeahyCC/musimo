@@ -331,7 +331,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
   )
 }
 
-function JobCard({ job }: { job: DownloadJob }) {
+function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boolean }) {
   const client = useQueryClient()
   const [copied, setCopied] = useState(false)
   const action = useMutation({
@@ -351,7 +351,7 @@ function JobCard({ job }: { job: DownloadJob }) {
   const running = activeJob(job)
   const canPick = ['queued', 'paused', 'failed', 'cancelled', 'done'].includes(job.stage)
   return (
-    <article className={`job-card ${job.stage}`}>
+    <article className={`job-card ${job.stage}`} id={`job-${job.id}`} tabIndex={focusable ? 0 : -1}>
       <div className="job-heading">
         {job.meta.art ? <img src={job.meta.art} alt="" /> : <Disc3 size={38} />}
         <div>
@@ -569,6 +569,7 @@ function JobCard({ job }: { job: DownloadJob }) {
 
 function JobList({ jobs }: { jobs: DownloadJob[] }) {
   const parent = useRef<HTMLDivElement>(null)
+  const [focusedIndex, setFocusedIndex] = useState(0)
   const virtual = useVirtualizer({
     count: jobs.length,
     getScrollElement: () => parent.current,
@@ -581,11 +582,39 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
     getItemKey: (index) => jobs[index]?.id ?? index,
   })
   const rows = virtual.getVirtualItems()
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (!jobs.length) return
+    let newIndex = focusedIndex
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      newIndex = Math.min(focusedIndex + 1, jobs.length - 1)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      newIndex = Math.max(focusedIndex - 1, 0)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      newIndex = 0
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      newIndex = jobs.length - 1
+    } else {
+      return
+    }
+    setFocusedIndex(newIndex)
+    if (jobs.length > 6) {
+      virtual.scrollToIndex(newIndex, { align: 'center' })
+    }
+    requestAnimationFrame(() => {
+      document.getElementById(`job-${jobs[newIndex]?.id}`)?.focus({ preventScroll: true })
+    })
+  }
+
   if (jobs.length <= 6)
     return (
-      <div className="jobs-list">
-        {jobs.map((job) => (
-          <JobCard key={job.id} job={job} />
+      <div className="jobs-list" onKeyDown={handleKeyDown}>
+        {jobs.map((job, index) => (
+          <JobCard key={job.id} job={job} focusable={index === focusedIndex} />
         ))}
       </div>
     )
@@ -596,6 +625,7 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
       role="region"
       aria-label="Download jobs"
       tabIndex={0}
+      onKeyDown={handleKeyDown}
     >
       <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>
         {/* One offset for the window, then normal flow inside it. Positioning each card
@@ -616,7 +646,7 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
                 ref={virtual.measureElement}
                 data-index={row.index}
               >
-                <JobCard job={job} />
+                <JobCard job={job} focusable={row.index === focusedIndex} />
               </div>
             ) : null
           })}
@@ -1001,11 +1031,7 @@ export function QueueDock() {
         {active.length} · {speed ? `${bytes(speed)}/s` : 'Queue'}
         <ChevronUp size={14} />
       </button>
-      <span
-        aria-live="polite"
-        aria-atomic="true"
-        style={{ position: 'absolute', left: '-10000px' }}
-      >
+      <span className="sr-only" aria-live="polite" aria-atomic="true">
         {active.length} active download{active.length === 1 ? '' : 's'}
       </span>
       <dialog
