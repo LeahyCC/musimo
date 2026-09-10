@@ -1521,26 +1521,35 @@ export function LibraryPage({
       {tab === 'tracks' && showBrowser && (
         <section className="library-detail">
           <div className="library-list-actions">
-            <CollectionPlayButton
-              source={trackSource}
-              text="Play all"
-              className="button primary"
-              size={15}
-              disabled={busy || !trackTotal}
-              onPlay={() => playTracks.mutate({ shuffled: false })}
-            />
-            <button
-              className="button"
-              onClick={() => playTracks.mutate({ shuffled: true })}
-              disabled={busy || !trackTotal}
-            >
-              <Shuffle size={15} /> Shuffle
-            </button>
-            <small className="muted">
-              {trackTotal > 500
-                ? `Plays a random 500 of ${trackTotal.toLocaleString()} matching songs.`
-                : 'Covers every matching song, not just the loaded ones.'}
-            </small>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <CollectionPlayButton
+                source={trackSource}
+                text="Play all"
+                className="button primary"
+                size={15}
+                disabled={busy || !trackTotal}
+                onPlay={() => playTracks.mutate({ shuffled: false })}
+              />
+              <small className="muted">
+                {trackTotal > 500
+                  ? `Plays the first 500 of ${trackTotal.toLocaleString()} matching songs.`
+                  : 'Covers every matching song, not just the loaded ones.'}
+              </small>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+              <button
+                className="button"
+                onClick={() => playTracks.mutate({ shuffled: true })}
+                disabled={busy || !trackTotal}
+              >
+                <Shuffle size={15} /> Shuffle
+              </button>
+              <small className="muted">
+                {trackTotal > 500
+                  ? `Plays a random 500 of ${trackTotal.toLocaleString()} matching songs.`
+                  : 'Covers every matching song, not just the loaded ones.'}
+              </small>
+            </div>
           </div>
           {playTracks.isError && (
             <p className="error" role="alert">
