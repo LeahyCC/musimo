@@ -96,6 +96,12 @@ test('loading states name what is on the way and hold the counts back', async ({
   await page.goto('/library')
   // The home view loads albums, so that is what it says while waiting.
   await expect(page.getByText('Loading albums…')).toBeVisible()
+
+  await page.route('**/api/library/albums/album-1', () => new Promise(() => undefined))
+  await page.goto('/library/albums/album-1')
+  await expect(page.getByText('Loading songs…')).toBeVisible()
+  // No "0 songs" while the album is still on its way.
+  await expect(page.locator('.library-detail .library-count')).toHaveCount(0)
 })
 
 test('a filtered selection is its own queue, not the one already playing', async ({ page }) => {
