@@ -606,10 +606,24 @@ test('youtube source panel has no test button', async ({ page }) => {
       json: {
         health: { status: 'ok', version: '1.0.0', uptime_seconds: 100, phase: 1 },
         versions: {},
-        disks: [{ path: '/music', free_bytes: 1000, total_bytes: 2000, exists: true, writable: true }],
+        disks: [
+          { path: '/music', free_bytes: 1000, total_bytes: 2000, exists: true, writable: true },
+        ],
         sources: [
-          { source: 'deezer', status: 'healthy', latency_ms: 50, detail: '', checked_at: '2020-01-01T00:00:00Z' },
-          { source: 'youtube', status: 'healthy', latency_ms: 100, detail: '', checked_at: '2020-01-01T00:00:00Z' },
+          {
+            source: 'deezer',
+            status: 'healthy',
+            latency_ms: 50,
+            detail: '',
+            checked_at: '2020-01-01T00:00:00Z',
+          },
+          {
+            source: 'youtube',
+            status: 'healthy',
+            latency_ms: 100,
+            detail: '',
+            checked_at: '2020-01-01T00:00:00Z',
+          },
         ],
         events: [],
         database: { mode: 'wal', schema: 1, retained_events: 0 },
