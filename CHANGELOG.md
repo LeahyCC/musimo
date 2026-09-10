@@ -70,28 +70,17 @@ First tagged release of Musimo. This release provides search, library indexing, 
 
 - Hide AudioMuse connection errors (#17)
 
-### Visualizer experiments
-
-These PRs add a native WebGL2 visualizer study renderer alongside the Butterchurn integration for exploring audio-reactive visual patterns.
-
-- Give Kaleidoscope V3 one void that breathes open (#27)
-- Remove Butterchurn from the visualizer package (#26)
-- Move Dive to the native renderer (#25)
-- Kaleidoscope V3 on the native renderer, plus Julia spiral and Liquid contours (#24)
-- Give the native renderer a real onset signal and verify band levels (#23)
-- Native WebGL2 study renderer beside Butterchurn (#22)
-
 ### Known limitations
 
-From PR bodies and docs/measurements.md:
+From docs/measurements.md:
 
-- Cold search latency misses the 400ms target (median 416.95ms)
-- Sustained idle CPU usage at 2.349% average (target is 1%)
-- Music match accuracy is not independently labeled (100-case corpus exists but needs review)
-- Fifty distinct permitted music downloads not measured
-- Native arm64 builds successfully but performance not measured on hardware
-- Representative 50k mixed-format library not tested (synthetic 50k scan passes)
-- Provider album throughput not measured
+- Cold search latency misses 400ms target: ten distinct uncached queries had median 416.95 ms and p95 496.56 ms (measurements.md line 88)
+- Sustained idle CPU misses 1% target: 120 samples over 737.9 seconds averaged 2.349% of one CPU core with the deployed 60-second polling watcher (measurements.md line 92)
+- Music match accuracy corpus exists (100 distinct MusicBrainz recordings) but independent labels pending (measurements.md line 86)
+- Fifty distinct permitted music downloads not measured (measurements.md line 94)
+- Native arm64 emulated build passes but native ARM hardware and performance not measured (measurements.md line 90)
+- Representative 50k mixed-format library not tested: current index is 3,681 files (measurements.md line 94)
+- Provider album throughput not measured (measurements.md line 94)
 - Document Picture in Picture (Now Playing popout) requires desktop Chrome or Edge
 - No built-in login or multi-user support
 - Catalog results do not guarantee permitted full-quality downloads exist
