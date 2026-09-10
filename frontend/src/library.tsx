@@ -538,7 +538,7 @@ function PlaylistRow({
     <>
       <strong>
         {liked && <Heart size={13} fill="currentColor" />}
-        {playlist.name}
+        <span>{playlist.name}</span>
       </strong>
       <small>
         {songCount(playlist.songCount ?? 0)}
