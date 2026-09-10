@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
+import { emptyQueue } from './queue-fixtures'
 
 for (const count of [2, 30]) {
   test(`download options stay usable with ${count} tracks`, async ({ page }, testInfo) => {
@@ -52,15 +53,8 @@ for (const count of [2, 30]) {
       }),
     )
 
-    await page.route('**/api/jobs', (route) =>
-      route.fulfill({
-        json: {
-          jobs: [],
-          controls: { paused: false, source_paused: false },
-          summary: { active: 0, failed: 0, failure_reasons: [] },
-        },
-      }),
-    )
+    // Answers /api/snapshot as well, which writes the same jobs cache entry.
+    await emptyQueue(page)
     await page.route('**/api/events*', (route) => route.abort())
     await page.goto('/albums/42')
     const first = page.getByRole('button', {
