@@ -3397,6 +3397,8 @@ button.library-card-play.active {
   }
   .library-filter > div {
     width: 100%;
+    /* The desktop minimum is wider than a half-row filter on a phone. */
+    min-width: 0;
   }
   .library-artist-heading {
     align-items: flex-start;

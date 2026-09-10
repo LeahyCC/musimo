@@ -74,6 +74,12 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
   await page.getByText('All genres', { exact: true }).click()
   // Filter choices come from the whole library, not only the rows on screen.
   await expect(page.getByLabel('Rock')).toBeVisible()
+  // The open menu stays inside the viewport at phone widths instead of forcing a sideways scroll.
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBe(0)
   await page.getByLabel('Jazz').check()
   await expect.poll(() => recorded.tracks.at(-1)?.searchParams.getAll('genre')).toEqual(['Jazz'])
   // Close the panel first: at narrow widths it sits over the rest of the toolbar.
