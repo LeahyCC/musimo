@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { ORIGIN } from './library-fixtures'
+
 const song = {
   id: 'song-1',
   title: 'First Light',
@@ -39,9 +41,10 @@ test('library playback opens the full player and starts AudioMuse radio', async 
     ),
   )
   await page.route('**/api/player/scrobble', (route) => route.fulfill({ status: 204 }))
-  await page.route('**/api/player/stream/**', (route) =>
-    route.fulfill({ status: 200, contentType: 'audio/wav', body: '' }),
-  )
+  await page.route('**/api/player/stream/**', async (route) => {
+    const silence = await route.fetch({ url: `${ORIGIN}/assets/e2e-silence.wav` })
+    await route.fulfill({ response: silence })
+  })
 
   await page.route('**/api/player/art/**', (route) =>
     route.fulfill({
@@ -225,7 +228,13 @@ test('library playback opens the full player and starts AudioMuse radio', async 
   } finally {
     releasePlayback()
   }
-  await expect(page.getByRole('button', { name: 'Play Clear Water' })).toBeEnabled()
+  // Its own album owns the queue now, so this control offers pause.
+  const albumPlay = grid
+    .locator('.library-card')
+    .filter({ hasText: 'Clear Water' })
+    .locator('.library-card-play')
+  await expect(albumPlay).toBeEnabled()
+  await expect(albumPlay).toHaveAccessibleName('Pause Clear Water')
   await expect(page.locator('.live-player')).toContainText('First Light')
   expect(
     await grid.evaluate((element) => element.getBoundingClientRect().top + scrollY),
@@ -233,7 +242,12 @@ test('library playback opens the full player and starts AudioMuse radio', async 
   await expect(page).toHaveURL(/\/library$/)
   await page.getByRole('button', { name: 'Open Clear Water' }).click()
   await expect(page).toHaveURL(/\/library\/albums\/album-1$/)
-  await page.getByRole('button', { name: 'Play all' }).click()
+  // This album already owns the queue, so its control is marked active and toggles that queue
+  // rather than fetching the album again and starting it over. The active state depends only
+  // on which collection is queued, so it holds on engines that stop headless audio early.
+  const playAll = page.locator('.library-detail .button.primary').first()
+  await expect(playAll).toHaveClass(/active/)
+  await playAll.click()
   await expect(page.locator('.live-player')).toContainText('First Light')
 
   await page.getByRole('button', { name: 'artists', exact: true }).click()

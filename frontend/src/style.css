@@ -2496,7 +2496,8 @@ button.library-card-play {
     transform 140ms ease;
 }
 .library-card:hover .library-card-play,
-.library-card:focus-within .library-card-play {
+.library-card:focus-within .library-card-play,
+button.library-card-play.active {
   opacity: 1;
   transform: none;
 }
@@ -2748,7 +2749,7 @@ button.library-card-play {
 }
 .library-list {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(330px, 1fr));
   gap: 10px;
 }
 .library-list.compact,
@@ -2926,22 +2927,53 @@ button.library-card-play {
 }
 .library-list-row {
   display: flex;
-  align-items: stretch;
+  gap: 6px;
+  align-items: center;
   background: #17201c;
   border: 1px solid var(--line);
   border-radius: 9px;
 }
+.library-list-row .library-collection-actions {
+  padding-right: 6px;
+}
+.library-list-open strong {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
 .library-list-row .library-list-open {
   flex: 1;
+  min-width: 0;
   border: 0;
   border-radius: 8px;
 }
-.library-list-row .library-list-delete {
+.library-list-open strong,
+.library-list-open small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.library-collection-actions .library-row-delete {
   align-self: center;
-  margin-right: 8px;
   padding: 8px;
+  margin-right: 4px;
+  color: var(--muted);
   background: transparent;
   border: 0;
+  opacity: 0;
+  transition: opacity 140ms ease;
+}
+.library-list-row:hover .library-row-delete,
+.library-list-row:focus-within .library-row-delete,
+.library-collection-row:hover .library-row-delete,
+.library-collection-row:focus-within .library-row-delete {
+  opacity: 1;
+}
+@media (hover: none) {
+  .library-collection-actions .library-row-delete {
+    opacity: 1;
+  }
 }
 .library-list-row:hover,
 .library-list-row:focus-within {
@@ -3042,9 +3074,10 @@ button.library-card-play {
 }
 .playlist-picker-sheet {
   position: fixed;
-  inset: auto;
-  margin: 0 auto;
+  inset: 0;
+  margin: auto;
   width: min(520px, calc(100% - 32px));
+  height: fit-content;
   max-height: 78dvh;
   overflow: auto;
   border: 1px solid #414a38;
@@ -3087,20 +3120,66 @@ button.library-card-play {
   margin-bottom: 10px;
 }
 .playlist-picker-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: space-between;
   border: 1px solid var(--line);
   background: #17201c;
   border-radius: 8px;
   padding: 8px 10px;
 }
-.playlist-picker-row span {
+.playlist-picker-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-content: space-between;
+}
+.playlist-picker-head > span {
+  display: grid;
+  flex: 1;
+  gap: 2px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.playlist-picker-head small {
+  color: var(--muted);
+  font-size: 11px;
+}
+.playlist-picker-head .button {
+  flex-shrink: 0;
+}
+.playlist-picker-expand svg {
+  transition: transform 140ms ease;
+}
+.playlist-picker-expand.open svg {
+  transform: rotate(180deg);
+}
+.playlist-picker-songs {
+  display: grid;
+  gap: 4px;
+  max-height: 190px;
+  margin-top: 8px;
+  padding-top: 8px;
+  overflow-y: auto;
+  border-top: 1px solid var(--line);
+}
+.playlist-picker-songs > div {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 2px;
+  font-size: 12px;
+}
+.playlist-picker-songs > div > span {
+  display: grid;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.playlist-picker-songs small {
+  color: var(--muted);
+  font-size: 11px;
 }
 .playlist-picker-empty {
   margin: 6px 0 2px;
@@ -3180,4 +3259,92 @@ button.library-card-play {
   .library-collection-actions {
     gap: 0;
   }
+}
+.artist-tools {
+  margin: 4px 0 12px;
+}
+.artist-popularity {
+  display: grid;
+  gap: 10px;
+  margin-top: 26px;
+}
+.popularity-chart {
+  display: grid;
+  gap: 8px;
+  padding: 14px;
+  overflow-x: auto;
+  background: #151c19;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+.popularity-chart svg {
+  width: 100%;
+  min-width: 320px;
+  max-width: 620px;
+  height: auto;
+}
+.popularity-chart .axis {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+.popularity-chart .trend {
+  fill: none;
+  stroke: var(--accent);
+  stroke-width: 2;
+  stroke-linejoin: round;
+}
+.popularity-chart .node {
+  fill: var(--accent);
+}
+.popularity-chart .tick {
+  fill: var(--muted);
+  font-size: 11px;
+}
+.popularity-chart .tick.start {
+  text-anchor: start;
+}
+.popularity-chart .tick.end {
+  text-anchor: end;
+}
+.popularity-chart small {
+  color: var(--muted);
+  font-size: 12px;
+}
+.failure-groups {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 14px 0;
+}
+.failure-groups button {
+  padding: 7px 12px;
+  color: var(--muted);
+  font-size: 12px;
+  background: #151c19;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+.failure-groups button.selected {
+  color: #101412;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.library-detail .section-heading h2 {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+.library-list-actions .muted {
+  color: var(--muted);
+  font-size: 12px;
+}
+.virtual-window {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+}
+/* Padding, not a gap: a gap sits outside the box the virtualizer measures. */
+.virtual-row {
+  padding-bottom: 12px;
 }

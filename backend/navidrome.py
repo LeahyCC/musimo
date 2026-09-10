@@ -2,9 +2,13 @@ import asyncio
 import hashlib
 import json
 import os
+import random
 import re
 import secrets
+import time
+from collections import OrderedDict
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
@@ -18,9 +22,21 @@ class NavidromeError(RuntimeError):
     pass
 
 
+class PlaylistProtected(RuntimeError):
+    pass
+
+
 LRC_LINE = re.compile(r"^\[(\d+):(\d+(?:\.\d+)?)\](.*)$")
 LIKED_PLAYLIST_KEY = "liked"
 LIKED_PLAYLIST_NAME = "Liked"
+TRACK_PAGE = 500
+TRACK_CAP = 10_000
+TRACK_WINDOWS = 4
+TRACK_CACHE_SECONDS = 60
+TRACK_CACHE_ENTRIES = 4
+# The accepted sort names live here so the request validator and the comparator cannot
+# disagree about which ones exist.
+TRACK_SORTS = ("title", "artist", "album", "year", "duration", "newest")
 
 
 def lyric_lines(synced: str, plain: str) -> tuple[list[dict[str, object]], bool]:
@@ -36,10 +52,93 @@ def lyric_lines(synced: str, plain: str) -> tuple[list[dict[str, object]], bool]
     return [{"value": line} for line in plain.splitlines() if line.strip()], False
 
 
+@dataclass(frozen=True)
+class TrackSnapshot:
+    fetched: float
+    rows: list[dict[str, object]]
+    facets: dict[str, object]
+
+
+def track_text(row: dict[str, object], key: str) -> str:
+    value = row.get(key)
+    return value.casefold() if isinstance(value, str) else ""
+
+
+def track_number(row: dict[str, object], key: str) -> float:
+    # bool is an int in Python, and Subsonic sends booleans in neighbouring fields.
+    value = row.get(key)
+    return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
+
+
+def filter_tracks(
+    rows: list[dict[str, object]], genres: list[str], years: list[int]
+) -> list[dict[str, object]]:
+    wanted_genres = {genre.casefold() for genre in genres}
+    wanted_years = set(years)
+    return [
+        row
+        for row in rows
+        if (not wanted_genres or track_text(row, "genre") in wanted_genres)
+        and (not wanted_years or int(track_number(row, "year")) in wanted_years)
+    ]
+
+
+def sort_tracks(rows: list[dict[str, object]], sort: str) -> list[dict[str, object]]:
+    if sort == "artist":
+        return sorted(
+            rows,
+            key=lambda row: (
+                track_text(row, "artist"),
+                track_text(row, "album"),
+                track_number(row, "track"),
+            ),
+        )
+    if sort == "album":
+        return sorted(
+            rows,
+            key=lambda row: (
+                track_text(row, "album"),
+                track_number(row, "discNumber"),
+                track_number(row, "track"),
+            ),
+        )
+    if sort == "year":
+        # Negating the year sorts newest first and leaves a missing year (0) at the end.
+        return sorted(rows, key=lambda row: (-track_number(row, "year"), track_text(row, "title")))
+    if sort == "duration":
+        return sorted(
+            rows, key=lambda row: (-track_number(row, "duration"), track_text(row, "title"))
+        )
+    if sort == "newest":
+        return sorted(rows, key=lambda row: track_text(row, "created"), reverse=True)
+    return sorted(rows, key=lambda row: (track_text(row, "title"), track_text(row, "artist")))
+
+
+def track_facets(rows: list[dict[str, object]]) -> dict[str, object]:
+    """Filter choices for the whole library, so picking one does not hide the others."""
+    genres: dict[str, str] = {}
+    years: set[int] = set()
+    for row in rows:
+        genre = row.get("genre")
+        # Filtering casefolds, so fold here too or a library holding both Jazz and jazz
+        # would offer two choices that select the same rows.
+        if isinstance(genre, str) and genre:
+            genres.setdefault(genre.casefold(), genre)
+        year = row.get("year")
+        if isinstance(year, int) and not isinstance(year, bool):
+            years.add(year)
+    return {
+        "genres": sorted(genres.values(), key=str.casefold),
+        "years": sorted(years, reverse=True),
+    }
+
+
 class Navidrome:
     def __init__(self, store: Store, client: httpx.AsyncClient) -> None:
         self.store = store
         self.client = client
+        self.track_cache: OrderedDict[str, TrackSnapshot] = OrderedDict()
+        self.track_locks: dict[str, asyncio.Lock] = {}
 
     def settings(self) -> Settings:
         with self.store.lock:
@@ -175,6 +274,8 @@ class Navidrome:
 
     async def start_scan(self, target: str) -> None:
         await self.response("startScan", {"target": target})
+        # A scan changes what search3 returns, so the browsing snapshot is stale.
+        self.forget_tracks()
 
     async def albums(
         self, sort: str, query: str, offset: int, size: int
@@ -240,11 +341,106 @@ class Navidrome:
         items = container.get("song", []) if isinstance(container, dict) else []
         return [cast(dict[str, object], item) for item in items if isinstance(item, dict)]
 
+    async def snapshot(self, query: str) -> TrackSnapshot:
+        """Every track Navidrome will return for a query, up to a bounded cap.
+
+        Filters, sort order, totals and shuffle have to see the whole library rather than the
+        page the browser happens to have scrolled to, so the pages are gathered once and reused
+        for a short window. The per-key lock means concurrent callers share one walk instead of
+        each starting their own.
+        """
+        key = query.casefold()
+        lock = self.track_locks.setdefault(key, asyncio.Lock())
+        try:
+            async with lock:
+                cached = self.track_cache.get(key)
+                if cached and time.monotonic() - cached.fetched < TRACK_CACHE_SECONDS:
+                    self.track_cache.move_to_end(key)
+                    return cached
+                fresh = await self.walk_tracks(query)
+                self.track_cache[key] = fresh
+                self.track_cache.move_to_end(key)
+                while len(self.track_cache) > TRACK_CACHE_ENTRIES:
+                    self.track_cache.popitem(last=False)
+                return fresh
+        finally:
+            if not lock.locked() and self.track_locks.get(key) is lock:
+                del self.track_locks[key]
+
+    async def walk_tracks(self, query: str) -> TrackSnapshot:
+        # One page first: most libraries fit inside it, and fanning out immediately would
+        # spend four upstream requests to discover that.
+        rows = await self.tracks(query, 0, TRACK_PAGE)
+        offset = TRACK_PAGE
+        while len(rows) >= offset and offset < TRACK_CAP:
+            pages = await asyncio.gather(
+                *(
+                    self.tracks(query, offset + window * TRACK_PAGE, TRACK_PAGE)
+                    for window in range(TRACK_WINDOWS)
+                )
+            )
+            for page in pages:
+                rows.extend(page)
+            # The deepest window is the one that proves the end. A nearer window can come back
+            # short when a scan commits mid-walk without meaning there is nothing beyond it.
+            if len(pages[-1]) < TRACK_PAGE:
+                break
+            offset += TRACK_WINDOWS * TRACK_PAGE
+        # A scan running mid-request can shift offsets, so overlapping windows repeat a track.
+        unique = {str(row.get("id", "")): row for row in rows if row.get("id")}
+        bounded = list(unique.values())[:TRACK_CAP]
+        return TrackSnapshot(time.monotonic(), bounded, track_facets(bounded))
+
+    def forget_tracks(self) -> None:
+        self.track_cache.clear()
+
+    async def browse_tracks(
+        self,
+        query: str,
+        sort: str,
+        genres: list[str],
+        years: list[int],
+        offset: int,
+        size: int,
+    ) -> dict[str, object]:
+        snapshot = await self.snapshot(query)
+        ordered = sort_tracks(filter_tracks(snapshot.rows, genres, years), sort)
+        end = offset + size
+        return {
+            "items": ordered[offset:end],
+            "next_offset": end if end < len(ordered) else None,
+            "total": len(ordered),
+            **snapshot.facets,
+        }
+
+    async def select_tracks(
+        self,
+        query: str,
+        sort: str,
+        genres: list[str],
+        years: list[int],
+        shuffle: bool,
+        limit: int,
+    ) -> dict[str, object]:
+        """Play all and Shuffle draw from the whole filtered library, not the loaded page."""
+        snapshot = await self.snapshot(query)
+        matched = filter_tracks(snapshot.rows, genres, years)
+        items = (
+            random.sample(matched, min(limit, len(matched)))
+            if shuffle
+            else sort_tracks(matched, sort)[:limit]
+        )
+        return {"items": items, "total": len(matched)}
+
     async def playlists(self) -> list[dict[str, object]]:
         body = await self.response("getPlaylists")
         container = body.get("playlists")
         items = container.get("playlist", []) if isinstance(container, dict) else []
         return [cast(dict[str, object], item) for item in items if isinstance(item, dict)]
+
+    def liked_id(self) -> str:
+        """The stored link is the identity; linked_playlist owns resolving and persisting it."""
+        return self.store.linked_playlist(LIKED_PLAYLIST_KEY) or ""
 
     async def linked_playlist(self) -> dict[str, object]:
         playlist_id = self.store.linked_playlist(LIKED_PLAYLIST_KEY)
@@ -344,6 +540,8 @@ class Navidrome:
         return await self.playlist(playlist_id)
 
     async def delete_playlist(self, playlist_id: str) -> None:
+        if playlist_id and playlist_id == self.liked_id():
+            raise PlaylistProtected("The liked playlist cannot be deleted")
         await self.response("deletePlaylist", {"id": playlist_id})
 
     async def song(self, song_id: str) -> dict[str, object]:

@@ -1,9 +1,11 @@
 import { createContext, type FormEvent, useContext, useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
+  Check,
+  ChevronDown,
   Disc3,
   Maximize2,
   Pause,
@@ -27,13 +29,15 @@ import {
   playerQueueSchema,
   previewSchema,
 } from './api'
-import type { LibraryTrack, MusicResult } from './api'
+import type { LibraryPlaylist, LibraryTrack, MusicResult } from './api'
 
 type RepeatMode = 'off' | 'all' | 'one'
 type Playback = {
   track: MusicResult | null
   libraryTrack: LibraryTrack | null
   queue: LibraryTrack[]
+  /** Which collection filled the queue, so its own play button can show pause. */
+  source: string
   currentIndex: number
   playing: boolean
   position: number
@@ -41,8 +45,9 @@ type Playback = {
   shuffle: boolean
   repeat: RepeatMode
   play: (track: MusicResult) => void
-  playLibrary: (tracks: LibraryTrack[], index?: number) => void
-  shuffleLibrary: (tracks: LibraryTrack[]) => void
+  playLibrary: (tracks: LibraryTrack[], index?: number, source?: string) => void
+  shuffleLibrary: (tracks: LibraryTrack[], source?: string) => void
+  toggle: () => void
   next: () => void
   previous: () => void
 }
@@ -50,6 +55,7 @@ const PlayerContext = createContext<Playback>({
   track: null,
   libraryTrack: null,
   queue: [],
+  source: '',
   currentIndex: -1,
   playing: false,
   position: 0,
@@ -59,13 +65,80 @@ const PlayerContext = createContext<Playback>({
   play: () => undefined,
   playLibrary: () => undefined,
   shuffleLibrary: () => undefined,
+  toggle: () => undefined,
   next: () => undefined,
   previous: () => undefined,
 })
 export const usePlayer = () => useContext(PlayerContext)
 
+/** True while this exact collection owns the queue, so Play can become Pause. */
+export function useCollectionPlayback(source: string) {
+  const player = usePlayer()
+  const active = Boolean(source) && player.source === source && Boolean(player.libraryTrack)
+  return { active, playing: active && player.playing, toggle: player.toggle }
+}
+
+/** The same derived state for a catalog preview, which has no collection behind it. */
+export function usePreviewPlayback(id: number) {
+  const player = usePlayer()
+  const active = !player.libraryTrack && player.track?.id === id
+  return { active, playing: active && player.playing }
+}
+
+export type PlaylistSongChange = { playlistId: string; songId?: string; index?: number }
+
+/**
+ * Adding and removing playlist songs, shared by the footer picker and the playlist page so
+ * the cache writes that keep them in step cannot drift apart.
+ *
+ * Removal is positional, so a control must stay disabled while any change to its playlist is
+ * in flight: a second click would send an index measured against the pre-change list and
+ * delete the wrong song. One mutation serves every row, and its own `variables` only ever
+ * describe the newest call, so in-flight playlists are counted here instead.
+ */
+export function usePlaylistSongs() {
+  const client = useQueryClient()
+  const [inFlight, setInFlight] = useState<Record<string, number>>({})
+  const count = (playlistId: string, delta: number) =>
+    setInFlight((counts) => ({
+      ...counts,
+      [playlistId]: Math.max(0, (counts[playlistId] ?? 0) + delta),
+    }))
+  const mutation = useMutation({
+    mutationFn: ({ playlistId, songId, index }: PlaylistSongChange) =>
+      api(
+        `library/playlists/${encodeURIComponent(playlistId)}/songs`,
+        libraryPlaylistDetailSchema,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(
+            songId === undefined ? { song_index_to_remove: index } : { song_id_to_add: songId },
+          ),
+        },
+      ),
+    onMutate: (change) => count(change.playlistId, 1),
+    onSettled: (_playlist, _error, change) => count(change.playlistId, -1),
+    onSuccess: (playlist) => {
+      client.setQueryData(['library-playlist', playlist.id], playlist)
+      // The liked playlist is also read under its own key. Write both, or the thumbs up
+      // re-enables against a stale list and its next click removes a different song.
+      if (client.getQueryData<LibraryPlaylist>(['library-playlist-liked'])?.id === playlist.id)
+        client.setQueryData(['library-playlist-liked'], playlist)
+      void client.invalidateQueries({ queryKey: ['library-playlists'] })
+      void client.invalidateQueries({ queryKey: ['library-playlist-liked'] })
+    },
+  })
+  return { mutation, busy: (playlistId: string) => (inFlight[playlistId] ?? 0) > 0 }
+}
+
 export const durationText = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
+
+// One request per row is fine for a picker; filter the list to reach the rest.
+const PICKER_ROWS = 25
+
+export const songCount = (count: number) => `${count} ${count === 1 ? 'song' : 'songs'}`
 
 const artUrl = (track: LibraryTrack) =>
   track.coverArt ? `/api/player/art/${encodeURIComponent(track.coverArt)}` : ''
@@ -86,6 +159,105 @@ export function remember(key: string, value: string) {
   }
 }
 
+function PlaylistPickerRow({
+  playlist,
+  songs,
+  failed,
+  onRetry,
+  trackId,
+  trackTitle,
+  busy,
+  blocked,
+  expanded,
+  onExpand,
+  onToggleTrack,
+  onRemoveSong,
+}: {
+  playlist: LibraryPlaylist
+  songs?: LibraryTrack[]
+  failed: boolean
+  onRetry: () => void
+  trackId: string
+  trackTitle: string
+  busy: boolean
+  blocked: boolean
+  expanded: boolean
+  onExpand: (open: boolean) => void
+  onToggleTrack: () => void
+  onRemoveSong: (index: number) => void
+}) {
+  const known = songs !== undefined
+  const index = (songs ?? []).findIndex((item) => item.id === trackId)
+  const member = index >= 0
+  const label = busy ? 'Saving…' : !known ? 'Loading…' : member ? 'Remove' : 'Add'
+  return (
+    <div className="playlist-picker-row">
+      <div className="playlist-picker-head">
+        <button
+          type="button"
+          className={`icon-button playlist-picker-expand ${expanded ? 'open' : ''}`}
+          aria-label={`${expanded ? 'Hide' : 'Show'} songs in ${playlist.name}`}
+          aria-expanded={expanded}
+          onClick={() => onExpand(!expanded)}
+        >
+          <ChevronDown size={16} />
+        </button>
+        <span>
+          {playlist.name}
+          <small>{songCount((known ? songs.length : playlist.songCount) ?? 0)}</small>
+        </span>
+        {failed ? (
+          <button type="button" className="button" onClick={onRetry}>
+            Retry
+          </button>
+        ) : (
+          <button
+            type="button"
+            className={member ? 'button' : 'button primary'}
+            // Membership decides the action, so the label has to wait for the song list.
+            aria-label={
+              known
+                ? `${member ? 'Remove' : 'Add'} ${trackTitle} ${member ? 'from' : 'to'} ${playlist.name}`
+                : `Loading songs in ${playlist.name}`
+            }
+            disabled={busy || blocked || !known}
+            onClick={onToggleTrack}
+          >
+            {member && known && !busy && <Check size={14} />}
+            {!member && known && !busy && <Plus size={14} />} {label}
+          </button>
+        )}
+      </div>
+      {expanded && (
+        <div className="playlist-picker-songs">
+          {(songs ?? []).map((song, songIndex) => (
+            <div key={`${song.id}-${songIndex}`}>
+              <span>
+                {song.title}
+                <small>{song.artist}</small>
+              </span>
+              <button
+                type="button"
+                className="icon-button"
+                aria-label={`Remove ${song.title} from ${playlist.name}`}
+                disabled={busy}
+                onClick={() => onRemoveSong(songIndex)}
+              >
+                <X size={14} />
+              </button>
+            </div>
+          ))}
+          {known && !songs.length && (
+            <p className="playlist-picker-empty">This playlist is empty.</p>
+          )}
+          {failed && <p className="error">That playlist could not be read.</p>}
+          {!known && !failed && <p role="status">Loading songs…</p>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function PlayerProvider({ children }: { children: ReactNode }) {
   const audio = useRef<HTMLAudioElement>(null)
   const request = useRef<AbortController | null>(null)
@@ -93,6 +265,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const libraryCurrent = useRef<LibraryTrack | null>(null)
   const queueRef = useRef<LibraryTrack[]>([])
   const indexRef = useRef(-1)
+  const sourceRef = useRef('')
   const mode = useRef<'preview' | 'library'>('preview')
   const previewStage = useRef(0)
   const pendingSeek = useRef(0)
@@ -100,6 +273,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [track, setTrack] = useState<MusicResult | null>(null)
   const [libraryTrack, setLibraryTrack] = useState<LibraryTrack | null>(null)
   const [queue, setQueue] = useState<LibraryTrack[]>([])
+  const [source, setSource] = useState('')
   const [currentIndex, setCurrentIndex] = useState(-1)
   const [playing, setPlaying] = useState(false)
   const [position, setPosition] = useState(0)
@@ -115,6 +289,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [notice, setNotice] = useState('Choose a track to start listening.')
   const [playlistSearch, setPlaylistSearch] = useState('')
   const [newPlaylistName, setNewPlaylistName] = useState('')
+  const [pickerOpen, setPickerOpen] = useState(false)
+  const [expandedPlaylist, setExpandedPlaylist] = useState('')
   const playlistDialog = useRef<HTMLDialogElement>(null)
   const queryClient = useQueryClient()
 
@@ -130,51 +306,45 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     queryFn: ({ signal }) => api('library/playlists', libraryPlaylistsSchema, { signal }),
     enabled: isLibraryTrack,
   })
-  const selectedPlaylistIndex = isLibraryTrack
+  const playlistSearchTerms = playlistSearch.trim().toLocaleLowerCase()
+  // The list response carries the liked id, so the thumbs-up playlist never flashes into the
+  // picker while its own query is still loading.
+  const likedId = allPlaylists.data?.liked_id || likedPlaylist.data?.id
+  const matchingPlaylists = (allPlaylists.data?.items ?? [])
+    .filter((playlist) => playlist.id !== likedId)
+    .filter((playlist) =>
+      playlistSearchTerms ? playlist.name.toLocaleLowerCase().includes(playlistSearchTerms) : true,
+    )
+  const availablePlaylists = matchingPlaylists.slice(0, PICKER_ROWS)
+  // Membership decides whether a row offers Add or Remove, so the picker needs each
+  // playlist's songs. Only the rows actually on show are fetched, and only while the
+  // picker is open. They share the playlist page's cache key, so a change here shows
+  // there without a reload.
+  const playlistDetails = useQueries({
+    queries: availablePlaylists.map((playlist) => ({
+      queryKey: ['library-playlist', playlist.id],
+      queryFn: ({ signal }: { signal: AbortSignal }) =>
+        api(`library/playlists/${encodeURIComponent(playlist.id)}`, libraryPlaylistDetailSchema, {
+          signal,
+        }),
+      enabled: pickerOpen,
+    })),
+  })
+  const songsByPlaylist = new Map(
+    playlistDetails.flatMap((result) =>
+      result.data ? [[result.data.id, result.data.entry] as const] : [],
+    ),
+  )
+  const failedPlaylists = new Set(
+    availablePlaylists.flatMap((playlist, at) =>
+      playlistDetails[at]?.isError ? [playlist.id] : [],
+    ),
+  )
+  const likedIndex = isLibraryTrack
     ? (likedPlaylist.data?.entry ?? []).findIndex((item) => item.id === libraryTrack?.id)
     : -1
-  const isLiked = selectedPlaylistIndex >= 0
-  const addToLiked = useMutation({
-    mutationFn: ({ trackId, shouldAdd }: { trackId: string; shouldAdd: boolean }) => {
-      const playlist = likedPlaylist.data
-      if (!playlist) throw new Error('Liked playlist is not loaded.')
-      if (!shouldAdd && selectedPlaylistIndex < 0) {
-        throw new Error('Track is not in the liked playlist.')
-      }
-      const body = shouldAdd
-        ? { song_id_to_add: trackId }
-        : { song_index_to_remove: selectedPlaylistIndex }
-      return api(
-        `library/playlists/${encodeURIComponent(playlist.id)}/songs`,
-        libraryPlaylistDetailSchema,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(body),
-        },
-      )
-    },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['library-playlist-liked'] })
-      void queryClient.invalidateQueries({ queryKey: ['library-playlists'] })
-    },
-  })
-  const addToPlaylist = useMutation({
-    mutationFn: ({ playlistId, songId }: { playlistId: string; songId: string }) =>
-      api(
-        `library/playlists/${encodeURIComponent(playlistId)}/songs`,
-        libraryPlaylistDetailSchema,
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ song_id_to_add: songId }),
-        },
-      ),
-    onSuccess: () => {
-      void queryClient.invalidateQueries({ queryKey: ['library-playlists'] })
-      void queryClient.invalidateQueries({ queryKey: ['library-playlist-liked'] })
-    },
-  })
+  const isLiked = likedIndex >= 0
+  const playlistSongs = usePlaylistSongs()
   const createPlaylist = useMutation({
     mutationFn: (name: string) =>
       api('library/playlists', libraryPlaylistDetailSchema, {
@@ -189,7 +359,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       void queryClient.invalidateQueries({ queryKey: ['library-playlists'] })
       if (playlist.id) setNotice(`Created playlist ${playlist.name}.`)
       setNewPlaylistName('')
-      playlistDialog.current?.close()
+      closePlaylistDialog()
     },
   })
 
@@ -266,17 +436,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     startAudio(`/api/player/stream/${encodeURIComponent(item.id)}`, autoplay)
   }
 
-  function playLibrary(items: LibraryTrack[], index = 0) {
+  function playLibrary(items: LibraryTrack[], index = 0, origin = '') {
     if (!items.length) return
     queueRef.current = items
+    sourceRef.current = origin
     setQueue(items)
+    setSource(origin)
     loadLibrary(Math.max(0, Math.min(index, items.length - 1)))
   }
 
-  function shuffleLibrary(items: LibraryTrack[]) {
+  function shuffleLibrary(items: LibraryTrack[], origin = '') {
     if (!items.length) return
     setShuffle(true)
-    playLibrary(items, Math.floor(Math.random() * items.length))
+    playLibrary(items, Math.floor(Math.random() * items.length), origin)
   }
 
   function toggle() {
@@ -342,6 +514,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     saveQueue()
     previewCurrent.current = null
     libraryCurrent.current = null
+    sourceRef.current = ''
+    setSource('')
     audio.current?.pause()
     audio.current?.removeAttribute('src')
     audio.current?.load()
@@ -363,6 +537,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         )
         queueRef.current = saved.entry
         setQueue(saved.entry)
+        sourceRef.current = 'restored'
+        setSource('restored')
         loadLibrary(index, false, saved.position / 1000)
         setNotice('Queue restored. Press play to continue.')
       })
@@ -422,33 +598,43 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const activeAlbum = libraryTrack?.album ?? track?.album
   const activeArt = libraryTrack ? artUrl(libraryTrack) : track?.art
   const isLibrary = Boolean(libraryTrack)
-  const playlistSearchTerms = playlistSearch.trim().toLocaleLowerCase()
-  const availablePlaylists = (allPlaylists.data?.items ?? [])
-    .filter((playlist) => playlist.id !== likedPlaylist.data?.id)
-    .filter((playlist) =>
-      playlistSearchTerms ? playlist.name.toLocaleLowerCase().includes(playlistSearchTerms) : true,
-    )
 
   function openPlaylistDialog() {
     setPlaylistSearch('')
     setNewPlaylistName('')
+    setExpandedPlaylist('')
+    setPickerOpen(true)
     playlistDialog.current?.showModal()
   }
 
+  function closePlaylistDialog() {
+    setPickerOpen(false)
+    playlistDialog.current?.close()
+  }
+
   const canToggleLiked = likedPlaylist.data && libraryTrack ? true : false
-  const likedActionBusy = addToLiked.isPending
-  const addActionBusy = addToPlaylist.isPending
   const createBusy = createPlaylist.isPending
 
   function toggleLikedTrack() {
     const trackId = libraryTrack?.id
-    if (!trackId || !likedPlaylist.data) return
-    addToLiked.mutate({ trackId, shouldAdd: !isLiked })
+    const liked = likedPlaylist.data
+    if (!trackId || !liked) return
+    playlistSongs.mutation.mutate(
+      isLiked
+        ? { playlistId: liked.id, index: likedIndex }
+        : { playlistId: liked.id, songId: trackId },
+    )
   }
 
-  function addTrackToPlaylist(playlistId: string) {
-    if (!libraryTrack) return
-    addToPlaylist.mutate({ playlistId, songId: libraryTrack.id })
+  function togglePlaylistTrack(playlist: LibraryPlaylist) {
+    const trackId = libraryTrack?.id
+    if (!trackId) return
+    const index = (songsByPlaylist.get(playlist.id) ?? []).findIndex((item) => item.id === trackId)
+    playlistSongs.mutation.mutate(
+      index >= 0
+        ? { playlistId: playlist.id, index }
+        : { playlistId: playlist.id, songId: trackId },
+    )
   }
 
   function submitNewPlaylist(event: FormEvent<HTMLFormElement>) {
@@ -466,6 +652,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         track,
         libraryTrack,
         queue,
+        source,
         currentIndex,
         playing,
         position,
@@ -475,6 +662,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         play,
         playLibrary,
         shuffleLibrary,
+        toggle,
         next: () => next(),
         previous,
       }}
@@ -548,7 +736,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               aria-label={
                 isLiked ? `Remove ${activeTitle} from liked` : `Add ${activeTitle} to liked`
               }
-              disabled={!canToggleLiked || likedActionBusy}
+              disabled={!canToggleLiked || playlistSongs.busy(likedPlaylist.data?.id ?? '')}
               onClick={() => toggleLikedTrack()}
             >
               <ThumbsUp size={16} fill={isLiked ? 'currentColor' : 'none'} />
@@ -680,8 +868,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             ref={playlistDialog}
             className="playlist-picker-sheet"
             aria-label="Add track to playlist"
+            onClose={() => setPickerOpen(false)}
             onClick={(event) => {
-              if (event.target === playlistDialog.current) playlistDialog.current?.close()
+              if (event.target === playlistDialog.current) closePlaylistDialog()
             }}
           >
             <header>
@@ -690,7 +879,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 type="button"
                 className="icon-button"
                 aria-label="Close playlist picker"
-                onClick={() => playlistDialog.current?.close()}
+                onClick={() => closePlaylistDialog()}
               >
                 <X size={16} />
               </button>
@@ -706,21 +895,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             {allPlaylists.isLoading && <p role="status">Loading playlists…</p>}
             {allPlaylists.isError && <p className="error">{allPlaylists.error.message}</p>}
             <div className="playlist-picker-list">
-              {availablePlaylists.map((playlist) => (
-                <div key={playlist.id} className="playlist-picker-row">
-                  <span>{playlist.name}</span>
-                  <button
-                    type="button"
-                    className="button"
-                    disabled={addActionBusy || createBusy}
-                    onClick={() => addTrackToPlaylist(playlist.id)}
-                  >
-                    {addActionBusy ? 'Saving…' : 'Add'}
-                  </button>
-                </div>
+              {availablePlaylists.map((playlist, at) => (
+                <PlaylistPickerRow
+                  key={playlist.id}
+                  playlist={playlist}
+                  songs={songsByPlaylist.get(playlist.id)}
+                  failed={failedPlaylists.has(playlist.id)}
+                  onRetry={() => void playlistDetails[at]?.refetch()}
+                  trackId={libraryTrack?.id ?? ''}
+                  trackTitle={activeTitle ?? 'this track'}
+                  busy={playlistSongs.busy(playlist.id)}
+                  blocked={createBusy}
+                  expanded={expandedPlaylist === playlist.id}
+                  onExpand={(open) => setExpandedPlaylist(open ? playlist.id : '')}
+                  onToggleTrack={() => togglePlaylistTrack(playlist)}
+                  onRemoveSong={(index) =>
+                    playlistSongs.mutation.mutate({ playlistId: playlist.id, index })
+                  }
+                />
               ))}
               {!allPlaylists.isLoading && !availablePlaylists.length && (
                 <p className="playlist-picker-empty">No playlists yet.</p>
+              )}
+              {matchingPlaylists.length > PICKER_ROWS && (
+                <p className="playlist-picker-empty">
+                  Showing {PICKER_ROWS} of {matchingPlaylists.length}. Filter above to reach the
+                  others.
+                </p>
               )}
             </div>
             <form className="playlist-picker-form" onSubmit={submitNewPlaylist}>
@@ -741,11 +942,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 {createBusy ? 'Creating…' : 'Create'}
               </button>
             </form>
-            {(addToPlaylist.isError || addToLiked.isError || createPlaylist.isError) && (
+            {(playlistSongs.mutation.isError || createPlaylist.isError) && (
               <p className="error">
-                {addToPlaylist.error?.message ||
-                  addToLiked.error?.message ||
-                  createPlaylist.error?.message}
+                {playlistSongs.mutation.error?.message || createPlaylist.error?.message}
               </p>
             )}
           </dialog>

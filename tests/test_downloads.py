@@ -282,6 +282,37 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                 self.assertNotIn("test secret", json.dumps(store.snapshot()))
             store.close()
 
+    async def test_failed_jobs_clear_individually_and_in_bulk_without_touching_done(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                store.update({"destination": str(root)})
+                jobs = [service.jobs.enqueue(track, "original", str(root)) for track in (1, 2, 3)]
+                service.jobs.update(jobs[0].id, stage="failed", error="No match")
+                service.jobs.update(jobs[1].id, stage="failed", error="No match")
+                service.jobs.update(jobs[2].id, stage="done", final_path=str(root / "a.opus"))
+                app = FastAPI()
+                install_download_routes(app, lambda: service)
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app), base_url="http://test"
+                ) as api:
+                    dismissed = await api.post(f"/api/jobs/{jobs[0].id}/dismiss")
+                    self.assertEqual(dismissed.status_code, 200)
+                    self.assertTrue(dismissed.json()["hidden"])
+                    self.assertEqual((await api.post("/api/queue/clear-failed")).status_code, 200)
+                    visible = {job.id: job for job in service.jobs.visible()}
+                    self.assertNotIn(jobs[1].id, visible)
+                    self.assertIn(jobs[2].id, visible)
+                    running = service.jobs.enqueue(4, "original", str(root))
+                    refused = await api.post(f"/api/jobs/{running.id}/dismiss")
+                    self.assertEqual(refused.status_code, 409)
+            store.close()
+
     async def test_pause_stops_worker_preserves_partial_cancel_removes_only_staging(self) -> None:
         class SlowWorker(Downloads):
             async def worker(self, job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
