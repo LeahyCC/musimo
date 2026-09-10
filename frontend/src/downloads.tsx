@@ -1001,6 +1001,13 @@ export function QueueDock() {
         {active.length} · {speed ? `${bytes(speed)}/s` : 'Queue'}
         <ChevronUp size={14} />
       </button>
+      <span
+        aria-live="polite"
+        aria-atomic="true"
+        style={{ position: 'absolute', left: '-10000px' }}
+      >
+        {active.length} active download{active.length === 1 ? '' : 's'}
+      </span>
       <dialog
         className="queue-sheet"
         ref={dialog}

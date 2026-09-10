@@ -327,7 +327,15 @@ function CardGrid({ items }: { items: MusicResult[] }) {
   )
 }
 
-export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTrack?: number }) {
+export function TrackList({
+  items,
+  focusTrack,
+  resetScroll,
+}: {
+  items: MusicResult[]
+  focusTrack?: number
+  resetScroll?: number
+}) {
   const parent = useRef<HTMLDivElement>(null)
   const queue = useJobs()
   const jobs = new Map<number, DownloadJob>()
@@ -342,6 +350,12 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
     estimateSize: () => 76,
     overscan: 6,
   })
+  useEffect(() => {
+    if (resetScroll !== undefined && parent.current) {
+      parent.current.scrollTop = 0
+    }
+  }, [resetScroll])
+
   useEffect(() => {
     const index = items.findIndex((item) => item.id === focusTrack)
     if (index < 0) return
@@ -465,6 +479,37 @@ function ResultsSection({
     staleTime: 86_400_000,
     retry: false,
   })
+  // Track filter state separately from search query for deliberate scroll reset
+  const filterSignature = useMemo(
+    () =>
+      JSON.stringify({
+        explicit: state.explicit,
+        from: state.from,
+        until: state.until,
+        library: state.library,
+        min: state.min,
+        max: state.max,
+        preview: state.preview,
+        sort: state.sort,
+      }),
+    [
+      state.explicit,
+      state.from,
+      state.until,
+      state.library,
+      state.min,
+      state.max,
+      state.preview,
+      state.sort,
+    ],
+  )
+  const prevFilterRef = useRef(filterSignature)
+  const resetCounterRef = useRef(0)
+  if (prevFilterRef.current !== filterSignature) {
+    prevFilterRef.current = filterSignature
+    resetCounterRef.current += 1
+  }
+  const resetScroll = resetCounterRef.current
   const items = useMemo(() => {
     const unique = [...new Map(raw.map((item) => [item.id, item])).values()]
     const filtered = unique
@@ -563,9 +608,9 @@ function ResultsSection({
       )}
       {items.length > 0 &&
         (kind === 'track' ? (
-          <TrackList key={JSON.stringify(state)} items={items} />
+          <TrackList items={items} resetScroll={resetScroll} />
         ) : (
-          <CardGrid key={JSON.stringify(state)} items={items} />
+          <CardGrid items={items} />
         ))}
       {!query.isPending && !query.isError && !items.length && (
         <p className="empty-results">
