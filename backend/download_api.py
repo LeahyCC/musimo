@@ -1,4 +1,3 @@
-import time
 import uuid
 from collections.abc import Callable
 from typing import Literal
@@ -95,6 +94,11 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
                 skipped_owned += 1
             else:
                 wanted.append(track.id)
+        active_ids = {
+            job.id
+            for job in service.jobs.list(active=True)
+            if job.track_id in wanted and job.format == format and job.target == str(target)
+        }
         batch_id = uuid.uuid4().hex
         jobs = service.jobs.enqueue_many(
             wanted,
@@ -104,8 +108,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             album_id=request.album_id,
         )
         skipped_owned += sum(job.stage == "done" for job in jobs)
-        created = time.time()
-        skipped_queued = sum(job.created_at < created - 0.01 for job in jobs if job.stage != "done")
+        skipped_queued = sum(job.id in active_ids for job in jobs if job.stage != "done")
         jobs = [job for job in jobs if job.stage != "done"]
         return {
             "id": batch_id,

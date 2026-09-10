@@ -472,6 +472,14 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(payload["skipped_queued"], 1)
                     self.assertEqual(len(payload["jobs"]), 2)
                     self.assertEqual({job["track_id"] for job in payload["jobs"]}, {3, 4})
+                    # Second request: track 2 is still queued, tracks 3 and 4 are now also queued
+                    again = await api.post(
+                        "/api/batches", json={"album_id": 100, "missing_only": False}
+                    )
+                    again_payload = again.json()
+                    self.assertEqual(again_payload["skipped_owned"], 1)
+                    self.assertEqual(again_payload["skipped_queued"], 3)
+                    self.assertEqual(len(again_payload["jobs"]), 2)
             store.close()
 
 
