@@ -451,6 +451,16 @@ test('long titles and labels stay inside the page', async ({ page }) => {
       () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
     ),
   ).toBe(0)
+
+  // A group chip carrying a long album name is cut to one line with an ellipsis, not
+  // wrapped and clipped or stretched across the page.
+  const groups = page.getByRole('group', { name: 'Failures by download group' })
+  const chip = groups.getByRole('button', { name: new RegExp(`^${LONG_TITLE.slice(0, 20)}`) })
+  const chipBox = await chip.boundingBox()
+  const groupsBox = await groups.boundingBox()
+  if (!chipBox || !groupsBox) throw new Error('Missing chip measurements')
+  expect(chipBox.height).toBeLessThan(40)
+  expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(groupsBox.x + groupsBox.width + 1)
 })
 
 test('done jobs with warnings show the count in their heading', async ({ page }) => {
