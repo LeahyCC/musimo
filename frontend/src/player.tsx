@@ -1,4 +1,12 @@
-import { createContext, type FormEvent, useContext, useEffect, useRef, useState } from 'react'
+import {
+  createContext,
+  type FormEvent,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { ReactNode } from 'react'
 
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -31,7 +39,13 @@ import {
 } from './api'
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from './api'
 
-type RepeatMode = 'off' | 'all' | 'one'
+export type RepeatMode = 'off' | 'all' | 'one'
+export type LikedControl = {
+  isLiked: boolean
+  canToggle: boolean
+  busy: boolean
+  toggle: () => void
+}
 type Playback = {
   track: MusicResult | null
   libraryTrack: LibraryTrack | null
@@ -50,6 +64,18 @@ type Playback = {
   toggle: () => void
   next: () => void
   previous: () => void
+  // Transport for the Now Playing popout. It reads the element's clock and
+  // drives it through these; the element itself stays here.
+  ready: boolean
+  volume: number
+  muted: boolean
+  audio: () => HTMLAudioElement | null
+  seek: (seconds: number) => void
+  setVolume: (value: number) => void
+  toggleMute: () => void
+  toggleShuffle: () => void
+  cycleRepeat: () => void
+  liked: LikedControl
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -68,6 +94,16 @@ const PlayerContext = createContext<Playback>({
   toggle: () => undefined,
   next: () => undefined,
   previous: () => undefined,
+  ready: false,
+  volume: 0.7,
+  muted: false,
+  audio: () => null,
+  seek: () => undefined,
+  setVolume: () => undefined,
+  toggleMute: () => undefined,
+  toggleShuffle: () => undefined,
+  cycleRepeat: () => undefined,
+  liked: { isLiked: false, canToggle: false, busy: false, toggle: () => undefined },
 })
 export const usePlayer = () => useContext(PlayerContext)
 
@@ -140,7 +176,7 @@ const PICKER_ROWS = 25
 
 export const songCount = (count: number) => `${count} ${count === 1 ? 'song' : 'songs'}`
 
-const artUrl = (track: LibraryTrack) =>
+export const artUrl = (track: LibraryTrack) =>
   track.coverArt ? `/api/player/art/${encodeURIComponent(track.coverArt)}` : ''
 
 export function stored(key: string, fallback: string) {
@@ -509,6 +545,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     loadLibrary(Math.max(0, indexRef.current - 1))
   }
 
+  const audioElement = useCallback(() => audio.current, [])
+
+  function seek(seconds: number) {
+    if (audio.current) audio.current.currentTime = seconds
+    setPosition(seconds)
+  }
+
+  function changeVolume(value: number) {
+    setVolume(value)
+    setMuted(false)
+  }
+
+  function toggleMute() {
+    setMuted(!muted)
+  }
+
+  function toggleShuffle() {
+    setShuffle(!shuffle)
+  }
+
+  function cycleRepeat() {
+    setRepeat(repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off')
+  }
+
   function stop() {
     request.current?.abort()
     saveQueue()
@@ -665,6 +725,21 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         toggle,
         next: () => next(),
         previous,
+        ready,
+        volume,
+        muted,
+        audio: audioElement,
+        seek,
+        setVolume: changeVolume,
+        toggleMute,
+        toggleShuffle,
+        cycleRepeat,
+        liked: {
+          isLiked,
+          canToggle: canToggleLiked,
+          busy: playlistSongs.busy(likedId ?? ''),
+          toggle: toggleLikedTrack,
+        },
       }}
     >
       {children}
@@ -802,11 +877,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             step="0.1"
             value={Math.min(position, length || 30)}
             disabled={!ready}
-            onChange={(event) => {
-              const value = Number(event.target.value)
-              if (audio.current) audio.current.currentTime = value
-              setPosition(value)
-            }}
+            onChange={(event) => seek(Number(event.target.value))}
           />
           <span>{durationText(length)}</span>
         </div>
@@ -816,16 +887,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               <button
                 className={`icon-button ${shuffle ? 'active' : ''}`}
                 aria-label="Shuffle"
-                onClick={() => setShuffle(!shuffle)}
+                onClick={toggleShuffle}
               >
                 <Shuffle size={17} />
               </button>
               <button
                 className={`icon-button ${repeat !== 'off' ? 'active' : ''}`}
                 aria-label={`Repeat ${repeat}`}
-                onClick={() =>
-                  setRepeat(repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off')
-                }
+                onClick={cycleRepeat}
               >
                 <Repeat size={17} />
                 {repeat === 'one' && <small>1</small>}
@@ -837,7 +906,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             aria-label={
               isLibrary ? (muted ? 'Unmute' : 'Mute') : muted ? 'Unmute preview' : 'Mute preview'
             }
-            onClick={() => setMuted(!muted)}
+            onClick={toggleMute}
           >
             {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
           </button>
@@ -848,10 +917,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             max="1"
             step="0.01"
             value={muted ? 0 : volume}
-            onChange={(event) => {
-              setVolume(Number(event.target.value))
-              setMuted(false)
-            }}
+            onChange={(event) => changeVolume(Number(event.target.value))}
           />
         </div>
         {(track || libraryTrack) && (
