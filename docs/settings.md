@@ -2,6 +2,8 @@
 
 Settings are validated and stored in SQLite. Edit the form, then use Save changes. Successful saves apply without a restart and publish a durable event. They survive container recreation when the data volume remains attached.
 
+A status summary at the top of the Settings page shows overall system readiness (ready or needs attention) with a link to Diagnostics for detailed component status.
+
 ## Editable settings
 
 - `library_label`: Music by default, 1–60 characters.

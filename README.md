@@ -88,10 +88,11 @@ If Musimo is useful, [star it on GitHub](https://github.com/LeahyCC/musimo).
 If you want to support the people who make music possible, [Donate to MUSICARES](https://www.musicares.org/).
 
 1. Search for an artist or track. Catalog access needs no credentials.
-2. Open Settings and inspect the library paths and download destination.
-3. Mount your collection using the instructions below, then scan it.
-4. Preview a result and check its library badge.
-5. For a download test, use material you have permission to obtain.
+2. Open Diagnostics to verify all components are ready (library roots, destination, scan, helpers).
+3. Open Settings and inspect the library paths and download destination.
+4. Mount your collection using the instructions below, then scan it.
+5. Preview a result and check its library badge.
+6. For a download test, use material you have permission to obtain.
 
 The default music mount is `./runtime/music`, an isolated test folder within the checkout. It does not automatically find your existing collection. SQLite lives in the `musimo-data` named volume.
 
@@ -305,13 +306,15 @@ Self-hosted does not mean offline. Catalog/enrichment providers receive requests
 
 ## Troubleshooting
 
+Visit the Diagnostics page to check system readiness. It shows library roots (mounted, writable, free space), the selected destination with write testing, the last library scan, Navidrome status, YouTube helper availability and the most recent download outcome. Settings displays a summary with a link to Diagnostics.
+
 ### The page does not open
 
 Check Docker, `docker compose ps`, bind/port settings and service logs. A loopback bind cannot be reached from another device. Health is independent of remote provider availability.
 
 ### Search works but downloads fail
 
-Metadata and audio come from different systems. Read the job stage and error. Unavailable recordings, source restrictions, rate limits, missing tools and disk permissions need different remedies. Avoid repeatedly retrying a blocked source. See [YouTube troubleshooting](docs/youtube-troubleshooting.md).
+Metadata and audio come from different systems. Read the job stage and error. Unavailable recordings, source restrictions, rate limits, missing tools and disk permissions need different remedies. Avoid repeatedly retrying a blocked source. See [YouTube troubleshooting](docs/youtube-troubleshooting.md). Use the destination write test in Diagnostics to verify write permissions.
 
 ### Coverage is wrong or unknown
 

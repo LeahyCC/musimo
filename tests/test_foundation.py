@@ -167,6 +167,51 @@ class FoundationTests(unittest.TestCase):
                 response = client.patch("/api/settings", json={"destination": str(writable)})
                 self.assertEqual(response.status_code, 200)
 
+    def test_destination_write_probe_succeeds_on_writable_path(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            music = data / "music"
+            music.mkdir()
+            with (
+                patch.dict("os.environ", {"MUSIMO_LIBRARY_ROOTS": str(music)}),
+                TestClient(create_app(data)) as client,
+            ):
+                client.patch("/api/settings", json={"destination": str(music)})
+                response = client.post("/api/diagnostics/test/destination")
+                self.assertEqual(response.status_code, 200)
+                result = response.json()
+                self.assertTrue(result["success"])
+                self.assertIsNone(result["error"])
+                self.assertGreaterEqual(result["elapsed_ms"], 0)
+                self.assertFalse(list((music / ".musimo").glob("*.tmp")))
+
+    def test_destination_write_probe_returns_expected_structure(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            with TestClient(create_app(data)) as client:
+                response = client.post("/api/diagnostics/test/destination")
+                self.assertEqual(response.status_code, 200)
+                result = response.json()
+                self.assertIn("success", result)
+                self.assertIn("error", result)
+                self.assertIn("elapsed_ms", result)
+                self.assertIsInstance(result["success"], bool)
+                self.assertGreaterEqual(result["elapsed_ms"], 0)
+
+    def test_diagnostics_includes_navidrome_and_last_download(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            with TestClient(create_app(data)) as client:
+                diagnostics = client.get("/api/diagnostics").json()
+                self.assertIn("navidrome", diagnostics)
+                self.assertIn("last_download", diagnostics)
+                self.assertIn("library", diagnostics)
+                self.assertIn("queue", diagnostics)
+                self.assertIn("capabilities", diagnostics)
+                self.assertIsNone(diagnostics["last_download"])
+                self.assertIsNotNone(diagnostics["navidrome"])
+                self.assertFalse(diagnostics["navidrome"]["configured"])
+
 
 if __name__ == "__main__":
     unittest.main()
