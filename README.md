@@ -174,7 +174,7 @@ Filters and sorting apply to **loaded results**, not the entire provider catalog
 
 Cards automatically check album details against the local index. Loading shows checking or estimated coverage; complete track lists permit verified counts. Incomplete provider lists stay partial. Failed checks show Retry coverage.
 
-The album download icon queues missing tracks without opening the album. It uses the saved format and destination, skips indexed matches and links to the queue after success. A completely indexed album shows a check. Open an album to inspect individual tracks and available album actions.
+The album download icon queues missing tracks without opening the album. The card shows where files will land and in what format before queueing. It uses the saved format and destination, skips indexed matches and links to the queue after success. A completely indexed album shows a check. Open an album to inspect individual tracks and available album actions.
 
 Artist release types come from the catalog. A generic album type does not establish whether a recording is live, remixed or a compilation. Library coverage is a file match, not proof of legal rights.
 
@@ -213,7 +213,7 @@ Keyboard controls: `/` focuses search; Ctrl/Cmd+K opens the command palette; Esc
 
 ### Downloads and history
 
-Jobs progress through queued, matching, downloading, optional conversion, tagging, moving, scanning and done. Low-confidence matches are flagged. Failures retain their stage and error rather than looking like success.
+Jobs progress through queued, matching, downloading, optional conversion, tagging, moving, scanning and done. Job cards display the destination and format. Low-confidence matches are flagged. Failures retain their stage and error rather than looking like success.
 
 Each failure shows a reason summary with plain language messages. The NO_MATCH message reads "No matching recording was found on YouTube. Nothing was downloaded." Per card attempt counts are shown and reset when retrying. The Failed tab groups failures by download group with reason chips, and offers a bulk Clear failed action. Each finished card also has its own Clear to dismiss it individually. The download arrow on a track becomes Retry with the failure reason in its tooltip.
 
@@ -221,7 +221,7 @@ The floating queue button appears only while a download is active. History and q
 
 Pause/resume and restart recovery depend on the stage and surviving partial files. Cancelling does not remove an already published library file. Clearing finished jobs from the queue is separate from download history.
 
-Validate a new setup by inspecting a permitted test file, its tags and its appearance in Navidrome. A queue acknowledgement confirms submission, not successful publication. [Measurements](docs/measurements.md) records which acceptance checks have actually passed.
+Validate a new setup by inspecting a permitted test file, its tags and its appearance in Navidrome. A queue acknowledgement confirms submission, not successful publication. Download controls show the destination and format before queueing so you know where files will land. [Measurements](docs/measurements.md) records which acceptance checks have actually passed.
 
 ### Recent activity
 
