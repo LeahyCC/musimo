@@ -1532,11 +1532,11 @@ export function LibraryPage({
                 disabled={busy || !trackTotal}
                 onPlay={() => playTracks.mutate({ shuffled: false })}
               />
-              <small className="muted">
-                {trackTotal > 500
-                  ? `Plays the first 500 of ${trackTotal.toLocaleString()} matching songs.`
-                  : 'Covers every matching song, not just the loaded ones.'}
-              </small>
+              {trackTotal > 500 && (
+                <small className="muted">
+                  Plays the first 500 of {trackTotal.toLocaleString()} matching songs.
+                </small>
+              )}
             </div>
             <div className="library-action-column">
               <button
@@ -1546,13 +1546,20 @@ export function LibraryPage({
               >
                 <Shuffle size={15} /> Shuffle
               </button>
-              <small className="muted">
-                {trackTotal > 500
-                  ? `Plays a random 500 of ${trackTotal.toLocaleString()} matching songs.`
-                  : 'Covers every matching song, not just the loaded ones.'}
-              </small>
+              {trackTotal > 500 && (
+                <small className="muted">
+                  Plays a random 500 of {trackTotal.toLocaleString()} matching songs.
+                </small>
+              )}
             </div>
           </div>
+          {/* Both buttons share one note when the whole selection fits; the per-button notes
+              only differ once the 500-song queue limit splits their behaviour. */}
+          {trackTotal <= 500 && (
+            <small className="muted library-actions-note">
+              Covers every matching song, not just the loaded ones.
+            </small>
+          )}
           {playTracks.isError && (
             <p className="error" role="alert">
               {playTracks.error.message}

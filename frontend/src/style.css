@@ -3484,9 +3484,14 @@ button.library-card-play.active {
   gap: 8px;
   align-items: center;
 }
-.library-list-actions .muted {
+.library-list-actions .muted,
+.library-actions-note {
   color: var(--muted);
   font-size: 12px;
+}
+.library-actions-note {
+  display: block;
+  margin: 8px 0 16px;
 }
 .virtual-window {
   position: absolute;
