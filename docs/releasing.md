@@ -28,13 +28,13 @@ This separates files present in the repository from GitHub settings, legal revie
 
 ## Build and runtime evidence
 
-- [x] Run lint, format, strict typing, backend tests and frontend build on the final revision. (10 September 2026, release/0.4.0: 57 backend tests pass, ruff check/format pass, mypy passes, frontend build passes, npm audit passes. Browser checks: 112 tests across Chromium/Firefox/WebKit/mobile from PRs #43 and #44, 74%+ backend coverage)
+- [x] Run lint, format, strict typing, backend tests and frontend build on the final revision. (10 September 2026, release/0.4.0: 57 backend tests pass, ruff check/format pass, mypy passes, frontend build passes, npm audit passes. Browser checks: PR #44 run showed 59 passed and 1 skipped on Chromium, 38 on mobile project, 74%+ backend coverage)
 - [ ] Build from a clean clone using committed locks and check the image on supported platforms. Historical arm64 emulated build from 7 September 2026 passed 41 tests in [evidence/arm64-emulated.json](evidence/arm64-emulated.json). Fresh clone build on Windows amd64 and linux/amd64 not performed today.
 - [ ] Run install, persistence/restart, scan, event replay and proxy checks against isolated test data. CI is paused. Either run `uv run python scripts/smoke.py --url http://127.0.0.1:18810 --restart --compose-file compose.ci.yaml --project-name musimo-ci-release` now or leave unticked.
 - [x] Verify a permitted track downloads, matches correctly, receives tags/artwork/lyrics where available, and appears in Navidrome. (U.S. Navy Band public domain fixture, see [evidence/phase3-public-domain.json](evidence/phase3-public-domain.json))
 - [x] Verify album missing-only batches, repeated clicks, partial failures and batch controls. (Covered by browser specs e2e/download-options.spec.ts and e2e/cards.spec.ts)
 - [ ] Exercise pause/resume/cancel/retry, source failure, low disk space, mount loss and restart recovery. Pause/resume/cancel/retry and restart recovery verified in [measurements.md](measurements.md#reliability-and-indexing-7-september-2026). Low disk space and mount loss not exercised.
-- [x] Visually check desktop/mobile search, player, queue and Settings, including keyboard operation and error states. (PR #43 walked every screen at desktop and 390px mobile width, fixed 21 bugs)
+- [x] Visually check desktop/mobile search, player, queue and Settings, including keyboard operation and error states. (PR #43 walked every screen at desktop and 390px mobile width, fixed 13 layout and wording issues)
 - [ ] Record cold/warm search, accuracy, throughput, large-library scan and idle CPU measurements. Cold/warm search and sustained idle resources recorded in [measurements.md](measurements.md) but miss targets. Match accuracy corpus exists (100 cases) but independent labels pending. Permitted-music throughput not measured. Representative mixed-format 50k library not tested (synthetic 50k scan passes). Cannot tick while measurements remain incomplete.
 - [ ] Test backup restoration and upgrade compatibility, not just backup creation.
 

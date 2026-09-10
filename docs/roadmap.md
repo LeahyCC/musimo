@@ -28,7 +28,7 @@ Version 0.4.0 (10 September 2026) completed the core search, download and playba
 - ✓ Touch targets meet 44px minimum on coarse pointers
 - ✓ Player height adapts dynamically to prevent queue button overlap
 - ✓ Automated axe accessibility checks run on every route
-- ✓ Minimum text size raised from 9px to 10px
+- ✓ Minimum text size raised from 9px to 10px for .nav-link and .connection at narrow widths
 - ✓ Queue count changes announce via live region
 - ✓ Settings drafts survive SSE events
 - ✓ Conflict notices appear when a value changes elsewhere
