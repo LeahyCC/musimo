@@ -412,7 +412,9 @@ function JobCard({ job }: { job: DownloadJob }) {
         <span>
           {job.format === 'original'
             ? 'Original source quality'
-            : job.format.toUpperCase() + ' · conversion if needed'}
+            : job.format === 'mp3'
+              ? 'MP3 · lossy conversion'
+              : job.format.toUpperCase() + ' · conversion if needed'}
         </span>
         {job.stage === 'downloading' && (
           <span>
