@@ -258,10 +258,12 @@ export function TrackRow({
   item,
   selected = false,
   job,
+  focusable = false,
 }: {
   item: MusicResult
   selected?: boolean
   job?: DownloadJob
+  focusable?: boolean
 }) {
   const player = usePlayer()
   const playing = usePreviewPlayback(item.id).playing
@@ -272,7 +274,7 @@ export function TrackRow({
       className={`track-row${selected ? ' selected-track' : ''}`}
       id={`track-${item.id}`}
       aria-current={selected ? 'true' : undefined}
-      tabIndex={-1}
+      tabIndex={focusable ? 0 : -1}
     >
       <Art item={item} />
       <div className="track-title">
@@ -327,8 +329,17 @@ function CardGrid({ items }: { items: MusicResult[] }) {
   )
 }
 
-export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTrack?: number }) {
+export function TrackList({
+  items,
+  focusTrack,
+  resetScroll,
+}: {
+  items: MusicResult[]
+  focusTrack?: number
+  resetScroll?: number
+}) {
   const parent = useRef<HTMLDivElement>(null)
+  const [focusedIndex, setFocusedIndex] = useState(0)
   const queue = useJobs()
   const jobs = new Map<number, DownloadJob>()
   for (const job of queue.data?.jobs ?? []) {
@@ -343,6 +354,12 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
     overscan: 6,
   })
   useEffect(() => {
+    if (resetScroll !== undefined && parent.current) {
+      parent.current.scrollTop = 0
+    }
+  }, [resetScroll])
+
+  useEffect(() => {
     const index = items.findIndex((item) => item.id === focusTrack)
     if (index < 0) return
     if (items.length > 12) {
@@ -356,15 +373,43 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
       element?.focus({ preventScroll: true })
     }
   }, [focusTrack, items, virtual])
+
+  const handleKeyDown = (event: React.KeyboardEvent) => {
+    if (!items.length) return
+    let newIndex = focusedIndex
+    if (event.key === 'ArrowDown') {
+      event.preventDefault()
+      newIndex = Math.min(focusedIndex + 1, items.length - 1)
+    } else if (event.key === 'ArrowUp') {
+      event.preventDefault()
+      newIndex = Math.max(focusedIndex - 1, 0)
+    } else if (event.key === 'Home') {
+      event.preventDefault()
+      newIndex = 0
+    } else if (event.key === 'End') {
+      event.preventDefault()
+      newIndex = items.length - 1
+    } else {
+      return
+    }
+    setFocusedIndex(newIndex)
+    if (items.length > 12) {
+      virtual.scrollToIndex(newIndex, { align: 'center' })
+    }
+    requestAnimationFrame(() => {
+      document.getElementById(`track-${items[newIndex]?.id}`)?.focus({ preventScroll: true })
+    })
+  }
   if (items.length <= 12)
     return (
-      <div className="track-list">
-        {items.map((item) => (
+      <div className="track-list" onKeyDown={handleKeyDown}>
+        {items.map((item, index) => (
           <TrackRow
             key={item.id}
             item={item}
             selected={item.id === focusTrack}
             job={jobs.get(item.id)}
+            focusable={index === focusedIndex}
           />
         ))}
       </div>
@@ -376,6 +421,7 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
       role="region"
       aria-label="Tracks"
       tabIndex={0}
+      onKeyDown={handleKeyDown}
     >
       <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>
         {virtual.getVirtualItems().map((row) => {
@@ -393,7 +439,12 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
                 transform: `translateY(${row.start}px)`,
               }}
             >
-              <TrackRow item={item} selected={item.id === focusTrack} job={jobs.get(item.id)} />
+              <TrackRow
+                item={item}
+                selected={item.id === focusTrack}
+                job={jobs.get(item.id)}
+                focusable={row.index === focusedIndex}
+              />
             </div>
           ) : null
         })}
@@ -465,6 +516,37 @@ function ResultsSection({
     staleTime: 86_400_000,
     retry: false,
   })
+  // Track filter state separately from search query for deliberate scroll reset
+  const filterSignature = useMemo(
+    () =>
+      JSON.stringify({
+        explicit: state.explicit,
+        from: state.from,
+        until: state.until,
+        library: state.library,
+        min: state.min,
+        max: state.max,
+        preview: state.preview,
+        sort: state.sort,
+      }),
+    [
+      state.explicit,
+      state.from,
+      state.until,
+      state.library,
+      state.min,
+      state.max,
+      state.preview,
+      state.sort,
+    ],
+  )
+  const prevFilterRef = useRef(filterSignature)
+  const resetCounterRef = useRef(0)
+  if (prevFilterRef.current !== filterSignature) {
+    prevFilterRef.current = filterSignature
+    resetCounterRef.current += 1
+  }
+  const resetScroll = resetCounterRef.current
   const items = useMemo(() => {
     const unique = [...new Map(raw.map((item) => [item.id, item])).values()]
     const filtered = unique
@@ -563,9 +645,9 @@ function ResultsSection({
       )}
       {items.length > 0 &&
         (kind === 'track' ? (
-          <TrackList key={JSON.stringify(state)} items={items} />
+          <TrackList items={items} resetScroll={resetScroll} />
         ) : (
-          <CardGrid key={JSON.stringify(state)} items={items} />
+          <CardGrid items={items} />
         ))}
       {!query.isPending && !query.isError && !items.length && (
         <p className="empty-results">

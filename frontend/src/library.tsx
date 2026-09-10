@@ -201,9 +201,20 @@ function FilterMenu({
       }
     }
 
+    const handleEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && open) {
+        setOpen(false)
+        event.preventDefault()
+      }
+    }
+
     document.addEventListener('pointerdown', closeOutside)
-    return () => document.removeEventListener('pointerdown', closeOutside)
-  }, [])
+    document.addEventListener('keydown', handleEscape)
+    return () => {
+      document.removeEventListener('pointerdown', closeOutside)
+      document.removeEventListener('keydown', handleEscape)
+    }
+  }, [open])
 
   return (
     <details
