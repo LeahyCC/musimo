@@ -911,7 +911,9 @@ export function DownloadsPage() {
           <h2>
             {queue.isPending
               ? 'Loading queue…'
-              : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
+              : tab === 'done'
+                ? 'Nothing has finished yet.'
+                : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
           </h2>
           <Link to="/search" className="button primary">
             Find a track
