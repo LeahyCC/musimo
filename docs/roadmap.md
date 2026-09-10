@@ -16,7 +16,7 @@ Recent UI work covered automatic album coverage, card downloads, library playbac
 4. ✓ **Explain duplicates and editions** (done 10 September 2026). "Already queued", "in library" and "another edition matched" now show distinct badges and counts. Edition matches keep the download control enabled with a hint. Replacement flow remains open because the worker appends the job id to the filename when the target exists instead of overwriting.
 5. ✓ **First-run readiness** (done 10 September 2026). Diagnostics now shows library roots (mounted, writable, free space), the selected destination with a write-test button, the last library scan (state, file count, when), Navidrome (configured, available, version, mode), YouTube helper status with pause state, and the last download outcome (done or failed with error code). Settings displays an overall status summary with a link to Diagnostics.
 6. **Long-list accessibility.** Exercise keyboard focus across virtualization, touch targets, screen-reader labels, contrast and zoom. Check queue/player overlap at narrow widths (partly addressed in PR #32) and while errors expand.
-7. **Separate settings drafts from live updates.** Verify that scan/queue events do not erase an unsaved form. Show a clear save acknowledgement and preserve drafts during an unrelated background event.
+7. ✓ **Separate settings drafts from live updates** (done 10 September 2026). Settings drafts survive SSE events, conflict notices appear when a value changes elsewhere, and navigation guards block unsaved changes from being lost.
 
 ## Release readiness
 

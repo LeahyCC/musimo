@@ -17,6 +17,7 @@ import {
   Link,
   Outlet,
   RouterProvider,
+  useBlocker,
   useNavigate,
   useParams,
   useRouterState,
@@ -457,7 +458,46 @@ function SettingsPage() {
     queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
   })
   const [draft, setDraft] = useState<Partial<Record<SettingKey, string | number>>>({})
+  const [originalValues, setOriginalValues] = useState<
+    Partial<Record<SettingKey, string | number>>
+  >({})
+  const [conflicts, setConflicts] = useState<Partial<Record<SettingKey, string | number>>>({})
   const [saved, setSaved] = useState(false)
+
+  const isDirty = Object.keys(draft).length > 0
+
+  useBlocker({
+    condition: isDirty,
+    blockerFn: () => !window.confirm('You have unsaved changes. Leave anyway?'),
+  })
+
+  useEffect(() => {
+    const handler = (e: BeforeUnloadEvent) => {
+      if (isDirty) {
+        e.preventDefault()
+        e.returnValue = ''
+      }
+    }
+    window.addEventListener('beforeunload', handler)
+    return () => window.removeEventListener('beforeunload', handler)
+  }, [isDirty])
+
+  useEffect(() => {
+    if (!settings.data) return
+    const newConflicts: Partial<Record<SettingKey, string | number>> = {}
+    for (const key of Object.keys(draft) as SettingKey[]) {
+      const original = originalValues[key]
+      const current = settings.data[key]?.value
+      if (original !== undefined && current !== original && current !== draft[key]) {
+        newConflicts[key] = current
+      }
+    }
+    setConflicts(newConflicts)
+    if (Object.keys(newConflicts).length > 0) {
+      setSaved(false)
+    }
+  }, [settings.data, draft, originalValues])
+
   const save = useMutation({
     mutationFn: () =>
       api('settings', settingsSchema, {
@@ -468,6 +508,8 @@ function SettingsPage() {
     onSuccess: (data) => {
       client.setQueryData(['settings'], data)
       setDraft({})
+      setOriginalValues({})
+      setConflicts({})
       setSaved(true)
     },
   })
@@ -580,6 +622,9 @@ function SettingsPage() {
                             value={value}
                             disabled={setting.locked || save.isPending}
                             onChange={(e) => {
+                              if (!(key in draft)) {
+                                setOriginalValues({ ...originalValues, [key]: setting.value })
+                              }
                               setDraft({ ...draft, [key]: e.target.value })
                               setSaved(false)
                             }}
@@ -607,6 +652,9 @@ function SettingsPage() {
                             value={value}
                             disabled={setting.locked || save.isPending}
                             onChange={(e) => {
+                              if (!(key in draft)) {
+                                setOriginalValues({ ...originalValues, [key]: setting.value })
+                              }
                               setDraft({ ...draft, [key]: e.target.value })
                               setSaved(false)
                             }}
@@ -627,6 +675,9 @@ function SettingsPage() {
                             disabled={setting.locked || save.isPending}
                             value={value}
                             onChange={(e) => {
+                              if (!(key in draft)) {
+                                setOriginalValues({ ...originalValues, [key]: setting.value })
+                              }
                               setDraft({
                                 ...draft,
                                 [key]: min === undefined ? e.target.value : Number(e.target.value),
@@ -634,6 +685,11 @@ function SettingsPage() {
                               setSaved(false)
                             }}
                           />
+                        )}
+                        {conflicts[key] !== undefined && (
+                          <small className="conflict">
+                            Changed elsewhere to {String(conflicts[key])}
+                          </small>
                         )}
                       </div>
                     </div>
