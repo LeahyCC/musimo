@@ -175,17 +175,85 @@ test('a failed save keeps the draft and allows a successful retry', async ({ pag
   await expect(page.getByRole('textbox', { name: 'Library label' })).toHaveValue(label)
 })
 
-test('settings draft shows unsaved changes status and saves correctly', async ({ page }) => {
+test('settings draft survives SSE events and shows conflict notices', async ({ page, request }) => {
   await page.goto('/settings')
   const labelField = page.getByRole('textbox', { name: 'Library label' })
-  const timestamp = Date.now()
-  await labelField.fill(`Draft ${timestamp}`)
+  const namingField = page.getByRole('textbox', { name: 'Folder and file naming' })
+  const concurrencySelect = page.getByRole('spinbutton', { name: 'Parallel downloads' })
+
+  const originalLabel = await labelField.inputValue()
+  const originalNaming = await namingField.inputValue()
+  const originalConcurrency = await concurrencySelect.inputValue()
+
+  await labelField.fill('Draft label')
+  await namingField.fill('{artist}/{album}/{track} {title}')
   await expect(page.getByText('You have unsaved changes.')).toBeVisible()
+
+  const scanResponse = await request.post('/api/library/scan')
+  expect(scanResponse.ok()).toBe(true)
+  const cancelResponse = await request.post('/api/library/cancel')
+  expect(cancelResponse.ok()).toBe(true)
+
+  await expect(labelField).toHaveValue('Draft label')
+  await expect(namingField).toHaveValue('{artist}/{album}/{track} {title}')
+  await expect(page.getByText('You have unsaved changes.')).toBeVisible()
+
+  const newConcurrency = originalConcurrency === '2' ? '3' : '2'
+  const concurrencyResponse = await request.patch('/api/settings', {
+    data: { concurrency: Number(newConcurrency) },
+  })
+  expect(concurrencyResponse.ok()).toBe(true)
+
+  await expect(concurrencySelect).toHaveValue(newConcurrency)
+  await expect(labelField).toHaveValue('Draft label')
+  await expect(namingField).toHaveValue('{artist}/{album}/{track} {title}')
+  await expect(page.getByText('You have unsaved changes.')).toBeVisible()
+
+  const labelResponse = await request.patch('/api/settings', {
+    data: { library_label: 'Changed elsewhere' },
+  })
+  expect(labelResponse.ok()).toBe(true)
+
+  await expect(page.getByText('Changed elsewhere to Changed elsewhere')).toBeVisible()
+  await expect(labelField).toHaveValue('Draft label')
+  await expect(page.getByText('You have unsaved changes.')).toBeVisible()
+  await expect(page.getByText('Saved. You can safely refresh.')).not.toBeVisible()
 
   await page.getByRole('button', { name: 'Save changes' }).click()
   await expect(page.getByText('Saved. You can safely refresh.')).toBeVisible()
-  await page.reload()
-  await expect(labelField).toHaveValue(`Draft ${timestamp}`)
+
+  await request.patch('/api/settings', {
+    data: {
+      library_label: originalLabel,
+      naming_template: originalNaming,
+      concurrency: Number(originalConcurrency),
+    },
+  })
+})
+
+test('navigation guard blocks unsaved changes from being lost', async ({ page }) => {
+  await page.goto('/settings')
+  const labelField = page.getByRole('textbox', { name: 'Library label' })
+  await labelField.fill('Draft that should not be lost')
+  await expect(page.getByText('You have unsaved changes.')).toBeVisible()
+
+  page.once('dialog', (dialog) => {
+    expect(dialog.message()).toContain('unsaved changes')
+    void dialog.dismiss()
+  })
+
+  await page.getByRole('link', { name: 'Downloads' }).click()
+  await expect(page).toHaveURL(/\/settings$/)
+  await expect(labelField).toHaveValue('Draft that should not be lost')
+  await expect(page.getByText('You have unsaved changes.')).toBeVisible()
+
+  page.once('dialog', (dialog) => {
+    expect(dialog.message()).toContain('unsaved changes')
+    void dialog.accept()
+  })
+
+  await page.getByRole('link', { name: 'Downloads' }).click()
+  await expect(page).toHaveURL(/\/downloads$/)
 })
 
 test('queue pause and resume persist through refresh', async ({ page, request }) => {
