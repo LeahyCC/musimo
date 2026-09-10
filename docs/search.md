@@ -1,6 +1,6 @@
 # Search and library indexing
 
-Phase 2 runs in the same Docker service as Phase 1. The music folder is read-only for the scanner; search does not start downloads or change audio tags.
+The search service runs in the same Docker service as the rest. The music folder is read-only for the scanner; search does not start downloads or change audio tags.
 
 ## Using search
 
@@ -36,7 +36,7 @@ Startup and thirty-minute reconciliation scans walk configured roots. Settings p
 
 Hidden files and directories, including `.musimo` staging, are excluded from scans and watcher updates. Artwork, lyrics and manifest writes do not trigger a full scan. Moving a staged recording into a visible music folder still triggers indexing. Publication uses the same scan lock as watcher updates so a concurrent scan cannot prune a just-published recording's index entry.
 
-Native watchdog events are the default. Docker Desktop did not forward Windows host writes in the live test, so this machine uses `MUSIMO_WATCH_MODE=poll`. Polling checks each mount every 60 seconds by default, then applies changes after a short settling interval. `MUSIMO_POLL_INTERVAL_SECONDS` changes this deployment setting; shorter intervals cost more idle CPU. A native mode test failed to observe a host-created fixture within 12 seconds; polling passed. The earlier five-second setting used about 7.7% of one CPU core. The longer default reduces repeated metadata reads across the Windows mount. The final idle sample still missed the 1% CPU target; see the measurements note. Phase 3 will upsert immediately after its own successful file moves.
+Native watchdog events are the default. Docker Desktop did not forward Windows host writes in the live test, so this machine uses `MUSIMO_WATCH_MODE=poll`. Polling checks each mount every 60 seconds by default, then applies changes after a short settling interval. `MUSIMO_POLL_INTERVAL_SECONDS` changes this deployment setting; shorter intervals cost more idle CPU. A native mode test failed to observe a host-created fixture within 12 seconds; polling passed. The earlier five-second setting used about 7.7% of one CPU core. The longer default reduces repeated metadata reads across the Windows mount. The final idle sample still missed the 1% CPU target; see the measurements note. Publication indexing already exists and is described at docs/downloads.md ~45 and search.md ~37.
 
 Machine-specific mounts belong in the ignored `compose.override.yaml`. The portable Compose file contains no host drive letter. Use read-only binds for collections that only contribute to the index, and a writable bind for the selected download destination. Verify the host paths on each machine.
 
@@ -62,7 +62,7 @@ Browser coverage for these UI changes is recorded in [UI verification](ui-verifi
 
 ## Preview navigation and controls
 
-The player lives within the root router and persists while routes change. Song links open `/albums/{album_id}?track={track_id}`; the album scrolls its virtual list to that recording, highlights it with `aria-current="true"` and focuses it using `tabIndex={-1}`. The focused row shows a visible focus outline. Artist links open the artist page. Missing catalog identifiers remain text rather than invalid links.
+The player lives within the root router and persists while routes change. Song links open `/albums/{album_id}?track={track_id}`; the album scrolls its virtual list to that recording, highlights it with `aria-current="true"` and focuses it using a roving tabindex (`tabIndex={focusable ? 0 : -1}`) with `focus({ preventScroll: true })`. The focused row shows a visible focus outline. ArrowUp, ArrowDown, Home and End move focus through the track list (`role="region"` labelled Tracks); focus is kept across virtual unmount. Artist links open the artist page. Missing catalog identifiers remain text rather than invalid links.
 
 Album and artist pages show a "Back to results" link when reached from search. The link restores the last search query, tab, sort and filters from sessionStorage. Direct visits or links from elsewhere fall back to the search home.
 
