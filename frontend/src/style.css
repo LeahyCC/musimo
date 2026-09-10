@@ -3426,6 +3426,14 @@ button.library-card-play {
   box-shadow: none;
 }
 @media (max-width: 700px) {
+  /* The stage's own 16:9 aspect ratio makes it short at this width, and the
+     seek bar wrapping to its own row makes the controls taller. Without a
+     floor, the two overlay bars can add up to more than the stage itself, so
+     the controls clip and the idle fade can never find a still gap to fade
+     into. object-fit: contain on the canvas letterboxes cleanly above that. */
+  .visual-stage {
+    min-height: 280px;
+  }
   .visual-controls {
     gap: 4px;
   }
