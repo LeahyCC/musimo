@@ -361,7 +361,9 @@ function ArtistItem({
         </span>
         <span>
           <strong>{artist.name}</strong>
-          <small>{artist.albumCount ?? 0} albums</small>
+          <small>
+            {artist.albumCount ?? 0} {artist.albumCount === 1 ? 'album' : 'albums'}
+          </small>
         </span>
       </button>
       <div className="library-collection-actions">
