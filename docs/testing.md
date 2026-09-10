@@ -41,11 +41,13 @@ docker compose -f compose.ci.yaml -p musimo-ci down --volumes
 
 The explicit Compose file, project name, port 18765 and named test volumes keep these checks separate from a running installation. They do not mount host music or load `compose.override.yaml`. Cleanup removes only this test project's containers and volumes. To run several stacks side by side (parallel branches on one machine), give each its own `MUSIMO_CI_PORT`, `MUSIMO_CI_TAG` and `-p` project name when starting Compose, and point Playwright at it with `PLAYWRIGHT_BASE_URL` and `MUSIMO_CI_PROJECT`:
 
-````sh
+```sh
 MUSIMO_CI_PORT=18801 MUSIMO_CI_TAG=ci-mybranch docker compose -f compose.ci.yaml -p musimo-ci-mybranch up -d --build --wait
 PLAYWRIGHT_BASE_URL=http://127.0.0.1:18801 MUSIMO_CI_PROJECT=musimo-ci-mybranch npm run test:e2e --prefix frontend
 docker compose -f compose.ci.yaml -p musimo-ci-mybranch down --volumes
-``` Run smoke and browser tests sequentially because both change installation settings. Start the test server before Playwright.
+```
+
+Run smoke and browser tests sequentially because both change installation settings. Start the test server before Playwright.
 
 Playwright runs Chromium, Firefox, WebKit and a 390px mobile viewport (iPhone 13 on Chromium). Tests cover keyboard search, query/tab/sort persistence, catalog error/retry, saved settings, cross-tab SSE updates, failed saves, queue pause/resume, activity clear, diagnostics export, album ownership, artist selection, library track controls, play-to-pause and resume, artist album dates and sorting, playlist CRUD and the playlist picker, download card layout with failure grouping, infinite scrolling, failure explanations and retry counts, the loading transition check and AudioMuse radio, and the Now Playing hover and idle stage (Chromium desktop only). They also check real audio decoding, seeking, volume, mute, restart and navigation using generated silence served by the test container.
 
@@ -59,7 +61,7 @@ npm run test:e2e:report --prefix frontend
 
 Spec files: `e2e/album.spec.ts`, `e2e/app.spec.ts`, `e2e/cards.spec.ts`, `e2e/download-failures.spec.ts`, `e2e/download-options.spec.ts`, `e2e/library-controls.spec.ts`, `e2e/now-playing-popout.spec.ts`, `e2e/player.spec.ts`, `e2e/playlists.spec.ts`, plus support files `e2e/env.ts`, `e2e/library-fixtures.ts`, `e2e/queue-fixtures.ts`, `e2e/setup.ts`.
 
-Test files: `tests/test_activity.py`, `tests/test_artist_downloads.py`, `tests/test_downloads.py`, `tests/test_enrichment.py`, `tests/test_foundation.py`, `tests/test_player.py`, `tests/test_reliability.py`, `tests/test_search.py`, `tests/test_worker.py`.`
+Test files: `tests/test_activity.py`, `tests/test_artist_downloads.py`, `tests/test_downloads.py`, `tests/test_enrichment.py`, `tests/test_foundation.py`, `tests/test_player.py`, `tests/test_reliability.py`, `tests/test_search.py`, `tests/test_worker.py`.
 
 The report links screenshots, video and traces. CI also retains JUnit output, container logs, API benchmarks and coverage XML for 14 days. Linux CI starts PulseAudio with a virtual output so Firefox can decode and play audio without physical speakers. The benchmark's release gate remains deliberately incomplete; ordinary CI checks only measurements the script implements.
 
@@ -105,4 +107,3 @@ Dependency changes include manifests, locks and exports in the same PR. Required
 The initial CodeQL review led to allowlisted static filenames and download destinations. Requests cannot select files outside the built frontend or cause arbitrary destination paths to be resolved. Root public files are discovered at startup; dynamic assets remain under `/assets`.
 
 The Navidrome scan integration has one documented hashing exception: [Subsonic authentication](https://www.subsonic.org/pages/api.jsp) requires `MD5(password + salt)` for its request token. Musimo uses a fresh random salt for each call and does not store that token as a password hash. Replacing the algorithm would break the protocol. This exception applies only to that token calculation, not other hashing or password storage.
-````
