@@ -23,6 +23,7 @@ import {
 } from '@tanstack/react-router'
 import {
   Activity,
+  AlertCircle,
   ArrowDownToLine,
   ArrowRight,
   Check,
@@ -31,14 +32,23 @@ import {
   Heart,
   Library,
   LockKeyhole,
+  Minus,
   Radio,
   RefreshCw,
   Search,
   SlidersHorizontal,
   Star,
+  X,
 } from 'lucide-react'
 
-import { api, diagnosticsSchema, settingsSchema, snapshotSchema, sourceSchema } from './api'
+import {
+  api,
+  destinationTestSchema,
+  diagnosticsSchema,
+  settingsSchema,
+  snapshotSchema,
+  sourceSchema,
+} from './api'
 import type { SettingKey } from './api'
 import { librarySchema } from './api'
 import { namingSchema } from './api'
@@ -469,6 +479,42 @@ function SettingsPage() {
       <p className="page-intro">
         Preferences save without a restart. Download defaults apply to newly queued tracks.
       </p>
+      {diagnostics.data &&
+        (() => {
+          const rootsReady = diagnostics.data.library.roots.every((root: string) => {
+            const disk = diagnostics.data.disks.find((d) => d.path === root)
+            return disk?.exists && disk?.writable && disk?.free_bytes !== null
+          })
+          const scanReady =
+            diagnostics.data.library.status === 'idle' ||
+            diagnostics.data.library.status === 'scanning'
+          const navidromeReady = diagnostics.data.navidrome
+            ? diagnostics.data.navidrome.available
+            : null
+          const youtubeReady =
+            diagnostics.data.sources.find((s) => s.source === 'youtube')?.status === 'healthy'
+          const lastDownloadOk =
+            !diagnostics.data.last_download || diagnostics.data.last_download.stage === 'done'
+          const overallReady =
+            rootsReady && scanReady && navidromeReady !== false && youtubeReady && lastDownloadOk
+
+          return (
+            <div className={`settings-status ${overallReady ? 'ready' : 'not-ready'}`}>
+              {overallReady ? (
+                <>
+                  <Check size={16} />
+                  System ready.
+                </>
+              ) : (
+                <>
+                  <AlertCircle size={16} />
+                  Some components need attention.
+                </>
+              )}
+              <Link to="/diagnostics">View diagnostics</Link>
+            </div>
+          )
+        })()}
       {settings.isError && (
         <div className="error" role="alert">
           {settings.error.message}
@@ -656,9 +702,18 @@ function DiagnosticsPage() {
     queryKey: ['diagnostics'],
     queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
   })
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
+  })
   const probe = useMutation({
     mutationFn: (sourceName: string) =>
       api(`diagnostics/test/${sourceName}`, sourceSchema, { method: 'POST' }),
+    onSuccess: () => void client.invalidateQueries({ queryKey: ['diagnostics'] }),
+  })
+  const testDestination = useMutation({
+    mutationFn: () =>
+      api('diagnostics/test/destination', destinationTestSchema, { method: 'POST' }),
     onSuccess: () => void client.invalidateQueries({ queryKey: ['diagnostics'] }),
   })
   const data = diagnostics.data
@@ -690,16 +745,214 @@ function DiagnosticsPage() {
       {!data && !diagnostics.isError && <p role="status">Checking your container…</p>}
       {data && (
         <>
-          <div className="health-strip">
-            <span className="health-icon">
-              <Check size={24} />
-            </span>
-            <div>
-              <h2>Musimo is ready.</h2>
-              <p>The application and database are responding.</p>
+          {(() => {
+            const rootsReady = data.library.roots.every((root: string) => {
+              const disk = data.disks.find((d) => d.path === root)
+              return disk?.exists && disk?.writable && disk?.free_bytes !== null
+            })
+            const scanReady = data.library.status === 'idle' || data.library.status === 'scanning'
+            const navidromeReady = data.navidrome ? data.navidrome.available : null
+            const youtubeReady =
+              data.sources.find((s) => s.source === 'youtube')?.status === 'healthy'
+            const lastDownloadOk = !data.last_download || data.last_download.stage === 'done'
+            const overallReady =
+              rootsReady && scanReady && navidromeReady !== false && youtubeReady && lastDownloadOk
+
+            return (
+              <div className="health-strip">
+                <span className="health-icon">
+                  {overallReady ? <Check size={24} /> : <AlertCircle size={24} />}
+                </span>
+                <div>
+                  <h2>Ready to download?</h2>
+                  <p>{overallReady ? 'All systems ready.' : 'Some components need attention.'}</p>
+                </div>
+                <span className="tag">v{data.health.version}</span>
+              </div>
+            )
+          })()}
+          <section className="panel readiness-panel">
+            <div className="section-heading">
+              <h2>System readiness</h2>
             </div>
-            <span className="tag">v{data.health.version}</span>
-          </div>
+            <div className="readiness-items">
+              {data.library.roots.map((root: string) => {
+                const disk = data.disks.find((d) => d.path === root)
+                const ready = disk?.exists && disk?.writable && disk?.free_bytes !== null
+                return (
+                  <div key={root} className="readiness-item">
+                    <span className={`readiness-badge ${ready ? 'ready' : 'not-ready'}`}>
+                      {ready ? <Check size={14} /> : <X size={14} />}
+                      {ready ? 'Ready' : 'Not ready'}
+                    </span>
+                    <div>
+                      <strong>Library root</strong>
+                      <code>{root}</code>
+                      <small>
+                        {disk?.exists
+                          ? disk?.writable
+                            ? `${gb(disk.free_bytes)} free`
+                            : 'Not writable'
+                          : 'Not mounted'}
+                      </small>
+                    </div>
+                  </div>
+                )
+              })}
+              {settings.data &&
+                (() => {
+                  const destPath = String(settings.data.destination.value)
+                  const disk = data.disks.find((d) => d.path === destPath)
+                  const ready = disk?.exists && disk?.writable
+                  return (
+                    <div className="readiness-item">
+                      <span className={`readiness-badge ${ready ? 'ready' : 'not-ready'}`}>
+                        {ready ? <Check size={14} /> : <X size={14} />}
+                        {ready ? 'Ready' : 'Not ready'}
+                      </span>
+                      <div>
+                        <strong>Download destination</strong>
+                        <code>{destPath}</code>
+                        <small>
+                          {disk?.exists
+                            ? disk?.writable
+                              ? `${gb(disk.free_bytes)} free`
+                              : 'Not writable'
+                            : 'Not mounted'}
+                        </small>
+                      </div>
+                      {ready && (
+                        <button
+                          className="button"
+                          onClick={() => testDestination.mutate()}
+                          disabled={testDestination.isPending}
+                        >
+                          {testDestination.isPending ? 'Testing…' : 'Test write'}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })()}
+              {testDestination.data && (
+                <div
+                  className={`readiness-feedback ${testDestination.data.success ? 'success' : 'error'}`}
+                >
+                  {testDestination.data.success
+                    ? `Write test succeeded (${testDestination.data.elapsed_ms} ms)`
+                    : `Write test failed: ${testDestination.data.error}`}
+                </div>
+              )}
+              <div className="readiness-item">
+                <span
+                  className={`readiness-badge ${data.library.status === 'idle' || data.library.status === 'scanning' ? 'ready' : 'not-ready'}`}
+                >
+                  {data.library.status === 'idle' || data.library.status === 'scanning' ? (
+                    <Check size={14} />
+                  ) : (
+                    <X size={14} />
+                  )}
+                  {data.library.status === 'idle' || data.library.status === 'scanning'
+                    ? 'Ready'
+                    : 'Not ready'}
+                </span>
+                <div>
+                  <strong>Library scan</strong>
+                  <p>
+                    {data.library.status === 'idle'
+                      ? `${data.library.total_files} files indexed`
+                      : data.library.status === 'scanning'
+                        ? `Scanning (${data.library.indexed} files)`
+                        : data.library.detail}
+                  </p>
+                </div>
+              </div>
+              {data.navidrome && settings.data && (
+                <div className="readiness-item">
+                  <span
+                    className={`readiness-badge ${data.navidrome.available ? 'ready' : data.navidrome.configured ? 'not-ready' : 'not-tested'}`}
+                  >
+                    {data.navidrome.available ? (
+                      <>
+                        <Check size={14} />
+                        Ready
+                      </>
+                    ) : data.navidrome.configured ? (
+                      <>
+                        <X size={14} />
+                        Not ready
+                      </>
+                    ) : (
+                      <>
+                        <Minus size={14} />
+                        Not configured
+                      </>
+                    )}
+                  </span>
+                  <div>
+                    <strong>Navidrome</strong>
+                    <p>
+                      {data.navidrome.available
+                        ? `${data.navidrome.version} · ${String(settings.data.navidrome_mode.value)} mode`
+                        : data.navidrome.detail}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {data.sources
+                .filter((s) => s.source === 'youtube')
+                .map((source) => (
+                  <div key={source.source} className="readiness-item">
+                    <span
+                      className={`readiness-badge ${source.status === 'healthy' ? 'ready' : 'not-ready'}`}
+                    >
+                      {source.status === 'healthy' ? <Check size={14} /> : <X size={14} />}
+                      {source.status === 'healthy' ? 'Ready' : 'Not ready'}
+                    </span>
+                    <div>
+                      <strong>YouTube download helper</strong>
+                      <p>
+                        {source.detail}
+                        {data.queue.source_paused && ' · Paused'}
+                      </p>
+                    </div>
+                  </div>
+                ))}
+              {data.last_download && (
+                <div className="readiness-item">
+                  <span
+                    className={`readiness-badge ${data.last_download.stage === 'done' ? 'ready' : 'not-ready'}`}
+                  >
+                    {data.last_download.stage === 'done' ? <Check size={14} /> : <X size={14} />}
+                    {data.last_download.stage === 'done' ? 'Success' : 'Failed'}
+                  </span>
+                  <div>
+                    <strong>Last download</strong>
+                    <p>
+                      {data.last_download.stage === 'done'
+                        ? 'Completed successfully'
+                        : data.last_download.stage === 'failed'
+                          ? `Failed${data.last_download.error_code ? `: ${data.last_download.error_code}` : ''}`
+                          : `Cancelled`}
+                      {' · '}
+                      {new Date(data.last_download.created_at * 1000).toLocaleString()}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {!data.last_download && (
+                <div className="readiness-item">
+                  <span className="readiness-badge not-tested">
+                    <Minus size={14} />
+                    Not tested
+                  </span>
+                  <div>
+                    <strong>Last download</strong>
+                    <p>No download attempted yet</p>
+                  </div>
+                </div>
+              )}
+            </div>
+          </section>
           <div className="diagnostic-grid">
             {data.sources.map((source) => (
               <section className="panel" key={source.source}>
