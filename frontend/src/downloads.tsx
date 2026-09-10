@@ -27,6 +27,7 @@ import {
   settingsSchema,
 } from './api'
 import type { DownloadJob, MusicResult } from './api'
+import { formatLabel } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
 
 export type QueueData = {
@@ -219,7 +220,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
               ? `${item.title} is ${existing.stage}`
               : failed
                 ? `Retry ${item.title}. ${failureMessage(failed)}`
-                : `Download ${item.title}`
+                : `Download ${item.title} to ${target || settings.data?.destination.value || '(not set)'} · ${formatLabel(selected)}`
         }
         title={
           owned
@@ -228,7 +229,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
               ? existing.stage
               : failed
                 ? failureMessage(failed)
-                : 'Download track'
+                : `to ${target || settings.data?.destination.value || '(not set)'} · ${formatLabel(selected)}`
         }
         disabled={owned || Boolean(existing) || mutation.isPending}
         onClick={() => mutation.mutate()}
@@ -269,7 +270,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         <label>
           Download to
           <select value={target} onChange={(e) => setTarget(e.target.value)}>
-            <option value="">Default folder</option>
+            <option value="">{settings.data?.destination.value || '(not set)'}</option>
             {mounts.data?.disks
               .slice(1)
               .filter((disk) => disk.writable)
@@ -409,13 +410,8 @@ function JobCard({ job }: { job: DownloadJob }) {
         />
       )}
       <div className="job-stats">
-        <span>
-          {job.format === 'original'
-            ? 'Original source quality'
-            : job.format === 'mp3'
-              ? 'MP3 · lossy conversion'
-              : job.format.toUpperCase() + ' · conversion if needed'}
-        </span>
+        <span>to {job.target}</span>
+        <span>{formatLabel(job.format)}</span>
         {job.stage === 'downloading' && (
           <span>
             {bytes(job.downloaded)}
@@ -783,13 +779,11 @@ function History() {
           <button onClick={() => void query.refetch()}>Retry</button>
         </p>
       )}
-      {query.isSuccess &&
-        query.data.pages[0]?.jobs.length === 0 &&
-        query.data.pages[0]?.total === 0 && (
-          <div className="empty-panel">
-            <p>No download history yet.</p>
-          </div>
-        )}
+      {!query.isPending && !query.isError && query.data?.pages[0]?.jobs.length === 0 && (
+        <div className="empty-panel">
+          <h2>Nothing has finished yet.</h2>
+        </div>
+      )}
       <JobList jobs={query.data?.pages.flatMap((page) => page.jobs) ?? []} />
       {query.hasNextPage && (
         <InfiniteScroll
@@ -914,9 +908,7 @@ export function DownloadsPage() {
           <h2>
             {queue.isPending
               ? 'Loading queue…'
-              : tab === 'done'
-                ? 'Nothing has finished yet.'
-                : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
+              : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
           </h2>
           <Link to="/search" className="button primary">
             Find a track
@@ -965,7 +957,11 @@ export function QueueDock() {
           </button>
         </header>
         <QueueControls />
-        <JobList jobs={active} />
+        {active.length ? (
+          <JobList jobs={active} />
+        ) : (
+          <p className="empty-results">Nothing queued. Add a track from search.</p>
+        )}
       </dialog>
     </>
   )
