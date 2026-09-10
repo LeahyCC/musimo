@@ -108,13 +108,22 @@ test('popularity keeps an exact artist name ahead of larger fuzzy matches', asyn
     artist_id: 7004075,
     popularity: 994430,
   }
+  const single: MusicResult = {
+    ...exact,
+    id: 8001,
+    title: 'Tipper Tribute',
+    artist: 'Tipper Tribute',
+    artist_id: 8001,
+    popularity: 1,
+  }
   await page.route('**/api/search?*', (route) =>
     route.fulfill({
-      json: { items: [larger, exact], total: 2, next_index: null, cached: false },
+      json: { items: [larger, exact, single], total: 3, next_index: null, cached: false },
     }),
   )
   await page.goto('/search?q=tipper&tab=artist&sort=popularity')
   await expect(page.getByRole('article').first()).toContainText('Tipper')
+  await expect(page.getByText('1 fan', { exact: true })).toBeVisible()
 })
 
 test('catalog failure offers retry and recovers', async ({ page }) => {
