@@ -35,7 +35,14 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         self.store.close()
         self.folder.cleanup()
 
-    def add_file(self, name: str, isrc: str = "", mbid: str = "", duration: float = 320) -> str:
+    def add_file(
+        self,
+        name: str,
+        isrc: str = "",
+        mbid: str = "",
+        duration: float = 320,
+        album: str = "Discovery",
+    ) -> str:
         path = str(self.root / name)
         self.store.db.execute(
             "INSERT INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
@@ -47,10 +54,10 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
                 "old",
                 "One More Time",
                 "Daft Punk",
-                "Discovery",
+                album,
                 "one more time",
                 "daft punk",
-                "discovery",
+                album.lower(),
                 duration,
                 isrc,
                 mbid,
@@ -58,7 +65,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         )
         self.store.db.execute(
             "INSERT INTO library_fts VALUES (?,?,?,?)",
-            (path, "One More Time", "Daft Punk", "Discovery"),
+            (path, "One More Time", "Daft Punk", album),
         )
         return path
 
@@ -256,3 +263,107 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         self.store.db.execute("UPDATE library_roots SET enabled=0")
         item = Result(id=1, kind="track", title="One More Time", artist="Daft Punk", duration=320)
         self.assertEqual(self.library.annotate([item])[0].ownership, "missing")
+
+    async def test_matched_by_and_edition_detection(self) -> None:
+        # Test different match priorities and edition detection
+        self.add_file("isrc_match.flac", isrc="GBDUW0000053", album="Discovery")
+        self.add_file("mbid_match.flac", mbid="test-mbid-123", album="Discovery")
+        self.add_file("same_album.flac", album="Discovery")
+        self.add_file("different_album.flac", album="Discovery Deluxe Edition")
+
+        # ISRC match
+        isrc_item = Result(
+            id=1,
+            kind="track",
+            title="One More Time",
+            artist="Daft Punk",
+            album="Discovery",
+            duration=320,
+            isrc="GB-DUW-00-00053",
+        )
+        self.library.annotate([isrc_item])
+        self.assertEqual(isrc_item.ownership, "owned")
+        self.assertEqual(isrc_item.matched_by, "isrc")
+
+        # MBID match (no ISRC on either side)
+        mbid_item = Result(
+            id=2,
+            kind="track",
+            title="One More Time",
+            artist="Daft Punk",
+            album="Discovery",
+            duration=320,
+            mbid="test-mbid-123",
+        )
+        self.library.annotate([mbid_item])
+        self.assertEqual(mbid_item.ownership, "owned")
+        self.assertEqual(mbid_item.matched_by, "mbid")
+
+        # Tags match on same album (should be owned, not edition)
+        tags_same_album = Result(
+            id=3,
+            kind="track",
+            title="One More Time",
+            artist="Daft Punk",
+            album="Discovery",
+            duration=320,
+        )
+        self.library.annotate([tags_same_album])
+        self.assertEqual(tags_same_album.ownership, "owned")
+        self.assertEqual(tags_same_album.matched_by, "tags")
+
+        # Multiple matches: one on same album, one on different album (should be owned)
+        multi_match_item = Result(
+            id=4,
+            kind="track",
+            title="One More Time",
+            artist="Daft Punk",
+            album="Discovery",
+            duration=320,
+        )
+        self.library.annotate([multi_match_item])
+        self.assertEqual(multi_match_item.ownership, "owned")
+        self.assertGreaterEqual(len(multi_match_item.matched_paths), 2)
+
+        # Tags match with only different album (edition) - use a completely different track
+        # so it doesn't match the Discovery files
+        self.store.db.execute(
+            "INSERT INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            (
+                str(self.root / "edition_track.flac"),
+                str(self.root),
+                1,
+                1,
+                "old",
+                "Aerodynamic",
+                "Daft Punk",
+                "Discovery Deluxe Edition",
+                "aerodynamic",
+                "daft punk",
+                "discovery deluxe edition",
+                215,
+                "",
+                "",
+            ),
+        )
+        self.store.db.execute(
+            "INSERT INTO library_fts VALUES (?,?,?,?)",
+            (
+                str(self.root / "edition_track.flac"),
+                "Aerodynamic",
+                "Daft Punk",
+                "Discovery Deluxe Edition",
+            ),
+        )
+        edition_only = Result(
+            id=5,
+            kind="track",
+            title="Aerodynamic",
+            artist="Daft Punk",
+            album="Discovery",
+            duration=215,
+        )
+        self.library.annotate([edition_only])
+        self.assertEqual(edition_only.ownership, "edition")
+        self.assertEqual(edition_only.matched_by, "tags")
+        self.assertEqual(edition_only.matched_album, "Discovery Deluxe Edition")
