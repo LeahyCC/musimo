@@ -309,6 +309,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const previewStage = useRef(0)
   const pendingSeek = useRef(0)
   const lastSavedSecond = useRef(-1)
+  const footerRef = useRef<HTMLElement>(null)
   const [track, setTrack] = useState<MusicResult | null>(null)
   const [libraryTrack, setLibraryTrack] = useState<LibraryTrack | null>(null)
   const [queue, setQueue] = useState<LibraryTrack[]>([])
@@ -662,6 +663,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     navigator.mediaSession.setActionHandler('previoustrack', previous)
   }, [libraryTrack, shuffle, repeat])
 
+  useEffect(() => {
+    if (!footerRef.current) return
+    const observer = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const height = entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height
+        document.documentElement.style.setProperty('--player-height', `${height}px`)
+      }
+    })
+    observer.observe(footerRef.current)
+    return () => observer.disconnect()
+  }, [])
+
   const activeTitle = libraryTrack?.title ?? track?.title
   const activeArtist = libraryTrack?.artist ?? track?.artist
   const activeAlbum = libraryTrack?.album ?? track?.album
@@ -753,7 +766,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-      <footer className="player live-player">
+      <footer ref={footerRef} className="player live-player">
         <div className="now-playing">
           {activeArt ? <img src={activeArt} alt="" /> : <Disc3 size={30} />}
           <span>
