@@ -93,22 +93,18 @@ class Downloads:
     def last_terminal_job(self) -> dict[str, object] | None:
         with self.store.lock:
             row = self.store.db.execute(
-                "SELECT payload FROM jobs WHERE "
+                "SELECT payload, created_at FROM jobs WHERE "
                 "json_extract(payload,'$.stage') IN ('done','failed','cancelled') "
                 "ORDER BY created_at DESC LIMIT 1"
             ).fetchone()
-        if row is None:
-            return None
-        job = Job.model_validate_json(row[0])
-        return {
-            "stage": job.stage,
-            "error_code": job.error_code,
-            "created_at": float(
-                self.store.db.execute(
-                    "SELECT created_at FROM jobs WHERE id=?", (job.id,)
-                ).fetchone()[0]
-            ),
-        }
+            if row is None:
+                return None
+            job = Job.model_validate_json(row[0])
+            return {
+                "stage": job.stage,
+                "error_code": job.error_code,
+                "created_at": float(row[1]),
+            }
 
     def set_controls(self, paused: bool | None = None, source_paused: bool | None = None) -> None:
         with self.store.lock:
