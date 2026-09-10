@@ -468,11 +468,14 @@ test('artist review counts selections, excludes failed albums and retries submis
   await page.getByRole('button', { name: 'Download all albums' }).click()
   const dialog = page.getByRole('dialog', { name: 'Choose albums to download' })
   await expect(dialog.getByText('2 albums · 2 songs', { exact: true })).toBeVisible()
+  await expect(
+    dialog.getByText('1 song already in library · 0 already queued', { exact: true }),
+  ).toBeVisible()
   await expect(dialog.getByRole('checkbox', { name: /Unavailable album/ })).toBeDisabled()
   await dialog.getByRole('checkbox', { name: /Second album/ }).uncheck()
-  await expect(dialog.getByText('1 albums · 1 songs', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('1 album · 1 song', { exact: true })).toBeVisible()
   await dialog.getByRole('checkbox', { name: 'Skip songs already in my library' }).uncheck()
-  await expect(dialog.getByText('1 albums · 2 songs', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('1 album · 2 songs', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Select none' }).click()
   await expect(dialog.getByRole('button', { name: 'Download 0 albums (0 songs)' })).toBeDisabled()
   await dialog.getByRole('button', { name: 'Select all' }).click()
