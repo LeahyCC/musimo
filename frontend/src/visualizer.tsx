@@ -138,12 +138,12 @@ export function VisualizerProvider({ children }: { children: ReactNode }) {
   // track changes or visuals are switched off, and only fetched while a stage
   // can show it.
   useEffect(() => {
-    if (!enabled || !trackId) {
+    if (!enabled || !trackId || !wanted) {
       setSource(undefined)
       setLoadError('')
       return
     }
-    if (!wanted || source?.trackId === trackId) return
+    if (source?.trackId === trackId) return
     const controller = new AbortController()
     setSource(undefined)
     setLoadError('')
@@ -173,6 +173,7 @@ export function VisualizerProvider({ children }: { children: ReactNode }) {
   const openPopout = useCallback(() => {
     const api = pictureInPicture()
     if (!api) return
+    setNotice('')
     api
       .requestWindow({ width: 640, height: 360 })
       .then((win) => {
@@ -287,6 +288,7 @@ export function NowPlayingVisuals({ track }: { track: LibraryTrack }) {
   useEffect(() => {
     if (!pendingFullscreen || popout || !enabled) return
     clearPendingFullscreen()
+    setNotice('')
     container.current
       ?.requestFullscreen()
       .catch(() => setNotice('Press F on the visualizer for full screen.'))
@@ -295,6 +297,7 @@ export function NowPlayingVisuals({ track }: { track: LibraryTrack }) {
   function toggleFullscreen() {
     const element = container.current
     if (!element) return
+    setNotice('')
     if (document.fullscreenElement === element) void document.exitFullscreen()
     else
       element

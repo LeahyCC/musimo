@@ -66,6 +66,7 @@ export function VisualizerStage({
   const engine = useRef<VisualizerEngine | undefined>(undefined)
   const preparing = useRef<VisualizerEngine | undefined>(undefined)
   const canvas = useRef<HTMLCanvasElement | undefined>(undefined)
+  const fadingOut = useRef<Set<HTMLCanvasElement>>(new Set())
   const generation = useRef(0)
   const task = useRef<Promise<void>>(Promise.resolve())
   const rebuilding = useRef(false)
@@ -96,6 +97,8 @@ export function VisualizerStage({
     engine.current = undefined
     canvas.current?.remove()
     canvas.current = undefined
+    for (const stale of fadingOut.current) stale.remove()
+    fadingOut.current.clear()
   }, [])
 
   const prepare = useCallback(
@@ -129,12 +132,14 @@ export function VisualizerStage({
         hostElement.append(next)
         if (previous) {
           previous.setAttribute('aria-hidden', 'true')
+          fadingOut.current.add(previous)
+          const settle = () => {
+            previous.remove()
+            fadingOut.current.delete(previous)
+          }
           next
             .animate([{ opacity: 0 }, { opacity: 1 }], { duration: 450, easing: 'ease-out' })
-            .finished.then(
-              () => previous.remove(),
-              () => previous.remove(),
-            )
+            .finished.then(settle, settle)
         }
         canvas.current = next
         engine.current = candidate
