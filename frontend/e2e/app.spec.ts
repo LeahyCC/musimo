@@ -108,13 +108,22 @@ test('popularity keeps an exact artist name ahead of larger fuzzy matches', asyn
     artist_id: 7004075,
     popularity: 994430,
   }
+  const single: MusicResult = {
+    ...exact,
+    id: 8001,
+    title: 'Tipper Tribute',
+    artist: 'Tipper Tribute',
+    artist_id: 8001,
+    popularity: 1,
+  }
   await page.route('**/api/search?*', (route) =>
     route.fulfill({
-      json: { items: [larger, exact], total: 2, next_index: null, cached: false },
+      json: { items: [larger, exact, single], total: 3, next_index: null, cached: false },
     }),
   )
   await page.goto('/search?q=tipper&tab=artist&sort=popularity')
   await expect(page.getByRole('article').first()).toContainText('Tipper')
+  await expect(page.getByText('1 fan', { exact: true })).toBeVisible()
 })
 
 test('catalog failure offers retry and recovers', async ({ page }) => {
@@ -540,11 +549,14 @@ test('artist review counts selections, excludes failed albums and retries submis
   await page.getByRole('button', { name: 'Download all albums' }).click()
   const dialog = page.getByRole('dialog', { name: 'Choose albums to download' })
   await expect(dialog.getByText('2 albums · 2 songs', { exact: true })).toBeVisible()
+  await expect(
+    dialog.getByText('1 song already in library · 0 already queued', { exact: true }),
+  ).toBeVisible()
   await expect(dialog.getByRole('checkbox', { name: /Unavailable album/ })).toBeDisabled()
   await dialog.getByRole('checkbox', { name: /Second album/ }).uncheck()
-  await expect(dialog.getByText('1 albums · 1 songs', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('1 album · 1 song', { exact: true })).toBeVisible()
   await dialog.getByRole('checkbox', { name: 'Skip songs already in my library' }).uncheck()
-  await expect(dialog.getByText('1 albums · 2 songs', { exact: true })).toBeVisible()
+  await expect(dialog.getByText('1 album · 2 songs', { exact: true })).toBeVisible()
   await dialog.getByRole('button', { name: 'Select none' }).click()
   await expect(dialog.getByRole('button', { name: 'Download 0 albums (0 songs)' })).toBeDisabled()
   await dialog.getByRole('button', { name: 'Select all' }).click()
@@ -738,6 +750,42 @@ test('youtube source panel has no test button', async ({ page }) => {
   const youtubePanel = page.getByRole('heading', { name: 'Download source' }).locator('..')
   await expect(youtubePanel).toBeVisible()
   await expect(youtubePanel.getByRole('button', { name: /Test now/ })).toHaveCount(0)
+})
+
+test('a finished library scan counts as ready', async ({ page }) => {
+  await page.route('**/api/diagnostics', (route) =>
+    route.fulfill({
+      json: {
+        health: { status: 'ok', version: '1.0.0', uptime_seconds: 100, phase: 1 },
+        versions: {},
+        disks: [
+          { path: '/music', free_bytes: 1000, total_bytes: 2000, exists: true, writable: true },
+        ],
+        sources: [],
+        events: [],
+        database: { mode: 'wal', schema: 1, retained_events: 0 },
+        library: {
+          status: 'done',
+          walked: 12,
+          indexed: 12,
+          errors: 0,
+          elapsed: 1,
+          detail: 'Scan complete',
+          total_files: 12,
+          roots: ['/music'],
+        },
+        queue: { paused: false, source_paused: false },
+        capabilities: { settings: true, events: true, search: true, downloads: true },
+        navidrome: null,
+        last_download: null,
+      },
+    }),
+  )
+  await page.goto('/diagnostics')
+  const item = page.locator('.readiness-item').filter({ hasText: 'Library scan' })
+  await expect(item).toContainText('Scan complete')
+  // "Scan complete" and "Not ready" on the same row contradicted each other.
+  await expect(item.locator('.readiness-badge')).toHaveText('Ready')
 })
 
 test('read-only destination option is disabled', async ({ page }) => {

@@ -29,6 +29,37 @@ The download-options regression runs two-song and 30-song fixtures across Chromi
 
 The frontend production build and focused backend tests pass. The separate testing task owns broader browser regression automation and CI. [Download verification](downloads.md) records worker/publication/recovery checks, including the permitted fixture that appeared in Navidrome.
 
+## Visual walk, 10 September 2026
+
+A temporary Playwright script visited every screen at 1280 by 800 and 390 by 844 against the isolated CI stack, using the shared search, library, player and queue fixtures with invented long titles, and saved a screenshot per screen. Each screenshot was inspected by eye, with a probe reporting page-level sideways scroll and any element wider than its box. Screens covered: home, search results on the Top, Tracks, Albums and Artists tabs, no results, catalog error and loading, an album with a highlighted track and a playing preview, an artist page with both download sheets, album loading, missing album, library home in grid and list layout, albums, artists, tracks with the genre and year menus open, playlists, a playlist page with rename and add-song search, a library album and artist and its All songs view, Downloads queue, done, failed with a batch group selected, history, the queue dock and sheet, source paused, empty and unreadable queue, Settings clean, dirty, loading and failed, Diagnostics and its failure, Now Playing with a library track, AudioMuse radio, the hover controls and the full screen stage, the command palette with and without matches, the mobile mini player, the add to playlist picker, and the empty, unconfigured and unavailable library states, plus the reconnecting, connecting and offline banners.
+
+Fixed in that pass, each with a browser check in the spec for its screen:
+
+- Download cards widened the page (and clipped the queue sheet) when one title was long; the card list grid track now has a zero minimum.
+- Failure group chips with a long album name stretched across the page or wrapped and were clipped; they cut to one line.
+- The Queue tab label broke onto two lines on a phone; tab labels no longer wrap.
+- The destination warning triangle sat on a line of its own on album pages and cards; it now sits beside its link.
+- Playlist cards let a long name run under the play button; the name cuts short of the controls.
+- The add to playlist sheet let long playlist and song names run past its edge.
+- The genre and year menus pushed a phone page sideways; they fit their filter now.
+- The library tracks view printed the same note under both Play all and Shuffle; one note covers both.
+- The library home view said "Loading home…"; it says "Loading albums…".
+- An album or playlist heading said "0 songs" while its songs were loading; the count waits.
+- Downloads showed "No queued downloads" under the error when the queue could not be read; only the error shows.
+- Diagnostics marked a finished scan "Not ready" beside "Scan complete"; a finished scan counts as ready.
+- "1 fans", "1 albums", "1 songs" and "1 songs already in library" are singular when the count is one.
+
+Looked at and left as they are: the search empty state, the catalog error with retry, the library empty, unconfigured and unavailable panels, the Now Playing empty state, the queue dock, source paused banner, history empty state, Settings dirty state, the reconnecting, connecting and offline banners, the command palette, the full screen stage and the mobile mini player.
+
+Still open after the walk:
+
+- A path outside the allow-listed screens (for example `/nope`) gets the backend's JSON 404, so the app's own "Page not found" screen only appears under `/library`. The backend tests assert that 404, so it was left alone.
+- Search sections still offer "View all" when they have no results.
+- Settings renders its section headings and the "Settings are up to date" bar before settings have loaded or when they fail to load.
+- A library request failure retries for several seconds before the inline error appears, and the loading line sits above the "Fresh in your library" heading rather than under it.
+- On a phone the artist download sheet's album list sits below the summary and scrolls inside the sheet with nothing in view to say so.
+- Long titles in the Now Playing "Up next" list wrap across several lines on desktop.
+
 ## Known limits
 
 Library album genre and year filters still apply to the pages loaded so far; only the tracks view filters and sorts on the server. Catalog search on the Search page is unchanged and says so in its own hint. Navidrome's saved play queue holds 500 songs, so Play all and Shuffle over a larger library play a 500-song selection. Whole-library track browsing reads up to 10,000 songs from Navidrome, so a library beyond that size describes the first 10,000 it returns.

@@ -409,6 +409,86 @@ test('error hints link to the relevant setting or diagnostic', async ({ page }) 
   await expect(page).toHaveURL(/\/settings#destination/)
 })
 
+const LONG_TITLE =
+  'An Unreasonably Long Title That Keeps Going Well Past Any Sensible Width (Deluxe Remastered Anniversary Edition)'
+
+test('long titles and labels stay inside the page', async ({ page }) => {
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
+    else await route.fallback()
+  })
+
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
+  )
+  const jobs: DownloadJob[] = [
+    { ...failed, id: 'long-title', meta: { ...failed.meta, title: LONG_TITLE } },
+    { ...failed, id: 'long-batch', batch_id: 'long-batch', batch_label: LONG_TITLE },
+    { ...failed, id: 'plain', batch_id: '', batch_label: '' },
+  ]
+  await page.route('**/api/jobs*', (route) =>
+    route.fulfill({
+      json: {
+        jobs,
+        controls: { paused: false, source_paused: false },
+        summary: { active: 0, failed: jobs.length, failure_reasons: [] },
+      },
+    }),
+  )
+
+  await page.goto('/downloads')
+  const failedTab = page.getByRole('button', { name: 'Failed (3)', exact: true })
+  await failedTab.click()
+  await expect(page.locator('#main .job-card')).toHaveCount(3)
+  // A tab label such as "Queue (5)" stays on one line at narrow widths; the row wraps instead.
+  // One line of tab measures 44px; a second line would put it past 60.
+  const tabBox = await failedTab.boundingBox()
+  expect(tabBox && tabBox.height).toBeLessThan(60)
+  const main = await page.locator('#main').boundingBox()
+  if (!main) throw new Error('Missing main box')
+  // The card list is a grid; a bare 1fr track let one long title widen every card and the
+  // page with it.
+  for (const card of await page.locator('#main .job-card').all()) {
+    const box = await card.boundingBox()
+    expect(box && box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1)
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBe(0)
+
+  // A group chip carrying a long album name is cut to one line with an ellipsis, not
+  // wrapped and clipped or stretched across the page.
+  const groups = page.getByRole('group', { name: 'Failures by download group' })
+  const chip = groups.getByRole('button', { name: new RegExp(`^${LONG_TITLE.slice(0, 20)}`) })
+  const chipBox = await chip.boundingBox()
+  const groupsBox = await groups.boundingBox()
+  if (!chipBox || !groupsBox) throw new Error('Missing chip measurements')
+  expect(chipBox.height).toBeLessThan(40)
+  expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(groupsBox.x + groupsBox.width + 1)
+})
+
+test('a queue that cannot be read shows the error, not an empty state', async ({ page }) => {
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
+    else await route.fallback()
+  })
+
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
+  )
+
+  await page.route('**/api/jobs*', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Queue database is locked' } }),
+  )
+
+  await page.goto('/downloads')
+  await expect(page.getByText('Queue database is locked')).toBeVisible({ timeout: 20_000 })
+  // "No queued downloads" would be a claim the page cannot make.
+  await expect(page.getByText('No queued downloads')).toHaveCount(0)
+})
+
 test('done jobs with warnings show the count in their heading', async ({ page }) => {
   await page.route('**/*', async (route) => {
     if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
