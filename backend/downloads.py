@@ -16,6 +16,7 @@ import httpx
 
 from backend.catalog import Catalog, CatalogError
 from backend.enrichment import Enrichment
+from backend.errors import error_guidance
 from backend.job_models import TERMINAL, Job
 from backend.job_store import Jobs
 from backend.library import Library
@@ -26,8 +27,11 @@ from backend.store import Store
 
 
 class DownloadError(Exception):
-    def __init__(self, code: str, detail: str, retryable: bool = False) -> None:
+    def __init__(
+        self, code: str, detail: str, retryable: bool = False, hint: str = "", fix: str = ""
+    ) -> None:
         self.code, self.detail, self.retryable = code, detail, retryable
+        self.hint, self.fix = hint, fix
 
 
 def digest(path: Path) -> str:
@@ -369,6 +373,8 @@ class Downloads:
                         str(raw.get("code", "DOWNLOAD_FAILED")),
                         str(raw.get("message", "Worker failed")),
                         raw.get("retryable") is True,
+                        str(raw.get("hint", "")),
+                        str(raw.get("fix", "")),
                     )
                     self.jobs.update(job.id, tool_version=str(raw.get("version", "")))
                 elif kind == "ready":
@@ -502,6 +508,8 @@ class Downloads:
                 error_code="",
                 error="",
                 retryable=False,
+                error_hint="",
+                error_fix="",
                 retry_at=0,
             )
             if not job.meta.artist:
@@ -569,12 +577,16 @@ class Downloads:
                     settings.retry_base_seconds * 2 ** max(0, job.attempts - 1),
                 ),
             )
+            hint = error.hint or error_guidance(error.code)[0]
+            fix = error.fix or error_guidance(error.code)[1]
             self.jobs.update(
                 job_id,
                 stage="retry_wait" if retry else "failed",
                 error_code=error.code,
                 error=error.detail,
                 retryable=error.retryable,
+                error_hint=hint,
+                error_fix=fix,
                 retry_at=time.time() + delay if retry else 0,
                 speed=0,
                 eta=None,
