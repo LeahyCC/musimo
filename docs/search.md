@@ -58,9 +58,13 @@ Browser coverage for these UI changes is recorded in [UI verification](ui-verifi
 
 ## Preview navigation and controls
 
-The player lives within the root router and persists while routes change. Song links open `/albums/{album_id}?track={track_id}`; the album scrolls its virtual list to that recording and highlights it. Artist links open the artist page. Missing catalog identifiers remain text rather than invalid links.
+The player lives within the root router and persists while routes change. Song links open `/albums/{album_id}?track={track_id}`; the album scrolls its virtual list to that recording, highlights it with `aria-current="true"` and focuses it using `tabIndex={-1}`. The focused row shows a visible focus outline. Artist links open the artist page. Missing catalog identifiers remain text rather than invalid links.
 
-Volume, mute, seeking, restart and close remain available on narrow screens. Volume is stored under `musimo.preview-volume`, default 70%; blocked storage does not prevent playback. Seeking is disabled until media metadata is ready. Closing pauses audio, removes its source, cancels lookups and clears the track. Playback errors retain the provider fallback behavior.
+Album and artist pages show a "Back to results" link when reached from search. The link restores the last search query, tab, sort and filters from sessionStorage. Direct visits or links from elsewhere fall back to the search home.
+
+Preview state is tracked per track. Tracks with no available preview show a disabled button and "No preview" label after lookup completes. The art overlay aria-label matches the row state.
+
+Volume, mute, seeking, restart and close remain available on narrow screens. Volume is stored under `musimo.player-volume`, default 70%; blocked storage does not prevent playback. Seeking is disabled until media metadata is ready. Closing pauses audio, removes its source, cancels lookups and clears the track. Playback errors retain the provider fallback behavior.
 
 ## Artist downloads
 

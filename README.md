@@ -178,8 +178,9 @@ Artist release types come from the catalog. A generic album type does not establ
 
 Previews are provider clips, not full library playback. Failed Deezer clips refresh their URLs and can fall back to a matching iTunes preview. Some tracks have no playable preview.
 
-- Artwork controls start or pause a preview.
-- The player's song title returns to its highlighted track in the album.
+- Artwork controls start or pause a preview. Tracks with no available preview show a disabled state.
+- The player's song title returns to its highlighted track in the album. The highlighted row receives focus and shows a visible focus indicator.
+- Album and artist pages show "Back to results" when reached from search, restoring your last query and filters.
 - Its artist link opens that artist's page.
 - Seek within the clip, restart, mute, adjust volume or close it.
 - Volume is remembered in the current browser. Mute preserves the chosen level.

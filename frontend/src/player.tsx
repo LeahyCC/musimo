@@ -40,6 +40,7 @@ import {
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from './api'
 
 export type RepeatMode = 'off' | 'all' | 'one'
+export type PreviewState = 'finding' | 'none' | 'ready'
 export type LikedControl = {
   isLiked: boolean
   canToggle: boolean
@@ -76,6 +77,7 @@ type Playback = {
   toggleShuffle: () => void
   cycleRepeat: () => void
   liked: LikedControl
+  previewState: (trackId: number) => PreviewState | undefined
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -104,6 +106,7 @@ const PlayerContext = createContext<Playback>({
   toggleShuffle: () => undefined,
   cycleRepeat: () => undefined,
   liked: { isLiked: false, canToggle: false, busy: false, toggle: () => undefined },
+  previewState: () => undefined,
 })
 export const usePlayer = () => useContext(PlayerContext)
 
@@ -327,6 +330,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [newPlaylistName, setNewPlaylistName] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [expandedPlaylist, setExpandedPlaylist] = useState('')
+  const [previewStates, setPreviewStates] = useState<Map<number, PreviewState>>(new Map())
   const playlistDialog = useRef<HTMLDialogElement>(null)
   const queryClient = useQueryClient()
 
@@ -404,6 +408,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const controller = new AbortController()
     request.current = controller
     setNotice('Finding preview…')
+    setPreviewStates((prev) => new Map(prev).set(item.id, 'finding'))
     try {
       const clip = await api(`preview/${item.id}?fallback=${fallback}`, previewSchema, {
         signal: controller.signal,
@@ -411,13 +416,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (controller.signal.aborted || previewCurrent.current?.id !== item.id) return
       if (!clip.url) {
         setNotice('No preview available for this track.')
+        setPreviewStates((prev) => new Map(prev).set(item.id, 'none'))
         return
       }
       setNotice(`${clip.source} preview`)
+      setPreviewStates((prev) => new Map(prev).set(item.id, 'ready'))
       startAudio(clip.url)
     } catch (error) {
-      if (!controller.signal.aborted)
+      if (!controller.signal.aborted) {
         setNotice(error instanceof Error ? error.message : 'Preview unavailable')
+        setPreviewStates((prev) => new Map(prev).set(item.id, 'none'))
+      }
     }
   }
 
@@ -521,6 +530,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     previewStage.current = item.preview ? 0 : 1
     if (item.preview) {
       setNotice('Deezer preview')
+      setPreviewStates((prev) => new Map(prev).set(item.id, 'ready'))
       startAudio(item.preview)
     } else void loadPreview(item, false)
   }
@@ -740,6 +750,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           busy: playlistSongs.busy(likedId ?? ''),
           toggle: toggleLikedTrack,
         },
+        previewState: (trackId: number) => previewStates.get(trackId),
       }}
     >
       {children}
