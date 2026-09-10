@@ -174,7 +174,9 @@ Filters and sorting apply to **loaded results**, not the entire provider catalog
 
 Cards automatically check album details against the local index. Loading shows checking or estimated coverage; complete track lists permit verified counts. Incomplete provider lists stay partial. Failed checks show Retry coverage.
 
-The album download icon queues missing tracks without opening the album. The card shows where files will land and in what format before queueing. It uses the saved format and destination, skips indexed matches and links to the queue after success. A completely indexed album shows a check. Open an album to inspect individual tracks and available album actions.
+Tracks show distinct badges: "In library" for exact matches, "Another edition in library" when a different album edition is detected, "Queued" for active downloads, and "Downloaded earlier" for completed downloads. Edition matches keep the download button enabled so you can choose to download both versions.
+
+The album download icon queues missing tracks without opening the album. The card shows where files will land and in what format before queueing. It uses the saved format and destination, skips indexed matches and links to the queue after success. A completely indexed album shows a check. Open an album to inspect individual tracks and available album actions. The status line separates owned and queued counts.
 
 Artist release types come from the catalog. A generic album type does not establish whether a recording is live, remixed or a compilation. Library coverage is a file match, not proof of legal rights.
 
@@ -314,7 +316,7 @@ Metadata and audio come from different systems. Read the job stage and error. Un
 
 ### Coverage is wrong or unknown
 
-Check mounted roots, scan status and tags. Rescan after mount changes. Matches prefer identifiers, then normalized artist/title and duration. Different editions or inaccessible files can produce partial results. An incomplete provider track list cannot establish full album coverage.
+Check mounted roots, scan status and tags. Rescan after mount changes. Matches use a priority system: completed downloads first, then ISRC, then MusicBrainz ID, then normalized artist/title and duration. Different editions (same title and artist but different album) are flagged separately with the matched album name shown. Inaccessible files or incomplete provider track lists can produce partial results.
 
 ### New files are absent
 

@@ -396,6 +396,8 @@ class Library:
             result.matched_paths = []
             result.ownership = "missing"
             result.owned_count = 0
+            result.matched_by = ""
+            result.matched_album = ""
         # One indexed SQL join for the whole result page. Filesystem access never enters search.
         payload = json.dumps(
             [
@@ -407,6 +409,7 @@ class Library:
                     "title": normalize(r.title),
                     "artist": normalize(r.artist),
                     "duration": r.duration,
+                    "album": normalize(r.album),
                 }
                 for i, r in enumerate(results)
                 if r.kind == "track"
@@ -419,43 +422,65 @@ class Library:
                   SELECT json_extract(value,'$.i') i,json_extract(value,'$.id') id,
                   json_extract(value,'$.isrc') isrc,
                   json_extract(value,'$.mbid') mbid,json_extract(value,'$.title') title,
-                  json_extract(value,'$.artist') artist,json_extract(value,'$.duration') duration
+                  json_extract(value,'$.artist') artist,json_extract(value,'$.duration') duration,
+                  json_extract(value,'$.album') album
                   FROM json_each(?)
                 )
                 , matches AS (
-                SELECT w.i,f.path,0 priority
+                SELECT w.i,f.path,f.album_key,0 priority
                 FROM wanted w JOIN jobs j ON j.catalog='deezer' AND j.track_id=w.id
                   AND j.active=0 AND json_extract(j.payload,'$.stage')='done'
                 JOIN library_files f ON f.path=json_extract(j.payload,'$.final_path')
                   AND (w.isrc='' OR f.isrc='' OR w.isrc=f.isrc)
                 JOIN library_roots r ON r.path=f.root AND r.enabled=1
                 UNION ALL
-                SELECT w.i,f.path,1 priority
+                SELECT w.i,f.path,f.album_key,1 priority
                 FROM wanted w JOIN library_files f INDEXED BY library_isrc
                   ON f.isrc=w.isrc AND f.isrc!='' AND w.isrc!=''
                 JOIN library_roots r ON r.path=f.root AND r.enabled=1
                 UNION ALL
-                SELECT w.i,f.path,2 priority
+                SELECT w.i,f.path,f.album_key,2 priority
                 FROM wanted w JOIN library_files f INDEXED BY library_mbid
                   ON f.mbid=w.mbid AND f.mbid!='' AND w.mbid!=''
                 JOIN library_roots r ON r.path=f.root AND r.enabled=1
                 UNION ALL
-                SELECT w.i,f.path,3 priority
+                SELECT w.i,f.path,f.album_key,3 priority
                 FROM wanted w JOIN library_files f INDEXED BY library_identity ON
                   w.title!='' AND w.artist!='' AND w.duration>0 AND f.title_key=w.title
                    AND f.artist_key=w.artist AND f.duration BETWEEN w.duration-3 AND w.duration+3
                    AND (w.isrc='' OR f.isrc='' OR w.isrc=f.isrc)
                 JOIN library_roots r ON r.path=f.root AND r.enabled=1
                 ), ranked AS (
-                  SELECT i,path,priority,min(priority) OVER (PARTITION BY i) best FROM matches
-                ) SELECT i,path FROM ranked WHERE priority=best
+                  SELECT i,path,album_key,priority,
+                    min(priority) OVER (PARTITION BY i) best
+                  FROM matches
+                ) SELECT i,path,album_key,priority FROM ranked WHERE priority=best
             """,
                 (payload,),
             ).fetchall()
+            priority_labels = {0: "download", 1: "isrc", 2: "mbid", 3: "tags"}
             for row in matches:
                 result = results[row["i"]]
-                result.ownership = "owned"
                 result.matched_paths.append(row["path"])
+                if not result.matched_by:
+                    result.matched_by = priority_labels[row["priority"]]
+                is_edition = (
+                    row["priority"] == 3
+                    and row["album_key"]
+                    and normalize(result.album)
+                    and row["album_key"] != normalize(result.album)
+                )
+                if is_edition:
+                    result.ownership = "edition"
+                    if not result.matched_album and row["album_key"]:
+                        album_row = self.store.db.execute(
+                            "SELECT album FROM library_files WHERE album_key=? LIMIT 1",
+                            (row["album_key"],),
+                        ).fetchone()
+                        if album_row:
+                            result.matched_album = album_row["album"]
+                else:
+                    result.ownership = "owned"
             for result in results:
                 if result.kind == "album":
                     rows = self.store.db.execute(

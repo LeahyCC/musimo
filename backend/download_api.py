@@ -1,3 +1,4 @@
+import time
 import uuid
 from collections.abc import Callable
 from typing import Literal
@@ -86,21 +87,31 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         raw = album.get("tracks", [])
         tracks = [Result.model_validate(row) for row in raw] if isinstance(raw, list) else []
         service.library.annotate(tracks)
-        wanted = [row.id for row in tracks if not request.missing_only or row.ownership != "owned"]
+        format = request.format or settings.output_format
+        wanted: list[int] = []
+        skipped_owned = 0
+        for track in tracks:
+            if request.missing_only and track.ownership in ("owned", "edition"):
+                skipped_owned += 1
+            else:
+                wanted.append(track.id)
         batch_id = uuid.uuid4().hex
         jobs = service.jobs.enqueue_many(
             wanted,
-            request.format or settings.output_format,
+            format,
             str(target),
             batch_id,
             album_id=request.album_id,
         )
-        completed = sum(job.stage == "done" for job in jobs)
+        skipped_owned += sum(job.stage == "done" for job in jobs)
+        created = time.time()
+        skipped_queued = sum(job.created_at < created - 0.01 for job in jobs if job.stage != "done")
         jobs = [job for job in jobs if job.stage != "done"]
         return {
             "id": batch_id,
             "jobs": [job.public() for job in jobs],
-            "skipped": len(tracks) - len(wanted) + completed,
+            "skipped_owned": skipped_owned,
+            "skipped_queued": skipped_queued,
         }
 
     @app.post("/api/batches/{batch_id}/{action}")
