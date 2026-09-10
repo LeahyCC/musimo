@@ -173,7 +173,9 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         )
 
     @app.post("/api/jobs/{job_id}/{action}", response_model=Job)
-    async def command(job_id: str, action: Literal["pause", "resume", "cancel", "retry"]) -> Job:
+    async def command(
+        job_id: str, action: Literal["pause", "resume", "cancel", "retry", "dismiss"]
+    ) -> Job:
         try:
             return get().command(job_id, action)
         except KeyError as exc:
@@ -184,7 +186,13 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
     @app.post("/api/queue/{action}")
     async def queue(
         action: Literal[
-            "pause", "resume", "cancel-queued", "retry-failed", "clear-finished", "resume-source"
+            "pause",
+            "resume",
+            "cancel-queued",
+            "retry-failed",
+            "clear-finished",
+            "clear-failed",
+            "resume-source",
         ],
     ) -> dict[str, object]:
         service = get()
@@ -206,6 +214,8 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
                 elif action == "retry-failed" and job.stage == "failed" and not job.hidden:
                     service.command(job.id, "retry")
                 elif action == "clear-finished" and job.stage in TERMINAL:
+                    service.jobs.update(job.id, hidden=True)
+                elif action == "clear-failed" and job.stage == "failed" and not job.hidden:
                     service.jobs.update(job.id, hidden=True)
             except (ValueError, DownloadError) as exc:
                 failures.append(str(exc) if not isinstance(exc, DownloadError) else exc.detail)

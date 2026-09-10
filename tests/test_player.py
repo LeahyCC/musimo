@@ -1,3 +1,4 @@
+import asyncio
 import json
 import tempfile
 import unittest
@@ -414,6 +415,173 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(first["id"], second["id"])
                         self.assertEqual(first["name"], "Liked")
                         self.assertEqual(requests["created"], 1)
+            store.close()
+
+    async def test_track_browsing_filters_sorts_and_shuffles_the_whole_library(self) -> None:
+        library = [
+            {"id": "s1", "title": "Beacon", "artist": "Zia", "genre": "Jazz", "year": 1999},
+            {"id": "s2", "title": "Anchor", "artist": "Mox", "genre": "Rock", "year": 2011},
+            {"id": "s3", "title": "Cinder", "artist": "Ame", "genre": "Jazz", "year": 2011},
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+            searches = {"count": 0}
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                path = request.url.path
+                if path.endswith("/ping"):
+                    return subsonic(serverVersion="0.63.0")
+                if path.endswith("/search3"):
+                    searches["count"] += 1
+                    offset = int(request.url.params.get("songOffset", 0))
+                    return subsonic(searchResult3={"song": library[offset:]})
+                return subsonic()
+
+            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    app = FastAPI()
+                    install_player_routes(app, lambda: navidrome)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app), base_url="http://test"
+                    ) as client:
+                        listing = (await client.get("/api/library/tracks")).json()
+                        self.assertEqual(
+                            [row["id"] for row in listing["items"]], ["s2", "s1", "s3"]
+                        )
+                        self.assertEqual(listing["total"], 3)
+                        self.assertEqual(listing["genres"], ["Jazz", "Rock"])
+                        self.assertEqual(listing["years"], [2011, 1999])
+                        by_artist = (await client.get("/api/library/tracks?sort=artist")).json()
+                        self.assertEqual(
+                            [row["id"] for row in by_artist["items"]], ["s3", "s2", "s1"]
+                        )
+                        # Sorting and totals must cover the library, not the requested page.
+                        page = (await client.get("/api/library/tracks?size=1&offset=1")).json()
+                        self.assertEqual([row["id"] for row in page["items"]], ["s1"])
+                        self.assertEqual(page["next_offset"], 2)
+                        self.assertEqual(page["total"], 3)
+                        filtered = (
+                            await client.get("/api/library/tracks?genre=Jazz&year=2011")
+                        ).json()
+                        self.assertEqual([row["id"] for row in filtered["items"]], ["s3"])
+                        self.assertEqual(filtered["total"], 1)
+                        self.assertEqual(filtered["genres"], ["Jazz", "Rock"])
+                        selection = (
+                            await client.get("/api/library/tracks/selection?sort=year&limit=2")
+                        ).json()
+                        self.assertEqual([row["id"] for row in selection["items"]], ["s2", "s3"])
+                        self.assertEqual(selection["total"], 3)
+                        shuffled = (
+                            await client.get("/api/library/tracks/selection?shuffle=true")
+                        ).json()
+                        self.assertEqual(
+                            sorted(row["id"] for row in shuffled["items"]), ["s1", "s2", "s3"]
+                        )
+                        cached = searches["count"]
+                        await client.get("/api/library/tracks")
+                        self.assertEqual(searches["count"], cached)
+                        # A library inside one page costs one upstream request, not a
+                        # speculative fan-out, and concurrent callers share that one walk.
+                        navidrome.forget_tracks()
+                        searches["count"] = 0
+                        await asyncio.gather(
+                            client.get("/api/library/tracks"),
+                            client.get("/api/library/tracks/selection"),
+                        )
+                        self.assertEqual(searches["count"], 1)
+                        # The picker endpoint asks Navidrome directly instead of walking.
+                        navidrome.forget_tracks()
+                        searches["count"] = 0
+                        picker = (await client.get("/api/library/tracks/search?q=cinder")).json()
+                        self.assertEqual([row["id"] for row in picker["items"]], ["s1", "s2", "s3"])
+                        self.assertEqual(searches["count"], 1)
+                        self.assertEqual(
+                            (await client.get("/api/library/tracks")).json()["total"], 3
+                        )
+                        # A scan changes what search3 returns, so the snapshot is dropped.
+                        searches["count"] = 0
+                        await navidrome.start_scan("1:Artist/Album")
+                        await client.get("/api/library/tracks")
+                        self.assertGreater(searches["count"], 0)
+                        self.assertEqual(
+                            (await client.get("/api/library/tracks?sort=nonsense")).status_code, 422
+                        )
+            store.close()
+
+    async def test_linked_liked_playlist_is_reported_without_creating_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+            deleted: list[str] = []
+            created: list[str] = []
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                path = request.url.path
+                if path.endswith("/getPlaylists"):
+                    return subsonic(
+                        playlists={
+                            "playlist": [
+                                {"id": "p1", "name": "Road trip", "songCount": 4},
+                                {"id": "p2", "name": "Liked", "songCount": 9},
+                            ]
+                        }
+                    )
+                if path.endswith("/createPlaylist"):
+                    created.append(str(request.url.params.get("name")))
+                    return subsonic(playlist={"id": "p3", "name": "Liked", "entry": []})
+                if path.endswith("/deletePlaylist"):
+                    deleted.append(str(request.url.params.get("id")))
+                return subsonic()
+
+            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    app = FastAPI()
+                    install_player_routes(app, lambda: navidrome)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app), base_url="http://test"
+                    ) as client:
+                        # Nothing is linked yet, so listing reports no liked playlist and
+                        # creates none: a playlist merely named Liked is still deletable.
+                        unlinked = (await client.get("/api/library/playlists")).json()
+                        self.assertEqual(unlinked["liked_id"], "")
+                        self.assertEqual(created, [])
+                        self.assertEqual(
+                            (await client.delete("/api/library/playlists/p2")).status_code, 204
+                        )
+
+                        store.set_linked_playlist("liked", "p2")
+                        listing = (await client.get("/api/library/playlists")).json()
+                        self.assertEqual(listing["liked_id"], "p2")
+                        self.assertEqual([row["id"] for row in listing["items"]], ["p1", "p2"])
+                        self.assertEqual(created, [])
+                        refused = await client.delete("/api/library/playlists/p2")
+                        self.assertEqual(refused.status_code, 409)
+                        self.assertEqual(
+                            refused.json()["detail"], "The liked playlist cannot be deleted"
+                        )
+                        self.assertEqual(
+                            (await client.delete("/api/library/playlists/p1")).status_code, 204
+                        )
+                        self.assertEqual(deleted, ["p2", "p1"])
             store.close()
 
     def test_navidrome_url_rejects_credentials_and_non_http_schemes(self) -> None:

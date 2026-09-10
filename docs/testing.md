@@ -24,7 +24,7 @@ uv run pip-audit --disable-pip --no-deps -r requirements.lock
 npm audit --prefix frontend --audit-level=high
 ```
 
-The unittest suite covers persistence, input validation, origin checks, catalog caching, ownership refresh, job idempotency, queue controls, crash recovery, audio tagging, metadata identification and worker failures. Provider requests use mock HTTP transports. FFmpeg generates audio fixtures. No ordinary test needs a provider account or downloads a recording.
+The unittest suite covers persistence, input validation, origin checks, catalog caching, ownership refresh, job idempotency, queue controls, clearing failed downloads, whole-library track browsing, liked-playlist protection, crash recovery, audio tagging, metadata identification and worker failures. Provider requests use mock HTTP transports. FFmpeg generates audio fixtures. No ordinary test needs a provider account or downloads a recording.
 
 Coverage includes branches and every backend module, including unexecuted modules. The current floor is 70%. Raise it as coverage grows; do not lower it to make a PR pass. Docker smoke and browser checks are additional behavioral checks outside this percentage. Coverage does not establish music-match accuracy or successful provider downloads.
 
@@ -41,7 +41,7 @@ docker compose -f compose.ci.yaml -p musimo-ci down --volumes
 
 The explicit Compose file, project name, port 18765 and named test volumes keep these checks separate from a running installation. They do not mount host music or load `compose.override.yaml`. Cleanup removes only this test project's containers and volumes. Run smoke and browser tests sequentially because both change installation settings. Start the test server before Playwright.
 
-Playwright runs Chromium, Firefox, WebKit and a 390px mobile viewport. Tests cover keyboard search, query/tab/sort persistence, catalog error/retry, saved settings, cross-tab SSE updates, failed saves, queue pause/resume, activity clear, diagnostics export, album ownership and artist selection. They also check real audio decoding, seeking, volume, mute, restart and navigation using generated silence served by the test container.
+Playwright runs Chromium, Firefox, WebKit and a 390px mobile viewport. Tests cover keyboard search, query/tab/sort persistence, catalog error/retry, saved settings, cross-tab SSE updates, failed saves, queue pause/resume, activity clear, diagnostics export, album ownership, artist selection, library track controls, play-to-pause and resume, artist album dates and sorting, playlist CRUD and the playlist picker, and download card layout with failure grouping. They also check real audio decoding, seeking, volume, mute, restart and navigation using generated silence served by the test container.
 
 Catalog records are invented. Batch responses are mocked to verify UI requests and feedback; Python API tests cover real batch semantics. Settings, events, diagnostics and queue controls use the real container API and SQLite. Global setup writes only a generated WAV file into the isolated test container. Provider downloads and music-match accuracy still need separate verification.
 

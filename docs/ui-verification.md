@@ -21,7 +21,15 @@ The download-options regression runs two-song and 30-song fixtures across Chromi
 
 `tests/test_activity.py` checks persistent clearing, preserved SSE replay, events arriving after the observed cursor, invalid inputs and cross-origin rejection. The search regression covers background album detail parity and refreshed ownership after changing the index while catalog data stays cached.
 
+`e2e/library-controls.spec.ts` and `e2e/playlists.spec.ts` cover the Library work added on 9 September 2026. The tracks view is checked for sending its query, genre, sort and shuffle to the server and for offering whole-library filter choices; a track's play button is checked for turning into a pause button and back; an artist page is checked for album release years, album and song sort orders and the popularity chart's summary. The playlist checks cover the liked playlist leading the list with no delete control, the delete control appearing only on hover, the public/private filter, a playlist's song count, play, rename and non-duplicating add, and the picker being centred in the viewport, toggling Add to Remove, listing a playlist's songs in a fixed-height area, removing one of them, and the playlist page showing that change without a reload.
+
+`e2e/download-failures.spec.ts` adds a nine-failure queue: it checks the group chips split album failures from single tracks, that Clear failed calls the queue command, and that download cards flow inside one offset container rather than each carrying its own absolute position. That last check is the structural guard against overlapping cards. The overlap itself could not be reproduced by sampling scroll frames, so it is guarded by layout rather than by measurement; per-card absolute offsets could place a card over its neighbour whenever a measured height had not landed, and grid flow cannot.
+
 The frontend production build and focused backend tests pass. The separate testing task owns broader browser regression automation and CI. [Download verification](downloads.md) records worker/publication/recovery checks, including the permitted fixture that appeared in Navidrome.
+
+## Known limits
+
+Library album genre and year filters still apply to the pages loaded so far; only the tracks view filters and sorts on the server. Catalog search on the Search page is unchanged and says so in its own hint. Navidrome's saved play queue holds 500 songs, so Play all and Shuffle over a larger library play a 500-song selection. Whole-library track browsing reads up to 10,000 songs from Navidrome, so a library beyond that size describes the first 10,000 it returns.
 
 ## Further coverage
 
