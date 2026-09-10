@@ -27,7 +27,7 @@ export function DownloadTarget({ format, target }: { format?: string; target?: s
   const chosenFormat = format ?? settings.data?.output_format.value ?? 'original'
   const chosenTarget = target ?? settings.data?.destination.value ?? ''
   const disk = diagnostics.data?.disks.find((d) => d.path === chosenTarget)
-  const problem = chosenTarget && (!disk || !disk.exists || !disk.writable)
+  const problem = diagnostics.data && chosenTarget && (!disk || !disk.exists || !disk.writable)
 
   return (
     <small className="download-target">
