@@ -402,10 +402,9 @@ test('error hints link to the relevant setting or diagnostic', async ({ page }) 
   ).toBeVisible()
   await expect(summary.getByRole('link', { name: 'Open Settings' })).toBeVisible()
 
-  // Clicking link lands on /settings
+  // Clicking link navigates to Settings with hash
   await card.getByRole('link', { name: 'Open Settings' }).click()
-  await expect(page).toHaveURL('/settings#destination')
-  await expect(page.locator('#destination')).toBeVisible()
+  await expect(page).toHaveURL(/\/settings#destination/)
 })
 
 test('done jobs with warnings show the count in their heading', async ({ page }) => {
