@@ -467,6 +467,24 @@ test('long titles and labels stay inside the page', async ({ page }) => {
   expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(groupsBox.x + groupsBox.width + 1)
 })
 
+test('a queue that cannot be read shows the error, not an empty state', async ({ page }) => {
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
+    else await route.fallback()
+  })
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
+  )
+  await page.route('**/api/jobs*', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Queue database is locked' } }),
+  )
+
+  await page.goto('/downloads')
+  await expect(page.getByText('Queue database is locked')).toBeVisible({ timeout: 20_000 })
+  // "No queued downloads" would be a claim the page cannot make.
+  await expect(page.getByText('No queued downloads')).toHaveCount(0)
+})
+
 test('done jobs with warnings show the count in their heading', async ({ page }) => {
   await page.route('**/*', async (route) => {
     if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()

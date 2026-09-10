@@ -964,7 +964,7 @@ export function DownloadsPage() {
         <History />
       ) : jobs.length ? (
         <JobList jobs={jobs} />
-      ) : (
+      ) : queue.isError ? null : (
         <section className="empty-panel">
           <ArrowDownToLine size={36} />
           <h2>
