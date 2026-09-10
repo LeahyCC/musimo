@@ -74,8 +74,10 @@ class Result(BaseModel):
     popularity: int = 0
     track_count: int = 0
     record_type: str = ""
-    ownership: Literal["owned", "partial", "missing"] = "missing"
+    ownership: Literal["owned", "partial", "missing", "edition"] = "missing"
     matched_paths: list[str] = Field(default_factory=list)
+    matched_by: Literal["download", "isrc", "mbid", "tags", ""] = ""
+    matched_album: str = ""
     owned_count: int = 0
     coverage_verified: bool = False
     disc: int = 1

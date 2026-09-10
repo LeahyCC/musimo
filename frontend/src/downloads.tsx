@@ -215,7 +215,9 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         className="icon-button"
         aria-label={
           owned
-            ? `${item.title} is in your library`
+            ? item.ownership === 'edition'
+              ? `Another edition is in your library. Download ${item.title} to ${target || settings.data?.destination.value || '(not set)'} · ${formatLabel(selected)}`
+              : `${item.title} is in your library`
             : existing
               ? `${item.title} is ${existing.stage}`
               : failed
@@ -224,17 +226,21 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         }
         title={
           owned
-            ? 'Already in your library'
+            ? item.ownership === 'edition'
+              ? 'Another edition is in your library'
+              : 'Already in your library'
             : existing?.stage
               ? existing.stage
               : failed
                 ? failureMessage(failed)
                 : `to ${target || settings.data?.destination.value || '(not set)'} · ${formatLabel(selected)}`
         }
-        disabled={owned || Boolean(existing) || mutation.isPending}
+        disabled={
+          (owned && item.ownership !== 'edition') || Boolean(existing) || mutation.isPending
+        }
         onClick={() => mutation.mutate()}
       >
-        {owned || existing ? (
+        {(owned && item.ownership !== 'edition') || existing ? (
           <Check size={17} />
         ) : failed ? (
           <RotateCcw size={17} />
