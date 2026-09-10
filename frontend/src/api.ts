@@ -293,6 +293,27 @@ export const diagnosticsSchema = z.object({
     schema: z.number(),
     retained_events: z.number(),
   }),
+  library: librarySchema,
+  queue: controlsSchema,
+  capabilities: z.object({
+    settings: z.boolean(),
+    events: z.boolean(),
+    search: z.boolean(),
+    downloads: z.boolean(),
+  }),
+  navidrome: playerCapabilitiesSchema.nullable(),
+  last_download: z
+    .object({
+      stage: z.string(),
+      error_code: z.string(),
+      created_at: z.number(),
+    })
+    .nullable(),
+})
+export const destinationTestSchema = z.object({
+  success: z.boolean(),
+  error: z.string().nullable(),
+  elapsed_ms: z.number(),
 })
 export const snapshotSchema = z.object({
   settings: settingsSchema,

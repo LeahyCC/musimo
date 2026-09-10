@@ -189,7 +189,7 @@ test('activity clear persists and diagnostics export is valid JSON', async ({ pa
   })
   expect(changed.ok()).toBe(true)
   await page.goto('/diagnostics')
-  await expect(page.getByRole('heading', { name: 'Musimo is ready.' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Ready to download?' })).toBeVisible()
   const activity = page.getByRole('region', { name: 'Recent activity entries' })
   await expect(activity).toBeVisible()
   expect((await activity.boundingBox())?.height).toBeLessThanOrEqual(320)
@@ -203,7 +203,14 @@ test('activity clear persists and diagnostics export is valid JSON', async ({ pa
   const exported = await request.get('/api/diagnostics/export')
   expect(exported.ok()).toBe(true)
   const data: unknown = await exported.json()
-  expect(data).toMatchObject({ database: { mode: 'wal' }, health: { status: 'ok' } })
+  expect(data).toMatchObject({
+    database: { mode: 'wal' },
+    health: { status: 'ok' },
+    library: expect.any(Object),
+    queue: expect.any(Object),
+    capabilities: expect.any(Object),
+    navidrome: expect.any(Object),
+  })
 })
 
 test('album download skips owned tracks and recovers from failure', async ({ page }) => {
@@ -689,4 +696,83 @@ test('album download button disabled while coverage unverified', async ({ page }
   await page.goto('/albums/50')
   const downloadButton = page.getByRole('button', { name: /Checking coverage/ })
   await expect(downloadButton).toBeDisabled()
+})
+
+test('diagnostics readiness panel shows each component status', async ({ page }) => {
+  await page.goto('/diagnostics')
+  await expect(page.getByRole('heading', { name: 'Ready to download?' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'System readiness' })).toBeVisible()
+  await expect(page.getByText('Library root')).toBeVisible()
+  await expect(page.getByText('Download destination')).toBeVisible()
+  await expect(page.getByText('Library scan')).toBeVisible()
+  await expect(page.getByText('YouTube download helper')).toBeVisible()
+  await expect(page.getByText('Last download')).toBeVisible()
+})
+
+test('destination test write button succeeds on valid volume', async ({ page }) => {
+  await page.goto('/diagnostics')
+  const testButton = page.getByRole('button', { name: 'Test write' })
+  await expect(testButton).toBeVisible()
+  await testButton.click()
+  await expect(testButton).toBeDisabled()
+  await expect(page.getByText(/Write test succeeded/)).toBeVisible()
+})
+
+test('overall status is not ready when destination is missing', async ({ page }) => {
+  await page.route('**/api/diagnostics', (route) =>
+    route.fulfill({
+      json: {
+        health: { status: 'ok', version: '1.0.0', uptime_seconds: 100, phase: 1 },
+        versions: {},
+        disks: [
+          { path: '/data', free_bytes: 10000, total_bytes: 20000, exists: true, writable: true },
+          { path: '/missing', free_bytes: null, total_bytes: null, exists: false, writable: false },
+        ],
+        sources: [
+          { source: 'youtube', status: 'healthy', latency_ms: null, detail: '', checked_at: '' },
+        ],
+        events: [],
+        database: { mode: 'wal', schema: 1, retained_events: 0 },
+        library: {
+          status: 'idle',
+          walked: 0,
+          indexed: 0,
+          errors: 0,
+          elapsed: 0,
+          detail: 'Ready',
+          total_files: 0,
+          roots: ['/data'],
+        },
+        queue: { paused: false, source_paused: false },
+        capabilities: { settings: true, events: true, search: true, downloads: true },
+        navidrome: null,
+        last_download: null,
+      },
+    }),
+  )
+
+  await page.route('**/api/settings', (route) =>
+    route.fulfill({
+      json: {
+        destination: { value: '/missing', origin: 'database', locked: false },
+        library_label: { value: 'Music', origin: 'default', locked: false },
+        output_format: { value: 'original', origin: 'default', locked: false },
+        concurrency: { value: 2, origin: 'default', locked: false },
+        max_attempts: { value: 4, origin: 'default', locked: false },
+        retry_base_seconds: { value: 2, origin: 'default', locked: false },
+        retry_cap_seconds: { value: 60, origin: 'default', locked: false },
+        naming_template: {
+          value: '{album_artist}/{album}/{track:02d} - {title}',
+          origin: 'default',
+          locked: false,
+        },
+        navidrome_url: { value: '', origin: 'default', locked: false },
+        navidrome_mode: { value: 'off', origin: 'default', locked: false },
+        navidrome_library_id: { value: 1, origin: 'default', locked: false },
+      },
+    }),
+  )
+  await page.goto('/diagnostics')
+  await expect(page.getByText('Some components need attention.')).toBeVisible()
+  await expect(page.getByText('Not mounted')).toBeVisible()
 })

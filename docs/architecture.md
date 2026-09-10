@@ -29,8 +29,9 @@ Main (main.py):
 - `PATCH /api/settings`: validated partial updates, atomic persistence, rejects locked fields.
 - `GET /api/snapshot`: settings, jobs and an event cursor from a consistent snapshot.
 - `GET /api/events?after=N`: SSE replay and live events; Last-Event-ID wins on reconnect.
-- `GET /api/diagnostics`: runtime versions, disk availability, database mode, source status and recent events.
+- `GET /api/diagnostics`: runtime versions, disk availability, database mode, source status, library status, queue controls, Navidrome capabilities and last terminal job.
 - `POST /api/diagnostics/test/deezer`: real bounded catalog probe, measured latency and persisted result.
+- `POST /api/diagnostics/test/destination`: destination write test with elapsed time.
 - `GET /api/diagnostics/export`: sanitized diagnostics JSON. ZIP log export follows in hardening.
 
 Activity (activity_api.py):

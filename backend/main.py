@@ -7,9 +7,11 @@ import re
 import shutil
 import subprocess
 import time
+import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import cast
 from urllib.parse import urlsplit
 
 import httpx
@@ -266,7 +268,40 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             "library": library.status(),
             "queue": downloads.controls(),
             "capabilities": {"settings": True, "events": True, "search": True, "downloads": True},
+            "navidrome": await navidrome.capabilities() if navidrome else None,
+            "last_download": downloads.last_terminal_job(),
         }
+
+    @app.post("/api/diagnostics/test/destination")
+    async def test_destination() -> dict[str, object]:
+        settings_dict = store.settings()
+        dest_field = cast(dict[str, object], settings_dict["destination"])
+        destination = str(dest_field["value"])
+        t0 = time.monotonic()
+        try:
+            dest_path = Path(destination)
+            if not dest_path.exists():
+                return {
+                    "success": False,
+                    "error": "Destination directory does not exist",
+                    "elapsed_ms": round((time.monotonic() - t0) * 1000, 1),
+                }
+            test_dir = dest_path / ".musimo"
+            test_dir.mkdir(parents=False, exist_ok=True)
+            test_file = test_dir / f"write-test-{uuid.uuid4()}.tmp"
+            await asyncio.to_thread(test_file.write_text, "test", encoding="utf-8")
+            await asyncio.to_thread(test_file.unlink)
+            return {
+                "success": True,
+                "error": None,
+                "elapsed_ms": round((time.monotonic() - t0) * 1000, 1),
+            }
+        except Exception as e:
+            return {
+                "success": False,
+                "error": str(e),
+                "elapsed_ms": round((time.monotonic() - t0) * 1000, 1),
+            }
 
     @app.post("/api/diagnostics/test/deezer")
     async def test_deezer() -> dict[str, object]:
