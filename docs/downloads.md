@@ -44,6 +44,31 @@ Repeated pause/cancel commands preserve the cleanup already in progress. Resume 
 
 An album with an incomplete catalog track list returns an error before creating any jobs. Retry after the catalog recovers. Download publication waits for any current library scan to finish pruning old entries before adding the finished file to the index.
 
+## Error codes and recovery
+
+Failed downloads display a plain hint with a link to the relevant setting or diagnostic. Each error code maps to one fix target:
+
+| Code                 | Hint                                                       | Link target                      |
+| -------------------- | ---------------------------------------------------------- | -------------------------------- |
+| `DEST_UNWRITABLE`    | The destination folder is missing or not writable.         | Settings → Destination           |
+| `DISK_FULL`          | Less than 128 MB is free on the destination drive.         | Diagnostics → Persistent storage |
+| `MOVE_FAILED`        | The file could not be moved to its final location.         | Settings → Naming template       |
+| `SOURCE_BLOCKED`     | YouTube is blocking requests. Check credentials and tools. | Diagnostics → Download source    |
+| `RATE_LIMITED`       | YouTube rate limit reached. Wait before retrying.          | Diagnostics → Download source    |
+| `POT_MISSING`        | The PO token is required for YouTube downloads.            | Diagnostics → Download source    |
+| `JS_RUNTIME_MISSING` | Deno is required for extracting YouTube metadata.          | Diagnostics → Download source    |
+| `COOKIES_EXPIRED`    | YouTube cookies have expired or are invalid.               | Diagnostics → Download source    |
+| `CATALOG_FAILED`     | The music catalog could not be reached.                    | Diagnostics → Test now           |
+| `TRANSCODE_FAILED`   | FFmpeg could not convert the audio to the target format.   | Settings → Output format         |
+| `TAG_FAILED`         | The audio file could not be tagged with metadata.          | Settings → Output format         |
+| `NO_MATCH`           | No matching recording was found on YouTube.                | Job card → Pick candidate        |
+| `DURATION_MISMATCH`  | The downloaded audio length differs from the catalog.      | Job card → Pick candidate        |
+| `TIMEOUT`            | The download stage timed out before completing.            | Retry button                     |
+| `DOWNLOAD_FAILED`    | The download stopped without a specific cause.             | Retry button                     |
+| `INTERNAL_ERROR`     | An unexpected error occurred during processing.            | Report with tool output          |
+
+Successful downloads with Navidrome or artwork warnings now show the warning count in the done job heading while keeping the details element collapsed. The heading reads "opus · 161 kbps · 2 warnings" so successful jobs with scan notes remain visible without being marked as failures.
+
 ## Verification and remaining gates
 
 Automated tests cover Python 3.12 compatibility and Windows/Docker Python 3.14. They cover prior search/settings behavior plus queue identity, restart state, actual worker termination, protected publication, disk failure and tag round trips for all four output choices.

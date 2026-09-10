@@ -246,9 +246,12 @@ class Store:
             rows = self.db.execute(
                 "SELECT json_extract(payload,'$.stage') stage,"
                 "json_extract(payload,'$.error_code') error_code,"
-                "json_extract(payload,'$.error') error,count(*) amount FROM jobs "
+                "json_extract(payload,'$.error') error,"
+                "json_extract(payload,'$.error_hint') error_hint,"
+                "json_extract(payload,'$.error_fix') error_fix,"
+                "count(*) amount FROM jobs "
                 "WHERE coalesce(json_extract(payload,'$.hidden'),0)=0 "
-                "GROUP BY stage,error_code,error ORDER BY amount DESC"
+                "GROUP BY stage,error_code,error,error_hint,error_fix ORDER BY amount DESC"
             ).fetchall()
         active = sum(
             int(row["amount"])
@@ -260,6 +263,8 @@ class Store:
                 "code": str(row["error_code"] or ""),
                 "message": str(row["error"] or ""),
                 "count": int(row["amount"]),
+                "hint": str(row["error_hint"] or ""),
+                "fix": str(row["error_fix"] or ""),
             }
             for row in rows
             if row["stage"] == "failed"
