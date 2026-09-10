@@ -13,7 +13,10 @@ const song = {
 }
 
 // Thirty seconds of 8 kHz mono silence: enough for the stream to play and for
-// the visualizer's own decode to succeed.
+// the visualizer's own decode to succeed. Keep this short - the decoded PCM
+// is resampled to 44.1 kHz regardless of this file's own rate, so a longer
+// clip means proportionally more samples for the engine to prepare, not just
+// a longer playthrough.
 function silenceWav(seconds = 30, rate = 8000) {
   const samples = seconds * rate
   const buffer = Buffer.alloc(44 + samples * 2)
@@ -128,10 +131,21 @@ test('now playing shows the visualizer with hover controls and an artwork switch
     hasPictureInPicture ? 1 : 0,
   )
 
+  // Idle only applies while playing, and the 30-second fixture track can have
+  // already run out under CI's slow rendering above (playback runs in real
+  // time regardless of how slow the visuals are). Rewind and make sure it is
+  // still playing before relying on that.
+  await stage.getByLabel('Playback position').evaluate((input: HTMLInputElement) => {
+    input.value = '0'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  const playButton = stage.getByRole('button', { name: 'Play' })
+  if (await playButton.isVisible()) await playButton.click()
+  if (webgl2) await expect(stage).toHaveClass(/live/, { timeout: 90_000 })
+
   // The controls rest while music plays and the pointer is still, and wake on movement.
-  // Software rendering also delays this timer, so give it the same room as the rebuild waits above.
   await stage.hover()
-  await expect(stage).toHaveClass(/idle/, { timeout: 60_000 })
+  await expect(stage).toHaveClass(/idle/, { timeout: 30_000 })
   await stage.hover({ position: { x: 40, y: 40 } })
   await expect(stage).not.toHaveClass(/idle/)
 
