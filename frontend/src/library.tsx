@@ -969,9 +969,9 @@ export function LibraryPage({
         <Library size={36} />
         <h1>Your music library lives here.</h1>
         <p>{capabilities.data?.detail ?? 'Navidrome is not ready.'}</p>
-        <a className="button primary" href="/settings#library">
+        <Link className="button primary" to="/settings" hash="library">
           Connect Navidrome
-        </a>
+        </Link>
       </section>
     )
 
@@ -1621,9 +1621,9 @@ export function NowPlayingPage() {
       <section className="empty-panel library-empty">
         <Disc3 size={40} />
         <h1>Nothing playing yet.</h1>
-        <a className="button primary" href="/library">
+        <Link className="button primary" to="/library">
           Open your library
-        </a>
+        </Link>
       </section>
     )
 
