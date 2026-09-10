@@ -383,21 +383,26 @@ test('history tab shows empty state when no jobs finished', async ({ page }) => 
   await page.route('**/api/snapshot', (route) =>
     route.fulfill({
       json: {
+        cursor: 0,
         jobs: [],
         controls: { paused: false, source_paused: false },
         summary: { active: 0, failed: 0, failure_reasons: [] },
-        settings: {},
+        settings: {
+          destination: { value: '/music' },
+          output_format: { value: 'original' },
+        },
       },
     }),
   )
 
   await page.route('**/api/history?*', (route) =>
     route.fulfill({
-      json: { rows: [], next: null },
+      json: { jobs: [], total: 0 },
     }),
   )
 
   await page.goto('/downloads')
+  await expect(page.getByRole('button', { name: 'Queue (0)', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'History' }).click()
   await expect(page.getByText('Nothing has finished yet.')).toBeVisible()
 })
