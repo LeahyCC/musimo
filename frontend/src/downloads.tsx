@@ -720,7 +720,7 @@ function QueueControls() {
           disabled={command.isPending}
           onClick={() => command.mutate('clear-finished')}
         >
-          Clear finished
+          Clear all done
         </button>
       </div>
       {queue.data?.controls.source_paused && (
