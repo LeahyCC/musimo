@@ -1,6 +1,6 @@
 # Live updates behind a proxy
 
-Keep the UI and API on the same origin. SSE uses one long-lived response at `/api/events`, heartbeat comments every 15 seconds, increasing event IDs and a one-second reconnect hint. The client gets a snapshot before opening the stream, and reloads it if the replay cursor has expired. Up to 5,000 events are retained.
+Keep the UI and API on the same origin. SSE uses one long-lived response at `/api/events`, heartbeat comments every 15 seconds, increasing event IDs and a one-second reconnect hint. The client gets a snapshot before opening the stream, and reloads it if the replay cursor has expired. Up to 5,000 events are retained. `/api/player/stream/{id}` forwards a single byte range request, so the proxy must pass `Range` headers through.
 
 ## nginx
 
