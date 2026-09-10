@@ -134,12 +134,11 @@ class FoundationTests(unittest.TestCase):
                     client.get("/library/artists/artist-1/albums/album-1").status_code,
                     200,
                 )
+                self.assertEqual(client.get("/library/artists/artist-1/songs").status_code, 200)
                 self.assertEqual(client.get("/library/artists/bad!id").status_code, 404)
                 self.assertEqual(client.get("/nope").status_code, 404)
 
     def test_read_only_destinations_are_rejected(self) -> None:
-        import os as os_module
-
         with tempfile.TemporaryDirectory() as folder:
             data = Path(folder)
             readonly = data / "readonly"
@@ -147,10 +146,10 @@ class FoundationTests(unittest.TestCase):
             writable = data / "writable"
             writable.mkdir()
 
-            original_access = os_module.access
+            original_access = os.access
 
             def mock_access(path: str, mode: int) -> bool:
-                if path == str(readonly) and mode == os_module.W_OK:
+                if path == str(readonly) and mode == os.W_OK:
                     return False
                 return original_access(path, mode)
 

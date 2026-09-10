@@ -704,7 +704,7 @@ function DiagnosticsPage() {
             {data.sources.map((source) => (
               <section className="panel" key={source.source}>
                 <div className="section-heading">
-                  <h2>Catalog connection</h2>
+                  <h2>{source.source === 'deezer' ? 'Catalog connection' : 'Download source'}</h2>
                   <span className={`status-chip ${source.status === 'healthy' ? 'good' : ''}`}>
                     {source.status}
                   </span>
@@ -724,14 +724,16 @@ function DiagnosticsPage() {
                       ? `${source.latency_ms} ms · ${new Date(source.checked_at).toLocaleTimeString()}`
                       : 'Not tested recently'}
                   </span>
-                  <button
-                    className="button"
-                    onClick={() => probe.mutate(source.source)}
-                    disabled={probe.isPending}
-                  >
-                    {probe.isPending ? 'Testing…' : 'Test now'}
-                    <ArrowRight size={14} />
-                  </button>
+                  {source.source === 'deezer' && (
+                    <button
+                      className="button"
+                      onClick={() => probe.mutate(source.source)}
+                      disabled={probe.isPending}
+                    >
+                      {probe.isPending ? 'Testing…' : 'Test now'}
+                      <ArrowRight size={14} />
+                    </button>
+                  )}
                 </div>
                 {probe.isError && (
                   <p className="error" role="alert">
