@@ -721,6 +721,116 @@ meter::-webkit-meter-bar {
 meter::-webkit-meter-optimum-value {
   background: #a0b783;
 }
+.readiness-panel {
+  grid-column: 1 / -1;
+}
+.readiness-items {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.readiness-item {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.readiness-item:last-child {
+  border-bottom: none;
+  padding-bottom: 0;
+}
+.readiness-item > div {
+  flex: 1;
+}
+.readiness-item strong {
+  display: block;
+  font-size: 12px;
+  margin-bottom: 4px;
+  color: var(--text);
+}
+.readiness-item p,
+.readiness-item code,
+.readiness-item small {
+  font-size: 11px;
+  color: #a8b69f;
+}
+.readiness-item code {
+  display: block;
+  margin-bottom: 4px;
+}
+.readiness-item small {
+  display: block;
+  margin-top: 4px;
+  color: #81937f;
+}
+.readiness-badge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  border-radius: 5px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  flex-shrink: 0;
+}
+.readiness-badge.ready {
+  background: #283a28;
+  border: 1px solid #4b6743;
+  color: var(--accent);
+}
+.readiness-badge.not-ready {
+  background: #3a2828;
+  border: 1px solid #674343;
+  color: #f8a5a5;
+}
+.readiness-badge.not-tested {
+  background: #2e2f24;
+  border: 1px solid #4b4b3a;
+  color: #c9c5a4;
+}
+.readiness-feedback {
+  padding: 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  margin-top: -8px;
+}
+.readiness-feedback.success {
+  background: #283a28;
+  border: 1px solid #4b6743;
+  color: var(--accent);
+}
+.readiness-feedback.error {
+  background: #3a2828;
+  border: 1px solid #674343;
+  color: #f8a5a5;
+}
+.settings-status {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 6px;
+  font-size: 12px;
+  margin: 16px 0;
+}
+.settings-status.ready {
+  background: #283a28;
+  border: 1px solid #4b6743;
+  color: var(--accent);
+}
+.settings-status.not-ready {
+  background: #3a2828;
+  border: 1px solid #674343;
+  color: #f8a5a5;
+}
+.settings-status a {
+  margin-left: auto;
+  text-decoration: underline;
+  color: inherit;
+}
 .versions-section,
 .events-section {
   margin-top: 32px;
