@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
+import { ORIGIN } from './env'
 import { emptyQueue } from './queue-fixtures'
 
 const track: MusicResult = {
@@ -31,7 +32,7 @@ const track: MusicResult = {
 for (const ownedCount of [0, 1, 2]) {
   test(`album download adapts to ${ownedCount} of 2 owned tracks`, async ({ page }) => {
     await page.route('**/*', async (route) => {
-      if (new URL(route.request().url()).origin !== 'http://127.0.0.1:18765') await route.abort()
+      if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
       else await route.fallback()
     })
     // The download buttons below read the queue, so it comes from the fixture rather than
