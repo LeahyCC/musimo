@@ -71,6 +71,8 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     changed = asyncio.Event()
     probe_lock = asyncio.Lock()
     last_probe = 0.0
+    navidrome_cache: dict[str, object] | None = None
+    navidrome_cache_time = 0.0
     versions: dict[str, str] = {}
     store: Store
     catalog: Catalog
@@ -229,6 +231,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
 
     @app.get("/api/diagnostics")
     async def diagnostics() -> dict[str, object]:
+        nonlocal navidrome_cache, navidrome_cache_time
         roots = os.getenv("MUSIMO_LIBRARY_ROOTS", "/music").split(os.pathsep)
         disks: list[dict[str, object]] = []
         for root in [str(data), *roots]:
@@ -253,6 +256,18 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                         "total_bytes": None,
                     }
                 )
+
+        # Cache Navidrome capabilities for 30 seconds to avoid repeated pings
+        navidrome_result = None
+        if navidrome:
+            now = time.monotonic()
+            if navidrome_cache is None or now - navidrome_cache_time > 30:
+                navidrome_result = await navidrome.capabilities()
+                navidrome_cache = navidrome_result
+                navidrome_cache_time = now
+            else:
+                navidrome_result = navidrome_cache
+
         first, latest = store.bounds()
         return {
             "health": await health(),
@@ -268,7 +283,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             "library": library.status(),
             "queue": downloads.controls(),
             "capabilities": {"settings": True, "events": True, "search": True, "downloads": True},
-            "navidrome": await navidrome.capabilities() if navidrome else None,
+            "navidrome": navidrome_result,
             "last_download": downloads.last_terminal_job(),
         }
 
