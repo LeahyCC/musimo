@@ -27,6 +27,14 @@ Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGI
 
 Library's empty state links to `/settings#library`. The liked playlist link is persisted outside the settings table in `linked_playlists` and is untouched by settings saves.
 
+## Draft preservation
+
+Settings keeps draft values separate from the live query data. The form renders `draft[key] ?? setting.value` so unsaved changes remain visible while background SSE events (library scans, job updates, unrelated setting changes) update the query cache. A "You have unsaved changes." status appears while the draft has keys.
+
+When a setting changes elsewhere (another tab, another user, or the Downloads page's concurrency select), a conflict notice appears on that row showing "Changed elsewhere to X" where X is the new value. The draft is not overwritten, and the saved flag resets so a later save sends the user's intended value, not the externally changed one.
+
+Navigation guards block in-app Link clicks and browser tab close/refresh while the draft holds unsaved keys. The blocker shows a confirmation dialog. Saving clears the draft, removes conflict notices, and shows "Saved. You can safely refresh."
+
 See [downloads](downloads.md) for staging, formats and metadata. See [library player](player.md) for playback and shared Navidrome credentials.
 
 ## Later phases
