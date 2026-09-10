@@ -31,13 +31,13 @@ from backend.navidrome import Navidrome
 from backend.player_api import install_player_routes
 from backend.search_api import install_search_routes
 from backend.store import LockedSetting, Store
+from backend.version import VERSION
 
 LIBRARY_ITEM = r"[A-Za-z0-9._:-]{1,200}"
 LIBRARY_SPA_PATH = re.compile(
     rf"^library/(?:(?:albums|playlists)(?:/{LIBRARY_ITEM})?|tracks|"
     rf"artists(?:/{LIBRARY_ITEM}(?:/(?:albums/{LIBRARY_ITEM}|songs))?)?)$"
 )
-VERSION = "0.3.0"
 
 
 def runtime_versions() -> dict[str, str]:
@@ -170,7 +170,9 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             if "destination" in changes:
                 dest = str(changes["destination"])
                 if not os.access(dest, os.W_OK):
-                    raise HTTPException(422, "Destination must be writable. Read-only mounts cannot be used.")
+                    raise HTTPException(
+                        422, "Destination must be writable. Read-only mounts cannot be used."
+                    )
                 downloads.target(dest)
             result = store.update(changes)
         except LockedSetting as exc:
