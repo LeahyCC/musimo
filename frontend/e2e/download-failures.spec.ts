@@ -60,6 +60,8 @@ const failed: DownloadJob = {
   error_code: 'NO_MATCH',
   error: 'No sufficiently close recording found',
   retryable: false,
+  error_hint: 'No matching recording was found on YouTube.',
+  error_fix: 'card:pick',
   tool_tail: '',
   tool_version: '',
   warnings: [],

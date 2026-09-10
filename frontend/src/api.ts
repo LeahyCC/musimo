@@ -43,6 +43,8 @@ export const jobSchema = z.object({
   error_code: z.string(),
   error: z.string(),
   retryable: z.boolean(),
+  error_hint: z.string(),
+  error_fix: z.string(),
   tool_tail: z.string(),
   tool_version: z.string(),
   warnings: z.array(z.string()),
@@ -58,7 +60,15 @@ export const controlsSchema = z.object({ paused: z.boolean(), source_paused: z.b
 export const jobSummarySchema = z.object({
   active: z.number(),
   failed: z.number(),
-  failure_reasons: z.array(z.object({ code: z.string(), message: z.string(), count: z.number() })),
+  failure_reasons: z.array(
+    z.object({
+      code: z.string(),
+      message: z.string(),
+      count: z.number(),
+      hint: z.string().optional(),
+      fix: z.string().optional(),
+    }),
+  ),
 })
 export const jobsSchema = z.object({
   jobs: z.array(jobSchema),

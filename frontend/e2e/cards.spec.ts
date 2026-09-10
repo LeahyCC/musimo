@@ -62,6 +62,8 @@ test('card links and download controls work independently in a natural-height gr
     error_code: '',
     error: '',
     retryable: false,
+    error_hint: '',
+    error_fix: '',
     tool_tail: '',
     tool_version: '',
     warnings: [],

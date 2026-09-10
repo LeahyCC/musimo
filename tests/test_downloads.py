@@ -56,6 +56,8 @@ class DurableJobsTests(unittest.TestCase):
                 stage="failed",
                 error_code="NO_MATCH",
                 error="No sufficiently close recording found",
+                error_hint="No matching recording was found on YouTube.",
+                error_fix="card:pick",
             )
             self.assertEqual(
                 store.job_summary(),
@@ -67,6 +69,8 @@ class DurableJobsTests(unittest.TestCase):
                             "code": "NO_MATCH",
                             "message": "No sufficiently close recording found",
                             "count": 1,
+                            "hint": "No matching recording was found on YouTube.",
+                            "fix": "card:pick",
                         }
                     ],
                 },

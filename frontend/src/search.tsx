@@ -122,7 +122,7 @@ export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
       className={`ownership ${failed ? 'failed' : item.ownership}`}
       title={
         failed
-          ? failureMessage(job)
+          ? job.error_hint || failureMessage(job)
           : item.matched_paths.join('\n') ||
             (item.kind === 'album' && !item.coverage_verified
               ? 'Coverage is still being checked against the library index.'
