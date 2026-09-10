@@ -46,6 +46,7 @@ import {
 } from './api'
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from './api'
 import { InfiniteScroll } from './infinite-scroll'
+import { NowPlayingStage } from './now-playing-popout'
 import {
   durationText,
   remember,
@@ -1630,9 +1631,7 @@ export function NowPlayingPage() {
   return (
     <div className="now-page">
       <section className="now-hero">
-        <div className="now-art">
-          {track.coverArt ? <img src={cover(track.coverArt)} alt="" /> : <Disc3 />}
-        </div>
+        <NowPlayingStage />
         <div>
           <p className="eyebrow">NOW PLAYING</p>
           <h1>{track.title}</h1>
