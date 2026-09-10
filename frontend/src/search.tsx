@@ -117,7 +117,7 @@ function Art({ item }: { item: MusicResult }) {
       {item.kind === 'track' && (
         <button
           className="art-play"
-          aria-label={`${active ? 'Pause' : 'Preview'} ${item.title}`}
+          aria-label={`${active ? 'Pause' : item.preview ? 'Preview' : 'Find preview for'} ${item.title}`}
           onClick={() => player.play(item)}
         >
           {active ? <Pause size={19} /> : <Play size={19} />}
