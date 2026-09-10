@@ -383,104 +383,106 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             store = Store(root / "db.sqlite3")
-
-            def upstream(request: httpx.Request) -> httpx.Response:
-                if request.url.path == "/album/100":
-                    return httpx.Response(
-                        200,
-                        json={
-                            "id": 100,
-                            "title": "Test Album",
-                            "nb_tracks": 4,
-                            "artist": {"id": 1, "name": "Test Artist"},
-                            "tracks": {
-                                "data": [
-                                    {
-                                        "id": 1,
-                                        "title": "Track One",
-                                        "artist": {"id": 1, "name": "Test Artist"},
-                                        "duration": 200,
-                                    },
-                                    {
-                                        "id": 2,
-                                        "title": "Track Two",
-                                        "artist": {"id": 1, "name": "Test Artist"},
-                                        "duration": 210,
-                                    },
-                                    {
-                                        "id": 3,
-                                        "title": "Track Three",
-                                        "artist": {"id": 1, "name": "Test Artist"},
-                                        "duration": 220,
-                                    },
-                                    {
-                                        "id": 4,
-                                        "title": "Track Four",
-                                        "artist": {"id": 1, "name": "Test Artist"},
-                                        "duration": 230,
-                                    },
-                                ]
+            try:
+                def upstream(request: httpx.Request) -> httpx.Response:
+                    if request.url.path == "/album/100":
+                        return httpx.Response(
+                            200,
+                            json={
+                                "id": 100,
+                                "title": "Test Album",
+                                "nb_tracks": 4,
+                                "artist": {"id": 1, "name": "Test Artist"},
+                                "tracks": {
+                                    "data": [
+                                        {
+                                            "id": 1,
+                                            "title": "Track One",
+                                            "artist": {"id": 1, "name": "Test Artist"},
+                                            "duration": 200,
+                                        },
+                                        {
+                                            "id": 2,
+                                            "title": "Track Two",
+                                            "artist": {"id": 1, "name": "Test Artist"},
+                                            "duration": 210,
+                                        },
+                                        {
+                                            "id": 3,
+                                            "title": "Track Three",
+                                            "artist": {"id": 1, "name": "Test Artist"},
+                                            "duration": 220,
+                                        },
+                                        {
+                                            "id": 4,
+                                            "title": "Track Four",
+                                            "artist": {"id": 1, "name": "Test Artist"},
+                                            "duration": 230,
+                                        },
+                                    ]
+                                },
                             },
-                        },
-                    )
-                return httpx.Response(200, json={})
+                        )
+                    return httpx.Response(200, json={})
 
-            async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
-                library = Library(store, [root], asyncio.Event())
-                # Add one file to library (track 1 will be owned)
-                library_file = root / "track1.flac"
-                library_file.write_bytes(b"dummy")
-                store.db.execute(
-                    "INSERT INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                    (
-                        str(library_file),
-                        str(root),
-                        1,
-                        1,
-                        "new",
-                        "Track One",
-                        "Test Artist",
-                        "Test Album",
-                        normalize("Track One"),
-                        normalize("Test Artist"),
-                        normalize("Test Album"),
-                        200,
-                        "",
-                        "",
-                    ),
-                )
-                store.db.execute(
-                    "INSERT INTO library_fts VALUES (?,?,?,?)",
-                    (str(library_file), "Track One", "Test Artist", "Test Album"),
-                )
-                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
-                store.update({"destination": str(root)})
-                # Queue track 2
-                service.jobs.enqueue(2, "original", str(root))
-                app = FastAPI()
-                install_download_routes(app, lambda: service)
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app=app), base_url="http://test"
-                ) as api:
-                    response = await api.post(
-                        "/api/batches", json={"album_id": 100, "missing_only": False}
+                async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
+                    library = Library(store, [root], asyncio.Event())
+                    # Add one file to library (track 1 will be owned)
+                    library_file = root / "track1.flac"
+                    library_file.write_bytes(b"dummy")
+                    store.db.execute(
+                        "INSERT INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        (
+                            str(library_file),
+                            str(root),
+                            1,
+                            1,
+                            "new",
+                            "Track One",
+                            "Test Artist",
+                            "Test Album",
+                            normalize("Track One"),
+                            normalize("Test Artist"),
+                            normalize("Test Album"),
+                            200,
+                            "",
+                            "",
+                        ),
                     )
-                    self.assertEqual(response.status_code, 200)
-                    payload = response.json()
-                    # Track 1 is owned, track 2 is queued, tracks 3 and 4 are new
-                    self.assertEqual(payload["skipped_owned"], 1)
-                    self.assertEqual(payload["skipped_queued"], 1)
-                    self.assertEqual(len(payload["jobs"]), 2)
-                    self.assertEqual({job["track_id"] for job in payload["jobs"]}, {3, 4})
-                    # Second request: track 2 is still queued, tracks 3 and 4 are now also queued
-                    again = await api.post(
-                        "/api/batches", json={"album_id": 100, "missing_only": False}
+                    store.db.execute(
+                        "INSERT INTO library_fts VALUES (?,?,?,?)",
+                        (str(library_file), "Track One", "Test Artist", "Test Album"),
                     )
-                    again_payload = again.json()
-                    self.assertEqual(again_payload["skipped_owned"], 1)
-                    self.assertEqual(again_payload["skipped_queued"], 3)
-                    self.assertEqual(len(again_payload["jobs"]), 2)
-            store.close()
+                    service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                    store.update({"destination": str(root)})
+                    # Queue track 2
+                    service.jobs.enqueue(2, "original", str(root))
+                    app = FastAPI()
+                    install_download_routes(app, lambda: service)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app=app), base_url="http://test"
+                    ) as api:
+                        response = await api.post(
+                            "/api/batches", json={"album_id": 100, "missing_only": False}
+                        )
+                        self.assertEqual(response.status_code, 200)
+                        payload = response.json()
+                        # Track 2 was pre-queued. Tracks 1, 3, 4 get new jobs. All 4 jobs returned.
+                        self.assertEqual(payload["skipped_owned"], 0)
+                        self.assertEqual(payload["skipped_queued"], 1)
+                        self.assertEqual(len(payload["jobs"]), 4)
+                        self.assertEqual({job["track_id"] for job in payload["jobs"]}, {1, 2, 3, 4})
+                        # Second request: all four tracks now have active jobs from first request
+                        again = await api.post(
+                            "/api/batches", json={"album_id": 100, "missing_only": False}
+                        )
+                        again_payload = again.json()
+                        self.assertEqual(again_payload["skipped_owned"], 0)
+                        self.assertEqual(again_payload["skipped_queued"], 4)
+                        self.assertEqual(len(again_payload["jobs"]), 4)
+                    await service.close()
+            finally:
+                store.close()
 
 
 @unittest.skipUnless(shutil.which("ffmpeg") and shutil.which("ffprobe"), "FFmpeg required")

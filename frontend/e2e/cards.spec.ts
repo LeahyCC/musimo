@@ -344,22 +344,25 @@ test('badge shows distinct states for owned, edition, queued, and downloaded', a
   )
 
   await page.goto('/search?q=test&tab=track')
-  const cards = page.getByRole('article')
-  await expect(cards).toHaveCount(4)
+  const rows = page.locator('.track-row')
+  await expect(rows).toHaveCount(4)
+
+  // Wait for queue jobs to load and be applied
+  await page.waitForTimeout(500)
 
   // Owned track shows "In library"
-  await expect(cards.nth(0).getByText('In library')).toBeVisible()
-  await expect(cards.nth(0).locator('.ownership.owned')).toBeVisible()
+  await expect(rows.nth(0).getByText('In library')).toBeVisible()
+  await expect(rows.nth(0).locator('.ownership.owned')).toBeVisible()
 
   // Edition track shows "Another edition in library (Album Deluxe Edition)"
   await expect(
-    cards.nth(1).getByText('Another edition in library (Album Deluxe Edition)'),
+    rows.nth(1).getByText('Another edition in library (Album Deluxe Edition)'),
   ).toBeVisible()
-  await expect(cards.nth(1).locator('.ownership.partial')).toBeVisible()
+  await expect(rows.nth(1).locator('.ownership.partial')).toBeVisible()
 
   // Queued track shows the job stage
-  await expect(cards.nth(2).getByText('Queued')).toBeVisible()
+  await expect(rows.nth(2).getByText('Queued')).toBeVisible()
 
   // Done track shows "Downloaded earlier"
-  await expect(cards.nth(3).getByText('Downloaded earlier')).toBeVisible()
+  await expect(rows.nth(3).getByText('Downloaded earlier')).toBeVisible()
 })
