@@ -28,6 +28,7 @@ export function AlbumDownloadButton({
     (job) => job.album_id === item.id && activeJob(job),
   ).length
   const complete = item.coverage_verified && item.ownership === 'owned'
+  const checkingCoverage = !item.coverage_verified && item.ownership === 'owned'
   const download = useMutation({
     mutationFn: () =>
       api('batches', batchSchema, {
@@ -50,13 +51,15 @@ export function AlbumDownloadButton({
       <button
         type="button"
         className={label ? 'button' : 'icon-button'}
-        disabled={complete || download.isPending}
+        disabled={complete || checkingCoverage || download.isPending}
         aria-label={
           complete
-            ? `${item.title} is in your library`
-            : missingOnly
-              ? `Download missing tracks from ${item.title}`
-              : `Download ${item.title}`
+            ? `Nothing to download for ${item.title}`
+            : checkingCoverage
+              ? `Checking coverage for ${item.title}`
+              : missingOnly
+                ? `Download missing tracks from ${item.title}`
+                : `Download ${item.title}`
         }
         title={
           complete

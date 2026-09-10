@@ -642,7 +642,7 @@ export function SearchPage() {
   if (/^https?:\/\//i.test(state.q.trim()))
     return (
       <section className="empty-panel">
-        <h1>Link imports arrive in Phase 4.</h1>
+        <h1>Pasting links is not supported yet.</h1>
         <p>Search by artist, album or track name for now.</p>
         <button className="button" onClick={() => change({ q: '' })}>
           Clear link

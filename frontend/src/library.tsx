@@ -969,9 +969,9 @@ export function LibraryPage({
         <Library size={36} />
         <h1>Your music library lives here.</h1>
         <p>{capabilities.data?.detail ?? 'Navidrome is not ready.'}</p>
-        <a className="button primary" href="/settings#library">
+        <Link className="button primary" to="/settings" hash="library">
           Connect Navidrome
-        </a>
+        </Link>
       </section>
     )
 
@@ -997,9 +997,10 @@ export function LibraryPage({
           <button
             className={tab === item ? 'active' : ''}
             key={item}
+            aria-pressed={tab === item}
             onClick={() => changeTab(item)}
           >
-            {item}
+            {item.charAt(0).toUpperCase() + item.slice(1)}
           </button>
         ))}
       </nav>
@@ -1520,26 +1521,35 @@ export function LibraryPage({
       {tab === 'tracks' && showBrowser && (
         <section className="library-detail">
           <div className="library-list-actions">
-            <CollectionPlayButton
-              source={trackSource}
-              text="Play all"
-              className="button primary"
-              size={15}
-              disabled={busy || !trackTotal}
-              onPlay={() => playTracks.mutate({ shuffled: false })}
-            />
-            <button
-              className="button"
-              onClick={() => playTracks.mutate({ shuffled: true })}
-              disabled={busy || !trackTotal}
-            >
-              <Shuffle size={15} /> Shuffle
-            </button>
-            <small className="muted">
-              {trackTotal > 500
-                ? `Plays a random 500 of ${trackTotal.toLocaleString()} matching songs.`
-                : 'Covers every matching song, not just the loaded ones.'}
-            </small>
+            <div className="library-action-column">
+              <CollectionPlayButton
+                source={trackSource}
+                text="Play all"
+                className="button primary"
+                size={15}
+                disabled={busy || !trackTotal}
+                onPlay={() => playTracks.mutate({ shuffled: false })}
+              />
+              <small className="muted">
+                {trackTotal > 500
+                  ? `Plays the first 500 of ${trackTotal.toLocaleString()} matching songs.`
+                  : 'Covers every matching song, not just the loaded ones.'}
+              </small>
+            </div>
+            <div className="library-action-column">
+              <button
+                className="button"
+                onClick={() => playTracks.mutate({ shuffled: true })}
+                disabled={busy || !trackTotal}
+              >
+                <Shuffle size={15} /> Shuffle
+              </button>
+              <small className="muted">
+                {trackTotal > 500
+                  ? `Plays a random 500 of ${trackTotal.toLocaleString()} matching songs.`
+                  : 'Covers every matching song, not just the loaded ones.'}
+              </small>
+            </div>
           </div>
           {playTracks.isError && (
             <p className="error" role="alert">
@@ -1621,9 +1631,9 @@ export function NowPlayingPage() {
       <section className="empty-panel library-empty">
         <Disc3 size={40} />
         <h1>Nothing playing yet.</h1>
-        <a className="button primary" href="/library">
+        <Link className="button primary" to="/library">
           Open your library
-        </a>
+        </Link>
       </section>
     )
 
