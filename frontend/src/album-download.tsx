@@ -7,7 +7,12 @@ import { api, jobSchema } from './api'
 import type { MusicResult } from './api'
 import { activeJob, updateJob, useJobs } from './downloads'
 
-const batchSchema = z.object({ id: z.string(), jobs: z.array(jobSchema), skipped: z.number() })
+const batchSchema = z.object({
+  id: z.string(),
+  jobs: z.array(jobSchema),
+  skipped_owned: z.number(),
+  skipped_queued: z.number(),
+})
 
 export function AlbumDownloadButton({
   item,
@@ -88,7 +93,8 @@ export function AlbumDownloadButton({
               : result?.jobs.length
                 ? `${result.jobs.length} queued`
                 : 'Nothing missing'}
-            {result?.skipped ? ` · ${result.skipped} skipped` : ''}
+            {result?.skipped_owned ? ` · ${result.skipped_owned} owned` : ''}
+            {result?.skipped_queued ? ` · ${result.skipped_queued} queued` : ''}
           </Link>
         </span>
       )}

@@ -23,6 +23,8 @@ const track: MusicResult = {
   record_type: 'album',
   ownership: 'missing',
   matched_paths: [],
+  matched_by: '',
+  matched_album: '',
   owned_count: 0,
   coverage_verified: true,
   disc: 1,
