@@ -96,6 +96,8 @@ test('failed downloads show a count, cause and retry state', async ({ page }) =>
               code: failed.error_code,
               message: failed.error,
               count: 1,
+              hint: failed.error_hint,
+              fix: failed.error_fix,
             },
           ],
         },
@@ -126,13 +128,13 @@ test('failed downloads show a count, cause and retry state', async ({ page }) =>
   await expect(page.getByRole('button', { name: 'Failed (1)', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Failed (1)', exact: true }).click()
   await expect(page.getByLabel('Failure summary')).toContainText(
-    'No matching recording was found on YouTube. Nothing was downloaded.',
+    'No matching recording was found on YouTube.',
   )
 
   await page.goto('/albums/42')
   await expect(page.getByText('Download failed', { exact: true })).toHaveAttribute(
     'title',
-    'No matching recording was found on YouTube. Nothing was downloaded.',
+    'No matching recording was found on YouTube.',
   )
   await page.getByRole('button', { name: /Retry Recording 1/ }).click()
   await expect(page.getByText('Queued', { exact: true })).toBeVisible()
@@ -312,6 +314,142 @@ test('a queued card keeps its own height when a job above it finishes', async ({
   release()
   await expect(page.getByRole('button', { name: 'Queue (8)', exact: true })).toBeVisible()
   expect(await overlaps(page)).toEqual([])
+})
+
+test('error hints link to the relevant setting or diagnostic', async ({ page }) => {
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
+    else await route.fallback()
+  })
+
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
+  )
+
+  const destFailed: DownloadJob = {
+    ...failed,
+    id: 'dest-failed',
+    error_code: 'DEST_UNWRITABLE',
+    error: 'Destination is missing or read-only',
+    error_hint: 'The destination folder is missing or not writable.',
+    error_fix: 'settings:destination',
+  }
+
+  await page.route('**/api/jobs*', (route) =>
+    route.fulfill({
+      json: {
+        jobs: [destFailed],
+        controls: { paused: false, source_paused: false },
+        summary: {
+          active: 0,
+          failed: 1,
+          failure_reasons: [
+            {
+              code: destFailed.error_code,
+              message: destFailed.error,
+              count: 1,
+              hint: destFailed.error_hint,
+              fix: destFailed.error_fix,
+            },
+          ],
+        },
+      },
+    }),
+  )
+
+  await page.route('**/api/settings*', (route) =>
+    route.fulfill({
+      json: {
+        destination: { value: '/music', locked: false, origin: '' },
+        output_format: { value: 'original', locked: false, origin: '' },
+        naming_template: { value: '{artist}/{album}/{title}', locked: false, origin: '' },
+        navidrome_mode: { value: 'off', locked: false, origin: '' },
+        navidrome_url: { value: '', locked: false, origin: '' },
+        navidrome_library_id: { value: '', locked: false, origin: '' },
+        concurrency: { value: 2, locked: false, origin: '' },
+        max_attempts: { value: 4, locked: false, origin: '' },
+        retry_base_seconds: { value: 5, locked: false, origin: '' },
+        retry_cap_seconds: { value: 60, locked: false, origin: '' },
+      },
+    }),
+  )
+
+  await page.route('**/api/diagnostics*', (route) =>
+    route.fulfill({
+      json: {
+        health: { status: 'healthy', version: '0.3.0' },
+        sources: [],
+        disks: [
+          { path: '', exists: false, writable: false, free_bytes: null },
+          { path: '/music', exists: true, writable: true, free_bytes: 1024 ** 3 },
+        ],
+      },
+    }),
+  )
+
+  await page.goto('/downloads')
+  await page.getByRole('button', { name: 'Failed (1)', exact: true }).click()
+
+  // Failed card shows hint and link
+  const card = page.locator('.job-card')
+  await expect(card.getByText('The destination folder is missing or not writable.')).toBeVisible()
+  await expect(card.getByRole('link', { name: 'Open Settings' })).toBeVisible()
+
+  // Failed tab summary shows hint and link
+  const summary = page.getByLabel('Failure summary')
+  await expect(
+    summary.getByText('The destination folder is missing or not writable.'),
+  ).toBeVisible()
+  await expect(summary.getByRole('link', { name: 'Open Settings' })).toBeVisible()
+
+  // Clicking link lands on /settings
+  await card.getByRole('link', { name: 'Open Settings' }).click()
+  await expect(page).toHaveURL('/settings#destination')
+  await expect(page.locator('#destination')).toBeVisible()
+})
+
+test('done jobs with warnings show the count in their heading', async ({ page }) => {
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
+    else await route.fallback()
+  })
+
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
+  )
+
+  const doneWithWarnings: DownloadJob = {
+    ...failed,
+    id: 'done-warnings',
+    stage: 'done',
+    error_code: '',
+    error: '',
+    error_hint: '',
+    error_fix: '',
+    warnings: ['Navidrome scan delayed', 'Artwork fallback used'],
+    codec: 'opus',
+    actual_bitrate: 161000,
+  }
+
+  await page.route('**/api/jobs*', (route) =>
+    route.fulfill({
+      json: {
+        jobs: [doneWithWarnings],
+        controls: { paused: false, source_paused: false },
+        summary: {
+          active: 0,
+          failed: 0,
+          failure_reasons: [],
+        },
+      },
+    }),
+  )
+
+  await page.goto('/downloads')
+  await page.getByRole('button', { name: 'Done (1)', exact: true }).click()
+
+  const card = page.locator('.job-card')
+  await expect(card.getByText('opus · 161 kbps · 2 warnings')).toBeVisible()
 })
 
 test('history tab shows empty state when no jobs finished', async ({ page }) => {

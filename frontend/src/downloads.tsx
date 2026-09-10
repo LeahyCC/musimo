@@ -465,10 +465,13 @@ function JobCard({ job }: { job: DownloadJob }) {
             (() => {
               const link = errorLink(job.error_fix)
               if (link) {
+                const [to, hash] = link.href.split('#')
                 return (
                   <>
                     {' '}
-                    <a href={link.href}>{link.text}</a>
+                    <Link to={to} hash={hash}>
+                      {link.text}
+                    </Link>
                   </>
                 )
               }
@@ -917,12 +920,18 @@ export function DownloadsPage() {
               <span key={reason.code + reason.message}>
                 {reason.count} · {reason.hint || reason.message}{' '}
                 {reason.code && <small>({reason.code})</small>}
-                {link && (
-                  <>
-                    {' '}
-                    <a href={link.href}>{link.text}</a>
-                  </>
-                )}
+                {link &&
+                  (() => {
+                    const [to, hash] = link.href.split('#')
+                    return (
+                      <>
+                        {' '}
+                        <Link to={to} hash={hash}>
+                          {link.text}
+                        </Link>
+                      </>
+                    )
+                  })()}
               </span>
             )
           })}

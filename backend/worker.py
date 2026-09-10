@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Protocol, cast
 
+from backend.errors import error_guidance
 from backend.job_models import Candidate, Job
 from backend.matching import Matcher
 from backend.tagging import Tagger, probe
@@ -25,61 +26,6 @@ def emit(kind: str, **values: object) -> None:
 
 def redact(text: str) -> str:
     return re.sub(r"https?://\S+", "[URL]", text)[-3000:]
-
-
-def error_guidance(code: str) -> tuple[str, str]:
-    """Map an error code to a plain hint and a fix target."""
-    hints: dict[str, tuple[str, str]] = {
-        "NO_MATCH": (
-            "No matching recording was found on YouTube.",
-            "card:pick",
-        ),
-        "DURATION_MISMATCH": (
-            "The downloaded audio length differs from the catalog.",
-            "card:pick",
-        ),
-        "SOURCE_BLOCKED": (
-            "YouTube is blocking requests. Check credentials and tools.",
-            "diagnostics:sources",
-        ),
-        "RATE_LIMITED": (
-            "YouTube rate limit reached. Wait before retrying.",
-            "diagnostics:sources",
-        ),
-        "POT_MISSING": (
-            "The PO token is required for YouTube downloads.",
-            "diagnostics:sources",
-        ),
-        "JS_RUNTIME_MISSING": (
-            "Deno is required for extracting YouTube metadata.",
-            "diagnostics:sources",
-        ),
-        "COOKIES_EXPIRED": (
-            "YouTube cookies have expired or are invalid.",
-            "diagnostics:sources",
-        ),
-        "DISK_FULL": (
-            "Less than 128 MB is free on the destination drive.",
-            "diagnostics:disk",
-        ),
-        "TIMEOUT": (
-            "The download stage timed out before completing.",
-            "retry",
-        ),
-        "DOWNLOAD_FAILED": (
-            "The download stopped without a specific cause.",
-            "retry",
-        ),
-        "TRANSCODE_FAILED": (
-            "FFmpeg could not convert the audio to the target format.",
-            "settings:audio",
-        ),
-        "TAG_FAILED": (
-            "The audio file could not be tagged with metadata.",
-            "settings:audio",
-        ),
-    }
-    return hints.get(code, ("", ""))
 
 
 def main() -> None:
