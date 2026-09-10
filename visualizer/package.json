@@ -11,6 +11,10 @@
     "./songs": {
       "types": "./types/src/songs.d.ts",
       "default": "./src/songs.ts"
+    },
+    "./song-hashes": {
+      "types": "./types/src/song-hashes.d.ts",
+      "default": "./src/song-hashes.ts"
     }
   },
   "scripts": {

@@ -46,8 +46,9 @@ Shortcuts bind to the window the stage is in. In the tab they apply while the st
 - `frontend/src/visualizer.tsx`: the provider at the app root (prepared audio, study choice, popout window, the request that carries full screen back to the tab) and the Now Playing slot.
 - `frontend/src/visualizer-stage.tsx`: one canvas and one engine at a time, rebuilt as the studio does.
 - `frontend/src/visualizer-overlay.tsx`: the hover controls, the idle fade and the shortcuts.
-- `frontend/src/visualizer-source.ts`: download, hash and decode.
+- `frontend/src/visualizer-source.ts`: download, hash and decode. Checks the hash against `@musimo/visualizer/song-hashes` before importing the much larger `@musimo/visualizer/songs`.
 - `visualizer/src/songs.ts`: prepared scores by recording hash, exported as `@musimo/visualizer/songs`.
+- `visualizer/src/song-hashes.ts`: just the hash and duration for each prepared song, exported as `@musimo/visualizer/song-hashes`, so a track that cannot match never pays for the analysis behind `songs.ts`.
 
 The frontend depends on the `visualizer/` package through a local `file:` link. Its build first emits the package's declaration files (`npm run types` in `visualizer/`, written to the ignored `visualizer/types/`), type-checks against those, and lets Vite bundle the engine source; the Docker image copies the package beside the frontend for the same steps.
 

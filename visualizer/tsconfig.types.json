@@ -8,5 +8,5 @@
     "outDir": "types",
     "types": []
   },
-  "include": ["src/engine.ts", "src/songs.ts"]
+  "include": ["src/engine.ts", "src/songs.ts", "src/song-hashes.ts"]
 }

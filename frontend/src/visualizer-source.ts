@@ -1,4 +1,5 @@
 import type { JourneyScore, Pcm } from '@musimo/visualizer'
+import { songHashes } from '@musimo/visualizer/song-hashes'
 
 export type VisualSource = {
   trackId: string
@@ -27,6 +28,7 @@ export async function loadVisualSource(
   const sha256 = globalThis.crypto?.subtle
     ? hex(await crypto.subtle.digest('SHA-256', bytes))
     : undefined
+  signal.throwIfAborted()
   const decoded = await new OfflineAudioContext(2, 1, 44100).decodeAudioData(bytes)
   signal.throwIfAborted()
   const pcm: Pcm = {
@@ -34,13 +36,14 @@ export async function loadVisualSource(
     left: decoded.getChannelData(0),
     right: decoded.getChannelData(Math.min(1, decoded.numberOfChannels - 1)),
   }
+  // The hash list is cheap to hold in memory; the songs it points to are not,
+  // so most tracks never pay for that dynamic import.
   let score: JourneyScore | undefined
-  if (sha256) {
+  const candidate = sha256 && songHashes.find((entry) => entry.sha256 === sha256)
+  if (candidate && Math.abs(decoded.duration - candidate.duration) <= 0.25) {
     const { journeyFor } = await import('@musimo/visualizer/songs')
     signal.throwIfAborted()
-    const prepared = journeyFor(sha256)
-    if (prepared && Math.abs(decoded.duration - prepared.recording.duration) <= 0.25)
-      score = prepared
+    score = journeyFor(sha256)
   }
   return { trackId, pcm, score, sha256 }
 }
