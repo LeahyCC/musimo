@@ -3266,6 +3266,7 @@ button.library-card-play.active {
 }
 .playlist-picker-list {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
   margin-top: 8px;
   margin-bottom: 10px;
@@ -3282,16 +3283,18 @@ button.library-card-play.active {
   gap: 10px;
   justify-content: space-between;
 }
+/* Blocks, not grids: text-overflow only cuts text that sits directly in a block box. */
 .playlist-picker-head > span {
-  display: grid;
+  display: block;
   flex: 1;
-  gap: 2px;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .playlist-picker-head small {
+  display: block;
+  margin-top: 2px;
   color: var(--muted);
   font-size: 11px;
 }
@@ -3322,13 +3325,14 @@ button.library-card-play.active {
   font-size: 12px;
 }
 .playlist-picker-songs > div > span {
-  display: grid;
+  display: block;
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 .playlist-picker-songs small {
+  display: block;
   color: var(--muted);
   font-size: 11px;
 }
