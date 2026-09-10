@@ -175,6 +175,19 @@ test('a failed save keeps the draft and allows a successful retry', async ({ pag
   await expect(page.getByRole('textbox', { name: 'Library label' })).toHaveValue(label)
 })
 
+test('settings draft shows unsaved changes status and saves correctly', async ({ page }) => {
+  await page.goto('/settings')
+  const labelField = page.getByRole('textbox', { name: 'Library label' })
+  const timestamp = Date.now()
+  await labelField.fill(`Draft ${timestamp}`)
+  await expect(page.getByText('You have unsaved changes.')).toBeVisible()
+
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('Saved. You can safely refresh.')).toBeVisible()
+  await page.reload()
+  await expect(labelField).toHaveValue(`Draft ${timestamp}`)
+})
+
 test('queue pause and resume persist through refresh', async ({ page, request }) => {
   expect((await request.post('/api/queue/resume')).ok()).toBe(true)
   await page.goto('/downloads')
