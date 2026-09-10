@@ -88,11 +88,9 @@ The existing `scripts/download_smoke.py` remains the opt-in Wikimedia public-dom
 
 ## GitHub checks
 
-**Pull request CI is paused for the first release cut (10 September 2026).** Both workflows run on pushes to main and on manual dispatch only, and the main ruleset no longer requires `CI required` or the CodeQL jobs. Reviewers run the required checks locally before merging. Restore the `pull_request` triggers and the required status checks before the release is published; [releasing](releasing.md) tracks that.
+`CI required` is the stable merge gate. It fails if Python, frontend, Docker/browser or dependency checks fail or are cancelled. Workflows run on pull requests, main pushes and manual dispatch. Fork PRs run without repository secrets, with read-only default permissions and without persistent Git credentials. Actions are pinned to upstream commit SHAs; Dependabot opens update PRs. See [GitHub's workflow security guidance](https://docs.github.com/en/actions/reference/security/secure-use).
 
-`CI required` is the stable merge gate once restored. It fails if Python, frontend, Docker/browser or dependency checks fail or are cancelled. Workflows normally run on pull requests, main pushes and manual dispatch. Fork PRs run without repository secrets, with read-only default permissions and without persistent Git credentials. Actions are pinned to upstream commit SHAs; Dependabot opens update PRs. See [GitHub's workflow security guidance](https://docs.github.com/en/actions/reference/security/secure-use).
-
-CodeQL scans Python, JavaScript/TypeScript and Actions on main pushes and weekly, and on PRs once the pause ends. Dependency review rejects new high/critical vulnerabilities in PRs when PR CI runs. Python runtime dependencies are audited for known vulnerabilities; npm includes development dependencies and fails at high severity. Dependabot provides ongoing update notifications. Fix findings through reviewed PRs rather than adding blanket audit ignores.
+CodeQL scans Python, JavaScript/TypeScript and Actions on PRs, main pushes and weekly. Dependency review rejects new high/critical vulnerabilities in PRs. Python runtime dependencies are audited for known vulnerabilities; npm includes development dependencies and fails at high severity. Dependabot provides ongoing update notifications. Fix findings through reviewed PRs rather than adding blanket audit ignores.
 
 CI verifies that the Python runtime export matches the uv lock:
 
@@ -100,7 +98,7 @@ CI verifies that the Python runtime export matches the uv lock:
 uv export --locked --no-header --no-dev --no-emit-project --format requirements-txt --output-file requirements.lock
 ```
 
-Main requires a pull request and resolved review conversations. Its ruleset blocks deletion and force pushes. Until the pause ends it does not require an up-to-date branch, `CI required`, the CodeQL jobs or the CodeQL security-finding gate. No actor has a bypass. A second maintainer's approval is optional while the project has one maintainer.
+Main requires a pull request and resolved review conversations. Its ruleset blocks deletion and force pushes. It requires an up-to-date branch, `CI required`, the three CodeQL jobs and the CodeQL security-finding gate. No actor has a bypass. A second maintainer's approval is optional while the project has one maintainer.
 
 Dependency changes include manifests, locks and exports in the same PR. Required status names and protection are maintained on GitHub; update those settings before renaming a required job. There is no automatic merge, release or container publication workflow.
 
