@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import type { DownloadJob, MusicResult } from '../src/api'
+import { emptyQueue } from './queue-fixtures'
 
 test('card links and download controls work independently in a natural-height grid', async ({
   page,
@@ -71,6 +72,9 @@ test('card links and download controls work independently in a natural-height gr
     updated_at: 1,
     hidden: false,
   }
+  // This spec asserts an exact active-download count, so the queue cannot come from the
+  // backend the whole run shares.
+  await emptyQueue(page)
   await page.route('**/api/search?*', (route) =>
     route.fulfill({
       json: { items: albums, total: albums.length, next_index: null, cached: false },
