@@ -920,6 +920,10 @@ export function QueueDock() {
   const queue = useJobs()
   const active = (queue.data?.jobs ?? []).filter(activeJob)
   const speed = active.reduce((total, job) => total + job.speed, 0)
+  // A floating dock advertising an empty queue has nothing to offer over the Downloads nav
+  // link, and on short pages (e.g. the search-empty home) it has nowhere to float without
+  // sitting on top of other content, since there's no space reserved for it.
+  if (!active.length) return null
   return (
     <>
       <button

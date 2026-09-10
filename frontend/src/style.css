@@ -996,8 +996,6 @@ meter::-webkit-meter-optimum-value {
   .player {
     bottom: 64px;
     left: 0;
-    height: 64px;
-    padding: 0 18px;
   }
   .player > div > svg {
     display: none;
@@ -1027,7 +1025,7 @@ meter::-webkit-meter-optimum-value {
     font-size: 11px;
   }
   .save-bar {
-    bottom: 139px;
+    bottom: 226px;
     padding: 12px;
   }
   .save-bar > span {
@@ -1849,7 +1847,8 @@ meter::-webkit-meter-optimum-value {
 }
 @media (max-width: 767px) {
   .live-player {
-    height: 114px;
+    height: auto;
+    min-height: 114px;
     flex-wrap: wrap;
     gap: 4px 8px;
     padding: 8px 12px;
@@ -1874,6 +1873,12 @@ meter::-webkit-meter-optimum-value {
   .live-player .playback-controls > span {
     display: inline;
     flex-shrink: 0;
+  }
+  /* Shares a row with volume-controls; without an explicit order it wraps onto its own
+     line (the now-playing/close row only budgets 44px for a single trailing icon), pushing
+     the player past its fixed height and behind the bottom nav. */
+  .live-player .playlist-actions {
+    order: 2;
   }
   .live-player .volume-controls {
     order: 2;
@@ -2227,7 +2232,7 @@ meter::-webkit-meter-optimum-value {
 }
 @media (max-width: 700px) {
   .queue-dock {
-    bottom: 190px;
+    bottom: 277px;
     right: 12px;
   }
   .queue-sheet {
@@ -2248,7 +2253,7 @@ meter::-webkit-meter-optimum-value {
 }
 @media (min-width: 701px) and (max-width: 767px) {
   .queue-dock {
-    bottom: 190px;
+    bottom: 277px;
   }
 }
 
