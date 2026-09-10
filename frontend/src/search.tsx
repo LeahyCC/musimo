@@ -73,8 +73,39 @@ export function validateArtistSearch(search: Record<string, unknown>): ArtistSea
 }
 const labels = { top: 'Top', track: 'Tracks', album: 'Albums', artist: 'Artists' }
 
+function saveLastSearch(state: SearchState) {
+  try {
+    sessionStorage.setItem('musimo.last-search', JSON.stringify(state))
+  } catch {
+    // Silently fail if sessionStorage is not available
+  }
+}
+
+function getLastSearch(): SearchState | null {
+  try {
+    const stored = sessionStorage.getItem('musimo.last-search')
+    return stored ? validateSearch(JSON.parse(stored)) : null
+  } catch {
+    return null
+  }
+}
+
 function normalizedText(value: string) {
   return value.normalize('NFKC').trim().toLocaleLowerCase()
+}
+
+function BackToSearch() {
+  const navigate = useNavigate()
+  const lastSearch = getLastSearch()
+  if (!lastSearch?.q) return null
+  return (
+    <button
+      className="text-link back-to-search"
+      onClick={() => void navigate({ to: '/search', search: lastSearch })}
+    >
+      ← Back to results
+    </button>
+  )
 }
 
 export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
@@ -113,14 +144,24 @@ export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
 function Art({ item }: { item: MusicResult }) {
   const player = usePlayer()
   const active = usePreviewPlayback(item.id).playing
+  const previewState = player.previewState(item.id)
+  const noPreview = previewState === 'none'
+  const label = active
+    ? `Pause ${item.title}`
+    : noPreview
+      ? `No preview ${item.title}`
+      : item.preview
+        ? `Preview ${item.title}`
+        : `Find preview ${item.title}`
   return (
     <div className={`result-art ${item.kind === 'artist' ? 'artist-art' : ''}`}>
       {item.art ? <img src={item.art} alt="" loading="lazy" /> : <Disc3 />}
       {item.kind === 'track' && (
         <button
           className="art-play"
-          aria-label={`${active ? 'Pause' : item.preview ? 'Preview' : 'Find preview for'} ${item.title}`}
+          aria-label={label}
           onClick={() => player.play(item)}
+          disabled={noPreview}
         >
           {active ? <Pause size={19} /> : <Play size={19} />}
         </button>
@@ -214,16 +255,25 @@ export function TrackRow({
 }) {
   const player = usePlayer()
   const playing = usePreviewPlayback(item.id).playing
+  const previewState = player.previewState(item.id)
+  const noPreview = previewState === 'none'
   return (
     <div
       className={`track-row${selected ? ' selected-track' : ''}`}
       id={`track-${item.id}`}
       aria-current={selected ? 'true' : undefined}
+      tabIndex={-1}
     >
       <Art item={item} />
       <div className="track-title">
         <strong>
-          {item.title}{' '}
+          <Link
+            to="/albums/$albumId"
+            params={{ albumId: String(item.album_id) }}
+            search={{ track: item.id }}
+          >
+            {item.title}
+          </Link>{' '}
           {item.explicit && (
             <span className="explicit" title="Explicit">
               E
@@ -244,8 +294,13 @@ export function TrackRow({
       <span className="track-year">{item.year ?? '…'}</span>
       <span className="track-duration">{durationText(item.duration)}</span>
       <Badge item={item} job={job} />
-      <button className="text-preview" onClick={() => player.play(item)}>
-        {playing ? 'Pause' : item.preview ? 'Preview' : 'Find preview'}
+      <button
+        className="text-preview"
+        onClick={() => player.play(item)}
+        disabled={noPreview}
+        title={noPreview ? 'No preview available' : undefined}
+      >
+        {playing ? 'Pause' : noPreview ? 'No preview' : item.preview ? 'Preview' : 'Find preview'}
       </button>
       <DownloadButton item={item} />
     </div>
@@ -280,8 +335,16 @@ export function TrackList({ items, focusTrack }: { items: MusicResult[]; focusTr
   useEffect(() => {
     const index = items.findIndex((item) => item.id === focusTrack)
     if (index < 0) return
-    if (items.length > 12) virtual.scrollToIndex(index, { align: 'center' })
-    else document.getElementById(`track-${focusTrack}`)?.scrollIntoView({ block: 'center' })
+    if (items.length > 12) {
+      virtual.scrollToIndex(index, { align: 'center' })
+      requestAnimationFrame(() => {
+        document.getElementById(`track-${focusTrack}`)?.focus({ preventScroll: true })
+      })
+    } else {
+      const element = document.getElementById(`track-${focusTrack}`)
+      element?.scrollIntoView({ block: 'center' })
+      element?.focus({ preventScroll: true })
+    }
   }, [focusTrack, items, virtual])
   if (items.length <= 12)
     return (
@@ -543,6 +606,9 @@ export function SearchPage() {
   }
   const tab = state.tab ?? 'top'
   const [filters, setFilters] = useState(false)
+  useEffect(() => {
+    if (state.q) saveLastSearch(state)
+  }, [state])
   if (!state.q || state.q.trim().length < 2)
     return (
       <div className="discovery-home">
@@ -783,6 +849,7 @@ export function AlbumPage() {
   const bitrate = chosenQuality === 'mp3' ? 320 : 160
   return (
     <>
+      <BackToSearch />
       <div className="album-header">
         <Art item={album} />
         <div>
@@ -912,6 +979,7 @@ export function ArtistPage() {
   }
   return (
     <>
+      <BackToSearch />
       <div className="artist-header">
         {artist?.art && <img src={artist.art} alt="" />}
         <div>
