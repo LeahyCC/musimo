@@ -1,10 +1,10 @@
 # Now Playing popout
 
-Now Playing's hero is a stage that can go full screen in the tab or pop out into a floating window above other applications, keeping the artwork and playback controls in reach wherever it sits. This is the docked/full-screen/popout shell only; it carries no rendering of its own, so it stays independent of whatever draws inside it later.
+Now Playing's hero is a stage that can go full screen in the tab or pop out into a floating window above other applications, keeping the artwork and playback controls in reach wherever it sits. This is the docked/full-screen/popout shell only; it carries no rendering of its own, so it stays independent of whatever draws inside it later. The stage and like button exist only for library tracks.
 
 ## Now Playing
 
-The stage shows the current track's artwork: a sharp, letterboxed copy of the cover over a blurred, cropped fill of the same image. Hovering it reveals the player's controls along the bottom (artwork, title and album, like, previous, play, next, position, shuffle, repeat, mute and volume) and a status line and the full-screen and popout buttons along the top. The controls fade after two and a half seconds without movement while music plays, and the cursor hides with them. They stay while paused or while the pointer rests on a control.
+The stage shows the current track's artwork: a sharp, letterboxed copy of the cover over a blurred, cropped fill of the same image. Hovering it reveals the player's controls along the bottom (artwork, byline showing artist and album, like, previous, play, next, position, shuffle, repeat, mute and volume) and a status line and the full-screen and popout buttons along the top. The controls fade after two and a half seconds without movement while music plays and the pointer leaves the stage, and the cursor hides with them. They stay while paused or while the pointer rests on a control.
 
 ## Full screen
 

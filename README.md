@@ -17,7 +17,7 @@ Search tracks, albums, and artists. Hear previews, check your local collection, 
 Musimo keeps discovery close to the library you already own. React provides the interface, FastAPI runs the backend, and SQLite stores settings, the library index, and jobs. Docker Compose builds the app from this repository. No Musimo account or hosted Musimo service is required.
 
 > [!WARNING]
-> Musimo is in early development. Search, indexing, download workers, queue controls, and album batches are implemented, but the project is not a stable release. Read [download verification](docs/downloads.md) and [measurements](docs/measurements.md). The original [brief](docs/brief.md) describes ambitions, not shipped capability.
+> Musimo is in early development. Search, indexing, download workers, queue controls, album batches, library playback and playlists are implemented, but the project is not a stable release. Read [download verification](docs/downloads.md) and [measurements](docs/measurements.md). The original [brief](docs/brief.md) describes ambitions, not shipped capability.
 
 ## Contents
 
@@ -49,17 +49,21 @@ Search and library features:
 - A persistent index of audio tags. Search does not reopen music files to check coverage.
 - One player across navigation for catalog previews and full Navidrome tracks.
 - Navidrome library browsing for albums, artists, tracks and playlists, with playlist CRUD, a saved queue, media controls, lyrics, scrobbling, shuffle and repeat.
+- A linked liked playlist, thumbs up button, add to playlist picker with inline creation and the artist All songs subpage with a popularity chart.
+- Server side Tracks view filters by search, genre, year and sort order.
+- LRCLIB lyric fallback when Navidrome has no imported lyrics.
+- Now Playing full screen and popout stage for library tracks.
 - Optional AudioMuse radio through Navidrome's `sonicSimilarity` extension.
 - Background scans, scan cancellation, native or polling watchers and diagnostics.
 - A bounded activity feed in Settings and Diagnostics, with persistent clearing.
 
-The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection and history. Album card actions queue missing tracks using Settings defaults. External-source availability and the complete file-to-Navidrome journey still require validation for your setup.
+The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card and bulk Clear failed, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. External-source availability and the complete file-to-Navidrome journey still require validation for your setup.
 
 These are **not finished features**: personalized Discover, automatic release-edition filters, pasted links/playlists, paid audio sources, notifications, cookie management, built-in login, multiple users and the full release benchmark suite. See [Discover planning](docs/discover.md) and [the roadmap](docs/roadmap.md).
 
 ## Requirements
 
-The supported deployment uses Docker Engine with the Compose plugin, or Docker Desktop running Linux containers. You need a recent browser with JavaScript, HTML audio and Server-Sent Events support.
+The supported deployment uses Docker Engine with the Compose plugin, or Docker Desktop running Linux containers. You need a recent browser with JavaScript, HTML audio and Server-Sent Events support. The Now Playing popout requires Document Picture in Picture API support, available in desktop Chrome and Edge.
 
 Catalog queries, artwork, previews and enabled sources require internet access. Keep application state on local disk. The music destination needs room for temporary and final files, and the runtime user needs permission to read indexed folders and write to the selected destination.
 
@@ -174,22 +178,46 @@ The album download icon queues missing tracks without opening the album. The car
 
 Artist release types come from the catalog. A generic album type does not establish whether a recording is live, remixed or a compilation. Library coverage is a file match, not proof of legal rights.
 
-### Preview controls
+### Card navigation and artist batches
+
+Click an album or artist card to open it. Separate artist links and card controls still work independently. Download sits in the card's top-right corner and appears on hover or keyboard focus; touch screens keep it visible. Card collections scroll with the page.
+
+An artist's **Download all albums** button opens a selection sheet with album/song counts, estimated size, format and destination. Existing library songs are skipped by default, already queued songs are excluded, and you can deselect alternative editions. All album pages are checked before confirmation; singles and EPs are excluded. See [search behavior](docs/search.md#artist-album-downloads).
+
+### Library and playback
+
+Library has Home, Albums, Artists, Tracks and Playlists views. Grid and list layouts are available for collection views and the choice is remembered in the browser under `musimo.library-layout`. The Tracks view offers server side search, genre, year and sort filters that describe the whole library rather than only loaded pages. Its Play all button plays the first 500 songs in the current sort order; Shuffle plays a random 500.
+
+Artist pages include an All songs subpage at `/library/artists/{id}/songs` and a popularity chart plotted from Navidrome play counts when enough data exists. Playlists show song count and can be filtered by public or private status. Inline rename is available for all playlists.
+
+The linked liked playlist is always listed, sorts first, cannot be deleted, and is required for the thumbs up button to work. Its identity is stored in the SQLite table `linked_playlists`. An existing playlist named Liked is adopted when none is stored.
+
+The add to playlist picker appears in the footer player and shows 25 rows with a filter box. The liked playlist is excluded from the picker. Inline New playlist is available with the current song. The Add button toggles to Remove when that song is already in the playlist.
+
+The Now Playing stage offers full screen in the tab and a popout floating window. Both are available for library tracks only; catalog previews show "Nothing playing yet."
+
+### Player controls
 
 Previews are provider clips, not full library playback. Failed Deezer clips refresh their URLs and can fall back to a matching iTunes preview. Some tracks have no playable preview.
 
 - Artwork controls start or pause a preview.
-- The player's song title returns to its highlighted track in the album.
-- Its artist link opens that artist's page.
+- The player's song title returns to its highlighted track in the album for previews, or links to Now Playing for library tracks.
+- Its artist and album names link to their Library pages when playing library tracks, or to the artist page for previews.
 - Seek within the clip, restart, mute, adjust volume or close it.
-- Volume is remembered in the current browser. Mute preserves the chosen level.
+- Volume is remembered in the current browser under `musimo.player-volume`. Mute preserves the chosen level.
 - Navigating keeps playback; closing stops audio and cancels a pending lookup.
 
-Keyboard controls: `/` focuses search; Ctrl/Cmd+K opens the command palette; Escape closes it. Space toggles playback outside editing fields and interactive controls. Native sliders support keyboard adjustment. Browser autoplay rules can require another press of Play.
+Library playback adds previous (restarts the current track after 4 seconds of playback), next, shuffle, repeat including repeat one, thumbs up to add or remove from the liked playlist, add to playlist picker, and expand to Now Playing. The queue autosaves every 10 seconds of playback and on pause or close. Now playing scrobbles on play and submits on track end. MediaSession handlers provide play, pause, next and previous for system media controls.
+
+Keyboard controls: `/` focuses search; Ctrl/Cmd+K opens the command palette; Escape closes it. Space toggles playback outside editing fields and interactive controls. Native sliders support keyboard adjustment. Browser autoplay rules can require another press of Play. On the Now Playing stage, F enters full screen, Esc leaves full screen or closes the popout, left and right seek by five seconds, up and down adjust volume, M mutes, and N and P skip tracks. See [Now Playing popout](docs/now-playing-popout.md) for full keyboard reference.
 
 ### Downloads and history
 
 Jobs progress through queued, matching, downloading, optional conversion, tagging, moving, scanning and done. Job cards display the destination and format. Low-confidence matches are flagged. Failures retain their stage and error rather than looking like success.
+
+Each failure shows a reason summary with plain language messages. The NO_MATCH message reads "No matching recording was found on YouTube. Nothing was downloaded." Per card attempt counts are shown and reset when retrying. The Failed tab groups failures by download group with reason chips, and offers a bulk Clear failed action. Each finished card also has its own Clear to dismiss it individually. The download arrow on a track becomes Retry with the failure reason in its tooltip.
+
+The floating queue button appears only while a download is active. History and queue load more results on scroll.
 
 Pause/resume and restart recovery depend on the stage and surviving partial files. Cancelling does not remove an already published library file. Clearing finished jobs from the queue is separate from download history.
 
@@ -390,13 +418,14 @@ The backend serves frontend and API on one origin. SQLite uses WAL and a seriali
 
 API groups:
 
-- Health/settings: `/api/health`, `/api/settings`, `/api/snapshot`.
-- Search: `/api/search`, `/api/albums/{id}`, `/api/artists/{id}`, `/api/preview/{id}`.
-- Index: `/api/library`, `/api/library/scan`, `/api/library/cancel`.
-- Player foundation: `/api/player/capabilities`, Navidrome-backed `/api/library/*`, `/api/player/stream/{id}` and `/api/player/art/{id}`.
-- Jobs/batches: `/api/jobs`, job commands, `/api/queue/{action}`, `/api/history`, `/api/batches`.
-- Activity: GET/DELETE `/api/activity`; deletion takes the observed `through` cursor.
-- Operations: `/api/events`, `/api/diagnostics`, catalog probe and export.
+- Health/settings: `/api/health`, `/api/settings` GET and PATCH, `/api/snapshot`.
+- Search: `/api/search`, `/api/album-years`, `/api/albums/{id}`, `/api/artists/{id}`, `/api/artists/{id}/top`, `/api/preview/{id}`.
+- Index: `/api/library` GET, `/api/library/scan` POST, `/api/library/cancel` POST.
+- Player foundation: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/radio/{id}`, `/api/player/path`, `/api/player/stream/{id}`, `/api/player/art/{id}`. Navidrome-backed library routes at `/api/library/{albums,artists,tracks,playlists}` for browsing; local index routes at `/api/library` GET, `/api/library/scan`, `/api/library/cancel` remain separate.
+- Jobs/batches: `/api/naming-preview`, `/api/jobs` GET and POST, `/api/history`, `/api/batches` POST, `/api/batches/{id}/{pause,resume,cancel,retry}`, `/api/jobs/{id}/pick`, `/api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`, `/api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,resume-source}`.
+- Artist downloads: `/api/artists/{id}/download-plan`, `/api/artist-batches`.
+- Activity: `/api/activity` GET and DELETE; deletion takes the observed `through` cursor.
+- Operations: `/api/events`, `/api/diagnostics`, `/api/diagnostics/test/deezer`, `/api/diagnostics/export`.
 
 Contracts can change before a stable release. The live schema is at `/openapi.json`; interactive Swagger/Redoc pages are disabled. Read [architecture](docs/architecture.md), [search/indexing](docs/search.md) and source for detailed behavior.
 
@@ -424,9 +453,3 @@ Musimo's original source uses the [MIT licence](LICENSE). Dependencies and execu
 Use Musimo where you have the rights or permission required for the intended copying, downloading, processing and sharing. Possessing a copy or paying for a subscription does not by itself establish those permissions. Read [Terms and responsible use](TERMS.md), [Privacy](PRIVACY.md) and each configured provider's terms.
 
 Musimo is independent of the providers and Navidrome. Names describe integrations, not endorsement. MIT includes warranty and liability provisions; no notice waives rights or liabilities that applicable law does not allow to be waived.
-
-### Card navigation and artist batches
-
-Click an album or artist card to open it. Separate artist links and card controls still work independently. Download sits in the card’s top-right corner and appears on hover or keyboard focus; touch screens keep it visible. Card collections scroll with the page.
-
-An artist’s **Download all albums** button opens a selection sheet with album/song counts, estimated size, format and destination. Existing library songs are skipped by default, already queued songs are excluded, and you can deselect alternative editions. All album pages are checked before confirmation; singles and EPs are excluded. See [search behavior](docs/search.md#artist-album-downloads).
