@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { DownloadJob, MusicResult } from '../src/api'
+import { ORIGIN } from './env'
 
 const track: MusicResult = {
   id: 101,
@@ -72,7 +73,7 @@ const failed: DownloadJob = {
 
 test('failed downloads show a count, cause and retry state', async ({ page }) => {
   await page.route('**/*', async (route) => {
-    if (new URL(route.request().url()).origin !== 'http://127.0.0.1:18765') await route.abort()
+    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
     else await route.fallback()
   })
 
@@ -208,7 +209,7 @@ test('a long failure queue lists cards without overlapping, and can be grouped o
   page,
 }) => {
   await page.route('**/*', async (route) => {
-    if (new URL(route.request().url()).origin !== 'http://127.0.0.1:18765') await route.abort()
+    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
     else await route.fallback()
   })
 
@@ -261,7 +262,7 @@ test('a long failure queue lists cards without overlapping, and can be grouped o
 
 test('a queued card keeps its own height when a job above it finishes', async ({ page }) => {
   await page.route('**/*', async (route) => {
-    if (new URL(route.request().url()).origin !== 'http://127.0.0.1:18765') await route.abort()
+    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
     else await route.fallback()
   })
   const queued = Array.from({ length: 9 }, (_, index) => ({

@@ -1,6 +1,8 @@
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 
+import { CI_PROJECT } from './env'
+
 export default function setup() {
   // WebKit can fetch media outside browser routing. Serve generated silence over real HTTP.
   execFileSync(
@@ -10,7 +12,7 @@ export default function setup() {
       '-f',
       'compose.ci.yaml',
       '-p',
-      'musimo-ci',
+      CI_PROJECT,
       'exec',
       '-T',
       '--user',

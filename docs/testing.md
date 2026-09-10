@@ -39,7 +39,13 @@ uv run python scripts/benchmark.py --url http://127.0.0.1:18765 --output runtime
 docker compose -f compose.ci.yaml -p musimo-ci down --volumes
 ```
 
-The explicit Compose file, project name, port 18765 and named test volumes keep these checks separate from a running installation. They do not mount host music or load `compose.override.yaml`. Cleanup removes only this test project's containers and volumes. Run smoke and browser tests sequentially because both change installation settings. Start the test server before Playwright.
+The explicit Compose file, project name, port 18765 and named test volumes keep these checks separate from a running installation. They do not mount host music or load `compose.override.yaml`. Cleanup removes only this test project's containers and volumes. To run several stacks side by side (parallel branches on one machine), give each its own `MUSIMO_CI_PORT`, `MUSIMO_CI_TAG` and `-p` project name when starting Compose, and point Playwright at it with `PLAYWRIGHT_BASE_URL` and `MUSIMO_CI_PROJECT`:
+
+````sh
+MUSIMO_CI_PORT=18801 MUSIMO_CI_TAG=ci-mybranch docker compose -f compose.ci.yaml -p musimo-ci-mybranch up -d --build --wait
+PLAYWRIGHT_BASE_URL=http://127.0.0.1:18801 MUSIMO_CI_PROJECT=musimo-ci-mybranch npm run test:e2e --prefix frontend
+docker compose -f compose.ci.yaml -p musimo-ci-mybranch down --volumes
+``` Run smoke and browser tests sequentially because both change installation settings. Start the test server before Playwright.
 
 Playwright runs Chromium, Firefox, WebKit and a 390px mobile viewport. Tests cover keyboard search, query/tab/sort persistence, catalog error/retry, saved settings, cross-tab SSE updates, failed saves, queue pause/resume, activity clear, diagnostics export, album ownership, artist selection, library track controls, play-to-pause and resume, artist album dates and sorting, playlist CRUD and the playlist picker, and download card layout with failure grouping. They also check real audio decoding, seeking, volume, mute, restart and navigation using generated silence served by the test container.
 
@@ -49,7 +55,7 @@ Tests use one worker because settings and queue controls belong to the installat
 
 ```sh
 npm run test:e2e:report --prefix frontend
-```
+````
 
 The report links screenshots, video and traces. CI also retains JUnit output, container logs, API benchmarks and coverage XML for 14 days. Linux CI starts PulseAudio with a virtual output so Firefox can decode and play audio without physical speakers. The benchmark's release gate remains deliberately incomplete; ordinary CI checks only measurements the script implements.
 

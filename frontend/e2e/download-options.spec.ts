@@ -1,11 +1,12 @@
 import { expect, test } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
+import { ORIGIN } from './env'
 import { emptyQueue } from './queue-fixtures'
 
 for (const count of [2, 30]) {
   test(`download options stay usable with ${count} tracks`, async ({ page }, testInfo) => {
-    const origin = new URL(testInfo.project.use.baseURL ?? 'http://127.0.0.1:18765').origin
+    const origin = new URL(testInfo.project.use.baseURL ?? ORIGIN).origin
     await page.route('**/*', async (route) => {
       if (new URL(route.request().url()).origin !== origin || route.request().method() !== 'GET')
         await route.abort()

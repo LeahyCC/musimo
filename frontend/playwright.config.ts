@@ -1,5 +1,7 @@
 import { defineConfig, devices } from '@playwright/test'
 
+import { BASE_URL } from './e2e/env'
+
 export default defineConfig({
   testDir: './e2e',
   globalSetup: './e2e/setup.ts',
@@ -16,7 +18,7 @@ export default defineConfig({
     ['junit', { outputFile: 'test-results/junit.xml' }],
   ],
   use: {
-    baseURL: 'http://127.0.0.1:18765',
+    baseURL: BASE_URL,
     serviceWorkers: 'block',
     trace: 'retain-on-failure',
     screenshot: 'only-on-failure',

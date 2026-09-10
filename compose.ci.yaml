@@ -2,10 +2,10 @@
 services:
   musimo:
     build: .
-    image: musimo:ci
+    image: musimo:${MUSIMO_CI_TAG:-ci}
     init: true
     ports:
-      - '127.0.0.1:18765:8765'
+      - '127.0.0.1:${MUSIMO_CI_PORT:-18765}:8765'
     environment:
       MUSIMO_LIBRARY_ROOTS: /music
     volumes:
