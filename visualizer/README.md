@@ -56,7 +56,7 @@ Rendering advances at 60 fixed media steps per second, regardless of display ref
 
 Pause holds the image. A seek rebuilds bounded feedback history from the seed at the destination, then the preview dissolves into it. This preserves the score's state and returning motifs; it does not restore historical pixels. Hidden-tab recovery uses the same policy. Repeat from zero uses the same seed and prepared input. Determinism and timing evidence belong in the [build record](../docs/visualizer-build.md), including the machine and limits of each check.
 
-Musimo integration is still pending. Its shared library/Deezer/iTunes audio element must remain player-owned. The first adapter should use prepared data and media time, as described in [the handoff](../docs/visualizer-build-handoff.md).
+Musimo's Now Playing page hosts the engine through a small adapter that keeps this boundary: the player keeps its shared library/Deezer/iTunes audio element, and the adapter supplies prepared PCM and media time. Prepared scores are looked up by recording hash through `src/songs.ts`, exported as `@musimo/visualizer/songs`. See [the popout note](../docs/visualizer-popout.md).
 
 ## Checks
 

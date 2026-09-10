@@ -4,14 +4,22 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/engine.ts"
+    ".": {
+      "types": "./types/src/engine.d.ts",
+      "default": "./src/engine.ts"
+    },
+    "./songs": {
+      "types": "./types/src/songs.d.ts",
+      "default": "./src/songs.ts"
+    }
   },
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 5180 --strictPort",
     "build": "tsc --noEmit && vite build",
     "test": "node --experimental-strip-types --test tests/*.test.ts",
     "analyze": "node scripts/analyze.mjs",
-    "prepare:dive": "node scripts/prepare-dive.mjs"
+    "prepare:dive": "node scripts/prepare-dive.mjs",
+    "types": "tsc -p tsconfig.types.json"
   },
   "devDependencies": {
     "@types/node": "26.4.1",

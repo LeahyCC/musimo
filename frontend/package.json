@@ -8,13 +8,14 @@
     "test:e2e:types": "tsc --project tsconfig.e2e.json",
     "test:e2e:report": "playwright show-report",
     "dev": "vite --host 127.0.0.1",
-    "build": "tsc --noEmit && vite build",
+    "build": "tsc -p ../visualizer/tsconfig.types.json && tsc --noEmit && vite build",
     "format": "prettier --ignore-path ../.prettierignore --write ..",
     "format:check": "prettier --ignore-path ../.prettierignore --check ..",
     "lint": "eslint .",
     "lint:fix": "eslint . --fix"
   },
   "dependencies": {
+    "@musimo/visualizer": "file:../visualizer",
     "@tanstack/react-query": "5.102.8",
     "@tanstack/react-router": "1.170.33",
     "@tanstack/react-virtual": "3.14.10",

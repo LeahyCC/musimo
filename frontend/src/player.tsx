@@ -1,4 +1,12 @@
-import { createContext, type FormEvent, useContext, useEffect, useRef, useState } from 'react'
+import {
+  createContext,
+  type FormEvent,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+} from 'react'
 import type { ReactNode } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
@@ -29,7 +37,13 @@ import {
 } from './api'
 import type { LibraryTrack, MusicResult } from './api'
 
-type RepeatMode = 'off' | 'all' | 'one'
+export type RepeatMode = 'off' | 'all' | 'one'
+export type LikedControl = {
+  isLiked: boolean
+  canToggle: boolean
+  busy: boolean
+  toggle: () => void
+}
 type Playback = {
   track: MusicResult | null
   libraryTrack: LibraryTrack | null
@@ -45,6 +59,19 @@ type Playback = {
   shuffleLibrary: (tracks: LibraryTrack[]) => void
   next: () => void
   previous: () => void
+  // Transport for the visualizer and its popout. They read the element's clock
+  // and drive it through these; the element itself stays here.
+  ready: boolean
+  volume: number
+  muted: boolean
+  audio: () => HTMLAudioElement | null
+  toggle: () => void
+  seek: (seconds: number) => void
+  setVolume: (value: number) => void
+  toggleMute: () => void
+  toggleShuffle: () => void
+  cycleRepeat: () => void
+  liked: LikedControl
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -61,13 +88,24 @@ const PlayerContext = createContext<Playback>({
   shuffleLibrary: () => undefined,
   next: () => undefined,
   previous: () => undefined,
+  ready: false,
+  volume: 0.7,
+  muted: false,
+  audio: () => null,
+  toggle: () => undefined,
+  seek: () => undefined,
+  setVolume: () => undefined,
+  toggleMute: () => undefined,
+  toggleShuffle: () => undefined,
+  cycleRepeat: () => undefined,
+  liked: { isLiked: false, canToggle: false, busy: false, toggle: () => undefined },
 })
 export const usePlayer = () => useContext(PlayerContext)
 
 export const durationText = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`
 
-const artUrl = (track: LibraryTrack) =>
+export const artUrl = (track: LibraryTrack) =>
   track.coverArt ? `/api/player/art/${encodeURIComponent(track.coverArt)}` : ''
 
 export function stored(key: string, fallback: string) {
@@ -337,6 +375,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     loadLibrary(Math.max(0, indexRef.current - 1))
   }
 
+  const audioElement = useCallback(() => audio.current, [])
+
+  function seek(seconds: number) {
+    if (audio.current) audio.current.currentTime = seconds
+    setPosition(seconds)
+  }
+
+  function cycleRepeat() {
+    setRepeat(repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off')
+  }
+
   function stop() {
     request.current?.abort()
     saveQueue()
@@ -486,6 +535,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         shuffleLibrary,
         next: () => next(),
         previous,
+        ready,
+        volume,
+        muted,
+        audio: audioElement,
+        toggle,
+        seek,
+        setVolume: (value) => {
+          setVolume(value)
+          setMuted(false)
+        },
+        toggleMute: () => setMuted(!muted),
+        toggleShuffle: () => setShuffle(!shuffle),
+        cycleRepeat,
+        liked: {
+          isLiked,
+          canToggle: canToggleLiked,
+          busy: likedActionBusy,
+          toggle: toggleLikedTrack,
+        },
       }}
     >
       {children}
@@ -623,11 +691,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             step="0.1"
             value={Math.min(position, length || 30)}
             disabled={!ready}
-            onChange={(event) => {
-              const value = Number(event.target.value)
-              if (audio.current) audio.current.currentTime = value
-              setPosition(value)
-            }}
+            onChange={(event) => seek(Number(event.target.value))}
           />
           <span>{durationText(length)}</span>
         </div>
@@ -644,9 +708,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               <button
                 className={`icon-button ${repeat !== 'off' ? 'active' : ''}`}
                 aria-label={`Repeat ${repeat}`}
-                onClick={() =>
-                  setRepeat(repeat === 'off' ? 'all' : repeat === 'all' ? 'one' : 'off')
-                }
+                onClick={cycleRepeat}
               >
                 <Repeat size={17} />
                 {repeat === 'one' && <small>1</small>}

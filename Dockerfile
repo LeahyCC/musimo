@@ -1,7 +1,12 @@
 FROM node:26-bookworm-slim AS frontend
 WORKDIR /build
+# The frontend links the visualizer engine from ../visualizer, so the package
+# sits beside /build at the same relative path as in the repository.
+COPY visualizer/package.json visualizer/package-lock.json visualizer/tsconfig.json visualizer/tsconfig.types.json /visualizer/
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
+COPY visualizer/src /visualizer/src/
+COPY visualizer/songs /visualizer/songs/
 COPY frontend/ ./
 RUN npm run build
 

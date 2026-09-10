@@ -5,6 +5,7 @@ import type { Pcm } from './engine.ts'
 import type { Study } from './engine.ts'
 import type { JourneyScore } from './engine.ts'
 import type { StudioOptions, Theme } from './engine.ts'
+import { journeyFor } from './songs.ts'
 import {
   mergeStudioOptions,
   parseStudioOptions,
@@ -52,14 +53,9 @@ let captureStream: MediaStream | undefined
 let recordingTimeout = 0
 const record = element<HTMLButtonElement>('record')
 const recording = element<HTMLVideoElement>('recording')
-const journeyScore: JourneyScore = {
-  ...(song as JourneyScore),
-  analysis: {
-    hopSeconds: dive.analysis.hopSamples / dive.analysis.sampleRate,
-    columns: dive.analysis.featureColumns,
-    frames: dive.features,
-  },
-}
+const preparedScore = journeyFor(dive.recording.sha256)
+if (!preparedScore) throw new Error('The Dive analysis has no prepared journey score.')
+const journeyScore: JourneyScore = preparedScore
 
 const time = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, '0')}`

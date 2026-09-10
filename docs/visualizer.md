@@ -10,4 +10,4 @@ The [first discovery recommendation](visualizer-discovery.md) proposes a browser
 
 The engine renders with our own small WebGL2 renderer rather than a third-party engine, so it can support a wide range of effects. See the [renderer handoff](visualizer-renderer-handoff.md).
 
-Implementation has started in the independent [`visualizer/` package](../visualizer/README.md). Colin selected Ben Böhmer's “Dive (Extended Mix)” and asked for fluid, soothing motion after inspecting the first preset auditions. See the [build record](visualizer-build.md) for the current preview, song preparation, verification and remaining work. Musimo's normal player still has no Visualize action.
+Implementation has started in the independent [`visualizer/` package](../visualizer/README.md). Colin selected Ben Böhmer's “Dive (Extended Mix)” and asked for fluid, soothing motion after inspecting the first preset auditions. See the [build record](visualizer-build.md) for the current preview, song preparation, verification and remaining work. Musimo's player now hosts the engine on Now Playing, with full screen and a floating popout; see [the popout note](visualizer-popout.md).

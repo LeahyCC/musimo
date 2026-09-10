@@ -37,6 +37,7 @@ import {
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from './api'
 import { InfiniteScroll } from './infinite-scroll'
 import { durationText, remember, stored, usePlayer } from './player'
+import { NowPlayingVisuals, useVisualizer } from './visualizer'
 
 export type LibraryTab = 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
 type Tab = LibraryTab
@@ -1289,6 +1290,7 @@ export function NowPlayingPage() {
       if (track) player.playLibrary([track, ...result.items.map((item) => item.entry)])
     },
   })
+  const visualizer = useVisualizer()
 
   if (!track)
     return (
@@ -1304,10 +1306,8 @@ export function NowPlayingPage() {
   const words = lyrics.data?.items[0]?.line ?? []
   return (
     <div className="now-page">
-      <section className="now-hero">
-        <div className="now-art">
-          {track.coverArt ? <img src={cover(track.coverArt)} alt="" /> : <Disc3 />}
-        </div>
+      <section className={`now-hero${visualizer.enabled ? ' visuals' : ''}`}>
+        <NowPlayingVisuals track={track} />
         <div>
           <p className="eyebrow">NOW PLAYING</p>
           <h1>{track.title}</h1>

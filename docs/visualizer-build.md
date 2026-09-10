@@ -109,7 +109,7 @@ Colin's reference for this study is a mandala around a single central void, so t
 ## Still open
 
 - Colin's review of the complete authored journey and provisional musical map.
-- A small Musimo adapter after the independent journey is convincing, followed by the full playback integration checks.
+- The Musimo adapter now lives on Now Playing with a full-screen and popout shell ([popout note](visualizer-popout.md)). Its by-hand playback checks in desktop Chrome and a lighter audio feed than a second full download remain open.
 - Exact feedback checkpoints, ordinary-device measurements and non-Chromium verification.
 - Colin's eye on the three native studies, in particular whether Kaleidoscope V3's grainy field between the jewels wants softening and whether Julia spiral should carry more of the reference's colour.
 

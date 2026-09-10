@@ -12,5 +12,6 @@ frontend/test-results
 htmlcov
 coverage.xml
 visualizer/dist
+visualizer/types
 visualizer/public/local
 visualizer/songs/*.analysis.json

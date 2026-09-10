@@ -18,7 +18,7 @@ export type { JourneyScore, JourneyCue, JourneyState, Motif } from './journey.ts
 export { nativeStudies } from './studies/index.ts'
 export type { StudyManifest, StudyPass, StudySetting, StudyFrameContext } from './study-manifest.ts'
 export { StudyRenderer } from './study-renderer.ts'
-export { THEMES, STUDIO_STORAGE_KEY } from './studio-options.ts'
+export { THEMES, STUDIO_STORAGE_KEY, parseStudioOptions } from './studio-options.ts'
 export type { StudioOptions, Theme } from './studio-options.ts'
 
 // Every study runs on the native WebGL2 renderer, compiled from its manifest

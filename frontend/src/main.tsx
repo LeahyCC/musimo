@@ -50,6 +50,7 @@ import { CommandPalette } from './palette'
 import { PlayerProvider } from './player'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
+import { VisualizerProvider } from './visualizer'
 
 import './style.css'
 
@@ -780,7 +781,9 @@ function DiagnosticsPage() {
 const rootRoute = createRootRoute({
   component: () => (
     <PlayerProvider>
-      <Shell />
+      <VisualizerProvider>
+        <Shell />
+      </VisualizerProvider>
     </PlayerProvider>
   ),
   notFoundComponent: () => (
