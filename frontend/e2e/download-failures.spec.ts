@@ -409,6 +409,50 @@ test('error hints link to the relevant setting or diagnostic', async ({ page }) 
   await expect(page).toHaveURL(/\/settings#destination/)
 })
 
+const LONG_TITLE =
+  'An Unreasonably Long Title That Keeps Going Well Past Any Sensible Width (Deluxe Remastered Anniversary Edition)'
+
+test('long titles and labels stay inside the page', async ({ page }) => {
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
+    else await route.fallback()
+  })
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
+  )
+  const jobs: DownloadJob[] = [
+    { ...failed, id: 'long-title', meta: { ...failed.meta, title: LONG_TITLE } },
+    { ...failed, id: 'long-batch', batch_id: 'long-batch', batch_label: LONG_TITLE },
+    { ...failed, id: 'plain', batch_id: '', batch_label: '' },
+  ]
+  await page.route('**/api/jobs*', (route) =>
+    route.fulfill({
+      json: {
+        jobs,
+        controls: { paused: false, source_paused: false },
+        summary: { active: 0, failed: jobs.length, failure_reasons: [] },
+      },
+    }),
+  )
+
+  await page.goto('/downloads')
+  await page.getByRole('button', { name: 'Failed (3)', exact: true }).click()
+  await expect(page.locator('#main .job-card')).toHaveCount(3)
+  const main = await page.locator('#main').boundingBox()
+  if (!main) throw new Error('Missing main box')
+  // The card list is a grid; a bare 1fr track let one long title widen every card and the
+  // page with it.
+  for (const card of await page.locator('#main .job-card').all()) {
+    const box = await card.boundingBox()
+    expect(box && box.x + box.width).toBeLessThanOrEqual(main.x + main.width + 1)
+  }
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBe(0)
+})
+
 test('done jobs with warnings show the count in their heading', async ({ page }) => {
   await page.route('**/*', async (route) => {
     if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
