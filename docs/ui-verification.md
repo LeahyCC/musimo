@@ -35,6 +35,8 @@ Library album genre and year filters still apply to the pages loaded so far; onl
 
 Track navigation checks added on 10 September 2026 cover highlighted row focus (including tracks outside the initial virtual window), aria-current marking, "Back to results" restoring search state, and no-preview state showing disabled controls and labels. These join the existing automated browser regression suite.
 
+Settings draft preservation is implemented with conflict detection (row notices when a value changes elsewhere), navigation guards (blocker for in-app links and beforeunload for tab close), and separation from the live query cache so SSE events do not erase unsaved forms. `e2e/app.spec.ts` includes tests for draft survival during library scans and external setting changes, conflict notices, and the navigation guard. The Downloads concurrency select's save sends only the draft keys to avoid interfering with a dirty Settings form.
+
 ## Further coverage
 
-Automate card success/retry against a fixture API, coverage loading/failure and filter reactivity, slider keyboard behavior, close during a pending lookup, activity clear racing with a new event, and the player/queue at small and tablet widths. Preserve unsaved Settings drafts during live queue activity. Do not treat this targeted browser pass as the full release acceptance suite.
+Automate card success/retry against a fixture API, coverage loading/failure and filter reactivity, slider keyboard behavior, close during a pending lookup, activity clear racing with a new event, and the player/queue at small and tablet widths. Do not treat this targeted browser pass as the full release acceptance suite.
