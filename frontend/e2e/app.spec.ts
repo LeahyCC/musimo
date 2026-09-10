@@ -469,3 +469,91 @@ test('artist review counts selections, excludes failed albums and retries submis
   await expect(dialog).not.toBeVisible()
   expect(attempts).toBe(2)
 })
+
+test('track link focuses highlighted row and back to results restores search', async ({ page }) => {
+  await page.goto('/search')
+  const search = page.getByRole('textbox', { name: 'Search music or paste a link' })
+  await search.fill('Fixture')
+  await search.press('Enter')
+  await page.getByRole('button', { name: 'Tracks', exact: true }).click()
+  await page.getByRole('combobox', { name: 'Sort' }).selectOption('title')
+  await page.getByText('Test recording', { exact: true }).click()
+  await expect(page).toHaveURL(/\/albums\/42/)
+  const backButton = page.getByRole('button', { name: 'Back to results' })
+  await expect(backButton).toBeVisible()
+  await backButton.click()
+  await expect(page).toHaveURL(/\/search\?.*q=Fixture/)
+  await expect(search).toHaveValue('Fixture')
+  await expect(page.getByRole('button', { name: 'Tracks', exact: true })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+  await expect(page.getByRole('combobox', { name: 'Sort' })).toHaveValue('title')
+})
+
+test('preview link focuses track row with aria-current', async ({ page }) => {
+  const trackWithPreview: MusicResult = {
+    ...track,
+    id: 105,
+    title: 'Track with preview',
+    preview: `${ORIGIN}/generated/test-recording.wav`,
+  }
+  const manyTracks = [
+    trackWithPreview,
+    ...Array.from({ length: 20 }, (_, i) => ({
+      ...track,
+      id: 200 + i,
+      title: `Track ${i + 1}`,
+    })),
+  ]
+  await page.route('**/api/albums/42*', (route) =>
+    route.fulfill({
+      json: {
+        album,
+        tracks: manyTracks,
+        label: 'Fixture label',
+        duration: 180 * manyTracks.length,
+        complete: true,
+      },
+    }),
+  )
+  await page.goto('/albums/42')
+  await page.getByRole('button', { name: 'Preview Track with preview' }).click()
+  const player = page.locator('footer.live-player')
+  await expect(player.getByRole('link', { name: 'Track with preview', exact: true })).toBeVisible()
+  await player.getByRole('link', { name: 'Track with preview', exact: true }).click()
+  await expect(page).toHaveURL(/\/albums\/42\?track=105/)
+  const selectedRow = page.locator('.track-row[aria-current="true"]')
+  await expect(selectedRow).toBeVisible()
+  await expect(selectedRow).toBeFocused()
+  await expect(selectedRow).toContainText('Track with preview')
+})
+
+test('no preview state shows disabled button and label', async ({ page }) => {
+  const trackNoPreview: MusicResult = { ...track, id: 106, title: 'No preview track', preview: '' }
+  await page.route('**/api/albums/42*', (route) =>
+    route.fulfill({
+      json: {
+        album,
+        tracks: [trackNoPreview],
+        label: 'Fixture label',
+        duration: 180,
+        complete: true,
+      },
+    }),
+  )
+
+  await page.route('**/api/preview/106*', (route) =>
+    route.fulfill({ json: { url: null, source: null } }),
+  )
+  await page.goto('/albums/42')
+  await page.getByRole('button', { name: 'Find preview No preview track' }).click()
+  const player = page.locator('footer.live-player')
+  await expect(player.getByText('No preview available for this track.')).toBeVisible()
+  const noPreviewButton = page.getByRole('button', { name: 'No preview' })
+  await expect(noPreviewButton).toBeVisible()
+  await expect(noPreviewButton).toBeDisabled()
+  await expect(noPreviewButton).toHaveAttribute('title', 'No preview available')
+  const artButton = page.getByRole('button', { name: 'No preview No preview track' })
+  await expect(artButton).toBeDisabled()
+})

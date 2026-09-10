@@ -31,6 +31,8 @@ The frontend production build and focused backend tests pass. The separate testi
 
 Library album genre and year filters still apply to the pages loaded so far; only the tracks view filters and sorts on the server. Catalog search on the Search page is unchanged and says so in its own hint. Navidrome's saved play queue holds 500 songs, so Play all and Shuffle over a larger library play a 500-song selection. Whole-library track browsing reads up to 10,000 songs from Navidrome, so a library beyond that size describes the first 10,000 it returns.
 
+Track navigation checks added on 10 September 2026 cover highlighted row focus (including tracks outside the initial virtual window), aria-current marking, "Back to results" restoring search state, and no-preview state showing disabled controls and labels. These join the existing automated browser regression suite.
+
 ## Further coverage
 
-Automate card success/retry against a fixture API, coverage loading/failure and filter reactivity, links to tracks outside the initial virtual window, slider keyboard behavior, close during a pending lookup, activity clear racing with a new event, and the player/queue at small and tablet widths. Preserve unsaved Settings drafts during live queue activity. Do not treat this targeted browser pass as the full release acceptance suite.
+Automate card success/retry against a fixture API, coverage loading/failure and filter reactivity, slider keyboard behavior, close during a pending lookup, activity clear racing with a new event, and the player/queue at small and tablet widths. Preserve unsaved Settings drafts during live queue activity. Do not treat this targeted browser pass as the full release acceptance suite.
