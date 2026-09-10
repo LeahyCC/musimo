@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
+import { emptyQueue } from './queue-fixtures'
 
 const track: MusicResult = {
   id: 101,
@@ -33,6 +34,9 @@ for (const ownedCount of [0, 1, 2]) {
       if (new URL(route.request().url()).origin !== 'http://127.0.0.1:18765') await route.abort()
       else await route.fallback()
     })
+    // The download buttons below read the queue, so it comes from the fixture rather than
+    // from whatever the shared backend happens to be holding.
+    await emptyQueue(page)
     const tracks: MusicResult[] = [0, 1].map((index) => ({
       ...track,
       id: 101 + index,
