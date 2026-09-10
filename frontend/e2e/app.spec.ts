@@ -608,8 +608,8 @@ test('youtube source panel has no test button', async ({ page }) => {
         versions: {},
         disks: [{ path: '/music', free_bytes: 1000, total_bytes: 2000, exists: true, writable: true }],
         sources: [
-          { source: 'deezer', status: 'ok', latency_ms: 50, detail: '', checked_at: '2020-01-01' },
-          { source: 'youtube', status: 'ok', latency_ms: 100, detail: '', checked_at: '2020-01-01' },
+          { source: 'deezer', status: 'healthy', latency_ms: 50, detail: '', checked_at: '2020-01-01T00:00:00Z' },
+          { source: 'youtube', status: 'healthy', latency_ms: 100, detail: '', checked_at: '2020-01-01T00:00:00Z' },
         ],
         events: [],
         database: { mode: 'wal', schema: 1, retained_events: 0 },
@@ -617,7 +617,7 @@ test('youtube source panel has no test button', async ({ page }) => {
     }),
   )
   await page.goto('/diagnostics')
-  const youtubePanel = page.getByRole('region', { name: /Download source/ })
+  const youtubePanel = page.getByRole('heading', { name: 'Download source' }).locator('..')
   await expect(youtubePanel).toBeVisible()
   await expect(youtubePanel.getByRole('button', { name: /Test now/ })).toHaveCount(0)
 })
@@ -629,6 +629,7 @@ test('read-only destination option is disabled', async ({ page }) => {
         health: { status: 'ok', version: '1.0.0', uptime_seconds: 100, phase: 1 },
         versions: {},
         disks: [
+          { path: '', free_bytes: null, total_bytes: null, exists: false, writable: false },
           { path: '/music', free_bytes: 1000, total_bytes: 2000, exists: true, writable: false },
         ],
         sources: [],
@@ -638,7 +639,7 @@ test('read-only destination option is disabled', async ({ page }) => {
     }),
   )
   await page.goto('/settings')
-  const destination = page.getByRole('combobox', { name: 'Destination' })
+  const destination = page.getByLabel('Download to')
   await expect(destination).toBeVisible()
   const readOnlyOption = destination.locator('option[value="/music"]')
   await expect(readOnlyOption).toBeDisabled()
