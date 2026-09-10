@@ -202,8 +202,9 @@ The Now Playing stage offers full screen in the tab and a popout floating window
 
 Previews are provider clips, not full library playback. Failed Deezer clips refresh their URLs and can fall back to a matching iTunes preview. Some tracks have no playable preview.
 
-- Artwork controls start or pause a preview.
-- The player's song title returns to its highlighted track in the album for previews, or links to Now Playing for library tracks.
+- Artwork controls start or pause a preview. Tracks with no available preview show a disabled state.
+- The player's song title returns to its highlighted track in the album for previews, or links to Now Playing for library tracks. The highlighted row receives focus and shows a visible focus indicator.
+- Album and artist pages show "Back to results" when reached from search, restoring your last query and filters.
 - Its artist and album names link to their Library pages when playing library tracks, or to the artist page for previews.
 - Seek within the clip, restart, mute, adjust volume or close it.
 - Volume is remembered in the current browser under `musimo.player-volume`. Mute preserves the chosen level.
