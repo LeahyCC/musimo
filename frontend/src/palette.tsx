@@ -5,8 +5,10 @@ import { Search } from 'lucide-react'
 
 const commands = [
   { label: 'Search music', to: '/search' },
-  { label: 'Library settings', to: '/settings' },
+  { label: 'Library', to: '/library' },
+  { label: 'Now Playing', to: '/now-playing' },
   { label: 'Downloads', to: '/downloads' },
+  { label: 'Settings', to: '/settings' },
   { label: 'Diagnostics', to: '/diagnostics' },
 ] as const
 export function CommandPalette() {

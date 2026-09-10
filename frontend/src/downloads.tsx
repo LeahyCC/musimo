@@ -715,8 +715,9 @@ function QueueControls() {
           className="button"
           disabled={command.isPending}
           onClick={() => command.mutate('clear-finished')}
+          title="Remove done, failed, and cancelled jobs from the queue"
         >
-          Clear finished
+          Clear all finished
         </button>
       </div>
       {queue.data?.controls.source_paused && (
@@ -777,6 +778,11 @@ function History() {
           {query.error.message}
           <button onClick={() => void query.refetch()}>Retry</button>
         </p>
+      )}
+      {!query.isPending && !query.isError && query.data?.pages[0]?.jobs.length === 0 && (
+        <div className="empty-panel">
+          <h2>Nothing has finished yet.</h2>
+        </div>
       )}
       <JobList jobs={query.data?.pages.flatMap((page) => page.jobs) ?? []} />
       {query.hasNextPage && (
