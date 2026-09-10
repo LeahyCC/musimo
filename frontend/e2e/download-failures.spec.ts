@@ -441,8 +441,9 @@ test('long titles and labels stay inside the page', async ({ page }) => {
   await failedTab.click()
   await expect(page.locator('#main .job-card')).toHaveCount(3)
   // A tab label such as "Queue (5)" stays on one line at narrow widths; the row wraps instead.
+  // One line of tab measures 44px; a second line would put it past 60.
   const tabBox = await failedTab.boundingBox()
-  expect(tabBox && tabBox.height).toBeLessThan(44)
+  expect(tabBox && tabBox.height).toBeLessThan(60)
   const main = await page.locator('#main').boundingBox()
   if (!main) throw new Error('Missing main box')
   // The card list is a grid; a bare 1fr track let one long title widen every card and the
