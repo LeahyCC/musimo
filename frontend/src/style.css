@@ -558,6 +558,12 @@ main {
   margin-top: 8px;
   font-size: 10px;
 }
+.conflict {
+  display: block;
+  color: #e89a4d;
+  margin-top: 6px;
+  font-size: 11px;
+}
 .note {
   display: flex;
   gap: 12px;
