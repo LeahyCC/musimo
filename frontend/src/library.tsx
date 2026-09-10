@@ -1521,7 +1521,7 @@ export function LibraryPage({
       {tab === 'tracks' && showBrowser && (
         <section className="library-detail">
           <div className="library-list-actions">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div className="library-action-column">
               <CollectionPlayButton
                 source={trackSource}
                 text="Play all"
@@ -1536,7 +1536,7 @@ export function LibraryPage({
                   : 'Covers every matching song, not just the loaded ones.'}
               </small>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+            <div className="library-action-column">
               <button
                 className="button"
                 onClick={() => playTracks.mutate({ shuffled: true })}

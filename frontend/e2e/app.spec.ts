@@ -469,3 +469,109 @@ test('artist review counts selections, excludes failed albums and retries submis
   await expect(dialog).not.toBeVisible()
   expect(attempts).toBe(2)
 })
+
+test('mobile nav shows all five items within the bottom bar', async ({ page, isMobile }) => {
+  if (!isMobile) {
+    test.skip()
+  }
+  await page.goto('/')
+  const nav = page.locator('.sidebar nav')
+  const searchLink = nav.getByRole('link', { name: 'Search' })
+  const libraryLink = nav.getByRole('link', { name: 'Library' })
+  const downloadsLink = nav.getByRole('link', { name: 'Downloads' })
+  const settingsLink = nav.getByRole('link', { name: 'Settings' })
+  const diagnosticsLink = nav.getByRole('link', { name: 'Diagnostics' })
+
+  await expect(searchLink).toBeVisible()
+  await expect(libraryLink).toBeVisible()
+  await expect(downloadsLink).toBeVisible()
+  await expect(settingsLink).toBeVisible()
+  await expect(diagnosticsLink).toBeVisible()
+
+  const sidebar = page.locator('.sidebar')
+  const sidebarBox = await sidebar.boundingBox()
+  expect(sidebarBox).toBeTruthy()
+  expect(sidebarBox!.height).toBe(64)
+
+  const diagnosticsBox = await diagnosticsLink.boundingBox()
+  expect(diagnosticsBox).toBeTruthy()
+  expect(diagnosticsBox!.y + diagnosticsBox!.height).toBeLessThanOrEqual(
+    sidebarBox!.y + sidebarBox!.height,
+  )
+})
+
+test('diagnostics shows youtube source without test button', async ({ page }) => {
+  await page.route('**/api/diagnostics', (route) =>
+    route.fulfill({
+      json: {
+        health: { status: 'ok', version: '1.0.0', db_version: '3.0.0' },
+        disks: [],
+        sources: [
+          {
+            source: 'deezer',
+            status: 'healthy',
+            detail: 'Catalog is responding',
+            latency_ms: 120,
+            checked_at: new Date().toISOString(),
+          },
+          {
+            source: 'youtube',
+            status: 'healthy',
+            detail: 'Download source is active',
+            latency_ms: 95,
+            checked_at: new Date().toISOString(),
+          },
+        ],
+      },
+    }),
+  )
+
+  await page.goto('/diagnostics')
+  const deezerPanel = page.locator('.panel:has-text("Catalog connection")')
+  const youtubePanel = page.locator('.panel:has-text("Download source")')
+
+  await expect(deezerPanel.getByRole('heading', { name: 'Catalog connection' })).toBeVisible()
+  await expect(deezerPanel.getByRole('button', { name: 'Test now' })).toBeVisible()
+
+  await expect(youtubePanel.getByRole('heading', { name: 'Download source' })).toBeVisible()
+  await expect(youtubePanel.getByRole('button', { name: 'Test now' })).not.toBeVisible()
+  await expect(youtubePanel.getByText('95 ms')).toBeVisible()
+})
+
+test('read only destination is disabled in settings', async ({ page }) => {
+  await page.route('**/api/settings', (route) =>
+    route.fulfill({
+      json: {
+        destination: '/music',
+        roots: [
+          { path: '/music', read_only: false },
+          { path: '/readonly', read_only: true },
+        ],
+        format: 'original',
+        skip_owned: true,
+      },
+    }),
+  )
+
+  await page.goto('/settings')
+  const destinationSelect = page.getByRole('combobox', { name: 'Destination' })
+  await expect(destinationSelect).toBeVisible()
+
+  const writableOption = destinationSelect.locator('option:has-text("/music")')
+  const readonlyOption = destinationSelect.locator('option:has-text("(read-only)")')
+
+  await expect(writableOption).toBeEnabled()
+  await expect(readonlyOption).toBeDisabled()
+  await expect(readonlyOption).toContainText('/readonly (read-only)')
+})
+
+test('command palette includes library and now playing', async ({ page }) => {
+  await page.goto('/')
+  await page.keyboard.press('Control+k')
+  const palette = page.getByRole('dialog')
+  await expect(palette).toBeVisible()
+
+  await expect(palette.getByRole('button', { name: /Library/ })).toBeVisible()
+  await expect(palette.getByRole('button', { name: /Now Playing/ })).toBeVisible()
+  await expect(palette.getByRole('button', { name: /Settings/ })).toBeVisible()
+})

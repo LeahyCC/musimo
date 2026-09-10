@@ -17,7 +17,7 @@ Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGI
 
 ## Download settings
 
-- `destination`: a writable root already listed in `MUSIMO_LIBRARY_ROOTS`, default `/music`.
+- `destination`: a writable root already listed in `MUSIMO_LIBRARY_ROOTS`, default `/music`. Read-only mounts are disabled in the destination selector and rejected by the API.
 - `naming_template`: relative path tokens, default `{album_artist}/{album}/{track:02d} - {title}`.
 - `navidrome_mode`: `off`, `watcher` or `api`, default `off`.
 - `navidrome_url`: server URL for API scanning and library playback. It must be HTTP or HTTPS and cannot contain credentials, a query or fragment.
