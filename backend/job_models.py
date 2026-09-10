@@ -96,6 +96,8 @@ class Job(BaseModel):
     error_code: str = ""
     error: str = ""
     retryable: bool = False
+    error_hint: str = ""
+    error_fix: str = ""
     tool_tail: str = ""
     tool_version: str = ""
     warnings: list[str] = Field(default_factory=list)

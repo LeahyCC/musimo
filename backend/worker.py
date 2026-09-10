@@ -9,6 +9,7 @@ import time
 from pathlib import Path
 from typing import Protocol, cast
 
+from backend.errors import error_guidance
 from backend.job_models import Candidate, Job
 from backend.matching import Matcher
 from backend.tagging import Tagger, probe
@@ -136,11 +137,14 @@ def main() -> None:
                             selected="",
                             check_match=True,
                         )
+                    hint, fix = error_guidance("NO_MATCH")
                     emit(
                         "error",
                         code="NO_MATCH",
                         message="No sufficiently close recording found",
                         retryable=False,
+                        hint=hint,
+                        fix=fix,
                         version=version,
                     )
                     return
@@ -169,11 +173,14 @@ def main() -> None:
             if job.meta.duration and abs(duration - job.meta.duration) > max(
                 15, job.meta.duration * 0.12
             ):
+                hint, fix = error_guidance("DURATION_MISMATCH")
                 emit(
                     "error",
                     code="DURATION_MISMATCH",
                     message="Downloaded audio duration differs from the catalog",
                     retryable=False,
+                    hint=hint,
+                    fix=fix,
                     version=version,
                 )
                 return
@@ -214,11 +221,14 @@ def main() -> None:
         )
         if code == "DOWNLOAD_FAILED" and stage in {"converting", "tagging"}:
             code = "TRANSCODE_FAILED" if stage == "converting" else "TAG_FAILED"
+        hint, fix = error_guidance(code)
         emit(
             "error",
             code=code,
             message=message,
             retryable=code in {"TIMEOUT", "RATE_LIMITED", "DOWNLOAD_FAILED"},
+            hint=hint,
+            fix=fix,
             version=version,
         )
 

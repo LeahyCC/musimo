@@ -128,7 +128,7 @@ export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
       className={`ownership ${failed ? 'failed' : item.ownership === 'edition' ? 'partial' : item.ownership}`}
       title={
         failed
-          ? failureMessage(job)
+          ? job.error_hint || failureMessage(job)
           : item.ownership === 'edition'
             ? `${editionLabel}\n${item.matched_paths.join('\n')}`
             : item.matched_paths.join('\n') ||
