@@ -780,6 +780,11 @@ function History() {
           <button onClick={() => void query.refetch()}>Retry</button>
         </p>
       )}
+      {query.isSuccess && query.data.pages[0]?.jobs.length === 0 && query.data.pages[0]?.total === 0 && (
+        <div className="empty-panel">
+          <p>No download history yet.</p>
+        </div>
+      )}
       <JobList jobs={query.data?.pages.flatMap((page) => page.jobs) ?? []} />
       {query.hasNextPage && (
         <InfiniteScroll
