@@ -253,6 +253,7 @@ test('library playback opens the full player and starts AudioMuse radio', async 
   await page.getByRole('button', { name: 'artists', exact: true }).click()
   await expect(page).toHaveURL(/\/library\/artists$/)
   await expect(page.locator('.library-artist-card img')).toBeVisible()
+  await expect(page.locator('.library-artist-card small')).toHaveText('1 album')
   await page.locator('.live-player').getByRole('link', { name: 'Harbor Static' }).click()
   await expect(page).toHaveURL(/\/library\/artists\/artist-1$/)
   await expect(page.locator('.library-artist-heading img')).toBeVisible()
