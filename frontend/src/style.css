@@ -3056,7 +3056,7 @@ button.library-card-play.active {
 }
 .library-list button {
   display: grid;
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: 28px minmax(0, 1fr);
   gap: 3px 10px;
   align-items: center;
   padding: 16px;
@@ -3084,6 +3084,13 @@ button.library-card-play.active {
   display: flex;
   gap: 6px;
   align-items: center;
+}
+/* Ellipsis needs a real box: text straight inside a flex row is an anonymous item. */
+.library-list-open strong > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .library-list-row .library-list-open {
   flex: 1;

@@ -110,6 +110,46 @@ test('the liked playlist leads the list and cannot be deleted from it', async ({
   await expect(rows.first()).toContainText('Liked')
 })
 
+const LONG_NAME =
+  'An Unreasonably Long Title That Keeps Going Well Past Any Sensible Width (Deluxe Remastered Anniversary Edition)'
+
+test('a long playlist name stops short of its controls', async ({ page }) => {
+  await playlistFixtures(page)
+  await page.route(
+    (url) => url.pathname === '/api/library/playlists',
+    (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            {
+              id: 'long',
+              name: LONG_NAME,
+              songCount: 40,
+              duration: 8000,
+              public: true,
+              owner: 'listener',
+              changed: '2026-09-01T00:00:00Z',
+            },
+          ],
+          liked_id: 'liked',
+        },
+      }),
+  )
+  await page.goto('/library/playlists')
+  const row = page.locator('.library-list-row').first()
+  await expect(row).toContainText('An Unreasonably')
+  const name = await row.locator('.library-list-open strong').boundingBox()
+  const play = await row.getByRole('button', { name: `Play ${LONG_NAME}` }).boundingBox()
+  if (!name || !play) throw new Error('Missing row measurements')
+  // The name is cut with an ellipsis before the play button instead of running under it.
+  expect(name.x + name.width).toBeLessThanOrEqual(play.x + 1)
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBe(0)
+})
+
 test('a playlist page counts, plays, shuffles and renames its songs', async ({ page }) => {
   await playlistFixtures(page)
   await page.goto('/library/playlists/road')
