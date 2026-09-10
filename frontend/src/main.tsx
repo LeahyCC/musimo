@@ -707,6 +707,10 @@ function SettingsPage() {
   )
 }
 
+// A finished scan is a healthy state; only an interrupted, failed or cancelled one needs a
+// person to look at it.
+const scanIsReady = (status: string) => ['idle', 'scanning', 'done'].includes(status)
+
 function DiagnosticsPage() {
   const client = useQueryClient()
   const diagnostics = useQuery({
@@ -771,7 +775,7 @@ function DiagnosticsPage() {
               const disk = data.disks.find((d) => d.path === root)
               return disk?.exists && disk?.writable && disk?.free_bytes !== null
             })
-            const scanReady = data.library.status === 'idle' || data.library.status === 'scanning'
+            const scanReady = scanIsReady(data.library.status)
             const navidromeReady = data.navidrome ? data.navidrome.available : null
             const youtubeReady =
               data.sources.find((s) => s.source === 'youtube')?.status === 'healthy'
@@ -865,16 +869,10 @@ function DiagnosticsPage() {
               )}
               <div className="readiness-item">
                 <span
-                  className={`readiness-badge ${data.library.status === 'idle' || data.library.status === 'scanning' ? 'ready' : 'not-ready'}`}
+                  className={`readiness-badge ${scanIsReady(data.library.status) ? 'ready' : 'not-ready'}`}
                 >
-                  {data.library.status === 'idle' || data.library.status === 'scanning' ? (
-                    <Check size={14} />
-                  ) : (
-                    <X size={14} />
-                  )}
-                  {data.library.status === 'idle' || data.library.status === 'scanning'
-                    ? 'Ready'
-                    : 'Not ready'}
+                  {scanIsReady(data.library.status) ? <Check size={14} /> : <X size={14} />}
+                  {scanIsReady(data.library.status) ? 'Ready' : 'Not ready'}
                 </span>
                 <div>
                   <strong>Library scan</strong>

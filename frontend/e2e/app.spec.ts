@@ -671,6 +671,42 @@ test('youtube source panel has no test button', async ({ page }) => {
   await expect(youtubePanel.getByRole('button', { name: /Test now/ })).toHaveCount(0)
 })
 
+test('a finished library scan counts as ready', async ({ page }) => {
+  await page.route('**/api/diagnostics', (route) =>
+    route.fulfill({
+      json: {
+        health: { status: 'ok', version: '1.0.0', uptime_seconds: 100, phase: 1 },
+        versions: {},
+        disks: [
+          { path: '/music', free_bytes: 1000, total_bytes: 2000, exists: true, writable: true },
+        ],
+        sources: [],
+        events: [],
+        database: { mode: 'wal', schema: 1, retained_events: 0 },
+        library: {
+          status: 'done',
+          walked: 12,
+          indexed: 12,
+          errors: 0,
+          elapsed: 1,
+          detail: 'Scan complete',
+          total_files: 12,
+          roots: ['/music'],
+        },
+        queue: { paused: false, source_paused: false },
+        capabilities: { settings: true, events: true, search: true, downloads: true },
+        navidrome: null,
+        last_download: null,
+      },
+    }),
+  )
+  await page.goto('/diagnostics')
+  const item = page.locator('.readiness-item').filter({ hasText: 'Library scan' })
+  await expect(item).toContainText('Scan complete')
+  // "Scan complete" and "Not ready" on the same row contradicted each other.
+  await expect(item.locator('.readiness-badge')).toHaveText('Ready')
+})
+
 test('read-only destination option is disabled', async ({ page }) => {
   await page.route('**/api/diagnostics', (route) =>
     route.fulfill({
