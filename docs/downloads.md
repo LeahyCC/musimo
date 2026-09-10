@@ -59,8 +59,8 @@ Failed downloads display a plain hint with a link to the relevant setting or dia
 | `JS_RUNTIME_MISSING` | Deno is required for extracting YouTube metadata.          | Diagnostics → Download source    |
 | `COOKIES_EXPIRED`    | YouTube cookies have expired or are invalid.               | Diagnostics → Download source    |
 | `CATALOG_FAILED`     | The music catalog could not be reached.                    | Diagnostics → Test now           |
-| `TRANSCODE_FAILED`   | FFmpeg could not convert the audio to the target format.   | Settings → Audio quality         |
-| `TAG_FAILED`         | The audio file could not be tagged with metadata.          | Settings → Audio quality         |
+| `TRANSCODE_FAILED`   | FFmpeg could not convert the audio to the target format.   | Settings → Output format         |
+| `TAG_FAILED`         | The audio file could not be tagged with metadata.          | Settings → Output format         |
 | `NO_MATCH`           | No matching recording was found on YouTube.                | Job card → Pick candidate        |
 | `DURATION_MISMATCH`  | The downloaded audio length differs from the catalog.      | Job card → Pick candidate        |
 | `TIMEOUT`            | The download stage timed out before completing.            | Retry button                     |
