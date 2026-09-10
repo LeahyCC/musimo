@@ -190,7 +190,7 @@ Library has Home, Albums, Artists, Tracks and Playlists views. Grid and list lay
 
 Artist pages include an All songs subpage at `/library/artists/{id}/songs` and a popularity chart plotted from Navidrome play counts when enough data exists. Playlists show song count and can be filtered by public or private status. Inline rename is available for all playlists.
 
-The linked liked playlist is always listed, sorts first, cannot be deleted, and is required for the thumbs up button to work. Its identity is stored in SQLite `linked_playlists` table. An existing playlist named Liked is adopted when none is stored.
+The linked liked playlist is always listed, sorts first, cannot be deleted, and is required for the thumbs up button to work. Its identity is stored in the SQLite table `linked_playlists`. An existing playlist named Liked is adopted when none is stored.
 
 The add to playlist picker appears in the footer player and shows 25 rows with a filter box. The liked playlist is excluded from the picker. Inline New playlist is available with the current song. The Add button toggles to Remove when that song is already in the playlist.
 
