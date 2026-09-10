@@ -31,6 +31,8 @@ for (const count of [2, 30]) {
       record_type: 'album',
       ownership: 'owned',
       matched_paths: [],
+      matched_by: '',
+      matched_album: '',
       owned_count: 1,
       coverage_verified: true,
       disc: 1,
