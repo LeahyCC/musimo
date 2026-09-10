@@ -296,7 +296,11 @@ function Shell() {
           <div className="connection-banner" role="status">
             {status === 'Offline'
               ? 'Cannot reach Musimo. Reconnecting automatically.'
-              : 'Connecting to live updates…'}
+              : status === 'Reconnecting'
+                ? 'Connection lost. Reconnecting…'
+                : status === 'Syncing'
+                  ? 'Syncing changes…'
+                  : 'Connecting to live updates…'}
           </div>
         )}
         <main id="main">
