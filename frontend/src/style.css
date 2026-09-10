@@ -2176,9 +2176,12 @@ meter::-webkit-meter-optimum-value {
 }
 .jobs-list {
   display: grid;
+  /* A bare 1fr track has a min-content floor, so one long title widened the page. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 12px;
 }
 .job-card {
+  min-width: 0;
   padding: 18px;
   border: 1px solid #363d31;
   border-radius: 12px;
