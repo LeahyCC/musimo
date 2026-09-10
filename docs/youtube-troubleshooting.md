@@ -1,6 +1,6 @@
 # Why is YouTube failing?
 
-This guide covers these error codes: `SOURCE_BLOCKED`, `RATE_LIMITED`, `POT_MISSING`, `JS_RUNTIME_MISSING`, `COOKIES_EXPIRED`. Failed downloads link directly to Diagnostics and this guide.
+This guide covers these error codes: `SOURCE_BLOCKED`, `RATE_LIMITED`, `POT_MISSING`, `JS_RUNTIME_MISSING`, `COOKIES_EXPIRED`. Failed downloads link to Diagnostics and Settings.
 
 The download worker includes the required tools in the image. Start the optional helper with `docker compose --profile youtube up -d --build --wait`, then inspect the failed job's stage and error alongside Diagnostics.
 

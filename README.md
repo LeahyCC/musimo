@@ -213,13 +213,13 @@ Previews are provider clips, not full library playback. Failed Deezer clips refr
 
 Library playback adds previous (restarts the current track after 4 seconds of playback), next, shuffle, repeat including repeat one, thumbs up to add or remove from the liked playlist, add to playlist picker, and expand to Now Playing. The queue autosaves every 10 seconds of playback and on pause or close. Now playing scrobbles on play and submits on track end. MediaSession handlers provide play, pause, next and previous for system media controls.
 
-Keyboard controls: `/` focuses search; Ctrl/Cmd+K opens the command palette; Escape closes it. Space toggles playback outside editing fields and interactive controls. Native sliders support keyboard adjustment. Browser autoplay rules can require another press of Play. On the Now Playing stage, F enters full screen, Esc leaves full screen or closes the popout, left and right seek by five seconds, up and down adjust volume, M mutes, and N and P skip tracks. See [Now Playing popout](docs/now-playing-popout.md) for full keyboard reference.
+Keyboard controls: `/` focuses search; Ctrl/Cmd+K opens the command palette; Escape closes it or filter menus. ArrowUp, ArrowDown, Home and End move focus through track lists and the download job list. Space toggles playback outside editing fields and interactive controls. Native sliders support keyboard adjustment. Browser autoplay rules can require another press of Play. On the Now Playing stage, F enters full screen, Esc leaves full screen or closes the popout, left and right seek by five seconds, up and down adjust volume, M mutes, and N and P skip tracks. See [Now Playing popout](docs/now-playing-popout.md) for full keyboard reference.
 
 ### Downloads and history
 
 Jobs progress through queued, matching, downloading, optional conversion, tagging, moving, scanning and done. Job cards display the destination and format. Low-confidence matches are flagged. Failures retain their stage and error rather than looking like success.
 
-Each failure shows a reason summary with plain language messages. The NO_MATCH message reads "No matching recording was found on YouTube. Nothing was downloaded." Per card attempt counts are shown and reset when retrying. The Failed tab groups failures by download group with reason chips, and offers a bulk Clear failed action. Each finished card also has its own Clear to dismiss it individually. The download arrow on a track becomes Retry with the failure reason in its tooltip.
+Each failure shows a reason summary with plain language messages. The NO_MATCH message reads "No matching recording was found on YouTube." Per card attempt counts are shown and reset when retrying. The Failed tab groups failures by download group with reason chips, and offers a bulk Clear failed action. Each finished card also has its own Clear to dismiss it individually. The download arrow on a track becomes Retry with the failure reason in its tooltip.
 
 The floating queue button appears only while a download is active. History and queue load more results on scroll.
 
@@ -433,7 +433,7 @@ API groups:
 - Jobs/batches: `/api/naming-preview`, `/api/jobs` GET and POST, `/api/history`, `/api/batches` POST, `/api/batches/{id}/{pause,resume,cancel,retry}`, `/api/jobs/{id}/pick`, `/api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`, `/api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,resume-source}`.
 - Artist downloads: `/api/artists/{id}/download-plan`, `/api/artist-batches`.
 - Activity: `/api/activity` GET and DELETE; deletion takes the observed `through` cursor.
-- Operations: `/api/events`, `/api/diagnostics`, `/api/diagnostics/test/deezer`, `/api/diagnostics/export`.
+- Operations: `/api/events`, `/api/diagnostics`, `/api/diagnostics/test/deezer`, `/api/diagnostics/test/destination`, `/api/diagnostics/export`.
 
 Contracts can change before a stable release. The live schema is at `/openapi.json`; interactive Swagger/Redoc pages are disabled. Read [architecture](docs/architecture.md), [search/indexing](docs/search.md) and source for detailed behavior.
 

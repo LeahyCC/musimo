@@ -54,6 +54,8 @@ First tagged release of Musimo. This release provides search, library indexing, 
 
 ### Documentation
 
+- Fix the last documentation drift before tagging 0.4.0 (#47)
+- Prepare the 0.4.0 release cut (#45)
 - Bring the docs in line with the code after PRs 13 to 34 (#36)
 - Refresh README with product screenshot (#10)
 - Fix README screenshot asset (#11)
