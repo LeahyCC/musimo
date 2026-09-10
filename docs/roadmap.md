@@ -10,7 +10,7 @@ Current UI work covers automatic album coverage, card downloads, linked preview 
 
 ## Next UX improvements
 
-1. **Make the download destination visible at the decision point.** Card actions use saved defaults. A compact destination/format summary would reduce accidental queueing to the wrong collection without adding a modal to every click.
+1. ✓ **Make the download destination visible at the decision point.** Album cards, the album page and track download controls now show where files will land and in what format before queueing. Job cards display the destination and format.
 2. **Actionable source errors.** Link a job's error to the exact source/credential/disk setting that needs attention. Keep successful jobs visible when enrichment or Navidrome scanning warns.
 3. **Track navigation and context.** Extend highlighted-track links with focus management, a consistent back path and predictable no-preview behavior. Consider previous/next only after defining whether it follows the album, search results or an explicit preview queue.
 4. **Explain duplicates and editions.** Separate "already queued", "in library" and "another edition matched". Offer a deliberate replacement flow without overwriting existing files silently.

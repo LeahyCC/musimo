@@ -219,7 +219,15 @@ export function DownloadButton({ item }: { item: MusicResult }) {
               ? `${item.title} is ${existing.stage}`
               : failed
                 ? `Retry ${item.title}. ${failureMessage(failed)}`
-                : `Download ${item.title}`
+                : `Download ${item.title} to ${target || settings.data?.destination.value || '(not set)'} · ${
+                    selected === 'original'
+                      ? 'Original source quality'
+                      : selected === 'm4a'
+                        ? 'M4A / AAC'
+                        : selected === 'opus'
+                          ? 'Opus'
+                          : 'MP3 · converted'
+                  }`
         }
         title={
           owned
@@ -228,7 +236,15 @@ export function DownloadButton({ item }: { item: MusicResult }) {
               ? existing.stage
               : failed
                 ? failureMessage(failed)
-                : 'Download track'
+                : `to ${target || settings.data?.destination.value || '(not set)'} · ${
+                    selected === 'original'
+                      ? 'Original source quality'
+                      : selected === 'm4a'
+                        ? 'M4A / AAC'
+                        : selected === 'opus'
+                          ? 'Opus'
+                          : 'MP3 · converted'
+                  }`
         }
         disabled={owned || Boolean(existing) || mutation.isPending}
         onClick={() => mutation.mutate()}
@@ -269,7 +285,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         <label>
           Download to
           <select value={target} onChange={(e) => setTarget(e.target.value)}>
-            <option value="">Default folder</option>
+            <option value="">{settings.data?.destination.value || '(not set)'}</option>
             {mounts.data?.disks
               .slice(1)
               .filter((disk) => disk.writable)
@@ -409,6 +425,7 @@ function JobCard({ job }: { job: DownloadJob }) {
         />
       )}
       <div className="job-stats">
+        <span>to {job.target}</span>
         <span>
           {job.format === 'original'
             ? 'Original source quality'
