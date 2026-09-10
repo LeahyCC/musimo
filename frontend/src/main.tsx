@@ -649,11 +649,11 @@ function DiagnosticsPage() {
     queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
   })
   const probe = useMutation({
-    mutationFn: () => api('diagnostics/test/deezer', sourceSchema, { method: 'POST' }),
+    mutationFn: (sourceName: string) =>
+      api(`diagnostics/test/${sourceName}`, sourceSchema, { method: 'POST' }),
     onSuccess: () => void client.invalidateQueries({ queryKey: ['diagnostics'] }),
   })
   const data = diagnostics.data
-  const source = data?.sources.find((s) => s.source === 'deezer')
   const gb = (bytes: number | null) =>
     bytes === null ? 'Unknown' : `${(bytes / 1024 ** 3).toFixed(1)} GB`
   return (
@@ -693,41 +693,45 @@ function DiagnosticsPage() {
             <span className="tag">v{data.health.version}</span>
           </div>
           <div className="diagnostic-grid">
-            <section className="panel">
-              <div className="section-heading">
-                <h2>Catalog connection</h2>
-                <span className={`status-chip ${source?.status === 'healthy' ? 'good' : ''}`}>
-                  {source?.status ?? 'Not tested'}
-                </span>
-              </div>
-              <div className="source-summary">
-                <span className="source-logo">d.</span>
-                <div>
-                  <h3>Deezer</h3>
-                  <p>{source?.detail ?? 'Run a live request to the keyless catalog.'}</p>
+            {data.sources.map((source) => (
+              <section className="panel" key={source.source}>
+                <div className="section-heading">
+                  <h2>Catalog connection</h2>
+                  <span className={`status-chip ${source.status === 'healthy' ? 'good' : ''}`}>
+                    {source.status}
+                  </span>
                 </div>
-              </div>
-              <div className="probe-bottom">
-                <span>
-                  {source?.latency_ms !== null && source?.latency_ms !== undefined
-                    ? `${source.latency_ms} ms · ${new Date(source.checked_at).toLocaleTimeString()}`
-                    : 'No credentials needed'}
-                </span>
-                <button
-                  className="button"
-                  onClick={() => probe.mutate()}
-                  disabled={probe.isPending}
-                >
-                  {probe.isPending ? 'Testing…' : 'Test now'}
-                  <ArrowRight size={14} />
-                </button>
-              </div>
-              {probe.isError && (
-                <p className="error" role="alert">
-                  {probe.error.message}
-                </p>
-              )}
-            </section>
+                <div className="source-summary">
+                  <span className="source-logo">
+                    {source.source === 'deezer' ? 'd.' : source.source.charAt(0).toUpperCase()}
+                  </span>
+                  <div>
+                    <h3>{source.source.charAt(0).toUpperCase() + source.source.slice(1)}</h3>
+                    <p>{source.detail}</p>
+                  </div>
+                </div>
+                <div className="probe-bottom">
+                  <span>
+                    {source.latency_ms !== null
+                      ? `${source.latency_ms} ms · ${new Date(source.checked_at).toLocaleTimeString()}`
+                      : 'Not tested recently'}
+                  </span>
+                  <button
+                    className="button"
+                    onClick={() => probe.mutate(source.source)}
+                    disabled={probe.isPending}
+                  >
+                    {probe.isPending ? 'Testing…' : 'Test now'}
+                    <ArrowRight size={14} />
+                  </button>
+                </div>
+                {probe.isError && (
+                  <p className="error" role="alert">
+                    {probe.error.message}
+                  </p>
+                )}
+              </section>
+            ))}
             <section className="panel">
               <div className="section-heading">
                 <h2>Persistent storage</h2>
