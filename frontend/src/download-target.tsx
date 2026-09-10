@@ -1,7 +1,18 @@
 import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { AlertTriangle } from 'lucide-react'
 
 import { api, diagnosticsSchema, settingsSchema } from './api'
+
+export function formatLabel(format: string): string {
+  return format === 'original'
+    ? 'Original source quality'
+    : format === 'm4a'
+      ? 'M4A / AAC'
+      : format === 'opus'
+        ? 'Opus'
+        : 'MP3 · converted'
+}
 
 export function DownloadTarget({ format, target }: { format?: string; target?: string }) {
   const settings = useQuery({
@@ -16,24 +27,22 @@ export function DownloadTarget({ format, target }: { format?: string; target?: s
   const chosenFormat = format ?? settings.data?.output_format.value ?? 'original'
   const chosenTarget = target ?? settings.data?.destination.value ?? ''
   const disk = diagnostics.data?.disks.find((d) => d.path === chosenTarget)
-  const problem = disk && (!disk.exists || !disk.writable)
-
-  const formatLabel =
-    chosenFormat === 'original'
-      ? 'Original source quality'
-      : chosenFormat === 'm4a'
-        ? 'M4A / AAC'
-        : chosenFormat === 'opus'
-          ? 'Opus'
-          : 'MP3 · converted'
+  const problem = chosenTarget && (!disk || !disk.exists || !disk.writable)
 
   return (
     <small className="download-target">
-      to {chosenTarget || '(not set)'} · {formatLabel}
+      to{' '}
+      <Link to="/settings" hash="library">
+        {chosenTarget || '(not set)'}
+      </Link>{' '}
+      · {formatLabel(chosenFormat)}
       {problem && (
         <>
           {' '}
-          <AlertTriangle size={14} aria-label="Destination not available" />
+          <AlertTriangle size={14} aria-hidden="true" />{' '}
+          <Link to="/settings" hash="library">
+            not available
+          </Link>
         </>
       )}
     </small>

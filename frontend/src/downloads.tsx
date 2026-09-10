@@ -27,6 +27,7 @@ import {
   settingsSchema,
 } from './api'
 import type { DownloadJob, MusicResult } from './api'
+import { formatLabel } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
 
 export type QueueData = {
@@ -219,15 +220,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
               ? `${item.title} is ${existing.stage}`
               : failed
                 ? `Retry ${item.title}. ${failureMessage(failed)}`
-                : `Download ${item.title} to ${target || settings.data?.destination.value || '(not set)'} · ${
-                    selected === 'original'
-                      ? 'Original source quality'
-                      : selected === 'm4a'
-                        ? 'M4A / AAC'
-                        : selected === 'opus'
-                          ? 'Opus'
-                          : 'MP3 · converted'
-                  }`
+                : `Download ${item.title} to ${target || settings.data?.destination.value || '(not set)'} · ${formatLabel(selected)}`
         }
         title={
           owned
@@ -236,15 +229,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
               ? existing.stage
               : failed
                 ? failureMessage(failed)
-                : `to ${target || settings.data?.destination.value || '(not set)'} · ${
-                    selected === 'original'
-                      ? 'Original source quality'
-                      : selected === 'm4a'
-                        ? 'M4A / AAC'
-                        : selected === 'opus'
-                          ? 'Opus'
-                          : 'MP3 · converted'
-                  }`
+                : `to ${target || settings.data?.destination.value || '(not set)'} · ${formatLabel(selected)}`
         }
         disabled={owned || Boolean(existing) || mutation.isPending}
         onClick={() => mutation.mutate()}
@@ -426,11 +411,7 @@ function JobCard({ job }: { job: DownloadJob }) {
       )}
       <div className="job-stats">
         <span>to {job.target}</span>
-        <span>
-          {job.format === 'original'
-            ? 'Original source quality'
-            : job.format.toUpperCase() + ' · conversion if needed'}
-        </span>
+        <span>{formatLabel(job.format)}</span>
         {job.stage === 'downloading' && (
           <span>
             {bytes(job.downloaded)}
