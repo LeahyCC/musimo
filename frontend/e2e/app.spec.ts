@@ -599,3 +599,79 @@ test('no preview state shows disabled button and label', async ({ page }) => {
     await expect(noPreviewButton).toHaveAttribute('title', 'No preview available')
   }
 })
+
+test('youtube source panel has no test button', async ({ page }) => {
+  await page.route('**/api/diagnostics', (route) =>
+    route.fulfill({
+      json: {
+        health: { status: 'ok', version: '1.0.0', uptime_seconds: 100, phase: 1 },
+        versions: {},
+        disks: [{ path: '/music', free_bytes: 1000, total_bytes: 2000, exists: true, writable: true }],
+        sources: [
+          { source: 'deezer', status: 'ok', latency_ms: 50, detail: '', checked_at: '2020-01-01' },
+          { source: 'youtube', status: 'ok', latency_ms: 100, detail: '', checked_at: '2020-01-01' },
+        ],
+        events: [],
+        database: { mode: 'wal', schema: 1, retained_events: 0 },
+      },
+    }),
+  )
+  await page.goto('/diagnostics')
+  const youtubePanel = page.getByRole('region', { name: /Download source/ })
+  await expect(youtubePanel).toBeVisible()
+  await expect(youtubePanel.getByRole('button', { name: /Test now/ })).toHaveCount(0)
+})
+
+test('read-only destination option is disabled', async ({ page }) => {
+  await page.route('**/api/diagnostics', (route) =>
+    route.fulfill({
+      json: {
+        health: { status: 'ok', version: '1.0.0', uptime_seconds: 100, phase: 1 },
+        versions: {},
+        disks: [
+          { path: '/music', free_bytes: 1000, total_bytes: 2000, exists: true, writable: false },
+        ],
+        sources: [],
+        events: [],
+        database: { mode: 'wal', schema: 1, retained_events: 0 },
+      },
+    }),
+  )
+  await page.goto('/settings')
+  const destination = page.getByRole('combobox', { name: 'Destination' })
+  await expect(destination).toBeVisible()
+  const readOnlyOption = destination.locator('option[value="/music"]')
+  await expect(readOnlyOption).toBeDisabled()
+})
+
+test('album download button disabled while coverage unverified', async ({ page }) => {
+  const ownedAlbum: MusicResult = {
+    ...track,
+    id: 50,
+    kind: 'album',
+    title: 'Owned album',
+    coverage_verified: false,
+    ownership: 'owned',
+    owned_count: 1,
+  }
+  const ownedTrack: MusicResult = {
+    ...track,
+    id: 501,
+    album_id: 50,
+    ownership: 'owned',
+  }
+  await page.route('**/api/albums/50*', (route) =>
+    route.fulfill({
+      json: {
+        album: ownedAlbum,
+        tracks: [ownedTrack],
+        label: 'Test label',
+        duration: 180,
+        complete: true,
+      },
+    }),
+  )
+  await page.goto('/albums/50')
+  const downloadButton = page.getByRole('button', { name: /Checking coverage/ })
+  await expect(downloadButton).toBeDisabled()
+})
