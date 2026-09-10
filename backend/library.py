@@ -7,7 +7,7 @@ import unicodedata
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Protocol, cast
+from typing import Literal, Protocol, cast
 
 import mutagen
 from mutagen.easymp4 import EasyMP4Tags
@@ -458,29 +458,48 @@ class Library:
             """,
                 (payload,),
             ).fetchall()
-            priority_labels = {0: "download", 1: "isrc", 2: "mbid", 3: "tags"}
+            priority_labels: dict[int, Literal["download", "isrc", "mbid", "tags"]] = {
+                0: "download",
+                1: "isrc",
+                2: "mbid",
+                3: "tags",
+            }
+            # Collect all best-priority matches per track
+            track_matches: dict[int, list[tuple[str, int, str]]] = {}
             for row in matches:
-                result = results[row["i"]]
-                result.matched_paths.append(row["path"])
-                if not result.matched_by:
-                    result.matched_by = priority_labels[row["priority"]]
-                is_edition = (
-                    row["priority"] == 3
-                    and row["album_key"]
-                    and normalize(result.album)
-                    and row["album_key"] != normalize(result.album)
-                )
-                if is_edition:
+                i = row["i"]
+                if i not in track_matches:
+                    track_matches[i] = []
+                track_matches[i].append((row["path"], row["priority"], row["album_key"]))
+            # Decide ownership: owned if any best match is not an edition, else edition
+            for i, rows in track_matches.items():
+                result = results[i]
+                result.matched_by = priority_labels[rows[0][1]]
+                has_exact_match = False
+                edition_album_key = None
+                for path, priority, album_key in rows:
+                    result.matched_paths.append(path)
+                    is_edition = (
+                        priority == 3
+                        and album_key
+                        and normalize(result.album)
+                        and album_key != normalize(result.album)
+                    )
+                    if not is_edition:
+                        has_exact_match = True
+                    elif not edition_album_key:
+                        edition_album_key = album_key
+                if has_exact_match:
+                    result.ownership = "owned"
+                else:
                     result.ownership = "edition"
-                    if not result.matched_album and row["album_key"]:
+                    if edition_album_key:
                         album_row = self.store.db.execute(
                             "SELECT album FROM library_files WHERE album_key=? LIMIT 1",
-                            (row["album_key"],),
+                            (edition_album_key,),
                         ).fetchone()
                         if album_row:
                             result.matched_album = album_row["album"]
-                else:
-                    result.ownership = "owned"
             for result in results:
                 if result.kind == "album":
                     rows = self.store.db.execute(

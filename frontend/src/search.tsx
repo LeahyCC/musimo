@@ -792,8 +792,9 @@ export function AlbumPage() {
   const missingCount = tracks.filter(
     (track) => track.ownership !== 'owned' && track.ownership !== 'edition',
   ).length
-  const hasOwnedTracks = tracks.some((track) => track.ownership === 'owned')
-  const hasEditions = editionCount > 0
+  const hasOwnedTracks = tracks.some(
+    (track) => track.ownership === 'owned' || track.ownership === 'edition',
+  )
   const bitrate = chosenQuality === 'mp3' ? 320 : 160
   return (
     <>
@@ -831,12 +832,18 @@ export function AlbumPage() {
           format={chosenQuality}
           target={settings.data?.destination.value}
           label={
-            hasOwnedTracks && (missingCount > 0 || editionCount > 0)
-              ? `Download missing (${missingCount}${hasEditions ? ` + ${editionCount} edition${editionCount === 1 ? '' : 's'}` : ''})`
+            hasOwnedTracks && missingCount > 0
+              ? `Download missing (${missingCount})`
               : 'Download album'
           }
         />
         <small>Size assumes {bitrate} kbps; actual source varies.</small>
+        {editionCount > 0 && (
+          <small>
+            {editionCount} track{editionCount === 1 ? ' has' : 's have'} another edition in your
+            library
+          </small>
+        )}
         <DownloadTarget format={chosenQuality} />
       </div>
       {!complete && (
