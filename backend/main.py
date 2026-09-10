@@ -168,7 +168,10 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             raise HTTPException(422, "Setting values cannot be null")
         try:
             if "destination" in changes:
-                downloads.target(str(changes["destination"]))
+                dest = str(changes["destination"])
+                if not os.access(dest, os.W_OK):
+                    raise HTTPException(422, "Destination must be writable. Read-only mounts cannot be used.")
+                downloads.target(dest)
             result = store.update(changes)
         except LockedSetting as exc:
             raise HTTPException(409, str(exc)) from exc

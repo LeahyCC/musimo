@@ -525,7 +525,7 @@ function SettingsPage() {
                           >
                             {key === 'destination'
                               ? diagnostics.data?.disks.slice(1).map((disk) => (
-                                  <option key={disk.path} value={disk.path}>
+                                  <option key={disk.path} value={disk.path} disabled={!disk.writable}>
                                     {disk.path}
                                     {disk.writable ? '' : ' (read-only)'}
                                   </option>
