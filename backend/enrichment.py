@@ -7,6 +7,7 @@ import httpx
 from backend.catalog import Album, Catalog, Track, safe_media
 from backend.job_models import Metadata
 from backend.library import normalize
+from backend.version import VERSION
 
 
 class Enrichment:
@@ -34,7 +35,7 @@ class Enrichment:
                 response = await self.catalog.client.get(
                     url,
                     params=params,
-                    headers={"User-Agent": "Musimo/0.3.0 (https://github.com/LeahyCC)"},
+                    headers={"User-Agent": f"Musimo/{VERSION} (https://github.com/LeahyCC)"},
                     timeout=4,
                 )
         else:
