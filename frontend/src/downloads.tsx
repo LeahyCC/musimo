@@ -719,8 +719,9 @@ function QueueControls() {
           className="button"
           disabled={command.isPending}
           onClick={() => command.mutate('clear-finished')}
+          title="Remove done, failed, and cancelled jobs from the queue"
         >
-          Clear all done
+          Clear all finished
         </button>
       </div>
       {queue.data?.controls.source_paused && (

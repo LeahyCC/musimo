@@ -169,11 +169,11 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         try:
             if "destination" in changes:
                 dest = str(changes["destination"])
+                downloads.target(dest)
                 if not os.access(dest, os.W_OK):
                     raise HTTPException(
                         422, "Destination must be writable. Read-only mounts cannot be used."
                     )
-                downloads.target(dest)
             result = store.update(changes)
         except LockedSetting as exc:
             raise HTTPException(409, str(exc)) from exc
