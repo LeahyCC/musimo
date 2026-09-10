@@ -361,7 +361,9 @@ function ArtistItem({
         </span>
         <span>
           <strong>{artist.name}</strong>
-          <small>{artist.albumCount ?? 0} albums</small>
+          <small>
+            {artist.albumCount ?? 0} {artist.albumCount === 1 ? 'album' : 'albums'}
+          </small>
         </span>
       </button>
       <div className="library-collection-actions">
@@ -536,7 +538,7 @@ function PlaylistRow({
     <>
       <strong>
         {liked && <Heart size={13} fill="currentColor" />}
-        {playlist.name}
+        <span>{playlist.name}</span>
       </strong>
       <small>
         {songCount(playlist.songCount ?? 0)}
@@ -1135,7 +1137,9 @@ export function LibraryPage({
           {createPlaylist.isError && <p className="error">{createPlaylist.error.message}</p>}
         </form>
       )}
-      {showBrowser && activeQuery.isLoading && <p role="status">Loading {tab}…</p>}
+      {showBrowser && activeQuery.isLoading && (
+        <p role="status">Loading {tab === 'home' ? 'albums' : tab}…</p>
+      )}
       {showBrowser && activeQuery.isError && (
         <div className="inline-error" role="alert">
           <span>{activeQuery.error.message}</span>
@@ -1165,10 +1169,12 @@ export function LibraryPage({
                 {playlistLiked && <Heart size={17} fill="currentColor" />}
                 {detailTitle}
               </h2>
-              <small className="library-count">
-                {songCount(detailTracks.length)}
-                {playlist?.duration ? ` · ${durationText(playlist.duration)}` : ''}
-              </small>
+              {!(albumDetail.isLoading || playlistDetail.isLoading) && (
+                <small className="library-count">
+                  {songCount(detailTracks.length)}
+                  {playlist?.duration ? ` · ${durationText(playlist.duration)}` : ''}
+                </small>
+              )}
             </div>
             <div className="button-row">
               <CollectionPlayButton
@@ -1530,11 +1536,11 @@ export function LibraryPage({
                 disabled={busy || !trackTotal}
                 onPlay={() => playTracks.mutate({ shuffled: false })}
               />
-              <small className="muted">
-                {trackTotal > 500
-                  ? `Plays the first 500 of ${trackTotal.toLocaleString()} matching songs.`
-                  : 'Covers every matching song, not just the loaded ones.'}
-              </small>
+              {trackTotal > 500 && (
+                <small className="muted">
+                  Plays the first 500 of {trackTotal.toLocaleString()} matching songs.
+                </small>
+              )}
             </div>
             <div className="library-action-column">
               <button
@@ -1544,13 +1550,20 @@ export function LibraryPage({
               >
                 <Shuffle size={15} /> Shuffle
               </button>
-              <small className="muted">
-                {trackTotal > 500
-                  ? `Plays a random 500 of ${trackTotal.toLocaleString()} matching songs.`
-                  : 'Covers every matching song, not just the loaded ones.'}
-              </small>
+              {trackTotal > 500 && (
+                <small className="muted">
+                  Plays a random 500 of {trackTotal.toLocaleString()} matching songs.
+                </small>
+              )}
             </div>
           </div>
+          {/* Both buttons share one note when the whole selection fits; the per-button notes
+              only differ once the 500-song queue limit splits their behaviour. */}
+          {trackTotal <= 500 && (
+            <small className="muted library-actions-note">
+              Covers every matching song, not just the loaded ones.
+            </small>
+          )}
           {playTracks.isError && (
             <p className="error" role="alert">
               {playTracks.error.message}

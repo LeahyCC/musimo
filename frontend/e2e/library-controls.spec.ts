@@ -57,6 +57,10 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
   await page.goto('/library/tracks')
 
   await expect(page.getByText('3 of 3 loaded')).toBeVisible()
+  // One note covers both buttons; it used to be printed under each of them.
+  await expect(page.getByText('Covers every matching song, not just the loaded ones.')).toHaveCount(
+    1,
+  )
   await page.getByLabel('Sort tracks').selectOption('duration')
   await page.getByLabel('Search tracks').fill('cinder')
   await expect
@@ -70,6 +74,12 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
   await page.getByText('All genres', { exact: true }).click()
   // Filter choices come from the whole library, not only the rows on screen.
   await expect(page.getByLabel('Rock')).toBeVisible()
+  // The open menu stays inside the viewport at phone widths instead of forcing a sideways scroll.
+  expect(
+    await page.evaluate(
+      () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+    ),
+  ).toBe(0)
   await page.getByLabel('Jazz').check()
   await expect.poll(() => recorded.tracks.at(-1)?.searchParams.getAll('genre')).toEqual(['Jazz'])
   // Close the panel first: at narrow widths it sits over the rest of the toolbar.
@@ -84,6 +94,20 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
   const actions = page.locator('.library-list-actions')
   await actions.getByRole('button', { name: 'Shuffle' }).click()
   await expect.poll(() => recorded.selection.at(-1)?.searchParams.get('shuffle')).toBe('true')
+})
+
+test('loading states name what is on the way and hold the counts back', async ({ page }) => {
+  await libraryFixtures(page)
+  await page.route('**/api/library/albums?**', () => new Promise(() => undefined))
+  await page.goto('/library')
+  // The home view loads albums, so that is what it says while waiting.
+  await expect(page.getByText('Loading albums…')).toBeVisible()
+
+  await page.route('**/api/library/albums/album-1', () => new Promise(() => undefined))
+  await page.goto('/library/albums/album-1')
+  await expect(page.getByText('Loading songs…')).toBeVisible()
+  // No "0 songs" while the album is still on its way.
+  await expect(page.locator('.library-detail .library-count')).toHaveCount(0)
 })
 
 test('a filtered selection is its own queue, not the one already playing', async ({ page }) => {

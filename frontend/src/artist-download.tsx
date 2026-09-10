@@ -8,6 +8,8 @@ import { z } from 'zod'
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from './api'
 import { activeJob, updateJob, useJobs } from './downloads'
 
+const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
+
 const planSchema = z.object({
   albums: z.array(
     z.object({
@@ -175,14 +177,14 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
           <>
             <div className="artist-download-stats" aria-live="polite">
               <strong>
-                {albumCount} {allMusic ? 'releases' : 'albums'} · {songs} songs
+                {plural(albumCount, allMusic ? 'release' : 'album')} · {plural(songs, 'song')}
               </strong>
               <span>
                 About {megabytes.toLocaleString()} MB · estimated at{' '}
                 {chosenFormat === 'mp3' ? 320 : 160} kbps
               </span>
               <small>
-                {owned} songs already in library · {queued} already queued
+                {plural(owned, 'song')} already in library · {queued} already queued
               </small>
             </div>
             <div className="artist-download-options">
@@ -307,7 +309,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
             >
               {download.isPending
                 ? `Adding ${allMusic ? 'music' : 'albums'}…`
-                : `Download ${albumCount} ${allMusic ? 'releases' : 'albums'} (${songs} songs)`}
+                : `Download ${plural(albumCount, allMusic ? 'release' : 'album')} (${plural(songs, 'song')})`}
             </button>
           )}
           {download.isError && (
