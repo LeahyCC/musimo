@@ -6,16 +6,16 @@ This is a priority list, not a release promise. The [brief](brief.md) preserves 
 
 Search -> inspect recording -> choose destination/format -> queue -> see progress -> handle failure -> find the finished file in Navidrome. Validate that entire path with permitted audio before expanding integrations.
 
-Current UI work covers automatic album coverage, card downloads, linked preview metadata, volume/mute/restart/close and bounded activity with clearing.
+Recent UI work covered automatic album coverage, card downloads, library playback with playlists, the linked liked playlist and thumbs up, the add to playlist picker, Now Playing full screen and popout, server side Tracks filters, artist All songs and popularity chart, download failure explanations and grouping, per card and bulk Clear failed, infinite scrolling and bounded activity with clearing.
 
 ## Next UX improvements
 
 1. ✓ **Make the download destination visible at the decision point.** Album cards, the album page and track download controls now show where files will land and in what format before queueing. Job cards display the destination and format.
 2. **Actionable source errors.** Link a job's error to the exact source/credential/disk setting that needs attention. Keep successful jobs visible when enrichment or Navidrome scanning warns.
-3. **Track navigation and context.** Extend highlighted-track links with focus management, a consistent back path and predictable no-preview behavior. Consider previous/next only after defining whether it follows the album, search results or an explicit preview queue.
+3. **Track navigation and context.** Extend highlighted-track links with focus management, a consistent back path and predictable no-preview behavior. Library playback already has previous, next, shuffle and repeat over a saved queue; the open question is whether previews should have previous and next, and if so, whether it follows the album, search results or an explicit preview queue.
 4. **Explain duplicates and editions.** Separate "already queued", "in library" and "another edition matched". Offer a deliberate replacement flow without overwriting existing files silently.
 5. **First-run readiness.** Show real mount access, selected destination, scan state and one permitted test-download outcome. Avoid a checklist that marks a dependency as connected merely because it is installed.
-6. **Long-list accessibility.** Exercise keyboard focus across virtualization, touch targets, screen-reader labels, contrast and zoom. Check queue/player overlap at narrow widths and while errors expand.
+6. **Long-list accessibility.** Exercise keyboard focus across virtualization, touch targets, screen-reader labels, contrast and zoom. Check queue/player overlap at narrow widths (partly addressed in PR #32) and while errors expand.
 7. **Separate settings drafts from live updates.** Verify that scan/queue events do not erase an unsaved form. Show a clear save acknowledgement and preserve drafts during an unrelated background event.
 
 ## Release readiness
