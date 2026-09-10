@@ -115,7 +115,7 @@ export const artistSchema = z.object({
 })
 export const artistTopSchema = z.object({ tracks: z.array(resultSchema) })
 export const yearsSchema = z.record(z.string(), z.number().nullable())
-export const previewSchema = z.object({ url: z.string(), source: z.string() })
+export const previewSchema = z.object({ url: z.string().nullable(), source: z.string().nullable() })
 export const librarySchema = z.object({
   status: z.string(),
   walked: z.number(),
