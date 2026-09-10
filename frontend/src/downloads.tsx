@@ -13,6 +13,7 @@ import {
   Pause,
   Play,
   RotateCcw,
+  Trash2,
   X,
 } from 'lucide-react'
 
@@ -49,11 +50,12 @@ export function updateJob(client: QueryClient, job: DownloadJob) {
     }
     // The server supplies totals beyond the 50 visible finished jobs. Adjust those totals as SSE
     // updates arrive so a large queue stays accurate without refetching after every completion.
+    // The server counts only visible jobs, so a job being hidden has to leave the totals too.
     for (const [item, delta] of [
       [previous, -1],
       [job, 1],
     ] as const) {
-      if (!item) continue
+      if (!item || item.hidden) continue
       if (activeJob(item)) summary.active = Math.max(0, summary.active + delta)
       if (item.stage !== 'failed') continue
       summary.failed = Math.max(0, summary.failed + delta)
@@ -371,6 +373,16 @@ function JobCard({ job }: { job: DownloadJob }) {
               <RotateCcw size={16} />
             </button>
           )}
+          {!running && (
+            <button
+              title="Clear"
+              aria-label={`Clear ${job.meta.title}`}
+              disabled={busy}
+              onClick={() => action.mutate('dismiss')}
+            >
+              <Trash2 size={16} />
+            </button>
+          )}
         </div>
       </div>
       <div className="job-steps" aria-label={`Current stage: ${job.stage}`}>
@@ -510,9 +522,15 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
   const virtual = useVirtualizer({
     count: jobs.length,
     getScrollElement: () => parent.current,
-    estimateSize: () => 190,
+    // A first guess for cards not yet measured. Roughly the shortest a card gets, so the
+    // scrollbar grows into place rather than shrinking back.
+    estimateSize: () => 200,
     overscan: 3,
+    // Cards differ in height and the queue reorders as jobs finish. Keying the measurement
+    // cache by job keeps each height with its own card instead of with a list position.
+    getItemKey: (index) => jobs[index]?.id ?? index,
   })
+  const rows = virtual.getVirtualItems()
   if (jobs.length <= 6)
     return (
       <div className="jobs-list">
@@ -530,30 +548,38 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
       tabIndex={0}
     >
       <div style={{ height: virtual.getTotalSize(), position: 'relative' }}>
-        {virtual.getVirtualItems().map((row) => {
-          const job = jobs[row.index]
-          return job ? (
-            <div
-              key={job.id}
-              ref={virtual.measureElement}
-              data-index={row.index}
-              style={{
-                position: 'absolute',
-                top: 0,
-                left: 0,
-                width: '100%',
-                transform: `translateY(${row.start}px)`,
-                paddingBottom: 12,
-              }}
-            >
-              <JobCard job={job} />
-            </div>
-          ) : null
-        })}
+        {/* One offset for the window, then normal flow inside it. Positioning each card
+            separately let a card sit on top of its neighbour whenever a measured height
+            had not landed yet, which is what made the queue overlap as jobs moved up.
+            The row separation is padding on the measured element, not a gap between them,
+            so it counts towards the height the virtualizer works from. */}
+        <div
+          className="virtual-window"
+          style={{ transform: `translateY(${rows[0]?.start ?? 0}px)` }}
+        >
+          {rows.map((row) => {
+            const job = jobs[row.index]
+            return job ? (
+              <div
+                key={job.id}
+                className="virtual-row"
+                ref={virtual.measureElement}
+                data-index={row.index}
+              >
+                <JobCard job={job} />
+              </div>
+            ) : null
+          })}
+        </div>
       </div>
     </div>
   )
 }
+
+const batchName = (rows: DownloadJob[]) =>
+  rows.find((job) => job.batch_label)?.batch_label ||
+  rows.find((job) => job.meta.album)?.meta.album ||
+  'Album download'
 
 function BatchSummary({ jobs }: { jobs: DownloadJob[] }) {
   const client = useQueryClient()
@@ -574,11 +600,7 @@ function BatchSummary({ jobs }: { jobs: DownloadJob[] }) {
         .filter(([, rows]) => rows.some(activeJob))
         .map(([id, rows]) => (
           <div key={id} className="batch-summary">
-            <strong>
-              {rows.find((job) => job.batch_label)?.batch_label ||
-                rows.find((job) => job.meta.album)?.meta.album ||
-                'Album download'}
-            </strong>
+            <strong>{batchName(rows)}</strong>
             <span>
               {rows.filter((job) => job.stage === 'done').length}/{rows.length} complete
               {rows.some((job) => job.stage === 'failed')
@@ -686,6 +708,13 @@ function QueueControls() {
         </button>
         <button
           className="button"
+          disabled={command.isPending || failed === 0}
+          onClick={() => command.mutate('clear-failed')}
+        >
+          Clear failed ({failed})
+        </button>
+        <button
+          className="button"
           disabled={command.isPending}
           onClick={() => command.mutate('clear-finished')}
         >
@@ -766,14 +795,30 @@ function History() {
 export function DownloadsPage() {
   const queue = useJobs()
   const [tab, setTab] = useState('queue')
+  // null shows every failure. Single-track failures have an empty batch, so they need
+  // their own chip rather than sharing the unfiltered state.
+  const [group, setGroup] = useState<string | null>(null)
   const all = (queue.data?.jobs ?? []).filter((job) => !job.hidden)
+  const failures = all.filter((job) => job.stage === 'failed')
+  // Album and artist downloads fail in clusters, so the batch is the useful unit to inspect.
+  const failureGroups = [
+    ...failures.reduce(
+      (map, job) => map.set(job.batch_id, [...(map.get(job.batch_id) ?? []), job]),
+      new Map<string, DownloadJob[]>(),
+    ),
+  ].sort(([left], [right]) => left.localeCompare(right))
+  // Chips only appear above one group, so the filter has to read from the same condition or
+  // the list could narrow by a control the user cannot see.
+  const grouped = failureGroups.length > 1
+  const selectedGroup =
+    grouped && group !== null && failureGroups.some(([id]) => id === group) ? group : null
   const jobs = all
     .filter((job) =>
       tab === 'queue'
         ? activeJob(job)
         : tab === 'done'
           ? job.stage === 'done'
-          : job.stage === 'failed',
+          : job.stage === 'failed' && (selectedGroup === null || job.batch_id === selectedGroup),
     )
     .sort((a, b) => (tab === 'queue' ? a.created_at - b.created_at : b.updated_at - a.updated_at))
   const counts = {
@@ -830,8 +875,24 @@ export function DownloadsPage() {
               {count} · {message}
             </span>
           ))}
-          {jobs.length < counts.failed && <small>Showing the latest {jobs.length} below.</small>}
+          {selectedGroup === null && jobs.length < counts.failed && (
+            <small>Showing the latest {jobs.length} below.</small>
+          )}
         </section>
+      )}
+      {tab === 'failed' && grouped && (
+        <div className="failure-groups" role="group" aria-label="Failures by download group">
+          {failureGroups.map(([id, rows]) => (
+            <button
+              key={id}
+              className={selectedGroup === id ? 'selected' : ''}
+              aria-pressed={selectedGroup === id}
+              onClick={() => setGroup(selectedGroup === id ? null : id)}
+            >
+              {id === '' ? 'Single tracks' : batchName(rows)} ({rows.length})
+            </button>
+          ))}
+        </div>
       )}
       {tab === 'history' ? (
         <History />

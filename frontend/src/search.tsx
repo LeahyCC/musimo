@@ -18,7 +18,7 @@ import type { DownloadJob, MusicResult } from './api'
 import { ArtistDownloadButton } from './artist-download'
 import { DownloadButton, failureMessage, useJobs } from './downloads'
 import { InfiniteScroll } from './infinite-scroll'
-import { durationText, usePlayer } from './player'
+import { durationText, usePlayer, usePreviewPlayback } from './player'
 
 const tabs = ['top', 'track', 'album', 'artist'] as const
 type Tab = (typeof tabs)[number]
@@ -110,7 +110,7 @@ export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
 
 function Art({ item }: { item: MusicResult }) {
   const player = usePlayer()
-  const active = player.track?.id === item.id && player.playing
+  const active = usePreviewPlayback(item.id).playing
   return (
     <div className={`result-art ${item.kind === 'artist' ? 'artist-art' : ''}`}>
       {item.art ? <img src={item.art} alt="" loading="lazy" /> : <Disc3 />}
@@ -206,6 +206,7 @@ export function TrackRow({
   job?: DownloadJob
 }) {
   const player = usePlayer()
+  const playing = usePreviewPlayback(item.id).playing
   return (
     <div
       className={`track-row${selected ? ' selected-track' : ''}`}
@@ -237,7 +238,7 @@ export function TrackRow({
       <span className="track-duration">{durationText(item.duration)}</span>
       <Badge item={item} job={job} />
       <button className="text-preview" onClick={() => player.play(item)}>
-        {item.preview ? 'Preview' : 'Find preview'}
+        {playing ? 'Pause' : item.preview ? 'Preview' : 'Find preview'}
       </button>
       <DownloadButton item={item} />
     </div>
@@ -518,9 +519,10 @@ function ResultsSection({
 
 function PreviewButton({ item }: { item: MusicResult }) {
   const player = usePlayer()
+  const active = usePreviewPlayback(item.id).playing
   return (
     <button className="button primary" onClick={() => player.play(item)}>
-      <Play size={16} /> Preview
+      {active ? <Pause size={16} /> : <Play size={16} />} {active ? 'Pause' : 'Preview'}
     </button>
   )
 }
