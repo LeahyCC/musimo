@@ -131,7 +131,16 @@ test('card links and download controls work independently in a natural-height gr
   await page.goBack()
   await expect(cards).toHaveCount(13)
   await expect(cards.first().getByText('1 queued')).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Open queue, 1 active downloads' })).toBeVisible()
+  // A phone carries the count on the Downloads item in its bottom bar; wider layouts float a dock.
+  const dock = page.getByRole('button', { name: 'Open queue, 1 active downloads' })
+  if (isMobile) {
+    await expect(dock).toBeHidden()
+    await expect(
+      page.getByRole('navigation', { name: 'Main navigation' }).locator('.nav-badge'),
+    ).toHaveText(/^,?\s*1\s*active$/)
+  } else {
+    await expect(dock).toBeVisible()
+  }
   await cards.first().click({ position: { x: 12, y: 60 } })
   await expect(page).toHaveURL(/\/albums\/42$/)
 })

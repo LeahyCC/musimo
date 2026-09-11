@@ -328,7 +328,7 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
   expect(attempts).toBe(2)
 })
 
-test('preview playback, volume and navigation remain usable', async ({ page }) => {
+test('preview playback, volume and navigation remain usable', async ({ page, isMobile }) => {
   await page.route('**/api/preview/101?*', (route) =>
     route.fulfill({
       json: { url: '/assets/e2e-silence.wav', source: 'Generated' },
@@ -336,24 +336,36 @@ test('preview playback, volume and navigation remain usable', async ({ page }) =
   )
 
   await page.goto('/search?q=Fixture&tab=track')
-  await page.getByRole('button', { name: 'Find preview Test recording' }).click()
   const player = page.getByRole('contentinfo')
-  const audio = player.locator('audio')
+  // A phone shows no footer until something plays; it would only take room from the list.
+  if (isMobile) await expect(player).toBeHidden()
+  await page.getByRole('button', { name: 'Find preview Test recording' }).click()
+  // Found by class, not role: the phone hides the idle footer, and the closed state is checked.
+  const audio = page.locator('footer.live-player audio')
   await expect(player.getByRole('slider', { name: 'Preview position' })).toBeEnabled()
   await expect(player.getByRole('button', { name: 'Pause preview', exact: true })).toBeVisible()
   await player.getByRole('button', { name: 'Pause preview', exact: true }).click()
   await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true)
   const volume = player.getByRole('slider', { name: 'Preview volume' })
-  await volume.focus()
-  await volume.press('Home')
-  await volume.press('ArrowRight')
-  await expect(volume).toHaveValue('0.01')
-  await expect
-    .poll(() => audio.evaluate((element: HTMLAudioElement) => element.volume))
-    .toBeCloseTo(0.01)
-  await player.getByRole('button', { name: 'Mute preview', exact: true }).click()
-  await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.muted)).toBe(true)
-  await player.getByRole('button', { name: 'Unmute preview', exact: true }).click()
+  if (isMobile) {
+    // The phone mini player is one row: play, close and a seek bar along its top edge. Volume
+    // and restart are left to the device and the Now Playing stage.
+    await expect(volume).toBeHidden()
+    await expect(player.getByRole('button', { name: 'Restart preview' })).toBeHidden()
+    const box = await player.boundingBox()
+    expect(box?.height ?? 0).toBeLessThan(90)
+  } else {
+    await volume.focus()
+    await volume.press('Home')
+    await volume.press('ArrowRight')
+    await expect(volume).toHaveValue('0.01')
+    await expect
+      .poll(() => audio.evaluate((element: HTMLAudioElement) => element.volume))
+      .toBeCloseTo(0.01)
+    await player.getByRole('button', { name: 'Mute preview', exact: true }).click()
+    await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.muted)).toBe(true)
+    await player.getByRole('button', { name: 'Unmute preview', exact: true }).click()
+  }
   const position = player.getByRole('slider', { name: 'Preview position' })
   await position.focus()
   await position.press('ArrowRight')
@@ -363,14 +375,22 @@ test('preview playback, volume and navigation remain usable', async ({ page }) =
   await player.getByRole('link', { name: 'Test recording', exact: true }).click()
   await expect(page).toHaveURL(/\/albums\/42\?track=101/)
   await expect(player.getByRole('link', { name: 'Test recording', exact: true })).toBeVisible()
-  await expect(volume).toHaveValue('0.01')
-  await player.getByRole('button', { name: 'Restart preview' }).click()
-  await expect.poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false)
+  if (!isMobile) {
+    await expect(volume).toHaveValue('0.01')
+    await player.getByRole('button', { name: 'Restart preview' }).click()
+    await expect
+      .poll(() => audio.evaluate((element: HTMLAudioElement) => element.paused))
+      .toBe(false)
+  }
   await player.getByRole('button', { name: 'Close preview' }).click()
   await expect(audio).not.toHaveAttribute('src')
-  await expect(player.getByRole('button', { name: 'Play preview', exact: true })).toBeDisabled()
-  await page.reload()
-  await expect(volume).toHaveValue('0.01')
+  if (isMobile) {
+    await expect(player).toBeHidden()
+  } else {
+    await expect(player.getByRole('button', { name: 'Play preview', exact: true })).toBeDisabled()
+    await page.reload()
+    await expect(volume).toHaveValue('0.01')
+  }
 })
 
 test('artist review counts selections, excludes failed albums and retries submission', async ({
