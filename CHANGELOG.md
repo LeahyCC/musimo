@@ -4,7 +4,7 @@
 
 ### UI and accessibility
 
-- Make every screen work on a phone: mini player, bottom-bar download count, safe-area insets, 44px touch targets, no focus zoom, tabs and sheets that fit
+- Make every screen work on a phone: mini player, bottom-bar download count, safe-area insets, 44px touch targets, no focus zoom, tabs and sheets that fit (#48)
 
 ## 0.4.0 (2026-09-10)
 
