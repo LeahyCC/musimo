@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### UI and accessibility
+
+- Make every screen work on a phone: mini player, bottom-bar download count, safe-area insets, 44px touch targets, no focus zoom, tabs and sheets that fit (#48)
+
 ## 0.4.0 (2026-09-10)
 
 First tagged release of Musimo. This release provides search, library indexing, download workers, queue controls, album batches, Navidrome library playback and playlist management.
