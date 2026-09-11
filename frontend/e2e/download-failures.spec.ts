@@ -465,7 +465,9 @@ test('long titles and labels stay inside the page', async ({ page }) => {
   const chipBox = await chip.boundingBox()
   const groupsBox = await groups.boundingBox()
   if (!chipBox || !groupsBox) throw new Error('Missing chip measurements')
-  expect(chipBox.height).toBeLessThan(40)
+  // One line of 12px text with its padding is under 40px; a touch screen pads the chip to a
+  // 44px target, and a second line would put either past 48.
+  expect(chipBox.height).toBeLessThan(48)
   expect(chipBox.x + chipBox.width).toBeLessThanOrEqual(groupsBox.x + groupsBox.width + 1)
 })
 

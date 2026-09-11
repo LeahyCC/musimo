@@ -269,7 +269,10 @@ test('library playback opens the full player and starts AudioMuse radio', async 
   await page.locator('.live-player').getByRole('link', { name: 'Clear Water' }).click()
   await expect(page).toHaveURL(/\/library\/albums\/album-1$/)
 
-  await page.getByRole('link', { name: 'Open Now Playing' }).click()
+  // The phone mini player has no maximise control; its title is the way in.
+  if (isMobile)
+    await page.locator('.live-player').getByRole('link', { name: 'First Light' }).click()
+  else await page.getByRole('link', { name: 'Open Now Playing' }).click()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
   await expect(page.getByText('Morning finds the water')).toBeVisible()
   await page.getByRole('button', { name: 'Start AudioMuse radio' }).click()

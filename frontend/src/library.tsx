@@ -1690,16 +1690,22 @@ export function NowPlayingPage() {
               </>
             )}
           </p>
-          {capabilities.data?.sonic_similarity && (
-            <button
-              className="button primary"
-              onClick={() => audioMuse.mutate()}
-              disabled={audioMuse.isPending}
-            >
-              <RadioIcon size={16} />{' '}
-              {audioMuse.isPending ? 'Building radio…' : 'Start AudioMuse radio'}
+          <div className="button-row now-actions">
+            {capabilities.data?.sonic_similarity && (
+              <button
+                className="button primary"
+                onClick={() => audioMuse.mutate()}
+                disabled={audioMuse.isPending}
+              >
+                <RadioIcon size={16} />{' '}
+                {audioMuse.isPending ? 'Building radio…' : 'Start AudioMuse radio'}
+              </button>
+            )}
+            {/* The footer's own add button is hidden on phones, so the page offers one too. */}
+            <button className="button" onClick={player.openPlaylistPicker}>
+              <Plus size={16} /> Add to playlist
             </button>
-          )}
+          </div>
           {audioMuse.isError && <p className="error">{audioMuse.error.message}</p>}
         </div>
       </section>

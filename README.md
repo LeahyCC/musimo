@@ -195,7 +195,7 @@ Artist pages include an All songs subpage at `/library/artists/{id}/songs` and a
 
 The linked liked playlist is always listed, sorts first, cannot be deleted, and is required for the thumbs up button to work. Its identity is stored in the SQLite table `linked_playlists`. An existing playlist named Liked is adopted when none is stored.
 
-The add to playlist picker appears in the footer player and shows 25 rows with a filter box. The liked playlist is excluded from the picker. Inline New playlist is available with the current song. The Add button toggles to Remove when that song is already in the playlist.
+The add to playlist picker opens from the footer player, or from Now Playing on a phone, and shows 25 rows with a filter box. The liked playlist is excluded from the picker. Inline New playlist is available with the current song. The Add button toggles to Remove when that song is already in the playlist.
 
 The Now Playing stage offers full screen in the tab and a popout floating window. Both are available for library tracks only; catalog previews show "Nothing playing yet."
 
