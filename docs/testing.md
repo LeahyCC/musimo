@@ -59,7 +59,9 @@ Tests use one worker because settings and queue controls belong to the installat
 npm run test:e2e:report --prefix frontend
 ```
 
-Spec files: `e2e/a11y.spec.ts`, `e2e/album.spec.ts`, `e2e/app.spec.ts`, `e2e/cards.spec.ts`, `e2e/download-failures.spec.ts`, `e2e/download-options.spec.ts`, `e2e/library-controls.spec.ts`, `e2e/now-playing-popout.spec.ts`, `e2e/player.spec.ts`, `e2e/playlists.spec.ts`, plus support files `e2e/env.ts`, `e2e/library-fixtures.ts`, `e2e/queue-fixtures.ts`, `e2e/setup.ts`.
+Spec files: `e2e/a11y.spec.ts`, `e2e/album.spec.ts`, `e2e/app.spec.ts`, `e2e/cards.spec.ts`, `e2e/download-failures.spec.ts`, `e2e/download-options.spec.ts`, `e2e/library-controls.spec.ts`, `e2e/now-playing-popout.spec.ts`, `e2e/phone.spec.ts`, `e2e/player.spec.ts`, `e2e/playlists.spec.ts`, plus support files `e2e/env.ts`, `e2e/library-fixtures.ts`, `e2e/queue-fixtures.ts`, `e2e/setup.ts`.
+
+`e2e/phone.spec.ts` runs on the mobile project only and covers the phone layout: the five library tabs and four download tabs each fit one row at 360px, the mini player is one row that hands shuffle, repeat and add to playlist to Now Playing, the Settings save bar and the active download count both clear the bottom bar, touch targets are 44px with no text control under 16px (which would make iOS Safari zoom), the format choice sits in the download options popover, and the artist download selection is a bottom sheet. The preview, playlist picker and player checks in the other specs branch on `isMobile` where the phone player hides a control.
 
 Test files: `tests/test_activity.py`, `tests/test_artist_downloads.py`, `tests/test_downloads.py`, `tests/test_enrichment.py`, `tests/test_errors.py`, `tests/test_foundation.py`, `tests/test_player.py`, `tests/test_reliability.py`, `tests/test_search.py`, `tests/test_worker.py`.
 

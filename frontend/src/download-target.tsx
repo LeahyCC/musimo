@@ -14,6 +14,18 @@ export function formatLabel(format: string): string {
         : 'MP3 · converted'
 }
 
+/** The short format choices a track's download controls offer, in one place. */
+export function FormatOptions() {
+  return (
+    <>
+      <option value="original">Original</option>
+      <option value="m4a">M4A</option>
+      <option value="opus">Opus</option>
+      <option value="mp3">MP3</option>
+    </>
+  )
+}
+
 export function DownloadTarget({ format, target }: { format?: string; target?: string }) {
   const settings = useQuery({
     queryKey: ['settings'],

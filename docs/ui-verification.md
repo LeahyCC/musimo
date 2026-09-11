@@ -57,8 +57,30 @@ Still open after the walk:
 - Search sections still offer "View all" when they have no results.
 - Settings renders its section headings and the "Settings are up to date" bar before settings have loaded or when they fail to load.
 - A library request failure retries for several seconds before the inline error appears, and the loading line sits above the "Fresh in your library" heading rather than under it.
-- On a phone the artist download sheet's album list sits below the summary and scrolls inside the sheet with nothing in view to say so.
 - Long titles in the Now Playing "Up next" list wrap across several lines on desktop.
+
+## Phone walk, 11 September 2026
+
+A second temporary Playwright script visited every screen at 390 by 844 and 360 by 780 with touch emulation against a local uvicorn backend serving the built frontend, using the same invented catalog, library, player and queue fixtures with long titles and a three-job queue. Each screen was screenshotted and probed for page-level sideways scroll, elements past the viewport edge, text under 11px, text controls under 16px and tap targets under 44px. Screens covered the same list as the desktop walk plus the download options popover, the artist download sheet, a preview and a library track in the footer, the playlist picker, the queue sheet, the genre menu, the playlist form and a dirty Settings form.
+
+Fixed in that pass, each with a check in `e2e/phone.spec.ts` or the spec for its screen:
+
+- The footer player took two or three rows (114 to 160px) on top of the 64px bottom bar, and rendered even with nothing playing. It is now a one-row mini player with a seek bar along its top edge, hidden while idle. Previous, shuffle, repeat, like, volume and add to playlist moved to the Now Playing stage and page.
+- The queue dock and the Settings save bar were placed from the footer height alone, so both sat behind the footer on a phone; the save bar was invisible with unsaved changes. Both now add the bottom bar and home-indicator inset. On a phone the dock is replaced by a count on the Downloads item in the bottom bar, since a floating pill covered the Save button and the last row's controls.
+- The five library tabs overflowed sideways with Playlists cut off, and the four download tabs with counts wrapped at 360px; both fit one row now.
+- The track row's format select left a long title about 108px; on a phone the format lives in the download options popover and the title has the row.
+- The search input, settings fields, format and filter selects and playlist inputs were 11 to 13px, which makes iOS Safari zoom the page when one gains focus; touch screens now get 16px text controls.
+- Footer and stage icon buttons were 36px on touch screens (a more specific desktop rule beat the touch rule), the play button 35px, card play 38px, chips, tabs, text links and inline Retry buttons under 30px; all are 44px on touch screens, with the touch rules last in the stylesheet so they win.
+- The artist download sheet was a centred box whose album list scrolled with nothing to say so; on a phone it is a bottom sheet with a fade above its sticky footer, and a long mount path no longer widens its Download to select, or the download options popover's.
+- The explicit badge was the first thing cut off beside a long track title; it stays visible after the ellipsis.
+- The Library's inline load and detail errors had no styling at all.
+- 7 to 10px text (welcome tag, footer byline, ownership badges, event times, save bar status, artist download eyebrow) is 10 to 12px on phones, and the unused welcome, record, setup grid and queue pill rules are gone.
+- The page declares `viewport-fit=cover`, and the bottom bar, footer, sheets and top bar pad by the safe-area insets so a phone installed to the home screen keeps its controls clear of the home indicator and notch.
+- Inner scrollers (track lists, the lyrics panel, filter menus, sheets and popovers) contain overscroll so a flick does not carry into the page, and the virtual track and job lists size themselves from the room left under the top bar and above the player and bottom bar.
+
+Looked at and left as they are: inline text links (track titles, artist links, the destination path) stay text-sized, as WCAG allows for links in running text; the playlist picker stays a centred modal because a bottom-anchored sheet with a text field at its foot sits under the on-screen keyboard; the Now Playing hero heading still wraps a very long title across several lines.
+
+Not verified on a device: the safe-area insets and the 16px zoom rule were reasoned from platform behaviour and checked only for their CSS effect in Chromium emulation, which reports no insets. A real notched iPhone in standalone mode and an Android phone with the keyboard open still need a look.
 
 ## Known limits
 
@@ -76,13 +98,13 @@ Checked 10 September 2026. Automated and manual accessibility checks cover keybo
 
 **Keyboard navigation:** Virtual lists (tracks, download queue) maintain focus without remounting on filter changes, with deliberate scroll reset when filters actually change. Escape key closes FilterMenu popovers. All icon-only buttons have aria-label attributes. TrackList uses stable keys to avoid losing focus on filter keystrokes.
 
-**Touch targets:** Under `(pointer: coarse)` media query, all interactive elements meet 44px minimum: icon buttons, job buttons, text preview button, download action select, and row actions. Desktop density unchanged.
+**Touch targets:** Under `(pointer: coarse)` media query, all interactive elements meet 44px minimum: icon buttons, job buttons, text preview button, download action select, row actions, tabs, chips, text links, inline Retry buttons, filter rows and form controls. The touch rules are the last block in the stylesheet so they outrank the size each control sets for itself. Text controls are 16px on touch screens so iOS Safari does not zoom on focus. Desktop density unchanged.
 
 **Screen reader:** Virtual lists announce with role="region" and aria-label. Queue count changes announce via aria-live="polite" live region. Library tabs carry aria-pressed state. TrackRow elements have aria-current when selected.
 
 **Contrast and text size:** Minimum text size raised from 9px to 10px for .nav-link and .connection at narrow widths to meet WCAG AA minimums.
 
-**Dynamic layout:** Player footer height tracked via ResizeObserver and published as --player-height CSS variable. Save bar and queue dock derive offsets from this variable to prevent overlap when footer height changes (library track playing, connection banner shown, error expanded).
+**Dynamic layout:** Player footer height tracked via ResizeObserver and published as --player-height CSS variable. Save bar, queue dock, main padding and the virtual lists derive offsets from this variable plus --nav-height (the phone bottom bar) and the safe-area insets, to prevent overlap when footer height changes (library track playing, connection banner shown, error expanded, footer hidden while idle on a phone).
 
 **Manual checks still needed:** Screen reader announcement quality across all flows (not just presence of ARIA attributes). Keyboard-only navigation completeness across all interactions. Focus visibility under different browser/OS high contrast modes. Touch target effectiveness on actual touch devices (automated check verifies size only).
 

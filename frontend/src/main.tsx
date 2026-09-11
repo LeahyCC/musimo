@@ -54,7 +54,7 @@ import type { SettingKey } from './api'
 import { librarySchema } from './api'
 import { namingSchema } from './api'
 import { controlsSchema, jobSchema } from './api'
-import { DownloadsPage, QueueDock, updateJob } from './downloads'
+import { activeCount, DownloadsPage, QueueDock, updateJob, useJobs } from './downloads'
 import type { QueueData } from './downloads'
 import { LibraryPanel } from './library-panel'
 import { PopoutProvider } from './now-playing-popout'
@@ -184,6 +184,9 @@ function Shell() {
   const location = useRouterState({ select: (s) => s.location })
   const params = new URLSearchParams(location.searchStr)
   const [text, setText] = useState(params.get('q') ?? '')
+  // The phone bottom bar carries the active download count that the dock shows elsewhere.
+  // Selecting the count keeps progress ticks from re-rendering the whole shell.
+  const activeDownloads = useJobs(activeCount).data ?? 0
 
   useEffect(() => {
     clearTimeout(debounce.current)
@@ -233,6 +236,13 @@ function Shell() {
               <Icon size={19} />
               <span>{label}</span>
               {to === '/search' && <kbd>/</kbd>}
+              {to === '/downloads' && activeDownloads > 0 && (
+                <span className="nav-badge">
+                  <span className="sr-only">, </span>
+                  {activeDownloads}
+                  <span className="sr-only"> active</span>
+                </span>
+              )}
             </Link>
           ))}
         </nav>

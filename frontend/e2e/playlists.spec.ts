@@ -174,15 +174,27 @@ test('a playlist page counts, plays, shuffles and renames its songs', async ({ p
   await expect(results.getByRole('button', { name: 'Remove Beacon from Long drive' })).toBeVisible()
 })
 
+/** The footer's add button on wide screens; on a phone the Now Playing page offers it. */
+async function openPicker(page: Page, isMobile: boolean, title: string) {
+  if (!isMobile) {
+    await page.getByRole('button', { name: `Add ${title} to a playlist` }).click()
+    return
+  }
+  await expect(page.getByRole('button', { name: `Add ${title} to a playlist` })).toBeHidden()
+  await page.locator('.live-player').getByRole('link', { name: title }).click()
+  await page.getByRole('button', { name: 'Add to playlist' }).click()
+}
+
 test('the playlist picker centres, toggles membership and removes other songs', async ({
   page,
+  isMobile,
 }) => {
   await playlistFixtures(page)
   await page.goto('/library/albums/album-1')
   await page.getByRole('button', { name: 'Play all' }).click()
   await expect(page.locator('.live-player')).toContainText('Beacon')
 
-  await page.getByRole('button', { name: 'Add Beacon to a playlist' }).click()
+  await openPicker(page, isMobile, 'Beacon')
   const sheet = page.getByRole('dialog', { name: 'Add track to playlist' })
   await expect(sheet).toBeVisible()
   const box = await sheet.boundingBox()
@@ -215,7 +227,7 @@ test('the playlist picker centres, toggles membership and removes other songs', 
   await expect(page.locator('.library-tracks')).toContainText('Beacon')
 })
 
-test('the picker keeps long names inside the sheet', async ({ page }) => {
+test('the picker keeps long names inside the sheet', async ({ page, isMobile }) => {
   await playlistFixtures(page)
   const long = {
     id: 'long',
@@ -238,7 +250,7 @@ test('the picker keeps long names inside the sheet', async ({ page }) => {
   await page.goto('/library/albums/album-1')
   await page.getByRole('button', { name: 'Play all' }).click()
   await expect(page.locator('.live-player')).toContainText('Beacon')
-  await page.getByRole('button', { name: 'Add Beacon to a playlist' }).click()
+  await openPicker(page, isMobile, 'Beacon')
   const sheet = page.getByRole('dialog', { name: 'Add track to playlist' })
   const row = sheet.locator('.playlist-picker-row').filter({ hasText: 'An Unreasonably' })
   await expect(row).toBeVisible()

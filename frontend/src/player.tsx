@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { ReactNode } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -78,6 +78,8 @@ type Playback = {
   cycleRepeat: () => void
   liked: LikedControl
   previewState: (trackId: number) => PreviewState | undefined
+  /** Opens the add-to-playlist sheet; a phone's mini player has no button of its own for it. */
+  openPlaylistPicker: () => void
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -107,6 +109,7 @@ const PlayerContext = createContext<Playback>({
   cycleRepeat: () => undefined,
   liked: { isLiked: false, canToggle: false, busy: false, toggle: () => undefined },
   previewState: () => undefined,
+  openPlaylistPicker: () => undefined,
 })
 export const usePlayer = () => useContext(PlayerContext)
 
@@ -663,23 +666,34 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     navigator.mediaSession.setActionHandler('previoustrack', previous)
   }, [libraryTrack, shuffle, repeat])
 
-  useEffect(() => {
-    if (!footerRef.current) return
-    const observer = new ResizeObserver((entries) => {
-      for (const entry of entries) {
-        const height = entry.borderBoxSize[0]?.blockSize ?? entry.contentRect.height
-        document.documentElement.style.setProperty('--player-height', `${height}px`)
-      }
-    })
-    observer.observe(footerRef.current)
-    return () => observer.disconnect()
-  }, [])
-
   const activeTitle = libraryTrack?.title ?? track?.title
   const activeArtist = libraryTrack?.artist ?? track?.artist
   const activeAlbum = libraryTrack?.album ?? track?.album
   const activeArt = libraryTrack ? artUrl(libraryTrack) : track?.art
   const isLibrary = Boolean(libraryTrack)
+  const seekMax = length || 30
+  // The phone mini player draws the seek bar's played portion from this, since WebKit has no
+  // pseudo-element for a range's progress.
+  const seekStyle = {
+    '--progress': `${Math.min(100, (Math.min(position, seekMax) / seekMax) * 100).toFixed(2)}%`,
+  } as CSSProperties
+
+  useEffect(() => {
+    const footer = footerRef.current
+    if (!footer) return
+    const publish = () => {
+      document.documentElement.style.setProperty(
+        '--player-height',
+        `${footer.getBoundingClientRect().height}px`,
+      )
+    }
+    // A hidden footer (a phone with nothing playing) gets no first observation, so the
+    // height is published now and again whenever the footer shows or hides.
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(footer)
+    return () => observer.disconnect()
+  }, [activeTitle])
 
   function openPlaylistDialog() {
     setPlaylistSearch('')
@@ -763,10 +777,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           toggle: toggleLikedTrack,
         },
         previewState: (trackId: number) => previewStates.get(trackId),
+        openPlaylistPicker: openPlaylistDialog,
       }}
     >
       {children}
-      <footer ref={footerRef} className="player live-player">
+      <footer ref={footerRef} className={`player live-player${activeTitle ? '' : ' idle'}`}>
         <div className="now-playing">
           {activeArt ? <img src={activeArt} alt="" /> : <Disc3 size={30} />}
           <span>
@@ -858,7 +873,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         )}
         <div className="playback-controls">
           {isLibrary ? (
-            <button className="icon-button" aria-label="Previous track" onClick={previous}>
+            <button
+              className="icon-button previous-track"
+              aria-label="Previous track"
+              onClick={previous}
+            >
               <SkipBack size={17} />
             </button>
           ) : (
@@ -896,10 +915,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             aria-label={isLibrary ? 'Playback position' : 'Preview position'}
             type="range"
             min="0"
-            max={length || 30}
+            max={seekMax}
             step="0.1"
-            value={Math.min(position, length || 30)}
+            value={Math.min(position, seekMax)}
             disabled={!ready}
+            style={seekStyle}
             onChange={(event) => seek(Number(event.target.value))}
           />
           <span>{durationText(length)}</span>

@@ -16,6 +16,7 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
+import { z } from 'zod'
 
 import {
   api,
@@ -27,7 +28,7 @@ import {
   settingsSchema,
 } from './api'
 import type { DownloadJob, MusicResult } from './api'
-import { formatLabel } from './download-target'
+import { formatLabel, FormatOptions } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
 
 export type QueueData = {
@@ -79,7 +80,9 @@ export function updateJob(client: QueryClient, job: DownloadJob) {
   })
 }
 
-export function useJobs() {
+type Jobs = z.infer<typeof jobsSchema>
+/** The queue; `select` narrows it so a caller re-renders only when its own slice changes. */
+export function useJobs<T = Jobs>(select?: (data: Jobs) => T) {
   const client = useQueryClient()
   return useQuery({
     queryKey: ['jobs'],
@@ -92,8 +95,10 @@ export function useJobs() {
       return { ...data, jobs: [...rows.values()] }
     },
     staleTime: Infinity,
+    select,
   })
 }
+export const activeCount = (data: QueueData) => data.jobs.filter(activeJob).length
 const bytes = (value: number) =>
   value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.round(value / 1024)} KB`
 
@@ -228,10 +233,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         value={selected}
         onChange={(e) => setFormat(e.target.value)}
       >
-        <option value="original">Original</option>
-        <option value="m4a">M4A</option>
-        <option value="opus">Opus</option>
-        <option value="mp3">MP3</option>
+        <FormatOptions />
       </select>
       <button
         className="icon-button"
@@ -307,6 +309,15 @@ export function DownloadButton({ item }: { item: MusicResult }) {
                   {disk.path}
                 </option>
               ))}
+          </select>
+        </label>
+        {/* The same choice as the row's select; a phone hides that one to give the title room
+            and shows this instead. It follows the destination so the focus rule above lands on
+            the same control everywhere. */}
+        <label className="download-options-format">
+          Format
+          <select value={selected} onChange={(e) => setFormat(e.target.value)}>
+            <FormatOptions />
           </select>
         </label>
         <small>Original keeps source quality. Conversion does not improve it.</small>

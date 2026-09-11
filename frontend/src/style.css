@@ -14,6 +14,17 @@
   --muted: #93a39b;
   --line: #2a3630;
   --accent: #c3e4a2;
+  --sidebar-width: 215px;
+  --topbar-height: 87px;
+  /* The phone layout turns the sidebar into a bottom bar of this height; 0 elsewhere. */
+  --nav-height: 0px;
+  /* The footer player publishes its measured height here so bars and docks can clear it. */
+  --player-height: 75px;
+  /* Notch and home-indicator insets; 0 until viewport-fit=cover meets a device that has them. */
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
 }
 * {
   box-sizing: border-box;
@@ -89,9 +100,9 @@ p {
   min-height: 100vh;
 }
 .sidebar {
-  width: 215px;
+  width: var(--sidebar-width);
   position: fixed;
-  inset: 0 auto 0 0;
+  inset: 0 auto 0 var(--safe-left);
   background: #0e1312;
   padding: 33px 19px 98px;
   border-right: 1px solid var(--line);
@@ -141,6 +152,11 @@ p {
   font-size: 12px;
   opacity: 0.6;
 }
+/* Active download count on the Downloads item. Only the phone bottom bar shows it; wider
+   layouts have the floating queue dock instead. */
+.nav-badge {
+  display: none;
+}
 .sidebar-bottom {
   margin: auto 7px 0;
   color: #a1afa7;
@@ -176,12 +192,13 @@ p {
   color: var(--accent);
 }
 .workspace {
-  margin-left: 215px;
+  margin-left: calc(var(--sidebar-width) + var(--safe-left));
+  padding-right: var(--safe-right);
 }
 .topbar {
-  height: 87px;
+  height: calc(var(--topbar-height) + var(--safe-top));
   border-bottom: 1px solid var(--line);
-  padding: 0 43px;
+  padding: var(--safe-top) 43px 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -258,78 +275,6 @@ main {
   margin-bottom: 32px;
   max-width: 650px;
 }
-.tabs {
-  display: flex;
-  align-items: center;
-  gap: 27px;
-  border-bottom: 1px solid var(--line);
-  margin-bottom: 31px;
-  color: #8b9b91;
-  font-size: 13px;
-}
-.tabs > span {
-  padding: 13px 0 15px;
-}
-.tabs .selected {
-  border-bottom: 2px solid var(--accent);
-  color: var(--accent);
-}
-.tabs .phase-label {
-  margin-left: auto;
-  font-size: 10px;
-  color: #809087;
-}
-.welcome {
-  min-height: 290px;
-  display: flex;
-  align-items: center;
-  gap: 48px;
-  background: #1c2821;
-  border-radius: 10px;
-  padding: 40px;
-  overflow: hidden;
-}
-.record {
-  width: 215px;
-  height: 215px;
-  flex: 0 0 215px;
-  border-radius: 50%;
-  background: #101714;
-  border: 1px solid #445345;
-  display: grid;
-  place-items: center;
-  position: relative;
-}
-.record::before,
-.record::after {
-  content: '';
-  position: absolute;
-  inset: 13px;
-  border-radius: 50%;
-  border: 1px solid #2c3930;
-}
-.record::after {
-  inset: 27px;
-  border: 3px double #2c3930;
-}
-.record-label {
-  background: #a9bc87;
-  color: #1a2b1c;
-  width: 100px;
-  height: 100px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-direction: column;
-  gap: 7px;
-  transform: rotate(-12deg);
-}
-.record-label span {
-  font-size: 7px;
-  text-align: center;
-  letter-spacing: 1.3px;
-}
 .tag {
   display: inline-flex;
   align-items: center;
@@ -341,25 +286,11 @@ main {
   border-radius: 4px;
   white-space: nowrap;
 }
-.welcome h2 {
-  font-size: 31px;
-  line-height: 1.15;
-  font-weight: 500;
-  letter-spacing: -0.8px;
-  margin: 17px 0 13px;
-}
-.welcome p {
-  max-width: 420px;
-  font-size: 13px;
-}
 .button-row {
   display: flex;
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-}
-.welcome .button-row {
-  margin-top: 23px;
 }
 .button {
   display: inline-flex;
@@ -403,9 +334,6 @@ main {
 .text-link:hover {
   color: #e0f5ce;
 }
-.next-steps {
-  margin-top: 35px;
-}
 .section-heading {
   display: flex;
   align-items: center;
@@ -421,41 +349,11 @@ main {
   font-size: 9px;
   letter-spacing: 1.2px;
 }
-.setup-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 25px;
-}
-.setup-grid > * {
-  border-top: 1px solid #354336;
-  padding: 23px 5px 4px 0;
-}
-.setup-grid svg {
-  color: #aabda1;
-  width: 21px;
-}
-.setup-grid h3 {
-  margin: 16px 0 10px;
-}
-.setup-grid p {
-  font-size: 12px;
-  margin-bottom: 20px;
-}
-.setup-grid span {
-  display: inline-flex;
-  gap: 7px;
-  color: var(--accent);
-  font-size: 11px;
-  align-items: center;
-}
-.setup-grid .muted {
-  color: #8c9d92;
-}
 .player {
   position: fixed;
   bottom: 0;
-  right: 0;
-  left: 215px;
+  right: var(--safe-right);
+  left: calc(var(--sidebar-width) + var(--safe-left));
   height: 75px;
   background: #17201b;
   border-top: 1px solid #344035;
@@ -480,16 +378,6 @@ main {
   font-size: 10px;
   color: #8e9e93;
   margin-top: 5px;
-}
-.queue-pill {
-  font-size: 11px;
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  background: #26352b;
-  border: 1px solid #3b4b3d;
-  border-radius: 22px;
-  padding: 9px 13px;
 }
 .settings-layout {
   display: grid;
@@ -620,7 +508,9 @@ main {
 }
 .save-bar {
   position: sticky;
-  bottom: calc(var(--player-height, 88px) + 2px);
+  z-index: 4;
+  /* Clears the footer player, and on a phone the bottom bar and home indicator under it. */
+  bottom: calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 8px);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -931,6 +821,24 @@ meter::-webkit-meter-optimum-value {
   margin-left: 15px;
   text-decoration: underline;
 }
+/* Library load and detail failures: the message and its Retry share one row where they fit. */
+.inline-error {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin: 8px 0 18px;
+  padding: 13px;
+  color: #efbaa2;
+  font-size: 13px;
+  background: #39251f;
+  border-radius: 6px;
+}
+.inline-error > span {
+  flex: 1 1 200px;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
 .connection-banner {
   padding: 8px 43px;
   background: #342e1d;
@@ -960,36 +868,19 @@ meter::-webkit-meter-optimum-value {
   main {
     padding-top: 48px;
   }
-  .welcome {
-    min-height: 330px;
-    gap: 65px;
-  }
 }
 @media (max-width: 1100px) {
+  :root {
+    --sidebar-width: 184px;
+  }
   .sidebar {
-    width: 184px;
     padding-inline: 13px;
-  }
-  .workspace {
-    margin-left: 184px;
-  }
-  .player {
-    left: 184px;
   }
   .topbar {
     padding-inline: 27px;
   }
   main {
     padding-inline: 27px;
-  }
-  .welcome {
-    padding: 28px;
-    gap: 28px;
-  }
-  .record {
-    width: 170px;
-    height: 170px;
-    flex-basis: 170px;
   }
   .settings-layout {
     grid-template-columns: 1fr;
@@ -1009,11 +900,18 @@ meter::-webkit-meter-optimum-value {
   }
 }
 @media (max-width: 767px) {
+  :root {
+    --sidebar-width: 0px;
+    --nav-height: 64px;
+    --topbar-height: 60px;
+  }
+  /* The sidebar becomes a bottom bar. Its height and padding grow by the home-indicator inset so
+     the links stay above it on a phone installed to the home screen. */
   .sidebar {
     inset: auto 0 0;
     width: auto;
-    height: 64px;
-    padding: 0;
+    height: calc(var(--nav-height) + var(--safe-bottom));
+    padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
     border-right: 0;
     border-top: 1px solid var(--line);
     z-index: 20;
@@ -1034,111 +932,76 @@ meter::-webkit-meter-optimum-value {
     justify-content: center;
     flex-direction: column;
     gap: 5px;
-    font-size: 10px;
-    padding: 9px 2px;
+    font-size: 11px;
+    padding: 8px 2px;
     border-radius: 0;
   }
   .nav-link kbd {
     display: none;
   }
+  .nav-link {
+    position: relative;
+  }
+  .nav-badge {
+    position: absolute;
+    top: 5px;
+    left: calc(50% + 6px);
+    display: grid;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    place-items: center;
+    color: #172014;
+    font-size: 10px;
+    font-weight: 700;
+    background: #d9ff73;
+    border-radius: 9px;
+  }
   .workspace {
     margin: 0;
+    padding-right: 0;
   }
   .topbar {
-    height: 68px;
-    padding: 0 20px;
+    padding: var(--safe-top) calc(16px + var(--safe-right)) 0 calc(16px + var(--safe-left));
+    gap: 12px;
   }
   .search-input {
     width: 100%;
   }
   .search-input input {
-    font-size: 12px;
+    padding: 10px 0;
   }
   .search-input kbd {
     display: none;
   }
   .connection {
-    font-size: 10px;
+    font-size: 11px;
   }
   main {
-    padding: 28px 20px 150px;
+    /* The bottom padding follows the player and nav so the last row is never under them. */
+    padding: 24px calc(20px + var(--safe-right))
+      calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 32px)
+      calc(20px + var(--safe-left));
   }
   h1 {
     font-size: 27px;
+  }
+  .eyebrow {
+    font-size: 10px;
+  }
+  .tag,
+  .section-heading > span:not(.status-chip) {
+    font-size: 10px;
   }
   .page-heading {
     align-items: flex-start;
     flex-wrap: wrap;
     gap: 15px;
   }
-  .tabs {
-    gap: 23px;
-  }
-  .tabs .phase-label {
-    display: none;
-  }
-  .welcome {
-    padding: 25px;
-    gap: 18px;
-  }
-  .record {
-    width: 103px;
-    height: 103px;
-    flex-basis: 103px;
-  }
-  .record-label {
-    width: 58px;
-    height: 58px;
-  }
-  .record-label svg {
-    width: 23px;
-  }
-  .record-label span {
-    font-size: 5px;
-  }
-  .welcome h2 {
-    font-size: 25px;
-  }
-  .welcome p {
-    font-size: 12px;
-  }
-  .welcome .tag {
-    font-size: 7px;
-  }
-  .welcome .button-row {
-    gap: 14px;
-  }
-  .setup-grid {
-    grid-template-columns: 1fr;
-    gap: 8px;
-  }
-  .setup-grid > * {
-    padding: 19px 0;
-  }
-  .setup-grid h3 {
-    margin-top: 10px;
-  }
-  .setup-grid p {
-    margin-bottom: 11px;
-  }
   .player {
-    bottom: 64px;
+    bottom: calc(var(--nav-height) + var(--safe-bottom));
     left: 0;
-  }
-  .player > div > svg {
-    display: none;
-  }
-  .player > div {
-    font-size: 10px;
-  }
-  .player small {
-    font-size: 9px;
-    max-width: 180px;
-  }
-  .queue-pill {
-    font-size: 10px;
-    padding: 8px 10px;
-    gap: 6px;
+    right: 0;
   }
   .settings-layout {
     gap: 26px;
@@ -1153,11 +1016,10 @@ meter::-webkit-meter-optimum-value {
     font-size: 11px;
   }
   .save-bar {
-    bottom: calc(var(--player-height, 224px) + 2px);
     padding: 12px;
   }
   .save-bar > span {
-    font-size: 10px;
+    font-size: 12px;
   }
   .save-bar .button {
     white-space: nowrap;
@@ -1181,31 +1043,21 @@ meter::-webkit-meter-optimum-value {
     display: none;
   }
   .event-list time {
-    font-size: 9px;
-  }
-  .source-summary .text-link {
     font-size: 10px;
   }
+  .disk small {
+    font-size: 10px;
+  }
+  .source-summary .text-link {
+    font-size: 11px;
+  }
   .connection-banner {
-    padding-inline: 20px;
+    padding-inline: calc(20px + var(--safe-left)) calc(20px + var(--safe-right));
   }
 }
 @media (max-width: 420px) {
-  .welcome {
-    flex-direction: column;
-    align-items: flex-start;
-  }
-  .record {
-    display: none;
-  }
-  .welcome h2 br {
-    display: none;
-  }
   .versions {
     grid-template-columns: 1fr;
-  }
-  .player small {
-    max-width: 160px;
   }
   .event-list li {
     gap: 8px;
@@ -1476,10 +1328,16 @@ meter::-webkit-meter-optimum-value {
   min-width: 0;
   flex: 1;
 }
+/* A row, not a block: the explicit badge was the first thing an ellipsis cut off. */
 .track-title strong {
-  display: block;
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-size: 13px;
   font-weight: 500;
+}
+.track-title strong > a {
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -1505,6 +1363,7 @@ meter::-webkit-meter-optimum-value {
   color: var(--muted);
 }
 .explicit {
+  flex-shrink: 0;
   font-size: 9px;
   padding: 1px 4px;
   border-radius: 2px;
@@ -1525,9 +1384,20 @@ meter::-webkit-meter-optimum-value {
   width: 65px;
 }
 .virtual-list {
-  max-height: 620px;
+  /* The first height stands in where dvh is unknown; the second wins everywhere else. */
   height: min(620px, 65vh);
+  /* The room left under the top bar and above the player and bottom bar, so the list never
+     has to be scrolled out from under either. */
+  height: min(
+    620px,
+    calc(
+      100dvh - var(--topbar-height) - var(--player-height) - var(--nav-height) -
+        var(--safe-bottom) - 72px
+    )
+  );
+  min-height: 280px;
   overflow: auto;
+  overscroll-behavior: contain;
   contain: strict;
 }
 .empty-results {
@@ -1715,7 +1585,7 @@ meter::-webkit-meter-optimum-value {
 }
 .artist-download-action small {
   color: var(--muted);
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.12em;
   text-transform: uppercase;
@@ -1849,6 +1719,19 @@ meter::-webkit-meter-optimum-value {
     flex: 1;
     padding: 9px;
   }
+  /* Four tabs with counts do not fit one 360px row at the desktop size, so they share it. */
+  .result-tabs.download-tabs {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 4px;
+  }
+  .result-tabs.download-tabs button {
+    min-width: 0;
+    padding: 10px 2px;
+    font-size: 13px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   .music-grid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 12px;
@@ -1858,7 +1741,6 @@ meter::-webkit-meter-optimum-value {
     padding: 6px 0;
   }
   .track-year,
-  .download-later,
   .text-preview {
     display: none;
   }
@@ -1866,28 +1748,8 @@ meter::-webkit-meter-optimum-value {
     font-size: 11px;
   }
   .track-row .ownership {
-    font-size: 9px;
-    padding: 4px;
-  }
-  .art-play {
-    opacity: 1;
-    background: #0003;
-  }
-  .live-player {
-    padding: 10px 14px;
-    gap: 10px;
-  }
-  .live-player .playback-controls input,
-  .playback-controls > span,
-  .preview-label {
-    display: none;
-  }
-  .now-playing img {
-    width: 36px;
-    height: 36px;
-  }
-  .now-playing small {
-    max-width: 240px;
+    font-size: 10px;
+    padding: 4px 6px;
   }
   .album-header {
     align-items: flex-start;
@@ -1985,54 +1847,100 @@ meter::-webkit-meter-optimum-value {
   }
 }
 @media (max-width: 767px) {
+  /* Phones get a mini player: one row (art, title, play, next, close) with a slim seek bar
+     along its top edge. Volume, shuffle, repeat, like and add to playlist live on the Now
+     Playing stage, which the title opens. An idle footer would only take space here. */
   .live-player {
     height: auto;
-    min-height: 114px;
-    flex-wrap: wrap;
-    gap: 4px 8px;
-    padding: 8px 12px;
+    min-height: 60px;
+    gap: 6px;
+    padding: 10px calc(12px + var(--safe-right)) 8px calc(12px + var(--safe-left));
+  }
+  .live-player.idle {
+    display: none;
   }
   .live-player .now-playing {
-    flex-basis: calc(100% - 44px);
+    gap: 10px;
+    font-size: 12px;
   }
-  .live-player .close-preview {
-    order: 0;
+  .now-playing img {
+    width: 40px;
+    height: 40px;
   }
-  .live-player .playback-controls {
-    order: 1;
-    flex: 1;
-    gap: 6px;
+  .now-playing strong {
+    font-size: 13px;
   }
-  .live-player .playback-controls input {
-    display: block;
-    min-width: 40px;
-    width: 50px;
-    flex: 1;
-  }
-  .live-player .playback-controls > span {
-    display: inline;
-    flex-shrink: 0;
-  }
-  /* Shares a row with volume-controls; without an explicit order it wraps onto its own
-     line (the now-playing/close row only budgets 44px for a single trailing icon), pushing
-     the player past its fixed height and behind the bottom nav. */
-  .live-player .playlist-actions {
-    order: 2;
-  }
-  .live-player .volume-controls {
-    order: 2;
-  }
-  .volume-controls input {
-    width: 55px;
-  }
+  .now-playing small,
   .now-playing .playback-notice {
     max-width: 100%;
+    margin-top: 2px;
+    font-size: 11px;
+    line-height: 1.3;
+  }
+  .live-player .playlist-actions,
+  .live-player .volume-controls,
+  .live-player .restart-preview,
+  .live-player .previous-track,
+  .live-player .playback-controls > span,
+  .preview-label {
+    display: none;
+  }
+  .live-player .playback-controls {
+    gap: 2px;
+  }
+  .live-player .playback-controls input[type='range'] {
+    display: block;
+    appearance: none;
+    position: absolute;
+    top: -6px;
+    left: 0;
+    width: 100%;
+    height: 13px;
+    margin: 0;
+    background: transparent;
+    outline-offset: -2px;
+  }
+  .live-player .playback-controls input[type='range']::-webkit-slider-runnable-track {
+    height: 3px;
+    background: linear-gradient(
+      to right,
+      var(--accent) var(--progress, 0%),
+      #344035 var(--progress, 0%)
+    );
+  }
+  .live-player .playback-controls input[type='range']::-webkit-slider-thumb {
+    appearance: none;
+    width: 11px;
+    height: 11px;
+    margin-top: -4px;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .live-player .playback-controls input[type='range']::-moz-range-track {
+    height: 3px;
+    background: #344035;
+  }
+  .live-player .playback-controls input[type='range']::-moz-range-progress {
+    height: 3px;
+    background: var(--accent);
+  }
+  .live-player .playback-controls input[type='range']::-moz-range-thumb {
+    width: 11px;
+    height: 11px;
+    border: 0;
+    border-radius: 50%;
+    background: var(--accent);
+  }
+  .live-player .playback-controls input[type='range']:disabled {
+    opacity: 0.6;
+  }
+  .live-player .icon-button small {
+    font-size: 9px;
   }
   .playlist-picker-sheet {
     width: calc(100% - 16px);
-  }
-  main {
-    padding-bottom: 260px;
+    max-height: calc(100dvh - 32px);
+    padding: 14px;
   }
 }
 @media (max-width: 767px) {
@@ -2061,7 +1969,11 @@ meter::-webkit-meter-optimum-value {
   .track-row .download-action {
     grid-column: 3;
     grid-row: 1 / 3;
-    gap: 4px;
+    gap: 2px;
+  }
+  /* The format moves into the options popover, which gives the title the row's width. */
+  .track-row .download-action > select {
+    display: none;
   }
 }
 .album-card-download {
@@ -2119,40 +2031,24 @@ meter::-webkit-meter-optimum-value {
     opacity: 1;
     pointer-events: auto;
   }
-}
-@media (pointer: coarse) {
-  .album-card-download > .icon-button {
-    min-width: 44px;
-    min-height: 44px;
-  }
-  .icon-button {
-    min-width: 44px;
-    min-height: 44px;
-  }
-  .job-buttons button {
-    min-width: 44px;
-    min-height: 44px;
-  }
-  .text-preview {
-    min-width: 44px;
-    min-height: 44px;
-    padding: 12px 6px;
-  }
-  .download-action select {
-    min-height: 44px;
-    padding: 12px 6px;
-  }
-  .track-row button,
-  .library-track-row button {
-    min-height: 44px;
+  /* A tablet has no hover either, so the preview button on track art has to stay visible. */
+  .art-play {
+    opacity: 1;
+    background: #0003;
   }
 }
-
+@media (max-width: 767px) {
+  .art-play {
+    opacity: 1;
+    background: #0003;
+  }
+}
 /* The queue shares the bottom edge with the global preview player. */
 .queue-dock {
   position: fixed;
-  bottom: var(--player-height, 88px);
-  right: 24px;
+  /* Above the player, and on a phone above the bottom bar and home indicator as well. */
+  bottom: calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 12px);
+  right: calc(24px + var(--safe-right));
   z-index: 45;
   display: flex;
   gap: 8px;
@@ -2166,6 +2062,13 @@ meter::-webkit-meter-optimum-value {
   font-weight: 700;
   box-shadow: 0 4px 24px #0005;
 }
+/* A floating dock covers whatever sits bottom right on a phone (the Save button, the last
+   row's controls), so the count moves into the bottom bar instead. */
+@media (max-width: 767px) {
+  .queue-dock {
+    display: none;
+  }
+}
 .queue-sheet {
   position: fixed;
   inset: auto 0 0;
@@ -2173,11 +2076,17 @@ meter::-webkit-meter-optimum-value {
   width: min(1100px, 100%);
   max-height: 78dvh;
   overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid #41453e;
   border-radius: 20px 20px 0 0;
-  padding: 24px;
+  padding: 24px 24px calc(24px + var(--safe-bottom));
   background: #171b16;
   color: #edf0e9;
+}
+/* Inside the sheet the list shares the sheet's own scroll room rather than the page's. */
+.queue-sheet .virtual-list {
+  height: min(620px, 50dvh);
+  min-height: 0;
 }
 .queue-sheet::backdrop {
   background: #0008;
@@ -2391,13 +2300,28 @@ meter::-webkit-meter-optimum-value {
   background: #39251f;
   border-radius: 5px;
 }
+.failure-summary small,
+.error small {
+  font-size: 11px;
+}
 @media (max-width: 700px) {
   .queue-dock {
-    bottom: var(--player-height, 277px);
-    right: 12px;
+    right: calc(12px + var(--safe-right));
   }
   .queue-sheet {
-    padding: 16px;
+    padding: 16px 16px calc(16px + var(--safe-bottom));
+  }
+  /* Six controls in three ragged rows become two even columns. */
+  .queue-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .queue-actions .queue-concurrency {
+    grid-column: 1 / -1;
+  }
+  .queue-actions .button {
+    width: 100%;
+    padding-inline: 8px;
   }
   .job-heading {
     flex-wrap: wrap;
@@ -2412,12 +2336,6 @@ meter::-webkit-meter-optimum-value {
     flex-wrap: wrap;
   }
 }
-@media (min-width: 701px) and (max-width: 767px) {
-  .queue-dock {
-    bottom: var(--player-height, 277px);
-  }
-}
-
 .download-options {
   position: fixed;
   inset: auto;
@@ -2426,6 +2344,7 @@ meter::-webkit-meter-optimum-value {
   max-width: calc(100vw - 16px);
   max-height: calc(100dvh - 16px);
   overflow: auto;
+  overscroll-behavior: contain;
   color: inherit;
   padding: 14px;
   border: 1px solid #414a38;
@@ -2436,10 +2355,26 @@ meter::-webkit-meter-optimum-value {
 .download-options label {
   display: grid;
   gap: 6px;
+  min-width: 0;
   font-size: 12px;
 }
+.download-options label + label {
+  margin-top: 10px;
+}
+/* A long mount path must not widen the popover past the screen. */
 .download-options select {
+  width: 100%;
+  min-width: 0;
   max-width: 100%;
+}
+/* The format lives beside the download button on wide screens and in here on phones. */
+.download-options .download-options-format {
+  display: none;
+}
+@media (max-width: 767px) {
+  .download-options .download-options-format {
+    display: grid;
+  }
 }
 .download-options small {
   display: block;
@@ -2470,6 +2405,7 @@ meter::-webkit-meter-optimum-value {
 .artist-download-sheet {
   width: min(700px, calc(100% - 32px));
   max-height: 85dvh;
+  overscroll-behavior: contain;
   padding: 24px;
   border: 1px solid var(--line);
   border-radius: 16px;
@@ -2513,8 +2449,12 @@ meter::-webkit-meter-optimum-value {
   display: flex;
   gap: 8px;
   align-items: center;
+  max-width: 100%;
+  min-width: 0;
 }
 .artist-download-options select {
+  min-width: 0;
+  max-width: 100%;
   background: #101813;
   color: inherit;
   border: 1px solid var(--line);
@@ -2559,8 +2499,53 @@ meter::-webkit-meter-optimum-value {
   background: #17201b;
   border-top: 1px solid var(--line);
 }
+/* A fade above the footer says the album list carries on underneath it. */
+.artist-download-sheet footer::before {
+  content: '';
+  position: absolute;
+  top: -29px;
+  right: 0;
+  left: 0;
+  height: 28px;
+  background: linear-gradient(#17201b00, #17201b);
+  pointer-events: none;
+}
 .artist-download-sheet input[type='checkbox'] {
   accent-color: var(--accent);
+}
+@media (max-width: 767px) {
+  /* On a phone the selection is a bottom sheet: full width, anchored to the bottom edge, with
+     its footer clear of the home indicator. */
+  .artist-download-sheet {
+    width: 100%;
+    max-width: none;
+    max-height: calc(100dvh - 24px);
+    margin: 0;
+    inset: auto 0 0;
+    padding: 16px 16px calc(16px + var(--safe-bottom));
+    border-bottom: 0;
+    border-radius: 18px 18px 0 0;
+  }
+  .artist-download-sheet header {
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .artist-download-sheet header h2 {
+    font-size: 17px;
+  }
+  .artist-download-stats {
+    padding: 14px;
+  }
+  .artist-download-stats strong {
+    font-size: 20px;
+  }
+  .artist-download-options {
+    gap: 10px 16px;
+  }
+  .artist-download-sheet footer {
+    bottom: calc(-16px - var(--safe-bottom));
+    padding-bottom: calc(16px + var(--safe-bottom));
+  }
 }
 
 .library-heading {
@@ -2854,6 +2839,7 @@ button.library-card-play.active {
   max-height: 260px;
   padding: 8px;
   overflow: auto;
+  overscroll-behavior: contain;
   background: #151c19;
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -3189,7 +3175,7 @@ button.library-card-play.active {
   margin: 8px 0;
   font-size: clamp(36px, 6vw, 72px);
 }
-.now-hero .button {
+.now-hero .now-actions {
   margin-top: 20px;
 }
 .now-art {
@@ -3230,6 +3216,7 @@ button.library-card-play.active {
 .lyrics-panel {
   max-height: 500px;
   overflow: auto;
+  overscroll-behavior: contain;
 }
 .lyrics-panel > p {
   padding: 8px 0;
@@ -3258,6 +3245,7 @@ button.library-card-play.active {
   height: fit-content;
   max-height: 78dvh;
   overflow: auto;
+  overscroll-behavior: contain;
   border: 1px solid #414a38;
   border-radius: 16px;
   padding: 18px;
@@ -3342,6 +3330,7 @@ button.library-card-play.active {
   margin-top: 8px;
   padding-top: 8px;
   overflow-y: auto;
+  overscroll-behavior: contain;
   border-top: 1px solid var(--line);
 }
 .playlist-picker-songs > div {
@@ -3404,6 +3393,19 @@ button.library-card-play.active {
 @media (max-width: 700px) {
   .now-hero {
     grid-template-columns: 1fr;
+  }
+  /* Five tabs share the row instead of the last one hiding behind a sideways scroll. */
+  .library-tabs {
+    gap: 0;
+    margin-bottom: 20px;
+    overflow: visible;
+  }
+  .library-tabs button {
+    flex: 1 1 0;
+    min-width: 0;
+    padding: 12px 2px;
+    font-size: 13px;
+    text-align: center;
   }
   .now-art,
   .stage-slot {
@@ -3768,5 +3770,95 @@ button.library-card-play.active {
   }
   .stage-volume input {
     display: none;
+  }
+}
+
+/* Touch screens: 44px targets, and text controls at 16px so iOS Safari does not zoom the page
+   when one gains focus. Last in the file so it outranks the size each control sets for itself. */
+@media (pointer: coarse) {
+  .button,
+  .album-card-download > .icon-button,
+  .icon-button,
+  .job-buttons button,
+  .live-player .icon-button,
+  .stage-controls .icon-button,
+  .stage-actions .icon-button,
+  .library-layout-toggle .icon-button,
+  .library-collection-actions .icon-button,
+  .library-search button,
+  .queue-sheet > header button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+  .round-play,
+  .library-card-art button.library-card-play {
+    width: 44px;
+    height: 44px;
+  }
+  .text-preview {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 12px 6px;
+  }
+  .download-action select {
+    max-width: 96px;
+    padding: 12px 6px;
+  }
+  .track-row button,
+  .library-track-row button,
+  .result-tabs button,
+  .library-tabs button,
+  .failure-groups button,
+  .text-link,
+  .error button,
+  .job-path button,
+  .candidate a,
+  .library-filter label,
+  .artist-download-options label,
+  .check-filter {
+    min-height: 44px;
+  }
+  .error button {
+    padding: 0 6px;
+  }
+  .section-index a,
+  .settings-status a,
+  .queue-sheet > header a,
+  .album-download-status {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  .library-filter summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+  }
+  input:not([type='checkbox']):not([type='radio']):not([type='range']),
+  select,
+  textarea,
+  .search-input input,
+  .setting-row input,
+  .setting-row select,
+  .sort-control select,
+  .filter-chips select,
+  .filter-chips input,
+  .album-actions select,
+  .artist-release-controls select,
+  .artist-download-options select,
+  .download-action select,
+  .download-options select,
+  .queue-concurrency select,
+  .history-filters input,
+  .library-select select,
+  .playlist-form input,
+  .playlist-picker-form input {
+    min-height: 44px;
+    font-size: 16px;
+  }
+  input[type='checkbox'],
+  .artist-download-sheet input[type='checkbox'] {
+    width: 20px;
+    height: 20px;
   }
 }
