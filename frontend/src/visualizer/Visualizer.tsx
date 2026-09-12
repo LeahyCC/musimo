@@ -8,6 +8,7 @@ type Props = {
   scene: SceneId
   particles: number
   fluidSize: number
+  raymarchSteps: number
   /** The device could not be had, or was lost for good: show artwork instead. */
   onUnsupported: () => void
 }
@@ -19,6 +20,7 @@ export default function VisualizerStage({
   scene,
   particles,
   fluidSize,
+  raymarchSteps,
   onUnsupported,
 }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null)
@@ -43,6 +45,7 @@ export default function VisualizerStage({
   useEffect(() => renderer.setScene(scene), [scene])
   useEffect(() => renderer.setParticleCount(particles), [particles])
   useEffect(() => renderer.setFluidSize(fluidSize), [fluidSize])
+  useEffect(() => renderer.setRaymarchSteps(raymarchSteps), [raymarchSteps])
 
   return (
     <>

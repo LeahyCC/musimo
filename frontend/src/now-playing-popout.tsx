@@ -22,10 +22,12 @@ import { artUrl, remember, stored, usePlayer } from './player'
 import {
   DEFAULT_FLUID_SIZE,
   DEFAULT_PARTICLES,
+  DEFAULT_RAYMARCH_STEPS,
   DEFAULT_SCENE,
   FLUID_SIZES,
   isSceneId,
   PARTICLE_COUNTS,
+  RAYMARCH_STEPS,
 } from './visualizer/scenes/catalog'
 import type { SceneId } from './visualizer/scenes/catalog'
 
@@ -70,6 +72,8 @@ type PopoutValue = {
   setParticles: (count: number) => void
   fluidSize: number
   setFluidSize: (size: number) => void
+  raymarchSteps: number
+  setRaymarchSteps: (steps: number) => void
 }
 
 const noop = () => undefined
@@ -95,6 +99,8 @@ const PopoutContext = createContext<PopoutValue>({
   setParticles: noop,
   fluidSize: DEFAULT_FLUID_SIZE,
   setFluidSize: noop,
+  raymarchSteps: DEFAULT_RAYMARCH_STEPS,
+  setRaymarchSteps: noop,
 })
 export const useNowPlayingPopout = () => useContext(PopoutContext)
 
@@ -103,6 +109,7 @@ const VIEW_KEY = 'musimo.now-playing-view'
 const SCENE_KEY = 'musimo.visualizer-scene'
 const PARTICLES_KEY = 'musimo.visualizer-particles'
 const FLUID_KEY = 'musimo.visualizer-fluid-grid'
+const RAYMARCH_KEY = 'musimo.visualizer-raymarch-steps'
 const NOTICE_KEY = 'musimo.now-playing-visualizer-notice'
 const UNSUPPORTED = 'This browser has no WebGPU, so the stage shows the artwork.'
 
@@ -152,10 +159,15 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
     const saved = Number(stored(FLUID_KEY, ''))
     return FLUID_SIZES.includes(saved) ? saved : DEFAULT_FLUID_SIZE
   })
+  const [raymarchSteps, setRaymarchSteps] = useState(() => {
+    const saved = Number(stored(RAYMARCH_KEY, ''))
+    return RAYMARCH_STEPS.includes(saved) ? saved : DEFAULT_RAYMARCH_STEPS
+  })
   useEffect(() => remember(VIEW_KEY, view), [view])
   useEffect(() => remember(SCENE_KEY, scene), [scene])
   useEffect(() => remember(PARTICLES_KEY, String(particles)), [particles])
   useEffect(() => remember(FLUID_KEY, String(fluidSize)), [fluidSize])
+  useEffect(() => remember(RAYMARCH_KEY, String(raymarchSteps)), [raymarchSteps])
   const toggleView = useCallback(
     () => setView((current) => (current === 'artwork' ? 'visualizer' : 'artwork')),
     [],
@@ -225,6 +237,8 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       setParticles,
       fluidSize,
       setFluidSize,
+      raymarchSteps,
+      setRaymarchSteps,
     }),
     [
       popout,
@@ -243,6 +257,7 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       scene,
       particles,
       fluidSize,
+      raymarchSteps,
     ],
   )
 
@@ -317,6 +332,7 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
             scene={popout.scene}
             particles={popout.particles}
             fluidSize={popout.fluidSize}
+            raymarchSteps={popout.raymarchSteps}
             onUnsupported={popout.markUnsupported}
           />
         </Suspense>
@@ -336,6 +352,8 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
         onParticles={popout.setParticles}
         fluidSize={popout.fluidSize}
         onFluidSize={popout.setFluidSize}
+        raymarchSteps={popout.raymarchSteps}
+        onRaymarchSteps={popout.setRaymarchSteps}
       />
     </div>
   )
