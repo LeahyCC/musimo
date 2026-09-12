@@ -365,7 +365,11 @@ docker compose up -d --build --wait
 npm run dev --prefix frontend
 ```
 
-Open Vite's printed address. Its `/api` proxy targets localhost port 8765. A deliberately different backend port requires a local change to `frontend/vite.config.ts`.
+Open Vite's printed address. Its `/api` proxy targets localhost port 8765. Set `MUSIMO_API_TARGET` to use another backend, for example a Musimo on another machine on your network whose `MUSIMO_BIND` lets you reach it:
+
+```sh
+MUSIMO_API_TARGET=http://other-machine:8765 npm run dev --prefix frontend
+```
 
 For Python work outside Docker, install the worker tools if needed, and set `MUSIMO_DATA_DIR`, `MUSIMO_LIBRARY_ROOTS` and `MUSIMO_STATIC_DIR` to isolated absolute paths:
 
