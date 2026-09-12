@@ -11,6 +11,8 @@ export type HudStats = {
   frameMs: number
   particles: number
   adapter: string
+  /** Which post stages are on, already summarised for the line. */
+  post: string
 }
 
 const BARS = ['sub', 'bass', 'lowMid', 'highMid', 'treble', 'energy'] as const
@@ -61,7 +63,7 @@ export class Hud {
     const y = 10
     const width = 310
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
-    ctx.fillRect(x, y, width, 196)
+    ctx.fillRect(x, y, width, 210)
 
     BARS.forEach((name, index) => {
       const value = packet[index] ?? 0
@@ -126,5 +128,6 @@ export class Hud {
       top + height + 26,
     )
     ctx.fillText(stats.adapter.slice(0, 44), x + 8, top + height + 40)
+    ctx.fillText(`post ${stats.post}`, x + 8, top + height + 54)
   }
 }
