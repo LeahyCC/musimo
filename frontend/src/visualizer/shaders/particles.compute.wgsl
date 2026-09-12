@@ -154,14 +154,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
 
   let frequency = 0.7 + treble * 1.6;
   let flow = curl(p.position * frequency + vec3<f32>(0.0, time * 0.08, time * 0.05));
-  var accel = flow * (0.5 + energy * 1.5);
+  var accel = flow * (0.9 + energy * 1.3);
 
   // Three attractors circle the middle; bass pulls toward them.
   for (var k = 0u; k < 3u; k = k + 1u) {
     let phase = time * 0.35 + f32(k) * 2.0943951;
     let attractor = vec3<f32>(cos(phase), sin(phase * 0.7) * 0.6, sin(phase)) * 0.8;
     let d = attractor - p.position;
-    let dist2 = max(dot(d, d), 0.05);
+    let dist2 = max(dot(d, d), 0.16);
     accel = accel + d * (bass * bass * 1.5 / (dist2 * sqrt(dist2)));
   }
 

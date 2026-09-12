@@ -146,8 +146,20 @@ const MIN_DT = 0.001
 const MAX_DT = 0.1
 const TEMPO_MIN_BPM = 60
 const TEMPO_MAX_BPM = 200
-const TEMPO_WINDOW_SECONDS = 8
+// About 4 s at 120 Hz and 8 s at 60. Replaying recorded tracks through longer
+// windows made the beat lose out to the bar more often, not less.
+const TEMPO_WINDOW_FRAMES = 480
 const TEMPO_EVERY_SECONDS = 1
+const TEMPO_PREFERRED_BPM = 120
+// Width of the preference, in octaves: 60 and 240 score about half of 120.
+const TEMPO_PREFERENCE_OCTAVES = 0.9
+// Below this normalised correlation nothing is periodic enough to call.
+const TEMPO_MIN_CORRELATION = 0.05
+const TEMPO_HALF_LAG_RATIO = 0.6
+const TEMPO_COMPRESSION = 3
+// One reading a second can still jump for a bar; the median of the last few
+// holds the tempo steady through it.
+const TEMPO_MEDIAN_OF = 5
 
 export class FeatureExtractor {
   readonly packet = new Float32Array(PACKET_LENGTH)
@@ -178,6 +190,8 @@ export class FeatureExtractor {
   private tempoFilled = 0
   private sinceTempo = 0
   private tempo = 0
+  private readonly tempoReadings = new Float32Array(TEMPO_MEDIAN_OF)
+  private tempoReadingAt = 0
   private averageDt: number
   private time = 0
   private frames = 0
@@ -200,7 +214,7 @@ export class FeatureExtractor {
     this.sigma = options.fluxThresholdSigma ?? 2.5
     this.refractory = (options.onsetRefractoryMs ?? 80) / 1000
     this.beatDecay = options.beatDecaySeconds ?? 0.18
-    this.tempoWindow = new Float32Array(Math.round(TEMPO_WINDOW_SECONDS * rate))
+    this.tempoWindow = new Float32Array(TEMPO_WINDOW_FRAMES)
     this.averageDt = 1 / rate
   }
 
@@ -278,7 +292,9 @@ export class FeatureExtractor {
     packet[F.beatPulse] = this.beat
 
     this.averageDt += (dt - this.averageDt) * 0.05
-    this.trackTempo(flux, dt)
+    // Flux over its mean, compressed: a few huge hits would otherwise own
+    // the autocorrelation and the beat between them would not register.
+    this.trackTempo(Math.log1p(TEMPO_COMPRESSION * flux * unit), dt)
     packet[F.tempo] = this.tempo
 
     this.time += dt
@@ -301,9 +317,14 @@ export class FeatureExtractor {
     this.fluxAt = (this.fluxAt + 1) % window.length
   }
 
-  // Autocorrelation of the last few seconds of flux, once a second, over the
-  // lags that mean 60 to 200 beats per minute. The strongest lag wins if it
-  // clearly beats the average correlation; otherwise the tempo stays unknown.
+  // Autocorrelation of the last few seconds of compressed flux, once a
+  // second, over the lags that mean 60 to 200 beats per minute. Correlations
+  // are normalised so long lags are not penalised for having fewer samples.
+  // Each lag is scored with its multiples added in (a beat's half-bar and bar
+  // agree with it) and weighted toward the tempos people tap (around 120),
+  // because a bar-long pattern correlates as well as a beat-long one and
+  // would otherwise read half-time. When the half lag correlates nearly as
+  // well it wins for the same reason.
   private trackTempo(flux: number, dt: number) {
     const window = this.tempoWindow
     window[this.tempoAt] = flux
@@ -316,12 +337,16 @@ export class FeatureExtractor {
     let mean = 0
     for (let i = 0; i < length; i++) mean += window[i] ?? 0
     mean /= length
+    let variance = 0
+    for (let i = 0; i < length; i++) variance += ((window[i] ?? 0) - mean) ** 2
+    variance /= length
+    if (variance <= 0) {
+      this.report(0)
+      return
+    }
     const minLag = Math.max(1, Math.floor(60 / (TEMPO_MAX_BPM * this.averageDt)))
     const maxLag = Math.min(length >> 1, Math.ceil(60 / (TEMPO_MIN_BPM * this.averageDt)))
-    let bestLag = 0
-    let best = 0
-    let total = 0
-    let lags = 0
+    const correlation = new Float32Array(maxLag + 1)
     for (let lag = minLag; lag <= maxLag; lag++) {
       let sum = 0
       for (let i = lag; i < length; i++) {
@@ -329,15 +354,40 @@ export class FeatureExtractor {
         const b = (window[(this.tempoAt + i - lag) % length] ?? 0) - mean
         sum += a * b
       }
-      total += sum
-      lags++
-      if (sum > best) {
-        best = sum
+      correlation[lag] = sum / ((length - lag) * variance)
+    }
+    const bpm = (lag: number) => 60 / (lag * this.averageDt)
+    const preference = (lag: number) =>
+      Math.exp(-0.5 * (Math.log2(bpm(lag) / TEMPO_PREFERRED_BPM) / TEMPO_PREFERENCE_OCTAVES) ** 2)
+    let bestLag = 0
+    let best = 0
+    let total = 0
+    for (let lag = minLag; lag <= maxLag; lag++) {
+      const value = correlation[lag] ?? 0
+      total += value
+      const harmonics =
+        value + 0.5 * (correlation[2 * lag] ?? 0) + 0.25 * (correlation[4 * lag] ?? 0)
+      const score = harmonics * preference(lag)
+      if (score > best) {
+        best = score
         bestLag = lag
       }
     }
-    const average = lags ? total / lags : 0
-    this.tempo =
-      bestLag && best > 0 && best > 3 * Math.max(average, 0) ? 60 / (bestLag * this.averageDt) : 0
+    const average = total / (maxLag - minLag + 1)
+    const raw = correlation[bestLag] ?? 0
+    if (!bestLag || raw < TEMPO_MIN_CORRELATION || raw < 3 * Math.max(average, 0)) {
+      this.report(0)
+      return
+    }
+    const half = Math.round(bestLag / 2)
+    if (half >= minLag && (correlation[half] ?? 0) >= TEMPO_HALF_LAG_RATIO * raw) bestLag = half
+    this.report(bpm(bestLag))
+  }
+
+  private report(reading: number) {
+    this.tempoReadings[this.tempoReadingAt] = reading
+    this.tempoReadingAt = (this.tempoReadingAt + 1) % TEMPO_MEDIAN_OF
+    const sorted = Array.from(this.tempoReadings).sort((a, b) => a - b)
+    this.tempo = sorted[TEMPO_MEDIAN_OF >> 1] ?? 0
   }
 }
