@@ -4,12 +4,13 @@
  * read them without pulling the visualizer tree into the main bundle.
  */
 
-export const SCENE_IDS = ['particles', 'fluid'] as const
+export const SCENE_IDS = ['particles', 'fluid', 'raymarch'] as const
 export type SceneId = (typeof SCENE_IDS)[number]
 
 export const SCENE_LABELS: Record<SceneId, string> = {
   particles: 'Particles',
   fluid: 'Fluid',
+  raymarch: 'Raymarch',
 }
 
 export const DEFAULT_SCENE: SceneId = 'particles'
@@ -29,3 +30,12 @@ export const FLUID_SIZES: readonly number[] = [512, 1024]
 export const DEFAULT_FLUID_SIZE = 512
 /** A CPU rasteriser gets the small grid whatever was chosen. */
 export const SOFTWARE_FLUID_SIZE = 512
+
+/**
+ * Step caps the raymarch offers. The march is fill-bound, so this is the one
+ * number that decides what a 4K frame costs; see docs/visualizer.md.
+ */
+export const RAYMARCH_STEPS: readonly number[] = [64, 112]
+export const DEFAULT_RAYMARCH_STEPS = 64
+/** A CPU rasteriser halves the cap and marches at half the canvas. */
+export const SOFTWARE_RAYMARCH_SCALE = 0.5
