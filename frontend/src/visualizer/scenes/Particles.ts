@@ -153,7 +153,7 @@ export class Particles implements Scene {
     // area over the canvas area. That keeps a small docked stage and a 4K full
     // screen at the same brightness instead of one washing out to white.
     const cover = (this.count * Math.PI * pointSize * pointSize) / (this.width * this.height)
-    this.paramsFloats[21] = Math.min(1, Math.max(0.004, 0.35 / cover))
+    this.paramsFloats[21] = Math.min(1, Math.max(0.006, 0.65 / cover))
     context.device.queue.writeBuffer(this.params, 0, this.paramsData)
     this.reset = false
     void dt

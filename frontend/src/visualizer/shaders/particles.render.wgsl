@@ -34,7 +34,7 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Verte
   let warm = vec3<f32>(1.0, 0.45, 0.15);
   let cool = vec3<f32>(0.2, 0.55, 1.0);
   let tint = mix(cool, warm, clamp(bass - treble * 0.5 + p.seed * 0.4 - 0.2, 0.0, 1.0));
-  let bright = (0.25 + speed * 0.45 + energy * 0.3) * fade * params.intensity;
+  let bright = (0.35 + speed * 0.4 + energy * 0.5) * fade * params.intensity;
   out.colour = tint * bright;
   return out;
 }
