@@ -125,9 +125,14 @@ test('the scene choice switches the size control and survives a reload', async (
   await expect(stage.locator('canvas.stage-visualizer')).toHaveAttribute('data-scene', 'fluid')
   expect(await page.evaluate(() => localStorage.getItem('musimo.visualizer-scene'))).toBe('fluid')
 
+  await stage.getByRole('combobox', { name: 'Scene' }).selectOption('raymarch')
+  await expect(stage.getByRole('combobox', { name: 'Raymarch steps' })).toBeVisible()
+  await expect(stage.getByRole('combobox', { name: 'Fluid grid' })).toHaveCount(0)
+  await expect(stage.locator('canvas.stage-visualizer')).toHaveAttribute('data-scene', 'raymarch')
+
   await page.reload()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
   await page.locator('.stage').hover()
-  await expect(page.getByRole('combobox', { name: 'Scene' })).toHaveValue('fluid')
-  await expect(page.getByRole('combobox', { name: 'Fluid grid' })).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Scene' })).toHaveValue('raymarch')
+  await expect(page.getByRole('combobox', { name: 'Raymarch steps' })).toBeVisible()
 })

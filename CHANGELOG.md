@@ -11,6 +11,7 @@
 - Tune the particle field on real music and stop the tempo guess reading half-time (#56)
 - Draw the visualizer through a post stack of feedback trails, bloom, beat-driven chromatic aberration, a tonemap and grain, so loud passages no longer clip to white (#57)
 - Add a fluid scene to the visualizer, with a scene select in the stage's top bar (#58)
+- Add a raymarched fractal scene to the visualizer, folded by the bass and detailed by the treble, with a step cap in the stage's top bar (#59)
 
 ### Testing and CI
 
