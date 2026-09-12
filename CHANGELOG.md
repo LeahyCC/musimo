@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Testing and CI
+
+- Add a Vitest unit test runner for the frontend (#49)
+
 ### UI and accessibility
 
 - Make every screen work on a phone: mini player, bottom-bar download count, safe-area insets, 44px touch targets, no focus zoom, tabs and sheets that fit (#48)
