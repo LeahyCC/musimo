@@ -98,4 +98,6 @@ Checked by hand on a Mac (Apple M5 Pro, macOS 26.6), Chromium 153 driven by a Pl
 - V switches to artwork and back; the choice and the particle count survive a reload.
 - With `navigator.gpu` present but no adapter (headless Chromium), and with SwiftShader in the headless shell, which cannot present a WebGPU canvas, the stage falls back to artwork with the notice, and the renderer's device-loss recovery runs before it gives up.
 
-Not checked yet: a mid-range desktop GPU, and playback of a real library rather than a generated signal.
+- A real library, on the Mac through the Vite proxy to pancakes' Musimo over Tailscale Serve (a local config with `changeOrigin` and an Origin rewrite, see PR #50): Aphex Twin's Donkey Rhubarb streams from Navidrome, the analyser feeds the HUD, bands sit between 0.4 and 0.8 with onsets marked on the flux trace, and 250k particles run at the 120 Hz cap. The tempo guess reads 70 for a track near 140 BPM: the autocorrelation picks the half-time lag, a known weakness of the simple method. Compared with the generated signal the field looks dim and sparse on real music, which is the first thing to tune after listening more.
+
+Not checked yet: a mid-range desktop GPU.
