@@ -20,14 +20,18 @@ import {
 } from 'lucide-react'
 
 import { artUrl, durationText, usePlayer } from './player'
+import {
+  FLUID_SIZES,
+  isSceneId,
+  PARTICLE_COUNTS,
+  SCENE_IDS,
+  SCENE_LABELS,
+} from './visualizer/scenes/catalog'
+import type { SceneId } from './visualizer/scenes/catalog'
 
 export type StagePlacement = 'docked' | 'popout'
 export type StageView = 'artwork' | 'visualizer'
 
-// Particle counts the stage offers. The default holds 60 fps on Apple
-// Silicon with room to spare; see docs/visualizer.md for measurements.
-export const PARTICLE_CHOICES: readonly number[] = [100_000, 250_000, 500_000, 1_000_000]
-export const DEFAULT_PARTICLES = 250_000
 const particleLabel = (count: number) =>
   `${count >= 1_000_000 ? `${count / 1_000_000}M` : `${count / 1000}k`} particles`
 
@@ -39,8 +43,12 @@ type OverlayProps = {
   /** Undefined where the visualizer is not available, so no toggle is shown. */
   view?: StageView
   onToggleView?: () => void
+  scene?: SceneId
+  onScene?: (scene: SceneId) => void
   particles?: number
   onParticles?: (count: number) => void
+  fluidSize?: number
+  onFluidSize?: (size: number) => void
 }
 
 const IDLE_MS = 2500
@@ -197,8 +205,12 @@ export function NowPlayingOverlay({
   onPopout,
   view,
   onToggleView,
+  scene,
+  onScene,
   particles,
   onParticles,
+  fluidSize,
+  onFluidSize,
 }: OverlayProps) {
   const player = usePlayer()
   const track = player.libraryTrack
@@ -221,16 +233,47 @@ export function NowPlayingOverlay({
           {player.playing ? 'Playing' : 'Paused'}
         </span>
         <div className="stage-actions">
-          {view === 'visualizer' && onParticles && (
+          {view === 'visualizer' && onScene && (
+            <select
+              className="stage-select"
+              aria-label="Scene"
+              value={scene}
+              onChange={(event) => {
+                if (isSceneId(event.target.value)) onScene(event.target.value)
+              }}
+            >
+              {SCENE_IDS.map((id) => (
+                <option key={id} value={id}>
+                  {SCENE_LABELS[id]}
+                </option>
+              ))}
+            </select>
+          )}
+          {/* The size control belongs to whichever scene is drawing. */}
+          {view === 'visualizer' && scene === 'particles' && onParticles && (
             <select
               className="stage-select"
               aria-label="Particle count"
               value={particles}
               onChange={(event) => onParticles(Number(event.target.value))}
             >
-              {PARTICLE_CHOICES.map((count) => (
+              {PARTICLE_COUNTS.map((count) => (
                 <option key={count} value={count}>
                   {particleLabel(count)}
+                </option>
+              ))}
+            </select>
+          )}
+          {view === 'visualizer' && scene === 'fluid' && onFluidSize && (
+            <select
+              className="stage-select"
+              aria-label="Fluid grid"
+              value={fluidSize}
+              onChange={(event) => onFluidSize(Number(event.target.value))}
+            >
+              {FLUID_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size} grid
                 </option>
               ))}
             </select>
