@@ -133,7 +133,10 @@ class Renderer {
   private start() {
     if (this.frame || !this.canvas) return
     const win = this.canvas.ownerDocument.defaultView ?? window
+    // Each window has its own clock. A popout's starts near zero, so any
+    // timestamp kept from the tab would be in its future.
     this.last = win.performance.now()
+    this.reported = 0
     this.frame = win.requestAnimationFrame(this.tick)
   }
 

@@ -16,6 +16,8 @@ The ⧉ button opens the stage in a Document Picture-in-Picture window: 420 by 4
 
 Chrome reuses the window's last size and position on the next open, so nothing is stored for that.
 
+The visualizer follows the stage into the popout. Its device, pipelines and particle state belong to a renderer that outlives the stage, so only the canvas is remade on each move and the field keeps running; see [the visualizer note](visualizer.md).
+
 A popout window cannot enter full screen; the Picture-in-Picture specification forbids it. The ⤢ button in the popout therefore closes the window, brings the tab forward, opens Now Playing and puts the docked stage into full screen. If the browser refuses that request, a short notice under the stage says to press F on the player.
 
 The button only appears where the API exists: Chrome and Edge on desktop. Firefox and Safari keep the docked stage and full screen.

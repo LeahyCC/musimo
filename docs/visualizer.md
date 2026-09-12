@@ -47,6 +47,12 @@ frame clock, HUD history                       requestAnimationFrame handle
 
 Each frame: read the analyser through the feature client (once the library element has played), stamp time and dt into the packet, upload it as one 64-byte uniform, run the scene's compute and render passes, then draw the HUD if it is on. React owns mounting, unmounting and the controls only; no per-frame state touches it. The canvas carries `data-adapter`, `data-frame-ms` and `data-particles` so a screenshot or a test can read them.
 
+### Popout and full screen
+
+The design above was checked, not assumed. Across six dock, popout, dock round trips in desktop Chrome the page created one device and one particle storage buffer, reported no `uncapturederror`, and configured exactly one more canvas context than it unconfigured at every point, so nothing leaks with repeated toggling and the field never restarts. The popout's canvas is the size of its window at that window's pixel ratio and draws on that window's own animation frames, so it keeps moving while the tab is hidden behind it. The `captureStream` fallback the plan sketched was not needed and is not built.
+
+Full screen in the tab renders at device pixel ratio: a 1920 by 1080 CSS box at ratio 2 gets a 3840 by 2160 canvas.
+
 ### Particles
 
 `scenes/Particles.ts` with `shaders/common.wgsl`, `particles.compute.wgsl` and `particles.render.wgsl` (imported with `?raw`). Particles live in one storage buffer of 32-byte records (position, life, velocity, seed). A compute pass moves each one through a curl-noise flow field (simplex noise by Ashima Arts and Stefan Gustavson, MIT), toward three attractors that circle the middle, and integrates with drag and a soft spring; dead particles respawn in a ball, staggered on the first frame. The render pass draws one instanced quad per particle with no vertex buffer, additively blended, sized and lit by speed. Each particle is dimmed by the expected number landing on a pixel (count times point area over canvas area), so a small docked stage and a 4K full screen come out the same brightness.
@@ -88,7 +94,10 @@ Checked by hand on a Mac (Apple M5 Pro, macOS 26.6), Chromium 153 driven by a Pl
   The docked 1M case is slower than full screen because a million particles on a 320 pixel stage overdraw every pixel a hundred times; spread over 4K they do not.
 
 - Full screen from F renders at device pixel ratio: the canvas is 3840 by 2160 for a 1920 by 1080 CSS box at ratio 2.
+- Popout round trip, six times: `requestDevice` called once, one storage buffer, `configure` count always one ahead of `unconfigure`, no uncaptured errors; the popout canvas has the adapter and advancing frame times, the tab shows "Playing in the popout window", and Bring back remounts the docked canvas on the same device with the field still running. F from the popout closes it and lands the request in the tab; under automation the browser refuses it for want of a gesture and the stage shows its "Press F on the player" notice, which is the documented path.
 - V switches to artwork and back; the choice and the particle count survive a reload.
 - With `navigator.gpu` present but no adapter (headless Chromium), and with SwiftShader in the headless shell, which cannot present a WebGPU canvas, the stage falls back to artwork with the notice, and the renderer's device-loss recovery runs before it gives up.
 
-Not checked yet: a mid-range desktop GPU, and playback of a real library rather than a generated signal.
+- A real library, on the Mac through the Vite proxy to pancakes' Musimo over Tailscale Serve (a local config with `changeOrigin` and an Origin rewrite, see PR #50): Aphex Twin's Donkey Rhubarb streams from Navidrome, the analyser feeds the HUD, bands sit between 0.4 and 0.8 with onsets marked on the flux trace, and 250k particles run at the 120 Hz cap. The tempo guess reads 70 for a track near 140 BPM: the autocorrelation picks the half-time lag, a known weakness of the simple method. Compared with the generated signal the field looks dim and sparse on real music, which is the first thing to tune after listening more.
+
+Not checked yet: a mid-range desktop GPU.

@@ -7,6 +7,7 @@
 - Give library playback its own audio element and a Web Audio analyser for the coming visualizer, keeping catalog previews off it (#51)
 - Extract bands, energy, onsets, a beat pulse and tempo from library playback in a worker, ready for the visualizer (#52)
 - Draw a WebGPU particle field on the Now Playing stage, with a view toggle, a debug overlay and a particle count setting; browsers without WebGPU keep the artwork (#53)
+- Keep the visualizer running across the Now Playing popout round trip on one device, with its frame time reported in the popout window too (#54)
 
 ### Testing and CI
 
