@@ -160,6 +160,16 @@ export const bloomLevelSize = (width: number, height: number, level: number) => 
 })
 
 /**
+ * The texture a level's horizontal blur reads. Every level but the first
+ * reads the level above and halves it on the way in; the first reads what the
+ * bright pass already wrote at its own size. The taps are spaced by this
+ * texture's texels, so reading the canvas size here would blur level 0 half
+ * as wide sideways as it does vertically.
+ */
+export const bloomSourceSize = (width: number, height: number, level: number) =>
+  bloomLevelSize(width, height, Math.max(0, level - 1))
+
+/**
  * Fill the shared uniform. Everything a stage's toggle decides is resolved
  * here rather than branched on in WGSL: a disabled stage writes zeroes that
  * make its term vanish, so the shaders stay straight-line.

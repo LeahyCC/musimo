@@ -4,6 +4,7 @@ import { F, PACKET_LENGTH } from '../audio/FeatureExtractor'
 import {
   BLOOM_LEVELS,
   bloomLevelSize,
+  bloomSourceSize,
   defaultPostParams,
   mergePostParams,
   POST_UNIFORM_FLOATS,
@@ -67,6 +68,15 @@ describe('post parameters', () => {
     expect(bloomLevelSize(1920, 1080, 0)).toEqual({ width: 960, height: 540 })
     expect(bloomLevelSize(1920, 1080, BLOOM_LEVELS - 1)).toEqual({ width: 240, height: 135 })
     expect(bloomLevelSize(3, 1, 2)).toEqual({ width: 1, height: 1 })
+  })
+
+  it('spaces a horizontal blur by the texels of the texture it reads', () => {
+    // The first level reads what the bright pass wrote at its own size, not
+    // the canvas; the rest read the level above and halve it on the way in.
+    expect(bloomSourceSize(1920, 1080, 0)).toEqual(bloomLevelSize(1920, 1080, 0))
+    for (let level = 1; level < BLOOM_LEVELS; level++) {
+      expect(bloomSourceSize(1920, 1080, level)).toEqual(bloomLevelSize(1920, 1080, level - 1))
+    }
   })
 })
 
