@@ -24,18 +24,71 @@ What it computes, in order:
 
 The packet layout lives at the top of the file; WGSL structs must match it exactly. Indices 0 to 3 are the first four bands, 4 to 7 treble, energy, flux and the threshold, 8 to 11 onset, strength, pulse and tempo, 12 and 13 time and the frame step. The renderer, not the extractor, fills nothing else in; 14 and 15 are reserved.
 
+## WebGPU
+
+WebGPU only. Where it is missing, or the adapter or device cannot be had, the stage shows the artwork exactly as before and says so once (`musimo.now-playing-visualizer-notice`). There is no WebGL fallback and none is planned.
+
+`frontend/src/visualizer/gpu/Device.ts` asks for a high-performance adapter and a device once, keeps them as a module singleton, logs `uncapturederror`, and clears the singleton when the browser reports the device lost so the next request starts fresh. An adapter whose info names SwiftShader or another software rasteriser is flagged, and the scene caps its particle count at 20,000 on it.
+
+### Lifetime
+
+The popout portals a fresh stage into the Picture-in-Picture document, so the stage subtree unmounts and remounts on every dock and popout transition. Nothing that is expensive or stateful may live in a component:
+
+```
+module singleton, survives remounts            per mount, made again each time
+------------------------------------           -------------------------------
+GPUDevice, feature uniform buffer              HTMLCanvasElement (scene + HUD)
+pipelines, particle storage buffers            GPUCanvasContext, configure()
+the feature worker and its client              ResizeObserver, visibility hook
+frame clock, HUD history                       requestAnimationFrame handle
+```
+
+`gpu/Renderer.ts` is that singleton. A stage calls `attach(canvas, hudCanvas, onFailure)` on mount and `detach(canvas)` on unmount; `attach` configures the context, sizes the canvas to its CSS box times `devicePixelRatio`, and starts a loop on the canvas's own window, so a popout keeps drawing while the tab behind it is hidden and a hidden tab stops. On device loss the renderer drops the scene and buffers and tries once to come back on the same canvas; if that fails it calls `onFailure` and the stage falls back to artwork.
+
+Each frame: read the analyser through the feature client (once the library element has played), stamp time and dt into the packet, upload it as one 64-byte uniform, run the scene's compute and render passes, then draw the HUD if it is on. React owns mounting, unmounting and the controls only; no per-frame state touches it. The canvas carries `data-adapter`, `data-frame-ms` and `data-particles` so a screenshot or a test can read them.
+
+### Particles
+
+`scenes/Particles.ts` with `shaders/common.wgsl`, `particles.compute.wgsl` and `particles.render.wgsl` (imported with `?raw`). Particles live in one storage buffer of 32-byte records (position, life, velocity, seed). A compute pass moves each one through a curl-noise flow field (simplex noise by Ashima Arts and Stefan Gustavson, MIT), toward three attractors that circle the middle, and integrates with drag and a soft spring; dead particles respawn in a ball, staggered on the first frame. The render pass draws one instanced quad per particle with no vertex buffer, additively blended, sized and lit by speed. Each particle is dimmed by the expected number landing on a pixel (count times point area over canvas area), so a small docked stage and a 4K full screen come out the same brightness.
+
+Audio mapping: bass (the louder of sub and bass) to attractor strength; treble to noise frequency and jitter; `beatPulse` to a radial push and a size bump; energy to flow strength, speed and how many dead particles respawn. Colour runs cool to warm with bass.
+
+The count is chosen from the stage's top bar (100k, 250k, 500k, 1M) and remembered as `musimo.visualizer-particles`. The default is 250,000.
+
+### HUD
+
+H toggles `hud/Hud.ts`, a 2D canvas over the scene: the five band envelopes and energy as bars, the flux trace against its threshold with onset marks, beat, tempo, frame time, particle count and the adapter. It ships in the build so a report from another machine can carry a screenshot.
+
 ## Code
 
 - `frontend/src/visualizer/audio/AudioGraph.ts`: the context, the analyser and the attach and resume rules above.
 - `frontend/src/visualizer/audio/FeatureExtractor.ts`, `features.protocol.ts` and `features.worker.ts`: the feature packet and the worker that produces it.
+- `frontend/src/visualizer/gpu/Device.ts`, `gpu/Renderer.ts`, `gpu/math.ts`: the device singleton, the renderer and the camera maths.
+- `frontend/src/visualizer/scenes/Particles.ts` and `shaders/*.wgsl`: the particle scene.
+- `frontend/src/visualizer/hud/Hud.ts`, `Visualizer.tsx`: the debug overlay and the React shell the stage mounts.
 - `frontend/src/player.tsx`: the two audio elements, the handlers they share (each ignores events from the element that is not current), and the visibility resume.
 
 ## Checks
 
-The extractor is checked by unit tests with synthetic spectra: band collapse at both FFT sizes, envelope attack and release timing, every click in a click train detected with none between and the tempo found, jitter not read as onsets, and the worker protocol handing buffers back. Playwright cannot hear audio and headless engines stop it early, so the suite only proves the structure of playback: the preview checks in `e2e/app.spec.ts` drive the preview element, the phone player checks drive the library element, and the player shortcut checks still pass.
+Unit tests cover the pure parts: the feature extractor with synthetic spectra (band collapse at both FFT sizes, envelope attack and release timing, every click in a click train detected with none between and the tempo found, jitter not read as onsets), the worker protocol handing buffers back, and the camera maths.
 
-Checked by hand, each on a named machine and browser:
+Playwright can prove structure, not pixels: headless engines have no WebGPU adapter and a WebGPU canvas renders black in a screenshot. `e2e/visualizer.spec.ts` checks the artwork fallback and its one-time notice with `navigator.gpu` removed, and, only where the browser has an adapter, the default visualizer view, the V and H keys, the toggle button and the remembered choice. The preview checks in `e2e/app.spec.ts` drive the preview element and the phone player checks drive the library element, so the split cannot regress silently.
 
-- The analyser reports non-zero frequency data during library playback.
-- A catalog preview is still audible after a library track has played, and vice versa.
-- Pausing the tab, switching tabs for a minute and coming back resumes the context.
+Checked by hand on a Mac (Apple M5 Pro, macOS 26.6), Chromium 153 driven by a Playwright script with mocked library routes serving a generated 120 BPM test signal:
+
+- Audio graph: the analyser peaks at the test tone during library playback, a cross-origin preview plays without ever being attached, the library element is paused meanwhile, Space and the footer controls drive whichever is current, and a suspended context resumes on visibilitychange.
+- Adapter `apple metal-3`, format `bgra8unorm`. The HUD shows live bands, the flux trace crossing its threshold on every hit, `beatPulse` reaching 1, and tempo settling at 120 BPM within ten seconds.
+- Frame time, read from `data-frame-ms` after five seconds at each count. The display runs at 120 Hz, so 8.3 ms means the GPU is not the limit:
+
+  | Stage size                                             | 100k   | 250k   | 500k   | 1M      |
+  | ------------------------------------------------------ | ------ | ------ | ------ | ------- |
+  | 320 by 320, ratio 1 (docked)                           | 8.4 ms | 8.4 ms | 8.3 ms | 11.2 ms |
+  | 1920 by 1080 at ratio 2 (3840 by 2160, as full screen) | 8.3 ms | 8.4 ms | 8.4 ms | 8.3 ms  |
+
+  The docked 1M case is slower than full screen because a million particles on a 320 pixel stage overdraw every pixel a hundred times; spread over 4K they do not.
+
+- Full screen from F renders at device pixel ratio: the canvas is 3840 by 2160 for a 1920 by 1080 CSS box at ratio 2.
+- V switches to artwork and back; the choice and the particle count survive a reload.
+- With `navigator.gpu` present but no adapter (headless Chromium), and with SwiftShader in the headless shell, which cannot present a WebGPU canvas, the stage falls back to artwork with the notice, and the renderer's device-loss recovery runs before it gives up.
+
+Not checked yet: a mid-range desktop GPU, and playback of a real library rather than a generated signal.
