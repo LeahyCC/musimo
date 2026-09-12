@@ -384,8 +384,9 @@ uv run mypy
 uv run coverage run -m unittest discover -s tests
 uv run coverage report
 npm run lint --prefix frontend
-npm run build --prefix frontend
 npm run format:check --prefix frontend
+npm run test --prefix frontend
+npm run build --prefix frontend
 npm run test:e2e:types --prefix frontend
 ```
 
