@@ -365,11 +365,14 @@ docker compose up -d --build --wait
 npm run dev --prefix frontend
 ```
 
-Open Vite's printed address. Its `/api` proxy targets localhost port 8765. Set `MUSIMO_API_TARGET` to use another backend, for example a Musimo on another machine on your network whose `MUSIMO_BIND` lets you reach it:
+Open Vite's printed address. Its `/api` proxy targets localhost port 8765. Set `MUSIMO_API_TARGET` to use another backend, for example a Musimo on another machine on your network whose `MUSIMO_BIND` lets you reach it, or one behind Tailscale Serve or a reverse proxy over https:
 
 ```sh
 MUSIMO_API_TARGET=http://other-machine:8765 npm run dev --prefix frontend
+MUSIMO_API_TARGET=https://other-machine.tailnet.ts.net npm run dev --prefix frontend
 ```
+
+Writes through the proxy (saving the queue, scrobbles, settings) work in both cases: over http the browser's Host goes through unchanged, and over https the proxy presents the target's own origin.
 
 For Python work outside Docker, install the worker tools if needed, and set `MUSIMO_DATA_DIR`, `MUSIMO_LIBRARY_ROOTS` and `MUSIMO_STATIC_DIR` to isolated absolute paths:
 
