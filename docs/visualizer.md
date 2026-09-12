@@ -28,7 +28,7 @@ The packet layout lives at the top of the file; WGSL structs must match it exact
 
 WebGPU only. Where it is missing, or the adapter or device cannot be had, the stage shows the artwork exactly as before and says so once (`musimo.now-playing-visualizer-notice`). There is no WebGL fallback and none is planned.
 
-`frontend/src/visualizer/gpu/Device.ts` asks for a high-performance adapter and a device once, keeps them as a module singleton, logs `uncapturederror`, and clears the singleton when the browser reports the device lost so the next request starts fresh. An adapter whose info names SwiftShader or another software rasteriser is flagged, and the scene caps its particle count at 20,000 on it.
+`frontend/src/visualizer/gpu/Device.ts` asks for a high-performance adapter and a device once, keeps them as a module singleton, logs `uncapturederror`, and clears the singleton when the browser reports the device lost so the next request starts fresh. An adapter whose info names SwiftShader or another software rasteriser is flagged, and each scene scales itself down on it: 20,000 particles, the small fluid grid with fewer sweeps, or half the march's step cap at half the canvas.
 
 ### Lifetime
 
@@ -48,7 +48,7 @@ The post stack's offscreen textures are sized from the canvas, so they belong to
 
 `gpu/Renderer.ts` is that singleton. A stage calls `attach(canvas, hudCanvas, onFailure)` on mount and `detach(canvas)` on unmount; `attach` configures the context, sizes the canvas to its CSS box times `devicePixelRatio`, and starts a loop on the canvas's own window, so a popout keeps drawing while the tab behind it is hidden and a hidden tab stops. On device loss the renderer drops the scene, the post stack and their buffers and tries once to come back on the same canvas; if that fails it calls `onFailure` and the stage falls back to artwork.
 
-Each frame: read the analyser through the feature client (once the library element has played), stamp time and dt into the packet, upload it as one 64-byte uniform, run the scene's compute and render passes into the post stack's texture, run the stack over it onto the canvas, then draw the HUD if it is on. React owns mounting, unmounting and the controls only; no per-frame state touches it. The canvas carries `data-adapter`, `data-frame-ms`, `data-scene`, `data-detail` (the scene's workload, such as `250,000 particles` or `512 fluid`) and `data-post` so a screenshot or a test can read them.
+Each frame: read the analyser through the feature client (once the library element has played), stamp time and dt into the packet, upload it as one 64-byte uniform, run the scene's compute and render passes into the post stack's texture, run the stack over it onto the canvas, then draw the HUD if it is on. React owns mounting, unmounting and the controls only; no per-frame state touches it. The canvas carries `data-adapter`, `data-frame-ms`, `data-scene`, `data-detail` (the scene's workload, such as `250,000 particles`, `512 fluid` or `64-step raymarch`) and `data-post` so a screenshot or a test can read them.
 
 ### Popout and full screen
 
@@ -58,7 +58,7 @@ Full screen in the tab renders at device pixel ratio: a 1920 by 1080 CSS box at 
 
 ### Scenes
 
-Two of them, behind the `Scene` interface in `scenes/Scene.ts`: `init`, `resize`, `update`, `render`, `dispose`, and a `detail` line naming what the scene is doing. The renderer holds exactly one, chosen from the stage's top bar and remembered as `musimo.visualizer-scene`; the default is the particle field. `scenes/catalog.ts` holds the ids, the labels and the sizes each scene offers, and imports nothing, so the top bar can read them without pulling the WebGPU tree into the main bundle.
+Three of them, behind the `Scene` interface in `scenes/Scene.ts`: `init`, `resize`, `update`, `render`, `dispose`, and a `detail` line naming what the scene is doing. The renderer holds exactly one, chosen from the stage's top bar and remembered as `musimo.visualizer-scene`; the default is the particle field. `scenes/catalog.ts` holds the ids, the labels and the sizes each scene offers, and imports nothing, so the top bar can read them without pulling the WebGPU tree into the main bundle.
 
 Switching scenes disposes the old one, which destroys its buffers and textures, then builds the new one on the same device and resizes it to the canvas. Nothing else changes: the device, the feature buffer and the post stack all carry on.
 
@@ -96,6 +96,22 @@ The grid size is chosen from the stage's top bar and remembered as `musimo.visua
 
 `scenes/fluid.params.ts` is pure TypeScript with no GPU objects, like `post/params.ts`: the palette table, the visible extent, the emitter placement, the feature mapping and the uniform write all live there and are unit tested in `fluid.params.test.ts`.
 
+#### Raymarch
+
+`scenes/Raymarch.ts` with `shaders/raymarch.common.wgsl`, `raymarch.march.wgsl` and `raymarch.upscale.wgsl`, plus `scenes/raymarch.params.ts` for the numbers. One full-screen fragment pass, one ray a pixel through a Mandelbox distance field: each round folds the point back into the unit box, inflates it out of an inner ball or inverts it inside a shell, scales it and adds the point it started from, while a running derivative turns the folded length back into a distance. The fold in its own units is about ten across at the corners, which would put any sensible camera inside it, so the march divides through a constant and works on a shape a few units wide.
+
+There is no simulation state at all, unlike the other two scenes: a frame is drawn from the uniform and nothing else. Nothing is lost when the stage remounts, nothing is rebuilt on a resize, and the 128-byte uniform is the whole of what the scene owns.
+
+Shading is one light. The surface normal is four samples on a tetrahedron rather than six on the axes. The shadow is a second, much shorter march (18 steps, 5 units) that keeps the nearest the field came to the ray, so an edge is soft for the price of one sample; a face turned away from the light skips it entirely, which is half the surface on a convex fold and was the second most expensive thing in the pass. Ambient occlusion is free: a ray that took many steps to land was scraping past the fold, which is what a crevice does, so the step count is the occlusion term. That same count is the halo around a miss, and the only thing a miss draws; it is what the bloom picks up. Colour is a cosine ramp read at the surface's distance from the middle plus its step count, so a face and the filigree on it are not one flat tint.
+
+Audio mapping: bass sets the fold scale, so the shape opens and closes with the low end; treble sets how many times the fold runs (6 to 12), which is where the fine detail comes from; `beatPulse` pulls the camera in, never past the shell, because inside the fold the distance estimate is no use and the frame turns to noise; energy drives the light and the halo, and the colour ramp drifts with time and bass.
+
+The march is bounded twice, because it has no natural cost: a step cap and a distance cap, both in `raymarch.params.ts`. Without them a passage that folds the field tighter would make every ray creep and one bar could cost ten times the frame budget of the one before. The cap is chosen from the stage's top bar (64 or 112 steps) and remembered as `musimo.visualizer-raymarch-steps`; the default is 64. A software rasteriser gets half of whatever was chosen and marches at half the canvas each side, then the result is stretched back with one bilinear tap a pixel; that upsample pass is the only thing `Raymarch.ts` ever allocates a texture for.
+
+The cap is a ceiling rather than the cost. Walking the same rays outside the browser, an average ray uses about half the cap at 64 and under a third at 112, and the share that leaves the march unfinished falls from six per cent to about one; that share is the soft fringe around the silhouette. This is why the two caps measure the same on the Mac below, and why the control is still worth having: it is what bounds the worst case on a slower machine.
+
+`scenes/raymarch.params.ts` is pure TypeScript with no GPU objects, like the fluid's: the camera orbit, the step and distance caps, the feature mapping and the uniform write live there and are unit tested in `raymarch.params.test.ts`. The camera itself is three axes rather than a matrix, `cameraBasis` in `gpu/math.ts`, since a ray is built from them directly.
+
 ### Post stack
 
 `post/PostStack.ts` sits between the scene and the swap chain. The scene no longer draws on the canvas at all: it draws into one of two `rgba16float` history textures, and the composite pass is the only thing that writes the canvas.
@@ -131,16 +147,17 @@ H toggles `hud/Hud.ts`, a 2D canvas over the scene: the five band envelopes and 
 - `frontend/src/visualizer/audio/AudioGraph.ts`: the context, the analyser and the attach and resume rules above.
 - `frontend/src/visualizer/audio/FeatureExtractor.ts`, `features.protocol.ts` and `features.worker.ts`: the feature packet and the worker that produces it.
 - `frontend/src/visualizer/gpu/Device.ts`, `gpu/Renderer.ts`, `gpu/math.ts`: the device singleton, the renderer and the camera maths.
-- `frontend/src/visualizer/scenes/Scene.ts` and `scenes/catalog.ts`: the interface both scenes meet, and the ids and sizes the top bar offers.
+- `frontend/src/visualizer/scenes/Scene.ts` and `scenes/catalog.ts`: the interface all three scenes meet, and the ids and sizes the top bar offers.
 - `frontend/src/visualizer/scenes/Particles.ts` and `shaders/particles.*.wgsl`: the particle scene.
 - `frontend/src/visualizer/scenes/Fluid.ts`, `scenes/fluid.params.ts` and `shaders/fluid.*.wgsl`: the fluid scene, its numbers and its passes.
+- `frontend/src/visualizer/scenes/Raymarch.ts`, `scenes/raymarch.params.ts` and `shaders/raymarch.*.wgsl`: the raymarch scene, its caps and its one pass.
 - `frontend/src/visualizer/post/PostStack.ts`, `post/params.ts` and `shaders/post.*.wgsl`: the post stack, its parameters and its passes.
 - `frontend/src/visualizer/hud/Hud.ts`, `Visualizer.tsx`: the debug overlay and the React shell the stage mounts.
 - `frontend/src/player.tsx`: the two audio elements, the handlers they share (each ignores events from the element that is not current), and the visibility resume.
 
 ## Checks
 
-Unit tests cover the pure parts: the feature extractor with synthetic spectra (band collapse at both FFT sizes, envelope attack and release timing, every click in a click train detected with none between and the tempo found, jitter not read as onsets), the worker protocol handing buffers back, the camera maths, the post stack's parameters (a patch leaving the object it was given alone, the stack's own switch overriding the stages under it, each stage that is off writing values that make its term vanish, the chromatic split widening with `beatPulse`, the bloom level sizes, and nothing that the shaders divide by reaching zero), and the fluid's parameters (the grid size chosen and capped on a rasteriser, the visible extent of a square grid on a canvas of any shape including one with no area, every emitter landing inside the band the canvas shows at the loudest spread, the push being a unit vector, an onset injecting several times the trickle and bass raising it further, the trickle halving when the step halves, the step clamped, treble raising vorticity and thinning viscosity, energy clearing the dye faster, the palette coordinate staying inside the table, the palette starting and ending on the same colour, and no emitter slot writing a radius the shader would divide by).
+Unit tests cover the pure parts: the feature extractor with synthetic spectra (band collapse at both FFT sizes, envelope attack and release timing, every click in a click train detected with none between and the tempo found, jitter not read as onsets), the worker protocol handing buffers back, the camera maths, the post stack's parameters (a patch leaving the object it was given alone, the stack's own switch overriding the stages under it, each stage that is off writing values that make its term vanish, the chromatic split widening with `beatPulse`, the bloom level sizes, and nothing that the shaders divide by reaching zero), and the fluid's parameters (the grid size chosen and capped on a rasteriser, the visible extent of a square grid on a canvas of any shape including one with no area, every emitter landing inside the band the canvas shows at the loudest spread, the push being a unit vector, an onset injecting several times the trickle and bass raising it further, the trickle halving when the step halves, the step clamped, treble raising vorticity and thinning viscosity, energy clearing the dye faster, the palette coordinate staying inside the table, the palette starting and ending on the same colour, and no emitter slot writing a radius the shader would divide by), and the raymarch's (the step cap taken from the offered set or falling back to the default, halved but never emptied on a rasteriser, the march size half the canvas there and all of it otherwise and never zero texels, bass opening the fold, treble adding whole fold iterations, a beat pulling the camera in but never inside the shell, energy raising the light and the halo, the light direction being a unit vector, the camera basis staying orthonormal all round the orbit, the colour coordinate staying inside the ramp, the cap surviving the loudest packet, and no lane of the uniform reaching a value the shader would divide by). The camera basis is tested in `gpu/math.test.ts` for the orbit and for the one case where it is undefined, a camera looking straight along its own up vector.
 
 Playwright can prove structure, not pixels: headless engines have no WebGPU adapter and a WebGPU canvas renders black in a screenshot. `e2e/visualizer.spec.ts` checks the artwork fallback and its one-time notice with `navigator.gpu` removed, and, only where the browser has an adapter, the default visualizer view, the V and H keys, the toggle button, the remembered choice, the post stages named in `data-post`, and the scene select naming the scene in `data-scene`, swapping the size control beside it and surviving a reload. The preview checks in `e2e/app.spec.ts` drive the preview element and the phone player checks drive the library element, so the split cannot regress silently.
 
@@ -194,4 +211,27 @@ Checked by hand on a Mac (Apple M5 Pro, macOS 26.6), Chromium 153 driven by a Pl
 
 - The grid select, eight switches between 512 and 1024 while a track played: `data-detail` followed each time, no console errors, the frame time held, and the choice survived a reload as `musimo.visualizer-fluid-grid`.
 
-Not checked yet: a mid-range desktop GPU, and the fluid on a software rasteriser, which the 512 cap and the reduced sweep counts are written for but no machine here can run.
+- The raymarch scene, on the same Mac in headed Chromium 153 against the real library, the post stack on throughout. The same four tracks, each searched for, started from the tracks list and opened with in-app navigation, with the artist on the footer checked before anything was read, because the saved queue comes back from the backend a moment after the page loads and a click that lands early is overwritten by whatever played last. Each cell is `data-frame-ms` after ten and a half seconds, and the particle field at 250k is the control. The display runs at 120 Hz, so 8.3 ms means the GPU is not the limit:
+
+  | Stage size, track                                      | Raymarch 64 | Raymarch 112 | 250k particles |
+  | ------------------------------------------------------ | ----------- | ------------ | -------------- |
+  | 320 by 320, ratio 1 (docked), Donkey Rhubarb           | 8.4 ms      | 8.2 ms       | 8.3 ms         |
+  | 320 by 320, Above & Beyond                             | 8.4 ms      | 8.3 ms       | 8.4 ms         |
+  | 320 by 320, CamelPhat                                  | 8.4 ms      | 8.2 ms       | 8.3 ms         |
+  | 320 by 320, Andy C                                     | 8.4 ms      | 8.4 ms       | 8.4 ms         |
+  | 1920 by 1080 at ratio 2 (3840 by 2160), Donkey Rhubarb | 18.6 ms     | 18.6 ms      | 8.4 ms         |
+  | 3840 by 2160, Above & Beyond                           | 18.7 ms     | 18.1 ms      | 8.4 ms         |
+  | 3840 by 2160, CamelPhat                                | 16.5 ms     | 15.0 ms      | 8.3 ms         |
+  | 3840 by 2160, Andy C                                   | 19.5 ms     | 18.4 ms      | 8.4 ms         |
+
+  Docked, the march is at the cap like everything else. At 3840 by 2160 it is not: a fill-bound pass shading eight million pixels through a fractal costs 15 to 20 ms on this machine, so full screen runs at 50 to 65 frames a second rather than 120. That is the honest number for this scene and the reason the caps exist. The two caps do not separate: 112 measured the same as 64, or a little faster, because what the frame costs is how much of the screen the fold covers and how many times it is folded, not the ceiling on a ray that has already stopped. Full screen cannot be requested without a gesture under automation, so the 4K case forces the stage to a 1920 by 1080 CSS box at ratio 2, which is the same canvas.
+
+- What the stage showed, screenshotted at 3840 by 2160. The fold reads as a folded box with its faces cut away into galleries and filigree, lit from one side with the crevices dark and a coloured halo around the silhouette. On Donkey Rhubarb, whose treble is gentle, the fold runs six or seven times and the faces stay broad and plain, and the camera sits back. CamelPhat's Easier and Andy C's Back & Forth drive it the other way: the fold runs to twelve, the faces break into filigree down to a pixel at 4K, and the camera is pulled in on almost every onset, so the shape breathes at the beat. Colour drifts through the ramp over a minute or two, from deep blue and teal to green and gold, with the bloom taking the halo and nothing clipping to a flat white mass.
+
+- Scene switching, twelve times around all three scenes while a track played: one `requestAdapter` and one `requestDevice` for the whole run, one `configure` and no `unconfigure`, no `uncapturederror` and no console errors. `data-scene` and `data-detail` followed the select every time and the frame time stayed at 8.3 to 8.4 ms docked throughout.
+
+- The step select, six switches between 64 and 112 while a track played: `data-detail` followed each time, no console errors, the frame time held, and the choice survived a reload as `musimo.visualizer-raymarch-steps`.
+
+- Popout round trip with the march drawing, six times: one adapter and one device for the whole run, the number of configured canvas contexts always exactly one ahead of the number unconfigured (7 against 6 at the end), no uncaptured errors and no console errors. Both canvases carried `raymarch` and `64-step raymarch` with advancing frame times, the docked stage came back at 320 by 320 each time, and playback was never interrupted across the run.
+
+Not checked yet: a mid-range desktop GPU, and the fluid and the raymarch on a software rasteriser, which the reduced grid, sweep counts, halved step cap and half-resolution march are written for but no machine here can run.

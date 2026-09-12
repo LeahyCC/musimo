@@ -47,6 +47,22 @@ export function lookAt(eye: Vec3, target: Vec3, up: Vec3) {
   return m
 }
 
+/** An orthonormal camera frame, forward from the eye toward the target. */
+export type Basis = { forward: Vec3; right: Vec3; up: Vec3 }
+
+/**
+ * The camera as three axes rather than a matrix. A raymarch builds each ray
+ * from these directly, so it never needs a projection or its inverse. Looking
+ * straight along the given up vector leaves the cross product undefined, so a
+ * different axis is borrowed for that frame rather than returning zeros.
+ */
+export function cameraBasis(eye: Vec3, target: Vec3, up: Vec3): Basis {
+  const forward = normalize(sub(target, eye))
+  const reference = Math.abs(dot(forward, normalize(up))) > 0.999 ? ([0, 0, 1] as Vec3) : up
+  const right = normalize(cross(forward, reference))
+  return { forward, right, up: cross(right, forward) }
+}
+
 /** a * b, both column-major. */
 export function multiply(a: Float32Array, b: Float32Array, out = new Float32Array(16)) {
   for (let column = 0; column < 4; column++) {

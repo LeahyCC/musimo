@@ -16,10 +16,16 @@ import { Hud } from '../hud/Hud'
 import { postSummary } from '../post/params'
 import type { PostParams, PostPatch } from '../post/params'
 import { PostStack, SCENE_FORMAT } from '../post/PostStack'
-import { DEFAULT_FLUID_SIZE, DEFAULT_PARTICLES, DEFAULT_SCENE } from '../scenes/catalog'
+import {
+  DEFAULT_FLUID_SIZE,
+  DEFAULT_PARTICLES,
+  DEFAULT_RAYMARCH_STEPS,
+  DEFAULT_SCENE,
+} from '../scenes/catalog'
 import type { SceneId } from '../scenes/catalog'
 import { Fluid } from '../scenes/Fluid'
 import { Particles } from '../scenes/Particles'
+import { Raymarch } from '../scenes/Raymarch'
 import type { Scene } from '../scenes/Scene'
 import { acquireGpu, configureCanvas, onGpuLost } from './Device'
 import type { Gpu, GpuInfo } from './Device'
@@ -51,6 +57,7 @@ class Renderer {
   private sceneId: SceneId = DEFAULT_SCENE
   private particles = DEFAULT_PARTICLES
   private fluidSize = DEFAULT_FLUID_SIZE
+  private raymarchSteps = DEFAULT_RAYMARCH_STEPS
   private readonly packet = new Float32Array(PACKET_LENGTH)
   private frameMs = 16.7
   private reported = 0
@@ -152,6 +159,11 @@ class Renderer {
     if (this.scene instanceof Fluid) this.scene.setSize(size)
   }
 
+  setRaymarchSteps(steps: number) {
+    this.raymarchSteps = steps
+    if (this.scene instanceof Raymarch) this.scene.setSteps(steps)
+  }
+
   /** Swap the whole scene. The old one's buffers go with it. */
   setScene(id: SceneId) {
     if (id === this.sceneId) return
@@ -167,8 +179,7 @@ class Renderer {
     const features = this.features
     if (!gpu || !features) return
     this.scene?.dispose()
-    this.scene =
-      this.sceneId === 'fluid' ? new Fluid(this.fluidSize) : new Particles(this.particles)
+    this.scene = this.build()
 
     this.scene.init({
       device: gpu.device,
@@ -178,6 +189,12 @@ class Renderer {
     })
 
     if (this.canvas) this.scene.resize(this.canvas.width, this.canvas.height)
+  }
+
+  private build(): Scene {
+    if (this.sceneId === 'fluid') return new Fluid(this.fluidSize)
+    if (this.sceneId === 'raymarch') return new Raymarch(this.raymarchSteps)
+    return new Particles(this.particles)
   }
 
   private start() {

@@ -24,6 +24,7 @@ import {
   FLUID_SIZES,
   isSceneId,
   PARTICLE_COUNTS,
+  RAYMARCH_STEPS,
   SCENE_IDS,
   SCENE_LABELS,
 } from './visualizer/scenes/catalog'
@@ -49,6 +50,8 @@ type OverlayProps = {
   onParticles?: (count: number) => void
   fluidSize?: number
   onFluidSize?: (size: number) => void
+  raymarchSteps?: number
+  onRaymarchSteps?: (steps: number) => void
 }
 
 const IDLE_MS = 2500
@@ -211,6 +214,8 @@ export function NowPlayingOverlay({
   onParticles,
   fluidSize,
   onFluidSize,
+  raymarchSteps,
+  onRaymarchSteps,
 }: OverlayProps) {
   const player = usePlayer()
   const track = player.libraryTrack
@@ -274,6 +279,20 @@ export function NowPlayingOverlay({
               {FLUID_SIZES.map((size) => (
                 <option key={size} value={size}>
                   {size} grid
+                </option>
+              ))}
+            </select>
+          )}
+          {view === 'visualizer' && scene === 'raymarch' && onRaymarchSteps && (
+            <select
+              className="stage-select"
+              aria-label="Raymarch steps"
+              value={raymarchSteps}
+              onChange={(event) => onRaymarchSteps(Number(event.target.value))}
+            >
+              {RAYMARCH_STEPS.map((steps) => (
+                <option key={steps} value={steps}>
+                  {steps} steps
                 </option>
               ))}
             </select>
