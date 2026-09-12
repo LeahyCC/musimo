@@ -7,7 +7,7 @@ import {
   useRef,
   useState,
 } from 'react'
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, ReactNode, SyntheticEvent } from 'react'
 
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -185,6 +185,9 @@ export const songCount = (count: number) => `${count} ${count === 1 ? 'song' : '
 export const artUrl = (track: LibraryTrack) =>
   track.coverArt ? `/api/player/art/${encodeURIComponent(track.coverArt)}` : ''
 
+// The visualizer tree loads on demand so the main bundle stays as it is.
+const audioGraph = () => import('./visualizer/audio/AudioGraph')
+
 export function stored(key: string, fallback: string) {
   try {
     return localStorage.getItem(key) ?? fallback
@@ -301,7 +304,11 @@ function PlaylistPickerRow({
 }
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  const audio = useRef<HTMLAudioElement>(null)
+  // Two elements, one per mode. Previews stream from the provider's CDN without
+  // CORS headers, and the Web Audio analyser the visualizer needs would silence
+  // such media for good, so only the library element ever feeds it.
+  const previewAudio = useRef<HTMLAudioElement>(null)
+  const libraryAudio = useRef<HTMLAudioElement>(null)
   const request = useRef<AbortController | null>(null)
   const previewCurrent = useRef<MusicResult | null>(null)
   const libraryCurrent = useRef<LibraryTrack | null>(null)
@@ -309,6 +316,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const indexRef = useRef(-1)
   const sourceRef = useRef('')
   const mode = useRef<'preview' | 'library'>('preview')
+  const current = () => (mode.current === 'library' ? libraryAudio.current : previewAudio.current)
+  const elements = () => [previewAudio.current, libraryAudio.current]
   const previewStage = useRef(0)
   const pendingSeek = useRef(0)
   const lastSavedSecond = useRef(-1)
@@ -434,7 +443,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   function startAudio(url: string, autoplay = true) {
-    const element = audio.current
+    const element = current()
     if (!element) return
     element.src = url
     setReady(false)
@@ -449,7 +458,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({
         ids: queueRef.current.map((item) => item.id),
         current: libraryCurrent.current.id,
-        position: Math.round((audio.current?.currentTime ?? 0) * 1000),
+        position: Math.round((libraryAudio.current?.currentTime ?? 0) * 1000),
       }),
     })
   }
@@ -468,7 +477,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const item = queueRef.current[index]
     if (!item) return
     request.current?.abort()
-    audio.current?.pause()
+    // Only one of the two plays at a time. The other element's pause event is
+    // ignored once the mode has changed, so the state is set here instead.
+    for (const element of elements()) element?.pause()
+    setPlaying(false)
     mode.current = 'library'
     previewCurrent.current = null
     libraryCurrent.current = item
@@ -500,7 +512,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   function toggle() {
-    const element = audio.current
+    const element = current()
     const hasItem = mode.current === 'library' ? libraryCurrent.current : previewCurrent.current
     if (!element || !hasItem) return
     if (!element.paused) element.pause()
@@ -516,13 +528,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (
       mode.current === 'preview' &&
       previewCurrent.current?.id === item.id &&
-      audio.current?.src
+      previewAudio.current?.src
     ) {
       toggle()
       return
     }
     request.current?.abort()
-    audio.current?.pause()
+    for (const element of elements()) element?.pause()
+    setPlaying(false)
     mode.current = 'preview'
     libraryCurrent.current = null
     previewCurrent.current = item
@@ -551,17 +564,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function previous() {
     if (mode.current !== 'library') return
-    if ((audio.current?.currentTime ?? 0) > 4) {
-      if (audio.current) audio.current.currentTime = 0
+    if ((libraryAudio.current?.currentTime ?? 0) > 4) {
+      if (libraryAudio.current) libraryAudio.current.currentTime = 0
       return
     }
     loadLibrary(Math.max(0, indexRef.current - 1))
   }
 
-  const audioElement = useCallback(() => audio.current, [])
+  const audioElement = useCallback(() => current(), [])
 
   function seek(seconds: number) {
-    if (audio.current) audio.current.currentTime = seconds
+    const element = current()
+    if (element) element.currentTime = seconds
     setPosition(seconds)
   }
 
@@ -589,9 +603,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     libraryCurrent.current = null
     sourceRef.current = ''
     setSource('')
-    audio.current?.pause()
-    audio.current?.removeAttribute('src')
-    audio.current?.load()
+    for (const element of elements()) {
+      element?.pause()
+      element?.removeAttribute('src')
+      element?.load()
+    }
     setTrack(null)
     setLibraryTrack(null)
     setPlaying(false)
@@ -620,12 +636,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   useEffect(() => {
     const value = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 0.7
-    if (audio.current) {
-      audio.current.volume = value
-      audio.current.muted = muted
+    for (const element of elements()) {
+      if (!element) continue
+      element.volume = value
+      element.muted = muted
     }
     remember('musimo.player-volume', String(value))
   }, [volume, muted])
+
+  // Browsers suspend the audio context while a tab is hidden for a while, or on
+  // iOS when another app takes the output. Wake it when the tab comes back.
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState !== 'visible' || mode.current !== 'library') return
+      if (libraryAudio.current && !libraryAudio.current.paused)
+        void audioGraph().then((module) => module.resumeAudioGraph())
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [])
 
   useEffect(() => {
     remember('musimo.player-shuffle', String(shuffle))
@@ -731,6 +760,76 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         ? { playlistId: playlist.id, index }
         : { playlistId: playlist.id, songId: trackId },
     )
+  }
+
+  // Both elements share these. Each ignores events while the other mode is
+  // current, so a preview pausing as a library track starts cannot mark that
+  // track paused, and a stale timeupdate cannot move the seek bar.
+  function mediaHandlers(which: 'preview' | 'library') {
+    type MediaEvent = SyntheticEvent<HTMLAudioElement>
+    const library = which === 'library'
+    return {
+      onLoadedMetadata: (event: MediaEvent) => {
+        if (mode.current !== which) return
+        setReady(true)
+        if (pendingSeek.current) {
+          event.currentTarget.currentTime = pendingSeek.current
+          pendingSeek.current = 0
+        }
+      },
+      onPlay: (event: MediaEvent) => {
+        if (mode.current !== which) return
+        setPlaying(true)
+        if (!library) return
+        scrobble(false)
+        const element = event.currentTarget
+        void audioGraph().then((module) => module.connectLibraryAudio(element))
+      },
+      onPause: () => {
+        if (mode.current !== which) return
+        setPlaying(false)
+        saveQueue()
+      },
+      onEnded: () => {
+        if (mode.current !== which) return
+        if (!library) {
+          setPlaying(false)
+          return
+        }
+        scrobble(true)
+        if (repeat === 'one') loadLibrary(indexRef.current)
+        else next()
+      },
+      onTimeUpdate: (event: MediaEvent) => {
+        if (mode.current !== which) return
+        const seconds = event.currentTarget.currentTime
+        setPosition(seconds)
+        if (library && Math.floor(seconds / 10) !== lastSavedSecond.current) {
+          lastSavedSecond.current = Math.floor(seconds / 10)
+          saveQueue()
+        }
+      },
+      onDurationChange: (event: MediaEvent) => {
+        if (mode.current !== which) return
+        const { duration } = event.currentTarget
+        if (Number.isFinite(duration)) setLength(duration)
+      },
+      onError: () => {
+        if (mode.current !== which) return
+        setPlaying(false)
+        setReady(false)
+        if (library) {
+          setNotice('This library track could not be played.')
+          return
+        }
+        const item = previewCurrent.current
+        if (!item) return
+        if (previewStage.current < 2) {
+          previewStage.current += 1
+          void loadPreview(item, previewStage.current === 2)
+        } else setNotice('No playable preview available.')
+      },
+    }
   }
 
   function submitNewPlaylist(event: FormEvent<HTMLFormElement>) {
@@ -886,9 +985,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               aria-label="Restart preview"
               disabled={!ready}
               onClick={() => {
-                if (audio.current) {
-                  audio.current.currentTime = 0
-                  void audio.current.play().catch(() => setNotice('Press play when you are ready.'))
+                const element = previewAudio.current
+                if (element) {
+                  element.currentTime = 0
+                  void element.play().catch(() => setNotice('Press play when you are ready.'))
                 }
               }}
             >
@@ -1059,57 +1159,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           </dialog>
         )}
         <audio
-          ref={audio}
+          ref={previewAudio}
+          className="preview-audio"
           preload="metadata"
-          onLoadedMetadata={() => {
-            setReady(true)
-            if (pendingSeek.current && audio.current) {
-              audio.current.currentTime = pendingSeek.current
-              pendingSeek.current = 0
-            }
-          }}
-          onPlay={() => {
-            setPlaying(true)
-            if (mode.current === 'library') scrobble(false)
-          }}
-          onPause={() => {
-            setPlaying(false)
-            saveQueue()
-          }}
-          onEnded={() => {
-            if (mode.current === 'library') scrobble(true)
-            if (mode.current === 'library' && repeat === 'one') loadLibrary(indexRef.current)
-            else if (mode.current === 'library') next()
-            else setPlaying(false)
-          }}
-          onTimeUpdate={() => {
-            const seconds = audio.current?.currentTime ?? 0
-            setPosition(seconds)
-            if (
-              mode.current === 'library' &&
-              Math.floor(seconds / 10) !== lastSavedSecond.current
-            ) {
-              lastSavedSecond.current = Math.floor(seconds / 10)
-              saveQueue()
-            }
-          }}
-          onDurationChange={() => {
-            if (Number.isFinite(audio.current?.duration)) setLength(audio.current?.duration ?? 0)
-          }}
-          onError={() => {
-            setPlaying(false)
-            setReady(false)
-            if (mode.current === 'library') {
-              setNotice('This library track could not be played.')
-              return
-            }
-            const item = previewCurrent.current
-            if (!item) return
-            if (previewStage.current < 2) {
-              previewStage.current += 1
-              void loadPreview(item, previewStage.current === 2)
-            } else setNotice('No playable preview available.')
-          }}
+          {...mediaHandlers('preview')}
+        />
+        <audio
+          ref={libraryAudio}
+          className="library-audio"
+          preload="metadata"
+          {...mediaHandlers('library')}
         />
       </footer>
     </PlayerContext.Provider>

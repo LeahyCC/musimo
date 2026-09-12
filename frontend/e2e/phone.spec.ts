@@ -229,7 +229,9 @@ test('the mini player is one row and hands the rest to Now Playing', async ({ pa
   await seek.press('ArrowRight')
   await expect
     .poll(() =>
-      player.locator('audio').evaluate((element: HTMLAudioElement) => element.currentTime),
+      player
+        .locator('audio.library-audio')
+        .evaluate((element: HTMLAudioElement) => element.currentTime),
     )
     .toBeGreaterThan(0)
   // The seek bar runs along the player's top edge rather than taking a row of its own.

@@ -174,6 +174,6 @@ See [downloads](downloads.md) for durable job state, worker control, publication
 
 ## Library player
 
-See [library player](player.md). Navidrome is the playback data plane rather than duplicating streaming, artwork and playable IDs in Musimo. One backend client owns Subsonic authentication, capability discovery, library browsing, media proxying, queue persistence, lyrics, scrobbles and selective scans. Browser code never receives Navidrome credentials. One browser audio element switches explicitly between catalog preview and library playback.
+See [library player](player.md). Navidrome is the playback data plane rather than duplicating streaming, artwork and playable IDs in Musimo. One backend client owns Subsonic authentication, capability discovery, library browsing, media proxying, queue persistence, lyrics, scrobbles and selective scans. Browser code never receives Navidrome credentials. Catalog previews and library playback have separate browser audio elements, and only the library one is routed through Web Audio for the visualizer, because provider preview media has no CORS headers and would be silenced by it. Only one of the two plays at a time.
 
 AudioMuse-AI remains optional. Standard sonic radio and path features route through Navidrome's advertised OpenSubsonic `sonicSimilarity` extension. AudioMuse-specific natural-language and alchemy features remain behind a later adapter.
