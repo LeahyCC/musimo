@@ -39,13 +39,16 @@ module singleton, survives remounts            per mount, made again each time
 ------------------------------------           -------------------------------
 GPUDevice, feature uniform buffer              HTMLCanvasElement (scene + HUD)
 pipelines, particle storage buffers            GPUCanvasContext, configure()
-the feature worker and its client              ResizeObserver, visibility hook
-frame clock, HUD history                       requestAnimationFrame handle
+the post stack and its parameters              ResizeObserver, visibility hook
+the feature worker and its client              requestAnimationFrame handle
+frame clock, HUD history
 ```
 
-`gpu/Renderer.ts` is that singleton. A stage calls `attach(canvas, hudCanvas, onFailure)` on mount and `detach(canvas)` on unmount; `attach` configures the context, sizes the canvas to its CSS box times `devicePixelRatio`, and starts a loop on the canvas's own window, so a popout keeps drawing while the tab behind it is hidden and a hidden tab stops. On device loss the renderer drops the scene and buffers and tries once to come back on the same canvas; if that fails it calls `onFailure` and the stage falls back to artwork.
+The post stack's offscreen textures are sized from the canvas, so they belong to neither column: the singleton owns them and rebuilds them whenever the size changes, which a dock or popout move always does.
 
-Each frame: read the analyser through the feature client (once the library element has played), stamp time and dt into the packet, upload it as one 64-byte uniform, run the scene's compute and render passes, then draw the HUD if it is on. React owns mounting, unmounting and the controls only; no per-frame state touches it. The canvas carries `data-adapter`, `data-frame-ms` and `data-particles` so a screenshot or a test can read them.
+`gpu/Renderer.ts` is that singleton. A stage calls `attach(canvas, hudCanvas, onFailure)` on mount and `detach(canvas)` on unmount; `attach` configures the context, sizes the canvas to its CSS box times `devicePixelRatio`, and starts a loop on the canvas's own window, so a popout keeps drawing while the tab behind it is hidden and a hidden tab stops. On device loss the renderer drops the scene, the post stack and their buffers and tries once to come back on the same canvas; if that fails it calls `onFailure` and the stage falls back to artwork.
+
+Each frame: read the analyser through the feature client (once the library element has played), stamp time and dt into the packet, upload it as one 64-byte uniform, run the scene's compute and render passes into the post stack's texture, run the stack over it onto the canvas, then draw the HUD if it is on. React owns mounting, unmounting and the controls only; no per-frame state touches it. The canvas carries `data-adapter`, `data-frame-ms`, `data-particles` and `data-post` so a screenshot or a test can read them.
 
 ### Popout and full screen
 
@@ -61,24 +64,51 @@ Audio mapping: bass (the louder of sub and bass) to attractor strength; treble t
 
 The count is chosen from the stage's top bar (100k, 250k, 500k, 1M) and remembered as `musimo.visualizer-particles`. The default is 250,000.
 
+### Post stack
+
+`post/PostStack.ts` sits between the scene and the swap chain. The scene no longer draws on the canvas at all: it draws into one of two `rgba16float` history textures, and the composite pass is the only thing that writes the canvas.
+
+```
+scene ──► history[current] ──► bright ──► blur x3 ──► composite ──► canvas
+                ▲ add                                     ▲
+                └── history[other], zoomed, turned, decayed
+```
+
+Half floats because the scene sums thousands of additively blended particles: its cores run well past 1, and in `bgra8unorm` everything above 1 was lost, which is why loud passages used to clip to a flat white blob. They are also filterable, which the warp and the blur both need.
+
+The stages, in order:
+
+- **Feedback.** The other history texture, scaled a little about the middle, turned a fraction of a degree and decayed, added under the new frame. The scene has already drawn into this pass's target, so the pass is additively blended rather than reading its own output. The two textures swap each frame. On a still image the gain is `1 / (1 - amount × decay)`, about 1.19 at the defaults; more than that and the field, which already fills most of the frame, turns into a milky haze.
+- **Bloom.** A bright pass with a soft knee at half resolution, then three levels, each a horizontal blur that reads the level above (so it downsamples) and a vertical blur inside its own level. Five taps land between texels, so the hardware filtering makes each one a nine-tap Gaussian for the price of five. The composite adds the three levels back with their own weights.
+- **Chromatic aberration.** Red and blue are read either side of green, by an offset that grows with the distance from the middle. The split is `amount + beat × beatPulse`, packet index 10, so it opens on every onset and closes again.
+- **Tonemap.** A shoulder rather than a curve over the whole range: below the shoulder nothing changes, so the field keeps the brightness PR #56 tuned it to, and above it a value bends toward 1 and never reaches it. Rolling the brightest channel and letting the other two follow keeps a pixel's colour; rolling each channel on its own bleaches it toward white. The pass mixes from the first to the second across the first stop above the shoulder, so the field keeps its colour and only a real core goes white-hot. An extended Reinhard over the whole range was tried first and made every track flat and muddy.
+- **Grain.** A hash of the pixel and a clock, added at the end.
+
+Each stage has its own parameter object with an `enabled` flag, and `PostParams` holds all five plus a switch for the stack itself; a stage runs only when both are on. A later presets step sets a whole stack with one `renderer.setPost(patch)` call and needs no new API. `post/params.ts` holds the defaults and `writePostUniform`, which resolves every toggle on the CPU and writes the 112-byte uniform each pass reads, so the shaders have no branches in them. That file is pure TypeScript with unit tests in `params.test.ts`.
+
+With every stage off the composite is a straight copy, which is what the frame times below call the stack off. Nothing in the interface turns a stage off; a development-only `window.musimoVisualizer` handle does, behind Vite's `DEV` flag, so a Playwright script can measure the difference. It is not in a production build.
+
+Textures are rebuilt whenever the canvas size changes, which includes every dock and popout move, and dropped with the device on loss. The trails therefore start again from black on each move, while the particle field itself keeps running. At 3840 by 2160 the stack holds about 176 MB: two full-resolution history textures and six smaller ones for the bloom levels and their temporaries.
+
 ### HUD
 
-H toggles `hud/Hud.ts`, a 2D canvas over the scene: the five band envelopes and energy as bars, the flux trace against its threshold with onset marks, beat, tempo, frame time, particle count and the adapter. It ships in the build so a report from another machine can carry a screenshot.
+H toggles `hud/Hud.ts`, a 2D canvas over the scene: the five band envelopes and energy as bars, the flux trace against its threshold with onset marks, beat, tempo, frame time, particle count, the adapter and which post stages are running. It ships in the build so a report from another machine can carry a screenshot.
 
 ## Code
 
 - `frontend/src/visualizer/audio/AudioGraph.ts`: the context, the analyser and the attach and resume rules above.
 - `frontend/src/visualizer/audio/FeatureExtractor.ts`, `features.protocol.ts` and `features.worker.ts`: the feature packet and the worker that produces it.
 - `frontend/src/visualizer/gpu/Device.ts`, `gpu/Renderer.ts`, `gpu/math.ts`: the device singleton, the renderer and the camera maths.
-- `frontend/src/visualizer/scenes/Particles.ts` and `shaders/*.wgsl`: the particle scene.
+- `frontend/src/visualizer/scenes/Particles.ts` and `shaders/particles.*.wgsl`: the particle scene.
+- `frontend/src/visualizer/post/PostStack.ts`, `post/params.ts` and `shaders/post.*.wgsl`: the post stack, its parameters and its passes.
 - `frontend/src/visualizer/hud/Hud.ts`, `Visualizer.tsx`: the debug overlay and the React shell the stage mounts.
 - `frontend/src/player.tsx`: the two audio elements, the handlers they share (each ignores events from the element that is not current), and the visibility resume.
 
 ## Checks
 
-Unit tests cover the pure parts: the feature extractor with synthetic spectra (band collapse at both FFT sizes, envelope attack and release timing, every click in a click train detected with none between and the tempo found, jitter not read as onsets), the worker protocol handing buffers back, and the camera maths.
+Unit tests cover the pure parts: the feature extractor with synthetic spectra (band collapse at both FFT sizes, envelope attack and release timing, every click in a click train detected with none between and the tempo found, jitter not read as onsets), the worker protocol handing buffers back, the camera maths, and the post stack's parameters (a patch leaving the object it was given alone, the stack's own switch overriding the stages under it, each stage that is off writing values that make its term vanish, the chromatic split widening with `beatPulse`, the bloom level sizes, and nothing that the shaders divide by reaching zero).
 
-Playwright can prove structure, not pixels: headless engines have no WebGPU adapter and a WebGPU canvas renders black in a screenshot. `e2e/visualizer.spec.ts` checks the artwork fallback and its one-time notice with `navigator.gpu` removed, and, only where the browser has an adapter, the default visualizer view, the V and H keys, the toggle button and the remembered choice. The preview checks in `e2e/app.spec.ts` drive the preview element and the phone player checks drive the library element, so the split cannot regress silently.
+Playwright can prove structure, not pixels: headless engines have no WebGPU adapter and a WebGPU canvas renders black in a screenshot. `e2e/visualizer.spec.ts` checks the artwork fallback and its one-time notice with `navigator.gpu` removed, and, only where the browser has an adapter, the default visualizer view, the V and H keys, the toggle button, the remembered choice and the post stages named in `data-post`. The preview checks in `e2e/app.spec.ts` drive the preview element and the phone player checks drive the library element, so the split cannot regress silently.
 
 Checked by hand on a Mac (Apple M5 Pro, macOS 26.6), Chromium 153 driven by a Playwright script with mocked library routes serving a generated 120 BPM test signal:
 
@@ -99,6 +129,18 @@ Checked by hand on a Mac (Apple M5 Pro, macOS 26.6), Chromium 153 driven by a Pl
 - With `navigator.gpu` present but no adapter (headless Chromium), and with SwiftShader in the headless shell, which cannot present a WebGPU canvas, the stage falls back to artwork with the notice, and the renderer's device-loss recovery runs before it gives up.
 
 - A real library, on the Mac through the Vite proxy to pancakes' Musimo over Tailscale Serve (a local config with `changeOrigin` and an Origin rewrite, see PR #50). Four tracks were played for 40 s each with the feature packets recorded and the stage screenshotted at 1920 by 1080: Aphex Twin's Donkey Rhubarb (about 140 BPM), an Above & Beyond track (about 130), and two drum and bass tracks at 174, CamelPhat's Easier in the Sub Focus remix and one by Andy C. The analyser feeds the HUD, bands sit between 0.3 and 0.95 depending on the track, onsets land on the flux trace, and 250k particles run at the 120 Hz cap. After tuning, the field on real music is a full warm cloud with bright attractor cores rather than the dim haze of the first run.
+- The post stack, on the same Mac in headed Chromium 153 at 1920 by 1080 and ratio 2, against the real library, the same four tracks played from the start with the stage in full screen. Frame time is `data-frame-ms` after eight seconds, first with every stage on, then with the stack switched off, which leaves the composite a straight copy. The display runs at 120 Hz, so 8.3 ms means the GPU is not the limit and the stack costs nothing measurable:
+
+  | Stage size, Donkey Rhubarb                             | 100k         | 250k         | 500k         | 1M             |
+  | ------------------------------------------------------ | ------------ | ------------ | ------------ | -------------- |
+  | 320 by 320, ratio 1 (docked), stack on / off           | 8.3 / 8.4 ms | 8.3 / 8.4 ms | 8.3 / 8.2 ms | 8.4 / 8.4 ms   |
+  | 1920 by 1080 at ratio 2 (3840 by 2160), stack on / off | 8.4 / 8.4 ms | 8.4 / 8.3 ms | 8.4 / 8.3 ms | 11.1 / 10.9 ms |
+
+  At 250k and 3840 by 2160, stack on then off: Donkey Rhubarb 8.3 / 8.2, Above & Beyond 8.4 / 8.4, CamelPhat 8.3 / 8.3, Andy C 8.4 / 8.3 ms. The only case that leaves the cap is a million particles at 4K, where the stack adds about 0.2 ms.
+
+- The white-out is gone. Without the stack, CamelPhat's Easier drives a third of the frame to a flat white mass with no particles visible inside it, and Donkey Rhubarb does the same on its loud passages. With the stack the same moments are a warm core that fades into the colour of the field, and individual particles are still visible inside it. The trails read as a slow radial smear from the zoom, the split opens on each onset, and no track produced a clipped area at any of the four counts.
+- Tuning took several passes, all recorded here because the first two looked worse than no stack at all. An extended Reinhard over the whole range removed the clipping but flattened every track into a muddy grey-brown, so the curve became a shoulder that leaves everything below it alone. A generous feedback (amount 0.55, decay 0.86) and bloom (threshold 0.5, intensity 0.75) filled the gaps between particles and turned the field into a milky haze, so both were cut hard: the feedback gain is now 1.19 on a still image and the bloom threshold is 0.85, high enough that only the cores glow.
+- Popout round trip with the stack on, six times, in headed Chromium: one `requestAdapter` and one `requestDevice`, the number of configured canvas contexts never below zero or above one, no `uncapturederror` and no console errors. Both canvases carried all five stages in `data-post` and advancing frame times throughout, the popout at 3840 by 2160 and the docked stage at 640 by 640, so the stack rebuilds its textures for each size without restarting the field. One cycle read about 22 ms in both windows and the rest sat at the cap.
 - Tempo, replaying those recordings through the extractor exactly as it runs (480-frame window, one reading a second, median of five): Donkey Rhubarb reads 140 for 59% of readings and 69 for most of the rest, where the first version read 70 throughout; Above & Beyond reads 129 for 62%. Both drum and bass tracks read 111 to 115, two thirds of the truth, because the dotted-quarter pattern of their drums correlates more than the beat. A 3:2 rule that fixed one of them broke Above & Beyond, so it was not kept. Nothing uses tempo yet; if something comes to, it needs a better method than flux autocorrelation for drum and bass.
 
 Not checked yet: a mid-range desktop GPU.

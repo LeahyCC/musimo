@@ -1,9 +1,9 @@
 /**
- * The one renderer. It owns the device, the feature buffer, the scene and
- * its particle state, and outlives every stage. A stage hands it a canvas
- * to draw on and takes it back on unmount; the popout portals a fresh stage
- * into another document, so the canvas and its context are the only things
- * made per mount.
+ * The one renderer. It owns the device, the feature buffer, the scene with
+ * its particle state, and the post stack, and outlives every stage. A stage
+ * hands it a canvas to draw on and takes it back on unmount; the popout
+ * portals a fresh stage into another document, so the canvas and its context
+ * are the only things made per mount.
  *
  * The animation loop belongs to the window the canvas is in: the tab's
  * requestAnimationFrame stops when the tab is hidden, and a popout window
@@ -13,6 +13,9 @@ import { audioGraph } from '../audio/AudioGraph'
 import { FeatureClient } from '../audio/FeatureClient'
 import { F, PACKET_LENGTH } from '../audio/FeatureExtractor'
 import { Hud } from '../hud/Hud'
+import { postSummary } from '../post/params'
+import type { PostParams, PostPatch } from '../post/params'
+import { PostStack, SCENE_FORMAT } from '../post/PostStack'
 import { DEFAULT_PARTICLES, Particles } from '../scenes/Particles'
 import { acquireGpu, configureCanvas, onGpuLost } from './Device'
 import type { Gpu, GpuInfo } from './Device'
@@ -27,6 +30,7 @@ class Renderer {
   private gpu: Gpu | null = null
   private features: GPUBuffer | null = null
   private scene: Particles | null = null
+  private post: PostStack | null = null
   private client: FeatureClient | null = null
   private canvas: HTMLCanvasElement | null = null
   private attaching: HTMLCanvasElement | null = null
@@ -70,15 +74,23 @@ class Renderer {
       size: PACKET_LENGTH * 4,
       usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
     })
+    if (!this.post) {
+      this.post = new PostStack()
+      this.post.init(gpu.device, gpu.format)
+    }
+
     if (!this.scene) {
       this.scene = new Particles(this.particles)
+      // The scene draws into the stack's floating-point texture, not the
+      // canvas, so its pipeline is built for that format.
       this.scene.init({
         device: gpu.device,
-        format: gpu.format,
+        format: SCENE_FORMAT,
         features: this.features,
         software: gpu.info.software,
       })
     }
+
     const context = configureCanvas(gpu, canvas)
     if (!context) return 'unsupported'
     this.canvas = canvas
@@ -125,6 +137,15 @@ class Renderer {
     this.hud?.setVisible(visible)
   }
 
+  /** Change one or more post stages; a later presets step calls this. */
+  setPost(patch: PostPatch) {
+    this.post?.setParams(patch)
+  }
+
+  get postParams(): PostParams | null {
+    return this.post?.params ?? null
+  }
+
   setParticleCount(count: number) {
     this.particles = count
     this.scene?.setCount(count)
@@ -164,8 +185,8 @@ class Renderer {
 
   private readonly tick = (now: number) => {
     this.frame = 0
-    const { canvas, context, gpu, scene, features } = this
-    if (!canvas || !context || !gpu || !scene || !features || gpu.lost) return
+    const { canvas, context, gpu, scene, post, features } = this
+    if (!canvas || !context || !gpu || !scene || !post || !features || gpu.lost) return
     const win = canvas.ownerDocument.defaultView ?? window
     this.frame = win.requestAnimationFrame(this.tick)
     const dt = Math.min(0.1, Math.max(0.001, (now - this.last) / 1000))
@@ -187,7 +208,13 @@ class Renderer {
 
     scene.update(this.packet, dt)
     const encoder = gpu.device.createCommandEncoder()
-    scene.render(encoder, context.getCurrentTexture().createView())
+    // The scene draws into the stack's texture and the stack writes the
+    // canvas. With every stage off the composite is a straight copy, so the
+    // path is the same either way and the scene has one pipeline.
+    const offscreen = post.target(canvas.width, canvas.height)
+    if (!offscreen) return
+    scene.render(encoder, offscreen)
+    post.render(encoder, context.getCurrentTexture().createView(), this.packet)
     gpu.device.queue.submit([encoder.finish()])
 
     this.hud?.record(this.packet)
@@ -196,12 +223,14 @@ class Renderer {
       frameMs: this.frameMs,
       particles: scene.particleCount,
       adapter: describe(gpu.info),
+      post: postSummary(post.params),
     })
     // Timing on the element, so a screenshot or a test can read it.
     if (now - this.reported > 500) {
       this.reported = now
       canvas.dataset.frameMs = this.frameMs.toFixed(1)
       canvas.dataset.particles = String(scene.particleCount)
+      canvas.dataset.post = postSummary(post.params)
     }
   }
 
@@ -214,6 +243,8 @@ class Renderer {
     if (canvas) this.detach(canvas)
     this.scene?.dispose()
     this.scene = null
+    this.post?.dispose()
+    this.post = null
     this.features = null
     this.client?.dispose()
     this.client = null
@@ -226,3 +257,19 @@ class Renderer {
 }
 
 export const renderer = new Renderer()
+
+/** What the development handle below offers; nothing in the app uses it. */
+export type VisualizerDevHandle = {
+  setPost: (patch: PostPatch) => void
+  post: () => PostParams | null
+}
+
+// A handle for driving the post stack by hand while measuring frame times,
+// since nothing in the interface turns a stage off. It is behind Vite's DEV
+// flag, so a production build has neither the handle nor this block.
+if (import.meta.env.DEV && typeof window !== 'undefined') {
+  ;(window as Window & { musimoVisualizer?: VisualizerDevHandle }).musimoVisualizer = {
+    setPost: (patch) => renderer.setPost(patch),
+    post: () => renderer.postParams,
+  }
+}
