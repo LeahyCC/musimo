@@ -17,6 +17,7 @@
 ### Infrastructure and fixes
 
 - Let the dev proxy target another backend with `MUSIMO_API_TARGET`, and keep writes through it from being refused as cross-origin (#50)
+- Let the dev proxy reach an https backend such as Tailscale Serve and still save (#55)
 
 ### UI and accessibility
 
