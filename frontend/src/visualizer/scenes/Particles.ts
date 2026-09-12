@@ -9,10 +9,9 @@ import { lookAt, multiply, perspective } from '../gpu/math'
 import common from '../shaders/common.wgsl?raw'
 import compute from '../shaders/particles.compute.wgsl?raw'
 import render from '../shaders/particles.render.wgsl?raw'
+import { DEFAULT_PARTICLES } from './catalog'
 import type { Scene, SceneContext } from './Scene'
 
-export const PARTICLE_COUNTS = [100_000, 250_000, 500_000, 1_000_000] as const
-export const DEFAULT_PARTICLES = 250_000
 // A CPU rasteriser manages a few thousand particles at best.
 const SOFTWARE_CAP = 20_000
 const PARTICLE_BYTES = 32
@@ -51,6 +50,11 @@ export class Particles implements Scene {
 
   get particleCount() {
     return this.count
+  }
+
+  /** One line for the debug overlay and the canvas dataset. */
+  get detail() {
+    return `${this.count.toLocaleString()} particles`
   }
 
   init(context: SceneContext) {

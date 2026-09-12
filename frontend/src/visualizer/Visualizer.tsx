@@ -1,17 +1,26 @@
 import { useEffect, useRef } from 'react'
 
 import { renderer } from './gpu/Renderer'
+import type { SceneId } from './scenes/catalog'
 
 type Props = {
   hud: boolean
+  scene: SceneId
   particles: number
+  fluidSize: number
   /** The device could not be had, or was lost for good: show artwork instead. */
   onUnsupported: () => void
 }
 
 // The whole visualizer tree is loaded on demand from here. React owns the
 // canvas elements and nothing per frame; the renderer draws until unmount.
-export default function VisualizerStage({ hud, particles, onUnsupported }: Props) {
+export default function VisualizerStage({
+  hud,
+  scene,
+  particles,
+  fluidSize,
+  onUnsupported,
+}: Props) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const overlay = useRef<HTMLCanvasElement>(null)
   const failed = useRef(onUnsupported)
@@ -31,7 +40,9 @@ export default function VisualizerStage({ hud, particles, onUnsupported }: Props
   }, [])
 
   useEffect(() => renderer.setHud(hud), [hud])
+  useEffect(() => renderer.setScene(scene), [scene])
   useEffect(() => renderer.setParticleCount(particles), [particles])
+  useEffect(() => renderer.setFluidSize(fluidSize), [fluidSize])
 
   return (
     <>

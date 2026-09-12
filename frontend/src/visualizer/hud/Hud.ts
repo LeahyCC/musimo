@@ -9,7 +9,8 @@ import { F } from '../audio/FeatureExtractor'
 export type HudStats = {
   fps: number
   frameMs: number
-  particles: number
+  /** What the scene is doing, already summarised for the line. */
+  scene: string
   adapter: string
   /** Which post stages are on, already summarised for the line. */
   post: string
@@ -123,7 +124,7 @@ export class Hud {
     )
 
     ctx.fillText(
-      `${stats.fps.toFixed(0)} fps  ${stats.frameMs.toFixed(1)} ms  ${stats.particles.toLocaleString()} particles`,
+      `${stats.fps.toFixed(0)} fps  ${stats.frameMs.toFixed(1)} ms  ${stats.scene}`,
       x + 8,
       top + height + 26,
     )
