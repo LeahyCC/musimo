@@ -5,6 +5,7 @@
 ### Library and playback
 
 - Give library playback its own audio element and a Web Audio analyser for the coming visualizer, keeping catalog previews off it (#51)
+- Extract bands, energy, onsets, a beat pulse and tempo from library playback in a worker, ready for the visualizer (#52)
 
 ### Testing and CI
 
