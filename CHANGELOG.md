@@ -6,6 +6,10 @@
 
 - Add a Vitest unit test runner for the frontend (#49)
 
+### Infrastructure and fixes
+
+- Let the dev proxy target another backend with `MUSIMO_API_TARGET`, and keep writes through it from being refused as cross-origin (#50)
+
 ### UI and accessibility
 
 - Make every screen work on a phone: mini player, bottom-bar download count, safe-area insets, 44px touch targets, no focus zoom, tabs and sheets that fit (#48)
