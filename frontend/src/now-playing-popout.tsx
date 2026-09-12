@@ -1,4 +1,14 @@
-import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  createContext,
+  lazy,
+  Suspense,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 import type { ReactNode, RefObject } from 'react'
 
 import { createPortal } from 'react-dom'
@@ -6,9 +16,18 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from '@tanstack/react-router'
 import { Disc3 } from 'lucide-react'
 
-import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
-import type { StagePlacement } from './now-playing-overlay'
-import { artUrl, usePlayer } from './player'
+import {
+  DEFAULT_PARTICLES,
+  NowPlayingOverlay,
+  PARTICLE_CHOICES,
+  useOverlayIdle,
+  useStageKeys,
+} from './now-playing-overlay'
+import type { StagePlacement, StageView } from './now-playing-overlay'
+import { artUrl, remember, stored, usePlayer } from './player'
+
+// The whole WebGPU tree stays out of the main bundle until a stage wants it.
+const VisualizerStage = lazy(() => import('./visualizer/Visualizer'))
 
 type PictureInPictureApi = {
   requestWindow: (options?: {
@@ -33,6 +52,16 @@ type PopoutValue = {
   clearPendingFullscreen: () => void
   notice: string
   setNotice: (text: string) => void
+  /** Artwork or the visualizer. Lives here so it survives the stage remounting. */
+  view: StageView
+  toggleView: () => void
+  /** False without WebGPU, or once the device could not be had. */
+  canVisualize: boolean
+  markUnsupported: () => void
+  hud: boolean
+  toggleHud: () => void
+  particles: number
+  setParticles: (count: number) => void
 }
 
 const noop = () => undefined
@@ -46,10 +75,24 @@ const PopoutContext = createContext<PopoutValue>({
   clearPendingFullscreen: noop,
   notice: '',
   setNotice: noop,
+  view: 'artwork',
+  toggleView: noop,
+  canVisualize: false,
+  markUnsupported: noop,
+  hud: false,
+  toggleHud: noop,
+  particles: DEFAULT_PARTICLES,
+  setParticles: noop,
 })
 export const useNowPlayingPopout = () => useContext(PopoutContext)
 
 const POPOUT_SIZE = 420
+const VIEW_KEY = 'musimo.now-playing-view'
+const PARTICLES_KEY = 'musimo.visualizer-particles'
+const NOTICE_KEY = 'musimo.now-playing-visualizer-notice'
+const UNSUPPORTED = 'This browser has no WebGPU, so the stage shows the artwork.'
+
+const hasWebGpu = () => typeof navigator !== 'undefined' && Boolean(navigator.gpu)
 
 // The popout document starts empty and cannot navigate, so the tab's
 // stylesheets are copied across once when it opens.
@@ -78,6 +121,29 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   const [notice, setNotice] = useState('')
   const popoutStage = useRef<HTMLDivElement>(null)
   const popout = pipWindow !== null
+  const [view, setView] = useState<StageView>(() =>
+    stored(VIEW_KEY, 'visualizer') === 'artwork' ? 'artwork' : 'visualizer',
+  )
+  const [canVisualize, setCanVisualize] = useState(hasWebGpu)
+  const [hud, setHud] = useState(false)
+  const [particles, setParticles] = useState(() => {
+    const saved = Number(stored(PARTICLES_KEY, ''))
+    return PARTICLE_CHOICES.includes(saved) ? saved : DEFAULT_PARTICLES
+  })
+  useEffect(() => remember(VIEW_KEY, view), [view])
+  useEffect(() => remember(PARTICLES_KEY, String(particles)), [particles])
+  const toggleView = useCallback(
+    () => setView((current) => (current === 'artwork' ? 'visualizer' : 'artwork')),
+    [],
+  )
+  const toggleHud = useCallback(() => setHud((current) => !current), [])
+  // Said once per browser, then artwork without comment.
+  const markUnsupported = useCallback(() => {
+    setCanVisualize(false)
+    if (stored(NOTICE_KEY, '') === 'shown') return
+    remember(NOTICE_KEY, 'shown')
+    setNotice(UNSUPPORTED)
+  }, [])
 
   const canPopout = useMemo(() => Boolean(pictureInPicture()), [])
   const openPopout = useCallback(() => {
@@ -123,8 +189,31 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       clearPendingFullscreen,
       notice,
       setNotice,
+      view,
+      toggleView,
+      canVisualize,
+      markUnsupported,
+      hud,
+      toggleHud,
+      particles,
+      setParticles,
     }),
-    [popout, canPopout, openPopout, closePopout, popoutToFullscreen, pendingFullscreen, notice],
+    [
+      popout,
+      canPopout,
+      openPopout,
+      closePopout,
+      popoutToFullscreen,
+      pendingFullscreen,
+      notice,
+      view,
+      toggleView,
+      canVisualize,
+      markUnsupported,
+      hud,
+      toggleHud,
+      particles,
+    ],
   )
 
   return (
@@ -156,15 +245,29 @@ type StageProps = {
   onClose?: () => void
 }
 
-// One box: a blurred cover fill behind a sharp, letterboxed copy of the same
-// artwork, with the hover controls on top. Docked, full screen and popout all
-// share it.
+// One box: the visualizer, or a blurred cover fill behind a sharp,
+// letterboxed copy of the same artwork, with the hover controls on top.
+// Docked, full screen and popout all share it.
 function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClose }: StageProps) {
   const player = usePlayer()
+  const popout = useNowPlayingPopout()
   const track = player.libraryTrack
   const art = track ? artUrl(track) : (player.track?.art ?? '')
   const idle = useOverlayIdle(stageRef, player.playing)
-  useStageKeys(stageRef, { placement, onFullscreen, onClose })
+  const view = popout.canVisualize ? popout.view : undefined
+  useStageKeys(stageRef, {
+    placement,
+    onFullscreen,
+    onClose,
+    onToggleView: view ? popout.toggleView : undefined,
+    onToggleHud: view === 'visualizer' ? popout.toggleHud : undefined,
+  })
+  const artwork = (
+    <>
+      <div className="stage-backdrop">{art ? <img src={art} alt="" /> : <Disc3 size={48} />}</div>
+      {art && <img className="stage-art" src={art} alt="" />}
+    </>
+  )
 
   return (
     <div
@@ -177,13 +280,26 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
         onFullscreen()
       }}
     >
-      <div className="stage-backdrop">{art ? <img src={art} alt="" /> : <Disc3 size={48} />}</div>
-      {art && <img className="stage-art" src={art} alt="" />}
+      {view === 'visualizer' ? (
+        <Suspense fallback={artwork}>
+          <VisualizerStage
+            hud={popout.hud}
+            particles={popout.particles}
+            onUnsupported={popout.markUnsupported}
+          />
+        </Suspense>
+      ) : (
+        artwork
+      )}
       <NowPlayingOverlay
         placement={placement}
         fullscreen={fullscreen}
         onFullscreen={onFullscreen}
         onPopout={onPopout}
+        view={view}
+        onToggleView={popout.toggleView}
+        particles={popout.particles}
+        onParticles={popout.setParticles}
       />
     </div>
   )
@@ -204,6 +320,11 @@ export function NowPlayingStage() {
     document.addEventListener('fullscreenchange', onChange)
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
+
+  // No WebGPU at all is known before anything loads; say so once.
+  useEffect(() => {
+    if (!popout.canVisualize) popout.markUnsupported()
+  }, [popout.canVisualize, popout.markUnsupported])
 
   useEffect(() => {
     if (!popout.pendingFullscreen || popout.popout) return
