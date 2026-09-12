@@ -1,6 +1,6 @@
 /**
- * The one renderer. It owns the device, the feature buffer, the scene with
- * its particle state, and the post stack, and outlives every stage. A stage
+ * The one renderer. It owns the device, the feature buffer, whichever scene
+ * is chosen with its state, and the post stack, and outlives every stage. A stage
  * hands it a canvas to draw on and takes it back on unmount; the popout
  * portals a fresh stage into another document, so the canvas and its context
  * are the only things made per mount.
@@ -16,7 +16,11 @@ import { Hud } from '../hud/Hud'
 import { postSummary } from '../post/params'
 import type { PostParams, PostPatch } from '../post/params'
 import { PostStack, SCENE_FORMAT } from '../post/PostStack'
-import { DEFAULT_PARTICLES, Particles } from '../scenes/Particles'
+import { DEFAULT_FLUID_SIZE, DEFAULT_PARTICLES, DEFAULT_SCENE } from '../scenes/catalog'
+import type { SceneId } from '../scenes/catalog'
+import { Fluid } from '../scenes/Fluid'
+import { Particles } from '../scenes/Particles'
+import type { Scene } from '../scenes/Scene'
 import { acquireGpu, configureCanvas, onGpuLost } from './Device'
 import type { Gpu, GpuInfo } from './Device'
 
@@ -29,7 +33,7 @@ const describe = (info: GpuInfo) =>
 class Renderer {
   private gpu: Gpu | null = null
   private features: GPUBuffer | null = null
-  private scene: Particles | null = null
+  private scene: Scene | null = null
   private post: PostStack | null = null
   private client: FeatureClient | null = null
   private canvas: HTMLCanvasElement | null = null
@@ -44,7 +48,9 @@ class Renderer {
   private frame = 0
   private last = 0
   private time = 0
+  private sceneId: SceneId = DEFAULT_SCENE
   private particles = DEFAULT_PARTICLES
+  private fluidSize = DEFAULT_FLUID_SIZE
   private readonly packet = new Float32Array(PACKET_LENGTH)
   private frameMs = 16.7
   private reported = 0
@@ -79,17 +85,7 @@ class Renderer {
       this.post.init(gpu.device, gpu.format)
     }
 
-    if (!this.scene) {
-      this.scene = new Particles(this.particles)
-      // The scene draws into the stack's floating-point texture, not the
-      // canvas, so its pipeline is built for that format.
-      this.scene.init({
-        device: gpu.device,
-        format: SCENE_FORMAT,
-        features: this.features,
-        software: gpu.info.software,
-      })
-    }
+    if (!this.scene) this.buildScene()
 
     const context = configureCanvas(gpu, canvas)
     if (!context) return 'unsupported'
@@ -115,7 +111,7 @@ class Renderer {
     return 'ok'
   }
 
-  /** Stop drawing on this canvas. The device, scene and particles stay. */
+  /** Stop drawing on this canvas. The device and the scene's state stay. */
   detach(canvas: HTMLCanvasElement) {
     if (this.attaching === canvas) this.attaching = null
     if (this.canvas !== canvas) return
@@ -148,7 +144,40 @@ class Renderer {
 
   setParticleCount(count: number) {
     this.particles = count
-    this.scene?.setCount(count)
+    if (this.scene instanceof Particles) this.scene.setCount(count)
+  }
+
+  setFluidSize(size: number) {
+    this.fluidSize = size
+    if (this.scene instanceof Fluid) this.scene.setSize(size)
+  }
+
+  /** Swap the whole scene. The old one's buffers go with it. */
+  setScene(id: SceneId) {
+    if (id === this.sceneId) return
+    this.sceneId = id
+    if (this.gpu) this.buildScene()
+  }
+
+  // Build the chosen scene, dropping whatever was there. Scenes draw into the
+  // stack's floating-point texture, not the canvas, so their pipelines are
+  // built for that format.
+  private buildScene() {
+    const gpu = this.gpu
+    const features = this.features
+    if (!gpu || !features) return
+    this.scene?.dispose()
+    this.scene =
+      this.sceneId === 'fluid' ? new Fluid(this.fluidSize) : new Particles(this.particles)
+
+    this.scene.init({
+      device: gpu.device,
+      format: SCENE_FORMAT,
+      features,
+      software: gpu.info.software,
+    })
+
+    if (this.canvas) this.scene.resize(this.canvas.width, this.canvas.height)
   }
 
   private start() {
@@ -221,7 +250,7 @@ class Renderer {
     this.hud?.draw(this.packet, {
       fps: 1000 / this.frameMs,
       frameMs: this.frameMs,
-      particles: scene.particleCount,
+      scene: scene.detail,
       adapter: describe(gpu.info),
       post: postSummary(post.params),
     })
@@ -229,7 +258,8 @@ class Renderer {
     if (now - this.reported > 500) {
       this.reported = now
       canvas.dataset.frameMs = this.frameMs.toFixed(1)
-      canvas.dataset.particles = String(scene.particleCount)
+      canvas.dataset.scene = this.sceneId
+      canvas.dataset.detail = scene.detail
       canvas.dataset.post = postSummary(post.params)
     }
   }

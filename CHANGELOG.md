@@ -10,6 +10,7 @@
 - Keep the visualizer running across the Now Playing popout round trip on one device, with its frame time reported in the popout window too (#54)
 - Tune the particle field on real music and stop the tempo guess reading half-time (#56)
 - Draw the visualizer through a post stack of feedback trails, bloom, beat-driven chromatic aberration, a tonemap and grain, so loud passages no longer clip to white (#57)
+- Add a fluid scene to the visualizer, with a scene select in the stage's top bar (#58)
 
 ### Testing and CI
 

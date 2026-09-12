@@ -48,7 +48,7 @@ The post stack's offscreen textures are sized from the canvas, so they belong to
 
 `gpu/Renderer.ts` is that singleton. A stage calls `attach(canvas, hudCanvas, onFailure)` on mount and `detach(canvas)` on unmount; `attach` configures the context, sizes the canvas to its CSS box times `devicePixelRatio`, and starts a loop on the canvas's own window, so a popout keeps drawing while the tab behind it is hidden and a hidden tab stops. On device loss the renderer drops the scene, the post stack and their buffers and tries once to come back on the same canvas; if that fails it calls `onFailure` and the stage falls back to artwork.
 
-Each frame: read the analyser through the feature client (once the library element has played), stamp time and dt into the packet, upload it as one 64-byte uniform, run the scene's compute and render passes into the post stack's texture, run the stack over it onto the canvas, then draw the HUD if it is on. React owns mounting, unmounting and the controls only; no per-frame state touches it. The canvas carries `data-adapter`, `data-frame-ms`, `data-particles` and `data-post` so a screenshot or a test can read them.
+Each frame: read the analyser through the feature client (once the library element has played), stamp time and dt into the packet, upload it as one 64-byte uniform, run the scene's compute and render passes into the post stack's texture, run the stack over it onto the canvas, then draw the HUD if it is on. React owns mounting, unmounting and the controls only; no per-frame state touches it. The canvas carries `data-adapter`, `data-frame-ms`, `data-scene`, `data-detail` (the scene's workload, such as `250,000 particles` or `512 fluid`) and `data-post` so a screenshot or a test can read them.
 
 ### Popout and full screen
 
@@ -56,13 +56,45 @@ The design above was checked, not assumed. Across six dock, popout, dock round t
 
 Full screen in the tab renders at device pixel ratio: a 1920 by 1080 CSS box at ratio 2 gets a 3840 by 2160 canvas.
 
-### Particles
+### Scenes
+
+Two of them, behind the `Scene` interface in `scenes/Scene.ts`: `init`, `resize`, `update`, `render`, `dispose`, and a `detail` line naming what the scene is doing. The renderer holds exactly one, chosen from the stage's top bar and remembered as `musimo.visualizer-scene`; the default is the particle field. `scenes/catalog.ts` holds the ids, the labels and the sizes each scene offers, and imports nothing, so the top bar can read them without pulling the WebGPU tree into the main bundle.
+
+Switching scenes disposes the old one, which destroys its buffers and textures, then builds the new one on the same device and resizes it to the canvas. Nothing else changes: the device, the feature buffer and the post stack all carry on.
+
+#### Particles
 
 `scenes/Particles.ts` with `shaders/common.wgsl`, `particles.compute.wgsl` and `particles.render.wgsl` (imported with `?raw`). Particles live in one storage buffer of 32-byte records (position, life, velocity, seed). A compute pass moves each one through a curl-noise flow field (simplex noise by Ashima Arts and Stefan Gustavson, MIT), toward three attractors that circle the middle, and integrates with drag and a soft spring; dead particles respawn in a ball, staggered on the first frame. The render pass draws one instanced quad per particle with no vertex buffer, additively blended, sized and lit by speed. Each particle is dimmed by the expected number landing on a pixel (count times point area over canvas area), so a small docked stage and a 4K full screen come out the same brightness. The target of 0.65 light units per pixel, the brightness floor and the attractor spread were set by eye on real tracks at 4K; the first cut looked dim and sparse on anything quieter than a test signal.
 
 Audio mapping: bass (the louder of sub and bass) to attractor strength; treble to noise frequency and jitter; `beatPulse` to a radial push and a size bump; energy to flow strength, speed and how many dead particles respawn. Colour runs cool to warm with bass.
 
 The count is chosen from the stage's top bar (100k, 250k, 500k, 1M) and remembered as `musimo.visualizer-particles`. The default is 250,000.
+
+#### Fluid
+
+`scenes/Fluid.ts` with `shaders/fluid.common.wgsl`, `fluid.sim.wgsl` and `fluid.render.wgsl`, plus `scenes/fluid.params.ts` for the numbers. Stam's stable fluids on a square grid of compute textures, one compute entry point per step, all of them dispatched inside a single compute pass because dispatches in one pass are ordered and see each other's writes:
+
+```
+advect velocity ─► diffuse xN ─► curl ─► vorticity and injection ─► divergence
+                                                                       │
+      draw ◄─ advect dye ◄─ subtract gradient ◄─ pressure xN ◄─ relax ◄─┘
+```
+
+Velocity is kept in grid widths per second, so a semi-Lagrangian backtrace is `uv - velocity * dt` with nothing scaling in between and the pressure solve works in the same units throughout. The pressure solve is 24 Jacobi sweeps, warm-started from last frame's solution faded to 0.8, which converges far better in that many sweeps than starting from nothing. The viscosity solve is two Jacobi sweeps with the alpha set directly rather than derived from a physical viscosity, because what is wanted here is a knob. Walls are free slip: the velocity component running into one is dropped and the component along it is kept. Vorticity confinement pushes each eddy back toward its own centre, which is what keeps small detail alive against the smearing the advection adds.
+
+Every field is `rgba16float`, including the three that carry one number. `r32float` would halve their memory but is not filterable, so each would need a bind group layout of its own; one format means one explicit layout and any three fields can go to any step. Curl is read before divergence is written, so both live in one scratch field. That leaves seven textures: velocity, dye and pressure ping-ponging, and the scratch. At 512 the set is 14 MB and at 1024 it is 56 MB.
+
+The grid is square and fixed at 512 or 1024, so nothing is rebuilt on a resize. It covers the canvas and the overflow is cropped, which keeps the scale the same on both axes so a round splat stays round; `visibleExtent` reports the band the canvas actually shows and the emitters are placed inside it, so nothing is injected off screen. A software rasteriser gets the 512 grid whatever was chosen, with 8 pressure sweeps and one viscosity sweep.
+
+Audio mapping. Three emitters ride a Lissajous orbit, spread wider by energy, pushing along the tangent of their own path. Injection is an onset (packet index 8, its strength at 9): bass sets how hard the impulse pushes and how much dye it carries, and the onset strength grades it. A small trickle rides along between hits, scaled by the step so it does not depend on the frame rate, because a track with long quiet passages otherwise settles into a still frame. Treble raises the vorticity and thins the viscosity, so busy music keeps its detail. Energy sets both decay rates, since a loud passage injects far more and has to clear faster. `beatPulse` lifts the output intensity.
+
+Colour comes from a 256-texel palette lookup table built on the CPU, deep blue through teal and green into warm orange and magenta and back to the first colour so the coordinate wraps with no seam. The dye carries its place in that table as a unit vector rather than a number, so two plumes that meet average their colours the short way round instead of sweeping the whole palette between them; the draw pass recovers the angle and reads the table. Dye density is bent through `1 - exp(-d)` before it is coloured, so a thick plume reads as its own colour rather than a flat white mass, and the intensity puts only the brightest of it past the bloom threshold.
+
+The numbers were set by eye at 3840 by 2160 against real tracks, and the first cut was wrong in a way worth recording. The viscosity alpha started between 0.4 and 2.0, which at 120 frames a second is a box blur of the neighbours every frame: 4K showed enormous soft blobs with no structure in them at all. Dropping it to between 0.02 and 0.2, halving the splat radius and roughly doubling the vorticity turned the same passage into plumes with filaments down to a texel. Emitter spread then went the other way twice: wide enough to reach the corners left three separate plumes with black between them, so it settled between the two, with more dye and a slower decay so the plumes grow into each other.
+
+The grid size is chosen from the stage's top bar and remembered as `musimo.visualizer-fluid-grid`. The default is 512. The two sizes are not just detail levels: 512 fills the frame with bold, soft-edged plumes and 1024 draws finer, wispier ones, because the same emitter radius is a smaller fraction of the larger grid.
+
+`scenes/fluid.params.ts` is pure TypeScript with no GPU objects, like `post/params.ts`: the palette table, the visible extent, the emitter placement, the feature mapping and the uniform write all live there and are unit tested in `fluid.params.test.ts`.
 
 ### Post stack
 
@@ -92,23 +124,25 @@ Textures are rebuilt whenever the canvas size changes, which includes every dock
 
 ### HUD
 
-H toggles `hud/Hud.ts`, a 2D canvas over the scene: the five band envelopes and energy as bars, the flux trace against its threshold with onset marks, beat, tempo, frame time, particle count, the adapter and which post stages are running. It ships in the build so a report from another machine can carry a screenshot.
+H toggles `hud/Hud.ts`, a 2D canvas over the scene: the five band envelopes and energy as bars, the flux trace against its threshold with onset marks, beat, tempo, frame time, what the scene is doing, the adapter and which post stages are running. It ships in the build so a report from another machine can carry a screenshot.
 
 ## Code
 
 - `frontend/src/visualizer/audio/AudioGraph.ts`: the context, the analyser and the attach and resume rules above.
 - `frontend/src/visualizer/audio/FeatureExtractor.ts`, `features.protocol.ts` and `features.worker.ts`: the feature packet and the worker that produces it.
 - `frontend/src/visualizer/gpu/Device.ts`, `gpu/Renderer.ts`, `gpu/math.ts`: the device singleton, the renderer and the camera maths.
+- `frontend/src/visualizer/scenes/Scene.ts` and `scenes/catalog.ts`: the interface both scenes meet, and the ids and sizes the top bar offers.
 - `frontend/src/visualizer/scenes/Particles.ts` and `shaders/particles.*.wgsl`: the particle scene.
+- `frontend/src/visualizer/scenes/Fluid.ts`, `scenes/fluid.params.ts` and `shaders/fluid.*.wgsl`: the fluid scene, its numbers and its passes.
 - `frontend/src/visualizer/post/PostStack.ts`, `post/params.ts` and `shaders/post.*.wgsl`: the post stack, its parameters and its passes.
 - `frontend/src/visualizer/hud/Hud.ts`, `Visualizer.tsx`: the debug overlay and the React shell the stage mounts.
 - `frontend/src/player.tsx`: the two audio elements, the handlers they share (each ignores events from the element that is not current), and the visibility resume.
 
 ## Checks
 
-Unit tests cover the pure parts: the feature extractor with synthetic spectra (band collapse at both FFT sizes, envelope attack and release timing, every click in a click train detected with none between and the tempo found, jitter not read as onsets), the worker protocol handing buffers back, the camera maths, and the post stack's parameters (a patch leaving the object it was given alone, the stack's own switch overriding the stages under it, each stage that is off writing values that make its term vanish, the chromatic split widening with `beatPulse`, the bloom level sizes, and nothing that the shaders divide by reaching zero).
+Unit tests cover the pure parts: the feature extractor with synthetic spectra (band collapse at both FFT sizes, envelope attack and release timing, every click in a click train detected with none between and the tempo found, jitter not read as onsets), the worker protocol handing buffers back, the camera maths, the post stack's parameters (a patch leaving the object it was given alone, the stack's own switch overriding the stages under it, each stage that is off writing values that make its term vanish, the chromatic split widening with `beatPulse`, the bloom level sizes, and nothing that the shaders divide by reaching zero), and the fluid's parameters (the grid size chosen and capped on a rasteriser, the visible extent of a square grid on a canvas of any shape including one with no area, every emitter landing inside the band the canvas shows at the loudest spread, the push being a unit vector, an onset injecting several times the trickle and bass raising it further, the trickle halving when the step halves, the step clamped, treble raising vorticity and thinning viscosity, energy clearing the dye faster, the palette coordinate staying inside the table, the palette starting and ending on the same colour, and no emitter slot writing a radius the shader would divide by).
 
-Playwright can prove structure, not pixels: headless engines have no WebGPU adapter and a WebGPU canvas renders black in a screenshot. `e2e/visualizer.spec.ts` checks the artwork fallback and its one-time notice with `navigator.gpu` removed, and, only where the browser has an adapter, the default visualizer view, the V and H keys, the toggle button, the remembered choice and the post stages named in `data-post`. The preview checks in `e2e/app.spec.ts` drive the preview element and the phone player checks drive the library element, so the split cannot regress silently.
+Playwright can prove structure, not pixels: headless engines have no WebGPU adapter and a WebGPU canvas renders black in a screenshot. `e2e/visualizer.spec.ts` checks the artwork fallback and its one-time notice with `navigator.gpu` removed, and, only where the browser has an adapter, the default visualizer view, the V and H keys, the toggle button, the remembered choice, the post stages named in `data-post`, and the scene select naming the scene in `data-scene`, swapping the size control beside it and surviving a reload. The preview checks in `e2e/app.spec.ts` drive the preview element and the phone player checks drive the library element, so the split cannot regress silently.
 
 Checked by hand on a Mac (Apple M5 Pro, macOS 26.6), Chromium 153 driven by a Playwright script with mocked library routes serving a generated 120 BPM test signal:
 
@@ -143,4 +177,21 @@ Checked by hand on a Mac (Apple M5 Pro, macOS 26.6), Chromium 153 driven by a Pl
 - Popout round trip with the stack on, six times, in headed Chromium: one `requestAdapter` and one `requestDevice`, the number of configured canvas contexts never below zero or above one, no `uncapturederror` and no console errors. Both canvases carried all five stages in `data-post` and advancing frame times throughout, the popout at 3840 by 2160 and the docked stage at 640 by 640, so the stack rebuilds its textures for each size without restarting the field. One cycle read about 22 ms in both windows and the rest sat at the cap.
 - Tempo, replaying those recordings through the extractor exactly as it runs (480-frame window, one reading a second, median of five): Donkey Rhubarb reads 140 for 59% of readings and 69 for most of the rest, where the first version read 70 throughout; Above & Beyond reads 129 for 62%. Both drum and bass tracks read 111 to 115, two thirds of the truth, because the dotted-quarter pattern of their drums correlates more than the beat. A 3:2 rule that fixed one of them broke Above & Beyond, so it was not kept. Nothing uses tempo yet; if something comes to, it needs a better method than flux autocorrelation for drum and bass.
 
-Not checked yet: a mid-range desktop GPU.
+- The fluid scene, on the same Mac in headed Chromium 153 against the real library, the post stack on throughout. Each of the four tracks was searched for, started from the tracks list and opened with in-app navigation so the analyser survived, then left playing for ten and a half seconds before `data-frame-ms` was read; the artist on the footer was checked each time, because the tracks list reloads asynchronously and a click that lands early starts whatever was there before. The four numbers in each cell are Donkey Rhubarb, Above & Beyond, CamelPhat and Andy C in that order, and the particle field at 250k is the control. The display runs at 120 Hz, so 8.3 ms means the GPU is not the limit; no cell left the cap and none logged a console error:
+
+  | Stage size                                             | Fluid 512             | Fluid 1024            | 250k particles        |
+  | ------------------------------------------------------ | --------------------- | --------------------- | --------------------- |
+  | 320 by 320, ratio 1 (docked)                           | 8.3, 8.2, 8.3, 8.4 ms | 8.4, 8.3, 8.3, 8.3 ms | 8.4, 8.4, 8.4, 8.3 ms |
+  | 1920 by 1080 at ratio 2 (3840 by 2160, as full screen) | 8.2, 8.3, 8.4, 8.4 ms | 8.3, 8.7, 8.2, 8.4 ms | 8.3, 8.3, 8.2, 8.4 ms |
+
+  Full screen cannot be requested without a gesture under automation, so the 3840 by 2160 case forces the stage to a 1920 by 1080 CSS box at ratio 2, which is the same canvas.
+
+- What the stage showed on each track, screenshotted at 3840 by 2160. Donkey Rhubarb, whose percussion is sparse, gives three well separated plumes with soft round heads and long filamented tails, and the trickle carries the field through its quiet stretches rather than letting it settle. CamelPhat's Easier nearly fills the frame by 45 seconds with two interlocking masses of orange, magenta and teal whose edges curl down to a texel; the same passage at 1024 is thinner and wispier, because the emitter radius is a smaller fraction of the larger grid. Andy C's Back & Forth throws fast edge to edge streaks with heavy colour fringing along them, since its onsets are almost continuous and the post stack's chromatic split opens on every one. Above & Beyond sits between the two, three separate coloured plumes growing steadily. No track produced a flat white mass at either grid.
+
+- Scene switching, twelve times between the particle field and the fluid while a track played: one `requestAdapter` and one `requestDevice` for the whole run, no `uncapturederror`, no console errors, and the canvas context configured once and never reconfigured, since only the scene is rebuilt. `data-scene` and `data-detail` followed the select each time and the frame time stayed at 8.3 to 8.4 ms throughout.
+
+- Popout round trip with the fluid drawing, six times: one adapter and one device, the number of configured canvas contexts always exactly one ahead of the number unconfigured, no uncaptured errors and no console errors. Both canvases carried `fluid` and `512 fluid` with advancing frame times, the docked stage came back at 320 by 320, and playback was never interrupted across the whole run.
+
+- The grid select, eight switches between 512 and 1024 while a track played: `data-detail` followed each time, no console errors, the frame time held, and the choice survived a reload as `musimo.visualizer-fluid-grid`.
+
+Not checked yet: a mid-range desktop GPU, and the fluid on a software rasteriser, which the 512 cap and the reduced sweep counts are written for but no machine here can run.
