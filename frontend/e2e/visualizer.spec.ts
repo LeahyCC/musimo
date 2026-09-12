@@ -76,6 +76,8 @@ test('with WebGPU the visualizer is the default, V and the button switch it, and
   const canvas = stage.locator('canvas.stage-visualizer')
   await expect(canvas).toBeVisible()
   await expect(canvas).toHaveAttribute('data-adapter', /.+/)
+  // Structure only: which post stages are running, not what they look like.
+  await expect(canvas).toHaveAttribute('data-post', /feedback bloom chroma tonemap grain/)
   await stage.hover()
   await expect(stage.getByRole('button', { name: 'Show artwork' })).toBeVisible()
   await expect(stage.getByRole('combobox', { name: 'Particle count' })).toBeVisible()
