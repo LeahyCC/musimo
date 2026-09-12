@@ -3,6 +3,7 @@ import type { RefObject } from 'react'
 
 import {
   Disc3,
+  Image as ImageIcon,
   Maximize2,
   Minimize2,
   Pause,
@@ -12,6 +13,7 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
+  Sparkles,
   ThumbsUp,
   Volume2,
   VolumeX,
@@ -20,12 +22,25 @@ import {
 import { artUrl, durationText, usePlayer } from './player'
 
 export type StagePlacement = 'docked' | 'popout'
+export type StageView = 'artwork' | 'visualizer'
+
+// Particle counts the stage offers. The default holds 60 fps on Apple
+// Silicon with room to spare; see docs/visualizer.md for measurements.
+export const PARTICLE_CHOICES: readonly number[] = [100_000, 250_000, 500_000, 1_000_000]
+export const DEFAULT_PARTICLES = 250_000
+const particleLabel = (count: number) =>
+  `${count >= 1_000_000 ? `${count / 1_000_000}M` : `${count / 1000}k`} particles`
 
 type OverlayProps = {
   placement: StagePlacement
   fullscreen: boolean
   onFullscreen: () => void
   onPopout?: () => void
+  /** Undefined where the visualizer is not available, so no toggle is shown. */
+  view?: StageView
+  onToggleView?: () => void
+  particles?: number
+  onParticles?: (count: number) => void
 }
 
 const IDLE_MS = 2500
@@ -84,6 +99,8 @@ type KeyActions = {
   placement: StagePlacement
   onFullscreen: () => void
   onClose?: () => void
+  onToggleView?: () => void
+  onToggleHud?: () => void
 }
 
 // Shortcuts bind to the stage's own window, so the popout has its own set.
@@ -148,6 +165,16 @@ export function useStageKeys(container: RefObject<HTMLDivElement | null>, action
         case 'P':
           playback.previous()
           break
+        case 'v':
+        case 'V':
+          if (!current.onToggleView) return
+          current.onToggleView()
+          break
+        case 'h':
+        case 'H':
+          if (!current.onToggleHud) return
+          current.onToggleHud()
+          break
         case 'Escape':
           if (current.placement !== 'popout' || !current.onClose) return
           current.onClose()
@@ -163,7 +190,16 @@ export function useStageKeys(container: RefObject<HTMLDivElement | null>, action
   }, [container])
 }
 
-export function NowPlayingOverlay({ placement, fullscreen, onFullscreen, onPopout }: OverlayProps) {
+export function NowPlayingOverlay({
+  placement,
+  fullscreen,
+  onFullscreen,
+  onPopout,
+  view,
+  onToggleView,
+  particles,
+  onParticles,
+}: OverlayProps) {
   const player = usePlayer()
   const track = player.libraryTrack
   const title = track?.title ?? player.track?.title ?? 'Nothing playing'
@@ -185,6 +221,29 @@ export function NowPlayingOverlay({ placement, fullscreen, onFullscreen, onPopou
           {player.playing ? 'Playing' : 'Paused'}
         </span>
         <div className="stage-actions">
+          {view === 'visualizer' && onParticles && (
+            <select
+              className="stage-select"
+              aria-label="Particle count"
+              value={particles}
+              onChange={(event) => onParticles(Number(event.target.value))}
+            >
+              {PARTICLE_CHOICES.map((count) => (
+                <option key={count} value={count}>
+                  {particleLabel(count)}
+                </option>
+              ))}
+            </select>
+          )}
+          {view && onToggleView && (
+            <button
+              className="icon-button"
+              aria-label={view === 'visualizer' ? 'Show artwork' : 'Show visualizer'}
+              onClick={onToggleView}
+            >
+              {view === 'visualizer' ? <ImageIcon size={17} /> : <Sparkles size={17} />}
+            </button>
+          )}
           {onPopout && (
             <button className="icon-button" aria-label="Pop out player" onClick={onPopout}>
               <PictureInPicture2 size={17} />
