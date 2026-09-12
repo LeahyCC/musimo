@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Library and playback
+
+- Give library playback its own audio element and a Web Audio analyser for the coming visualizer, keeping catalog previews off it (#51)
+
 ### Testing and CI
 
 - Add a Vitest unit test runner for the frontend (#49)
