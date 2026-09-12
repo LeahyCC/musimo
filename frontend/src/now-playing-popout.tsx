@@ -16,15 +16,18 @@ import { createPortal } from 'react-dom'
 import { useNavigate } from '@tanstack/react-router'
 import { Disc3 } from 'lucide-react'
 
-import {
-  DEFAULT_PARTICLES,
-  NowPlayingOverlay,
-  PARTICLE_CHOICES,
-  useOverlayIdle,
-  useStageKeys,
-} from './now-playing-overlay'
+import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
 import type { StagePlacement, StageView } from './now-playing-overlay'
 import { artUrl, remember, stored, usePlayer } from './player'
+import {
+  DEFAULT_FLUID_SIZE,
+  DEFAULT_PARTICLES,
+  DEFAULT_SCENE,
+  FLUID_SIZES,
+  isSceneId,
+  PARTICLE_COUNTS,
+} from './visualizer/scenes/catalog'
+import type { SceneId } from './visualizer/scenes/catalog'
 
 // The whole WebGPU tree stays out of the main bundle until a stage wants it.
 const VisualizerStage = lazy(() => import('./visualizer/Visualizer'))
@@ -60,8 +63,13 @@ type PopoutValue = {
   markUnsupported: () => void
   hud: boolean
   toggleHud: () => void
+  /** Which scene draws, and how much work the chosen one does. */
+  scene: SceneId
+  setScene: (scene: SceneId) => void
   particles: number
   setParticles: (count: number) => void
+  fluidSize: number
+  setFluidSize: (size: number) => void
 }
 
 const noop = () => undefined
@@ -81,14 +89,20 @@ const PopoutContext = createContext<PopoutValue>({
   markUnsupported: noop,
   hud: false,
   toggleHud: noop,
+  scene: DEFAULT_SCENE,
+  setScene: noop,
   particles: DEFAULT_PARTICLES,
   setParticles: noop,
+  fluidSize: DEFAULT_FLUID_SIZE,
+  setFluidSize: noop,
 })
 export const useNowPlayingPopout = () => useContext(PopoutContext)
 
 const POPOUT_SIZE = 420
 const VIEW_KEY = 'musimo.now-playing-view'
+const SCENE_KEY = 'musimo.visualizer-scene'
 const PARTICLES_KEY = 'musimo.visualizer-particles'
+const FLUID_KEY = 'musimo.visualizer-fluid-grid'
 const NOTICE_KEY = 'musimo.now-playing-visualizer-notice'
 const UNSUPPORTED = 'This browser has no WebGPU, so the stage shows the artwork.'
 
@@ -126,12 +140,22 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   )
   const [canVisualize, setCanVisualize] = useState(hasWebGpu)
   const [hud, setHud] = useState(false)
+  const [scene, setScene] = useState<SceneId>(() => {
+    const saved = stored(SCENE_KEY, '')
+    return isSceneId(saved) ? saved : DEFAULT_SCENE
+  })
   const [particles, setParticles] = useState(() => {
     const saved = Number(stored(PARTICLES_KEY, ''))
-    return PARTICLE_CHOICES.includes(saved) ? saved : DEFAULT_PARTICLES
+    return PARTICLE_COUNTS.includes(saved) ? saved : DEFAULT_PARTICLES
+  })
+  const [fluidSize, setFluidSize] = useState(() => {
+    const saved = Number(stored(FLUID_KEY, ''))
+    return FLUID_SIZES.includes(saved) ? saved : DEFAULT_FLUID_SIZE
   })
   useEffect(() => remember(VIEW_KEY, view), [view])
+  useEffect(() => remember(SCENE_KEY, scene), [scene])
   useEffect(() => remember(PARTICLES_KEY, String(particles)), [particles])
+  useEffect(() => remember(FLUID_KEY, String(fluidSize)), [fluidSize])
   const toggleView = useCallback(
     () => setView((current) => (current === 'artwork' ? 'visualizer' : 'artwork')),
     [],
@@ -195,8 +219,12 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       markUnsupported,
       hud,
       toggleHud,
+      scene,
+      setScene,
       particles,
       setParticles,
+      fluidSize,
+      setFluidSize,
     }),
     [
       popout,
@@ -212,7 +240,9 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       markUnsupported,
       hud,
       toggleHud,
+      scene,
       particles,
+      fluidSize,
     ],
   )
 
@@ -284,7 +314,9 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
         <Suspense fallback={artwork}>
           <VisualizerStage
             hud={popout.hud}
+            scene={popout.scene}
             particles={popout.particles}
+            fluidSize={popout.fluidSize}
             onUnsupported={popout.markUnsupported}
           />
         </Suspense>
@@ -298,8 +330,12 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
         onPopout={onPopout}
         view={view}
         onToggleView={popout.toggleView}
+        scene={popout.scene}
+        onScene={popout.setScene}
         particles={popout.particles}
         onParticles={popout.setParticles}
+        fluidSize={popout.fluidSize}
+        onFluidSize={popout.setFluidSize}
       />
     </div>
   )

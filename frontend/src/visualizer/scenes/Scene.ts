@@ -8,6 +8,8 @@ export type SceneContext = {
 }
 
 export interface Scene {
+  /** One short line naming the scene's workload, for the overlay and tests. */
+  readonly detail: string
   init(context: SceneContext): void
   resize(width: number, height: number): void
   /** Per-frame CPU work: camera, parameters. `features` is the latest packet. */
