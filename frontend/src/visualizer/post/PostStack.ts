@@ -10,9 +10,11 @@
  * composite has something to roll off. The feedback pass adds the other
  * history texture back over it, warped a little, and the two swap each frame.
  *
- * Like the scene, this belongs to the renderer singleton: the textures are
- * sized from the canvas and rebuilt on resize, and the trails survive a dock,
- * popout, dock round trip because nothing here is remade on a remount.
+ * Like the scene, this belongs to the renderer singleton, so the pipelines,
+ * the sampler and the parameters outlive every remount. The textures do not:
+ * they are sized from the canvas and rebuilt whenever that size changes,
+ * which a dock or popout move always does, so the trails start again from
+ * black on each move while the particle field itself keeps running.
  */
 import blur from '../shaders/post.blur.wgsl?raw'
 import bright from '../shaders/post.bright.wgsl?raw'
@@ -22,6 +24,7 @@ import feedback from '../shaders/post.feedback.wgsl?raw'
 import {
   BLOOM_LEVELS,
   bloomLevelSize,
+  bloomSourceSize,
   defaultPostParams,
   mergePostParams,
   POST_UNIFORM_FLOATS,
@@ -203,13 +206,14 @@ export class PostStack {
     const levels: Level[] = []
     for (let index = 0; index < BLOOM_LEVELS; index++) {
       const size = bloomLevelSize(width, height, index)
-      const above = index === 0 ? { width, height } : bloomLevelSize(width, height, index - 1)
       const target = make(size.width, size.height)
       const temp = make(size.width, size.height)
-      // The horizontal pass reads the level above, so its taps are spaced by
-      // that level's texels; the vertical pass stays inside this one.
+      // The horizontal pass reads the texture named by bloomSourceSize, so
+      // its taps are spaced by that texture's texels; the vertical pass stays
+      // inside this level.
+      const from = bloomSourceSize(width, height, index)
       const steps: Pair<GPUBuffer> = [
-        blurStep(device, 1 / above.width, 1 / above.height, 1, 0),
+        blurStep(device, 1 / from.width, 1 / from.height, 1, 0),
         blurStep(device, 1 / size.width, 1 / size.height, 0, 1),
       ]
       const source = index === 0 ? target : (levels[index - 1]?.target ?? target)

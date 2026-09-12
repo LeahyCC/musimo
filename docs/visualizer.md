@@ -88,7 +88,7 @@ Each stage has its own parameter object with an `enabled` flag, and `PostParams`
 
 With every stage off the composite is a straight copy, which is what the frame times below call the stack off. Nothing in the interface turns a stage off; a development-only `window.musimoVisualizer` handle does, behind Vite's `DEV` flag, so a Playwright script can measure the difference. It is not in a production build.
 
-Textures are rebuilt whenever the canvas size changes, which includes every dock and popout move, and dropped with the device on loss. At 3840 by 2160 the stack holds about 176 MB: two full-resolution history textures and six smaller ones for the bloom levels and their temporaries.
+Textures are rebuilt whenever the canvas size changes, which includes every dock and popout move, and dropped with the device on loss. The trails therefore start again from black on each move, while the particle field itself keeps running. At 3840 by 2160 the stack holds about 176 MB: two full-resolution history textures and six smaller ones for the bloom levels and their temporaries.
 
 ### HUD
 
