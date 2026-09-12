@@ -144,6 +144,28 @@ describe('FeatureExtractor', () => {
     expect(tempo).toBeLessThan(123)
   })
 
+  it('reads a kick and snare pattern at the beat, not the bar', () => {
+    // 140 BPM at 70 frames a second is 30 frames a beat. Beats alternate a
+    // strong and a slightly softer hit, so the two-beat lag correlates as well
+    // as the one-beat lag and a naive pick would say 70.
+    const extractor = new FeatureExtractor({
+      sampleRate: SAMPLE_RATE,
+      fftSize: FFT_SIZE,
+      nominalFrameRate: 70,
+    })
+    const quiet = spectrum(flat(-40))
+    const strong = spectrum(flat(-10))
+    const soft = spectrum(flat(-13))
+    let tempo = 0
+    for (let frame = 0; frame < 70 * 12; frame++) {
+      const beat = frame % 30 === 0
+      const frameIn = beat ? ((frame / 30) % 2 === 0 ? strong : soft) : quiet
+      tempo = extractor.update(frameIn, 1 / 70)[F.tempo] ?? 0
+    }
+    expect(tempo).toBeGreaterThan(137)
+    expect(tempo).toBeLessThan(143)
+  })
+
   it('pulses to 1 on a click and decays afterwards', () => {
     const extractor = make()
     const quiet = spectrum(flat(-40))
