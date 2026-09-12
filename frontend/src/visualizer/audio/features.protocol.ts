@@ -8,14 +8,14 @@ import type { FeatureOptions } from './FeatureExtractor'
 
 export type ToWorker =
   | { type: 'configure'; options: FeatureOptions }
-  | { type: 'frame'; spectrum: Float32Array; dt: number }
+  | { type: 'frame'; spectrum: Float32Array<ArrayBuffer>; dt: number }
 
 export type FromWorker = {
   type: 'features'
   /** A fresh copy of the packet; the receiver owns it. */
   packet: Float32Array
   /** The spectrum buffer, handed back for the next frame. */
-  spectrum: Float32Array
+  spectrum: Float32Array<ArrayBuffer>
 }
 
 export type Post = (message: FromWorker, transfer: Transferable[]) => void

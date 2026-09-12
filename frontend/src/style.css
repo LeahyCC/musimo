@@ -3599,6 +3599,31 @@ button.library-card-play.active {
   height: 100%;
   object-fit: contain;
 }
+.stage-visualizer {
+  position: absolute;
+  inset: 0;
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #020305;
+}
+.stage-hud {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+}
+.stage-select {
+  height: 32px;
+  padding: 0 8px;
+  border: 1px solid #fff3;
+  border-radius: 8px;
+  background: #0009;
+  color: #fff;
+  font: inherit;
+  font-size: 12px;
+}
 .stage-overlay {
   position: absolute;
   inset: 0;
