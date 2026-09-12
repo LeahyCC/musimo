@@ -341,7 +341,8 @@ test('preview playback, volume and navigation remain usable', async ({ page, isM
   if (isMobile) await expect(player).toBeHidden()
   await page.getByRole('button', { name: 'Find preview Test recording' }).click()
   // Found by class, not role: the phone hides the idle footer, and the closed state is checked.
-  const audio = page.locator('footer.live-player audio')
+  // Previews have their own element; the library one stays idle here.
+  const audio = page.locator('footer.live-player audio.preview-audio')
   await expect(player.getByRole('slider', { name: 'Preview position' })).toBeEnabled()
   await expect(player.getByRole('button', { name: 'Pause preview', exact: true })).toBeVisible()
   await player.getByRole('button', { name: 'Pause preview', exact: true }).click()
