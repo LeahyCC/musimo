@@ -18,6 +18,7 @@ uv run coverage run -m unittest discover -s tests -v
 uv run coverage report
 npm run lint --prefix frontend
 npm run format:check --prefix frontend
+npm run test --prefix frontend
 npm run build --prefix frontend
 npm run test:e2e:types --prefix frontend
 uv run pip-audit --disable-pip --no-deps -r requirements.lock
@@ -25,6 +26,8 @@ npm audit --prefix frontend --audit-level=high
 ```
 
 The unittest suite covers persistence, input validation, origin checks, catalog caching, ownership refresh, job idempotency, queue controls, clearing failed downloads, whole-library track browsing, liked-playlist protection, crash recovery, audio tagging, metadata identification and worker failures. Provider requests use mock HTTP transports. FFmpeg generates audio fixtures. No ordinary test needs a provider account or downloads a recording.
+
+`npm run test` runs the frontend unit tests with Vitest. They live next to the module they cover as `frontend/src/**/*.test.ts`, run in Node without a browser, and are for pure TypeScript: maths, formatting and transforms. Anything that needs the DOM, audio or a real browser belongs in the Playwright suite below.
 
 Coverage includes branches and every backend module, including unexecuted modules. The current floor is 70%. Raise it as coverage grows; do not lower it to make a PR pass. Docker smoke and browser checks are additional behavioral checks outside this percentage. Coverage does not establish music-match accuracy or successful provider downloads.
 
@@ -62,6 +65,8 @@ npm run test:e2e:report --prefix frontend
 Spec files: `e2e/a11y.spec.ts`, `e2e/album.spec.ts`, `e2e/app.spec.ts`, `e2e/cards.spec.ts`, `e2e/download-failures.spec.ts`, `e2e/download-options.spec.ts`, `e2e/library-controls.spec.ts`, `e2e/now-playing-popout.spec.ts`, `e2e/phone.spec.ts`, `e2e/player.spec.ts`, `e2e/playlists.spec.ts`, plus support files `e2e/env.ts`, `e2e/library-fixtures.ts`, `e2e/queue-fixtures.ts`, `e2e/setup.ts`.
 
 `e2e/phone.spec.ts` runs on the mobile project only and covers the phone layout: the five library tabs and four download tabs each fit one row at 360px, the mini player is one row that hands shuffle, repeat and add to playlist to Now Playing, the Settings save bar and the active download count both clear the bottom bar, touch targets are 44px with no text control under 16px (which would make iOS Safari zoom), the format choice sits in the download options popover, and the artist download selection is a bottom sheet. The preview, playlist picker and player checks in the other specs branch on `isMobile` where the phone player hides a control.
+
+Unit test files: `frontend/src/player.test.ts`.
 
 Test files: `tests/test_activity.py`, `tests/test_artist_downloads.py`, `tests/test_downloads.py`, `tests/test_enrichment.py`, `tests/test_errors.py`, `tests/test_foundation.py`, `tests/test_player.py`, `tests/test_reliability.py`, `tests/test_search.py`, `tests/test_worker.py`.
 

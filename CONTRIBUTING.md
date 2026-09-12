@@ -44,12 +44,13 @@ uv run mypy
 uv run coverage run -m unittest discover -s tests
 uv run coverage report
 npm run lint --prefix frontend
-npm run build --prefix frontend
 npm run format:check --prefix frontend
+npm run test --prefix frontend
+npm run build --prefix frontend
 npm run test:e2e:types --prefix frontend
 ```
 
-Leave a focused regression test for changed logic. Provider tests should use mock transports or recordings you have permission to use. Record the source/licence of contributed fixtures. Never make ordinary unit tests download arbitrary songs.
+Leave a focused regression test for changed logic. A pure TypeScript helper gets a Vitest unit test beside it (`name.test.ts`); browser behaviour goes in the Playwright suite. Provider tests should use mock transports or recordings you have permission to use. Record the source/licence of contributed fixtures. Never make ordinary unit tests download arbitrary songs.
 
 For UI changes, run the isolated browser suite in [Testing and CI](docs/testing.md). Exercise the full journey on desktop and a narrow screen: action, feedback, navigation away/back, failure/retry, and refresh where state should persist. A TypeScript build does not establish browser behavior. Describe any untested path honestly.
 
