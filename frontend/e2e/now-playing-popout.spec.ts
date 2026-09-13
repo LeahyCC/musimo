@@ -11,6 +11,13 @@ test('now playing shows hover controls and the idle fade', async ({
 }) => {
   test.skip(browserName !== 'chromium' || isMobile, 'Checked on desktop Chromium.')
 
+  // This is about the hover controls and the idle fade, which are the same
+  // whichever view the stage shows. Pin the view rather than letting the
+  // machine decide it: the stage defaults to the visualizer wherever WebGPU
+  // has an adapter, so a headless run lands on artwork and a headed one does
+  // not, and the artwork assertion below would only hold on the first.
+  await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
+
   await playerFixtures(page)
 
   await page.route('**/api/player/queue', (route) =>

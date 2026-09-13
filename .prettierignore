@@ -1,4 +1,9 @@
 node_modules
+# Prettier walks everything under `..`, git's own store included.
+.git
+# Git worktrees. Each is a checkout with its own .prettierrc.yaml, whose
+# relative plugin path points at a node_modules that was never installed.
+.claude
 frontend/dist
 .research
 .venv
