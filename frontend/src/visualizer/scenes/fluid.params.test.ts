@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { F, PACKET_LENGTH } from '../audio/FeatureExtractor'
 import { presetOrDefault } from '../presets'
+import type { Tuning } from '../presets/knobs'
 import { resolveScene } from '../presets/resolve'
 import { DEFAULT_FLUID_SIZE, SOFTWARE_FLUID_SIZE } from './catalog'
 import {
@@ -77,7 +78,8 @@ describe('fluidParams', () => {
   it('takes the resolved value where there is one and the default otherwise', () => {
     expect(fluidParams({ vorticity: 40 }).vorticity).toBe(40)
     expect(fluidParams({}).viscosity).toBe(FLUID_DEFAULTS.viscosity)
-    expect(fluidParams({ flow: 3 })).toEqual(FLUID_DEFAULTS)
+    // A knob no scene offers; the parser rejects one, so this is the backstop.
+    expect(fluidParams({ flow: 3 } as Tuning)).toEqual(FLUID_DEFAULTS)
   })
 })
 

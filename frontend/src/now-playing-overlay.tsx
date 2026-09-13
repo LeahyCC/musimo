@@ -22,21 +22,11 @@ import {
 import { artUrl, durationText, usePlayer } from './player'
 import { PRESETS } from './visualizer/presets'
 import type { Preset } from './visualizer/presets/types'
-import {
-  FLUID_SIZES,
-  isSceneId,
-  PARTICLE_COUNTS,
-  RAYMARCH_STEPS,
-  SCENE_IDS,
-  SCENE_LABELS,
-} from './visualizer/scenes/catalog'
+import { FLUID_SIZES, isSceneId, SCENE_IDS, SCENE_LABELS } from './visualizer/scenes/catalog'
 import type { SceneId } from './visualizer/scenes/catalog'
 
 export type StagePlacement = 'docked' | 'popout'
 export type StageView = 'artwork' | 'visualizer'
-
-const particleLabel = (count: number) =>
-  `${count >= 1_000_000 ? `${count / 1_000_000}M` : `${count / 1000}k`} particles`
 
 type OverlayProps = {
   placement: StagePlacement
@@ -50,12 +40,8 @@ type OverlayProps = {
   onPreset?: (id: string) => void
   scene?: SceneId
   onScene?: (scene: SceneId) => void
-  particles?: number
-  onParticles?: (count: number) => void
   fluidSize?: number
   onFluidSize?: (size: number) => void
-  raymarchSteps?: number
-  onRaymarchSteps?: (steps: number) => void
 }
 
 const IDLE_MS = 2500
@@ -228,12 +214,8 @@ export function NowPlayingOverlay({
   onPreset,
   scene,
   onScene,
-  particles,
-  onParticles,
   fluidSize,
   onFluidSize,
-  raymarchSteps,
-  onRaymarchSteps,
 }: OverlayProps) {
   const player = usePlayer()
   const track = player.libraryTrack
@@ -274,7 +256,8 @@ export function NowPlayingOverlay({
               ))}
             </select>
           )}
-          {view === 'visualizer' && onScene && (
+          {/* Nothing to choose while there is one scene, so it is not shown. */}
+          {view === 'visualizer' && onScene && SCENE_IDS.length > 1 && (
             <select
               className="stage-select"
               aria-label="Scene"
@@ -291,20 +274,6 @@ export function NowPlayingOverlay({
             </select>
           )}
           {/* The size control belongs to whichever scene is drawing. */}
-          {view === 'visualizer' && scene === 'particles' && onParticles && (
-            <select
-              className="stage-select"
-              aria-label="Particle count"
-              value={particles}
-              onChange={(event) => onParticles(Number(event.target.value))}
-            >
-              {PARTICLE_COUNTS.map((count) => (
-                <option key={count} value={count}>
-                  {particleLabel(count)}
-                </option>
-              ))}
-            </select>
-          )}
           {view === 'visualizer' && scene === 'fluid' && onFluidSize && (
             <select
               className="stage-select"
@@ -315,20 +284,6 @@ export function NowPlayingOverlay({
               {FLUID_SIZES.map((size) => (
                 <option key={size} value={size}>
                   {size} grid
-                </option>
-              ))}
-            </select>
-          )}
-          {view === 'visualizer' && scene === 'raymarch' && onRaymarchSteps && (
-            <select
-              className="stage-select"
-              aria-label="Raymarch steps"
-              value={raymarchSteps}
-              onChange={(event) => onRaymarchSteps(Number(event.target.value))}
-            >
-              {RAYMARCH_STEPS.map((steps) => (
-                <option key={steps} value={steps}>
-                  {steps} steps
                 </option>
               ))}
             </select>

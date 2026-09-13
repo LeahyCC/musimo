@@ -48,51 +48,59 @@ describe('bend', () => {
 })
 
 describe('resolveScene', () => {
-  const base = { flow: 1, jitter: 0 }
+  const base = { vorticity: 1, viscosity: 0 }
 
   it('is the resting value where nothing drives a knob', () => {
     const out = resolveScene(base, [], packet({ energy: 1 }), {})
-    expect(out).toEqual({ flow: 1, jitter: 0 })
+    expect(out).toEqual({ vorticity: 1, viscosity: 0 })
   })
 
   it('adds gain times the bent feature', () => {
-    const mapping: Mapping<'flow' | 'jitter'>[] = [
-      { from: 'energy', to: 'flow', gain: 2, curve: 'linear' },
-      { from: 'treble', to: 'jitter', gain: 4, curve: 'square' },
+    const mapping: Mapping<'vorticity' | 'viscosity'>[] = [
+      { from: 'energy', to: 'vorticity', gain: 2, curve: 'linear' },
+      { from: 'treble', to: 'viscosity', gain: 4, curve: 'square' },
     ]
     const out = resolveScene(base, mapping, packet({ energy: 0.5, treble: 0.5 }), {})
-    expect(out.flow).toBeCloseTo(2)
-    expect(out.jitter).toBeCloseTo(1)
+    expect(out.vorticity).toBeCloseTo(2)
+    expect(out.viscosity).toBeCloseTo(1)
   })
 
   it('adds several rows onto one knob', () => {
-    const mapping: Mapping<'flow'>[] = [
-      { from: 'energy', to: 'flow', gain: 1, curve: 'linear' },
-      { from: 'beatPulse', to: 'flow', gain: 3, curve: 'linear' },
+    const mapping: Mapping<'vorticity'>[] = [
+      { from: 'energy', to: 'vorticity', gain: 1, curve: 'linear' },
+      { from: 'beatPulse', to: 'vorticity', gain: 3, curve: 'linear' },
     ]
-    expect(resolveScene({ flow: 1 }, mapping, packet({ energy: 1, beatPulse: 1 }), {}).flow).toBe(5)
+    expect(
+      resolveScene({ vorticity: 1 }, mapping, packet({ energy: 1, beatPulse: 1 }), {}).vorticity,
+    ).toBe(5)
   })
 
   it('takes a negative gain, which is how a feature thins a number', () => {
-    const mapping: Mapping<'flow'>[] = [{ from: 'treble', to: 'flow', gain: -0.5, curve: 'linear' }]
-    expect(resolveScene({ flow: 1 }, mapping, packet({ treble: 1 }), {}).flow).toBeCloseTo(0.5)
+    const mapping: Mapping<'vorticity'>[] = [
+      { from: 'treble', to: 'vorticity', gain: -0.5, curve: 'linear' },
+    ]
+    expect(
+      resolveScene({ vorticity: 1 }, mapping, packet({ treble: 1 }), {}).vorticity,
+    ).toBeCloseTo(0.5)
   })
 
   it('ignores a row aimed at the post stack', () => {
-    const mapping: Mapping<'flow'>[] = [
+    const mapping: Mapping<'vorticity'>[] = [
       { from: 'energy', to: 'bloom.intensity', gain: 9, curve: 'linear' },
     ]
-    const out = resolveScene({ flow: 1 }, mapping, packet({ energy: 1 }), {})
-    expect(out).toEqual({ flow: 1 })
+    const out = resolveScene({ vorticity: 1 }, mapping, packet({ energy: 1 }), {})
+    expect(out).toEqual({ vorticity: 1 })
   })
 
   it('rewrites the object it is given rather than keeping last frame', () => {
     const out: Record<string, number> = {}
-    const mapping: Mapping<'flow'>[] = [{ from: 'energy', to: 'flow', gain: 2, curve: 'linear' }]
-    resolveScene({ flow: 1 }, mapping, packet({ energy: 1 }), out)
-    expect(out.flow).toBe(3)
-    resolveScene({ flow: 1 }, mapping, packet({ energy: 0 }), out)
-    expect(out.flow).toBe(1)
+    const mapping: Mapping<'vorticity'>[] = [
+      { from: 'energy', to: 'vorticity', gain: 2, curve: 'linear' },
+    ]
+    resolveScene({ vorticity: 1 }, mapping, packet({ energy: 1 }), out)
+    expect(out.vorticity).toBe(3)
+    resolveScene({ vorticity: 1 }, mapping, packet({ energy: 0 }), out)
+    expect(out.vorticity).toBe(1)
   })
 })
 
@@ -116,7 +124,7 @@ describe('resolvePost', () => {
     const base = defaultPostParams()
     base.bloom.intensity = 0.3
     const out = defaultPostParams()
-    const mapping: Mapping<'flow'>[] = [
+    const mapping: Mapping<'vorticity'>[] = [
       { from: 'energy', to: 'bloom.intensity', gain: 0.4, curve: 'linear' },
     ]
     resolvePost(base, mapping, packet({ energy: 0.5 }), out)
@@ -128,7 +136,7 @@ describe('resolvePost', () => {
     const base = defaultPostParams()
     base.feedback.amount = 0.2
     const out = defaultPostParams()
-    const mapping: Mapping<'flow'>[] = [
+    const mapping: Mapping<'vorticity'>[] = [
       { from: 'treble', to: 'feedback.amount', gain: 0.2, curve: 'linear' },
     ]
     resolvePost(base, mapping, packet({ treble: 1 }), out)
@@ -140,7 +148,9 @@ describe('resolvePost', () => {
   it('ignores a row aimed at the scene', () => {
     const base = defaultPostParams()
     const out = defaultPostParams()
-    const mapping: Mapping<'flow'>[] = [{ from: 'energy', to: 'flow', gain: 9, curve: 'linear' }]
+    const mapping: Mapping<'vorticity'>[] = [
+      { from: 'energy', to: 'vorticity', gain: 9, curve: 'linear' },
+    ]
     resolvePost(base, mapping, packet({ energy: 1 }), out)
     expect(out).toEqual(base)
   })

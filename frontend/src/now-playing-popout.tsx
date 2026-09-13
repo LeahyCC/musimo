@@ -21,15 +21,7 @@ import type { StagePlacement, StageView } from './now-playing-overlay'
 import { artUrl, remember, stored, usePlayer } from './player'
 import { findPreset, firstPresetOf, presetOrDefault, stepPreset } from './visualizer/presets'
 import type { Preset } from './visualizer/presets/types'
-import {
-  DEFAULT_FLUID_SIZE,
-  DEFAULT_PARTICLES,
-  DEFAULT_RAYMARCH_STEPS,
-  FLUID_SIZES,
-  isSceneId,
-  PARTICLE_COUNTS,
-  RAYMARCH_STEPS,
-} from './visualizer/scenes/catalog'
+import { DEFAULT_FLUID_SIZE, FLUID_SIZES, isSceneId } from './visualizer/scenes/catalog'
 import type { SceneId } from './visualizer/scenes/catalog'
 
 // The whole WebGPU tree stays out of the main bundle until a stage wants it.
@@ -77,12 +69,8 @@ type PopoutValue = {
   /** Which scene draws, and how much work the chosen one does. */
   scene: SceneId
   setScene: (scene: SceneId) => void
-  particles: number
-  setParticles: (count: number) => void
   fluidSize: number
   setFluidSize: (size: number) => void
-  raymarchSteps: number
-  setRaymarchSteps: (steps: number) => void
 }
 
 const noop = () => undefined
@@ -107,12 +95,8 @@ const PopoutContext = createContext<PopoutValue>({
   cyclePreset: noop,
   scene: presetOrDefault('').scene,
   setScene: noop,
-  particles: DEFAULT_PARTICLES,
-  setParticles: noop,
   fluidSize: DEFAULT_FLUID_SIZE,
   setFluidSize: noop,
-  raymarchSteps: DEFAULT_RAYMARCH_STEPS,
-  setRaymarchSteps: noop,
 })
 export const useNowPlayingPopout = () => useContext(PopoutContext)
 
@@ -120,9 +104,7 @@ const POPOUT_SIZE = 420
 const VIEW_KEY = 'musimo.now-playing-view'
 const PRESET_KEY = 'musimo.visualizer-preset'
 const SCENE_KEY = 'musimo.visualizer-scene'
-const PARTICLES_KEY = 'musimo.visualizer-particles'
 const FLUID_KEY = 'musimo.visualizer-fluid-grid'
-const RAYMARCH_KEY = 'musimo.visualizer-raymarch-steps'
 const NOTICE_KEY = 'musimo.now-playing-visualizer-notice'
 const UNSUPPORTED = 'This browser has no WebGPU, so the stage shows the artwork.'
 
@@ -189,24 +171,14 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
     setSceneState(chosen)
     setPresetState((current) => (current.scene === chosen ? current : firstPresetOf(chosen)))
   }, [])
-  const [particles, setParticles] = useState(() => {
-    const saved = Number(stored(PARTICLES_KEY, ''))
-    return PARTICLE_COUNTS.includes(saved) ? saved : DEFAULT_PARTICLES
-  })
   const [fluidSize, setFluidSize] = useState(() => {
     const saved = Number(stored(FLUID_KEY, ''))
     return FLUID_SIZES.includes(saved) ? saved : DEFAULT_FLUID_SIZE
   })
-  const [raymarchSteps, setRaymarchSteps] = useState(() => {
-    const saved = Number(stored(RAYMARCH_KEY, ''))
-    return RAYMARCH_STEPS.includes(saved) ? saved : DEFAULT_RAYMARCH_STEPS
-  })
   useEffect(() => remember(VIEW_KEY, view), [view])
   useEffect(() => remember(PRESET_KEY, preset.id), [preset])
   useEffect(() => remember(SCENE_KEY, scene), [scene])
-  useEffect(() => remember(PARTICLES_KEY, String(particles)), [particles])
   useEffect(() => remember(FLUID_KEY, String(fluidSize)), [fluidSize])
-  useEffect(() => remember(RAYMARCH_KEY, String(raymarchSteps)), [raymarchSteps])
   const toggleView = useCallback(
     () => setView((current) => (current === 'artwork' ? 'visualizer' : 'artwork')),
     [],
@@ -275,12 +247,8 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       cyclePreset,
       scene,
       setScene,
-      particles,
-      setParticles,
       fluidSize,
       setFluidSize,
-      raymarchSteps,
-      setRaymarchSteps,
     }),
     [
       popout,
@@ -301,9 +269,7 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       cyclePreset,
       scene,
       setScene,
-      particles,
       fluidSize,
-      raymarchSteps,
     ],
   )
 
@@ -378,9 +344,7 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
             hud={popout.hud}
             preset={popout.preset}
             scene={popout.scene}
-            particles={popout.particles}
             fluidSize={popout.fluidSize}
-            raymarchSteps={popout.raymarchSteps}
             onUnsupported={popout.markUnsupported}
           />
         </Suspense>
@@ -398,12 +362,8 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
         onPreset={popout.setPreset}
         scene={popout.scene}
         onScene={popout.setScene}
-        particles={popout.particles}
-        onParticles={popout.setParticles}
         fluidSize={popout.fluidSize}
         onFluidSize={popout.setFluidSize}
-        raymarchSteps={popout.raymarchSteps}
-        onRaymarchSteps={popout.setRaymarchSteps}
       />
     </div>
   )

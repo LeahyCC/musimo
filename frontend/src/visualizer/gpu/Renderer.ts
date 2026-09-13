@@ -20,16 +20,9 @@ import { DEFAULT_PRESET_ID, presetOrDefault } from '../presets'
 import type { Tuning } from '../presets/knobs'
 import { resolvePost, resolveScene } from '../presets/resolve'
 import type { Preset } from '../presets/types'
-import {
-  DEFAULT_FLUID_SIZE,
-  DEFAULT_PARTICLES,
-  DEFAULT_RAYMARCH_STEPS,
-  DEFAULT_SCENE,
-} from '../scenes/catalog'
+import { DEFAULT_FLUID_SIZE, DEFAULT_SCENE } from '../scenes/catalog'
 import type { SceneId } from '../scenes/catalog'
 import { Fluid } from '../scenes/Fluid'
-import { Particles } from '../scenes/Particles'
-import { Raymarch } from '../scenes/Raymarch'
 import type { Scene } from '../scenes/Scene'
 import { acquireGpu, configureCanvas, onGpuLost } from './Device'
 import type { Gpu, GpuInfo } from './Device'
@@ -59,9 +52,7 @@ class Renderer {
   private last = 0
   private time = 0
   private sceneId: SceneId = DEFAULT_SCENE
-  private particles = DEFAULT_PARTICLES
   private fluidSize = DEFAULT_FLUID_SIZE
-  private raymarchSteps = DEFAULT_RAYMARCH_STEPS
   private readonly packet = new Float32Array(PACKET_LENGTH)
   // The preset it draws with, the object its mapping is resolved into each
   // frame, and the stack the post lanes are written into. All three belong to
@@ -182,19 +173,9 @@ class Renderer {
     return this.preset.id
   }
 
-  setParticleCount(count: number) {
-    this.particles = count
-    if (this.scene instanceof Particles) this.scene.setCount(count)
-  }
-
   setFluidSize(size: number) {
     this.fluidSize = size
     if (this.scene instanceof Fluid) this.scene.setSize(size)
-  }
-
-  setRaymarchSteps(steps: number) {
-    this.raymarchSteps = steps
-    if (this.scene instanceof Raymarch) this.scene.setSteps(steps)
   }
 
   /** Swap the whole scene. The old one's buffers go with it. */
@@ -224,10 +205,10 @@ class Renderer {
     if (this.canvas) this.scene.resize(this.canvas.width, this.canvas.height)
   }
 
+  // One scene for now. The switch stays here rather than being inlined above,
+  // because this is the one place a new scene has to be named.
   private build(): Scene {
-    if (this.sceneId === 'fluid') return new Fluid(this.fluidSize)
-    if (this.sceneId === 'raymarch') return new Raymarch(this.raymarchSteps)
-    return new Particles(this.particles)
+    return new Fluid(this.fluidSize)
   }
 
   private start() {

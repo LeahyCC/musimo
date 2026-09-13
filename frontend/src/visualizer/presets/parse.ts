@@ -2,7 +2,7 @@
  * Turn an unknown JSON value into a `Preset`, or throw saying what is wrong
  * with it. The preset files are compiled in rather than fetched, so a failure
  * here is a mistake in the repository and not something a person can cause;
- * `index.ts` parses all six at load and lets the error out, which is what
+ * `index.ts` parses them all at load and lets the error out, which is what
  * lets the rest of the visualizer trust the shape.
  *
  * Everything arrives as `unknown` and is narrowed on the way through. The
@@ -12,7 +12,7 @@
 import { defaultPostParams, isPostKnob, POST_KNOBS, POST_LANES } from '../post/params'
 import type { PostParams, PostStage } from '../post/params'
 import { isSceneId, SCENE_IDS } from '../scenes/catalog'
-import { AUDIO_FIELDS, CURVES, FLUID_KNOBS, PARTICLE_KNOBS, RAYMARCH_KNOBS } from './knobs'
+import { AUDIO_FIELDS, CURVES, FLUID_KNOBS } from './knobs'
 import type { AudioField, Curve } from './knobs'
 import type { Mapping, Preset } from './types'
 
@@ -183,32 +183,12 @@ export function parsePreset(value: unknown, source: string): Preset {
   if (!isSceneId(scene)) fail(source, 'scene', `is not a scene; they are ${list(SCENE_IDS)}`)
   const postParams = readPost(value.postParams, source, 'postParams')
 
-  if (scene === 'fluid')
-    return {
-      id,
-      name,
-      scene,
-      sceneParams: readKnobs(FLUID_KNOBS, value.sceneParams, source, 'sceneParams'),
-      postParams,
-      audioMapping: readMapping(FLUID_KNOBS, value.audioMapping, source, 'audioMapping'),
-    }
-
-  if (scene === 'raymarch')
-    return {
-      id,
-      name,
-      scene,
-      sceneParams: readKnobs(RAYMARCH_KNOBS, value.sceneParams, source, 'sceneParams'),
-      postParams,
-      audioMapping: readMapping(RAYMARCH_KNOBS, value.audioMapping, source, 'audioMapping'),
-    }
-
   return {
     id,
     name,
     scene,
-    sceneParams: readKnobs(PARTICLE_KNOBS, value.sceneParams, source, 'sceneParams'),
+    sceneParams: readKnobs(FLUID_KNOBS, value.sceneParams, source, 'sceneParams'),
     postParams,
-    audioMapping: readMapping(PARTICLE_KNOBS, value.audioMapping, source, 'audioMapping'),
+    audioMapping: readMapping(FLUID_KNOBS, value.audioMapping, source, 'audioMapping'),
   }
 }
