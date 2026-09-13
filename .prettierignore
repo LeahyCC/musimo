@@ -3,7 +3,8 @@ node_modules
 .git
 # Git worktrees. Each is a checkout with its own .prettierrc.yaml, whose
 # relative plugin path points at a node_modules that was never installed.
-.claude
+# Scoped to worktrees so anything committed under .claude is still formatted.
+.claude/worktrees
 frontend/dist
 .research
 .venv
