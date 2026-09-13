@@ -14,6 +14,7 @@
 - Add a raymarched fractal scene to the visualizer, folded by the bass and detailed by the treble, with a step cap in the stage's top bar (#59)
 - Add six visualizer presets, two per scene, each naming which feature drives which parameter, with a picker in the stage's top bar and `[` and `]` to cycle (#60)
 - Cut the particle and raymarch visualizer scenes and their four presets, leaving the fluid and hiding the scene select while there is one scene to pick
+- Move the visualizer into [visimo](https://github.com/LeahyCC/visimo) and consume it as a dependency, so scenes and presets can be tuned against a dropped track instead of a library
 
 ### Testing and CI
 

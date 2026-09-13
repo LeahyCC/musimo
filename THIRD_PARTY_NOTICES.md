@@ -4,9 +4,9 @@ The [MIT licence](LICENSE) covers Musimo's original source. It does not relicens
 
 ## Software inventory
 
-The exact dependency versions are recorded in `uv.lock`, `requirements.lock`, `frontend/package-lock.json` and `Dockerfile`. The container also installs Debian packages and copies a Deno binary. The optional helper image is specified in `compose.yaml`.
+The exact dependency versions are recorded in `uv.lock`, `requirements.lock`, `frontend/package-lock.json` and `Dockerfile`. The visualizer, `visimo`, is a git dependency of the frontend; it is MIT and its own notices travel with it. The container also installs Debian packages and copies a Deno binary. The optional helper image is specified in `compose.yaml`.
 
-Major components include React, TanStack Query/Router/Virtual, Vite, TypeScript, Zod, Lucide, Tailwind CSS, FastAPI, uvicorn, httpx, SQLite, Mutagen, watchdog, yt-dlp, the bgutil provider/plugin, FFmpeg, Chromaprint, Deno, Python and the base operating system. This list is an orientation, not a complete dependency licence audit or SBOM.
+Major components include React, TanStack Query/Router/Virtual, Vite, TypeScript, Zod, Lucide, Tailwind CSS, visimo, FastAPI, uvicorn, httpx, SQLite, Mutagen, watchdog, yt-dlp, the bgutil provider/plugin, FFmpeg, Chromaprint, Deno, Python and the base operating system. This list is an orientation, not a complete dependency licence audit or SBOM.
 
 Keep upstream copyright and licence files when redistributing packages. Python distributions contain their metadata/licence files; npm packages contain their own licence metadata; Debian packages generally place copyright information under `/usr/share/doc/<package>/copyright`. Inspect the exact build you ship, including transitive dependencies and executables.
 

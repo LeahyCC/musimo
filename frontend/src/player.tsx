@@ -186,7 +186,7 @@ export const artUrl = (track: LibraryTrack) =>
   track.coverArt ? `/api/player/art/${encodeURIComponent(track.coverArt)}` : ''
 
 // The visualizer tree loads on demand so the main bundle stays as it is.
-const audioGraph = () => import('./visualizer/audio/AudioGraph')
+const audioGraph = () => import('visimo/audio')
 
 export function stored(key: string, fallback: string) {
   try {
@@ -650,7 +650,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const onVisible = () => {
       if (document.visibilityState !== 'visible' || mode.current !== 'library') return
       if (libraryAudio.current && !libraryAudio.current.paused)
-        void audioGraph().then((module) => module.resumeAudioGraph())
+        void audioGraph().then((module) => module.resumeAudio())
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
@@ -783,7 +783,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (!library) return
         scrobble(false)
         const element = event.currentTarget
-        void audioGraph().then((module) => module.connectLibraryAudio(element))
+        void audioGraph().then((module) => module.attachAudio(element))
       },
       onPause: () => {
         if (mode.current !== which) return

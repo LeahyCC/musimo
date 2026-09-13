@@ -18,12 +18,12 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react'
+import { FLUID_SIZES, isSceneId, SCENE_IDS, SCENE_LABELS } from 'visimo/catalog'
+import type { SceneId } from 'visimo/catalog'
+import { PRESETS } from 'visimo/presets'
+import type { Preset } from 'visimo/presets'
 
 import { artUrl, durationText, usePlayer } from './player'
-import { PRESETS } from './visualizer/presets'
-import type { Preset } from './visualizer/presets/types'
-import { FLUID_SIZES, isSceneId, SCENE_IDS, SCENE_LABELS } from './visualizer/scenes/catalog'
-import type { SceneId } from './visualizer/scenes/catalog'
 
 export type StagePlacement = 'docked' | 'popout'
 export type StageView = 'artwork' | 'visualizer'

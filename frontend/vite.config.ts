@@ -14,6 +14,10 @@ const secure = apiTarget.startsWith('https:')
 
 export default defineConfig({
   plugins: [react(), tailwindcss()],
+  // visimo ships TypeScript rather than a build, and its shaders are `?raw`
+  // imports the dependency pre-bundler cannot load out of node_modules. The
+  // exclusion is also what keeps its feature worker's asset URL intact.
+  optimizeDeps: { exclude: ['visimo'] },
   server: {
     proxy: {
       '/api': {
