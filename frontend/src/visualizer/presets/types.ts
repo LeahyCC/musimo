@@ -7,7 +7,7 @@
  */
 import type { PostKnob, PostParams } from '../post/params'
 import type { SceneId } from '../scenes/catalog'
-import type { AudioField, Curve, FluidKnob, ParticleKnob, RaymarchKnob } from './knobs'
+import type { AudioField, Curve, FluidKnob } from './knobs'
 
 /**
  * One row of the mapping table: a feature, bent by a curve and multiplied by
@@ -41,9 +41,10 @@ type Shape<S extends SceneId, K extends string> = {
   audioMapping: readonly Mapping<K>[]
 }
 
-export type ParticlePreset = Shape<'particles', ParticleKnob>
 export type FluidPreset = Shape<'fluid', FluidKnob>
-export type RaymarchPreset = Shape<'raymarch', RaymarchKnob>
 
-/** A scene and the knobs it offers always agree, because this is a union. */
-export type Preset = ParticlePreset | FluidPreset | RaymarchPreset
+/**
+ * A scene and the knobs it offers always agree, because this is a union over
+ * the scenes. There is one scene for now, so the union has one member.
+ */
+export type Preset = FluidPreset

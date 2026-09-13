@@ -36,31 +36,6 @@ export const CURVES = ['linear', 'square', 'sqrt', 'invert'] as const
 export type Curve = (typeof CURVES)[number]
 
 /**
- * The particle field's numbers. The first twelve reach the compute shader and
- * the last four the render shader; nothing in either reads the feature packet
- * for a magnitude any more, so a preset can point any feature at any of them.
- */
-export const PARTICLE_KNOBS = [
-  'flow',
-  'noiseFrequency',
-  'attract',
-  'push',
-  'jitter',
-  'spring',
-  'drag',
-  'speedCap',
-  'advance',
-  'respawn',
-  'orbitSpeed',
-  'orbitRadius',
-  'warmth',
-  'brightness',
-  'speedLight',
-  'sizeBump',
-] as const
-export type ParticleKnob = (typeof PARTICLE_KNOBS)[number]
-
-/**
  * The fluid's numbers. `force` and `dye` are what the emitters trickle every
  * second; `hitForce` and `hitDye` are what one onset adds on top.
  */
@@ -82,33 +57,11 @@ export const FLUID_KNOBS = [
 ] as const
 export type FluidKnob = (typeof FLUID_KNOBS)[number]
 
-/**
- * The march's numbers. The camera sits at `orbit` less `pullIn`, never nearer
- * than `closest`, because inside the fold the distance estimate is no use.
- */
-export const RAYMARCH_KNOBS = [
-  'fold',
-  'iterations',
-  'orbit',
-  'pullIn',
-  'closest',
-  'yawSpeed',
-  'lightStrength',
-  'shadowSoftness',
-  'glow',
-  'occlusion',
-  'shift',
-  'shiftDrift',
-] as const
-export type RaymarchKnob = (typeof RAYMARCH_KNOBS)[number]
-
-export type SceneKnob = ParticleKnob | FluidKnob | RaymarchKnob
+export type SceneKnob = FluidKnob
 
 /** Every knob a scene offers, by scene id. The parser checks against this. */
 export const SCENE_KNOBS = {
-  particles: PARTICLE_KNOBS,
   fluid: FLUID_KNOBS,
-  raymarch: RAYMARCH_KNOBS,
 } as const satisfies Record<string, readonly SceneKnob[]>
 
 /**

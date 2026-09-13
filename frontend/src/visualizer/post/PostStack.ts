@@ -14,7 +14,7 @@
  * the sampler and the parameters outlive every remount. The textures do not:
  * they are sized from the canvas and rebuilt whenever that size changes,
  * which a dock or popout move always does, so the trails start again from
- * black on each move while the particle field itself keeps running.
+ * black on each move while the simulation itself keeps running.
  */
 import blur from '../shaders/post.blur.wgsl?raw'
 import bright from '../shaders/post.bright.wgsl?raw'
@@ -34,10 +34,10 @@ import {
 import type { PostParams, PostPatch } from './params'
 
 /**
- * The scene sums thousands of additively blended particles, so its cores run
- * well past 1. Half floats keep that headroom and are filterable, which the
- * blur and the warp both need. The scene renders into this format rather than
- * the canvas's, so the renderer hands it to the scene as well.
+ * A scene's brightest cores run well past 1. Half floats keep that headroom
+ * and are filterable, which the blur and the warp both need. The scene renders
+ * into this format rather than the canvas's, so the renderer hands it to the
+ * scene as well.
  */
 export const SCENE_FORMAT: GPUTextureFormat = 'rgba16float'
 const BLUR_STEP_BYTES = 16

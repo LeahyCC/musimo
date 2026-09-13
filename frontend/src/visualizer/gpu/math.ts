@@ -51,7 +51,7 @@ export function lookAt(eye: Vec3, target: Vec3, up: Vec3) {
 export type Basis = { forward: Vec3; right: Vec3; up: Vec3 }
 
 /**
- * The camera as three axes rather than a matrix. A raymarch builds each ray
+ * The camera as three axes rather than a matrix. A ray marcher builds each ray
  * from these directly, so it never needs a projection or its inverse. Looking
  * straight along the given up vector leaves the cross product undefined, so a
  * different axis is borrowed for that frame rather than returning zeros.

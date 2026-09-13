@@ -9,7 +9,7 @@
  * The grid is 512 or 1024 texels a side and does not follow the canvas, so
  * nothing is rebuilt on a resize: the square covers the canvas and the
  * overflow is cropped, and `visibleExtent` keeps the emitters inside the band
- * that is actually on screen. Like the particle field this object belongs to
+ * that is actually on screen. Like the post stack this object belongs to
  * the renderer singleton, so a remount of the stage never restarts the fluid.
  *
  * Every field is `rgba16float`, including the three that carry one number

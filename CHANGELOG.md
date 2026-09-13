@@ -13,6 +13,7 @@
 - Add a fluid scene to the visualizer, with a scene select in the stage's top bar (#58)
 - Add a raymarched fractal scene to the visualizer, folded by the bass and detailed by the treble, with a step cap in the stage's top bar (#59)
 - Add six visualizer presets, two per scene, each naming which feature drives which parameter, with a picker in the stage's top bar and `[` and `]` to cycle (#60)
+- Cut the particle and raymarch visualizer scenes and their four presets, leaving the fluid and hiding the scene select while there is one scene to pick
 
 ### Testing and CI
 
