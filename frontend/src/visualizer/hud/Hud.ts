@@ -1,8 +1,9 @@
 /**
  * A debug overlay drawn on a 2D canvas above the scene: the band envelopes,
  * energy, the flux trace against its onset threshold with onset marks, the
- * tempo guess, and frame timing. Toggled with H; it ships in the build so a
- * problem on someone else's machine can be read off a screenshot.
+ * tempo guess, the preset drawing, and frame timing. Toggled with H; it ships
+ * in the build so a problem on someone else's machine can be read off a
+ * screenshot.
  */
 import { F } from '../audio/FeatureExtractor'
 
@@ -14,6 +15,8 @@ export type HudStats = {
   adapter: string
   /** Which post stages are on, already summarised for the line. */
   post: string
+  /** The preset drawing, by its name in the picker. */
+  preset: string
 }
 
 const BARS = ['sub', 'bass', 'lowMid', 'highMid', 'treble', 'energy'] as const
@@ -64,7 +67,9 @@ export class Hud {
     const y = 10
     const width = 310
     ctx.fillStyle = 'rgba(0, 0, 0, 0.6)'
-    ctx.fillRect(x, y, width, 210)
+    // Tall enough for the four lines under the flux trace, the last of which
+    // is the preset.
+    ctx.fillRect(x, y, width, 240)
 
     BARS.forEach((name, index) => {
       const value = packet[index] ?? 0
@@ -130,5 +135,6 @@ export class Hud {
     )
     ctx.fillText(stats.adapter.slice(0, 44), x + 8, top + height + 40)
     ctx.fillText(`post ${stats.post}`, x + 8, top + height + 54)
+    ctx.fillText(`preset ${stats.preset}`, x + 8, top + height + 68)
   }
 }

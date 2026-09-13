@@ -135,6 +135,97 @@ export type PostStage = 'feedback' | 'bloom' | 'chromatic' | 'tonemap' | 'grain'
 
 const STAGES: readonly PostStage[] = ['feedback', 'bloom', 'chromatic', 'tonemap', 'grain']
 
+/**
+ * Every number in the stack a preset may name, read and written one at a
+ * time. The renderer holds the preset's stack as it came and a second copy it
+ * modulates, so a mapping that points at `bloom.intensity` writes that one
+ * lane each frame rather than rebuilding the whole object.
+ *
+ * `bloom.weights` is deliberately absent: it is three numbers, a preset can
+ * still set it outright, and nothing wants a feature riding on it.
+ */
+export const POST_LANES = {
+  'feedback.amount': {
+    read: (p: PostParams) => p.feedback.amount,
+    write: (p: PostParams, value: number) => {
+      p.feedback.amount = value
+    },
+  },
+  'feedback.decay': {
+    read: (p: PostParams) => p.feedback.decay,
+    write: (p: PostParams, value: number) => {
+      p.feedback.decay = value
+    },
+  },
+  'feedback.zoom': {
+    read: (p: PostParams) => p.feedback.zoom,
+    write: (p: PostParams, value: number) => {
+      p.feedback.zoom = value
+    },
+  },
+  'feedback.rotate': {
+    read: (p: PostParams) => p.feedback.rotate,
+    write: (p: PostParams, value: number) => {
+      p.feedback.rotate = value
+    },
+  },
+  'bloom.threshold': {
+    read: (p: PostParams) => p.bloom.threshold,
+    write: (p: PostParams, value: number) => {
+      p.bloom.threshold = value
+    },
+  },
+  'bloom.knee': {
+    read: (p: PostParams) => p.bloom.knee,
+    write: (p: PostParams, value: number) => {
+      p.bloom.knee = value
+    },
+  },
+  'bloom.intensity': {
+    read: (p: PostParams) => p.bloom.intensity,
+    write: (p: PostParams, value: number) => {
+      p.bloom.intensity = value
+    },
+  },
+  'chromatic.amount': {
+    read: (p: PostParams) => p.chromatic.amount,
+    write: (p: PostParams, value: number) => {
+      p.chromatic.amount = value
+    },
+  },
+  'chromatic.beat': {
+    read: (p: PostParams) => p.chromatic.beat,
+    write: (p: PostParams, value: number) => {
+      p.chromatic.beat = value
+    },
+  },
+  'tonemap.exposure': {
+    read: (p: PostParams) => p.tonemap.exposure,
+    write: (p: PostParams, value: number) => {
+      p.tonemap.exposure = value
+    },
+  },
+  'tonemap.shoulder': {
+    read: (p: PostParams) => p.tonemap.shoulder,
+    write: (p: PostParams, value: number) => {
+      p.tonemap.shoulder = value
+    },
+  },
+  'grain.amount': {
+    read: (p: PostParams) => p.grain.amount,
+    write: (p: PostParams, value: number) => {
+      p.grain.amount = value
+    },
+  },
+} as const
+
+export type PostKnob = keyof typeof POST_LANES
+
+export const POST_KNOBS = Object.keys(POST_LANES) as readonly PostKnob[]
+
+export const isPostKnob = (value: string): value is PostKnob =>
+  Object.prototype.hasOwnProperty.call(POST_LANES, value)
+
 /** A stage runs only when both it and the whole stack are on. */
 export const stageEnabled = (params: PostParams, stage: PostStage) =>
   params.enabled && params[stage].enabled

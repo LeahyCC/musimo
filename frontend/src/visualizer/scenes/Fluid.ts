@@ -1,6 +1,8 @@
 /**
  * The second scene: Stam's stable fluids on a square grid of compute
- * textures, with the music injecting velocity and dye on every onset.
+ * textures, with the music injecting velocity and dye on every onset. What an
+ * injection is worth, and every decay and strength around it, comes from the
+ * preset's numbers with its mapping already added; see `fluid.params.ts`.
  *
  *   advect ─► diffuse ─► vorticity and injection ─► project ─► advect dye
  *
@@ -16,6 +18,7 @@
  * format means one layout, and any three fields can go to any step. Curl is
  * read before divergence is written, so both live in the scratch field.
  */
+import type { Tuning } from '../presets/knobs'
 import common from '../shaders/fluid.common.wgsl?raw'
 import render from '../shaders/fluid.render.wgsl?raw'
 import simulation from '../shaders/fluid.sim.wgsl?raw'
@@ -23,6 +26,7 @@ import { DEFAULT_FLUID_SIZE } from './catalog'
 import {
   diffuseIterations,
   fluidFrame,
+  fluidParams,
   PALETTE_SIZE,
   paletteLut,
   pressureIterations,
@@ -244,13 +248,13 @@ export class Fluid implements Scene {
     this.visible = visibleExtent(width, height)
   }
 
-  update(features: Float32Array, dt: number) {
+  update(features: Float32Array, dt: number, tuning: Tuning) {
     const gear = this.gear
     const context = this.context
     if (!gear || !context) return
     if (this.sized?.size !== simSize(this.wanted, context.software)) this.allocate()
     const size = this.sized?.size ?? DEFAULT_FLUID_SIZE
-    const frame = fluidFrame(features, dt, this.visible)
+    const frame = fluidFrame(fluidParams(tuning), features, dt, this.visible)
     writeSimUniform(frame, size, this.visible, this.uniformData)
     gear.device.queue.writeBuffer(gear.uniform, 0, this.uniformData)
   }

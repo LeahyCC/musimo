@@ -1,10 +1,13 @@
 import { useEffect, useRef } from 'react'
 
 import { renderer } from './gpu/Renderer'
+import type { Preset } from './presets/types'
 import type { SceneId } from './scenes/catalog'
 
 type Props = {
   hud: boolean
+  /** Its numbers and its stack; the scene below is its own. */
+  preset: Preset
   scene: SceneId
   particles: number
   fluidSize: number
@@ -17,6 +20,7 @@ type Props = {
 // canvas elements and nothing per frame; the renderer draws until unmount.
 export default function VisualizerStage({
   hud,
+  preset,
   scene,
   particles,
   fluidSize,
@@ -42,6 +46,8 @@ export default function VisualizerStage({
   }, [])
 
   useEffect(() => renderer.setHud(hud), [hud])
+  // The preset first, so the scene it names is the one that gets built.
+  useEffect(() => renderer.setPreset(preset), [preset])
   useEffect(() => renderer.setScene(scene), [scene])
   useEffect(() => renderer.setParticleCount(particles), [particles])
   useEffect(() => renderer.setFluidSize(fluidSize), [fluidSize])

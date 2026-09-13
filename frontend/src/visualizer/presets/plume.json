@@ -1,0 +1,36 @@
+{
+  "id": "plume",
+  "name": "Plume",
+  "scene": "fluid",
+  "sceneParams": {
+    "velocityDecay": 0.18,
+    "dyeDecay": 0.22,
+    "vorticity": 12,
+    "viscosity": 0.2,
+    "intensity": 1.15,
+    "spread": 0.42,
+    "force": 0.45,
+    "dye": 1.6,
+    "hitForce": 0.3,
+    "hitDye": 1.1,
+    "radius": 0.012,
+    "colourShift": 0,
+    "colourDrift": 0.035,
+    "orbitSpeed": 0.19
+  },
+  "postParams": {},
+  "audioMapping": [
+    { "from": "energy", "to": "velocityDecay", "gain": 0.22 },
+    { "from": "energy", "to": "dyeDecay", "gain": 0.95 },
+    { "from": "treble", "to": "vorticity", "gain": 38 },
+    { "from": "treble", "to": "viscosity", "gain": -0.18 },
+    { "from": "beatPulse", "to": "intensity", "gain": 0.5 },
+    { "from": "energy", "to": "spread", "gain": 0.38 },
+    { "from": "energy", "to": "force", "gain": 0.6 },
+    { "from": "energy", "to": "dye", "gain": 2 },
+    { "from": "lowEnd", "to": "hitForce", "gain": 1.1 },
+    { "from": "lowEnd", "to": "hitDye", "gain": 1 },
+    { "from": "lowEnd", "to": "radius", "gain": 0.016 },
+    { "from": "treble", "to": "colourShift", "gain": 0.12 }
+  ]
+}

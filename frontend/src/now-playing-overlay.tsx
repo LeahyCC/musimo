@@ -20,6 +20,8 @@ import {
 } from 'lucide-react'
 
 import { artUrl, durationText, usePlayer } from './player'
+import { PRESETS } from './visualizer/presets'
+import type { Preset } from './visualizer/presets/types'
 import {
   FLUID_SIZES,
   isSceneId,
@@ -44,6 +46,8 @@ type OverlayProps = {
   /** Undefined where the visualizer is not available, so no toggle is shown. */
   view?: StageView
   onToggleView?: () => void
+  preset?: Preset
+  onPreset?: (id: string) => void
   scene?: SceneId
   onScene?: (scene: SceneId) => void
   particles?: number
@@ -112,6 +116,8 @@ type KeyActions = {
   onClose?: () => void
   onToggleView?: () => void
   onToggleHud?: () => void
+  /** Walks the preset list: -1 for `[` and 1 for `]`. */
+  onCyclePreset?: (delta: number) => void
 }
 
 // Shortcuts bind to the stage's own window, so the popout has its own set.
@@ -186,6 +192,16 @@ export function useStageKeys(container: RefObject<HTMLDivElement | null>, action
           if (!current.onToggleHud) return
           current.onToggleHud()
           break
+        // N and P are already the transport, so the presets walk on the
+        // brackets beside them.
+        case '[':
+          if (!current.onCyclePreset) return
+          current.onCyclePreset(-1)
+          break
+        case ']':
+          if (!current.onCyclePreset) return
+          current.onCyclePreset(1)
+          break
         case 'Escape':
           if (current.placement !== 'popout' || !current.onClose) return
           current.onClose()
@@ -208,6 +224,8 @@ export function NowPlayingOverlay({
   onPopout,
   view,
   onToggleView,
+  preset,
+  onPreset,
   scene,
   onScene,
   particles,
@@ -238,6 +256,24 @@ export function NowPlayingOverlay({
           {player.playing ? 'Playing' : 'Paused'}
         </span>
         <div className="stage-actions">
+          {view === 'visualizer' && preset && onPreset && (
+            <select
+              className="stage-select"
+              aria-label="Preset"
+              value={preset.id}
+              onChange={(event) => onPreset(event.target.value)}
+            >
+              {SCENE_IDS.map((id) => (
+                <optgroup key={id} label={SCENE_LABELS[id]}>
+                  {PRESETS.filter((entry) => entry.scene === id).map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.name}
+                    </option>
+                  ))}
+                </optgroup>
+              ))}
+            </select>
+          )}
           {view === 'visualizer' && onScene && (
             <select
               className="stage-select"

@@ -1,0 +1,40 @@
+{
+  "id": "furnace",
+  "name": "Furnace",
+  "scene": "raymarch",
+  "sceneParams": {
+    "fold": 2.15,
+    "iterations": 7,
+    "orbit": 7.6,
+    "pullIn": 0,
+    "closest": 6.2,
+    "yawSpeed": 0.12,
+    "lightStrength": 2,
+    "shadowSoftness": 16,
+    "glow": 0.35,
+    "occlusion": 0.45,
+    "shift": 0.62,
+    "shiftDrift": 0.014
+  },
+  "postParams": {
+    "feedback": { "amount": 0.16, "decay": 0.75, "zoom": 1.006, "rotate": 0.001 },
+    "bloom": { "threshold": 0.8, "intensity": 0.5, "weights": [0.45, 0.33, 0.22] },
+    "chromatic": { "amount": 0.0006, "beat": 0.0035 },
+    "tonemap": { "shoulder": 0.65 },
+    "grain": { "amount": 0.018 }
+  },
+  "audioMapping": [
+    { "from": "treble", "to": "fold", "gain": 0.45 },
+    { "from": "lowEnd", "to": "iterations", "gain": 5 },
+    { "from": "beatPulse", "to": "pullIn", "gain": 0.7 },
+    { "from": "lowEnd", "to": "pullIn", "gain": 0.35 },
+    { "from": "energy", "to": "lightStrength", "gain": 1.6 },
+    { "from": "lowEnd", "to": "shadowSoftness", "gain": -6 },
+    { "from": "energy", "to": "glow", "gain": 0.45 },
+    { "from": "beatPulse", "to": "glow", "gain": 0.5 },
+    { "from": "energy", "to": "occlusion", "gain": -0.2 },
+    { "from": "treble", "to": "shift", "gain": 0.2, "curve": "sqrt" },
+    { "from": "energy", "to": "bloom.threshold", "gain": -0.15 },
+    { "from": "energy", "to": "chromatic.amount", "gain": 0.0015 }
+  ]
+}

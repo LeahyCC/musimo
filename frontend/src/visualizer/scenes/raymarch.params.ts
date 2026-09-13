@@ -1,6 +1,6 @@
 /**
  * The raymarch scene's numbers: where the camera sits, how far the march is
- * allowed to run, and how the feature packet bends the fold. Pure TypeScript
+ * allowed to run, and how far the fold is bent. Pure TypeScript
  * with no GPU objects, like `fluid.params.ts` and `post/params.ts`, so every
  * choice here is unit tested and `Raymarch.ts` is left moving data about.
  *
@@ -12,6 +12,8 @@
 import { F } from '../audio/FeatureExtractor'
 import { cameraBasis } from '../gpu/math'
 import type { Basis, Vec3 } from '../gpu/math'
+import { RAYMARCH_KNOBS } from '../presets/knobs'
+import type { RaymarchKnob, Tuning } from '../presets/knobs'
 import { DEFAULT_RAYMARCH_STEPS, RAYMARCH_STEPS, SOFTWARE_RAYMARCH_SCALE } from './catalog'
 
 /** Floats in the march uniform; the March struct in raymarch.common.wgsl matches. */
@@ -19,30 +21,22 @@ export const MARCH_UNIFORM_FLOATS = 32
 
 /** Half the vertical field of view, as its tangent. */
 const FOV_TANGENT = Math.tan(Math.PI / 7)
-/** How far the camera orbits, and how far a beat is allowed to pull it in. */
-const ORBIT = 7.0
-const BEAT_PUSH = 0.9
-const CLOSEST = 5.6
-/** Mandelbox fold scale. Bass moves it across this range. */
-const FOLD_MIN = 2.02
-const FOLD_SPAN = 0.5
-/** Fold iterations. Treble moves it across this range, a whole one at a time. */
-const ITERATIONS_MIN = 6
-const ITERATIONS_SPAN = 6
 /** A ray stops when the field is nearer than this times the distance run. */
 const EPSILON = 0.0016
 /** Steps are shortened by this much, since the fold's estimate can overshoot. */
 const RELAX = 0.9
 /** Nothing is drawn past this; the fold is a few units across. */
 const FAR = 22
+/** The fold runs at least once, and never so often that a frame crawls. */
+const ITERATION_CAP = 24
 
 export type MarchFrame = {
   eye: Vec3
   basis: Basis
   fovTangent: number
-  /** Mandelbox fold scale, from bass. */
+  /** Mandelbox fold scale. */
   fold: number
-  /** Fold iterations, from treble. A whole number. */
+  /** Fold iterations. A whole number, at least one. */
   iterations: number
   /** The step cap for this frame. */
   steps: number
@@ -52,7 +46,7 @@ export type MarchFrame = {
   relax: number
   /** Unit direction the one light comes from. */
   light: Vec3
-  /** How hard it lights, from energy. */
+  /** How hard it lights. */
   lightStrength: number
   /** How tightly its shadow closes up. */
   shadowSoftness: number
@@ -85,27 +79,66 @@ export function marchSize(width: number, height: number, software: boolean) {
   }
 }
 
-/**
- * Everything the march uniform needs for one frame.
- *
- * Bass sets the fold scale, so the shape itself opens and closes with the low
- * end. Treble sets how many times the fold runs, which is where the fine
- * detail comes from, so busy music grows filigree and a quiet passage keeps
- * the plain shell. `beatPulse` pulls the camera in and back out, energy drives
- * the light and the halo, and the colour ramp drifts with time and bass.
- */
-export function marchFrame(features: Float32Array, steps: number): MarchFrame {
-  const time = features[F.time] ?? 0
-  const bass = Math.max(features[F.sub] ?? 0, features[F.bass] ?? 0)
-  const treble = features[F.treble] ?? 0
-  const energy = features[F.energy] ?? 0
-  const beat = features[F.beatPulse] ?? 0
+export type RaymarchParams = Record<RaymarchKnob, number>
 
-  // A slow orbit that rises and falls, pulled in on the beat but never past
-  // the shell: inside the fold the distance estimate is no use and the frame
-  // turns to noise.
-  const radius = Math.max(CLOSEST, ORBIT - beat * BEAT_PUSH - energy * 0.4)
-  const yaw = time * 0.07
+/**
+ * The march as PR #59 tuned it. `pullIn` rests at zero and does nothing until
+ * a feature drives it, which is what the beat did before presets existed.
+ */
+export const RAYMARCH_DEFAULTS: RaymarchParams = {
+  /** Mandelbox fold scale; the shape opens and closes with it. */
+  fold: 2.02,
+  /** How many times the fold runs. Rounded; this is where filigree comes from. */
+  iterations: 6,
+  /** How far the camera orbits. */
+  orbit: 7,
+  /** How far in something is allowed to pull it. */
+  pullIn: 0,
+  /** It never comes nearer than this; inside the fold the estimate is no use. */
+  closest: 5.6,
+  /** How fast it goes round, in radians per second. */
+  yawSpeed: 0.07,
+  /** How hard the one light lights. */
+  lightStrength: 1.5,
+  /** How tightly its shadow closes up. */
+  shadowSoftness: 10,
+  /** Halo from the step count, so a miss is not simply black. */
+  glow: 0.25,
+  /** How hard the step count darkens a crevice. */
+  occlusion: 0.6,
+  /** Offset into the colour ramp, 0 to 1 and wrapping. */
+  shift: 0,
+  /** How fast that offset drifts, per second. */
+  shiftDrift: 0.021,
+}
+
+/** The resolved knobs as this scene's own object, defaults for the rest. */
+export function raymarchParams(tuning: Tuning): RaymarchParams {
+  const out = { ...RAYMARCH_DEFAULTS }
+  for (const knob of RAYMARCH_KNOBS) out[knob] = tuning[knob] ?? RAYMARCH_DEFAULTS[knob]
+  return out
+}
+
+/** The ramp coordinate wraps, and a preset may hand over a negative one. */
+const wrap = (value: number) => ((value % 1) + 1) % 1
+
+/**
+ * Everything the march uniform needs for one frame. Every magnitude arrives
+ * already modulated by the preset's mapping; what is left here is the orbit
+ * the camera rides, the light's own circling, and the two caps.
+ */
+export function marchFrame(
+  params: RaymarchParams,
+  features: Float32Array,
+  steps: number,
+): MarchFrame {
+  const time = features[F.time] ?? 0
+
+  // A slow orbit that rises and falls, pulled in but never past the shell:
+  // inside the fold the distance estimate is no use and the frame turns to
+  // noise, so `closest` is a floor and not a suggestion.
+  const radius = Math.max(params.closest, params.orbit - params.pullIn)
+  const yaw = time * params.yawSpeed
   const pitch = Math.sin(time * 0.11) * 0.38 + 0.12
   const eye: Vec3 = [
     Math.sin(yaw) * Math.cos(pitch) * radius,
@@ -121,18 +154,18 @@ export function marchFrame(features: Float32Array, steps: number): MarchFrame {
     eye,
     basis: cameraBasis(eye, [0, 0, 0], [0, 1, 0]),
     fovTangent: FOV_TANGENT,
-    fold: FOLD_MIN + bass * FOLD_SPAN,
-    iterations: ITERATIONS_MIN + Math.round(treble * ITERATIONS_SPAN),
+    fold: params.fold,
+    iterations: Math.min(ITERATION_CAP, Math.max(1, Math.round(params.iterations))),
     steps: Math.max(8, Math.round(steps)),
     far: FAR,
     epsilon: EPSILON,
     relax: RELAX,
     light: [light[0] / length, light[1] / length, light[2] / length],
-    lightStrength: 1.5 + energy * 2.2,
-    shadowSoftness: 10 + treble * 14,
-    glow: 0.25 + energy * 0.5 + beat * 0.3,
-    occlusion: 0.35 + (1 - energy) * 0.25,
-    shift: (time * 0.021 + bass * 0.14) % 1,
+    lightStrength: params.lightStrength,
+    shadowSoftness: params.shadowSoftness,
+    glow: params.glow,
+    occlusion: params.occlusion,
+    shift: wrap(time * params.shiftDrift + params.shift),
   }
 }
 

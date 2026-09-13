@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import { F, PACKET_LENGTH } from '../audio/FeatureExtractor'
+import { presetOrDefault } from '../presets'
+import { resolveScene } from '../presets/resolve'
 import { DEFAULT_FLUID_SIZE, SOFTWARE_FLUID_SIZE } from './catalog'
 import {
   EMITTERS,
+  FLUID_DEFAULTS,
   fluidFrame,
+  fluidParams,
   PALETTE_SIZE,
   PALETTE_STOPS,
   paletteLut,
@@ -21,6 +25,20 @@ const packet = (values: Partial<Record<keyof typeof F, number>> = {}) => {
 }
 
 const square = { x: 0.5, y: 0.5 }
+
+// The shipped fluid preset, resolved the way the renderer resolves it, so
+// these read the behaviour the stage actually has rather than a bare default.
+const plume = presetOrDefault('plume')
+
+const frame = (
+  values: Partial<Record<keyof typeof F, number>> = {},
+  dt = 1 / 60,
+  visible = square,
+) => {
+  const features = packet(values)
+  const tuning = resolveScene(plume.sceneParams, plume.audioMapping, features, {})
+  return fluidFrame(fluidParams(tuning), features, dt, visible)
+}
 
 describe('fluid grid size', () => {
   it('takes an offered size and falls back to the default for anything else', () => {
@@ -55,15 +73,23 @@ describe('visible extent', () => {
   })
 })
 
+describe('fluidParams', () => {
+  it('takes the resolved value where there is one and the default otherwise', () => {
+    expect(fluidParams({ vorticity: 40 }).vorticity).toBe(40)
+    expect(fluidParams({}).viscosity).toBe(FLUID_DEFAULTS.viscosity)
+    expect(fluidParams({ flow: 3 })).toEqual(FLUID_DEFAULTS)
+  })
+})
+
 describe('fluid frame', () => {
   it('places every emitter inside the part of the grid the canvas shows', () => {
     const wide = visibleExtent(1920, 1080)
     // Louder music spreads the emitters further, so the loudest case is the
     // one that could push them off screen.
     for (const time of [0, 1.7, 5.3, 11, 23.5]) {
-      const frame = fluidFrame(packet({ time, energy: 1 }), 1 / 60, wide)
-      expect(frame.splats).toHaveLength(EMITTERS)
-      for (const splat of frame.splats) {
+      const built = frame({ time, energy: 1 }, 1 / 60, wide)
+      expect(built.splats).toHaveLength(EMITTERS)
+      for (const splat of built.splats) {
         expect(Math.abs(splat.x - 0.5)).toBeLessThanOrEqual(wide.x)
         expect(Math.abs(splat.y - 0.5)).toBeLessThanOrEqual(wide.y)
       }
@@ -71,14 +97,14 @@ describe('fluid frame', () => {
   })
 
   it('pushes along the orbit, so the direction is a unit vector', () => {
-    const frame = fluidFrame(packet({ time: 3.1 }), 1 / 60, square)
-    for (const splat of frame.splats) expect(Math.hypot(splat.dx, splat.dy)).toBeCloseTo(1, 6)
+    const built = frame({ time: 3.1 })
+    for (const splat of built.splats) expect(Math.hypot(splat.dx, splat.dy)).toBeCloseTo(1, 6)
   })
 
   it('injects much harder on an onset, and harder still with bass', () => {
-    const quiet = fluidFrame(packet(), 1 / 60, square)
-    const hit = fluidFrame(packet({ onset: 1, onsetStrength: 1 }), 1 / 60, square)
-    const loud = fluidFrame(packet({ onset: 1, onsetStrength: 1, bass: 1 }), 1 / 60, square)
+    const quiet = frame()
+    const hit = frame({ onset: 1, onsetStrength: 1 })
+    const loud = frame({ onset: 1, onsetStrength: 1, bass: 1 })
     const force = (frame: { splats: { force: number }[] }) => frame.splats[0]?.force ?? 0
     const dye = (frame: { splats: { dye: number }[] }) => frame.splats[0]?.dye ?? 0
 
@@ -89,33 +115,33 @@ describe('fluid frame', () => {
   })
 
   it('keeps a trickle between onsets, scaled by the step so the rate holds', () => {
-    const slow = fluidFrame(packet(), 1 / 60, square)
-    const fast = fluidFrame(packet(), 1 / 120, square)
+    const slow = frame()
+    const fast = frame({}, 1 / 120)
     expect(slow.splats[0]?.dye ?? 0).toBeGreaterThan(0)
     expect(fast.splats[0]?.dye ?? 0).toBeCloseTo((slow.splats[0]?.dye ?? 0) / 2, 6)
   })
 
   it('clamps the step, so a stalled tab cannot advance the sim by a second', () => {
-    expect(fluidFrame(packet(), 1, square).dt).toBeLessThanOrEqual(1 / 30)
-    expect(fluidFrame(packet(), 0, square).dt).toBeGreaterThan(0)
+    expect(frame({}, 1).dt).toBeLessThanOrEqual(1 / 30)
+    expect(frame({}, 0).dt).toBeGreaterThan(0)
   })
 
   it('raises vorticity with treble and clears the dye faster with energy', () => {
-    const dull = fluidFrame(packet(), 1 / 60, square)
-    const bright = fluidFrame(packet({ treble: 1 }), 1 / 60, square)
+    const dull = frame()
+    const bright = frame({ treble: 1 })
     expect(bright.vorticity).toBeGreaterThan(dull.vorticity)
     // More treble means less smoothing, so the detail survives.
     expect(bright.viscosity).toBeLessThan(dull.viscosity)
 
-    const loud = fluidFrame(packet({ energy: 1 }), 1 / 60, square)
+    const loud = frame({ energy: 1 })
     expect(loud.dyeDecay).toBeGreaterThan(dull.dyeDecay)
     expect(loud.velocityDecay).toBeGreaterThan(dull.velocityDecay)
   })
 
   it('keeps the palette coordinate inside the table', () => {
     for (const time of [0, 9, 60, 600, 4000]) {
-      const frame = fluidFrame(packet({ time, treble: 1 }), 1 / 60, square)
-      for (const splat of frame.splats) {
+      const built = frame({ time, treble: 1 })
+      for (const splat of built.splats) {
         expect(splat.colour).toBeGreaterThanOrEqual(0)
         expect(splat.colour).toBeLessThan(1)
       }
@@ -150,8 +176,8 @@ describe('palette', () => {
 describe('sim uniform', () => {
   it('writes the grid, its texel and the cover scale the shader divides by', () => {
     const visible = visibleExtent(1920, 1080)
-    const frame = fluidFrame(packet(), 1 / 60, visible)
-    const out = writeSimUniform(frame, 512, visible, new Float32Array(SIM_UNIFORM_FLOATS))
+    const built = frame({}, 1 / 60, visible)
+    const out = writeSimUniform(built, 512, visible, new Float32Array(SIM_UNIFORM_FLOATS))
 
     expect(out[0]).toBe(512)
     expect(out[1]).toBe(512)
@@ -161,17 +187,17 @@ describe('sim uniform', () => {
   })
 
   it('never writes a radius the shader would divide by zero', () => {
-    const frame = fluidFrame(packet(), 1 / 60, square)
-    frame.splats = []
-    const out = writeSimUniform(frame, 1024, square, new Float32Array(SIM_UNIFORM_FLOATS))
+    const built = frame()
+    built.splats = []
+    const out = writeSimUniform(built, 1024, square, new Float32Array(SIM_UNIFORM_FLOATS))
     for (let index = 0; index < EMITTERS; index++)
       expect(out[16 + index * 8 + 5] ?? 0).toBeGreaterThan(0)
   })
 
   it('carries every emitter through in order', () => {
-    const frame = fluidFrame(packet({ time: 2, onset: 1, onsetStrength: 1 }), 1 / 60, square)
-    const out = writeSimUniform(frame, 512, square, new Float32Array(SIM_UNIFORM_FLOATS))
-    frame.splats.forEach((splat, index) => {
+    const built = frame({ time: 2, onset: 1, onsetStrength: 1 })
+    const out = writeSimUniform(built, 512, square, new Float32Array(SIM_UNIFORM_FLOATS))
+    built.splats.forEach((splat, index) => {
       const base = 16 + index * 8
       expect(out[base]).toBeCloseTo(splat.x, 6)
       expect(out[base + 1]).toBeCloseTo(splat.y, 6)

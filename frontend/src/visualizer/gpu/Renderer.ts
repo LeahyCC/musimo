@@ -13,9 +13,13 @@ import { audioGraph } from '../audio/AudioGraph'
 import { FeatureClient } from '../audio/FeatureClient'
 import { F, PACKET_LENGTH } from '../audio/FeatureExtractor'
 import { Hud } from '../hud/Hud'
-import { postSummary } from '../post/params'
+import { defaultPostParams, mergePostParams, postSummary } from '../post/params'
 import type { PostParams, PostPatch } from '../post/params'
 import { PostStack, SCENE_FORMAT } from '../post/PostStack'
+import { DEFAULT_PRESET_ID, presetOrDefault } from '../presets'
+import type { Tuning } from '../presets/knobs'
+import { resolvePost, resolveScene } from '../presets/resolve'
+import type { Preset } from '../presets/types'
 import {
   DEFAULT_FLUID_SIZE,
   DEFAULT_PARTICLES,
@@ -59,10 +63,18 @@ class Renderer {
   private fluidSize = DEFAULT_FLUID_SIZE
   private raymarchSteps = DEFAULT_RAYMARCH_STEPS
   private readonly packet = new Float32Array(PACKET_LENGTH)
+  // The preset it draws with, the object its mapping is resolved into each
+  // frame, and the stack the post lanes are written into. All three belong to
+  // the singleton, so the popout round trip keeps the preset.
+  private preset: Preset = presetOrDefault(DEFAULT_PRESET_ID)
+  private readonly tuning: Record<string, number> = {}
+  private base: PostParams = defaultPostParams()
+  private readonly live: PostParams = defaultPostParams()
   private frameMs = 16.7
   private reported = 0
 
   constructor() {
+    this.base = mergePostParams(this.preset.postParams, {})
     onGpuLost(() => this.recover())
   }
 
@@ -91,6 +103,7 @@ class Renderer {
       this.post = new PostStack()
       this.post.init(gpu.device, gpu.format)
     }
+    this.post.useParams(this.live)
 
     if (!this.scene) this.buildScene()
 
@@ -140,13 +153,33 @@ class Renderer {
     this.hud?.setVisible(visible)
   }
 
-  /** Change one or more post stages; a later presets step calls this. */
+  /**
+   * Change one or more post stages by hand, over whatever the preset asked
+   * for. The development handle uses this to switch stages off while frame
+   * times are measured; choosing a preset clears it, since a preset brings
+   * its own stack.
+   */
   setPost(patch: PostPatch) {
-    this.post?.setParams(patch)
+    this.base = mergePostParams(this.base, patch)
   }
 
+  /** What the stack is actually drawing with: the preset, modulated. */
   get postParams(): PostParams | null {
     return this.post?.params ?? null
+  }
+
+  /**
+   * Draw with this preset: its scene numbers, its stack, and the mapping that
+   * says which feature drives which of them. The scene itself is switched by
+   * `setScene`, which the stage calls with the preset's own scene.
+   */
+  setPreset(preset: Preset) {
+    this.preset = preset
+    this.base = mergePostParams(preset.postParams, {})
+  }
+
+  get presetId() {
+    return this.preset.id
   }
 
   setParticleCount(count: number) {
@@ -252,7 +285,18 @@ class Renderer {
     this.packet[F.dt] = dt
     gpu.device.queue.writeBuffer(features, 0, this.packet)
 
-    scene.update(this.packet, dt)
+    // The mapping is applied here, on the CPU, and nowhere else: the scene
+    // and the stack both read numbers that have already been modulated.
+    const preset = this.preset
+    const tuning: Tuning = resolveScene(
+      preset.sceneParams,
+      preset.audioMapping,
+      this.packet,
+      this.tuning,
+    )
+    resolvePost(this.base, preset.audioMapping, this.packet, this.live)
+
+    scene.update(this.packet, dt, tuning)
     const encoder = gpu.device.createCommandEncoder()
     // The scene draws into the stack's texture and the stack writes the
     // canvas. With every stage off the composite is a straight copy, so the
@@ -270,6 +314,7 @@ class Renderer {
       scene: scene.detail,
       adapter: describe(gpu.info),
       post: postSummary(post.params),
+      preset: preset.name,
     })
     // Timing on the element, so a screenshot or a test can read it.
     if (now - this.reported > 500) {
@@ -278,6 +323,7 @@ class Renderer {
       canvas.dataset.scene = this.sceneId
       canvas.dataset.detail = scene.detail
       canvas.dataset.post = postSummary(post.params)
+      canvas.dataset.preset = preset.id
     }
   }
 
@@ -309,6 +355,7 @@ export const renderer = new Renderer()
 export type VisualizerDevHandle = {
   setPost: (patch: PostPatch) => void
   post: () => PostParams | null
+  preset: () => string
 }
 
 // A handle for driving the post stack by hand while measuring frame times,
@@ -318,5 +365,6 @@ if (import.meta.env.DEV && typeof window !== 'undefined') {
   ;(window as Window & { musimoVisualizer?: VisualizerDevHandle }).musimoVisualizer = {
     setPost: (patch) => renderer.setPost(patch),
     post: () => renderer.postParams,
+    preset: () => renderer.presetId,
   }
 }

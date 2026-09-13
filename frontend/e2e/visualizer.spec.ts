@@ -80,6 +80,7 @@ test('with WebGPU the visualizer is the default, V and the button switch it, and
   await expect(canvas).toHaveAttribute('data-post', /feedback bloom chroma tonemap grain/)
   await stage.hover()
   await expect(stage.getByRole('button', { name: 'Show artwork' })).toBeVisible()
+  await expect(stage.getByRole('combobox', { name: 'Preset' })).toBeVisible()
   await expect(stage.getByRole('combobox', { name: 'Scene' })).toBeVisible()
   await expect(stage.getByRole('combobox', { name: 'Particle count' })).toBeVisible()
 
@@ -135,4 +136,71 @@ test('the scene choice switches the size control and survives a reload', async (
   await page.locator('.stage').hover()
   await expect(page.getByRole('combobox', { name: 'Scene' })).toHaveValue('raymarch')
   await expect(page.getByRole('combobox', { name: 'Raymarch steps' })).toBeVisible()
+})
+
+test('the preset picker, [ and ], and the choice surviving a reload', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'The stage controls are checked on desktop.')
+  const stage = await openNowPlaying(page)
+  const adapter = await page.evaluate(async () =>
+    Boolean(navigator.gpu && (await navigator.gpu.requestAdapter())),
+  )
+  test.skip(!adapter, 'No WebGPU adapter in this browser.')
+
+  const picker = stage.getByRole('combobox', { name: 'Preset' })
+  const canvas = stage.locator('canvas.stage-visualizer')
+  await stage.hover()
+  // Structure only: which preset the canvas names, not what it draws.
+  await expect(picker).toHaveValue('drift')
+  await expect(canvas).toHaveAttribute('data-preset', 'drift')
+
+  // ] walks forward through the six and [ walks back. The second preset is
+  // the particle field's other one, so the scene select does not move yet.
+  await stage.focus()
+  await page.keyboard.press(']')
+  await expect(picker).toHaveValue('storm')
+  await expect(canvas).toHaveAttribute('data-preset', 'storm')
+  await expect(stage.getByRole('combobox', { name: 'Scene' })).toHaveValue('particles')
+
+  // The third belongs to the fluid, so choosing it moves the scene and its
+  // size control with it rather than leaving the two disagreeing.
+  await page.keyboard.press(']')
+  await expect(picker).toHaveValue('plume')
+  await expect(stage.getByRole('combobox', { name: 'Scene' })).toHaveValue('fluid')
+  await expect(stage.getByRole('combobox', { name: 'Fluid grid' })).toBeVisible()
+  await expect(canvas).toHaveAttribute('data-scene', 'fluid')
+
+  await page.keyboard.press('[')
+  await expect(picker).toHaveValue('storm')
+  await expect(stage.getByRole('combobox', { name: 'Particle count' })).toBeVisible()
+
+  // The picker itself sets the scene the same way.
+  await picker.selectOption('furnace')
+  await expect(stage.getByRole('combobox', { name: 'Scene' })).toHaveValue('raymarch')
+  await expect(canvas).toHaveAttribute('data-preset', 'furnace')
+  expect(await page.evaluate(() => localStorage.getItem('musimo.visualizer-preset'))).toBe(
+    'furnace',
+  )
+
+  await page.reload()
+  await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
+  await page.locator('.stage').hover()
+  await expect(page.getByRole('combobox', { name: 'Preset' })).toHaveValue('furnace')
+  await expect(page.getByRole('combobox', { name: 'Scene' })).toHaveValue('raymarch')
+})
+
+test('choosing a scene moves the preset to that scene', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'The stage controls are checked on desktop.')
+  const stage = await openNowPlaying(page)
+  const adapter = await page.evaluate(async () =>
+    Boolean(navigator.gpu && (await navigator.gpu.requestAdapter())),
+  )
+  test.skip(!adapter, 'No WebGPU adapter in this browser.')
+
+  await stage.hover()
+  await stage.getByRole('combobox', { name: 'Scene' }).selectOption('raymarch')
+  await expect(stage.getByRole('combobox', { name: 'Preset' })).toHaveValue('fold')
+  await expect(stage.locator('canvas.stage-visualizer')).toHaveAttribute('data-preset', 'fold')
 })

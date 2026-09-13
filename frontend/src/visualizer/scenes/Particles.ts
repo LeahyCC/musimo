@@ -1,29 +1,36 @@
 /**
  * The first scene: a few hundred thousand particles in a curl-noise flow
- * field, driven by the feature packet. State lives in GPU storage buffers
- * that belong to this object, which the renderer keeps as a singleton, so a
- * remount of the stage never restarts the field.
+ * field. State lives in GPU storage buffers that belong to this object, which
+ * the renderer keeps as a singleton, so a remount of the stage never restarts
+ * the field.
+ *
+ * The numbers it draws with arrive in `update` already modulated by the
+ * preset's mapping; `particles.params.ts` turns them into the uniform.
  */
 import { F } from '../audio/FeatureExtractor'
 import { lookAt, multiply, perspective } from '../gpu/math'
+import type { Tuning } from '../presets/knobs'
 import common from '../shaders/common.wgsl?raw'
 import compute from '../shaders/particles.compute.wgsl?raw'
 import render from '../shaders/particles.render.wgsl?raw'
 import { DEFAULT_PARTICLES } from './catalog'
+import { PARTICLE_UNIFORM_FLOATS, particleParams, writeParticleUniform } from './particles.params'
 import type { Scene, SceneContext } from './Scene'
 
 // A CPU rasteriser manages a few thousand particles at best.
 const SOFTWARE_CAP = 20_000
 const PARTICLE_BYTES = 32
 const WORKGROUP = 256
-// Params struct in common.wgsl: mat4x4 (64) + vec2 (8) + 2 u32 (8) + 2 f32 (8) + pad (8).
-const PARAMS_BYTES = 96
+// Params struct in common.wgsl: mat4x4 (64) + vec2 (8) + 2 u32 (8) + 2 f32 (8)
+// + pad (8), then four vec4s of tuning (64).
+const PARAMS_BYTES = PARTICLE_UNIFORM_FLOATS * 4
 const FOV = Math.PI / 3
 
 export class Particles implements Scene {
   private context: SceneContext | null = null
   private computePipeline: GPUComputePipeline | null = null
   private renderPipeline: GPURenderPipeline | null = null
+  private layouts: { compute: GPUBindGroupLayout; render: GPUBindGroupLayout } | null = null
   private params: GPUBuffer | null = null
   private readonly paramsData = new ArrayBuffer(PARAMS_BYTES)
   private readonly paramsFloats = new Float32Array(this.paramsData)
@@ -70,13 +77,41 @@ export class Particles implements Scene {
         }
       })
     }
+    // Explicit layouts rather than `layout: 'auto'`. The derived layout only
+    // holds the bindings a shader happens to read, so when the render half
+    // stopped reading the feature packet it silently lost binding 0 and every
+    // bind group built for both halves became invalid. Naming the layout means
+    // the two agree whatever the shaders read.
+    const entry = (binding: number, visibility: number, type: GPUBufferBindingType) => ({
+      binding,
+      visibility,
+      buffer: { type },
+    })
+
+    const computeLayout = device.createBindGroupLayout({
+      entries: [
+        entry(0, GPUShaderStage.COMPUTE, 'uniform'),
+        entry(1, GPUShaderStage.COMPUTE, 'uniform'),
+        entry(2, GPUShaderStage.COMPUTE, 'storage'),
+      ],
+    })
+
+    const renderLayout = device.createBindGroupLayout({
+      entries: [
+        entry(0, GPUShaderStage.VERTEX, 'uniform'),
+        entry(1, GPUShaderStage.VERTEX, 'uniform'),
+        entry(2, GPUShaderStage.VERTEX, 'read-only-storage'),
+      ],
+    })
+
+    this.layouts = { compute: computeLayout, render: renderLayout }
     this.computePipeline = device.createComputePipeline({
-      layout: 'auto',
+      layout: device.createPipelineLayout({ bindGroupLayouts: [computeLayout] }),
       compute: { module: computeModule, entryPoint: 'main' },
     })
 
     this.renderPipeline = device.createRenderPipeline({
-      layout: 'auto',
+      layout: device.createPipelineLayout({ bindGroupLayouts: [renderLayout] }),
       vertex: { module: renderModule, entryPoint: 'vs' },
       fragment: {
         module: renderModule,
@@ -103,7 +138,8 @@ export class Particles implements Scene {
 
   private allocate() {
     const context = this.context
-    if (!context || !this.computePipeline || !this.renderPipeline || !this.params) return
+    const layouts = this.layouts
+    if (!context || !layouts || !this.params) return
     this.particles?.destroy()
     this.count = context.software ? Math.min(this.wanted, SOFTWARE_CAP) : this.wanted
     this.particles = context.device.createBuffer({
@@ -116,12 +152,12 @@ export class Particles implements Scene {
       { binding: 2, resource: { buffer: particles } },
     ]
     this.computeGroup = context.device.createBindGroup({
-      layout: this.computePipeline.getBindGroupLayout(0),
+      layout: layouts.compute,
       entries: entries(this.particles),
     })
 
     this.renderGroup = context.device.createBindGroup({
-      layout: this.renderPipeline.getBindGroupLayout(0),
+      layout: layouts.render,
       entries: entries(this.particles),
     })
     this.reset = true
@@ -133,31 +169,28 @@ export class Particles implements Scene {
     this.projection = perspective(FOV, this.width / this.height, 0.1, 20)
   }
 
-  update(features: Float32Array, dt: number) {
+  update(features: Float32Array, dt: number, tuning: Tuning) {
     const context = this.context
     if (!context || !this.params) return
     const applied = context.software ? Math.min(this.wanted, SOFTWARE_CAP) : this.wanted
     if (applied !== this.count) this.allocate()
     const time = features[F.time] ?? 0
-    // A slow orbit, with a little lift that breathes on the beat.
+    // A slow orbit, with a little lift that breathes on the beat. The camera
+    // is the one thing here the preset does not reach.
     const yaw = time * 0.06
     const lift = 0.5 + Math.sin(time * 0.13) * 0.3 + (features[F.beatPulse] ?? 0) * 0.15
     const view = lookAt([Math.sin(yaw) * 3.2, lift, Math.cos(yaw) * 3.2], [0, 0, 0], [0, 1, 0])
     multiply(this.projection, view, this.camera)
-    this.paramsFloats.set(this.camera, 0)
-    this.paramsFloats[16] = this.width
-    this.paramsFloats[17] = this.height
-    this.paramsUints[18] = this.count
-    this.paramsUints[19] = this.reset ? 1 : 0
-    // Point size in framebuffer pixels, so full screen at 2x keeps the look.
-    const pointSize = 1.6 + (this.height / 720) * 1.2
-    this.paramsFloats[20] = pointSize
-    // Additive blending sums every particle a pixel receives, so each one is
-    // dimmed by how many are expected to land there: the count times a point's
-    // area over the canvas area. That keeps a small docked stage and a 4K full
-    // screen at the same brightness instead of one washing out to white.
-    const cover = (this.count * Math.PI * pointSize * pointSize) / (this.width * this.height)
-    this.paramsFloats[21] = Math.min(1, Math.max(0.006, 0.65 / cover))
+    writeParticleUniform(
+      particleParams(tuning),
+      this.camera,
+      this.width,
+      this.height,
+      this.count,
+      this.reset,
+      this.paramsFloats,
+      this.paramsUints,
+    )
     context.device.queue.writeBuffer(this.params, 0, this.paramsData)
     this.reset = false
     void dt
@@ -192,6 +225,7 @@ export class Particles implements Scene {
     this.params?.destroy()
     this.particles = null
     this.params = null
+    this.layouts = null
     this.context = null
   }
 }
