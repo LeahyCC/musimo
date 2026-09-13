@@ -4,7 +4,7 @@ Now Playing's hero is a stage that can go full screen in the tab or pop out into
 
 ## Now Playing
 
-The stage shows the visualizer, or the current track's artwork: a sharp, letterboxed copy of the cover over a blurred, cropped fill of the same image. Where WebGPU is available the visualizer is the default, and a button in the top bar (Show artwork, Show visualizer) or V switches between the two; the choice is remembered in the browser as `musimo.now-playing-view`. A scene select sits beside it while the visualizer shows, with the chosen scene's size control next to that: the particle count, the fluid's grid, or the raymarch's step cap. Without WebGPU, or if the device cannot be had, the stage shows the artwork and says so in a short notice under it, once per browser. Hovering the stage reveals the player's controls along the bottom (artwork, byline showing artist and album, like, previous, play, next, position, shuffle, repeat, mute and volume) and a status line and the full-screen and popout buttons along the top. The controls fade after two and a half seconds without movement while music plays and the pointer leaves the stage, and the cursor hides with them. They stay while paused or while the pointer rests on a control.
+The stage shows the visualizer, or the current track's artwork: a sharp, letterboxed copy of the cover over a blurred, cropped fill of the same image. Where WebGPU is available the visualizer is the default, and a button in the top bar (Show artwork, Show visualizer) or V switches between the two; the choice is remembered in the browser as `musimo.now-playing-view`. A preset picker sits beside it while the visualizer shows, grouped by scene, with the scene select and then the chosen scene's size control next to that: the particle count, the fluid's grid, or the raymarch's step cap. A preset carries a scene, so choosing one moves the scene select under it, and choosing a scene moves to that scene's first preset; the two are never left disagreeing. `[` and `]` walk the presets either way and wrap, and the choice is remembered as `musimo.visualizer-preset`. Without WebGPU, or if the device cannot be had, the stage shows the artwork and says so in a short notice under it, once per browser. Hovering the stage reveals the player's controls along the bottom (artwork, byline showing artist and album, like, previous, play, next, position, shuffle, repeat, mute and volume) and a status line and the full-screen and popout buttons along the top. The controls fade after two and a half seconds without movement while music plays and the pointer leaves the stage, and the cursor hides with them. They stay while paused or while the pointer rests on a control.
 
 ## Full screen
 
@@ -16,7 +16,7 @@ The ⧉ button opens the stage in a Document Picture-in-Picture window: 420 by 4
 
 Chrome reuses the window's last size and position on the next open, so nothing is stored for that.
 
-The visualizer follows the stage into the popout. Its device, pipelines, whichever scene is drawing with its state, and the post stack belong to a renderer that outlives the stage, so only the canvas is remade on each move and the scene keeps running. Switching scenes drops the old one's buffers and builds the new one on the same device; the choice, like the view, lives above the stage, so it survives the round trip. The stack's offscreen textures are sized from the canvas, so they are rebuilt for the popout's size and again on the way back; see [the visualizer note](visualizer.md).
+The visualizer follows the stage into the popout. Its device, pipelines, whichever scene is drawing with its state, the post stack and the chosen preset all belong to a renderer that outlives the stage, so only the canvas is remade on each move and the scene keeps running. Switching scenes drops the old one's buffers and builds the new one on the same device; the preset and the scene, like the view, live above the stage, so both survive the round trip. Six round trips with Wash chosen kept `wash` and `fluid` on both canvases and the picker on Wash each time back. The stack's offscreen textures are sized from the canvas, so they are rebuilt for the popout's size and again on the way back; see [the visualizer note](visualizer.md).
 
 A popout window cannot enter full screen; the Picture-in-Picture specification forbids it. The ⤢ button in the popout therefore closes the window, brings the tab forward, opens Now Playing and puts the docked stage into full screen. If the browser refuses that request, a short notice under the stage says to press F on the player.
 
@@ -36,18 +36,19 @@ Shortcuts bind to the window the stage is in. In the tab they apply while the st
 | Esc   | popout: close it. Tab: leave full screen                          |
 | N, P  | next, previous track                                              |
 | V     | artwork or visualizer, where WebGPU is available                  |
-| H     | the visualizer's debug overlay                                    |
+| H     | the visualizer's debug overlay, which names the preset            |
+| [ ]   | previous, next visualizer preset                                  |
 
 ## Code
 
 - `frontend/src/now-playing-popout.tsx`: the provider at the app root (the popout window, the request that carries full screen back to the tab) and the stage itself.
-- `frontend/src/now-playing-overlay.tsx`: the hover controls, the view toggle, the scene and size selects, the idle fade and the shortcuts.
+- `frontend/src/now-playing-overlay.tsx`: the hover controls, the view toggle, the preset picker, the scene and size selects, the idle fade and the shortcuts.
 - `frontend/src/visualizer/`: the WebGPU renderer the stage mounts, loaded on demand; see [the visualizer note](visualizer.md).
 - `frontend/src/player.tsx` exposes the transport (`seek`, `cycleRepeat`, `toggleShuffle`, `toggleMute`, `setVolume`, `audio()`, `liked`) the overlay needs to duplicate the footer's controls in a separate document.
 
 ## Checks
 
-`frontend/e2e/now-playing-popout.spec.ts` runs on desktop Chromium: the stage appears on Now Playing, hovering shows the controls, and the idle fade rests and wakes. `frontend/e2e/visualizer.spec.ts` covers the artwork fallback and its one-time notice without WebGPU, and, where the browser has an adapter, the default visualizer view, the V and H keys, the toggle button, the remembered choice, and the scene select swapping its size control and surviving a reload. The popout window itself cannot open headless, and neither can real full screen, so the following are checked by hand in desktop Chrome instead: full screen (button, double-click, F, Esc), popout open, resize, hover controls and idle fade inside it, every control and shortcut, Back to tab, close with music continuing, reopening at the same size and position, ⤢ from the popout landing in full screen in the tab, and moving around the app with it open.
+`frontend/e2e/now-playing-popout.spec.ts` runs on desktop Chromium: the stage appears on Now Playing, hovering shows the controls, and the idle fade rests and wakes. `frontend/e2e/visualizer.spec.ts` covers the artwork fallback and its one-time notice without WebGPU, and, where the browser has an adapter, the default visualizer view, the V and H keys, the toggle button, the remembered choice, the scene select swapping its size control and surviving a reload, and the preset picker with `[` and `]` moving it, the scene following it and the choice surviving a reload. The popout window itself cannot open headless, and neither can real full screen, so the following are checked by hand in desktop Chrome instead: full screen (button, double-click, F, Esc), popout open, resize, hover controls and idle fade inside it, every control and shortcut, Back to tab, close with music continuing, reopening at the same size and position, ⤢ from the popout landing in full screen in the tab, and moving around the app with it open.
 
 ## Later
 

@@ -1,3 +1,5 @@
+import type { Tuning } from '../presets/knobs'
+
 export type SceneContext = {
   device: GPUDevice
   format: GPUTextureFormat
@@ -12,8 +14,13 @@ export interface Scene {
   readonly detail: string
   init(context: SceneContext): void
   resize(width: number, height: number): void
-  /** Per-frame CPU work: camera, parameters. `features` is the latest packet. */
-  update(features: Float32Array, dt: number): void
+  /**
+   * Per-frame CPU work: camera, parameters. `features` is the latest packet,
+   * which a scene reads only for the clock and for events such as an onset;
+   * `tuning` is the preset's numbers with its audio mapping already added, so
+   * no scene decides for itself which feature drives what.
+   */
+  update(features: Float32Array, dt: number, tuning: Tuning): void
   render(encoder: GPUCommandEncoder, view: GPUTextureView): void
   dispose(): void
 }

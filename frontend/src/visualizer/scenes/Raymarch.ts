@@ -1,6 +1,8 @@
 /**
  * The third scene: one full-screen fragment pass marching a signed distance
- * field, a Mandelbox whose fold the music bends.
+ * field, a Mandelbox whose fold the music bends. How far it bends, how often
+ * it folds and where the camera sits all come from the preset's numbers with
+ * its mapping already added; see `raymarch.params.ts`.
  *
  *   ray per pixel ─► fold ─► surface ─► shadow ─► occlusion from the steps
  *
@@ -13,6 +15,7 @@
  * the step cap, chosen in the stage's top bar. A software rasteriser gets half
  * of it and marches at half the canvas, then the result is stretched back.
  */
+import type { Tuning } from '../presets/knobs'
 import common from '../shaders/raymarch.common.wgsl?raw'
 import marchShader from '../shaders/raymarch.march.wgsl?raw'
 import upscaleShader from '../shaders/raymarch.upscale.wgsl?raw'
@@ -22,6 +25,7 @@ import {
   marchFrame,
   marchSize,
   marchSteps,
+  raymarchParams,
   renderScale,
   writeMarchUniform,
 } from './raymarch.params'
@@ -167,12 +171,12 @@ export class Raymarch implements Scene {
     }
   }
 
-  update(features: Float32Array, dt: number) {
+  update(features: Float32Array, dt: number, tuning: Tuning) {
     const gear = this.gear
     const context = this.context
     if (!gear || !context) return
     this.steps = marchSteps(this.wanted, context.software)
-    const frame = marchFrame(features, this.steps)
+    const frame = marchFrame(raymarchParams(tuning), features, this.steps)
     const size = this.half ?? { width: this.width, height: this.height }
     writeMarchUniform(frame, size.width, size.height, this.uniformData)
     gear.device.queue.writeBuffer(gear.uniform, 0, this.uniformData)

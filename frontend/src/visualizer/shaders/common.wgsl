@@ -9,6 +9,9 @@ struct Features {
   clock: vec4<f32>,   // time, dt, 0, 0
 }
 
+// The four tuning vectors arrive already modulated: the preset's resting
+// value plus whatever its audio mapping added this frame, resolved on the CPU
+// in particles.params.ts. Nothing below reads the packet for a magnitude.
 struct Params {
   camera: mat4x4<f32>,
   resolution: vec2<f32>,
@@ -17,6 +20,10 @@ struct Params {
   pointSize: f32,
   intensity: f32,
   pad: vec2<f32>,
+  motion: vec4<f32>,  // flow, noiseFrequency, attract, push
+  body: vec4<f32>,    // jitter, spring, drag, speedCap
+  life: vec4<f32>,    // advance, respawn, orbitSpeed, orbitRadius
+  look: vec4<f32>,    // warmth, brightness, speedLight, sizeBump
 }
 
 struct Particle {

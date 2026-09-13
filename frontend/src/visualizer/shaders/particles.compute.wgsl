@@ -1,6 +1,8 @@
 // One step of the particle flow field. Each particle rides a curl-noise
-// field, is pulled toward three orbiting attractors by bass, kicked outward
-// by a beat, jittered by treble, and sped up by energy.
+// field, is pulled toward three orbiting attractors, kicked outward, jittered
+// and sped up. Which feature drives which of those is the preset's business,
+// not this shader's: every number below comes from params, already modulated
+// on the CPU, and the packet is read for the clock alone.
 
 @group(0) @binding(2) var<storage, read_write> particles: array<Particle>;
 
@@ -126,10 +128,6 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
   let time = features.clock.x;
   let dt = features.clock.y;
-  let bass = max(features.bands.x, features.bands.y);
-  let treble = features.levels.x;
-  let energy = features.levels.y;
-  let beat = features.beat.z;
   let frame = u32(time * 60.0);
   var p = particles[id];
 
@@ -142,8 +140,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
   }
 
   if (p.life <= 0.0) {
-    // Emission follows energy: in a quiet passage most dead particles wait.
-    if (rand(id ^ hash(frame)) < 0.15 + energy * 0.85) {
+    // In a quiet passage most dead particles wait, if that is what the preset
+    // has pointed at respawn.
+    if (rand(id ^ hash(frame)) < params.life.y) {
       p = spawn(id, frame);
     } else {
       p.life = 0.0;
@@ -152,35 +151,33 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
   }
 
-  let frequency = 0.7 + treble * 1.6;
-  let flow = curl(p.position * frequency + vec3<f32>(0.0, time * 0.08, time * 0.05));
-  var accel = flow * (0.9 + energy * 1.3);
+  let flow = curl(p.position * params.motion.y + vec3<f32>(0.0, time * 0.08, time * 0.05));
+  var accel = flow * params.motion.x;
 
-  // Three attractors circle the middle; bass pulls toward them.
+  // Three attractors circle the middle.
   for (var k = 0u; k < 3u; k = k + 1u) {
-    let phase = time * 0.35 + f32(k) * 2.0943951;
-    let attractor = vec3<f32>(cos(phase), sin(phase * 0.7) * 0.6, sin(phase)) * 0.8;
+    let phase = time * params.life.z + f32(k) * 2.0943951;
+    let attractor = vec3<f32>(cos(phase), sin(phase * 0.7) * 0.6, sin(phase)) * params.life.w;
     let d = attractor - p.position;
     let dist2 = max(dot(d, d), 0.16);
-    accel = accel + d * (bass * bass * 1.5 / (dist2 * sqrt(dist2)));
+    accel = accel + d * (params.motion.z / (dist2 * sqrt(dist2)));
   }
 
-  // A beat pushes everything outward from the middle.
+  // Outward from the middle.
   let radial = normalize(p.position + vec3<f32>(0.0001, 0.0002, 0.0003));
-  accel = accel + radial * beat * 7.0;
-  // Treble adds jitter.
-  accel = accel + (rand3(id ^ hash(frame + 977u)) - 0.5) * treble * 4.0;
+  accel = accel + radial * params.motion.w;
+  accel = accel + (rand3(id ^ hash(frame + 977u)) - 0.5) * params.body.x;
   // A gentle spring keeps the cloud together.
-  accel = accel - p.position * 0.15;
+  accel = accel - p.position * params.body.y;
 
-  let drag = 1.0 - min(1.0, 1.4 * dt);
+  let drag = 1.0 - min(1.0, params.body.z * dt);
   var v = p.velocity * drag + accel * dt;
   let speed = length(v);
-  if (speed > 3.0) {
-    v = v * (3.0 / speed);
+  if (speed > params.body.w) {
+    v = v * (params.body.w / speed);
   }
   p.velocity = v;
-  p.position = p.position + v * dt * (0.7 + energy * 0.8);
+  p.position = p.position + v * dt * params.life.x;
   p.life = p.life - dt;
   if (dot(p.position, p.position) > 12.0) {
     p.life = 0.0;
