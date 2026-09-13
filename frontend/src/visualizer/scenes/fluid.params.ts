@@ -1,10 +1,15 @@
 /**
- * The fluid scene's numbers: the palette lookup table, where the emitters
- * sit, and how the feature packet drives the simulation. Pure TypeScript with
- * no GPU objects, like `post/params.ts`, so every choice here is unit tested
- * and `Fluid.ts` is left moving data between buffers.
+ * The fluid scene's numbers: the palette lookup table, where the emitters sit,
+ * and what the simulation is driven with. Pure TypeScript with no GPU objects,
+ * like `post/params.ts`, so every choice here is unit tested and `Fluid.ts` is
+ * left moving data between buffers.
+ *
+ * Which feature drives which of these numbers is the preset's business, not
+ * this file's: the magnitudes arrive already modulated.
  */
 import { F } from '../audio/FeatureExtractor'
+import { FLUID_KNOBS } from '../presets/knobs'
+import type { FluidKnob, Tuning } from '../presets/knobs'
 import { DEFAULT_FLUID_SIZE, FLUID_SIZES, SOFTWARE_FLUID_SIZE } from './catalog'
 
 /** Emitters circling the grid. The WGSL array is this long. */
@@ -84,52 +89,101 @@ const orbit = (phase: number) => ({
   y: Math.sin(phase * 0.9) * 0.7 + Math.cos(phase * 3.1) * 0.22,
 })
 
+/** The palette coordinate wraps, and a preset may hand over a negative one. */
+const wrap = (value: number) => ((value % 1) + 1) % 1
+
+export type FluidParams = Record<FluidKnob, number>
+
+/**
+ * The fluid as PR #58 tuned it by eye at 3840 by 2160. The viscosity started
+ * ten times higher and 4K showed enormous soft blobs with no structure in
+ * them, which is why it is a knob worth a preset moving.
+ */
+export const FLUID_DEFAULTS: FluidParams = {
+  /** Velocity lost per second. */
+  velocityDecay: 0.18,
+  /** Dye lost per second. */
+  dyeDecay: 0.22,
+  /** Vorticity confinement; what keeps filaments alive against the smearing. */
+  vorticity: 12,
+  /** Jacobi alpha for the viscosity solve; larger smooths harder. */
+  viscosity: 0.2,
+  /** Multiplier on the dye's colour before the post stack sees it. */
+  intensity: 1.15,
+  /** How far out the emitters ride, as a fraction of the visible band. */
+  spread: 0.42,
+  /** Velocity the emitters trickle each second. */
+  force: 0.45,
+  /** Dye they trickle each second. */
+  dye: 1.6,
+  /** Velocity one onset adds on top of the trickle. */
+  hitForce: 0.3,
+  /** Dye one onset adds. */
+  hitDye: 1.1,
+  /** Gaussian radius of an emitter, in grid widths. */
+  radius: 0.012,
+  /** Offset into the palette, 0 to 1 and wrapping. */
+  colourShift: 0,
+  /** How fast that offset drifts, per second. */
+  colourDrift: 0.035,
+  /** How fast the emitters ride their Lissajous orbit. */
+  orbitSpeed: 0.19,
+}
+
+/** The resolved knobs as this scene's own object, defaults for the rest. */
+export function fluidParams(tuning: Tuning): FluidParams {
+  const out = { ...FLUID_DEFAULTS }
+  for (const knob of FLUID_KNOBS) out[knob] = tuning[knob] ?? FLUID_DEFAULTS[knob]
+  return out
+}
+
 /**
  * Everything the sim uniform needs for one frame.
  *
- * Injection is an onset event, packet index 8 with its strength at 9: bass
- * decides how hard the impulse pushes and how much dye it carries. A small
- * trickle rides along between hits, scaled by the step so it does not depend
- * on the frame rate, because a track with long quiet passages otherwise
- * settles into a still frame. Treble raises the vorticity and thins the
- * viscosity, so busy music keeps its detail. Energy sets both decays: a loud
- * passage injects far more, so it also has to clear faster.
+ * Every magnitude comes in already modulated: the preset's resting value plus
+ * whatever its mapping added. What stays here is the shape of the thing. The
+ * emitters ride a Lissajous orbit and push along its tangent. The trickle is
+ * scaled by the step so it does not depend on the frame rate, because a track
+ * with long quiet passages otherwise settles into a still frame. Injection is
+ * an onset event, packet index 8 with its strength at 9, and the gate is read
+ * from the packet here rather than mapped, because it is an event and not a
+ * level; what the hit is worth is `hitForce` and `hitDye`.
  */
-export function fluidFrame(features: Float32Array, dt: number, visible: Extent): FluidFrame {
+export function fluidFrame(
+  params: FluidParams,
+  features: Float32Array,
+  dt: number,
+  visible: Extent,
+): FluidFrame {
   const step = Math.min(MAX_STEP, Math.max(0.001, dt))
   const time = features[F.time] ?? 0
-  const bass = Math.max(features[F.sub] ?? 0, features[F.bass] ?? 0)
-  const treble = features[F.treble] ?? 0
-  const energy = features[F.energy] ?? 0
-  const beat = features[F.beatPulse] ?? 0
-  const hit = (features[F.onset] ?? 0) > 0.5 ? 0.3 + (features[F.onsetStrength] ?? 0) * 0.7 : 0
+  const gate = (features[F.onset] ?? 0) > 0.5 ? 0.3 + (features[F.onsetStrength] ?? 0) * 0.7 : 0
 
   const splats: Splat[] = []
   for (let index = 0; index < EMITTERS; index++) {
-    const phase = time * 0.19 + (index * TWO_PI) / EMITTERS
+    const phase = time * params.orbitSpeed + (index * TWO_PI) / EMITTERS
     const here = orbit(phase)
     const ahead = orbit(phase + 0.05)
     const run = Math.hypot(ahead.x - here.x, ahead.y - here.y) || 1
-    const spread = 0.42 + energy * 0.38
     splats.push({
-      x: 0.5 + here.x * spread * visible.x,
-      y: 0.5 + here.y * spread * visible.y,
+      x: 0.5 + here.x * params.spread * visible.x,
+      y: 0.5 + here.y * params.spread * visible.y,
       dx: (ahead.x - here.x) / run,
       dy: (ahead.y - here.y) / run,
-      force: (0.45 + energy * 0.6) * step + hit * (0.3 + bass * 1.1),
-      radius: 0.012 + bass * 0.016,
-      dye: (1.6 + energy * 2) * step + hit * (1.1 + bass * 1),
-      colour: (time * 0.035 + index / EMITTERS + treble * 0.12) % 1,
+      force: params.force * step + gate * params.hitForce,
+      radius: params.radius,
+      dye: params.dye * step + gate * params.hitDye,
+      colour: wrap(time * params.colourDrift + index / EMITTERS + params.colourShift),
     })
   }
 
   return {
     dt: step,
-    velocityDecay: 0.18 + energy * 0.22,
-    dyeDecay: 0.22 + energy * 0.95,
-    vorticity: 12 + treble * 38,
-    viscosity: 0.02 + (1 - treble) * 0.18,
-    intensity: 1.15 + beat * 0.5,
+    velocityDecay: params.velocityDecay,
+    dyeDecay: params.dyeDecay,
+    vorticity: params.vorticity,
+    viscosity: params.viscosity,
+    intensity: params.intensity,
     splats,
   }
 }

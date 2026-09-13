@@ -140,9 +140,18 @@ export class PostStack {
     return this.settings
   }
 
-  /** Apply a patch; a later presets step sets a whole stack this way. */
+  /** Apply a patch. The development handle sets one stage at a time this way. */
   setParams(patch: PostPatch) {
     this.settings = mergePostParams(this.settings, patch)
+  }
+
+  /**
+   * Draw from this object from now on, rather than a copy of it. The renderer
+   * rewrites it every frame from the preset and its audio mapping, and a
+   * clone per frame would be thrown away on the next one.
+   */
+  useParams(params: PostParams) {
+    this.settings = params
   }
 
   /**
