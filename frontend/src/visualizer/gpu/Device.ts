@@ -9,7 +9,7 @@ export type GpuInfo = {
   architecture: string
   device: string
   description: string
-  /** A CPU rasteriser such as SwiftShader: keep the particle count small. */
+  /** A CPU rasteriser such as SwiftShader: scenes should scale their work down. */
   software: boolean
 }
 

@@ -9,24 +9,14 @@ type Props = {
   /** Its numbers and its stack; the scene below is its own. */
   preset: Preset
   scene: SceneId
-  particles: number
   fluidSize: number
-  raymarchSteps: number
   /** The device could not be had, or was lost for good: show artwork instead. */
   onUnsupported: () => void
 }
 
 // The whole visualizer tree is loaded on demand from here. React owns the
 // canvas elements and nothing per frame; the renderer draws until unmount.
-export default function VisualizerStage({
-  hud,
-  preset,
-  scene,
-  particles,
-  fluidSize,
-  raymarchSteps,
-  onUnsupported,
-}: Props) {
+export default function VisualizerStage({ hud, preset, scene, fluidSize, onUnsupported }: Props) {
   const canvas = useRef<HTMLCanvasElement>(null)
   const overlay = useRef<HTMLCanvasElement>(null)
   const failed = useRef(onUnsupported)
@@ -49,9 +39,7 @@ export default function VisualizerStage({
   // The preset first, so the scene it names is the one that gets built.
   useEffect(() => renderer.setPreset(preset), [preset])
   useEffect(() => renderer.setScene(scene), [scene])
-  useEffect(() => renderer.setParticleCount(particles), [particles])
   useEffect(() => renderer.setFluidSize(fluidSize), [fluidSize])
-  useEffect(() => renderer.setRaymarchSteps(raymarchSteps), [raymarchSteps])
 
   return (
     <>
