@@ -1,5 +1,7 @@
 // Each particle is an instanced quad, additively blended, sized and lit by
 // its speed. There is no vertex buffer: the corner comes from vertex_index.
+// The size bump, the colour and the brightness all come from params, already
+// modulated on the CPU by the preset's mapping.
 
 @group(0) @binding(2) var<storage, read> particles: array<Particle>;
 
@@ -22,19 +24,17 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> Verte
   let alive = select(0.0, 1.0, p.life > 0.0);
   // Fade out over the last half second of a life.
   let fade = min(1.0, p.life * 2.0) * alive;
-  let size = params.pointSize * (0.7 + speed * 0.5) * (1.0 + features.beat.z * 0.6) * alive;
+  let size = params.pointSize * (0.7 + speed * 0.5) * params.look.w * alive;
   // size is in pixels; scale to clip space at this depth.
   let offset = corner * size / params.resolution * 2.0 * clip.w;
   var out: VertexOut;
   out.position = clip + vec4<f32>(offset, 0.0, 0.0);
   out.uv = corner;
-  let bass = features.bands.y;
-  let treble = features.levels.x;
-  let energy = features.levels.y;
   let warm = vec3<f32>(1.0, 0.45, 0.15);
   let cool = vec3<f32>(0.2, 0.55, 1.0);
-  let tint = mix(cool, warm, clamp(bass - treble * 0.5 + p.seed * 0.4 - 0.2, 0.0, 1.0));
-  let bright = (0.35 + speed * 0.4 + energy * 0.5) * fade * params.intensity;
+  // The seed spreads the cloud across the ramp, so it is never one flat tint.
+  let tint = mix(cool, warm, clamp(params.look.x + p.seed * 0.4, 0.0, 1.0));
+  let bright = (params.look.y + speed * params.look.z) * fade * params.intensity;
   out.colour = tint * bright;
   return out;
 }

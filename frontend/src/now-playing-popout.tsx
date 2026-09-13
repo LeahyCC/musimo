@@ -19,11 +19,12 @@ import { Disc3 } from 'lucide-react'
 import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
 import type { StagePlacement, StageView } from './now-playing-overlay'
 import { artUrl, remember, stored, usePlayer } from './player'
+import { findPreset, firstPresetOf, presetOrDefault, stepPreset } from './visualizer/presets'
+import type { Preset } from './visualizer/presets/types'
 import {
   DEFAULT_FLUID_SIZE,
   DEFAULT_PARTICLES,
   DEFAULT_RAYMARCH_STEPS,
-  DEFAULT_SCENE,
   FLUID_SIZES,
   isSceneId,
   PARTICLE_COUNTS,
@@ -65,6 +66,14 @@ type PopoutValue = {
   markUnsupported: () => void
   hud: boolean
   toggleHud: () => void
+  /**
+   * The preset drawing. It carries the scene, the scene's numbers and the
+   * post stack, so choosing one sets all three at once.
+   */
+  preset: Preset
+  setPreset: (id: string) => void
+  /** Where `[` and `]` go: -1 and 1. */
+  cyclePreset: (delta: number) => void
   /** Which scene draws, and how much work the chosen one does. */
   scene: SceneId
   setScene: (scene: SceneId) => void
@@ -93,7 +102,10 @@ const PopoutContext = createContext<PopoutValue>({
   markUnsupported: noop,
   hud: false,
   toggleHud: noop,
-  scene: DEFAULT_SCENE,
+  preset: presetOrDefault(''),
+  setPreset: noop,
+  cyclePreset: noop,
+  scene: presetOrDefault('').scene,
   setScene: noop,
   particles: DEFAULT_PARTICLES,
   setParticles: noop,
@@ -106,6 +118,7 @@ export const useNowPlayingPopout = () => useContext(PopoutContext)
 
 const POPOUT_SIZE = 420
 const VIEW_KEY = 'musimo.now-playing-view'
+const PRESET_KEY = 'musimo.visualizer-preset'
 const SCENE_KEY = 'musimo.visualizer-scene'
 const PARTICLES_KEY = 'musimo.visualizer-particles'
 const FLUID_KEY = 'musimo.visualizer-fluid-grid'
@@ -114,6 +127,15 @@ const NOTICE_KEY = 'musimo.now-playing-visualizer-notice'
 const UNSUPPORTED = 'This browser has no WebGPU, so the stage shows the artwork.'
 
 const hasWebGpu = () => typeof navigator !== 'undefined' && Boolean(navigator.gpu)
+
+// What the browser remembers. A preset names a scene, so it decides; the
+// scene key is only consulted where no preset was ever stored.
+function remembered(): Preset {
+  const saved = findPreset(stored(PRESET_KEY, ''))
+  if (saved) return saved
+  const scene = stored(SCENE_KEY, '')
+  return isSceneId(scene) ? firstPresetOf(scene) : presetOrDefault('')
+}
 
 // The popout document starts empty and cannot navigate, so the tab's
 // stylesheets are copied across once when it opens.
@@ -147,10 +169,26 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   )
   const [canVisualize, setCanVisualize] = useState(hasWebGpu)
   const [hud, setHud] = useState(false)
-  const [scene, setScene] = useState<SceneId>(() => {
-    const saved = stored(SCENE_KEY, '')
-    return isSceneId(saved) ? saved : DEFAULT_SCENE
-  })
+  // The preset carries a scene, so the two are kept in step rather than left
+  // to argue: choosing a preset moves the scene select under it, and choosing
+  // a scene moves to that scene's first preset. The stored preset wins over
+  // the stored scene, which matters on the first visit after this shipped,
+  // where the second is set and the first is not.
+  const [preset, setPresetState] = useState<Preset>(remembered)
+  const [scene, setSceneState] = useState<SceneId>(() => remembered().scene)
+  const choosePreset = useCallback((chosen: Preset) => {
+    setPresetState(chosen)
+    setSceneState(chosen.scene)
+  }, [])
+  const setPreset = useCallback((id: string) => choosePreset(presetOrDefault(id)), [choosePreset])
+  const cyclePreset = useCallback(
+    (delta: number) => choosePreset(stepPreset(preset.id, delta)),
+    [choosePreset, preset],
+  )
+  const setScene = useCallback((chosen: SceneId) => {
+    setSceneState(chosen)
+    setPresetState((current) => (current.scene === chosen ? current : firstPresetOf(chosen)))
+  }, [])
   const [particles, setParticles] = useState(() => {
     const saved = Number(stored(PARTICLES_KEY, ''))
     return PARTICLE_COUNTS.includes(saved) ? saved : DEFAULT_PARTICLES
@@ -164,6 +202,7 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
     return RAYMARCH_STEPS.includes(saved) ? saved : DEFAULT_RAYMARCH_STEPS
   })
   useEffect(() => remember(VIEW_KEY, view), [view])
+  useEffect(() => remember(PRESET_KEY, preset.id), [preset])
   useEffect(() => remember(SCENE_KEY, scene), [scene])
   useEffect(() => remember(PARTICLES_KEY, String(particles)), [particles])
   useEffect(() => remember(FLUID_KEY, String(fluidSize)), [fluidSize])
@@ -231,6 +270,9 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       markUnsupported,
       hud,
       toggleHud,
+      preset,
+      setPreset,
+      cyclePreset,
       scene,
       setScene,
       particles,
@@ -254,7 +296,11 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       markUnsupported,
       hud,
       toggleHud,
+      preset,
+      setPreset,
+      cyclePreset,
       scene,
+      setScene,
       particles,
       fluidSize,
       raymarchSteps,
@@ -306,6 +352,7 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
     onClose,
     onToggleView: view ? popout.toggleView : undefined,
     onToggleHud: view === 'visualizer' ? popout.toggleHud : undefined,
+    onCyclePreset: view === 'visualizer' ? popout.cyclePreset : undefined,
   })
   const artwork = (
     <>
@@ -329,6 +376,7 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
         <Suspense fallback={artwork}>
           <VisualizerStage
             hud={popout.hud}
+            preset={popout.preset}
             scene={popout.scene}
             particles={popout.particles}
             fluidSize={popout.fluidSize}
@@ -346,6 +394,8 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
         onPopout={onPopout}
         view={view}
         onToggleView={popout.toggleView}
+        preset={popout.preset}
+        onPreset={popout.setPreset}
         scene={popout.scene}
         onScene={popout.setScene}
         particles={popout.particles}
