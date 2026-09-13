@@ -1,29 +1,32 @@
 import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_POST_PARAMS } from '../post/params'
+import { SCENE_IDS } from '../scenes/catalog'
 import { DEFAULT_PRESET_ID, findPreset, firstPresetOf, PRESETS, stepPreset } from './index'
-import { PARTICLE_KNOBS, SCENE_KNOBS } from './knobs'
+import { FLUID_KNOBS, SCENE_KNOBS } from './knobs'
 import { parsePreset } from './parse'
 import type { Preset } from './types'
 
-const particleParams = () => Object.fromEntries(PARTICLE_KNOBS.map((knob) => [knob, 1]))
+const fluidParams = (): Record<string, number> =>
+  Object.fromEntries(FLUID_KNOBS.map((knob) => [knob, 1]))
 
 const good = () => ({
   id: 'test',
   name: 'Test',
-  scene: 'particles',
-  sceneParams: particleParams(),
+  scene: 'fluid',
+  sceneParams: fluidParams(),
   postParams: { bloom: { intensity: 0.5 } },
-  audioMapping: [{ from: 'treble', to: 'flow', gain: 2 }],
+  audioMapping: [{ from: 'treble', to: 'vorticity', gain: 2 }],
 })
 
 describe('parsePreset', () => {
   it('reads a whole preset', () => {
     const preset = parsePreset(good(), 'test.json')
-    expect(preset.scene).toBe('particles')
-    if (preset.scene !== 'particles') throw new Error('the scene should have been particles')
-    expect(preset.sceneParams.flow).toBe(1)
-    expect(preset.audioMapping).toEqual([{ from: 'treble', to: 'flow', gain: 2, curve: 'linear' }])
+    expect(preset.scene).toBe('fluid')
+    expect(preset.sceneParams.vorticity).toBe(1)
+    expect(preset.audioMapping).toEqual([
+      { from: 'treble', to: 'vorticity', gain: 2, curve: 'linear' },
+    ])
   })
 
   it('resolves the post patch over the stack defaults', () => {
@@ -37,39 +40,39 @@ describe('parsePreset', () => {
 
   it('names the file and the path when a knob is missing', () => {
     const broken = good()
-    delete (broken.sceneParams as Record<string, number>).jitter
+    delete broken.sceneParams.viscosity
     expect(() => parsePreset(broken, 'presets/broken.json')).toThrow(
-      'presets/broken.json: sceneParams.jitter is missing',
+      'presets/broken.json: sceneParams.viscosity is missing',
     )
   })
 
   it('rejects a knob that is not this scene’s', () => {
-    const broken = { ...good(), sceneParams: { ...particleParams(), vorticity: 3 } }
-    expect(() => parsePreset(broken, 'b.json')).toThrow(/sceneParams\.vorticity is not a knob/)
+    const broken = { ...good(), sceneParams: { ...fluidParams(), flow: 3 } }
+    expect(() => parsePreset(broken, 'b.json')).toThrow(/sceneParams\.flow is not a knob/)
   })
 
-  it('rejects a mapping onto a knob from another scene', () => {
-    const broken = { ...good(), audioMapping: [{ from: 'treble', to: 'vorticity', gain: 1 }] }
+  it('rejects a mapping onto a knob no scene offers', () => {
+    const broken = { ...good(), audioMapping: [{ from: 'treble', to: 'flow', gain: 1 }] }
     expect(() => parsePreset(broken, 'b.json')).toThrow(
       /audioMapping\[0\]\.to is neither a knob of this scene/,
     )
   })
 
   it('rejects a feature that does not exist', () => {
-    const broken = { ...good(), audioMapping: [{ from: 'bassline', to: 'flow', gain: 1 }] }
+    const broken = { ...good(), audioMapping: [{ from: 'bassline', to: 'vorticity', gain: 1 }] }
     expect(() => parsePreset(broken, 'b.json')).toThrow(/audioMapping\[0\]\.from is not a feature/)
   })
 
   it('rejects a curve that does not exist', () => {
     const broken = {
       ...good(),
-      audioMapping: [{ from: 'treble', to: 'flow', gain: 1, curve: 'cubed' }],
+      audioMapping: [{ from: 'treble', to: 'vorticity', gain: 1, curve: 'cubed' }],
     }
     expect(() => parsePreset(broken, 'b.json')).toThrow(/audioMapping\[0\]\.curve is not a curve/)
   })
 
   it('rejects a gain that is not a finite number', () => {
-    const broken = { ...good(), audioMapping: [{ from: 'treble', to: 'flow', gain: 'lots' }] }
+    const broken = { ...good(), audioMapping: [{ from: 'treble', to: 'vorticity', gain: 'lots' }] }
     expect(() => parsePreset(broken, 'b.json')).toThrow(
       'b.json: audioMapping[0].gain expected a finite number, got "lots"',
     )
@@ -121,10 +124,10 @@ describe('parsePreset', () => {
   })
 })
 
-describe('the six presets', () => {
+describe('the presets', () => {
   it('are two per scene, every one parsed', () => {
-    expect(PRESETS).toHaveLength(6)
-    for (const scene of ['particles', 'fluid', 'raymarch'] as const)
+    expect(PRESETS).toHaveLength(2 * SCENE_IDS.length)
+    for (const scene of SCENE_IDS)
       expect(PRESETS.filter((preset) => preset.scene === scene)).toHaveLength(2)
   })
 
@@ -142,10 +145,10 @@ describe('the six presets', () => {
     expect(new Set(PRESETS.map((preset) => preset.name)).size).toBe(PRESETS.length)
   })
 
-  it('has a default that exists and draws the particle field', () => {
+  it('has a default that exists and draws the fluid', () => {
     const preset = findPreset(DEFAULT_PRESET_ID) as Preset
     expect(preset).toBeDefined()
-    expect(preset.scene).toBe('particles')
+    expect(preset.scene).toBe('fluid')
   })
 
   it('steps both ways and wraps', () => {
@@ -159,7 +162,6 @@ describe('the six presets', () => {
   })
 
   it('offers a first preset for every scene', () => {
-    for (const scene of ['particles', 'fluid', 'raymarch'] as const)
-      expect(firstPresetOf(scene).scene).toBe(scene)
+    for (const scene of SCENE_IDS) expect(firstPresetOf(scene).scene).toBe(scene)
   })
 })

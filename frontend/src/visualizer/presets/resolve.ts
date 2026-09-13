@@ -6,7 +6,7 @@
  *   value = sceneParams[to] + Σ gain × curve(feature[from])
  *
  * All of it happens on the CPU. No scene shader reads the feature packet for
- * a magnitude any more, so a preset can send treble to a fold that used to
+ * a magnitude any more, so a preset can send treble to a knob that used to
  * take bass without a line of WGSL changing.
  *
  * Both functions write into an object the caller owns and keeps, because this
