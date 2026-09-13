@@ -1,4 +1,8 @@
 node_modules/
+# Agent worktrees. Git already skips registered worktrees, so this changes
+# nothing for git; it is here so anything else pointed at the repo root does
+# not walk a dozen full checkouts.
+.claude/
 frontend/dist/
 .venv/
 __pycache__/
