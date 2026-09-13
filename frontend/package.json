@@ -22,6 +22,7 @@
     "lucide-react": "1.41.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
+    "visimo": "github:LeahyCC/visimo#v0.1.0",
     "zod": "4.5.4"
   },
   "devDependencies": {

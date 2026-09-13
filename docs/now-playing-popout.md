@@ -43,7 +43,7 @@ Shortcuts bind to the window the stage is in. In the tab they apply while the st
 
 - `frontend/src/now-playing-popout.tsx`: the provider at the app root (the popout window, the request that carries full screen back to the tab) and the stage itself.
 - `frontend/src/now-playing-overlay.tsx`: the hover controls, the view toggle, the preset picker, the size select, the idle fade and the shortcuts.
-- `frontend/src/visualizer/`: the WebGPU renderer the stage mounts, loaded on demand; see [the visualizer note](visualizer.md).
+- `visimo`: the WebGPU renderer the stage mounts, loaded on demand from the package; see [the visualizer note](visualizer.md).
 - `frontend/src/player.tsx` exposes the transport (`seek`, `cycleRepeat`, `toggleShuffle`, `toggleMute`, `setVolume`, `audio()`, `liked`) the overlay needs to duplicate the footer's controls in a separate document.
 
 ## Checks
