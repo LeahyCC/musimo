@@ -13,13 +13,13 @@
 - Add a fluid scene to the visualizer, with a scene select in the stage's top bar (#58)
 - Add a raymarched fractal scene to the visualizer, folded by the bass and detailed by the treble, with a step cap in the stage's top bar (#59)
 - Add six visualizer presets, two per scene, each naming which feature drives which parameter, with a picker in the stage's top bar and `[` and `]` to cycle (#60)
-- Cut the particle and raymarch visualizer scenes and their four presets, leaving the fluid and hiding the scene select while there is one scene to pick
+- Cut the particle and raymarch visualizer scenes and their four presets, leaving the fluid and hiding the scene select while there is one scene to pick (#61)
 
 ### Testing and CI
 
 - Add a Vitest unit test runner for the frontend (#49)
-- Pin the stage view in the Now Playing popout test, which passed headless and failed on any machine with a WebGPU adapter
-- Keep prettier out of `.git` and the agent worktrees under `.claude`, so `npm run format` finishes instead of dying on a plugin it cannot resolve
+- Pin the stage view in the Now Playing popout test, which passed headless and failed on any machine with a WebGPU adapter (#62)
+- Keep prettier out of `.git` and the agent worktrees under `.claude`, so `npm run format` finishes instead of dying on a plugin it cannot resolve (#62)
 
 ### Infrastructure and fixes
 
