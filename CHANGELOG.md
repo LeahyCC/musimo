@@ -18,6 +18,8 @@
 ### Testing and CI
 
 - Add a Vitest unit test runner for the frontend (#49)
+- Pin the stage view in the Now Playing popout test, which passed headless and failed on any machine with a WebGPU adapter
+- Keep prettier out of `.git` and the agent worktrees under `.claude`, so `npm run format` finishes instead of dying on a plugin it cannot resolve
 
 ### Infrastructure and fixes
 
