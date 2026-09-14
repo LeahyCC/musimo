@@ -287,7 +287,17 @@ class Downloads:
             return
         try:
             if sys.platform == "win32":
-                process.terminate()
+                # FFmpeg and the token helper are children of the worker and must stop with it.
+                terminator = await asyncio.create_subprocess_exec(
+                    "taskkill",
+                    "/PID",
+                    str(process.pid),
+                    "/T",
+                    "/F",
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.DEVNULL,
+                )
+                await terminator.wait()
             else:
                 os.killpg(process.pid, signal.SIGTERM)
             try:
