@@ -10,10 +10,10 @@ npm ci --prefix frontend
 npm run build --prefix frontend
 ```
 
-For downloads, install the matching [bgutil helper](https://github.com/Brainicism/bgutil-ytdlp-pot-provider/tree/1.3.2) outside the checkout. Its version must match the Python plugin in `pyproject.toml`:
+For downloads, install the matching [bgutil helper](https://github.com/Brainicism/bgutil-ytdlp-pot-provider/tree/2.0.0) outside the checkout. Its version must match the Python plugin in `pyproject.toml`:
 
 ```powershell
-git clone --depth 1 --branch 1.3.2 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git "$env:LOCALAPPDATA\Musimo\bgutil"
+git clone --depth 1 --branch 2.0.0 https://github.com/Brainicism/bgutil-ytdlp-pot-provider.git "$env:LOCALAPPDATA\Musimo\bgutil"
 Push-Location "$env:LOCALAPPDATA\Musimo\bgutil\server"
 npm ci
 npx tsc

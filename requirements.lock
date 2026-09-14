@@ -12,9 +12,9 @@ anyio==4.15.1 \
     # via
     #   httpx
     #   starlette
-bgutil-ytdlp-pot-provider==1.3.2 \
-    --hash=sha256:9674227441402b56fe06f4e7559a691f33913eebfc7d50831894ccb24c8bc479 \
-    --hash=sha256:9971733ebba2b69ca1f1b8c6036a114154330a9f8af54491c6baa941863df87a
+bgutil-ytdlp-pot-provider==2.0.0 \
+    --hash=sha256:22884c399802771ddfd9275bb05b178d67c89db67a1d5d1e17ed7f681956628e \
+    --hash=sha256:dac2d1aeeac63218efe879e538e978d2efc088ed887124095e6fd6a09c3077df
     # via musimo
 brotli==1.2.0 ; implementation_name == 'cpython' and sys_platform != 'ios' \
     --hash=sha256:072e7624b1fc4d601036ab3f4f27942ef772887e876beff0301d261210bca97f \
