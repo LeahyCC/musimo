@@ -15,17 +15,17 @@ import { createPortal } from 'react-dom'
 
 import { useNavigate } from '@tanstack/react-router'
 import { Disc3 } from 'lucide-react'
+import { DEFAULT_FLUID_SIZE, FLUID_SIZES, isSceneId } from 'visimo/catalog'
+import type { SceneId } from 'visimo/catalog'
+import { findPreset, firstPresetOf, presetOrDefault, stepPreset } from 'visimo/presets'
+import type { Preset } from 'visimo/presets'
 
 import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
 import type { StagePlacement, StageView } from './now-playing-overlay'
 import { artUrl, remember, stored, usePlayer } from './player'
-import { findPreset, firstPresetOf, presetOrDefault, stepPreset } from './visualizer/presets'
-import type { Preset } from './visualizer/presets/types'
-import { DEFAULT_FLUID_SIZE, FLUID_SIZES, isSceneId } from './visualizer/scenes/catalog'
-import type { SceneId } from './visualizer/scenes/catalog'
 
 // The whole WebGPU tree stays out of the main bundle until a stage wants it.
-const VisualizerStage = lazy(() => import('./visualizer/Visualizer'))
+const VisualizerStage = lazy(() => import('visimo').then((m) => ({ default: m.VisualizerStage })))
 
 type PictureInPictureApi = {
   requestWindow: (options?: {
@@ -108,6 +108,8 @@ const FLUID_KEY = 'musimo.visualizer-fluid-grid'
 const NOTICE_KEY = 'musimo.now-playing-visualizer-notice'
 const UNSUPPORTED = 'This browser has no WebGPU, so the stage shows the artwork.'
 
+// A deliberate copy of visimo's own check. Importing it would pull the
+// WebGPU chunk into the main bundle to answer a question about navigator.
 const hasWebGpu = () => typeof navigator !== 'undefined' && Boolean(navigator.gpu)
 
 // What the browser remembers. A preset names a scene, so it decides; the
@@ -346,6 +348,8 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
             scene={popout.scene}
             fluidSize={popout.fluidSize}
             onUnsupported={popout.markUnsupported}
+            className="stage-visualizer"
+            hudClassName="stage-hud"
           />
         </Suspense>
       ) : (

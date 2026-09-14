@@ -14,6 +14,7 @@
 - Add a raymarched fractal scene to the visualizer, folded by the bass and detailed by the treble, with a step cap in the stage's top bar (#59)
 - Add six visualizer presets, two per scene, each naming which feature drives which parameter, with a picker in the stage's top bar and `[` and `]` to cycle (#60)
 - Cut the particle and raymarch visualizer scenes and their four presets, leaving the fluid and hiding the scene select while there is one scene to pick (#61)
+- Move the visualizer into [visimo](https://github.com/LeahyCC/visimo) and consume it as a dependency, so scenes and presets can be tuned against a dropped track instead of a library
 
 ### Testing and CI
 
@@ -23,6 +24,8 @@
 
 ### Infrastructure and fixes
 
+- Update React and its types together to 19.3.0, Vite to 8.3.0, TanStack Virtual to 3.14.11 and Ruff to 0.16.7
+- Update the bgutil plugin and helper together to 2.0.0, including the exported runtime lock and native Windows setup instructions
 - Let the dev proxy target another backend with `MUSIMO_API_TARGET`, and keep writes through it from being refused as cross-origin (#50)
 - Let the dev proxy reach an https backend such as Tailscale Serve and still save (#55)
 

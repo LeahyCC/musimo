@@ -1,5 +1,8 @@
 FROM node:26-bookworm-slim AS frontend
 WORKDIR /build
+# The slim image has no git, and visimo is a git dependency.
+RUN apt-get update && apt-get install -y --no-install-recommends git \
+    && rm -rf /var/lib/apt/lists/*
 COPY frontend/package.json frontend/package-lock.json ./
 RUN npm ci
 COPY frontend/ ./
