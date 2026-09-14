@@ -145,8 +145,9 @@ class DurableJobsTests(unittest.TestCase):
 
 
 class QueueControlTests(unittest.IsolatedAsyncioTestCase):
-    @unittest.skipUnless(sys.platform == "win32", "Windows process tree termination")
     async def test_windows_stop_also_terminates_worker_children(self) -> None:
+        if sys.platform != "win32":
+            self.skipTest("Windows process tree termination")
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             store = Store(root / "db.sqlite3")

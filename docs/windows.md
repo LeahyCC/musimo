@@ -25,6 +25,8 @@ Use your actual music folder. Multiple roots are a PowerShell array, such as `-L
 
 Pause and cancel stop the entire Windows worker process tree, including FFmpeg and the token helper. Without `MUSIMO_POT_SERVER_HOME`, workers retain the Docker HTTP helper configuration.
 
+For changes to Windows-specific Python code or tests, run `uv run mypy --platform win32` and `uv run mypy --platform linux`. CI checks Linux types even for tests that are skipped there.
+
 The launcher binds to `127.0.0.1:8765`, uses the built frontend, native filesystem events and one worker. State defaults to `%LOCALAPPDATA%\Musimo\data`; `-DataDir` and `-Port` override those locations. Keep the data directory on a local disk. Python stays running until stopped. Use a hidden Task Scheduler action at logon for unattended startup after signing in, with a fixed checkout, PATH and arguments. Configure restart on failure and do not start a second instance against the same database.
 
 Private Tailscale Serve works with the same loopback address as the Docker deployment. The launcher trusts forwarded headers only from loopback. Preserve existing Serve routes and check same-origin writes and SSE through the final URL. See [proxy configuration](reverse-proxy.md).
