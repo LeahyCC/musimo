@@ -2,6 +2,7 @@
 
 import importlib.metadata
 import json
+import os
 import random
 import re
 import sys
@@ -84,6 +85,11 @@ def main() -> None:
         "nopart": False,
         "sleep_interval_requests": random.uniform(0.3, 0.8),
     }
+    if server_home := os.getenv("MUSIMO_POT_SERVER_HOME"):
+        # Native installs can start the matching helper on demand instead of keeping a server up.
+        options["extractor_args"] = {
+            "youtubepot-bgutilscript": {"server_home": [server_home]},
+        }
     try:
         downloader = cast(Downloader, yt_dlp.YoutubeDL(options))
         manifest = folder / "download.json"

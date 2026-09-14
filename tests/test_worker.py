@@ -29,6 +29,7 @@ class WorkerTests(unittest.TestCase):
 
             with (
                 patch("sys.argv", ["worker", directory]),
+                patch.dict("os.environ", {"MUSIMO_POT_SERVER_HOME": directory}),
                 patch("yt_dlp.YoutubeDL") as downloader,
                 patch("backend.worker.emit", side_effect=record),
                 patch("backend.worker.Tagger") as tagger,
@@ -46,6 +47,10 @@ class WorkerTests(unittest.TestCase):
                     ]
                 }
                 main()
+                self.assertEqual(
+                    downloader.call_args.args[0]["extractor_args"],
+                    {"youtubepot-bgutilscript": {"server_home": [directory]}},
+                )
                 downloader.return_value.extract_info.assert_called_once()
                 self.assertFalse(downloader.return_value.extract_info.call_args.kwargs["download"])
                 self.assertEqual(events[-1]["code"], "NO_MATCH")

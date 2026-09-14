@@ -1,4 +1,5 @@
 import asyncio
+import ctypes
 import json
 import shutil
 import subprocess
@@ -144,6 +145,42 @@ class DurableJobsTests(unittest.TestCase):
 
 
 class QueueControlTests(unittest.IsolatedAsyncioTestCase):
+    @unittest.skipUnless(sys.platform == "win32", "Windows process tree termination")
+    async def test_windows_stop_also_terminates_worker_children(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient() as client:
+                service = Downloads(
+                    store,
+                    Catalog(store, client),
+                    Library(store, [root], asyncio.Event()),
+                    asyncio.Event(),
+                )
+                process = await asyncio.create_subprocess_exec(
+                    sys.executable,
+                    "-c",
+                    "import subprocess,sys,time; "
+                    "p=subprocess.Popen([sys.executable,'-c','import time; time.sleep(60)']); "
+                    "print(p.pid,flush=True); time.sleep(60)",
+                    stdout=asyncio.subprocess.PIPE,
+                )
+                service.processes["test"] = process
+                assert process.stdout
+                child_pid = int(await asyncio.wait_for(process.stdout.readline(), 5))
+                kernel = ctypes.WinDLL("kernel32", use_last_error=True)
+                kernel.OpenProcess.restype = ctypes.c_void_p
+                handle = kernel.OpenProcess(0x100000, False, child_pid)
+                self.assertTrue(handle)
+                try:
+                    await service.stop_process("test")
+                    self.assertIsNotNone(process.returncode)
+                    self.assertEqual(kernel.WaitForSingleObject(ctypes.c_void_p(handle), 1000), 0)
+                finally:
+                    kernel.CloseHandle(ctypes.c_void_p(handle))
+                    await service.stop_process("test")
+                    store.close()
+
     @unittest.skipUnless(shutil.which("ffmpeg"), "FFmpeg required")
     async def test_restart_after_publication_reconciles_without_second_download(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
