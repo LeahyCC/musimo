@@ -24,6 +24,8 @@
 
 ### Infrastructure and fixes
 
+- Update React and its types together to 19.3.0, Vite to 8.3.0, TanStack Virtual to 3.14.11 and Ruff to 0.16.7
+- Update the bgutil plugin and helper together to 2.0.0, including the exported runtime lock and native Windows setup instructions
 - Let the dev proxy target another backend with `MUSIMO_API_TARGET`, and keep writes through it from being refused as cross-origin (#50)
 - Let the dev proxy reach an https backend such as Tailscale Serve and still save (#55)
 
