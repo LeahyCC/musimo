@@ -244,18 +244,6 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
     async def lyrics(song_id: str) -> dict[str, object]:
         return {"items": await get().lyrics(checked_id(song_id))}
 
-    @app.get("/api/player/radio/{song_id}")
-    async def radio(
-        song_id: str, count: int = Query(default=30, ge=1, le=100)
-    ) -> dict[str, object]:
-        return {"items": await get().sonic_similar(checked_id(song_id), count)}
-
-    @app.get("/api/player/path")
-    async def sonic_path(
-        start: str, end: str, count: int = Query(default=20, ge=1, le=100)
-    ) -> dict[str, object]:
-        return {"items": await get().sonic_path(checked_id(start), checked_id(end), count)}
-
     async def media_response(endpoint: str, item_id: str, range_header: str) -> StreamingResponse:
         if range_header and not BYTE_RANGE.fullmatch(range_header):
             raise HTTPException(416, "Only one byte range is supported")

@@ -43,13 +43,6 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 path = request.url.path
                 if path.endswith("/ping"):
                     return subsonic(serverVersion="0.63.0")
-                if path.endswith("/getOpenSubsonicExtensions"):
-                    return subsonic(
-                        openSubsonicExtensions=[
-                            {"name": "sonicSimilarity", "versions": [1]},
-                            {"name": "formPost", "versions": [1]},
-                        ]
-                    )
                 if path.endswith("/getAlbumList2"):
                     return subsonic(albumList2={"album": [{"id": "album-1", "name": "One"}]})
                 if path.endswith("/getArtists"):
@@ -106,21 +99,6 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             ]
                         }
                     )
-                if path.endswith("/getSonicSimilarTracks") or path.endswith("/findSonicPath"):
-                    if request.url.params.get("id") == "radio-not-ready":
-                        return subsonic(
-                            status="failed",
-                            error={
-                                "message": (
-                                    "plugin call failed: AudioMuse-AI HTTP request failed: "
-                                    'Get "http://127.0.0.1:8000/api/similar_tracks": '
-                                    "connectex: No connection could be made"
-                                )
-                            },
-                        )
-                    return subsonic(
-                        sonicMatch=[{"entry": {"id": "song-2", "title": "Next"}, "similarity": 0.9}]
-                    )
                 if path.endswith("/stream"):
                     self.assertEqual(request.headers.get("range"), "bytes=2-5")
                     return httpx.Response(
@@ -151,7 +129,6 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                     ) as client:
                         capabilities = (await client.get("/api/player/capabilities")).json()
                         self.assertTrue(capabilities["available"])
-                        self.assertTrue(capabilities["sonic_similarity"])
                         self.assertEqual(capabilities["version"], "0.63.0")
                         self.assertEqual(
                             (await client.get("/api/library/albums")).json()["items"][0]["id"],
@@ -279,25 +256,6 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         ][0]
                         self.assertTrue(fallback_lyrics["synced"])
                         self.assertEqual(fallback_lyrics["line"][0]["start"], 1250)
-                        self.assertEqual(
-                            (await client.get("/api/player/radio/song-1?count=12")).json()["items"][
-                                0
-                            ]["entry"]["id"],
-                            "song-2",
-                        )
-                        self.assertEqual(
-                            (await client.get("/api/player/path?start=song-1&end=song-2")).json()[
-                                "items"
-                            ][0]["entry"]["id"],
-                            "song-2",
-                        )
-                        radio_error = await client.get("/api/player/radio/radio-not-ready?count=12")
-                        self.assertEqual(radio_error.status_code, 503)
-                        self.assertEqual(
-                            radio_error.json()["detail"],
-                            "AudioMuse is not ready. Check that it is running, then wait for its "
-                            "similarity index to finish building.",
-                        )
                         audio = await client.get(
                             "/api/player/stream/song-1", headers={"Range": "bytes=2-5"}
                         )
@@ -352,8 +310,6 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             "configured": False,
                             "available": False,
                             "version": "",
-                            "extensions": [],
-                            "sonic_similarity": False,
                             "detail": (
                                 "Add a Navidrome address in Settings to enable library playback"
                             ),

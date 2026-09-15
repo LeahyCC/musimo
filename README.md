@@ -53,7 +53,6 @@ Search and library features:
 - Server side Tracks view filters by search, genre, year and sort order.
 - LRCLIB lyric fallback when Navidrome has no imported lyrics.
 - Now Playing full screen and popout stage for library tracks.
-- Optional AudioMuse radio through Navidrome's `sonicSimilarity` extension.
 - Background scans, scan cancellation, native or polling watchers and diagnostics.
 - A bounded activity feed in Settings and Diagnostics, with persistent clearing.
 
@@ -439,7 +438,7 @@ API groups:
 - Health/settings: `/api/health`, `/api/settings` GET and PATCH, `/api/snapshot`.
 - Search: `/api/search`, `/api/album-years`, `/api/albums/{id}`, `/api/artists/{id}`, `/api/artists/{id}/top`, `/api/preview/{id}`.
 - Index: `/api/library` GET, `/api/library/scan` POST, `/api/library/cancel` POST.
-- Player foundation: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/radio/{id}`, `/api/player/path`, `/api/player/stream/{id}`, `/api/player/art/{id}`. Navidrome-backed library routes at `/api/library/{albums,artists,tracks,playlists}` for browsing; local index routes at `/api/library` GET, `/api/library/scan`, `/api/library/cancel` remain separate.
+- Player foundation: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/stream/{id}`, `/api/player/art/{id}`. Navidrome-backed library routes at `/api/library/{albums,artists,tracks,playlists}` for browsing; local index routes at `/api/library` GET, `/api/library/scan`, `/api/library/cancel` remain separate.
 - Jobs/batches: `/api/naming-preview`, `/api/jobs` GET and POST, `/api/history`, `/api/batches` POST, `/api/batches/{id}/{pause,resume,cancel,retry}`, `/api/jobs/{id}/pick`, `/api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`, `/api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,resume-source}`.
 - Artist downloads: `/api/artists/{id}/download-plan`, `/api/artist-batches`.
 - Activity: `/api/activity` GET and DELETE; deletion takes the observed `through` cursor.

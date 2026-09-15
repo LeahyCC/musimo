@@ -19,7 +19,6 @@ import {
   Pencil,
   Play,
   Plus,
-  Radio as RadioIcon,
   Search,
   Shuffle,
   SlidersHorizontal,
@@ -42,7 +41,6 @@ import {
   libraryTracksSchema,
   lyricsSchema,
   playerCapabilitiesSchema,
-  sonicMatchesSchema,
 } from './api'
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from './api'
 import { InfiniteScroll } from './infinite-scroll'
@@ -995,13 +993,8 @@ export function LibraryPage({
           <p className="eyebrow">YOUR MUSIC, READY TO PLAY</p>
           <h1>Library</h1>
         </div>
-        <span
-          className={`tag library-status ${capabilities.data.sonic_similarity ? 'good' : ''}`}
-          role="status"
-        >
-          <span style={{ visibility: busy ? 'hidden' : undefined }}>
-            {capabilities.data.sonic_similarity ? 'AUDIOMUSE CONNECTED' : 'NAVIDROME READY'}
-          </span>
+        <span className="tag library-status" role="status">
+          <span style={{ visibility: busy ? 'hidden' : undefined }}>NAVIDROME READY</span>
           {busy && <span>Opening music…</span>}
         </span>
       </div>
@@ -1631,10 +1624,6 @@ export function LibraryPage({
 export function NowPlayingPage() {
   const player = usePlayer()
   const track = player.libraryTrack
-  const capabilities = useQuery({
-    queryKey: ['player-capabilities'],
-    queryFn: ({ signal }) => api('player/capabilities', playerCapabilitiesSchema, { signal }),
-  })
   const lyrics = useQuery({
     queryKey: ['lyrics', track?.id],
     queryFn: ({ signal }) =>
@@ -1642,14 +1631,6 @@ export function NowPlayingPage() {
     enabled: Boolean(track),
     retry: false,
   })
-  const audioMuse = useMutation({
-    mutationFn: () =>
-      api(`player/radio/${encodeURIComponent(track?.id ?? '')}?count=40`, sonicMatchesSchema),
-    onSuccess: (result) => {
-      if (track) player.playLibrary([track, ...result.items.map((item) => item.entry)], 0, 'radio')
-    },
-  })
-
   if (!track)
     return (
       <section className="empty-panel library-empty">
@@ -1691,22 +1672,11 @@ export function NowPlayingPage() {
             )}
           </p>
           <div className="button-row now-actions">
-            {capabilities.data?.sonic_similarity && (
-              <button
-                className="button primary"
-                onClick={() => audioMuse.mutate()}
-                disabled={audioMuse.isPending}
-              >
-                <RadioIcon size={16} />{' '}
-                {audioMuse.isPending ? 'Building radio…' : 'Start AudioMuse radio'}
-              </button>
-            )}
             {/* The footer's own add button is hidden on phones, so the page offers one too. */}
             <button className="button" onClick={player.openPlaylistPicker}>
               <Plus size={16} /> Add to playlist
             </button>
           </div>
-          {audioMuse.isError && <p className="error">{audioMuse.error.message}</p>}
         </div>
       </section>
       <div className="now-columns">

@@ -221,8 +221,6 @@ class Navidrome:
                 "configured": False,
                 "available": False,
                 "version": "",
-                "extensions": [],
-                "sonic_similarity": False,
                 "detail": detail,
             }
         try:
@@ -232,28 +230,12 @@ class Navidrome:
                 "configured": True,
                 "available": False,
                 "version": "",
-                "extensions": [],
-                "sonic_similarity": False,
                 "detail": "Navidrome could not be reached or authenticated",
             }
-        extensions: list[str] = []
-        try:
-            result = await self.response("getOpenSubsonicExtensions")
-            raw = result.get("openSubsonicExtensions", [])
-            if isinstance(raw, list):
-                extensions = [
-                    str(item["name"])
-                    for item in raw
-                    if isinstance(item, dict) and isinstance(item.get("name"), str)
-                ]
-        except NavidromeError:
-            pass
         return {
             "configured": True,
             "available": True,
             "version": str(ping.get("serverVersion") or ping.get("version") or ""),
-            "extensions": extensions,
-            "sonic_similarity": any(name.casefold() == "sonicsimilarity" for name in extensions),
             "detail": "Navidrome is ready",
         }
 
@@ -610,30 +592,3 @@ class Navidrome:
 
     async def scrobble(self, song_id: str, submission: bool) -> None:
         await self.response("scrobble", {"id": song_id, "submission": submission})
-
-    async def sonic_similar(self, song_id: str, count: int) -> list[dict[str, object]]:
-        try:
-            body = await self.response("getSonicSimilarTracks", {"id": song_id, "count": count})
-        except NavidromeError as exc:
-            if "AudioMuse-AI" in str(exc):
-                raise NavidromeError(
-                    "AudioMuse is not ready. Check that it is running, then wait for its "
-                    "similarity index to finish building."
-                ) from exc
-            raise
-        items = body.get("sonicMatch", [])
-        if not isinstance(items, list):
-            return []
-        return [cast(dict[str, object], item) for item in items if isinstance(item, dict)]
-
-    async def sonic_path(
-        self, start_song_id: str, end_song_id: str, count: int
-    ) -> list[dict[str, object]]:
-        body = await self.response(
-            "findSonicPath",
-            {"startSongId": start_song_id, "endSongId": end_song_id, "count": count},
-        )
-        items = body.get("sonicMatch", [])
-        if not isinstance(items, list):
-            return []
-        return [cast(dict[str, object], item) for item in items if isinstance(item, dict)]
