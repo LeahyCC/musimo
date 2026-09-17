@@ -84,7 +84,6 @@
   --z-index-float: 3; /* the card's own download control */
   --z-index-sticky: 4; /* the settings save bar */
   --z-index-header: 5; /* the sticky top bar */
-  --z-index-chrome: 10; /* the footer player */
   --z-index-overlay: 15; /* the library filter popover */
   --z-index-bar: 20; /* the phone bottom bar, and the player above it */
   --z-index-skip: 30; /* the skip link */
@@ -214,149 +213,6 @@ select:focus-visible {
   white-space: nowrap;
   border-width: 0;
 }
-.app {
-  min-height: 100vh;
-}
-.sidebar {
-  width: var(--sidebar-width);
-  position: fixed;
-  inset: 0 auto 0 var(--safe-left);
-  background: var(--color-sidebar);
-  padding: 33px 19px 98px;
-  border-right: 1px solid var(--color-line);
-  display: flex;
-  flex-direction: column;
-}
-.brand {
-  display: flex;
-  align-items: center;
-  font-size: 27px;
-  font-weight: 650;
-  letter-spacing: -1px;
-  padding: 0 8px;
-}
-.brand-dot {
-  color: var(--color-accent);
-}
-.nav-caption {
-  margin: 51px 12px 17px;
-  color: var(--color-faint);
-  font-size: 9px;
-  letter-spacing: 1.6px;
-}
-.sidebar nav {
-  display: grid;
-  gap: 7px;
-}
-.nav-link {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 14px;
-  border-radius: 7px;
-  color: var(--color-muted);
-  font-size: 14px;
-}
-.nav-link:hover {
-  background: var(--color-hover);
-  color: var(--color-text);
-}
-.nav-link.active {
-  background: var(--color-active);
-  color: var(--color-accent);
-}
-/* Active download count on the Downloads item. Only the phone bottom bar shows it; wider
-   layouts have the floating queue dock instead. */
-.nav-badge {
-  display: none;
-}
-.sidebar-bottom {
-  margin: auto 7px 0;
-  color: var(--color-muted);
-  font-size: 12px;
-}
-.sidebar-note {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-.sidebar-bottom small {
-  display: block;
-  color: var(--color-faint);
-  margin-top: 5px;
-}
-.sidebar-actions {
-  display: grid;
-  gap: 6px;
-  margin-top: 14px;
-}
-.sidebar-actions a {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 7px 9px;
-  border: 1px solid var(--color-line);
-  border-radius: 6px;
-  color: var(--color-muted);
-  font-size: 11px;
-}
-.sidebar-actions a:hover {
-  border-color: var(--line-hover);
-  color: var(--color-accent);
-}
-.workspace {
-  margin-left: calc(var(--sidebar-width) + var(--safe-left));
-  padding-right: var(--safe-right);
-}
-.topbar {
-  height: calc(var(--topbar-height) + var(--safe-top));
-  border-bottom: 1px solid var(--color-line);
-  padding: var(--safe-top) 43px 0;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18px;
-  position: sticky;
-  top: 0;
-  z-index: var(--z-index-header);
-  background: var(--color-canvas);
-}
-.search-input {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: min(660px, 80%);
-  color: var(--color-muted);
-}
-.search-input input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  color: var(--color-text);
-  border: 0;
-  font-size: 14px;
-  padding: 12px 0;
-}
-.search-input input::placeholder {
-  color: var(--color-faint);
-}
-.connection {
-  font-size: 11px;
-  color: var(--color-muted);
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  white-space: nowrap;
-}
-.connection i {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--color-warn);
-}
-.connection.online i {
-  background: var(--color-accent);
-}
 main {
   max-width: 1360px;
   margin: auto;
@@ -402,36 +258,6 @@ main {
   color: var(--color-faint);
   font-size: 9px;
   letter-spacing: 1.2px;
-}
-.player {
-  position: fixed;
-  bottom: 0;
-  right: var(--safe-right);
-  left: calc(var(--sidebar-width) + var(--safe-left));
-  height: 75px;
-  background: var(--color-raised);
-  border-top: 1px solid var(--color-line-strong);
-  padding: 0 33px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  z-index: var(--z-index-chrome);
-  gap: 15px;
-}
-.player > div {
-  display: flex;
-  align-items: center;
-  gap: 13px;
-  font-size: 12px;
-}
-.player > div > svg {
-  color: var(--color-faint);
-}
-.player small {
-  display: block;
-  font-size: 10px;
-  color: var(--color-muted);
-  margin-top: 5px;
 }
 .settings-layout {
   display: grid;
@@ -541,23 +367,6 @@ main {
   color: var(--color-muted);
 }
 .small {
-  font-size: 12px;
-}
-.save-bar {
-  position: sticky;
-  z-index: var(--z-index-sticky);
-  /* Clears the footer player, and on a phone the bottom bar and home indicator under it. */
-  bottom: calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 8px);
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 15px;
-  padding: 13px 17px;
-  background: var(--color-good-bg);
-  border: 1px solid var(--color-good-line);
-  border-radius: 7px;
-}
-.save-bar > span {
   font-size: 12px;
 }
 .health-strip {
@@ -806,23 +615,6 @@ meter::-webkit-meter-optimum-value {
   color: var(--color-faint);
   font-size: 10px;
 }
-.connection-banner {
-  padding: 8px 43px;
-  background: var(--color-warn-bg);
-  color: var(--color-warn);
-  font-size: 12px;
-}
-.skip {
-  position: absolute;
-  top: -60px;
-  background: var(--color-accent);
-  color: var(--color-accent-ink);
-  padding: 10px;
-  z-index: var(--z-index-skip);
-}
-.skip:focus {
-  top: 0;
-}
 .spin {
   animation: spin 1s linear infinite;
 }
@@ -831,20 +623,14 @@ meter::-webkit-meter-optimum-value {
     transform: rotate(360deg);
   }
 }
-@media (min-width: 1500px) {
+@media (width >= 93.75rem) {
   main {
     padding-top: 48px;
   }
 }
-@media (max-width: 1100px) {
+@media (width < 68.75rem) {
   :root {
     --sidebar-width: 184px;
-  }
-  .sidebar {
-    padding-inline: 13px;
-  }
-  .topbar {
-    padding-inline: 27px;
   }
   main {
     padding-inline: 27px;
@@ -863,77 +649,11 @@ meter::-webkit-meter-optimum-value {
     gap: 15px;
   }
 }
-@media (max-width: 767px) {
+@media (width < 48rem) {
   :root {
     --sidebar-width: 0px;
     --nav-height: 64px;
     --topbar-height: 60px;
-  }
-  /* The sidebar becomes a bottom bar. Its height and padding grow by the home-indicator inset so
-     the links stay above it on a phone installed to the home screen. */
-  .sidebar {
-    inset: auto 0 0;
-    width: auto;
-    height: calc(var(--nav-height) + var(--safe-bottom));
-    padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
-    border-right: 0;
-    border-top: 1px solid var(--color-line);
-    z-index: var(--z-index-bar);
-  }
-  .brand,
-  .nav-caption,
-  .sidebar-bottom {
-    display: none;
-  }
-  .sidebar nav {
-    display: grid;
-    grid-auto-flow: column;
-    grid-auto-columns: 1fr;
-    gap: 0;
-    height: 100%;
-  }
-  .nav-link {
-    justify-content: center;
-    flex-direction: column;
-    gap: 5px;
-    font-size: 11px;
-    padding: 8px 2px;
-    border-radius: 0;
-  }
-  .nav-link {
-    position: relative;
-  }
-  .nav-badge {
-    position: absolute;
-    top: 5px;
-    left: calc(50% + 6px);
-    display: grid;
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    place-items: center;
-    color: var(--color-accent-ink);
-    font-size: 10px;
-    font-weight: 700;
-    background: var(--color-accent-hot);
-    border-radius: 9px;
-  }
-  .workspace {
-    margin: 0;
-    padding-right: 0;
-  }
-  .topbar {
-    padding: var(--safe-top) calc(16px + var(--safe-right)) 0 calc(16px + var(--safe-left));
-    gap: 12px;
-  }
-  .search-input {
-    width: 100%;
-  }
-  .search-input input {
-    padding: 10px 0;
-  }
-  .connection {
-    font-size: 11px;
   }
   main {
     /* The bottom padding follows the player and nav so the last row is never under them. */
@@ -955,11 +675,6 @@ meter::-webkit-meter-optimum-value {
     flex-wrap: wrap;
     gap: 15px;
   }
-  .player {
-    bottom: calc(var(--nav-height) + var(--safe-bottom));
-    left: 0;
-    right: 0;
-  }
   .settings-layout {
     gap: 26px;
   }
@@ -971,12 +686,6 @@ meter::-webkit-meter-optimum-value {
     gap: 18px;
     padding-inline: 12px;
     font-size: 11px;
-  }
-  .save-bar {
-    padding: 12px;
-  }
-  .save-bar > span {
-    font-size: 12px;
   }
   .diagnostic-grid {
     grid-template-columns: 1fr;
@@ -998,9 +707,6 @@ meter::-webkit-meter-optimum-value {
   }
   .disk small {
     font-size: 10px;
-  }
-  .connection-banner {
-    padding-inline: calc(20px + var(--safe-left)) calc(20px + var(--safe-right));
   }
 }
 @media (max-width: 420px) {
@@ -1359,42 +1065,6 @@ meter::-webkit-meter-optimum-value {
   color: var(--color-muted);
   font-size: 12px;
 }
-.live-player {
-  z-index: var(--z-index-bar);
-  gap: 20px;
-}
-.live-player .now-playing {
-  flex: 1;
-  min-width: 0;
-}
-.now-playing img {
-  width: 45px;
-  height: 45px;
-  border-radius: 6px;
-}
-.now-playing span {
-  min-width: 0;
-}
-.now-playing strong,
-.now-playing small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  display: block;
-}
-.now-playing strong {
-  font-size: 12px;
-  font-weight: 500;
-}
-.live-player .playback-controls {
-  gap: 12px;
-  font-size: 11px;
-  color: var(--color-muted);
-}
-.playback-controls input {
-  width: 140px;
-  accent-color: var(--color-accent);
-}
 .round-play {
   flex-shrink: 0;
   border: 0;
@@ -1609,7 +1279,7 @@ meter::-webkit-meter-optimum-value {
 .command-palette small {
   color: var(--color-muted);
 }
-@media (max-width: 1100px) {
+@media (width < 68.75rem) {
   .track-album {
     display: none;
   }
@@ -1617,7 +1287,7 @@ meter::-webkit-meter-optimum-value {
     display: none;
   }
 }
-@media (max-width: 767px) {
+@media (width < 48rem) {
   .discovery-home {
     padding-top: 25px;
   }
@@ -1718,28 +1388,6 @@ meter::-webkit-meter-optimum-value {
 }
 
 /* Keep preview controls usable on touch screens as well as desktop. */
-.now-playing a {
-  color: inherit;
-  text-decoration: none;
-}
-.now-playing a:hover {
-  text-decoration: underline;
-}
-.now-playing .playback-notice {
-  font-size: 10px;
-  margin-top: 2px;
-}
-.volume-controls input {
-  width: 80px;
-  accent-color: var(--color-accent);
-}
-.live-player .volume-controls {
-  gap: 4px;
-}
-.live-player [data-ui='icon-button'] {
-  min-width: 32px;
-  min-height: 36px;
-}
 .coverage-retry {
   font-size: 11px;
   align-self: flex-start;
@@ -1749,70 +1397,17 @@ meter::-webkit-meter-optimum-value {
   outline: 1px solid var(--color-accent);
   outline-offset: -1px;
 }
-@media (max-width: 1100px) {
-  .live-player {
-    gap: 10px;
-    padding-inline: 16px;
-  }
-  .playback-controls input {
-    width: 90px;
-  }
-  .volume-controls input {
-    width: 64px;
-  }
-}
-@media (max-width: 767px) {
-  /* Phones get a mini player: one row (art, title, play, next, close) with a slim seek bar
-     along its top edge. Volume, shuffle, repeat, like and add to playlist live on the Now
-     Playing stage, which the title opens. An idle footer would only take space here. */
-  .live-player {
-    height: auto;
-    min-height: 60px;
-    gap: 6px;
-    padding: 10px calc(12px + var(--safe-right)) 8px calc(12px + var(--safe-left));
-  }
-  .live-player.idle {
-    display: none;
-  }
-  .live-player .now-playing {
-    gap: 10px;
-    font-size: 12px;
-  }
-  .now-playing img {
-    width: 40px;
-    height: 40px;
-  }
-  .now-playing strong {
-    font-size: 13px;
-  }
-  .now-playing small,
-  .now-playing .playback-notice {
-    max-width: 100%;
-    margin-top: 2px;
-    font-size: 11px;
-    line-height: 1.3;
-  }
-  .live-player .playlist-actions,
-  .live-player .volume-controls,
-  .live-player .restart-preview,
-  .live-player .previous-track,
-  .live-player .playback-controls > span,
+@media (width < 48rem) {
   .preview-label {
     display: none;
   }
-  .live-player .playback-controls {
-    gap: 2px;
-  }
-  .live-player .playback-controls input[type='range'] {
-    display: block;
-    appearance: none;
-    position: absolute;
-    top: -6px;
-    left: 0;
-    width: 100%;
-    height: 13px;
-    margin: 0;
-    background: transparent;
+  /* Leftover by design: a range input's track and thumb are only reachable through vendor
+     pseudo-elements, and WebKit has none for the played portion, so the phone seek bar paints it
+     from --progress, which the footer sets on the input. See docs/tailwind-migration.md,
+     "What stays handwritten CSS". The input's own box is Tailwind utilities in player.tsx. */
+  /* Inset, because the bar runs edge to edge and a ring outside it would be cut off. Here and not
+     a utility: the unlayered focus ring rule above would beat one. */
+  .live-player .playback-controls input[type='range']:focus-visible {
     outline-offset: -2px;
   }
   .live-player .playback-controls input[type='range']::-webkit-slider-runnable-track {
@@ -1846,19 +1441,13 @@ meter::-webkit-meter-optimum-value {
     border-radius: 50%;
     background: var(--color-accent);
   }
-  .live-player .playback-controls input[type='range']:disabled {
-    opacity: 0.6;
-  }
-  .live-player [data-ui='icon-button'] small {
-    font-size: 9px;
-  }
   .playlist-picker-sheet {
     width: calc(100% - 16px);
     max-height: calc(100dvh - 32px);
     padding: 14px;
   }
 }
-@media (max-width: 767px) {
+@media (width < 48rem) {
   .track-row {
     display: grid;
     grid-template-columns: 44px minmax(0, 1fr) auto;
@@ -1952,36 +1541,10 @@ meter::-webkit-meter-optimum-value {
     background: color-mix(in oklab, var(--color-scrim) 20%, transparent);
   }
 }
-@media (max-width: 767px) {
+@media (width < 48rem) {
   .art-play {
     opacity: 1;
     background: color-mix(in oklab, var(--color-scrim) 20%, transparent);
-  }
-}
-/* The queue shares the bottom edge with the global preview player. */
-.queue-dock {
-  position: fixed;
-  /* Above the player, and on a phone above the bottom bar and home indicator as well. */
-  bottom: calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 12px);
-  right: calc(24px + var(--safe-right));
-  z-index: var(--z-index-dock);
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  background: var(--color-accent-hot);
-  color: var(--color-accent-ink);
-  border: 0;
-  border-radius: 22px;
-  padding: 11px 15px;
-  font-size: 12px;
-  font-weight: 700;
-  box-shadow: 0 4px 24px color-mix(in oklab, var(--color-shadow) 33%, transparent);
-}
-/* A floating dock covers whatever sits bottom right on a phone (the Save button, the last
-   row's controls), so the count moves into the bottom bar instead. */
-@media (max-width: 767px) {
-  .queue-dock {
-    display: none;
   }
 }
 .queue-sheet {
@@ -2206,9 +1769,6 @@ meter::-webkit-meter-optimum-value {
   font-size: 12px;
 }
 @media (max-width: 700px) {
-  .queue-dock {
-    right: calc(12px + var(--safe-right));
-  }
   .queue-sheet {
     padding: 16px 16px calc(16px + var(--safe-bottom));
   }
@@ -2268,7 +1828,7 @@ meter::-webkit-meter-optimum-value {
 .download-options .download-options-format {
   display: none;
 }
-@media (max-width: 767px) {
+@media (width < 48rem) {
   .download-options .download-options-format {
     display: grid;
   }
@@ -2410,7 +1970,7 @@ meter::-webkit-meter-optimum-value {
 .artist-download-sheet input[type='checkbox'] {
   accent-color: var(--color-accent);
 }
-@media (max-width: 767px) {
+@media (width < 48rem) {
   /* On a phone the selection is a bottom sheet: full width, anchored to the bottom edge, with
      its footer clear of the home indicator. */
   .artist-download-sheet {
@@ -3115,17 +2675,6 @@ button.library-card-play.active {
   color: var(--color-text);
   font-size: 17px;
 }
-.open-now-playing {
-  display: grid;
-  flex-shrink: 0;
-  text-decoration: none;
-  place-items: center;
-}
-.playlist-actions {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
 .playlist-picker-sheet {
   position: fixed;
   inset: 0;
@@ -3236,6 +2785,7 @@ button.library-card-play.active {
 }
 .playlist-picker-songs small {
   display: block;
+  margin-top: 5px;
   color: var(--color-muted);
   font-size: 11px;
 }
@@ -3264,14 +2814,7 @@ button.library-card-play.active {
   border: 1px solid var(--color-line);
   border-radius: 6px;
 }
-.live-player [data-ui='icon-button'] small {
-  position: absolute;
-  transform: translate(7px, 7px);
-  color: var(--color-accent);
-  font-size: 8px;
-}
-
-@media (max-width: 900px) {
+@media (width < 56.25rem) {
   .now-columns {
     grid-template-columns: 1fr;
   }
@@ -3680,7 +3223,6 @@ button.library-card-play.active {
 @media (pointer: coarse) {
   .album-card-download > [data-ui='icon-button'],
   .job-buttons button,
-  .live-player [data-ui='icon-button'],
   .stage-controls [data-ui='icon-button'],
   .stage-actions [data-ui='icon-button'],
   .library-layout-toggle [data-ui='icon-button'],
@@ -3732,7 +3274,6 @@ button.library-card-play.active {
   input:not([type='checkbox']):not([type='radio']):not([type='range']),
   select,
   textarea,
-  .search-input input,
   .sort-control select,
   .filter-chips select,
   .filter-chips input,
