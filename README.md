@@ -56,6 +56,7 @@ Search and library features:
 - Optional AudioMuse radio through Navidrome's `sonicSimilarity` extension.
 - Background scans, scan cancellation, native or polling watchers and diagnostics.
 - A bounded activity feed in Settings and Diagnostics, with persistent clearing.
+- Personal settings with a theme picker and editor, stored in your browser and movable between browsers as a file.
 
 The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card and bulk Clear failed, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Download verification requires testing with your chosen provider and Navidrome setup.
 
