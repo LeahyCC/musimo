@@ -8,6 +8,14 @@ Python 3.14, FastAPI, one uvicorn process, SQLite WAL, React 19 with TypeScript 
 
 The main image builds the frontend, serves it from FastAPI, and includes FFmpeg, Chromaprint, Deno, yt-dlp and the matching bgutil plugin. Vite copies `frontend/public` (favicon, manifest) to the dist root. FastAPI serves those files as-is, then `/assets` for the JS/CSS bundle. Only the listed SPA paths fall back to `index.html`. The only helper is a pinned bgutil service with no published port. SQLite lives in a named volume. Music mounts are separately configured. The initial test mount contains no real library files. PUID/PGID ownership changes apply only to application data; never recursively chown music.
 
+## Styling
+
+Colors live in the Tailwind 4 `@theme` block at the top of `frontend/src/style.css`, as `--color-*` tokens named for what they do (`canvas`, `raised`, `muted`, `danger-bg`) rather than what they look like. There is no `tailwind.config.js`. Nothing else in the frontend may name a color: no hex, `rgb()`, `hsl()` or named color outside that block, and no arbitrary utility such as `bg-[#17201b]`. A translucent color is an opacity modifier (`bg-accent/20`) or a `color-mix(in oklab, var(--color-x) N%, transparent)`. `frontend/src/no-raw-colors.test.ts` reads the sheet and every component and fails with the file and line if one slips in, which is what makes user themes possible: a theme is a value for each token and nothing else.
+
+Widths use four named breakpoints, `phone` (48rem, 768px), `split` (56.25rem, 900px), `tablet` (68.75rem, 1100px) and `wide` (93.75rem, 1500px), through Tailwind's `max-phone:` and `max-tablet:` variants. The queries that are not about width have custom variants: `coarse:`, `fine:` and `no-hover:`, alongside Tailwind's own `motion-reduce:`. Type sizes, radii and the stacking order are named in the same block. Layout measurements stay plain custom properties on `:root`, because `player.tsx` writes `--player-height` and several `calc()`s add it to `--nav-height` and the `--safe-*` insets.
+
+Screens are still painted by semantic classes in that sheet rather than utilities. [The styling plan](tailwind-migration.md) has the token table, the desktop and phone layout contract, what stays handwritten CSS and the order the screens convert in.
+
 ## Storage
 
 The database has `settings` and `job_events`. Schema versions use SQLite user_version. One writer connection is protected by a lock; write transactions use BEGIN IMMEDIATE. Snapshot data and event cursor are read under the same lock. Settings and source-health mutations commit with their corresponding events. Library scan status also commits with its event; file-index writes are grouped into throttled progress notifications. This prevents missing state between a snapshot and SSE subscription.

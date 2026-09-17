@@ -30,6 +30,8 @@ Migrating to Tailwind is the way to make the next desktop and phone fixes local:
 | Media queries                      | 23 blocks, 9 distinct conditions                                             |
 | JS-owned CSS variables             | `--player-height` (ResizeObserver in `player.tsx`), `--progress` (seek fill) |
 
+That count is the sheet as it stood before phase 1. The 151 hexes are now 30 color tokens, and `src/no-raw-colors.test.ts` keeps them that way. The sheet itself grew by about a hundred lines of token and variable declarations; the class, media query and JS-variable counts still hold.
+
 Surfaces, by file:
 
 | File                                                | Role                                        |
@@ -105,10 +107,18 @@ Proposed semantic tokens. Merge the near-duplicate hexes onto these; do not pres
 | `--color-warn` / `--color-warn-bg`                             | Conflict, match warning, offline banner  | `#f8ca76` / `#342e1d`             |
 | `--color-danger` / `--color-danger-bg` / `--color-danger-line` | Errors, failed, not-ready                | `#efbaa2` / `#39251f` / `#674343` |
 | `--color-owned-bg` / `--color-partial` / `--color-partial-bg`  | Ownership chips                          | `#2a3a27` / `#e4cc9c` / `#3a3224` |
-| `--color-scrim`                                                | Dialog and sheet backdrops, image washes | the black the backdrops use today |
-| `--color-shadow`                                               | Drop shadows                             | the black the shadows use today   |
+| `--color-scrim`                                                | Dialog and sheet backdrops, image washes | `#000000`                         |
+| `--color-shadow`                                               | Drop shadows                             | `#000000`                         |
 
-If the token pass finds a color that none of these can express, add a token with a role name and list it here. Do not name a token after a screen.
+Phase 1 added five more, because nothing above could express them:
+
+| Token                  | Role                                                                               | Value     |
+| ---------------------- | ---------------------------------------------------------------------------------- | --------- |
+| `--color-partial-line` | Border of a part-way or not-yet-tested chip, beside `--color-partial`              | `#4b4b3a` |
+| `--color-media`        | Solid backing behind artwork and the visualizer                                    | `#020305` |
+| `--color-on-media`     | Text and icons over artwork or the scrim; stays light when the page text goes dark | `#ffffff` |
+
+If a later pass finds a color that none of these can express, add a token with a role name and list it here. Do not name a token after a screen.
 
 Layout variables stay CSS custom properties, not Tailwind spacing, because JavaScript and several `calc()`s read them:
 
@@ -121,7 +131,7 @@ Layout variables stay CSS custom properties, not Tailwind spacing, because JavaS
 --safe-top/right/bottom/left   env(safe-area-inset-*, 0px)
 ```
 
-Z-index should become a short named scale instead of 4, 5, 10, 15, 20, 30, 45. Suggested: `base`, `sticky` (top bar, save bar), `chrome` (player, phone nav), `overlay` (filters), `dock` (queue pill), `skip`.
+Z-index is a named scale in `@theme` (`--z-index-*`, used as `z-chrome`, `z-dock` and so on) with the numbers the sheet already had: `base` 1, `raised` 2, `float` 3, `sticky` 4 (save bar), `header` 5 (top bar), `chrome` 10 (footer player), `overlay` 15 (filter popover), `bar` 20 (phone bottom bar), `skip` 30, `dock` 45 (queue pill). Collapse neighbours only when a screen conversion shows two of them never meet.
 
 Type: keep Inter and the system stack on `:root`. Map the sizes we actually use (9/10 captions, 11–14 body, 16–19 section, 27–32 page, clamp heroes) to `--text-*` theme keys so screens stop inventing 13.5 px.
 
@@ -187,7 +197,7 @@ Normalize the six widths to four named ones, then use Tailwind’s `max-*` varia
 | `split`  | max 899 px  | Now Playing columns stack. Can become `tablet` if a 900–1099 window looks fine as one column.                                                                                                          |
 | `wide`   | min 1500 px | Extra main padding only.                                                                                                                                                                               |
 
-Default Tailwind `md` is 768 px, one pixel off our phone cut. Do **not** silently switch to `md` / `max-md` without re-running `e2e/phone.spec.ts` at 360 and 390 and a 768 px desktop check. Safer: declare `--breakpoint-phone: 48rem` (768 px) and `max-phone:` as the documented phone variant, or keep 767 px explicitly.
+Default Tailwind `md` is 768 px, one pixel off our phone cut. Do **not** silently switch to `md` / `max-md` without re-running `e2e/phone.spec.ts` at 360 and 390 and a 768 px desktop check. The sheet declares `--breakpoint-phone: 48rem` (768 px) and `max-phone:` is the documented phone variant. Every breakpoint is in rem and the stock `sm` to `2xl` are reset, because Tailwind sorts breakpoints by unit before size and a px value next to a rem one puts the variants in the wrong order. The handwritten `max-width: 1100px` and `900px` queries include the pixel that `max-tablet:` and `max-split:` leave out; when a screen converts, the variant wins and the handwritten query goes.
 
 Add custom variants for the non-width queries:
 
