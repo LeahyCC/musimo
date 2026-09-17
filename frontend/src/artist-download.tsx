@@ -242,6 +242,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
             <div className="button-row">
               <button
                 type="button"
+                data-ui="text-link"
                 className={textLinkClassName()}
                 disabled={download.isPending}
                 onClick={() => setExcluded(new Set())}
@@ -250,6 +251,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               </button>
               <button
                 type="button"
+                data-ui="text-link"
                 className={textLinkClassName()}
                 disabled={download.isPending}
                 onClick={() => setExcluded(new Set(albums.map((album) => album.id)))}

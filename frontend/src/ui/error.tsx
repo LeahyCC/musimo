@@ -6,7 +6,7 @@ import type { ClassName } from '../cx'
 /** The `.error` look as a class string, for an element the component can't wrap (e.g. `<section>`). */
 export function errorBannerClassName(layout: 'block' | 'list' = 'block', className?: ClassName) {
   return cx(
-    'rounded-[5px] bg-danger-bg px-[13px] py-[13px] text-small text-danger',
+    'rounded-[5px] bg-danger-bg px-[13px] py-[13px] text-small leading-[1.6] text-danger',
     '[&_small]:text-tiny [&>button]:ml-[15px] [&>button]:underline',
     'coarse:[&>button]:min-h-11 coarse:[&>button]:px-[6px]',
     layout === 'list' ? 'my-[12px] grid gap-[5px]' : undefined,

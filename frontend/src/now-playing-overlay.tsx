@@ -318,6 +318,9 @@ export function NowPlayingOverlay({
         {track && (
           <IconButton
             active={player.liked.isLiked}
+            // The label already says which way the press goes, so a pressed state on top of it
+            // would be read out twice.
+            aria-pressed={undefined}
             aria-label={
               player.liked.isLiked ? `Remove ${title} from liked` : `Add ${title} to liked`
             }

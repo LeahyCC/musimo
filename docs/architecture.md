@@ -20,7 +20,11 @@ Applying a theme writes each `--color-*` and `color-scheme` onto `<html>` with `
 
 `frontend/public/theme-boot.js` is a small classic script loaded in `<head>` before the module bundle. It reads `musimo.theme-vars` and sets the properties before the first frame, so a saved theme does not flash the default. It is external and classic because the Content-Security-Policy allows scripts from this origin only and because it has to run ahead of the bundle. It accepts only `--color-*` names with six or eight digit hex values and swallows every error, so anything unexpected leaves the default in place. Vite copies it to the dist root with the other public files, where FastAPI serves it as-is.
 
-Screens are still painted by semantic classes in that sheet rather than utilities. [The styling plan](tailwind-migration.md) has the token table, the theme model, the desktop and phone layout contract, what stays handwritten CSS and the order the screens convert in.
+Shared controls live in `frontend/src/ui/` (`Button`, `IconButton`, `TextLink`, `Tag`, `StatusChip`, `Ownership`, `Panel`, `EmptyPanel`, `ErrorBanner`, `InlineError`, `Field`, `FieldSelect`, `Kbd`) and are styled with utilities. Each sets a `data-ui` attribute, and an element dressed by one of the `*ClassName` helpers (a routed link that looks like a button) sets the same attribute by hand, so the sheet's remaining contextual rules and the touch-target test see both. Pass `className` to a primitive for layout only; `cx` joins strings and does not settle a fight between two utilities for the same property.
+
+Tailwind puts utilities in a cascade layer, and a rule outside every layer beats any layered rule whatever its specificity. The sheet's resets for bare elements therefore sit in `@layer base`, where a utility can override them. The class rules for screens that have not converted yet stay unlayered, so a contextual rule such as `.live-player [data-ui='icon-button']` still wins over the primitive until its screen converts and the rule is deleted.
+
+The rest of each screen is still painted by semantic classes in that sheet. [The styling plan](tailwind-migration.md) has the token table, the theme model, the desktop and phone layout contract, what stays handwritten CSS and the order the screens convert in.
 
 ## Storage
 

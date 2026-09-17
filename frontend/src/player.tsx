@@ -944,6 +944,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           <div className="playlist-actions">
             <IconButton
               active={isLiked}
+              // The label already says which way the press goes, so a pressed state on top of it
+              // would be read out twice.
+              aria-pressed={undefined}
               aria-label={
                 isLiked ? `Remove ${activeTitle} from liked` : `Add ${activeTitle} to liked`
               }
@@ -960,6 +963,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               <Plus size={16} />
             </IconButton>
             <Link
+              data-ui="icon-button"
               className={iconButtonClassName(false, 'open-now-playing')}
               aria-label="Open Now Playing"
               to="/now-playing"

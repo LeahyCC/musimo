@@ -248,7 +248,7 @@ test('library playback opens the full player and starts AudioMuse radio', async 
   const playAll = page
     .locator('.library-detail')
     .getByRole('button', { name: /^(Play all|Pause)$/ })
-  await expect(playAll).toHaveAttribute('aria-pressed', 'true')
+  await expect(playAll).toHaveAttribute('data-active', 'true')
   await playAll.click()
   await expect(page.locator('.live-player')).toContainText('First Light')
 

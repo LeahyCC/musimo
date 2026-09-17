@@ -292,7 +292,7 @@ function CollectionPlayButton({
     return (
       <Button
         variant="primary"
-        aria-pressed={playback.active}
+        data-active={playback.active}
         aria-label={label}
         disabled={disabled}
         onClick={onClick}
@@ -1002,7 +1002,12 @@ export function LibraryPage({
         <Library size={36} />
         <h1>Your music library lives here.</h1>
         <p>{capabilities.data?.detail ?? 'Navidrome is not ready.'}</p>
-        <Link className={buttonClassName('primary', 'mx-auto')} to="/settings" hash="library">
+        <Link
+          data-ui="button"
+          className={buttonClassName('primary', 'mx-auto')}
+          to="/settings"
+          hash="library"
+        >
           Connect Navidrome
         </Link>
       </EmptyPanel>
@@ -1106,6 +1111,7 @@ export function LibraryPage({
               {(selectedGenres.length > 0 || selectedYears.length > 0) && (
                 <button
                   type="button"
+                  data-ui="text-link"
                   className={textLinkClassName('library-clear-filters')}
                   onClick={() => {
                     setSelectedGenres([])
@@ -1182,6 +1188,7 @@ export function LibraryPage({
             <div>
               <button
                 type="button"
+                data-ui="text-link"
                 className={textLinkClassName()}
                 onClick={() => {
                   if (albumParent)
@@ -1370,6 +1377,7 @@ export function LibraryPage({
         <section className="library-detail">
           <button
             type="button"
+            data-ui="text-link"
             className={textLinkClassName()}
             onClick={() => changeTab('artists')}
           >
@@ -1661,7 +1669,7 @@ export function NowPlayingPage() {
       <EmptyPanel className="library-empty">
         <Disc3 size={40} />
         <h1>Nothing playing yet.</h1>
-        <Link className={buttonClassName('primary', 'mx-auto')} to="/library">
+        <Link data-ui="button" className={buttonClassName('primary', 'mx-auto')} to="/library">
           Open your library
         </Link>
       </EmptyPanel>

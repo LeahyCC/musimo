@@ -753,7 +753,8 @@ function SettingsPage() {
               </div>
               <Link
                 to="/diagnostics"
-                className={textLinkClassName('ml-auto max-tablet:text-[11px]')}
+                data-ui="text-link"
+                className={textLinkClassName('ml-auto max-phone:text-tiny')}
               >
                 Test connection
                 <ArrowRight size={15} />
@@ -777,6 +778,7 @@ function SettingsPage() {
             <Button
               variant="primary"
               type="submit"
+              className="max-phone:whitespace-nowrap"
               disabled={!Object.keys(draft).length || save.isPending}
             >
               {save.isPending ? 'Saving…' : 'Save changes'}
@@ -835,7 +837,7 @@ function DiagnosticsPage() {
             <RefreshCw size={15} className={diagnostics.isFetching ? 'spin' : ''} />
             Refresh
           </Button>
-          <a className={buttonClassName()} href="/api/diagnostics/export" download>
+          <a data-ui="button" className={buttonClassName()} href="/api/diagnostics/export" download>
             <ArrowDownToLine size={15} />
             Export
           </a>

@@ -58,6 +58,7 @@ export function Ownership({ variant, className, ...props }: OwnershipProps) {
   return (
     <span
       data-ui="ownership"
+      data-variant={variant}
       className={cx(
         'inline-flex w-fit items-center gap-[4px] whitespace-nowrap rounded-sm px-[7px] py-[4px] text-tiny',
         ownershipVariantClassNames[variant],

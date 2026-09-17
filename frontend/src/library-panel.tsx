@@ -42,7 +42,7 @@ export function LibraryPanel() {
         </>
       )}
       {(query.isError || command.isError) && (
-        <ErrorBanner role="alert">
+        <ErrorBanner role="alert" className="my-[10px]">
           {query.error?.message ?? command.error?.message}
           <button type="button" onClick={() => void query.refetch()}>
             Retry

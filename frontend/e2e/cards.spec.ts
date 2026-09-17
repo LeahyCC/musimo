@@ -378,13 +378,17 @@ test('badge shows distinct states for owned, edition, queued, and downloaded', a
 
   // Owned track shows "In library"
   await expect(ownership(0)).toHaveText('In library')
+  await expect(ownership(0)).toHaveAttribute('data-variant', 'owned')
 
   // Edition track shows "Another edition in library (Album Deluxe Edition)"
   await expect(ownership(1)).toHaveText('Another edition in library (Album Deluxe Edition)')
+  await expect(ownership(1)).toHaveAttribute('data-variant', 'partial')
 
   // Queued track shows the job stage
   await expect(ownership(2)).toHaveText('Queued')
+  await expect(ownership(2)).toHaveAttribute('data-variant', 'missing')
 
   // Done track shows "Downloaded earlier"
   await expect(ownership(3)).toHaveText('Downloaded earlier')
+  await expect(ownership(3)).toHaveAttribute('data-variant', 'missing')
 })

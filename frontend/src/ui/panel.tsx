@@ -19,7 +19,7 @@ export function EmptyPanel({ className, ...props }: HTMLAttributes<HTMLElement>)
     <section
       data-ui="empty-panel"
       className={cx(
-        'flex min-h-[390px] flex-col items-center justify-center gap-[20px] rounded-[9px] border border-line p-[30px] text-center',
+        'mt-[30px] flex min-h-[390px] flex-col items-center justify-center gap-[20px] rounded-[9px] border border-line p-[30px] text-center',
         '[&>svg]:text-muted [&_p]:max-w-[400px] [&_p]:text-lead',
         className,
       )}

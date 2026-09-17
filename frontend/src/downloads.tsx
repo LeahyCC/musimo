@@ -931,7 +931,7 @@ export function DownloadsPage() {
           <div className="eyebrow">YOUR COLLECTION, IN MOTION</div>
           <h1>Downloads</h1>
         </div>
-        <Link className={buttonClassName()} to="/settings">
+        <Link data-ui="button" className={buttonClassName()} to="/settings">
           Download settings
         </Link>
       </div>
@@ -1014,7 +1014,7 @@ export function DownloadsPage() {
               ? 'Loading queue…'
               : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
           </h2>
-          <Link to="/search" className={buttonClassName('primary')}>
+          <Link to="/search" data-ui="button" className={buttonClassName('primary')}>
             Find a track
           </Link>
         </EmptyPanel>

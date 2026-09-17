@@ -102,6 +102,7 @@ function BackToSearch() {
   return (
     <button
       type="button"
+      data-ui="text-link"
       className={textLinkClassName()}
       onClick={() => void navigate({ to: '/search', search: lastSearch })}
     >
@@ -234,6 +235,7 @@ export function MusicCard({ item }: { item: MusicResult }) {
       {item.kind === 'album' && detail.isError ? (
         <button
           type="button"
+          data-ui="text-link"
           className={textLinkClassName('coverage-retry')}
           onClick={() => void detail.refetch()}
         >
@@ -617,6 +619,7 @@ function ResultsSection({
         {compact && (
           <button
             type="button"
+            data-ui="text-link"
             className={textLinkClassName()}
             onClick={() => change({ tab: kind })}
           >
@@ -893,6 +896,7 @@ export function SearchPage() {
           </label>
           <button
             type="button"
+            data-ui="text-link"
             className={textLinkClassName()}
             onClick={() =>
               void navigate({ to: '/search', search: { q: state.q, tab, sort: state.sort } })

@@ -138,34 +138,59 @@
   /* Short names the rules below were written against. Later phases of the migration retire them
      in favour of the --color-* tokens. */
 }
-* {
-  box-sizing: border-box;
-}
-body {
-  margin: 0;
-}
-button,
-input,
-select {
-  font: inherit;
-}
-/* In Tailwind's own `base` layer, not the page's unlayered rules below, so a Tailwind color or
-   underline utility on a link (the primitives in src/ui/ rely on this) still wins on specificity
-   instead of losing to this reset regardless of it. */
+/* Resets for bare elements sit in Tailwind's `base` layer. A rule outside every layer beats any
+   utility whatever its specificity, so left unlayered `font: inherit` on a button would undo the
+   size and weight a primitive in src/ui/ asks for. The class rules further down stay unlayered
+   on purpose: until its screen converts, a contextual rule is meant to win over a primitive. */
 @layer base {
+  * {
+    box-sizing: border-box;
+  }
+  body {
+    margin: 0;
+  }
+  button,
+  input,
+  select {
+    font: inherit;
+  }
   a {
     color: inherit;
     text-decoration: none;
   }
-}
-button,
-a,
-input,
-select {
-  -webkit-tap-highlight-color: transparent;
-}
-button {
-  cursor: pointer;
+  button,
+  a,
+  input,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button {
+    cursor: pointer;
+  }
+  h1,
+  h2,
+  h3,
+  p {
+    margin: 0;
+  }
+  h1 {
+    font-size: 32px;
+    font-weight: 550;
+    letter-spacing: -1px;
+    line-height: 1.2;
+  }
+  h2 {
+    font-size: 19px;
+    font-weight: 550;
+  }
+  h3 {
+    font-size: 15px;
+    font-weight: 550;
+  }
+  p {
+    color: var(--color-muted);
+    line-height: 1.6;
+  }
 }
 button:disabled {
   opacity: 0.5;
@@ -188,30 +213,6 @@ select:focus-visible {
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   border-width: 0;
-}
-h1,
-h2,
-h3,
-p {
-  margin: 0;
-}
-h1 {
-  font-size: 32px;
-  font-weight: 550;
-  letter-spacing: -1px;
-  line-height: 1.2;
-}
-h2 {
-  font-size: 19px;
-  font-weight: 550;
-}
-h3 {
-  font-size: 15px;
-  font-weight: 550;
-}
-p {
-  color: var(--color-muted);
-  line-height: 1.6;
 }
 .app {
   min-height: 100vh;
@@ -397,7 +398,7 @@ main {
 .section-heading h2 {
   font-size: 16px;
 }
-.section-heading > span:not(.status-chip) {
+.section-heading > span:not([data-ui='status-chip']) {
   color: var(--color-faint);
   font-size: 9px;
   letter-spacing: 1.2px;
@@ -946,7 +947,7 @@ meter::-webkit-meter-optimum-value {
   .eyebrow {
     font-size: 10px;
   }
-  .section-heading > span:not(.status-chip) {
+  .section-heading > span:not([data-ui='status-chip']) {
     font-size: 10px;
   }
   .page-heading {
