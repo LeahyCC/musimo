@@ -53,6 +53,7 @@ import type { SettingKey } from './api'
 import { librarySchema } from './api'
 import { namingSchema } from './api'
 import { controlsSchema, jobSchema } from './api'
+import { cx } from './cx'
 import { activeCount, DownloadsPage, QueueDock, updateJob, useJobs } from './downloads'
 import type { QueueData } from './downloads'
 import { LibraryPanel } from './library-panel'
@@ -97,6 +98,18 @@ const navItems = [
   { to: '/settings', label: 'Settings', icon: SlidersHorizontal },
   { to: '/diagnostics', label: 'Diagnostics', icon: Activity },
 ] as const
+
+/* A wide window gets a row per destination down the left edge; a phone gets the same five as a
+   bottom bar, so the link turns into a stacked icon-over-label tile. `relative` is here rather
+   than only on the phone because the count badge above positions against it. */
+const navLinkClassName = cx(
+  'relative flex items-center gap-[12px] rounded-[7px] px-[14px] py-[12px] text-lead',
+  'max-phone:flex-col max-phone:justify-center max-phone:gap-[5px] max-phone:rounded-none max-phone:px-[2px] max-phone:py-[8px] max-phone:text-tiny',
+)
+const sidebarActionClassName = cx(
+  'flex items-center gap-[8px] rounded-md border border-line px-[9px] py-[7px] text-tiny text-muted',
+  'hover:border-[color:var(--line-hover)] hover:text-accent',
+)
 
 function useLiveEvents() {
   const client = useQueryClient()
@@ -226,33 +239,54 @@ function Shell() {
   }, [])
 
   return (
-    <div className="app">
+    <div className="min-h-screen">
       <CommandPalette />
       <QueueDock />
-      <a className="skip" href="#main">
+      <a
+        className="absolute top-[-60px] z-skip bg-accent p-[10px] text-accent-ink focus:top-0"
+        href="#main"
+      >
         Skip to content
       </a>
-      <aside className="sidebar">
-        <Link to="/search" className="brand">
-          musimo<span className="brand-dot">.</span>
+      {/* `sidebar` carries no styling; it is the hook `e2e/app.spec.ts` and `e2e/phone.spec.ts`
+          measure the bottom bar with. */}
+      <aside
+        className={cx(
+          'sidebar fixed inset-y-0 left-[var(--safe-left)] flex w-[var(--sidebar-width)] flex-col border-r border-line bg-sidebar px-[19px] pt-[33px] pb-[98px]',
+          'max-tablet:px-[13px]',
+          'max-phone:inset-x-0 max-phone:top-auto max-phone:z-bar max-phone:h-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:w-auto max-phone:border-t max-phone:border-r-0 max-phone:pt-0 max-phone:pr-[var(--safe-right)] max-phone:pb-[var(--safe-bottom)] max-phone:pl-[var(--safe-left)]',
+        )}
+      >
+        <Link
+          to="/search"
+          className="flex items-center px-[8px] text-display font-[650] tracking-[-1px] max-phone:hidden"
+        >
+          musimo<span className="text-accent">.</span>
         </Link>
-        <div className="nav-caption">YOUR MUSIC, AT HOME</div>
-        <nav aria-label="Main navigation">
+        <div className="mx-[12px] mt-[51px] mb-[17px] text-micro tracking-[1.6px] text-faint max-phone:hidden">
+          YOUR MUSIC, AT HOME
+        </div>
+        <nav
+          aria-label="Main navigation"
+          className="grid gap-[7px] max-phone:h-full max-phone:auto-cols-fr max-phone:grid-flow-col max-phone:gap-0"
+        >
           {navItems.map(({ to, label, icon: Icon }) => (
             <Link
               key={to}
               to={to}
-              className="nav-link"
+              className={navLinkClassName}
               activeProps={{
-                'className': 'nav-link active',
+                'className': 'bg-active text-accent',
                 'aria-current': 'page',
               }}
+              inactiveProps={{ className: 'text-muted hover:bg-hover hover:text-text' }}
             >
               <Icon size={19} />
               <span>{label}</span>
               {to === '/search' && <Kbd className="ml-auto !text-small opacity-60">/</Kbd>}
               {to === '/downloads' && activeDownloads > 0 && (
-                <span className="nav-badge">
+                // Only the phone bottom bar shows the count; wider layouts have the queue dock.
+                <span className="nav-badge hidden max-phone:absolute max-phone:top-[5px] max-phone:left-[calc(50%+6px)] max-phone:grid max-phone:h-[18px] max-phone:min-w-[18px] max-phone:place-items-center max-phone:rounded-pill max-phone:bg-accent-hot max-phone:px-[5px] max-phone:text-caption max-phone:font-bold max-phone:text-accent-ink">
                   <span className="sr-only">, </span>
                   {activeDownloads}
                   <span className="sr-only"> active</span>
@@ -261,15 +295,17 @@ function Shell() {
             </Link>
           ))}
         </nav>
-        <footer className="sidebar-bottom">
-          <div className="sidebar-note">
+        <footer className="mx-[7px] mt-auto text-small text-muted max-phone:hidden">
+          <div className="flex items-center gap-[10px]">
             <Radio size={18} />
             <div>
-              Made for your library<small>Self-hosted music</small>
+              Made for your library
+              <small className="mt-[5px] block text-faint">Self-hosted music</small>
             </div>
           </div>
-          <div className="sidebar-actions">
+          <div className="mt-[14px] grid gap-[6px]">
             <a
+              className={sidebarActionClassName}
               href="https://www.musicares.org/donations/"
               target="_blank"
               rel="noopener noreferrer"
@@ -277,21 +313,37 @@ function Shell() {
               <Heart size={14} fill="var(--color-danger)" stroke="var(--color-danger)" />
               Donate
             </a>
-            <a href="https://ko-fi.com/colinleahy" target="_blank" rel="noopener noreferrer">
+            <a
+              className={sidebarActionClassName}
+              href="https://ko-fi.com/colinleahy"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <Coffee size={14} />
               Buy me a coffee
             </a>
-            <a href="https://github.com/LeahyCC/musimo" target="_blank" rel="noopener noreferrer">
+            <a
+              className={sidebarActionClassName}
+              href="https://github.com/LeahyCC/musimo"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <Star size={14} />
               Star on GitHub
             </a>
           </div>
         </footer>
       </aside>
-      <div className="workspace">
-        <header className="topbar">
+      <div className="ml-[calc(var(--sidebar-width)+var(--safe-left))] pr-[var(--safe-right)] max-phone:ml-0 max-phone:pr-0">
+        <header
+          className={cx(
+            'sticky top-0 z-header flex h-[calc(var(--topbar-height)+var(--safe-top))] items-center justify-between gap-[18px] border-b border-line bg-canvas px-[43px] pt-[var(--safe-top)]',
+            'max-tablet:px-[27px]',
+            'max-phone:gap-[12px] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
+          )}
+        >
           <form
-            className="search-input"
+            className="flex w-[min(660px,80%)] items-center gap-[12px] text-muted max-phone:w-full"
             onSubmit={(e) => {
               e.preventDefault()
               clearTimeout(debounce.current)
@@ -301,6 +353,7 @@ function Shell() {
             <Search size={20} />
             <input
               ref={input}
+              className="min-w-0 flex-1 border-0 bg-transparent py-[12px] text-lead text-text placeholder:text-faint max-phone:py-[10px]"
               aria-label="Search music or paste a link"
               placeholder="Search music or paste a link"
               value={text}
@@ -323,13 +376,21 @@ function Shell() {
             />
             <Kbd>/</Kbd>
           </form>
-          <span className={`connection ${status === 'Live' ? 'online' : ''}`} role="status">
-            <i />
+          <span
+            className="flex items-center gap-[7px] text-tiny whitespace-nowrap text-muted"
+            role="status"
+          >
+            <i
+              className={cx('size-[6px] rounded-full', status === 'Live' ? 'bg-accent' : 'bg-warn')}
+            />
             {status}
           </span>
         </header>
         {status !== 'Live' && (
-          <div className="connection-banner" role="status">
+          <div
+            className="bg-warn-bg px-[43px] py-[8px] text-small text-warn max-phone:pr-[calc(20px+var(--safe-right))] max-phone:pl-[calc(20px+var(--safe-left))]"
+            role="status"
+          >
             {status === 'Offline'
               ? 'Cannot reach Musimo. Reconnecting automatically.'
               : status === 'Reconnecting'
@@ -747,8 +808,10 @@ function SettingsPage() {
               are not enabled.
             </p>
           </section>
-          <div className="save-bar">
-            <span role="status">
+          {/* `save-bar` is the hook `e2e/phone.spec.ts` measures against the bottom bar. The
+              offset keeps it clear of the player, and on a phone the bar and home indicator. */}
+          <div className="save-bar sticky bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+8px)] z-sticky flex items-center justify-between gap-[15px] rounded-[7px] border border-good-line bg-good-bg px-[17px] py-[13px] max-phone:p-[12px]">
+            <span className="text-small" role="status">
               {save.isError
                 ? save.error.message
                 : saved
