@@ -241,6 +241,10 @@ Add a tiny `cx` helper (local, no new package unless class lists become painful)
 
 A primitive is done when its TSX call sites no longer mention the old class, its coarse/hover behavior is in the component, and the matching Playwright checks still pass. Prefer `getByRole` over a class locator when a primitive lands, so later class churn does not break the suite.
 
+What shipped in phase 2: `Field` has a `FieldSelect` twin for `<select>`. `buttonClassName`, `iconButtonClassName`, `textLinkClassName` and `errorBannerClassName` dress an element the component cannot wrap, such as a routed `<Link>`; that element also sets the matching `data-ui` by hand. Every primitive sets `data-ui`, and `Ownership` sets `data-variant`, which is what the sheet's leftover contextual rules and the specs hook onto where a role or label will not do. `className` on a primitive is for layout. A size or color that differs by context is a variant on the primitive, not an override.
+
+**The cascade rule.** Utilities live in a layer, so any unlayered rule beats them. Bare element resets live in `@layer base`. Unlayered class rules are the old screens, and they win over a primitive on purpose until that screen converts. When you convert a screen, delete its contextual rules for primitives (`.stage-controls [data-ui='icon-button']` and the like) and move what they did onto the call site or a variant.
+
 Do **not** `@apply` a primitive’s entire class string “for cleanliness” and also keep the old CSS class. One source of truth.
 
 ## Migration sequence
@@ -352,7 +356,7 @@ Do not “clean up” these as part of Tailwind unless a user asks: inline text 
 
 1. **Commit the CSS/TSX change, then run the suite that owns the screen** before calling it done. A production `vite build` does not prove layout.
 2. **Desktop 1280×800 and phone 390×844**, plus 360×780 when chrome or tabs change. `e2e/phone.spec.ts` is the gate for bottom bar, mini player, save bar, download count, 44 px targets, 16 px fields, format-in-popover and the artist sheet.
-3. **Do not rename a class that an e2e file still queries** in the same PR without updating the locator. Prefer switching that locator to a role or label while the markup is open. Current class locators include `.sidebar`, `.download-tabs`, `.save-bar`, `.track-row`, `.explicit`, `.virtual-list`, `.nav-badge`, `.ownership`, `.library-list-row`, `.live-player`, `.stage`, `.job-card`, `.readiness-item`, `.health-strip`, `.library-card`, `.library-grid`.
+3. **Do not rename a class that an e2e file still queries** in the same PR without updating the locator. Prefer switching that locator to a role or label while the markup is open. Current class locators include `.sidebar`, `.download-tabs`, `.save-bar`, `.track-row`, `.explicit`, `.virtual-list`, `.nav-badge`, `.library-list-row`, `.live-player`, `.stage`, `.job-card`, `.readiness-item`, `.health-strip`, `.library-card`, `.library-grid`.
 4. **Popout:** after any global CSS move, open Now Playing and pop out once. `copyStyles` must still see the generated Tailwind sheet.
 5. **Coarse pointer:** if you change a control’s size, the `coarse:` (or leftover `@media (pointer: coarse)`) rule must still win. The phone spec measures this.
 6. **No sideways scroll, no element wider than its box** on the screens you touched. That was the 10 September walk’s probe; keep the spirit even without the temporary script.

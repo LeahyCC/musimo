@@ -245,8 +245,10 @@ test('library playback opens the full player and starts AudioMuse radio', async 
   // This album already owns the queue, so its control is marked active and toggles that queue
   // rather than fetching the album again and starting it over. The active state depends only
   // on which collection is queued, so it holds on engines that stop headless audio early.
-  const playAll = page.locator('.library-detail .button.primary').first()
-  await expect(playAll).toHaveClass(/active/)
+  const playAll = page
+    .locator('.library-detail')
+    .getByRole('button', { name: /^(Play all|Pause)$/ })
+  await expect(playAll).toHaveAttribute('data-active', 'true')
   await playAll.click()
   await expect(page.locator('.live-player')).toContainText('First Light')
 

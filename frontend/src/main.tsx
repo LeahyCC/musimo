@@ -63,6 +63,19 @@ import { PlayerProvider } from './player'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
 import { startTheme } from './theme/store'
+import {
+  Button,
+  buttonClassName,
+  EmptyPanel,
+  ErrorBanner,
+  Field,
+  FieldSelect,
+  Kbd,
+  Panel,
+  StatusChip,
+  Tag,
+  textLinkClassName,
+} from './ui'
 
 import './style.css'
 
@@ -236,7 +249,7 @@ function Shell() {
             >
               <Icon size={19} />
               <span>{label}</span>
-              {to === '/search' && <kbd>/</kbd>}
+              {to === '/search' && <Kbd className="ml-auto !text-small opacity-60">/</Kbd>}
               {to === '/downloads' && activeDownloads > 0 && (
                 <span className="nav-badge">
                   <span className="sr-only">, </span>
@@ -307,7 +320,7 @@ function Shell() {
                 }, 200)
               }}
             />
-            <kbd>/</kbd>
+            <Kbd>/</Kbd>
           </form>
           <span className={`connection ${status === 'Live' ? 'online' : ''}`} role="status">
             <i />
@@ -538,7 +551,7 @@ function SettingsPage() {
   return (
     <>
       <PageTitle eyebrow="SET IT UP YOUR WAY" title="Settings">
-        <span className="tag">SAVED IN YOUR DATABASE</span>
+        <Tag>SAVED IN YOUR DATABASE</Tag>
       </PageTitle>
       <p className="page-intro">
         Preferences save without a restart. Download defaults apply to newly queued tracks.
@@ -580,10 +593,10 @@ function SettingsPage() {
           )
         })()}
       {settings.isError && (
-        <div className="error" role="alert">
+        <ErrorBanner role="alert">
           {settings.error.message}
           <button onClick={() => void settings.refetch()}>Retry</button>
-        </div>
+        </ErrorBanner>
       )}
       <div className="settings-layout">
         <nav className="section-index" aria-label="Settings sections">
@@ -628,7 +641,7 @@ function SettingsPage() {
                       </div>
                       <div>
                         {key === 'destination' || key === 'navidrome_mode' ? (
-                          <select
+                          <FieldSelect
                             id={key}
                             value={value}
                             disabled={setting.locked || save.isPending}
@@ -656,9 +669,9 @@ function SettingsPage() {
                                     {mode}
                                   </option>
                                 ))}
-                          </select>
+                          </FieldSelect>
                         ) : key === 'output_format' ? (
-                          <select
+                          <FieldSelect
                             id={key}
                             value={value}
                             disabled={setting.locked || save.isPending}
@@ -674,9 +687,9 @@ function SettingsPage() {
                             <option value="m4a">M4A / AAC</option>
                             <option value="opus">Opus</option>
                             <option value="mp3">MP3 · lossy conversion</option>
-                          </select>
+                          </FieldSelect>
                         ) : (
-                          <input
+                          <Field
                             id={key}
                             type={min === undefined ? 'text' : 'number'}
                             min={min}
@@ -738,7 +751,11 @@ function SettingsPage() {
                 <h3>Deezer</h3>
                 <p>Default catalog. No key required.</p>
               </div>
-              <Link to="/diagnostics" className="text-link">
+              <Link
+                to="/diagnostics"
+                data-ui="text-link"
+                className={textLinkClassName('ml-auto max-phone:text-tiny')}
+              >
                 Test connection
                 <ArrowRight size={15} />
               </Link>
@@ -758,14 +775,15 @@ function SettingsPage() {
                     ? 'You have unsaved changes.'
                     : 'Settings are up to date.'}
             </span>
-            <button
-              className="button primary"
+            <Button
+              variant="primary"
               type="submit"
+              className="max-phone:whitespace-nowrap"
               disabled={!Object.keys(draft).length || save.isPending}
             >
               {save.isPending ? 'Saving…' : 'Save changes'}
               {saved ? <Check size={16} /> : <ArrowRight size={16} />}
-            </button>
+            </Button>
           </div>
         </form>
       </div>
@@ -815,25 +833,17 @@ function DiagnosticsPage() {
     <>
       <PageTitle eyebrow="KNOW WHAT IS HAPPENING" title="Diagnostics">
         <div className="button-row">
-          <button
-            className="button"
-            onClick={() => void diagnostics.refetch()}
-            disabled={diagnostics.isFetching}
-          >
+          <Button onClick={() => void diagnostics.refetch()} disabled={diagnostics.isFetching}>
             <RefreshCw size={15} className={diagnostics.isFetching ? 'spin' : ''} />
             Refresh
-          </button>
-          <a className="button" href="/api/diagnostics/export" download>
+          </Button>
+          <a data-ui="button" className={buttonClassName()} href="/api/diagnostics/export" download>
             <ArrowDownToLine size={15} />
             Export
           </a>
         </div>
       </PageTitle>
-      {diagnostics.isError && (
-        <div className="error" role="alert">
-          {diagnostics.error.message}
-        </div>
-      )}
+      {diagnostics.isError && <ErrorBanner role="alert">{diagnostics.error.message}</ErrorBanner>}
       {!data && !diagnostics.isError && <p role="status">Checking your container…</p>}
       {data && (
         <>
@@ -859,11 +869,11 @@ function DiagnosticsPage() {
                   <h2>Ready to download?</h2>
                   <p>{overallReady ? 'All systems ready.' : 'Some components need attention.'}</p>
                 </div>
-                <span className="tag">v{data.health.version}</span>
+                <Tag className="ml-auto max-phone:hidden">v{data.health.version}</Tag>
               </div>
             )
           })()}
-          <section className="panel readiness-panel">
+          <Panel className="readiness-panel">
             <div className="section-heading">
               <h2>System readiness</h2>
             </div>
@@ -914,13 +924,12 @@ function DiagnosticsPage() {
                         </small>
                       </div>
                       {ready && (
-                        <button
-                          className="button"
+                        <Button
                           onClick={() => testDestination.mutate()}
                           disabled={testDestination.isPending}
                         >
                           {testDestination.isPending ? 'Testing…' : 'Test write'}
-                        </button>
+                        </Button>
                       )}
                     </div>
                   )
@@ -1038,15 +1047,15 @@ function DiagnosticsPage() {
                 </div>
               )}
             </div>
-          </section>
+          </Panel>
           <div className="diagnostic-grid" id="sources">
             {data.sources.map((source) => (
-              <section className="panel" key={source.source}>
+              <Panel key={source.source}>
                 <div className="section-heading">
                   <h2>{source.source === 'deezer' ? 'Catalog connection' : 'Download source'}</h2>
-                  <span className={`status-chip ${source.status === 'healthy' ? 'good' : ''}`}>
+                  <StatusChip variant={source.status === 'healthy' ? 'good' : 'default'}>
                     {source.status}
-                  </span>
+                  </StatusChip>
                 </div>
                 <div className="source-summary">
                   <span className="source-logo">
@@ -1064,24 +1073,16 @@ function DiagnosticsPage() {
                       : 'Not tested recently'}
                   </span>
                   {source.source === 'deezer' && (
-                    <button
-                      className="button"
-                      onClick={() => probe.mutate(source.source)}
-                      disabled={probe.isPending}
-                    >
+                    <Button onClick={() => probe.mutate(source.source)} disabled={probe.isPending}>
                       {probe.isPending ? 'Testing…' : 'Test now'}
                       <ArrowRight size={14} />
-                    </button>
+                    </Button>
                   )}
                 </div>
-                {probe.isError && (
-                  <p className="error" role="alert">
-                    {probe.error.message}
-                  </p>
-                )}
-              </section>
+                {probe.isError && <ErrorBanner role="alert">{probe.error.message}</ErrorBanner>}
+              </Panel>
             ))}
-            <section className="panel" id="disk">
+            <Panel id="disk">
               <div className="section-heading">
                 <h2>Persistent storage</h2>
                 <Folder size={18} />
@@ -1104,7 +1105,7 @@ function DiagnosticsPage() {
                   </small>
                 </div>
               ))}
-            </section>
+            </Panel>
           </div>
           <section className="versions-section">
             <div className="section-heading">
@@ -1140,10 +1141,10 @@ const rootRoute = createRootRoute({
     </PlayerProvider>
   ),
   notFoundComponent: () => (
-    <section className="empty-panel">
+    <EmptyPanel>
       <h1>Page not found</h1>
       <Link to="/search">Back to Musimo</Link>
-    </section>
+    </EmptyPanel>
   ),
 })
 const indexRoute = createRoute({

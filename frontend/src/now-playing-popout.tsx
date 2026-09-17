@@ -24,6 +24,7 @@ import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-o
 import type { StagePlacement, StageView } from './now-playing-overlay'
 import { artUrl, remember, stored, usePlayer } from './player'
 import { activeTheme, applyTheme, subscribeTheme } from './theme/store'
+import { Button } from './ui'
 
 // The whole WebGPU tree stays out of the main bundle until a stage wants it.
 const VisualizerStage = lazy(() => import('visimo').then((m) => ({ default: m.VisualizerStage })))
@@ -428,9 +429,7 @@ export function NowPlayingStage() {
           {art && <img className="stage-popped-art" src={art} alt="" />}
           <div className="stage-popped-notice">
             <p>Playing in the popout window.</p>
-            <button className="button" onClick={popout.closePopout}>
-              Bring back
-            </button>
+            <Button onClick={popout.closePopout}>Bring back</Button>
           </div>
         </div>
       ) : (

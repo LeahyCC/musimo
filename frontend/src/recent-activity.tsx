@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react'
 import { z } from 'zod'
 
 import { api } from './api'
+import { Button, ErrorBanner } from './ui'
 
 const activitySchema = z.object({
   events: z.array(z.object({ id: z.number(), kind: z.string(), created_at: z.string() })),
@@ -40,30 +41,24 @@ export function RecentActivity() {
     <section className="events-section" aria-labelledby="activity-heading">
       <div className="section-heading">
         <h2 id="activity-heading">Recent activity</h2>
-        <button
-          type="button"
-          className="button"
+        <Button
           disabled={!activity.data?.count || clear.isPending}
           onClick={() => activity.data && clear.mutate(activity.data.cursor)}
         >
           <Trash2 size={15} />
           {clear.isPending ? 'Clearing…' : 'Clear all'}
-        </button>
+        </Button>
       </div>
       {activity.isPending && <p role="status">Loading activity…</p>}
       {activity.isError && (
-        <p className="error" role="alert">
+        <ErrorBanner role="alert">
           {activity.error.message}{' '}
           <button type="button" onClick={() => void activity.refetch()}>
             Retry
           </button>
-        </p>
+        </ErrorBanner>
       )}
-      {clear.isError && (
-        <p className="error" role="alert">
-          {clear.error.message}
-        </p>
-      )}
+      {clear.isError && <ErrorBanner role="alert">{clear.error.message}</ErrorBanner>}
       {activity.data &&
         (activity.data.count ? (
           <>

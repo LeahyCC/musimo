@@ -7,6 +7,7 @@ import { z } from 'zod'
 
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from './api'
 import { activeJob, updateJob, useJobs } from './downloads'
+import { Button, ErrorBanner, IconButton, textLinkClassName } from './ui'
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
 
@@ -157,21 +158,20 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               {allMusic ? 'Choose music to download' : 'Choose albums to download'}
             </h2>
           </div>
-          <button
-            className="icon-button"
+          <IconButton
             aria-label="Close download selection"
             disabled={download.isPending}
             onClick={() => dialog.current?.close()}
           >
             <X size={22} />
-          </button>
+          </IconButton>
         </header>
         {plan.isFetching && <p role="status">Checking all albums and songs in your library…</p>}
         {plan.isError && (
-          <p className="error" role="alert">
+          <ErrorBanner role="alert">
             {plan.error.message}
             <button onClick={() => void plan.refetch()}>Retry</button>
-          </p>
+          </ErrorBanner>
         )}
         {plan.data && (
           <>
@@ -232,23 +232,27 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
                 : 'Includes albums and alternative editions. Singles and EPs are excluded. Uncheck editions you don’t want.'}
             </p>
             {albums.some((album) => album.error) && (
-              <p className="error">
+              <ErrorBanner>
                 Some albums could not be checked and are excluded.{' '}
                 <button disabled={plan.isFetching} onClick={() => void plan.refetch()}>
                   Retry album checks
                 </button>
-              </p>
+              </ErrorBanner>
             )}
             <div className="button-row">
               <button
-                className="text-link"
+                type="button"
+                data-ui="text-link"
+                className={textLinkClassName()}
                 disabled={download.isPending}
                 onClick={() => setExcluded(new Set())}
               >
                 Select all
               </button>
               <button
-                className="text-link"
+                type="button"
+                data-ui="text-link"
+                className={textLinkClassName()}
                 disabled={download.isPending}
                 onClick={() => setExcluded(new Set(albums.map((album) => album.id)))}
               >
@@ -300,8 +304,8 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               </Link>
             </p>
           ) : (
-            <button
-              className="button primary"
+            <Button
+              variant="primary"
               disabled={
                 !songs || plan.isFetching || plan.isError || download.isPending || !chosenTarget
               }
@@ -310,13 +314,9 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               {download.isPending
                 ? `Adding ${allMusic ? 'music' : 'albums'}…`
                 : `Download ${plural(albumCount, allMusic ? 'release' : 'album')} (${plural(songs, 'song')})`}
-            </button>
+            </Button>
           )}
-          {download.isError && (
-            <p className="error" role="alert">
-              {download.error.message}
-            </p>
-          )}
+          {download.isError && <ErrorBanner role="alert">{download.error.message}</ErrorBanner>}
         </footer>
       </dialog>
     </>

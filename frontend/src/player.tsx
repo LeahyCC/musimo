@@ -38,6 +38,8 @@ import {
   previewSchema,
 } from './api'
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from './api'
+import { cx } from './cx'
+import { Button, ErrorBanner, IconButton, iconButtonClassName } from './ui'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 export type PreviewState = 'finding' | 'none' | 'ready'
@@ -238,27 +240,26 @@ function PlaylistPickerRow({
   return (
     <div className="playlist-picker-row">
       <div className="playlist-picker-head">
-        <button
-          type="button"
-          className={`icon-button playlist-picker-expand ${expanded ? 'open' : ''}`}
+        <IconButton
+          className={cx('playlist-picker-expand', expanded && 'open')}
           aria-label={`${expanded ? 'Hide' : 'Show'} songs in ${playlist.name}`}
           aria-expanded={expanded}
           onClick={() => onExpand(!expanded)}
         >
           <ChevronDown size={16} />
-        </button>
+        </IconButton>
         <span>
           {playlist.name}
           <small>{songCount((known ? songs.length : playlist.songCount) ?? 0)}</small>
         </span>
         {failed ? (
-          <button type="button" className="button" onClick={onRetry}>
+          <Button className="shrink-0" onClick={onRetry}>
             Retry
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
-            className={member ? 'button' : 'button primary'}
+          <Button
+            className="shrink-0"
+            variant={member ? 'default' : 'primary'}
             // Membership decides the action, so the label has to wait for the song list.
             aria-label={
               known
@@ -270,7 +271,7 @@ function PlaylistPickerRow({
           >
             {member && known && !busy && <Check size={14} />}
             {!member && known && !busy && <Plus size={14} />} {label}
-          </button>
+          </Button>
         )}
       </div>
       {expanded && (
@@ -281,21 +282,19 @@ function PlaylistPickerRow({
                 {song.title}
                 <small>{song.artist}</small>
               </span>
-              <button
-                type="button"
-                className="icon-button"
+              <IconButton
                 aria-label={`Remove ${song.title} from ${playlist.name}`}
                 disabled={busy}
                 onClick={() => onRemoveSong(songIndex)}
               >
                 <X size={14} />
-              </button>
+              </IconButton>
             </div>
           ))}
           {known && !songs.length && (
             <p className="playlist-picker-empty">This playlist is empty.</p>
           )}
-          {failed && <p className="error">That playlist could not be read.</p>}
+          {failed && <ErrorBanner>That playlist could not be read.</ErrorBanner>}
           {!known && !failed && <p role="status">Loading songs…</p>}
         </div>
       )}
@@ -943,8 +942,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         </div>
         {isLibrary && (
           <div className="playlist-actions">
-            <button
-              className={`icon-button ${isLiked ? 'active' : ''}`}
+            <IconButton
+              active={isLiked}
+              // The label already says which way the press goes, so a pressed state on top of it
+              // would be read out twice.
+              aria-pressed={undefined}
               aria-label={
                 isLiked ? `Remove ${activeTitle} from liked` : `Add ${activeTitle} to liked`
               }
@@ -952,17 +954,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               onClick={() => toggleLikedTrack()}
             >
               <ThumbsUp size={16} fill={isLiked ? 'currentColor' : 'none'} />
-            </button>
-            <button
-              className="icon-button"
+            </IconButton>
+            <IconButton
               aria-label={`Add ${activeTitle} to a playlist`}
               disabled={!isLibrary}
               onClick={() => openPlaylistDialog()}
             >
               <Plus size={16} />
-            </button>
+            </IconButton>
             <Link
-              className="icon-button open-now-playing"
+              data-ui="icon-button"
+              className={iconButtonClassName(false, 'open-now-playing')}
               aria-label="Open Now Playing"
               to="/now-playing"
             >
@@ -972,16 +974,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         )}
         <div className="playback-controls">
           {isLibrary ? (
-            <button
-              className="icon-button previous-track"
-              aria-label="Previous track"
-              onClick={previous}
-            >
+            <IconButton className="previous-track" aria-label="Previous track" onClick={previous}>
               <SkipBack size={17} />
-            </button>
+            </IconButton>
           ) : (
-            <button
-              className="icon-button restart-preview"
+            <IconButton
+              className="restart-preview"
               aria-label="Restart preview"
               disabled={!ready}
               onClick={() => {
@@ -993,7 +991,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               }}
             >
               <RotateCcw size={16} />
-            </button>
+            </IconButton>
           )}
           <button
             className="round-play"
@@ -1006,9 +1004,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             {playing ? <Pause size={19} /> : <Play size={19} />}
           </button>
           {isLibrary && (
-            <button className="icon-button" aria-label="Next track" onClick={() => next()}>
+            <IconButton aria-label="Next track" onClick={() => next()}>
               <SkipForward size={17} />
-            </button>
+            </IconButton>
           )}
           <span>{durationText(position)}</span>
           <input
@@ -1027,32 +1025,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         <div className="volume-controls">
           {isLibrary && (
             <>
-              <button
-                className={`icon-button ${shuffle ? 'active' : ''}`}
-                aria-label="Shuffle"
-                onClick={toggleShuffle}
-              >
+              <IconButton active={shuffle} aria-label="Shuffle" onClick={toggleShuffle}>
                 <Shuffle size={17} />
-              </button>
-              <button
-                className={`icon-button ${repeat !== 'off' ? 'active' : ''}`}
+              </IconButton>
+              <IconButton
+                active={repeat !== 'off'}
                 aria-label={`Repeat ${repeat}`}
                 onClick={cycleRepeat}
               >
                 <Repeat size={17} />
                 {repeat === 'one' && <small>1</small>}
-              </button>
+              </IconButton>
             </>
           )}
-          <button
-            className="icon-button"
+          <IconButton
             aria-label={
               isLibrary ? (muted ? 'Unmute' : 'Mute') : muted ? 'Unmute preview' : 'Mute preview'
             }
             onClick={toggleMute}
           >
             {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-          </button>
+          </IconButton>
           <input
             type="range"
             aria-label={isLibrary ? 'Volume' : 'Preview volume'}
@@ -1064,13 +1057,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           />
         </div>
         {(track || libraryTrack) && (
-          <button
-            className="icon-button close-preview"
+          <IconButton
+            className="close-preview"
             aria-label={isLibrary ? 'Close player' : 'Close preview'}
             onClick={stop}
           >
             <X size={16} />
-          </button>
+          </IconButton>
         )}
         {isLibrary && (
           <dialog
@@ -1084,14 +1077,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           >
             <header>
               <h2>Add to playlist</h2>
-              <button
-                type="button"
-                className="icon-button"
-                aria-label="Close playlist picker"
-                onClick={() => closePlaylistDialog()}
-              >
+              <IconButton aria-label="Close playlist picker" onClick={() => closePlaylistDialog()}>
                 <X size={16} />
-              </button>
+              </IconButton>
             </header>
             <label className="playlist-picker-search">
               <input
@@ -1102,7 +1090,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               />
             </label>
             {allPlaylists.isLoading && <p role="status">Loading playlists…</p>}
-            {allPlaylists.isError && <p className="error">{allPlaylists.error.message}</p>}
+            {allPlaylists.isError && <ErrorBanner>{allPlaylists.error.message}</ErrorBanner>}
             <div className="playlist-picker-list">
               {availablePlaylists.map((playlist, at) => (
                 <PlaylistPickerRow
@@ -1143,18 +1131,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                   onChange={(event) => setNewPlaylistName(event.target.value)}
                 />
               </label>
-              <button
-                className="button"
-                type="submit"
-                disabled={createBusy || !newPlaylistName.trim()}
-              >
+              <Button type="submit" disabled={createBusy || !newPlaylistName.trim()}>
                 {createBusy ? 'Creating…' : 'Create'}
-              </button>
+              </Button>
             </form>
             {(playlistSongs.mutation.isError || createPlaylist.isError) && (
-              <p className="error">
+              <ErrorBanner>
                 {playlistSongs.mutation.error?.message || createPlaylist.error?.message}
-              </p>
+              </ErrorBanner>
             )}
           </dialog>
         )}
