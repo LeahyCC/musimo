@@ -30,6 +30,8 @@ Migrating to Tailwind is the way to make the next desktop and phone fixes local:
 | Media queries                      | 23 blocks, 9 distinct conditions                                             |
 | JS-owned CSS variables             | `--player-height` (ResizeObserver in `player.tsx`), `--progress` (seek fill) |
 
+That count is the sheet as it stood before phase 1. The 151 hexes are now 32 color tokens, and `src/no-raw-colors.test.ts` keeps them that way; everything else in the table still holds.
+
 Surfaces, by file:
 
 | File                                                | Role                                        |
@@ -105,10 +107,19 @@ Proposed semantic tokens. Merge the near-duplicate hexes onto these; do not pres
 | `--color-warn` / `--color-warn-bg`                             | Conflict, match warning, offline banner  | `#f8ca76` / `#342e1d`             |
 | `--color-danger` / `--color-danger-bg` / `--color-danger-line` | Errors, failed, not-ready                | `#efbaa2` / `#39251f` / `#674343` |
 | `--color-owned-bg` / `--color-partial` / `--color-partial-bg`  | Ownership chips                          | `#2a3a27` / `#e4cc9c` / `#3a3224` |
-| `--color-scrim`                                                | Dialog and sheet backdrops, image washes | the black the backdrops use today |
-| `--color-shadow`                                               | Drop shadows                             | the black the shadows use today   |
+| `--color-scrim`                                                | Dialog and sheet backdrops, image washes | `#000000`                         |
+| `--color-shadow`                                               | Drop shadows                             | `#000000`                         |
 
-If the token pass finds a color that none of these can express, add a token with a role name and list it here. Do not name a token after a screen.
+Phase 1 added five more, because nothing above could express them:
+
+| Token                                  | Role                                                                  | Value                 |
+| -------------------------------------- | --------------------------------------------------------------------- | --------------------- |
+| `--color-partial-line`                 | Border of a part-way or not-yet-tested chip, beside `--color-partial` | `#4b4b3a`             |
+| `--color-media`                        | Solid backing behind artwork and the visualizer                       | `#020305`             |
+| `--color-source` / `--color-source-bg` | The provider lettermark tile                                          | `#ceb6d8` / `#483252` |
+| `--color-heart`                        | The filled heart on the support link                                  | `#ef4444`             |
+
+If a later pass finds a color that none of these can express, add a token with a role name and list it here. Do not name a token after a screen.
 
 Layout variables stay CSS custom properties, not Tailwind spacing, because JavaScript and several `calc()`s read them:
 
