@@ -108,6 +108,10 @@ Checked 10 September 2026. Automated and manual accessibility checks cover keybo
 
 **Manual checks still needed:** Screen reader announcement quality across all flows (not just presence of ARIA attributes). Keyboard-only navigation completeness across all interactions. Focus visibility under different browser/OS high contrast modes. Touch target effectiveness on actual touch devices (automated check verifies size only).
 
+## Styling follow-up
+
+Handwritten semantic CSS in `frontend/src/style.css` still owns every screen. Tailwind 4 is imported and unused. The conversion plan, the layout contract the phone suite must keep, and the walk items that should move with a given screen are in [Tailwind migration](tailwind-migration.md).
+
 ## Further coverage
 
 Automate card success/retry against a fixture API, coverage loading/failure and filter reactivity, slider keyboard behavior, close during a pending lookup, activity clear racing with a new event, and the player/queue at small and tablet widths. Do not treat this targeted browser pass as the full release acceptance suite.
