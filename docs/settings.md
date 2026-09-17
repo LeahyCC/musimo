@@ -45,6 +45,26 @@ Settings now includes a library scan panel with live counts, elapsed time, resca
 
 The diagnostics export contains runtime versions, mount paths, library scan status, source test status, navidrome, last_download and recent events. Navidrome API credentials are mounted as a separate JSON file and are shared by scan and player calls. ZIP log export and a secret-redaction layer are hardening tasks.
 
+## Your settings
+
+Settings has two pages behind one Settings entry, and a Server / Yours switch at the top of both. Everything above is the server's: shared by whoever opens Musimo, saved in SQLite, and locked by environment where the deployment says so. `/settings/user`, "Your settings", is the other page. Nothing on it reaches the server or another person.
+
+Appearance is its first section. It lists every theme as a card with a strip of its page, card, text and accent colors. Choosing a card applies that theme and remembers it at once; there is no save bar. The cards are a radio group, so arrow keys move between them, and the active one is marked with a tick and the word Active rather than by its border alone. "Musimo dark" is the built-in theme and the one the app falls back to.
+
+- **Duplicate and edit** copies any theme, including the built-in one, and opens the editor. A built-in theme cannot be changed, only copied.
+- **Edit**, **Export** and **Delete** appear on your own themes. Deleting asks once, and deleting the theme you are using puts the default back.
+- **Reset to default** returns to Musimo dark without deleting anything.
+
+The editor takes a name, a dark or light scheme, and one color per token, grouped as Surfaces, Text, Lines, Accent and Status. Each color has a native color picker and a hex field that stay in step; a half-typed hex is marked, says what it needs, and leaves the last whole color on screen. The app around the editor is the live preview, and a preview strip at the top of the editor shows the colors the page itself cannot: buttons, chips, status messages, ownership badges, rows under the pointer and text over artwork. Save and Cancel ride in a sticky bar with a line that says what is stopping a save, if anything. Save keeps the theme and turns it on. Cancel puts your saved theme back. Leaving the page with unsaved edits asks first, then does the same. Under the colors, the editor shows the contrast ratio for the pairs people read text through, names the low ones in words, and warns below 4.5:1. That warning never blocks a save. Every action leaves a short status line behind (saved, imported, deleted, cancelled) and puts keyboard focus on the Appearance heading.
+
+### Where themes are stored
+
+In this browser only, under `musimo.theme`, `musimo.custom-themes` and `musimo.theme-vars` in local storage. They are not in the database, not in the diagnostics export and not synced. Another browser, another device or a cleared site history starts from the default. Up to 50 of your own themes are kept; at that many, Duplicate and Import are off until one is deleted. If the browser refuses to write, the page says so and the theme is not reported as saved. A list written by a newer Musimo is left alone rather than replaced, and the page says that too.
+
+### Import and export
+
+Export writes `<theme name>.musimo-theme.json` through the browser's own download, with characters a file name cannot hold replaced by a dash. Import takes that file back through the same validation as stored themes: known color names only, six or eight digit hex values, a name of at most 40 characters. An imported theme always arrives as a new theme, so it cannot overwrite one you already have, and it is turned on once it is read. A file that is not a Musimo theme is refused with a message and changes nothing.
+
 ## Recent activity
 
 Settings and Diagnostics reuse the same activity component. It displays the latest 100 visible events in a keyboard-focusable region with a 320px maximum height. Clear all disables while pending, reports failures and stores a persistent clear point through the snapshot the user saw. Newer events remain visible.

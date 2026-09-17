@@ -17,7 +17,7 @@ describe('parseHex', () => {
     expect(parseHex('#00000080')?.a).toBeCloseTo(0.502, 3)
   })
 
-  it('refuses anything that is not a hex colour', () => {
+  it('refuses anything that is not a hex color', () => {
     for (const value of ['', '#', '#12', '#12345', 'red', 'url(x)', 'rgb(0,0,0)', '#12345g']) {
       expect(parseHex(value), value).toBeNull()
     }
@@ -48,7 +48,7 @@ describe('contrast', () => {
     expect(hexContrast('#fff', '#000')).toBeCloseTo(21, 10)
   })
 
-  it('reports nothing rather than a number for a value that is not a colour', () => {
+  it('reports nothing rather than a number for a value that is not a color', () => {
     expect(hexContrast('nonsense', '#fff')).toBeNull()
     expect(hexContrast('#fff', 'nonsense')).toBeNull()
   })

@@ -1,7 +1,7 @@
 import type { Theme } from '../src/theme/themes'
 
 /* A light theme for the browser suite. It is deliberately the opposite of the built-in one, so a
-   surface that still paints its own colour shows up as a dark patch rather than blending in.
+   surface that still paints its own color shows up as a dark patch rather than blending in.
 
    Every text pair the app relies on clears WCAG AA at 4.5:1 here (text on canvas, raised and
    sunken, and accent-ink on accent); `src/theme/color.test.ts` holds the built-in theme to the

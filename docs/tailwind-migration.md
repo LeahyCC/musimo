@@ -170,18 +170,21 @@ type Theme = {
 
 ```text
 Your settings > Appearance
-  theme cards (swatch + name, the active one marked)      click = applied at once, no save bar
-  [Duplicate and edit]  [Import]                          built-ins cannot be edited, only copied
+  status line (saved, imported, deleted, cancelled)
+  theme cards (swatch + name, the active one marked)      pick = on at once, no save bar
+  [Duplicate and edit]  on every card                     built-ins can only be copied
+  [Edit] [Export] [Delete]  on your own                   [Reset to default] keeps your themes
+  Move a theme between browsers: [Import a theme file]    an import is turned on when it lands
       |
       v
-  editor: name, scheme, colors grouped as Surfaces / Text / Lines / Accent / Status
-          each color = native color input + hex field; the whole app is the live preview
-          contrast ratio shown for the text pairs, with a warning under 4.5:1 (never a block)
-          [Save]  [Cancel] puts the previous theme back   [Delete] and [Export] for custom themes
-  [Reset to default]
+  editor: preview strip (buttons, chips, status messages, badges, rows, text over artwork)
+          name, scheme, colors grouped as Surfaces / Text / Lines / Accent / Status
+          each color = native color input + hex field; the app around it is the live preview
+          contrast ratios for the pairs people read through, low ones named in words
+          sticky bar: what is stopping a save, if anything   [Cancel]  [Save]
 ```
 
-Changes apply while editing but only persist on Save; leaving the page with unsaved edits restores the saved theme. Deleting the active custom theme falls back to the default.
+Changes apply while editing but only persist on Save. Leaving the page with unsaved edits asks first, then restores the saved theme. Deleting the active custom theme falls back to the default. At the cap of fifty themes, Duplicate and Import are off until one is deleted.
 
 **What a theme cannot change, for now.** Type, spacing, radii, layout and the visualizer scenes. The stored format carries a version so radius or font choices can be added without breaking saved themes.
 
@@ -296,6 +299,8 @@ Two lanes can run at once after phase 3 because search and library touch differe
 - Extend `e2e/theme.spec.ts` (phase T1 added it, with the light fixture theme in `e2e/theme-fixtures.ts`): create, edit, cancel, save, reload, export, import, delete, a second tab following the first, a rejected bad import, and axe on the page at desktop and phone width.
 
 **Check:** the new spec, `e2e/a11y.spec.ts` and `e2e/phone.spec.ts`.
+
+What shipped in phase T2: `frontend/src/user-settings.tsx` is the page, all utilities and primitives. The theme rules it needs that are not pure page state live in the store (`saveAndActivate`, `hasRoomForTheme`, `isBuiltInTheme`, `themeFileName`, the file size cap) so a later caller cannot do half of one. `Field` grew `invalid` and `fullWidth` options because a call site cannot swap a primitive's border or width by passing another utility. `frontend/src/theme/contrast.ts` holds the pairs the readability report checks; it refuses the three and four digit hex the arithmetic would accept, because the editor does. The native color input's swatch is the one handwritten rule the page added to the sheet.
 
 ### Phase 2: primitives
 
