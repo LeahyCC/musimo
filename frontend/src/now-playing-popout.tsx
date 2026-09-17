@@ -23,6 +23,7 @@ import type { Preset } from 'visimo/presets'
 import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
 import type { StagePlacement, StageView } from './now-playing-overlay'
 import { artUrl, remember, stored, usePlayer } from './player'
+import { activeTheme, applyTheme, subscribeTheme } from './theme/store'
 import { Button } from './ui'
 
 // The whole WebGPU tree stays out of the main bundle until a stage wants it.
@@ -204,11 +205,17 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       .requestWindow({ width: POPOUT_SIZE, height: POPOUT_SIZE })
       .then((win) => {
         copyStyles(win.document)
+        // A theme other than the default lives as inline properties on the tab's <html>, which
+        // copyStyles cannot reach, so the popout document gets its own copy and every later change
+        // until it closes.
+        applyTheme(activeTheme(), win.document)
+        const unsubscribe = subscribeTheme(() => applyTheme(activeTheme(), win.document))
         win.document.title = 'Musimo player'
         win.document.body.className = 'popout-body'
-        win.addEventListener('pagehide', () =>
-          setPipWindow((current) => (current === win ? null : current)),
-        )
+        win.addEventListener('pagehide', () => {
+          unsubscribe()
+          setPipWindow((current) => (current === win ? null : current))
+        })
         setPipWindow(win)
       })
       .catch(() => setNotice('The popout could not open.'))
