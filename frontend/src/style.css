@@ -203,7 +203,7 @@ select:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 4px;
 }
-/* The one control Tailwind cannot dress: a native colour input paints its swatch in a shadow part
+/* The one control Tailwind cannot dress: a native color input paints its swatch in a shadow part
    that carries the engine's own padding and border. Each engine needs its own selector, because an
    unknown pseudo-element throws away the whole selector list it is written in. */
 input[type='color'] {

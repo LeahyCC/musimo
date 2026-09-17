@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 import type { DownloadJob, MusicResult } from '../src/api'
+import { COLOR_TOKENS } from '../src/theme/tokens'
 import { librarySong, ORIGIN, playerFixtures } from './library-fixtures'
 
 // Phone-width layout checks. Everything here runs on the mobile project only; the same
@@ -332,19 +333,30 @@ test('Your settings is one column and stays inside a 360px screen', async ({ pag
   expect(await undersized(page)).toEqual([])
   expect(await pageOverflow(page)).toBe(0)
 
-  // One column: every colour swatch starts at the same left edge.
+  // One column: every color swatch starts at the same left edge.
   const swatches = page.locator("input[type='color']")
-  await expect(swatches).toHaveCount(30)
+  await expect(swatches).toHaveCount(COLOR_TOKENS.length)
   const lefts = new Set<number>()
   for (const swatch of await swatches.all()) lefts.add(Math.round((await box(swatch)).x))
   expect(lefts.size).toBe(1)
 
-  // The last control still clears the bottom bar once the page is scrolled to its end.
+  // Save rides in a sticky bar, so it is on screen and clear of the bottom bar wherever the page
+  // is scrolled: at the top, and at the very end.
   const save = page.getByRole('button', { name: 'Save', exact: true })
-  await save.scrollIntoViewIfNeeded()
-  await page.mouse.wheel(0, 2000)
   const nav = await box(page.locator('.sidebar'))
-  expect((await box(save)).y + (await box(save)).height).toBeLessThanOrEqual(nav.y)
+  for (const y of [0, 100_000]) {
+    await page.evaluate((top: number) => window.scrollTo(0, top), y)
+    await expect
+      .poll(async () => (await box(save)).y + (await box(save)).height)
+      .toBeLessThanOrEqual(nav.y)
+    expect((await box(save)).y).toBeGreaterThanOrEqual(0)
+  }
+
+  // Picking a theme is the main control on the page, so its row is a full touch target.
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  for (const label of await page.locator('label:has(input[type=radio])').all()) {
+    expect((await box(label)).height).toBeGreaterThanOrEqual(44)
+  }
 })
 
 test('the artist download selection is a bottom sheet', async ({ page }) => {

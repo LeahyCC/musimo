@@ -196,8 +196,8 @@ async function duplicateDefault(page: Page, name: string) {
   await page.getByLabel('Name', { exact: true }).fill(name)
 }
 
-/** The two colours the rest of these tests recognise a changed theme by. */
-async function recolour(page: Page) {
+/** The two colors the rest of these tests recognise a changed theme by. */
+async function recolor(page: Page) {
   await page.getByLabel('Page background hex value').fill(CANVAS)
   await page.getByLabel('Accent hex value', { exact: true }).fill(ACCENT)
 }
@@ -206,7 +206,7 @@ test('a duplicate previews the whole app while it is being edited', async ({ pag
   await duplicateDefault(page, 'Plum')
   await backdropIs(page, DEFAULT_THEME.colors['--color-canvas'])
 
-  await recolour(page)
+  await recolor(page)
 
   await backdropIs(page, CANVAS)
   expect(await painted(page)).toMatchObject({ canvas: CANVAS, accent: ACCENT })
@@ -216,7 +216,7 @@ test('a duplicate previews the whole app while it is being edited', async ({ pag
 
 test('Cancel puts the saved theme back', async ({ page }) => {
   await duplicateDefault(page, 'Plum')
-  await recolour(page)
+  await recolor(page)
   await backdropIs(page, CANVAS)
 
   await page.getByRole('button', { name: 'Cancel' }).click()
@@ -226,20 +226,79 @@ test('Cancel puts the saved theme back', async ({ page }) => {
   expect(await painted(page)).toMatchObject({ inline: '', scheme: '' })
 })
 
-test('leaving the page with unsaved edits puts the saved theme back', async ({ page }) => {
+test('leaving the page with unsaved edits asks first, then puts the saved theme back', async ({
+  page,
+}) => {
   await duplicateDefault(page, 'Plum')
-  await recolour(page)
+  await recolor(page)
   await backdropIs(page, CANVAS)
 
+  // Staying keeps the draft and its preview.
+  page.once('dialog', (dialog) => void dialog.dismiss())
+  await page.getByRole('link', { name: 'Server' }).click()
+  await expect(page).toHaveURL(/\/settings\/user$/)
+  await backdropIs(page, CANVAS)
+
+  page.once('dialog', (dialog) => void dialog.accept())
   await page.getByRole('link', { name: 'Server' }).click()
 
-  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  await expect(page).toHaveURL(/\/settings$/)
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
   await backdropIs(page, DEFAULT_THEME.colors['--color-canvas'])
+  expect(await painted(page)).toMatchObject({ inline: '' })
+})
+
+test('a saved theme can be edited in place', async ({ page }) => {
+  await duplicateDefault(page, 'Plum')
+  await recolor(page)
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('status').filter({ hasText: 'Saved “Plum”' })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Edit Plum', exact: true }).click()
+  await page.getByLabel('Accent hex value', { exact: true }).fill('#66d1ff')
+  expect(await painted(page)).toMatchObject({ accent: '#66d1ff' })
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  await expect(page.getByRole('radio', { name: 'Plum' })).toBeChecked()
+  await expect(page.getByRole('radio')).toHaveCount(2)
+  await page.reload()
+  // The boot script's copy was rewritten along with the theme, so the new accent is there on
+  // the first frame.
+  expect(await painted(page)).toMatchObject({ canvas: CANVAS, accent: '#66d1ff' })
+})
+
+test('a half-typed color says what is wrong and holds the last good one', async ({ page }) => {
+  await duplicateDefault(page, 'Plum')
+  const field = page.getByLabel('Page background hex value')
+  await field.fill('#fff')
+
+  await expect(field).toHaveAttribute('aria-invalid', 'true')
+  await expect(page.getByText('Use a # followed by six or eight digits.')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save' })).toBeDisabled()
+  await expect(page.getByRole('status').filter({ hasText: 'Page background' })).toBeVisible()
+  // The app keeps painting the last whole value rather than flashing the default.
+  await backdropIs(page, DEFAULT_THEME.colors['--color-canvas'])
+
+  await field.fill(CANVAS)
+  await expect(page.getByRole('button', { name: 'Save' })).toBeEnabled()
+  await backdropIs(page, CANVAS)
+})
+
+test('the editor shows the colors the rest of the page cannot', async ({ page }) => {
+  await duplicateDefault(page, 'Plum')
+
+  const preview = page.getByRole('region', { name: 'Preview' })
+  await expect(preview.getByText('Failed')).toBeVisible()
+  await expect(preview.getByText('Text over artwork')).toBeVisible()
+  await expect(preview.getByText('A warning message.')).toBeVisible()
+
+  await page.getByLabel('Error hex value', { exact: true }).fill('#ff00aa')
+  await expect(preview.getByText('An error message.')).toHaveCSS('color', rgb('#ff00aa'))
 })
 
 test('Save keeps the theme and it survives a reload', async ({ page }) => {
   await duplicateDefault(page, 'Plum')
-  await recolour(page)
+  await recolor(page)
   await page.getByRole('button', { name: 'Save' }).click()
 
   await expect(page.getByRole('radio', { name: 'Plum' })).toBeChecked()
@@ -254,7 +313,7 @@ test('Save keeps the theme and it survives a reload', async ({ page }) => {
 
 test('a theme exports to a file and imports back', async ({ page }) => {
   await duplicateDefault(page, 'Roundtrip')
-  await recolour(page)
+  await recolor(page)
   await page.getByRole('button', { name: 'Save' }).click()
   await expect(page.getByRole('radio', { name: 'Roundtrip' })).toBeChecked()
 
@@ -292,7 +351,7 @@ test('a file that is not a theme is refused and changes nothing', async ({ page 
 
 test('deleting the active theme falls back to the default', async ({ page }) => {
   await duplicateDefault(page, 'Plum')
-  await recolour(page)
+  await recolor(page)
   await page.getByRole('button', { name: 'Save' }).click()
   await backdropIs(page, CANVAS)
 
@@ -309,7 +368,7 @@ test('a second tab follows a theme saved in the first', async ({ page, context }
   await backdropIs(other, DEFAULT_THEME.colors['--color-canvas'])
 
   await duplicateDefault(page, 'Plum')
-  await recolour(page)
+  await recolor(page)
   await page.getByRole('button', { name: 'Save' }).click()
 
   await backdropIs(other, CANVAS)
@@ -349,7 +408,8 @@ test('the Settings guard still fires when switching to Yours', async ({ page }) 
   await page.getByRole('link', { name: 'Yours' }).click()
 
   await expect.poll(() => asked).toContain('unsaved changes')
-  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  await expect(page).toHaveURL(/\/settings$/)
+  await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
 })
 
 test('the page passes axe under the default and a light theme', async ({ page }) => {

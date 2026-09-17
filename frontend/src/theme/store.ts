@@ -98,7 +98,7 @@ export function resolveVars(theme: Theme): ThemeVars {
 
 /**
  * Paints `theme` onto a document: every `--color-*` property, `color-scheme`, and the browser
- * chrome colour. The popout window is the second target.
+ * chrome color. The popout window is the second target.
  */
 export function applyTheme(theme: Theme, target: Document = document) {
   const root = target.documentElement
@@ -286,16 +286,41 @@ export function draftTheme(theme: Theme, name = `${theme.name} copy`): Theme {
   }
 }
 
+/**
+ * What Save and Import mean on the settings page: keep the theme and turn it on. One call, so the
+ * rule lives here and a caller cannot do half of it.
+ */
+export function saveAndActivate(theme: Theme): ThemeResult {
+  const result = saveTheme(theme)
+  if (result.ok) setActiveTheme(result.theme.id)
+
+  return result
+}
+
+export const isBuiltInTheme = (id: string): boolean =>
+  BUILT_IN_THEMES.some((built) => built.id === id)
+
+/** False at the cap, or when the stored list cannot be written, so the page can say so up front. */
+export const hasRoomForTheme = (): boolean =>
+  writable && custom.length + unreadable.length < MAX_CUSTOM_THEMES
+
 /** How a built-in becomes editable in one step: a saved copy under a new id. */
 export function duplicateTheme(theme: Theme, name?: string): ThemeResult {
   return saveTheme(draftTheme(theme, name))
 }
 
+/** Theme files are a few kilobytes. Anything far past that is not one, and is not worth parsing. */
+export const MAX_THEME_FILE_BYTES = 256 * 1024
+
 /**
  * Takes the contents of a file a person picked, as text or as already-parsed JSON, and returns
- * either the saved theme or a reason. It never throws, so a bad file is a message on the page.
+ * either the saved and active theme or a reason. It never throws, so a bad file is a message on
+ * the page.
  */
 export function importTheme(raw: unknown): ThemeResult {
+  if (typeof raw === 'string' && raw.length > MAX_THEME_FILE_BYTES) {
+    return fail('invalid-theme', 'That file is too big to be a Musimo theme.')
+  }
   let value = raw
   if (typeof value === 'string') {
     try {
@@ -309,10 +334,14 @@ export function importTheme(raw: unknown): ThemeResult {
 
   // An import is always a new theme, so it cannot overwrite a built-in or quietly replace one
   // already saved under the same id.
-  return saveTheme({ ...parsed.data, id: newThemeId() })
+  return saveAndActivate({ ...parsed.data, id: newThemeId() })
 }
 
 export const exportTheme = (theme: Theme): string => JSON.stringify(theme, null, 2)
+
+/** A name a person typed is not a safe file name as it stands. */
+export const themeFileName = (theme: Theme): string =>
+  `${theme.name.replace(/[^\p{L}\p{N} ._-]+/gu, '-').trim() || 'theme'}.musimo-theme.json`
 
 /** Paints an unsaved theme. `cancelPreview` puts the saved one back. */
 export function previewTheme(theme: Theme) {
