@@ -1,3 +1,4 @@
+import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
@@ -178,4 +179,188 @@ test('one unreadable saved theme does not cost the others', async ({ page }) => 
   }))
   expect(kept.custom).toContain('custom-broken')
   expect(JSON.parse(kept.vars)).toMatchObject(themeVars(LIGHT_THEME))
+})
+
+/* Phase T2: the personal settings page. These drive the picker and the editor the way a person
+   does, and look in storage only where the point of the step is that something persists. */
+
+const CANVAS = '#3a0f3f'
+const ACCENT = '#ffd166'
+
+const backdropIs = (target: Page, hex: string) =>
+  expect(target.locator(backdrop)).toHaveCSS('background-color', rgb(hex))
+
+async function duplicateDefault(page: Page, name: string) {
+  await page.goto('/settings/user')
+  await page.getByRole('button', { name: `Duplicate and edit ${DEFAULT_THEME.name}` }).click()
+  await page.getByLabel('Name', { exact: true }).fill(name)
+}
+
+/** The two colours the rest of these tests recognise a changed theme by. */
+async function recolour(page: Page) {
+  await page.getByLabel('Page background hex value').fill(CANVAS)
+  await page.getByLabel('Accent hex value', { exact: true }).fill(ACCENT)
+}
+
+test('a duplicate previews the whole app while it is being edited', async ({ page }) => {
+  await duplicateDefault(page, 'Plum')
+  await backdropIs(page, DEFAULT_THEME.colors['--color-canvas'])
+
+  await recolour(page)
+
+  await backdropIs(page, CANVAS)
+  expect(await painted(page)).toMatchObject({ canvas: CANVAS, accent: ACCENT })
+  // A preview is never written down, so a reload here would lose it.
+  expect(await page.evaluate(() => localStorage.getItem('musimo.custom-themes'))).toBeNull()
+})
+
+test('Cancel puts the saved theme back', async ({ page }) => {
+  await duplicateDefault(page, 'Plum')
+  await recolour(page)
+  await backdropIs(page, CANVAS)
+
+  await page.getByRole('button', { name: 'Cancel' }).click()
+
+  await expect(page.getByRole('radio', { name: DEFAULT_THEME.name })).toBeChecked()
+  await backdropIs(page, DEFAULT_THEME.colors['--color-canvas'])
+  expect(await painted(page)).toMatchObject({ inline: '', scheme: '' })
+})
+
+test('leaving the page with unsaved edits puts the saved theme back', async ({ page }) => {
+  await duplicateDefault(page, 'Plum')
+  await recolour(page)
+  await backdropIs(page, CANVAS)
+
+  await page.getByRole('link', { name: 'Server' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+  await backdropIs(page, DEFAULT_THEME.colors['--color-canvas'])
+})
+
+test('Save keeps the theme and it survives a reload', async ({ page }) => {
+  await duplicateDefault(page, 'Plum')
+  await recolour(page)
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  await expect(page.getByRole('radio', { name: 'Plum' })).toBeChecked()
+  await backdropIs(page, CANVAS)
+
+  await page.reload()
+
+  await backdropIs(page, CANVAS)
+  await expect(page.getByRole('radio', { name: 'Plum' })).toBeChecked()
+  expect(await painted(page)).toMatchObject({ canvas: CANVAS, accent: ACCENT, inline: CANVAS })
+})
+
+test('a theme exports to a file and imports back', async ({ page }) => {
+  await duplicateDefault(page, 'Roundtrip')
+  await recolour(page)
+  await page.getByRole('button', { name: 'Save' }).click()
+  await expect(page.getByRole('radio', { name: 'Roundtrip' })).toBeChecked()
+
+  const [file] = await Promise.all([
+    page.waitForEvent('download'),
+    page.getByRole('button', { name: 'Export Roundtrip' }).click(),
+  ])
+  expect(file.suggestedFilename()).toBe('Roundtrip.musimo-theme.json')
+  const written = await file.path()
+
+  page.once('dialog', (dialog) => void dialog.accept())
+  await page.getByRole('button', { name: 'Delete Roundtrip' }).click()
+  await expect(page.getByRole('radio', { name: 'Roundtrip' })).toHaveCount(0)
+
+  await page.getByLabel('Import a theme file').setInputFiles(written)
+
+  await expect(page.getByRole('radio', { name: 'Roundtrip' })).toBeChecked()
+  await backdropIs(page, CANVAS)
+})
+
+test('a file that is not a theme is refused and changes nothing', async ({ page }) => {
+  await page.goto('/settings/user')
+
+  await page.getByLabel('Import a theme file').setInputFiles({
+    name: 'not-a-theme.json',
+    mimeType: 'application/json',
+    buffer: Buffer.from('{ "hello": true }'),
+  })
+
+  await expect(page.getByRole('alert')).toContainText('not a Musimo theme')
+  await expect(page.getByRole('radio')).toHaveCount(1)
+  await backdropIs(page, DEFAULT_THEME.colors['--color-canvas'])
+  expect(await page.evaluate(() => localStorage.getItem('musimo.custom-themes'))).toBeNull()
+})
+
+test('deleting the active theme falls back to the default', async ({ page }) => {
+  await duplicateDefault(page, 'Plum')
+  await recolour(page)
+  await page.getByRole('button', { name: 'Save' }).click()
+  await backdropIs(page, CANVAS)
+
+  page.once('dialog', (dialog) => void dialog.accept())
+  await page.getByRole('button', { name: 'Delete Plum' }).click()
+
+  await expect(page.getByRole('radio', { name: DEFAULT_THEME.name })).toBeChecked()
+  await backdropIs(page, DEFAULT_THEME.colors['--color-canvas'])
+})
+
+test('a second tab follows a theme saved in the first', async ({ page, context }) => {
+  const other = await context.newPage()
+  await other.goto('/library')
+  await backdropIs(other, DEFAULT_THEME.colors['--color-canvas'])
+
+  await duplicateDefault(page, 'Plum')
+  await recolour(page)
+  await page.getByRole('button', { name: 'Save' }).click()
+
+  await backdropIs(other, CANVAS)
+  await other.close()
+})
+
+test('the command palette opens the page', async ({ page }) => {
+  await page.goto('/')
+  await page.keyboard.press('ControlOrMeta+k')
+  await page.getByRole('dialog', { name: 'Command palette' }).waitFor()
+
+  await page.getByRole('button', { name: 'Change theme' }).click()
+
+  await expect(page.getByRole('heading', { name: 'Your settings' })).toBeVisible()
+  await expect(page).toHaveURL(/\/settings\/user$/)
+  // One Settings entry in the chrome, and it is highlighted here as well as on /settings.
+  await expect(
+    page
+      .getByRole('navigation', { name: 'Main navigation' })
+      .getByRole('link', { name: 'Settings' }),
+  ).toHaveAttribute('aria-current', 'page')
+})
+
+test('the Settings guard still fires when switching to Yours', async ({ page }) => {
+  await page.goto('/settings')
+  await page.getByLabel('Library label').fill('Unsaved draft')
+
+  let asked = ''
+  page.once('dialog', (dialog) => {
+    asked = dialog.message()
+
+    return dialog.dismiss()
+  })
+  await page.getByRole('link', { name: 'Yours' }).click()
+
+  await expect.poll(() => asked).toContain('unsaved changes')
+  await expect(page.getByRole('heading', { name: 'Settings' })).toBeVisible()
+})
+
+test('the page passes axe under the default and a light theme', async ({ page }) => {
+  await page.goto('/settings/user')
+  await page.getByRole('heading', { name: 'Appearance' }).waitFor()
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+
+  // The editor is another page's worth of controls, so it is audited on its own.
+  await page.getByRole('button', { name: `Duplicate and edit ${DEFAULT_THEME.name}` }).click()
+  await page.getByRole('heading', { name: 'Readability' }).waitFor()
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
+
+  await page.addInitScript(seed, stored)
+  await page.goto('/settings/user')
+  await page.getByRole('heading', { name: 'Appearance' }).waitFor()
+  expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 })

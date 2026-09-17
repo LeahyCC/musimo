@@ -203,6 +203,25 @@ select:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 4px;
 }
+/* The one control Tailwind cannot dress: a native colour input paints its swatch in a shadow part
+   that carries the engine's own padding and border. Each engine needs its own selector, because an
+   unknown pseudo-element throws away the whole selector list it is written in. */
+input[type='color'] {
+  padding: 0;
+  border: none;
+  background: none;
+}
+input[type='color']::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+input[type='color']::-webkit-color-swatch {
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-sm);
+}
+input[type='color']::-moz-color-swatch {
+  border: 1px solid var(--color-line-strong);
+  border-radius: var(--radius-sm);
+}
 .sr-only {
   position: absolute;
   width: 1px;

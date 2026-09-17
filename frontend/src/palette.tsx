@@ -9,6 +9,7 @@ const commands = [
   { label: 'Now Playing', to: '/now-playing' },
   { label: 'Downloads', to: '/downloads' },
   { label: 'Settings', to: '/settings' },
+  { label: 'Change theme', to: '/settings/user' },
   { label: 'Diagnostics', to: '/diagnostics' },
 ] as const
 export function CommandPalette() {

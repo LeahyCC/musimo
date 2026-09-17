@@ -45,6 +45,26 @@ Settings now includes a library scan panel with live counts, elapsed time, resca
 
 The diagnostics export contains runtime versions, mount paths, library scan status, source test status, navidrome, last_download and recent events. Navidrome API credentials are mounted as a separate JSON file and are shared by scan and player calls. ZIP log export and a secret-redaction layer are hardening tasks.
 
+## Your settings
+
+Settings has two pages behind one Settings entry, and a Server / Yours switch at the top of both. Everything above is the server's: shared by whoever opens Musimo, saved in SQLite, and locked by environment where the deployment says so. `/settings/user`, "Your settings", is the other page. Nothing on it reaches the server or another person.
+
+Appearance is its first section. It lists every theme as a card with a strip of its page, card, text and accent colours. Choosing a card applies that theme and remembers it at once; there is no save bar. The cards are a radio group, so arrow keys move between them, and the active one is marked with a tick and the word Active rather than by its border alone. "Musimo dark" is the built-in theme and the one the app falls back to.
+
+- **Duplicate and edit** copies any theme, including the built-in one, and opens the editor. A built-in theme cannot be changed, only copied.
+- **Edit**, **Export** and **Delete** appear on your own themes. Deleting asks once, and deleting the theme you are using puts the default back.
+- **Reset to default** returns to Musimo dark without deleting anything.
+
+The editor takes a name, a dark or light scheme, and one colour per token, grouped as Surfaces, Text, Lines, Accent and Status. Each colour has a native colour picker and a hex field that stay in step. The whole app is the preview: edits paint immediately, Save keeps them and turns the theme on, Cancel puts your saved theme back, and leaving the page without saving does the same. Under the colours, the editor shows the contrast ratio for the pairs people read text through and warns below 4.5:1. That warning never blocks a save.
+
+### Where themes are stored
+
+In this browser only, under `musimo.theme`, `musimo.custom-themes` and `musimo.theme-vars` in local storage. They are not in the database, not in the diagnostics export and not synced. Another browser, another device or a cleared site history starts from the default. Up to 50 of your own themes are kept; if the browser refuses to write, the page says so and the theme is not reported as saved.
+
+### Import and export
+
+Export writes `<theme name>.musimo-theme.json` through the browser's own download. Import takes that file back through the same validation as stored themes: known colour names only, six or eight digit hex values, a name of at most 40 characters. An imported theme always arrives as a new theme, so it cannot overwrite one you already have, and it is turned on once it is read. A file that is not a Musimo theme is refused with a message and changes nothing.
+
 ## Recent activity
 
 Settings and Diagnostics reuse the same activity component. It displays the latest 100 visible events in a keyboard-focusable region with a 320px maximum height. Clear all disables while pending, reports failures and stores a persistent clear point through the snapshot the user saw. Newer events remain visible.
