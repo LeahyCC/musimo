@@ -318,6 +318,9 @@ test('a second tab follows a theme saved in the first', async ({ page, context }
 
 test('the command palette opens the page', async ({ page }) => {
   await page.goto('/')
+  // The shortcut is a window listener an effect adds, so the shell has to be on screen first.
+  // Pressing straight after goto is a race WebKit loses.
+  await page.getByRole('link', { name: 'Library', exact: true }).first().waitFor()
   await page.keyboard.press('ControlOrMeta+k')
   await page.getByRole('dialog', { name: 'Command palette' }).waitFor()
 
