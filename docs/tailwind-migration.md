@@ -110,7 +110,7 @@ Proposed semantic tokens. Merge the near-duplicate hexes onto these; do not pres
 | `--color-scrim`                                                | Dialog and sheet backdrops, image washes | `#000000`                         |
 | `--color-shadow`                                               | Drop shadows                             | `#000000`                         |
 
-Phase 1 added five more, because nothing above could express them:
+Phase 1 added three more, because nothing above could express them:
 
 | Token                  | Role                                                                               | Value     |
 | ---------------------- | ---------------------------------------------------------------------------------- | --------- |
@@ -285,7 +285,7 @@ Two lanes can run at once after phase 3 because search and library touch differe
 ### Phase T2: personal settings page
 
 - Add `/settings/user`, the Server / Yours switch, the palette command, the picker, the editor, import, export, delete and reset.
-- Add `e2e/theme.spec.ts` with a light fixture theme in `e2e/theme-fixtures.ts`: create, edit, cancel, save, reload, export, import, delete, a second tab following the first, a rejected bad import, and axe on the page at desktop and phone width.
+- Extend `e2e/theme.spec.ts` (phase T1 added it, with the light fixture theme in `e2e/theme-fixtures.ts`): create, edit, cancel, save, reload, export, import, delete, a second tab following the first, a rejected bad import, and axe on the page at desktop and phone width.
 
 **Check:** the new spec, `e2e/a11y.spec.ts` and `e2e/phone.spec.ts`.
 
@@ -356,7 +356,7 @@ Do not “clean up” these as part of Tailwind unless a user asks: inline text 
 4. **Popout:** after any global CSS move, open Now Playing and pop out once. `copyStyles` must still see the generated Tailwind sheet.
 5. **Coarse pointer:** if you change a control’s size, the `coarse:` (or leftover `@media (pointer: coarse)`) rule must still win. The phone spec measures this.
 6. **No sideways scroll, no element wider than its box** on the screens you touched. That was the 10 September walk’s probe; keep the spirit even without the temporary script.
-7. **Themes:** the no-raw-color test passes, and once phase T2 has added the light fixture theme in `e2e/theme-fixtures.ts`, the screens you touched look right under it. The rest of the suite runs under the default theme.
+7. **Themes:** the no-raw-color test passes, and the screens you touched look right under the light fixture theme in `e2e/theme-fixtures.ts`. The rest of the suite runs under the default theme.
 8. Update [UI verification](ui-verification.md) only when a walk finds or closes a user-visible issue. Do not log a class-only conversion there.
 
 ## Out of scope

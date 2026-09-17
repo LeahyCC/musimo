@@ -8,6 +8,13 @@ import globals from 'globals'
 export default [
   { ignores: ['dist'] },
   {
+    // `public/theme-boot.js` runs in <head> before the module bundle, so it is a classic script
+    // rather than a module and the TypeScript block below does not reach it.
+    files: ['public/*.js'],
+    ...js.configs.recommended,
+    languageOptions: { sourceType: 'script', globals: globals.browser },
+  },
+  {
     files: ['**/*.{ts,tsx}'],
     ...js.configs.recommended,
     languageOptions: {
