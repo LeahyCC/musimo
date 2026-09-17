@@ -182,13 +182,9 @@ export const durationText = (seconds: number) =>
 // One request per row is fine for a picker; filter the list to reach the rest.
 const PICKER_ROWS = 25
 
-/* The footer packs more controls into its row than a page does, so its icon buttons run smaller
-   than the primitive's own size. The primitive's `coarse:` rule still raises them to 44px. */
-const footerIconClassName = 'min-h-[36px] min-w-[32px]'
-/* Fixed to the bottom edge, clearing the sidebar on a desktop and sitting on the bottom bar on a
-   phone, where it shrinks to a single row and hides itself with nothing playing. `live-player`
-   carries no styling of its own; it is the hook the player, playlist and popout specs use, and
-   the one the leftover seek-bar rules in style.css hang off. */
+/* `live-player` carries no styling of its own. It is the hook the player, playlist and popout
+   specs use, and the one the leftover seek-bar rules in style.css hang off. The idle footer is
+   hidden on a phone where it is rendered, not here. */
 const footerClassName = cx(
   'live-player fixed right-[var(--safe-right)] bottom-0 left-[calc(var(--sidebar-width)+var(--safe-left))] z-bar flex h-[75px] items-center justify-between gap-[20px] border-t border-line-strong bg-raised px-[33px]',
   'max-tablet:gap-[10px] max-tablet:px-[16px]',
@@ -254,6 +250,7 @@ function PlaylistPickerRow({
     <div className="playlist-picker-row">
       <div className="playlist-picker-head">
         <IconButton
+          size="compact"
           className={cx('playlist-picker-expand', expanded && 'open')}
           aria-label={`${expanded ? 'Hide' : 'Show'} songs in ${playlist.name}`}
           aria-expanded={expanded}
@@ -296,6 +293,7 @@ function PlaylistPickerRow({
                 <small>{song.artist}</small>
               </span>
               <IconButton
+                size="compact"
                 aria-label={`Remove ${song.title} from ${playlist.name}`}
                 disabled={busy}
                 onClick={() => onRemoveSong(songIndex)}
@@ -893,10 +891,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     >
       {children}
       <footer ref={footerRef} className={cx(footerClassName, !activeTitle && 'max-phone:hidden')}>
-        <div className="now-playing flex min-w-0 flex-1 items-center gap-[13px] text-small max-phone:gap-[10px]">
-          {activeArt ? <img src={activeArt} alt="" /> : <Disc3 size={30} className="text-faint" />}
-          <span>
-            <strong>
+        <div className="flex min-w-0 flex-1 items-center gap-[13px] text-small max-phone:gap-[10px] [&_a:hover]:underline">
+          {activeArt ? (
+            <img className="size-[45px] rounded-md max-phone:size-[40px]" src={activeArt} alt="" />
+          ) : (
+            <Disc3 size={30} className="text-faint" />
+          )}
+          <span className="min-w-0">
+            <strong className="block truncate text-small font-medium max-phone:text-body">
               {isLibrary ? (
                 <Link to="/now-playing">{activeTitle}</Link>
               ) : track?.album_id ? (
@@ -912,7 +914,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               )}
             </strong>
             {activeArtist && (
-              <small className="player-byline mt-[5px] block text-caption text-muted">
+              <small className="mt-[5px] block truncate text-caption text-muted max-phone:mt-[2px] max-phone:max-w-full max-phone:text-tiny max-phone:leading-[1.3]">
                 {libraryTrack?.artistId ? (
                   <Link
                     to="/library/artists/$artistId"
@@ -948,13 +950,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 )}
               </small>
             )}
-            <small className="playback-notice mt-[5px] block text-caption text-muted" role="status">
+            <small
+              className="mt-[2px] block truncate text-caption text-muted max-phone:mt-[2px] max-phone:max-w-full max-phone:text-tiny max-phone:leading-[1.3]"
+              role="status"
+            >
               {notice}
             </small>
           </span>
         </div>
         {isLibrary && (
-          <div className="flex items-center gap-[4px] text-small max-phone:hidden">
+          <div className="flex items-center gap-[13px] text-small max-phone:hidden">
             <IconButton
               active={isLiked}
               // The label already says which way the press goes, so a pressed state on top of it
@@ -964,7 +969,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 isLiked ? `Remove ${activeTitle} from liked` : `Add ${activeTitle} to liked`
               }
               disabled={!canToggleLiked || playlistSongs.busy(likedPlaylist.data?.id ?? '')}
-              className={footerIconClassName}
+              size="compact"
               onClick={() => toggleLikedTrack()}
             >
               <ThumbsUp size={16} fill={isLiked ? 'currentColor' : 'none'} />
@@ -972,14 +977,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             <IconButton
               aria-label={`Add ${activeTitle} to a playlist`}
               disabled={!isLibrary}
-              className={footerIconClassName}
+              size="compact"
               onClick={() => openPlaylistDialog()}
             >
               <Plus size={16} />
             </IconButton>
             <Link
               data-ui="icon-button"
-              className={iconButtonClassName(false, cx('open-now-playing', footerIconClassName))}
+              className={iconButtonClassName(false, 'shrink-0', 'compact')}
               aria-label="Open Now Playing"
               to="/now-playing"
             >
@@ -990,7 +995,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         <div className="playback-controls flex items-center gap-[12px] text-tiny text-muted max-phone:gap-[2px]">
           {isLibrary ? (
             <IconButton
-              className={cx(footerIconClassName, 'max-phone:hidden')}
+              size="compact"
+              className="max-phone:hidden"
               aria-label="Previous track"
               onClick={previous}
             >
@@ -998,7 +1004,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             </IconButton>
           ) : (
             <IconButton
-              className={cx(footerIconClassName, 'max-phone:hidden')}
+              size="compact"
+              className="max-phone:hidden"
               aria-label="Restart preview"
               disabled={!ready}
               onClick={() => {
@@ -1023,11 +1030,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             {playing ? <Pause size={19} /> : <Play size={19} />}
           </button>
           {isLibrary && (
-            <IconButton
-              className={footerIconClassName}
-              aria-label="Next track"
-              onClick={() => next()}
-            >
+            <IconButton size="compact" aria-label="Next track" onClick={() => next()}>
               <SkipForward size={17} />
             </IconButton>
           )}
@@ -1037,7 +1040,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           <input
             className={cx(
               'w-[140px] accent-accent max-tablet:w-[90px]',
-              'max-phone:absolute max-phone:top-[-6px] max-phone:left-0 max-phone:m-0 max-phone:block max-phone:h-[13px] max-phone:w-full max-phone:appearance-none max-phone:bg-transparent max-phone:outline-offset-[-2px] max-phone:disabled:opacity-60',
+              'max-phone:absolute max-phone:top-[-6px] max-phone:left-0 max-phone:m-0 max-phone:block max-phone:h-[13px] max-phone:w-full max-phone:appearance-none max-phone:bg-transparent max-phone:disabled:opacity-60',
             )}
             aria-label={isLibrary ? 'Playback position' : 'Preview position'}
             type="range"
@@ -1051,12 +1054,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           />
           <span className="max-phone:hidden">{durationText(length)}</span>
         </div>
-        <div className="volume-controls flex items-center gap-[4px] text-small max-phone:hidden">
+        <div className="flex items-center gap-[4px] text-small max-phone:hidden">
           {isLibrary && (
             <>
               <IconButton
                 active={shuffle}
-                className={footerIconClassName}
+                size="compact"
                 aria-label="Shuffle"
                 onClick={toggleShuffle}
               >
@@ -1064,13 +1067,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               </IconButton>
               <IconButton
                 active={repeat !== 'off'}
-                className={footerIconClassName}
+                size="compact"
                 aria-label={`Repeat ${repeat}`}
                 onClick={cycleRepeat}
               >
                 <Repeat size={17} />
                 {repeat === 'one' && (
-                  <small className="absolute mt-[5px] block translate-x-[7px] translate-y-[7px] text-[8px] text-accent max-phone:text-micro">
+                  <small className="absolute mt-[5px] block translate-x-[7px] translate-y-[7px] text-[8px] text-accent">
                     1
                   </small>
                 )}
@@ -1078,7 +1081,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             </>
           )}
           <IconButton
-            className={footerIconClassName}
+            size="compact"
             aria-label={
               isLibrary ? (muted ? 'Unmute' : 'Mute') : muted ? 'Unmute preview' : 'Mute preview'
             }
@@ -1087,6 +1090,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
           </IconButton>
           <input
+            className="w-[80px] accent-accent max-tablet:w-[64px]"
             type="range"
             aria-label={isLibrary ? 'Volume' : 'Preview volume'}
             min="0"
@@ -1098,7 +1102,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         </div>
         {(track || libraryTrack) && (
           <IconButton
-            className={footerIconClassName}
+            size="compact"
             aria-label={isLibrary ? 'Close player' : 'Close preview'}
             onClick={stop}
           >
@@ -1117,7 +1121,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           >
             <header>
               <h2>Add to playlist</h2>
-              <IconButton aria-label="Close playlist picker" onClick={() => closePlaylistDialog()}>
+              <IconButton
+                size="compact"
+                aria-label="Close playlist picker"
+                onClick={() => closePlaylistDialog()}
+              >
                 <X size={16} />
               </IconButton>
             </header>

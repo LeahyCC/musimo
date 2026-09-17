@@ -248,13 +248,12 @@ function Shell() {
         Skip to content
       </a>
       {/* `sidebar` carries no styling; it is the hook `e2e/app.spec.ts` and `e2e/phone.spec.ts`
-          measure the bottom bar with. Desktop pins a column down the left edge, a phone pins a
-          bar across the bottom whose height and padding grow by the home-indicator inset. */}
+          measure the bottom bar with. */}
       <aside
         className={cx(
-          'sidebar fixed top-0 bottom-0 left-[var(--safe-left)] flex w-[var(--sidebar-width)] flex-col border-r border-line bg-sidebar pt-[33px] pr-[19px] pb-[98px] pl-[19px]',
-          'max-tablet:pr-[13px] max-tablet:pl-[13px]',
-          'max-phone:top-auto max-phone:right-0 max-phone:bottom-0 max-phone:left-0 max-phone:z-bar max-phone:h-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:w-auto max-phone:border-t max-phone:border-r-0 max-phone:pt-0 max-phone:pr-[var(--safe-right)] max-phone:pb-[var(--safe-bottom)] max-phone:pl-[var(--safe-left)]',
+          'sidebar fixed inset-y-0 left-[var(--safe-left)] flex w-[var(--sidebar-width)] flex-col border-r border-line bg-sidebar px-[19px] pt-[33px] pb-[98px]',
+          'max-tablet:px-[13px]',
+          'max-phone:inset-x-0 max-phone:top-auto max-phone:z-bar max-phone:h-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:w-auto max-phone:border-t max-phone:border-r-0 max-phone:pt-0 max-phone:pr-[var(--safe-right)] max-phone:pb-[var(--safe-bottom)] max-phone:pl-[var(--safe-left)]',
         )}
       >
         <Link
@@ -263,7 +262,7 @@ function Shell() {
         >
           musimo<span className="text-accent">.</span>
         </Link>
-        <div className="mt-[51px] mr-[12px] mb-[17px] ml-[12px] text-micro tracking-[1.6px] text-faint max-phone:hidden">
+        <div className="mx-[12px] mt-[51px] mb-[17px] text-micro tracking-[1.6px] text-faint max-phone:hidden">
           YOUR MUSIC, AT HOME
         </div>
         <nav
@@ -275,10 +274,8 @@ function Shell() {
               key={to}
               to={to}
               className={navLinkClassName}
-              // The selected destination keeps its accent while the pointer is over it, so the
-              // hover pair is repeated here rather than left to the inactive one.
               activeProps={{
-                'className': 'bg-active text-accent hover:bg-active hover:text-accent',
+                'className': 'bg-active text-accent',
                 'aria-current': 'page',
               }}
               inactiveProps={{ className: 'text-muted hover:bg-hover hover:text-text' }}
@@ -288,7 +285,7 @@ function Shell() {
               {to === '/search' && <Kbd className="ml-auto !text-small opacity-60">/</Kbd>}
               {to === '/downloads' && activeDownloads > 0 && (
                 // Only the phone bottom bar shows the count; wider layouts have the queue dock.
-                <span className="nav-badge hidden max-phone:absolute max-phone:top-[5px] max-phone:left-[calc(50%+6px)] max-phone:grid max-phone:h-[18px] max-phone:min-w-[18px] max-phone:place-items-center max-phone:rounded-[9px] max-phone:bg-accent-hot max-phone:px-[5px] max-phone:text-caption max-phone:font-bold max-phone:text-accent-ink">
+                <span className="nav-badge hidden max-phone:absolute max-phone:top-[5px] max-phone:left-[calc(50%+6px)] max-phone:grid max-phone:h-[18px] max-phone:min-w-[18px] max-phone:place-items-center max-phone:rounded-pill max-phone:bg-accent-hot max-phone:px-[5px] max-phone:text-caption max-phone:font-bold max-phone:text-accent-ink">
                   <span className="sr-only">, </span>
                   {activeDownloads}
                   <span className="sr-only"> active</span>
@@ -297,7 +294,7 @@ function Shell() {
             </Link>
           ))}
         </nav>
-        <footer className="mt-auto mr-[7px] mb-0 ml-[7px] text-small text-muted max-phone:hidden">
+        <footer className="mx-[7px] mt-auto text-small text-muted max-phone:hidden">
           <div className="flex items-center gap-[10px]">
             <Radio size={18} />
             <div>
@@ -336,11 +333,11 @@ function Shell() {
           </div>
         </footer>
       </aside>
-      <div className="ml-[calc(var(--sidebar-width)+var(--safe-left))] pr-[var(--safe-right)] max-phone:mr-0 max-phone:ml-0 max-phone:pr-0">
+      <div className="ml-[calc(var(--sidebar-width)+var(--safe-left))] pr-[var(--safe-right)] max-phone:ml-0 max-phone:pr-0">
         <header
           className={cx(
-            'sticky top-0 z-header flex h-[calc(var(--topbar-height)+var(--safe-top))] items-center justify-between gap-[18px] border-b border-line bg-canvas pt-[var(--safe-top)] pr-[43px] pb-0 pl-[43px]',
-            'max-tablet:pr-[27px] max-tablet:pl-[27px]',
+            'sticky top-0 z-header flex h-[calc(var(--topbar-height)+var(--safe-top))] items-center justify-between gap-[18px] border-b border-line bg-canvas px-[43px] pt-[var(--safe-top)]',
+            'max-tablet:px-[27px]',
             'max-phone:gap-[12px] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
           )}
         >
@@ -383,10 +380,7 @@ function Shell() {
             role="status"
           >
             <i
-              className={cx(
-                'h-[6px] w-[6px] rounded-full',
-                status === 'Live' ? 'bg-accent' : 'bg-warn',
-              )}
+              className={cx('size-[6px] rounded-full', status === 'Live' ? 'bg-accent' : 'bg-warn')}
             />
             {status}
           </span>
