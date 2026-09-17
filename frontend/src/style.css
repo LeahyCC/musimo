@@ -17,6 +17,9 @@
   --color-active: #263327;
   /* Solid backing behind artwork and the visualizer, where the picture is the only color wanted. */
   --color-media: #020305;
+  /* Text and icons drawn over artwork or the scrim. A light theme turns --color-text dark, and
+     these sit on a picture, not on the page. */
+  --color-on-media: #ffffff;
 
   /* Text */
   --color-text: #e8ece8;
@@ -47,11 +50,6 @@
   --color-partial: #e4cc9c;
   --color-partial-bg: #3a3224;
   --color-partial-line: #4b4b3a;
-
-  /* Marks */
-  --color-source: #ceb6d8;
-  --color-source-bg: #483252;
-  --color-heart: #ef4444;
 
   /* Depth. Backdrops and washes take the scrim, drop shadows take the shadow, both through an
      opacity modifier or a color-mix so a theme can tint them. */
@@ -95,10 +93,11 @@
   /* Four named widths replace the six the sheet used. `phone` is 48rem so `max-phone:` cuts at
      the same place as the `max-width: 767px` blocks below; `tablet` and `split` keep the narrow
      sidebar and the stacked Now Playing columns where they are. */
-  --breakpoint-phone: 48rem;
-  --breakpoint-tablet: 1100px;
-  --breakpoint-split: 900px;
-  --breakpoint-wide: 1500px;
+  --breakpoint-*: initial;
+  --breakpoint-phone: 48rem; /* 768px */
+  --breakpoint-split: 56.25rem; /* 900px */
+  --breakpoint-tablet: 68.75rem; /* 1100px */
+  --breakpoint-wide: 93.75rem; /* 1500px */
 }
 
 /* The queries that are not about width. `motion-reduce:` already ships with Tailwind. */
@@ -129,6 +128,8 @@
   --player-height: 75px;
   /* How much of the seek bar sits behind the playhead. The footer sets it on the range input. */
   --progress: 0%;
+  /* The border a row, card or link lights up with. Derived, so a theme does not have to name it. */
+  --line-hover: color-mix(in oklab, var(--color-line-strong), var(--color-muted) 35%);
   /* Notch and home-indicator insets; 0 until viewport-fit=cover meets a device that has them. */
   --safe-top: env(safe-area-inset-top, 0px);
   --safe-right: env(safe-area-inset-right, 0px);
@@ -136,10 +137,6 @@
   --safe-left: env(safe-area-inset-left, 0px);
   /* Short names the rules below were written against. Later phases of the migration retire them
      in favour of the --color-* tokens. */
-  --text: var(--color-text);
-  --muted: var(--color-muted);
-  --line: var(--color-line);
-  --accent: var(--color-accent);
 }
 * {
   box-sizing: border-box;
@@ -173,7 +170,7 @@ button:focus-visible,
 a:focus-visible,
 input:focus-visible,
 select:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-accent);
   outline-offset: 4px;
 }
 .sr-only {
@@ -208,7 +205,7 @@ h3 {
   font-weight: 550;
 }
 p {
-  color: var(--muted);
+  color: var(--color-muted);
   line-height: 1.6;
 }
 .app {
@@ -220,7 +217,7 @@ p {
   inset: 0 auto 0 var(--safe-left);
   background: var(--color-sidebar);
   padding: 33px 19px 98px;
-  border-right: 1px solid var(--line);
+  border-right: 1px solid var(--color-line);
   display: flex;
   flex-direction: column;
 }
@@ -233,7 +230,7 @@ p {
   padding: 0 8px;
 }
 .brand-dot {
-  color: var(--accent);
+  color: var(--color-accent);
 }
 .nav-caption {
   margin: 51px 12px 17px;
@@ -260,7 +257,7 @@ p {
 }
 .nav-link.active {
   background: var(--color-active);
-  color: var(--accent);
+  color: var(--color-accent);
 }
 .nav-link kbd {
   margin-left: auto;
@@ -297,14 +294,14 @@ p {
   align-items: center;
   gap: 8px;
   padding: 7px 9px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 6px;
   color: var(--color-muted);
   font-size: 11px;
 }
 .sidebar-actions a:hover {
-  border-color: var(--color-line-strong);
-  color: var(--accent);
+  border-color: var(--line-hover);
+  color: var(--color-accent);
 }
 .workspace {
   margin-left: calc(var(--sidebar-width) + var(--safe-left));
@@ -312,7 +309,7 @@ p {
 }
 .topbar {
   height: calc(var(--topbar-height) + var(--safe-top));
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-line);
   padding: var(--safe-top) 43px 0;
   display: flex;
   align-items: center;
@@ -350,7 +347,7 @@ kbd {
 }
 .connection {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--color-muted);
   display: flex;
   align-items: center;
   gap: 7px;
@@ -363,7 +360,7 @@ kbd {
   background: var(--color-warn);
 }
 .connection.online i {
-  background: var(--accent);
+  background: var(--color-accent);
 }
 main {
   max-width: 1360px;
@@ -395,7 +392,7 @@ main {
   align-items: center;
   font-size: 9px;
   letter-spacing: 1px;
-  color: var(--color-accent);
+  color: var(--color-good);
   padding: 6px 9px;
   background: var(--color-good-bg);
   border-radius: 4px;
@@ -425,9 +422,9 @@ main {
   background: var(--color-active);
 }
 .button.primary {
-  background: var(--accent);
+  background: var(--color-accent);
   color: var(--color-accent-ink);
-  border-color: var(--accent);
+  border-color: var(--color-accent);
 }
 .button.primary:hover {
   background: color-mix(in oklab, var(--color-accent) 75%, var(--color-text));
@@ -512,7 +509,7 @@ main {
   padding: 0 17px;
 }
 .section-index a:hover {
-  color: var(--accent);
+  color: var(--color-accent);
 }
 .settings-section {
   scroll-margin-top: 115px;
@@ -521,7 +518,7 @@ main {
 .settings-section h2 {
   font-size: 17px;
   padding-bottom: 17px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-line);
 }
 .setting-row {
   display: grid;
@@ -606,17 +603,17 @@ main {
 .source-logo {
   width: 42px;
   height: 42px;
-  background: var(--color-source-bg);
+  background: var(--color-partial-bg);
   display: grid;
   place-items: center;
   font-size: 26px;
-  color: var(--color-source);
+  color: var(--color-partial);
   border-radius: 8px;
   font-weight: 650;
   flex-shrink: 0;
 }
 .muted {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .small {
   font-size: 12px;
@@ -659,7 +656,7 @@ main {
   margin-left: auto;
 }
 .health-icon {
-  color: var(--accent);
+  color: var(--color-accent);
   border-radius: 50%;
   border: 1px solid var(--color-good-line);
   padding: 7px;
@@ -671,7 +668,7 @@ main {
   gap: 22px;
 }
 .panel {
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   padding: 23px;
   border-radius: 8px;
 }
@@ -686,7 +683,7 @@ main {
 .status-chip.good {
   background: var(--color-good-bg);
   border-color: var(--color-good-line);
-  color: var(--accent);
+  color: var(--color-good);
 }
 .probe-bottom {
   display: flex;
@@ -745,7 +742,7 @@ meter::-webkit-meter-optimum-value {
   gap: 14px;
   align-items: flex-start;
   padding-bottom: 16px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-line);
 }
 .readiness-item:last-child {
   border-bottom: none;
@@ -758,7 +755,7 @@ meter::-webkit-meter-optimum-value {
   display: block;
   font-size: 12px;
   margin-bottom: 4px;
-  color: var(--text);
+  color: var(--color-text);
 }
 .readiness-item p,
 .readiness-item code,
@@ -790,7 +787,7 @@ meter::-webkit-meter-optimum-value {
 .readiness-badge.ready {
   background: var(--color-good-bg);
   border: 1px solid var(--color-good-line);
-  color: var(--accent);
+  color: var(--color-good);
 }
 .readiness-badge.not-ready {
   background: var(--color-danger-bg);
@@ -811,7 +808,7 @@ meter::-webkit-meter-optimum-value {
 .readiness-feedback.success {
   background: var(--color-good-bg);
   border: 1px solid var(--color-good-line);
-  color: var(--accent);
+  color: var(--color-good);
 }
 .readiness-feedback.error {
   background: var(--color-danger-bg);
@@ -830,7 +827,7 @@ meter::-webkit-meter-optimum-value {
 .settings-status.ready {
   background: var(--color-good-bg);
   border: 1px solid var(--color-good-line);
-  color: var(--accent);
+  color: var(--color-good);
 }
 .settings-status.not-ready {
   background: var(--color-danger-bg);
@@ -857,7 +854,7 @@ meter::-webkit-meter-optimum-value {
   flex-direction: column;
   gap: 7px;
   padding: 13px 0;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-line);
   overflow-wrap: anywhere;
 }
 .versions dt {
@@ -887,7 +884,7 @@ meter::-webkit-meter-optimum-value {
   gap: 12px;
   align-items: center;
   font-size: 12px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-line);
   padding: 13px 0;
 }
 .event-dot {
@@ -913,7 +910,7 @@ meter::-webkit-meter-optimum-value {
   min-height: 390px;
   text-align: center;
   gap: 20px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 9px;
   margin-top: 30px;
   padding: 30px;
@@ -963,7 +960,7 @@ meter::-webkit-meter-optimum-value {
 .skip {
   position: absolute;
   top: -60px;
-  background: var(--accent);
+  background: var(--color-accent);
   color: var(--color-accent-ink);
   padding: 10px;
   z-index: var(--z-index-skip);
@@ -1028,7 +1025,7 @@ meter::-webkit-meter-optimum-value {
     height: calc(var(--nav-height) + var(--safe-bottom));
     padding: 0 var(--safe-right) var(--safe-bottom) var(--safe-left);
     border-right: 0;
-    border-top: 1px solid var(--line);
+    border-top: 1px solid var(--color-line);
     z-index: var(--z-index-bar);
   }
   .brand,
@@ -1199,7 +1196,7 @@ meter::-webkit-meter-optimum-value {
 }
 .discovery-home em {
   font-style: normal;
-  color: var(--accent);
+  color: var(--color-accent);
 }
 .discovery-home p {
   max-width: 490px;
@@ -1214,13 +1211,13 @@ meter::-webkit-meter-optimum-value {
 .discovery-note {
   display: flex;
   gap: 16px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-line);
   padding-top: 26px;
-  color: var(--accent);
+  color: var(--color-accent);
 }
 .discovery-note small {
   display: block;
-  color: var(--muted);
+  color: var(--color-muted);
   margin-top: 7px;
 }
 .search-toolbar {
@@ -1228,7 +1225,7 @@ meter::-webkit-meter-optimum-value {
   align-items: center;
   gap: 16px;
   flex-wrap: wrap;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-line);
   padding-bottom: 18px;
 }
 .result-tabs {
@@ -1242,18 +1239,18 @@ meter::-webkit-meter-optimum-value {
   border: 0;
   background: transparent;
   padding: 10px 17px;
-  color: var(--muted);
+  color: var(--color-muted);
   border-radius: 22px;
 }
 .result-tabs .selected {
   color: var(--color-accent-ink);
-  background: var(--accent);
+  background: var(--color-accent);
 }
 .sort-control {
   display: flex;
   align-items: center;
   gap: 10px;
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 13px;
 }
 .sort-control select,
@@ -1261,7 +1258,7 @@ meter::-webkit-meter-optimum-value {
 .filter-chips input,
 .album-actions select {
   background: var(--color-sunken);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 7px;
   padding: 8px;
   color: var(--color-text);
@@ -1278,7 +1275,7 @@ meter::-webkit-meter-optimum-value {
   flex-direction: column;
   gap: 5px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .filter-chips input[type='number'] {
   width: 93px;
@@ -1321,7 +1318,7 @@ meter::-webkit-meter-optimum-value {
 .music-card:hover,
 .music-card:focus-within {
   background: var(--color-hover);
-  border-color: var(--line);
+  border-color: var(--color-line);
 }
 .result-art {
   aspect-ratio: 1;
@@ -1347,7 +1344,7 @@ meter::-webkit-meter-optimum-value {
   display: grid;
   place-items: center;
   border: 0;
-  color: var(--color-text);
+  color: var(--color-on-media);
   background: color-mix(in oklab, var(--color-scrim) 47%, transparent);
   opacity: 0;
   transition: opacity 0.15s;
@@ -1374,7 +1371,7 @@ meter::-webkit-meter-optimum-value {
   border-radius: 12px;
 }
 .card-primary-link:focus-visible::after {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-accent);
   outline-offset: 3px;
 }
 .card-secondary-link,
@@ -1387,13 +1384,13 @@ meter::-webkit-meter-optimum-value {
   position: absolute;
 }
 .music-card small {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 12px;
 }
 .music-card meter {
   height: 4px;
   width: 100%;
-  accent-color: var(--accent);
+  accent-color: var(--color-accent);
 }
 .ownership {
   font-size: 10px;
@@ -1432,7 +1429,7 @@ meter::-webkit-meter-optimum-value {
   background: var(--color-hover);
 }
 .track-row:focus {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-accent);
   outline-offset: -2px;
 }
 .track-row .result-art {
@@ -1459,7 +1456,7 @@ meter::-webkit-meter-optimum-value {
 }
 .track-title > a {
   display: block;
-  color: var(--muted);
+  color: var(--color-muted);
   margin-top: 5px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1470,12 +1467,12 @@ meter::-webkit-meter-optimum-value {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .track-year,
 .track-duration {
   width: 32px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .explicit {
   flex-shrink: 0;
@@ -1488,13 +1485,13 @@ meter::-webkit-meter-optimum-value {
 .icon-button {
   border: 0;
   background: transparent;
-  color: var(--muted);
+  color: var(--color-muted);
   padding: 7px;
 }
 .text-preview {
   border: 0;
   background: transparent;
-  color: var(--accent);
+  color: var(--color-accent);
   font-size: 11px;
   width: 65px;
 }
@@ -1544,7 +1541,7 @@ meter::-webkit-meter-optimum-value {
   display: block;
 }
 .best-result small {
-  color: var(--accent);
+  color: var(--color-accent);
   font-size: 10px;
   letter-spacing: 1.5px;
 }
@@ -1553,7 +1550,7 @@ meter::-webkit-meter-optimum-value {
   margin: 7px 0;
 }
 .best-result span {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 12px;
 }
 .live-player {
@@ -1586,11 +1583,11 @@ meter::-webkit-meter-optimum-value {
 .live-player .playback-controls {
   gap: 12px;
   font-size: 11px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .playback-controls input {
   width: 140px;
-  accent-color: var(--accent);
+  accent-color: var(--color-accent);
 }
 .round-play {
   flex-shrink: 0;
@@ -1600,7 +1597,7 @@ meter::-webkit-meter-optimum-value {
   height: 35px;
   display: grid;
   place-items: center;
-  background: var(--accent);
+  background: var(--color-accent);
   color: var(--color-accent-ink);
 }
 .preview-label {
@@ -1608,7 +1605,7 @@ meter::-webkit-meter-optimum-value {
   gap: 8px;
   align-items: center;
   font-size: 10px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .album-header {
   display: flex;
@@ -1634,12 +1631,12 @@ meter::-webkit-meter-optimum-value {
   margin-bottom: 25px;
 }
 .album-actions label {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 12px;
 }
 .album-actions small {
   width: 100%;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 /* The base reset makes svg a block, which put the warning icon on a line of its own. */
 .download-target svg {
@@ -1672,21 +1669,21 @@ meter::-webkit-meter-optimum-value {
   gap: 9px;
   min-height: 44px;
   padding: 7px 13px 7px 7px;
-  color: var(--text);
+  color: var(--color-text);
   background: var(--color-sunken);
   border: 1px solid var(--color-line-strong);
   border-radius: 8px;
 }
 .artist-download-action:hover {
   background: var(--color-hover);
-  border-color: var(--color-line-strong);
+  border-color: var(--line-hover);
 }
 .artist-download-action > svg {
   box-sizing: border-box;
   width: 30px;
   height: 30px;
   padding: 7px;
-  color: var(--accent);
+  color: var(--color-accent);
   background: var(--color-active);
   border-radius: 6px;
 }
@@ -1699,7 +1696,7 @@ meter::-webkit-meter-optimum-value {
   text-align: left;
 }
 .artist-download-action small {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 10px;
   font-weight: 500;
   letter-spacing: 0.12em;
@@ -1720,7 +1717,7 @@ meter::-webkit-meter-optimum-value {
 .artist-release-controls label {
   display: grid;
   gap: 5px;
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 10px;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -1728,7 +1725,7 @@ meter::-webkit-meter-optimum-value {
 .artist-release-controls select {
   min-width: 145px;
   padding: 8px 30px 8px 10px;
-  color: var(--text);
+  color: var(--color-text);
   background: var(--color-sunken);
   border: 1px solid var(--color-line-strong);
   border-radius: 7px;
@@ -1737,7 +1734,7 @@ meter::-webkit-meter-optimum-value {
   text-transform: none;
 }
 .library-panel {
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
   padding: 20px;
   margin: 20px 0;
@@ -1751,7 +1748,7 @@ meter::-webkit-meter-optimum-value {
 }
 .library-panel progress {
   width: 100%;
-  accent-color: var(--accent);
+  accent-color: var(--color-accent);
   margin-bottom: 12px;
 }
 .command-palette {
@@ -1762,7 +1759,7 @@ meter::-webkit-meter-optimum-value {
   background: var(--color-raised);
   color: var(--color-text);
   padding: 18px;
-  border: 1px solid var(--color-line-strong);
+  border: 1px solid var(--line-hover);
   border-radius: 14px;
   box-shadow: 0 20px 90px color-mix(in oklab, var(--color-shadow) 60%, transparent);
 }
@@ -1775,7 +1772,7 @@ meter::-webkit-meter-optimum-value {
   gap: 12px;
   align-items: center;
   padding-bottom: 18px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-line);
 }
 .command-palette input {
   flex: 1;
@@ -1804,7 +1801,7 @@ meter::-webkit-meter-optimum-value {
   background: var(--color-active);
 }
 .command-palette small {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 @media (max-width: 1100px) {
   .track-album {
@@ -1931,7 +1928,7 @@ meter::-webkit-meter-optimum-value {
 }
 .volume-controls input {
   width: 80px;
-  accent-color: var(--accent);
+  accent-color: var(--color-accent);
 }
 .live-player .volume-controls {
   gap: 4px;
@@ -1946,7 +1943,7 @@ meter::-webkit-meter-optimum-value {
 }
 .selected-track {
   background: color-mix(in oklab, var(--color-accent) 9%, transparent);
-  outline: 1px solid var(--accent);
+  outline: 1px solid var(--color-accent);
   outline-offset: -1px;
 }
 @media (max-width: 1100px) {
@@ -2019,7 +2016,7 @@ meter::-webkit-meter-optimum-value {
     height: 3px;
     background: linear-gradient(
       to right,
-      var(--accent) var(--progress, 0%),
+      var(--color-accent) var(--progress, 0%),
       var(--color-line-strong) var(--progress, 0%)
     );
   }
@@ -2029,7 +2026,7 @@ meter::-webkit-meter-optimum-value {
     height: 11px;
     margin-top: -4px;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--color-accent);
   }
   .live-player .playback-controls input[type='range']::-moz-range-track {
     height: 3px;
@@ -2037,14 +2034,14 @@ meter::-webkit-meter-optimum-value {
   }
   .live-player .playback-controls input[type='range']::-moz-range-progress {
     height: 3px;
-    background: var(--accent);
+    background: var(--color-accent);
   }
   .live-player .playback-controls input[type='range']::-moz-range-thumb {
     width: 11px;
     height: 11px;
     border: 0;
     border-radius: 50%;
-    background: var(--accent);
+    background: var(--color-accent);
   }
   .live-player .playback-controls input[type='range']:disabled {
     opacity: 0.6;
@@ -2099,8 +2096,8 @@ meter::-webkit-meter-optimum-value {
   min-height: 36px;
 }
 .album-card-download > .icon-button {
-  color: var(--accent);
-  border: 1px solid var(--line);
+  color: var(--color-accent);
+  border: 1px solid var(--color-line);
   min-height: 36px;
   min-width: 36px;
 }
@@ -2522,10 +2519,10 @@ meter::-webkit-meter-optimum-value {
   max-height: 85dvh;
   overscroll-behavior: contain;
   padding: 24px;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 16px;
   background: var(--color-raised);
-  color: var(--text);
+  color: var(--color-text);
 }
 .artist-download-sheet::backdrop {
   background: color-mix(in oklab, var(--color-scrim) 60%, transparent);
@@ -2551,7 +2548,7 @@ meter::-webkit-meter-optimum-value {
 .artist-download-stats span,
 .artist-download-stats small {
   font-size: 12px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .artist-download-options {
   display: flex;
@@ -2572,7 +2569,7 @@ meter::-webkit-meter-optimum-value {
   max-width: 100%;
   background: var(--color-canvas);
   color: inherit;
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 6px;
   padding: 8px;
 }
@@ -2587,7 +2584,7 @@ meter::-webkit-meter-optimum-value {
   align-items: center;
   gap: 12px;
   padding: 12px 0;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-line);
   cursor: pointer;
 }
 .artist-album-selection img {
@@ -2605,14 +2602,14 @@ meter::-webkit-meter-optimum-value {
 }
 .artist-album-selection small {
   font-size: 11px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .artist-download-sheet footer {
   position: sticky;
   bottom: -24px;
   padding: 16px 0;
   background: var(--color-raised);
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-line);
 }
 /* A fade above the footer says the album list carries on underneath it. */
 .artist-download-sheet footer::before {
@@ -2626,7 +2623,7 @@ meter::-webkit-meter-optimum-value {
   pointer-events: none;
 }
 .artist-download-sheet input[type='checkbox'] {
-  accent-color: var(--accent);
+  accent-color: var(--color-accent);
 }
 @media (max-width: 767px) {
   /* On a phone the selection is a bottom sheet: full width, anchored to the bottom edge, with
@@ -2677,11 +2674,11 @@ meter::-webkit-meter-optimum-value {
   gap: 6px;
   margin-bottom: 28px;
   overflow-x: auto;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid var(--color-line);
 }
 .library-tabs button {
   padding: 11px 14px;
-  color: var(--muted);
+  color: var(--color-muted);
   text-transform: capitalize;
   background: none;
   border: 0;
@@ -2689,7 +2686,7 @@ meter::-webkit-meter-optimum-value {
 }
 .library-tabs button.active {
   color: var(--color-text);
-  border-color: var(--accent);
+  border-color: var(--color-accent);
 }
 .library-grid {
   display: grid;
@@ -2721,7 +2718,7 @@ meter::-webkit-meter-optimum-value {
 }
 .library-card-copy small {
   margin-top: 4px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .library-cover {
   position: relative;
@@ -2732,7 +2729,7 @@ meter::-webkit-meter-optimum-value {
   overflow: hidden;
   color: var(--color-faint);
   background: var(--color-raised);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 10px;
 }
 .library-cover:is(button) {
@@ -2751,7 +2748,7 @@ button.library-card-play {
   width: 38px;
   height: 38px;
   color: var(--color-accent-ink);
-  background: var(--accent);
+  background: var(--color-accent);
   border-radius: 50%;
   border: 0;
   place-items: center;
@@ -2814,7 +2811,7 @@ button.library-card-play.active {
 .library-tracks small,
 .library-tracks time,
 .library-tracks > div > button > span:first-child {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 12px;
 }
 .playlist-form {
@@ -2825,14 +2822,14 @@ button.library-card-play.active {
   padding: 14px;
   margin-bottom: 20px;
   background: var(--color-raised);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 9px;
 }
 .playlist-form label {
   display: grid;
   gap: 6px;
   min-width: min(320px, 100%);
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 12px;
 }
 .playlist-form input {
@@ -2840,7 +2837,7 @@ button.library-card-play.active {
   padding: 0 10px;
   color: inherit;
   background: var(--color-canvas);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 6px;
 }
 .playlist-form .error {
@@ -2849,7 +2846,7 @@ button.library-card-play.active {
 }
 .playlist-add {
   padding-top: 12px;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-line);
 }
 .playlist-add .library-search {
   width: min(420px, 100%);
@@ -2866,7 +2863,7 @@ button.library-card-play.active {
   justify-content: space-between;
   padding: 9px 12px;
   background: var(--color-raised);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 6px;
 }
 .playlist-add-list span {
@@ -2876,7 +2873,7 @@ button.library-card-play.active {
 }
 .playlist-add-list small {
   overflow: hidden;
-  color: var(--muted);
+  color: var(--color-muted);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -2892,9 +2889,9 @@ button.library-card-play.active {
   align-items: center;
   width: min(420px, 100%);
   padding: 0 12px;
-  color: var(--muted);
+  color: var(--color-muted);
   background: var(--color-sunken);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
 }
 .library-search input {
@@ -2908,7 +2905,7 @@ button.library-card-play.active {
 .library-search button {
   display: grid;
   padding: 7px;
-  color: var(--muted);
+  color: var(--color-muted);
   background: none;
   border: 0;
   place-items: center;
@@ -2919,9 +2916,9 @@ button.library-card-play.active {
   align-items: center;
   min-height: 42px;
   padding: 0 10px;
-  color: var(--muted);
+  color: var(--color-muted);
   background: var(--color-sunken);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
 }
 .library-select select {
@@ -2934,9 +2931,9 @@ button.library-card-play.active {
 .library-filter {
   position: relative;
   min-width: 125px;
-  color: var(--muted);
+  color: var(--color-muted);
   background: var(--color-sunken);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
 }
 .library-filter summary {
@@ -2956,7 +2953,7 @@ button.library-card-play.active {
   overflow: auto;
   overscroll-behavior: contain;
   background: var(--color-sunken);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
   box-shadow: 0 14px 36px color-mix(in oklab, var(--color-shadow) 53%, transparent);
 }
@@ -2969,13 +2966,13 @@ button.library-card-play.active {
   font-size: 12px;
 }
 .library-filter input {
-  accent-color: var(--accent);
+  accent-color: var(--color-accent);
 }
 .library-clear-filters {
   padding: 9px 5px;
 }
 .library-count {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 12px;
   white-space: nowrap;
 }
@@ -2989,22 +2986,22 @@ button.library-card-play.active {
   display: flex;
   padding: 3px;
   background: var(--color-sunken);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
 }
 .library-layout-toggle .icon-button {
   width: 34px;
   height: 34px;
-  color: var(--muted);
+  color: var(--color-muted);
   border-radius: 6px;
 }
 .library-layout-toggle .icon-button[aria-pressed='true'] {
   color: var(--color-accent-ink);
-  background: var(--accent);
+  background: var(--color-accent);
 }
 .library-no-results {
   padding: 64px 16px;
-  color: var(--muted);
+  color: var(--color-muted);
   text-align: center;
 }
 .infinite-sentinel {
@@ -3012,7 +3009,7 @@ button.library-card-play.active {
   min-height: 42px;
   align-items: center;
   justify-content: center;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .library-list {
   display: grid;
@@ -3037,12 +3034,12 @@ button.library-card-play.active {
   min-width: 0;
   padding: 12px;
   background: var(--color-raised);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 9px;
 }
 .library-artist-card:hover,
 .library-artist-card:focus-within {
-  border-color: var(--color-line-strong);
+  border-color: var(--line-hover);
 }
 .library-artist-open {
   display: flex;
@@ -3067,7 +3064,7 @@ button.library-card-play.active {
   white-space: nowrap;
 }
 .library-artist-open small {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .library-artist-art {
   display: grid;
@@ -3126,12 +3123,12 @@ button.library-card-play.active {
   min-width: 0;
   padding: 7px 10px;
   background: var(--color-sunken);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
 }
 .library-collection-row:hover,
 .library-collection-row:focus-within {
-  border-color: var(--color-line-strong);
+  border-color: var(--line-hover);
 }
 .library-collection-art {
   display: grid;
@@ -3165,7 +3162,7 @@ button.library-card-play.active {
   white-space: nowrap;
 }
 .library-collection-open small {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .library-collection-actions,
 .library-list-actions {
@@ -3191,18 +3188,18 @@ button.library-card-play.active {
   color: inherit;
   text-align: left;
   background: var(--color-raised);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 9px;
 }
 .library-list button:hover {
-  border-color: var(--color-line-strong);
+  border-color: var(--line-hover);
 }
 .library-list-row {
   display: flex;
   gap: 6px;
   align-items: center;
   background: var(--color-raised);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 9px;
 }
 .library-list-row .library-collection-actions {
@@ -3237,7 +3234,7 @@ button.library-card-play.active {
   align-self: center;
   padding: 8px;
   margin-right: 4px;
-  color: var(--muted);
+  color: var(--color-muted);
   background: transparent;
   border: 0;
   opacity: 0;
@@ -3256,7 +3253,7 @@ button.library-card-play.active {
 }
 .library-list-row:hover,
 .library-list-row:focus-within {
-  border-color: var(--color-line-strong);
+  border-color: var(--line-hover);
 }
 .library-list-row button:hover {
   border-color: transparent;
@@ -3265,7 +3262,7 @@ button.library-card-play.active {
   grid-row: 1 / 3;
 }
 .library-list small {
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .library-empty {
   min-height: 55vh;
@@ -3339,7 +3336,7 @@ button.library-card-play.active {
   font-size: 17px;
 }
 .live-player .icon-button.active {
-  color: var(--accent);
+  color: var(--color-accent);
 }
 .open-now-playing {
   display: grid;
@@ -3382,9 +3379,9 @@ button.library-card-play.active {
 .playlist-picker-search {
   display: flex;
   padding: 0 11px;
-  color: var(--muted);
+  color: var(--color-muted);
   background: var(--color-sunken);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 8px;
 }
 .playlist-picker-search input {
@@ -3402,7 +3399,7 @@ button.library-card-play.active {
   margin-bottom: 10px;
 }
 .playlist-picker-row {
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   background: var(--color-raised);
   border-radius: 8px;
   padding: 8px 10px;
@@ -3425,7 +3422,7 @@ button.library-card-play.active {
 .playlist-picker-head small {
   display: block;
   margin-top: 2px;
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 11px;
 }
 .playlist-picker-head .button {
@@ -3446,7 +3443,7 @@ button.library-card-play.active {
   padding-top: 8px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  border-top: 1px solid var(--line);
+  border-top: 1px solid var(--color-line);
 }
 .playlist-picker-songs > div {
   display: flex;
@@ -3465,12 +3462,12 @@ button.library-card-play.active {
 }
 .playlist-picker-songs small {
   display: block;
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 11px;
 }
 .playlist-picker-empty {
   margin: 6px 0 2px;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .playlist-picker-form {
   display: flex;
@@ -3481,7 +3478,7 @@ button.library-card-play.active {
 .playlist-picker-form label {
   display: grid;
   gap: 6px;
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 12px;
   min-width: min(260px, 100%);
 }
@@ -3490,13 +3487,13 @@ button.library-card-play.active {
   padding: 0 10px;
   color: inherit;
   background: var(--color-canvas);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 6px;
 }
 .live-player .icon-button small {
   position: absolute;
   transform: translate(7px, 7px);
-  color: var(--accent);
+  color: var(--color-accent);
   font-size: 8px;
 }
 
@@ -3578,7 +3575,7 @@ button.library-card-play.active {
   padding: 14px;
   overflow-x: auto;
   background: var(--color-sunken);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 10px;
 }
 .popularity-chart svg {
@@ -3588,20 +3585,20 @@ button.library-card-play.active {
   height: auto;
 }
 .popularity-chart .axis {
-  stroke: var(--line);
+  stroke: var(--color-line);
   stroke-width: 1;
 }
 .popularity-chart .trend {
   fill: none;
-  stroke: var(--accent);
+  stroke: var(--color-accent);
   stroke-width: 2;
   stroke-linejoin: round;
 }
 .popularity-chart .node {
-  fill: var(--accent);
+  fill: var(--color-accent);
 }
 .popularity-chart .tick {
-  fill: var(--muted);
+  fill: var(--color-muted);
   font-size: 11px;
 }
 .popularity-chart .tick.start {
@@ -3611,7 +3608,7 @@ button.library-card-play.active {
   text-anchor: end;
 }
 .popularity-chart small {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 12px;
 }
 .failure-groups {
@@ -3626,16 +3623,16 @@ button.library-card-play.active {
   text-overflow: ellipsis;
   white-space: nowrap;
   padding: 7px 12px;
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 12px;
   background: var(--color-sunken);
-  border: 1px solid var(--line);
+  border: 1px solid var(--color-line);
   border-radius: 999px;
 }
 .failure-groups button.selected {
   color: var(--color-accent-ink);
-  background: var(--accent);
-  border-color: var(--accent);
+  background: var(--color-accent);
+  border-color: var(--color-accent);
 }
 .library-detail .section-heading h2 {
   display: flex;
@@ -3644,7 +3641,7 @@ button.library-card-play.active {
 }
 .library-list-actions .muted,
 .library-actions-note {
-  color: var(--muted);
+  color: var(--color-muted);
   font-size: 12px;
 }
 .library-actions-note {
@@ -3678,7 +3675,7 @@ button.library-card-play.active {
   outline: none;
 }
 .stage:focus-visible {
-  outline: 2px solid var(--accent);
+  outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 .stage:fullscreen {
@@ -3717,10 +3714,10 @@ button.library-card-play.active {
 .stage-select {
   height: 32px;
   padding: 0 8px;
-  border: 1px solid color-mix(in oklab, var(--color-text) 20%, transparent);
+  border: 1px solid color-mix(in oklab, var(--color-on-media) 20%, transparent);
   border-radius: 8px;
   background: color-mix(in oklab, var(--color-scrim) 60%, transparent);
-  color: var(--color-text);
+  color: var(--color-on-media);
   font: inherit;
   font-size: 12px;
 }
@@ -3765,7 +3762,7 @@ button.library-card-play.active {
   font-size: 10px;
   letter-spacing: 1.5px;
   text-transform: uppercase;
-  color: var(--color-muted);
+  color: color-mix(in oklab, var(--color-on-media) 65%, transparent);
   text-shadow: 0 1px 6px var(--color-shadow);
 }
 .stage-actions {
@@ -3779,16 +3776,16 @@ button.library-card-play.active {
     transparent,
     color-mix(in oklab, var(--color-scrim) 80%, transparent)
   );
-  color: var(--color-text);
+  color: var(--color-on-media);
 }
 .stage-controls .icon-button,
 .stage-actions .icon-button {
   min-width: 32px;
   min-height: 36px;
-  color: var(--color-text);
+  color: var(--color-on-media);
 }
 .stage-controls .icon-button.active {
-  color: var(--accent);
+  color: var(--color-accent);
 }
 .stage-controls .icon-button small {
   margin-left: -4px;
@@ -3869,7 +3866,7 @@ button.library-card-play.active {
   display: grid;
   gap: 12px;
   justify-items: center;
-  color: var(--muted);
+  color: var(--color-muted);
 }
 .stage-notice {
   font-size: 12px;

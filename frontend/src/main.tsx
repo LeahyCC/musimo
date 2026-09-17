@@ -259,7 +259,7 @@ function Shell() {
               target="_blank"
               rel="noopener noreferrer"
             >
-              <Heart size={14} fill="var(--color-heart)" stroke="var(--color-heart)" />
+              <Heart size={14} fill="var(--color-danger)" stroke="var(--color-danger)" />
               Donate
             </a>
             <a href="https://ko-fi.com/colinleahy" target="_blank" rel="noopener noreferrer">
