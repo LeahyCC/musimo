@@ -4,7 +4,7 @@ Start with the [README](README.md), [architecture](docs/architecture.md) and the
 
 ## Before starting
 
-Search existing issues and pull requests. Small fixes can go straight to a pull request. For a new provider, dependency, database change or substantial screen redesign, open a proposal describing the user problem and the complete flow first.
+Search existing issues and pull requests. Small fixes can go straight to a pull request. For a new provider, dependency, database change or substantial screen redesign, open a proposal describing the user problem and the complete flow first. Screen and layout work follows [the Tailwind migration plan](docs/tailwind-migration.md): convert one surface at a time and keep the desktop/phone contract in [UI verification](docs/ui-verification.md).
 
 Useful contributions include reproducible bug reports, keyboard/touch accessibility, matching fixtures, documentation corrections, performance measurements and recovery tests. Do not submit credentials, copyrighted recordings without permission, private library indexes or unredacted diagnostics.
 
