@@ -62,6 +62,7 @@ import { CommandPalette } from './palette'
 import { PlayerProvider } from './player'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
+import { startTheme } from './theme/store'
 
 import './style.css'
 
@@ -1324,6 +1325,9 @@ declare module '@tanstack/react-router' {
 }
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing application root')
+// Before the first render, so the tree never paints against the wrong palette. The boot script in
+// <head> has already put a saved theme on <html>; this is what takes ownership of it.
+startTheme()
 createRoot(root).render(
   <QueryClientProvider client={queryClient}>
     <RouterProvider router={router} />
