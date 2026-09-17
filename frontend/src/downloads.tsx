@@ -1034,8 +1034,10 @@ export function QueueDock() {
   if (!active.length) return null
   return (
     <>
+      {/* The dock floats above the footer player, and on a phone it would land on the Save
+          button or the last row's controls, so there the count moves into the bottom bar. */}
       <button
-        className="queue-dock"
+        className="fixed right-[calc(24px+var(--safe-right))] bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+12px)] z-dock flex items-center gap-[8px] rounded-[22px] border-0 bg-accent-hot px-[15px] py-[11px] text-small font-bold text-accent-ink shadow-[0_4px_24px_color-mix(in_oklab,var(--color-shadow)_33%,transparent)] max-phone:hidden"
         onClick={() => dialog.current?.showModal()}
         aria-label={`Open queue, ${active.length} active downloads`}
       >
