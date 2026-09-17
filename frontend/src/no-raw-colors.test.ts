@@ -32,8 +32,9 @@ const named =
 const sources = (directory: string): string[] =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name)
-    // The theme registry a later card adds is the one place that spells the default theme out.
-    if (entry.isDirectory()) return entry.name === 'theme' ? [] : sources(path)
+    if (entry.isDirectory()) return sources(path)
+    // The theme registry is the one place that spells a theme's colors out.
+    if (relative(src, path).replaceAll('\\', '/') === 'theme/themes.ts') return []
 
     return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
   })

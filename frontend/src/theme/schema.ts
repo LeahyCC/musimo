@@ -33,19 +33,35 @@ const withDefaults = (colors: Partial<Record<ColorToken, string>>): Record<Color
     ]),
   ) as Record<ColorToken, string>
 
+const themeFields = {
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/i, 'A theme id is letters, digits and dashes'),
+  name: z.string().trim().min(1).max(MAX_THEME_NAME),
+  scheme: z.enum(['dark', 'light']),
+}
+
+type ParsedTheme = Omit<Theme, 'colors'> & { colors: Partial<Record<ColorToken, string>> }
+
+const complete = (theme: ParsedTheme): Theme => ({ ...theme, colors: withDefaults(theme.colors) })
+
 export const themeSchema = z
-  .strictObject({
-    id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/i, 'A theme id is letters, digits and dashes'),
-    name: z.string().trim().min(1).max(MAX_THEME_NAME),
-    scheme: z.enum(['dark', 'light']),
-    colors: z.strictObject(colorShape),
+  .strictObject({ ...themeFields, colors: z.strictObject(colorShape) })
+  .transform(complete)
+
+/* A theme read back from storage is held to the same values but forgiven an unknown color key,
+   which `z.object` drops. A release that retires a token would otherwise make every saved theme
+   unreadable at once. A file a person imports still goes through the strict schema above. */
+export const storedThemeSchema = z
+  .object({
+    ...themeFields,
+    colors: z.object(colorShape),
   })
-  .transform((theme): Theme => ({
-    id: theme.id,
-    name: theme.name,
-    scheme: theme.scheme,
-    colors: withDefaults(theme.colors),
-  }))
+  .transform(complete)
+
+/** The envelope alone, so each theme inside it can be read, and refused, on its own. */
+export const storedThemesSchema = z.object({
+  version: z.literal(CUSTOM_THEMES_VERSION),
+  themes: z.array(z.unknown()),
+})
 
 /** What `musimo.custom-themes` holds. The version is what lets a later format migrate. */
 export const customThemesSchema = z.strictObject({

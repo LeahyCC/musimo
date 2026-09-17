@@ -2,10 +2,11 @@ import { useSyncExternalStore } from 'react'
 
 import {
   CUSTOM_THEMES_VERSION,
-  customThemesSchema,
   HEX_COLOR,
   MAX_CUSTOM_THEMES,
   MAX_THEME_NAME,
+  storedThemeSchema,
+  storedThemesSchema,
   themeSchema,
 } from './schema'
 import { BUILT_IN_THEMES, DEFAULT_THEME, DEFAULT_THEME_ID } from './themes'
@@ -27,7 +28,7 @@ const VARS_KEY = 'musimo.theme-vars'
 /** What the boot script reads. Its shape is duplicated there, in plain JavaScript, on purpose. */
 export type ThemeVars = { scheme: ColorScheme; vars: Record<string, string> }
 
-export type ThemeError = 'invalid-json' | 'invalid-theme' | 'too-many'
+export type ThemeError = 'invalid-json' | 'invalid-theme' | 'too-many' | 'storage'
 
 export type ThemeResult =
   { ok: true; theme: Theme } | { ok: false; error: ThemeError; message: string }
@@ -35,6 +36,11 @@ export type ThemeResult =
 type Snapshot = { theme: Theme; themes: readonly Theme[] }
 
 let custom: readonly Theme[] = []
+/** Stored entries this build could not read. They are written back untouched, never dropped. */
+let unreadable: readonly unknown[] = []
+/** False when the stored list is in a shape this build does not know, so it must not be replaced. */
+let writable = true
+let themes: readonly Theme[] = BUILT_IN_THEMES
 let activeId = DEFAULT_THEME_ID
 /** An unsaved theme being edited. It paints, but it is never written to storage. */
 let previewed: Theme | null = null
@@ -52,25 +58,35 @@ function readStored(key: string): string | null {
   }
 }
 
-function writeStored(key: string, value: string) {
+/** False when the browser refused: storage is off, or it is full. */
+function writeStored(key: string, value: string): boolean {
   try {
-    localStorage.setItem(key, value)
+    if (localStorage.getItem(key) !== value) localStorage.setItem(key, value)
+
+    return true
   } catch {
-    /* The theme still paints for this session; it just will not survive a reload. */
+    return false
   }
 }
 
-function clearStored(key: string) {
+function clearStored(key: string): boolean {
   try {
     localStorage.removeItem(key)
+
+    return true
   } catch {
-    /* Nothing was stored to begin with. */
+    return false
   }
 }
 
-const allThemes = (): readonly Theme[] => [...BUILT_IN_THEMES, ...custom]
+/* The list keeps its identity until a theme is added, changed or removed, so a picker subscribed
+   to it does not re-render on every step of a color drag in the editor. */
+function setCustom(next: readonly Theme[]) {
+  custom = next
+  themes = [...BUILT_IN_THEMES, ...custom]
+}
 
-const findTheme = (id: string): Theme | undefined => allThemes().find((theme) => theme.id === id)
+const findTheme = (id: string): Theme | undefined => themes.find((theme) => theme.id === id)
 
 /** The properties the boot script writes, and what `musimo.theme-vars` holds. */
 export function resolveVars(theme: Theme): ThemeVars {
@@ -91,27 +107,31 @@ export function applyTheme(theme: Theme, target: Document = document) {
   const inline = theme.id !== DEFAULT_THEME_ID
   for (const token of COLOR_TOKENS) {
     const value = theme.colors[token.name]
-    // A half-typed hex in the editor falls back to the default shade instead of painting whatever
-    // the string happens to mean, which is also what keeps `url(...)` out of a live preview.
-    if (inline && HEX_COLOR.test(value)) root.style.setProperty(token.name, value)
-    else root.style.removeProperty(token.name)
+    // A half-typed hex in the editor leaves the last good value on screen instead of painting
+    // whatever the string happens to mean, which is also what keeps `url(...)` out of a preview.
+    if (!inline) root.style.removeProperty(token.name)
+    else if (HEX_COLOR.test(value)) root.style.setProperty(token.name, value)
   }
   if (inline) root.style.setProperty('color-scheme', theme.scheme)
   else root.style.removeProperty('color-scheme')
   // `index.html` ships the tag. A popout document has none, and does not need one.
   const meta = target.querySelector('meta[name="theme-color"]')
-  if (meta) meta.setAttribute('content', theme.colors['--color-canvas'])
+  const canvas = theme.colors['--color-canvas']
+  if (meta && HEX_COLOR.test(canvas)) meta.setAttribute('content', canvas)
 }
 
 function commit() {
-  snapshot = { theme: previewed ?? findTheme(activeId) ?? DEFAULT_THEME, themes: allThemes() }
+  snapshot = { theme: previewed ?? findTheme(activeId) ?? DEFAULT_THEME, themes }
   applyTheme(snapshot.theme)
   for (const listener of listeners) listener()
 }
 
-function persistCustom() {
-  if (custom.length === 0) clearStored(CUSTOM_KEY)
-  else writeStored(CUSTOM_KEY, JSON.stringify({ version: CUSTOM_THEMES_VERSION, themes: custom }))
+function persistCustom(): boolean {
+  if (!writable) return false
+  const stored = [...custom, ...unreadable]
+  if (stored.length === 0) return clearStored(CUSTOM_KEY)
+
+  return writeStored(CUSTOM_KEY, JSON.stringify({ version: CUSTOM_THEMES_VERSION, themes: stored }))
 }
 
 /* The default is stored as the absence of a key, so a person who never picked a theme, and one who
@@ -128,21 +148,44 @@ function persistActive() {
   writeStored(VARS_KEY, JSON.stringify(resolveVars(theme)))
 }
 
-function readCustom(): readonly Theme[] {
+/*
+ * Each stored theme is read on its own. One bad entry, or a list written by a newer Musimo, used to
+ * come back as an empty list, and the next save then replaced a person's whole collection with a
+ * single theme. An entry that does not read is kept aside and written back as it was. A list whose
+ * envelope does not read at all is left alone: nothing is saved over it.
+ */
+function readCustom() {
+  unreadable = []
+  writable = true
   const raw = readStored(CUSTOM_KEY)
-  if (!raw) return []
+  if (!raw) return setCustom([])
+  let envelope
   try {
-    const parsed = customThemesSchema.safeParse(JSON.parse(raw))
-
-    return parsed.success ? parsed.data.themes : []
+    envelope = storedThemesSchema.safeParse(JSON.parse(raw))
   } catch {
-    return []
+    envelope = null
   }
+
+  if (!envelope?.success) {
+    writable = false
+
+    return setCustom([])
+  }
+  const readable: Theme[] = []
+  const rest: unknown[] = []
+  for (const entry of envelope.data.themes) {
+    const parsed = storedThemeSchema.safeParse(entry)
+    if (parsed.success && !readable.some((theme) => theme.id === parsed.data.id)) {
+      readable.push(parsed.data)
+    } else rest.push(entry)
+  }
+  unreadable = rest
+  setCustom(readable)
 }
 
 /** An id that no longer names a theme falls back to the default rather than leaving the app blank. */
 function loadStored() {
-  custom = readCustom()
+  readCustom()
   const saved = readStored(ACTIVE_KEY)
   activeId = saved && findTheme(saved) ? saved : DEFAULT_THEME_ID
 }
@@ -189,14 +232,29 @@ export function saveTheme(theme: Theme): ThemeResult {
     return fail('invalid-theme', 'A built-in theme cannot be changed. Duplicate it instead.')
   }
   const known = custom.some((existing) => existing.id === saved.id)
-  if (!known && custom.length >= MAX_CUSTOM_THEMES) {
+  if (!known && custom.length + unreadable.length >= MAX_CUSTOM_THEMES) {
     return fail('too-many', `Only ${MAX_CUSTOM_THEMES} themes can be kept. Delete one first.`)
   }
-  custom = known
-    ? custom.map((existing) => (existing.id === saved.id ? saved : existing))
-    : [...custom, saved]
-  previewed = null
-  persistCustom()
+  const before = custom
+  setCustom(
+    known
+      ? custom.map((existing) => (existing.id === saved.id ? saved : existing))
+      : [...custom, saved],
+  )
+  if (!persistCustom()) {
+    // Saying "saved" about a theme that is gone after a reload is worse than saying no.
+    setCustom(before)
+
+    return fail(
+      'storage',
+      writable
+        ? 'This browser would not save the theme. Its storage is full or turned off.'
+        : 'Your saved themes were written by a newer Musimo, so this one cannot change them.',
+    )
+  }
+  // Only the draft that was just saved is finished. An import or a duplicate made while another
+  // theme is being edited must not throw that edit's preview away.
+  if (previewed?.id === saved.id) previewed = null
   if (activeId === saved.id) persistActive()
   commit()
 
@@ -205,7 +263,7 @@ export function saveTheme(theme: Theme): ThemeResult {
 
 /** Deleting the active theme puts the default back. */
 export function deleteTheme(id: string) {
-  custom = custom.filter((existing) => existing.id !== id)
+  setCustom(custom.filter((existing) => existing.id !== id))
   if (previewed?.id === id) previewed = null
   persistCustom()
   if (activeId === id) {
@@ -215,14 +273,22 @@ export function deleteTheme(id: string) {
   commit()
 }
 
-/** How a built-in becomes editable: a copy under a new id. */
-export function duplicateTheme(theme: Theme, name = `${theme.name} copy`): ThemeResult {
-  return saveTheme({
+/**
+ * An unsaved copy under a new id, for "Duplicate and edit": it can be previewed and thrown away, and
+ * nothing is kept until `saveTheme`.
+ */
+export function draftTheme(theme: Theme, name = `${theme.name} copy`): Theme {
+  return {
     id: newThemeId(),
     name: name.slice(0, MAX_THEME_NAME),
     scheme: theme.scheme,
     colors: { ...theme.colors },
-  })
+  }
+}
+
+/** How a built-in becomes editable in one step: a saved copy under a new id. */
+export function duplicateTheme(theme: Theme, name?: string): ThemeResult {
+  return saveTheme(draftTheme(theme, name))
 }
 
 /**
@@ -273,11 +339,23 @@ export function useTheme(): Theme {
   return useSyncExternalStore(subscribeTheme, getSnapshot, getSnapshot).theme
 }
 
+const getThemes = (): readonly Theme[] => themes
+
+/** Every theme, built-ins first. Re-renders when one is added, changed or removed. */
+export function useThemes(): readonly Theme[] {
+  return useSyncExternalStore(subscribeTheme, getThemes, getThemes)
+}
+
 /** Called from `main.tsx` before the first render. Safe to call twice. */
 export function startTheme() {
   if (started) return
   started = true
   loadStored()
+  // Brings the boot script's copy back in line with what was just resolved: a theme that no longer
+  // exists, colors a release has since changed, or keys written by hand without the third one.
+  // Without this the boot script paints the stale copy first on every load. A list this build
+  // cannot read is left alone, keys and all, for the build that can.
+  if (writable) persistActive()
   commit()
   window.addEventListener('storage', (event) => {
     // A null key means the whole store was cleared. An edit in progress in this tab is left alone:
