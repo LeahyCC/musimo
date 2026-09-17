@@ -301,12 +301,14 @@ test('touch controls are 44px and no text control is small enough to zoom', asyn
     }
 
     for (const el of document.querySelectorAll<HTMLElement>(
-      '.icon-button, .button, .round-play, .text-link, .result-tabs button',
+      "[data-ui='icon-button'], [data-ui='button'], .round-play, [data-ui='text-link'], .result-tabs button",
     )) {
       const rect = el.getBoundingClientRect()
       if (!rect.width || !rect.height) continue
       if (rect.height < 44 || rect.width < 44)
-        out.push(`${el.className} ${Math.round(rect.width)}x${Math.round(rect.height)}`)
+        out.push(
+          `${el.dataset.ui ?? el.className} ${Math.round(rect.width)}x${Math.round(rect.height)}`,
+        )
     }
     return out
   })

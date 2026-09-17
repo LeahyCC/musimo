@@ -21,6 +21,7 @@ import { DownloadTarget } from './download-target'
 import { DownloadButton, failureMessage, useJobs } from './downloads'
 import { InfiniteScroll } from './infinite-scroll'
 import { durationText, usePlayer, usePreviewPlayback } from './player'
+import { Button, EmptyPanel, ErrorBanner, Ownership, textLinkClassName } from './ui'
 
 const tabs = ['top', 'track', 'album', 'artist'] as const
 type Tab = (typeof tabs)[number]
@@ -100,7 +101,8 @@ function BackToSearch() {
   if (!lastSearch?.q) return null
   return (
     <button
-      className="text-link back-to-search"
+      type="button"
+      className={textLinkClassName()}
       onClick={() => void navigate({ to: '/search', search: lastSearch })}
     >
       ← Back to results
@@ -124,8 +126,8 @@ export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
     ? `Another edition in library (${item.matched_album})`
     : 'Another edition in library'
   return (
-    <span
-      className={`ownership ${failed ? 'failed' : item.ownership === 'edition' ? 'partial' : item.ownership}`}
+    <Ownership
+      variant={failed ? 'failed' : item.ownership === 'edition' ? 'partial' : item.ownership}
       title={
         failed
           ? job.error_hint || failureMessage(job)
@@ -147,7 +149,7 @@ export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
           : item.ownership === 'edition'
             ? editionLabel
             : (jobLabel ?? 'Missing')}
-    </span>
+    </Ownership>
   )
 }
 
@@ -230,7 +232,11 @@ export function MusicCard({ item }: { item: MusicResult }) {
         )}
       </small>
       {item.kind === 'album' && detail.isError ? (
-        <button className="text-link coverage-retry" onClick={() => void detail.refetch()}>
+        <button
+          type="button"
+          className={textLinkClassName('coverage-retry')}
+          onClick={() => void detail.refetch()}
+        >
           Retry coverage
         </button>
       ) : (
@@ -609,7 +615,11 @@ function ResultsSection({
       <div className="section-heading">
         <h2>{labels[kind]}</h2>
         {compact && (
-          <button className="text-link" onClick={() => change({ tab: kind })}>
+          <button
+            type="button"
+            className={textLinkClassName()}
+            onClick={() => change({ tab: kind })}
+          >
             View all
           </button>
         )}
@@ -620,10 +630,10 @@ function ResultsSection({
         )}
       </div>
       {query.isError && (
-        <div className="error" role="alert">
+        <ErrorBanner role="alert">
           {query.error.message}
           <button onClick={() => void query.refetch()}>Retry</button>
-        </div>
+        </ErrorBanner>
       )}
       {query.isPending && (
         <div className="search-skeleton" role="status">
@@ -683,9 +693,9 @@ function PreviewButton({ item }: { item: MusicResult }) {
   const player = usePlayer()
   const active = usePreviewPlayback(item.id).playing
   return (
-    <button className="button primary" onClick={() => player.play(item)}>
+    <Button variant="primary" onClick={() => player.play(item)}>
       {active ? <Pause size={16} /> : <Play size={16} />} {active ? 'Pause' : 'Preview'}
-    </button>
+    </Button>
   )
 }
 
@@ -716,10 +726,10 @@ export function SearchPage() {
         </p>
         <div className="suggestions">
           {['Daft Punk', 'Khruangbin', 'Nina Simone', 'Radiohead'].map((q) => (
-            <button className="button" key={q} onClick={() => change({ q })}>
+            <Button key={q} onClick={() => change({ q })}>
               <Search size={14} />
               {q}
-            </button>
+            </Button>
           ))}
         </div>
         <div className="discovery-note">
@@ -733,13 +743,11 @@ export function SearchPage() {
     )
   if (/^https?:\/\//i.test(state.q.trim()))
     return (
-      <section className="empty-panel">
+      <EmptyPanel>
         <h1>Pasting links is not supported yet.</h1>
         <p>Search by artist, album or track name for now.</p>
-        <button className="button" onClick={() => change({ q: '' })}>
-          Clear link
-        </button>
-      </section>
+        <Button onClick={() => change({ q: '' })}>Clear link</Button>
+      </EmptyPanel>
     )
   return (
     <>
@@ -762,9 +770,9 @@ export function SearchPage() {
             </button>
           ))}
         </div>
-        <button className="button" aria-expanded={filters} onClick={() => setFilters(!filters)}>
+        <Button aria-expanded={filters} onClick={() => setFilters(!filters)}>
           Filters
-        </button>
+        </Button>
         <label className="sort-control">
           Sort{' '}
           <select
@@ -884,7 +892,8 @@ export function SearchPage() {
             Has preview
           </label>
           <button
-            className="text-link"
+            type="button"
+            className={textLinkClassName()}
             onClick={() =>
               void navigate({ to: '/search', search: { q: state.q, tab, sort: state.sort } })
             }
@@ -929,10 +938,10 @@ export function AlbumPage() {
   const chosenQuality = quality ?? settings.data?.output_format.value ?? 'original'
   if (query.isError)
     return (
-      <div className="error" role="alert">
+      <ErrorBanner role="alert">
         {query.error.message}
         <button onClick={() => void query.refetch()}>Retry</button>
-      </div>
+      </ErrorBanner>
     )
   if (!query.data) return <p role="status">Loading album…</p>
   const { album, tracks, label, duration, complete } = query.data
@@ -996,7 +1005,9 @@ export function AlbumPage() {
         <DownloadTarget format={chosenQuality} />
       </div>
       {!complete && (
-        <p className="error">The catalog returned an incomplete track list. Coverage is partial.</p>
+        <ErrorBanner>
+          The catalog returned an incomplete track list. Coverage is partial.
+        </ErrorBanner>
       )}
       <TrackList items={tracks} focusTrack={focusTrack} />
     </>
@@ -1037,10 +1048,10 @@ export function ArtistPage() {
   })
   if (query.isError)
     return (
-      <div className="error">
+      <ErrorBanner>
         {query.error.message}
         <button onClick={() => void query.refetch()}>Retry</button>
-      </div>
+      </ErrorBanner>
     )
   if (!query.data) return <p role="status">Loading artist…</p>
   const artist = query.data.pages[0]?.artist
@@ -1102,9 +1113,9 @@ export function ArtistPage() {
         </div>
         {top.isPending && <p role="status">Loading popular songs…</p>}
         {top.isError && (
-          <p className="error" role="alert">
+          <ErrorBanner role="alert">
             {top.error.message} <button onClick={() => void top.refetch()}>Retry</button>
-          </p>
+          </ErrorBanner>
         )}
         {topTracks.length > 0 && <TrackList items={topTracks} />}
         {top.isSuccess && !topTracks.length && <p className="muted">No popular songs found.</p>}
@@ -1117,7 +1128,7 @@ export function ArtistPage() {
           <p role="status">Finding popular albums…</p>
         )}
         {popularAlbumQueries.some((result) => result.isError) && (
-          <p className="error" role="alert">
+          <ErrorBanner role="alert">
             Some popular albums could not be checked.{' '}
             <button
               onClick={() =>
@@ -1126,7 +1137,7 @@ export function ArtistPage() {
             >
               Retry
             </button>
-          </p>
+          </ErrorBanner>
         )}
         {popularAlbums.length > 0 && <CardGrid items={popularAlbums} />}
         {top.isSuccess &&

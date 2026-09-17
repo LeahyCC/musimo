@@ -30,6 +30,14 @@ import {
 import type { DownloadJob, MusicResult } from './api'
 import { formatLabel, FormatOptions } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
+import {
+  Button,
+  buttonClassName,
+  EmptyPanel,
+  ErrorBanner,
+  errorBannerClassName,
+  IconButton,
+} from './ui'
 
 export type QueueData = {
   jobs: DownloadJob[]
@@ -235,8 +243,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
       >
         <FormatOptions />
       </select>
-      <button
-        className="icon-button"
+      <IconButton
         aria-label={
           owned
             ? item.ownership === 'edition'
@@ -271,11 +278,9 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         ) : (
           <ArrowDownToLine size={17} />
         )}
-      </button>
-      <button
+      </IconButton>
+      <IconButton
         ref={optionsButton}
-        type="button"
-        className="icon-button"
         aria-label={`Download options for ${item.title}`}
         aria-expanded={options}
         aria-haspopup="dialog"
@@ -283,7 +288,7 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         onClick={(event) => event.currentTarget.focus({ preventScroll: true })}
       >
         <MoreHorizontal size={16} />
-      </button>
+      </IconButton>
       <div
         ref={optionsPanel}
         id={optionsId}
@@ -475,7 +480,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         </p>
       )}
       {job.error && (
-        <p className="error" role="alert">
+        <ErrorBanner role="alert">
           {job.error_hint || failureMessage(job)}{' '}
           {job.error_code && <small>({job.error_code})</small>}
           {job.error_fix &&
@@ -499,7 +504,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
 
               return null
             })()}
-        </p>
+        </ErrorBanner>
       )}
       {job.check_match && (
         <p className="match-warning">Check match: the selected recording needs a listen.</p>
@@ -552,13 +557,12 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               >
                 Listen ↗
               </a>
-              <button
-                className="button"
+              <Button
                 disabled={!canPick || busy || candidate.id === job.selected}
                 onClick={() => pick.mutate(candidate.id)}
               >
                 {candidate.id === job.selected ? 'Selected' : 'Use this'}
-              </button>
+              </Button>
             </div>
           ))}
         </details>
@@ -570,9 +574,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         </details>
       )}
       {(action.isError || pick.isError) && (
-        <p className="error" role="alert">
-          {action.error?.message ?? pick.error?.message}
-        </p>
+        <ErrorBanner role="alert">{action.error?.message ?? pick.error?.message}</ErrorBanner>
       )}
     </article>
   )
@@ -710,9 +712,8 @@ function BatchSummary({ jobs }: { jobs: DownloadJob[] }) {
               aria-label="Batch progress"
             />
             {['pause', 'resume', 'cancel'].map((command) => (
-              <button
+              <Button
                 key={command}
-                className="button"
                 disabled={action.isPending}
                 onClick={() => action.mutate({ id, command })}
               >
@@ -721,11 +722,11 @@ function BatchSummary({ jobs }: { jobs: DownloadJob[] }) {
                   : command === 'resume'
                     ? 'Resume group'
                     : 'Cancel group'}
-              </button>
+              </Button>
             ))}
           </div>
         ))}
-      {action.isError && <p className="error">{action.error.message}</p>}
+      {action.isError && <ErrorBanner>{action.error.message}</ErrorBanner>}
     </>
   )
 }
@@ -776,54 +777,54 @@ function QueueControls() {
             ))}
           </select>
         </label>
-        <button
-          className="button"
+        <Button
+          className="max-[700px]:w-full max-[700px]:px-2"
           disabled={command.isPending}
           onClick={() => command.mutate(queue.data?.controls.paused ? 'resume' : 'pause')}
         >
           {queue.data?.controls.paused ? 'Resume all' : 'Pause all'}
-        </button>
-        <button
-          className="button"
+        </Button>
+        <Button
+          className="max-[700px]:w-full max-[700px]:px-2"
           disabled={command.isPending}
           onClick={() => command.mutate('cancel-queued')}
         >
           Cancel queued
-        </button>
-        <button
-          className="button"
+        </Button>
+        <Button
+          className="max-[700px]:w-full max-[700px]:px-2"
           disabled={command.isPending || failed === 0}
           onClick={() => command.mutate('retry-failed')}
         >
           Retry failed ({failed})
-        </button>
-        <button
-          className="button"
+        </Button>
+        <Button
+          className="max-[700px]:w-full max-[700px]:px-2"
           disabled={command.isPending || failed === 0}
           onClick={() => command.mutate('clear-failed')}
         >
           Clear failed ({failed})
-        </button>
-        <button
-          className="button"
+        </Button>
+        <Button
+          className="max-[700px]:w-full max-[700px]:px-2"
           disabled={command.isPending}
           onClick={() => command.mutate('clear-finished')}
           title="Remove done, failed, and cancelled jobs from the queue"
         >
           Clear all finished
-        </button>
+        </Button>
       </div>
       {queue.data?.controls.source_paused && (
-        <div className="error" role="alert">
+        <ErrorBanner role="alert">
           YouTube paused after repeated blocking errors.{' '}
           <Link to="/diagnostics">Check diagnostics</Link>
           <button onClick={() => command.mutate('resume-source')}>Try source again</button>
-        </div>
+        </ErrorBanner>
       )}
       {(command.isError || Boolean(command.data?.errors.length)) && (
-        <p className="error" role="alert">
+        <ErrorBanner role="alert">
           {command.error?.message ?? command.data?.errors.join(' · ')}
-        </p>
+        </ErrorBanner>
       )}
     </>
   )
@@ -867,15 +868,15 @@ function History() {
       </div>
       {query.isPending && <p>Loading history…</p>}
       {query.isError && (
-        <p className="error">
+        <ErrorBanner>
           {query.error.message}
           <button onClick={() => void query.refetch()}>Retry</button>
-        </p>
+        </ErrorBanner>
       )}
       {!query.isPending && !query.isError && query.data?.pages[0]?.jobs.length === 0 && (
-        <div className="empty-panel">
+        <EmptyPanel>
           <h2>Nothing has finished yet.</h2>
-        </div>
+        </EmptyPanel>
       )}
       <JobList jobs={query.data?.pages.flatMap((page) => page.jobs) ?? []} />
       {query.hasNextPage && (
@@ -930,7 +931,7 @@ export function DownloadsPage() {
           <div className="eyebrow">YOUR COLLECTION, IN MOTION</div>
           <h1>Downloads</h1>
         </div>
-        <Link className="button" to="/settings">
+        <Link className={buttonClassName()} to="/settings">
           Download settings
         </Link>
       </div>
@@ -951,13 +952,13 @@ export function DownloadsPage() {
         ))}
       </div>
       {queue.isError && (
-        <p className="error">
+        <ErrorBanner>
           {queue.error.message}
           <button onClick={() => void queue.refetch()}>Retry</button>
-        </p>
+        </ErrorBanner>
       )}
       {tab === 'failed' && counts.failed > 0 && (
-        <section className="failure-summary" aria-label="Failure summary">
+        <section className={errorBannerClassName('list')} aria-label="Failure summary">
           <strong>
             {counts.failed} {counts.failed === 1 ? 'download' : 'downloads'} failed
           </strong>
@@ -1006,17 +1007,17 @@ export function DownloadsPage() {
       ) : jobs.length ? (
         <JobList jobs={jobs} />
       ) : queue.isError ? null : (
-        <section className="empty-panel">
+        <EmptyPanel>
           <ArrowDownToLine size={36} />
           <h2>
             {queue.isPending
               ? 'Loading queue…'
               : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
           </h2>
-          <Link to="/search" className="button primary">
+          <Link to="/search" className={buttonClassName('primary')}>
             Find a track
           </Link>
-        </section>
+        </EmptyPanel>
       )}
     </>
   )

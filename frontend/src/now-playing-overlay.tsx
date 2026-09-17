@@ -24,6 +24,7 @@ import { PRESETS } from 'visimo/presets'
 import type { Preset } from 'visimo/presets'
 
 import { artUrl, durationText, usePlayer } from './player'
+import { IconButton } from './ui'
 
 export type StagePlacement = 'docked' | 'popout'
 export type StageView = 'artwork' | 'visualizer'
@@ -289,22 +290,21 @@ export function NowPlayingOverlay({
             </select>
           )}
           {view && onToggleView && (
-            <button
-              className="icon-button"
+            <IconButton
               aria-label={view === 'visualizer' ? 'Show artwork' : 'Show visualizer'}
               onClick={onToggleView}
             >
               {view === 'visualizer' ? <ImageIcon size={17} /> : <Sparkles size={17} />}
-            </button>
+            </IconButton>
           )}
           {onPopout && (
-            <button className="icon-button" aria-label="Pop out player" onClick={onPopout}>
+            <IconButton aria-label="Pop out player" onClick={onPopout}>
               <PictureInPicture2 size={17} />
-            </button>
+            </IconButton>
           )}
-          <button className="icon-button" aria-label={fullscreenLabel} onClick={onFullscreen}>
+          <IconButton aria-label={fullscreenLabel} onClick={onFullscreen}>
             {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-          </button>
+          </IconButton>
         </div>
       </div>
       <div className="stage-controls">
@@ -316,8 +316,8 @@ export function NowPlayingOverlay({
           </span>
         </div>
         {track && (
-          <button
-            className={`icon-button ${player.liked.isLiked ? 'active' : ''}`}
+          <IconButton
+            active={player.liked.isLiked}
             aria-label={
               player.liked.isLiked ? `Remove ${title} from liked` : `Add ${title} to liked`
             }
@@ -325,17 +325,12 @@ export function NowPlayingOverlay({
             onClick={player.liked.toggle}
           >
             <ThumbsUp size={16} fill={player.liked.isLiked ? 'currentColor' : 'none'} />
-          </button>
+          </IconButton>
         )}
         <div className="stage-transport">
-          <button
-            className="icon-button"
-            aria-label="Previous track"
-            disabled={!track}
-            onClick={player.previous}
-          >
+          <IconButton aria-label="Previous track" disabled={!track} onClick={player.previous}>
             <SkipBack size={17} />
-          </button>
+          </IconButton>
           <button
             className="round-play"
             aria-label={player.playing ? 'Pause' : 'Play'}
@@ -344,14 +339,9 @@ export function NowPlayingOverlay({
           >
             {player.playing ? <Pause size={19} /> : <Play size={19} />}
           </button>
-          <button
-            className="icon-button"
-            aria-label="Next track"
-            disabled={!track}
-            onClick={player.next}
-          >
+          <IconButton aria-label="Next track" disabled={!track} onClick={player.next}>
             <SkipForward size={17} />
-          </button>
+          </IconButton>
         </div>
         <div className="stage-seek">
           <span>{durationText(player.position)}</span>
@@ -369,31 +359,23 @@ export function NowPlayingOverlay({
         </div>
         {track && (
           <>
-            <button
-              className={`icon-button ${player.shuffle ? 'active' : ''}`}
-              aria-label="Shuffle"
-              onClick={player.toggleShuffle}
-            >
+            <IconButton active={player.shuffle} aria-label="Shuffle" onClick={player.toggleShuffle}>
               <Shuffle size={17} />
-            </button>
-            <button
-              className={`icon-button ${player.repeat !== 'off' ? 'active' : ''}`}
+            </IconButton>
+            <IconButton
+              active={player.repeat !== 'off'}
               aria-label={`Repeat ${player.repeat}`}
               onClick={player.cycleRepeat}
             >
               <Repeat size={17} />
               {player.repeat === 'one' && <small>1</small>}
-            </button>
+            </IconButton>
           </>
         )}
         <div className="stage-volume">
-          <button
-            className="icon-button"
-            aria-label={player.muted ? 'Unmute' : 'Mute'}
-            onClick={player.toggleMute}
-          >
+          <IconButton aria-label={player.muted ? 'Unmute' : 'Mute'} onClick={player.toggleMute}>
             {player.muted || player.volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-          </button>
+          </IconButton>
           <input
             type="range"
             aria-label="Volume"

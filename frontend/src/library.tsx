@@ -45,6 +45,7 @@ import {
   sonicMatchesSchema,
 } from './api'
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from './api'
+import { cx } from './cx'
 import { InfiniteScroll } from './infinite-scroll'
 import { NowPlayingStage } from './now-playing-popout'
 import {
@@ -56,6 +57,17 @@ import {
   usePlayer,
   usePlaylistSongs,
 } from './player'
+import {
+  Button,
+  buttonClassName,
+  EmptyPanel,
+  ErrorBanner,
+  IconButton,
+  InlineError,
+  Panel,
+  Tag,
+  textLinkClassName,
+} from './ui'
 
 export type LibraryTab = 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
 type Tab = LibraryTab
@@ -160,22 +172,20 @@ function LayoutToggle({
 }) {
   return (
     <div className="library-layout-toggle" role="group" aria-label="Library layout">
-      <button
-        className="icon-button"
+      <IconButton
         aria-label="Grid view"
         aria-pressed={layout === 'grid'}
         onClick={() => onChange('grid')}
       >
         <Grid2X2 size={17} />
-      </button>
-      <button
-        className="icon-button"
+      </IconButton>
+      <IconButton
         aria-label="List view"
         aria-pressed={layout === 'list'}
         onClick={() => onChange('list')}
       >
         <List size={18} />
-      </button>
+      </IconButton>
     </div>
   )
 }
@@ -247,7 +257,7 @@ function CollectionPlayButton({
   source,
   name,
   text,
-  className,
+  variant,
   size,
   disabled,
   onPlay,
@@ -255,24 +265,49 @@ function CollectionPlayButton({
   source: string
   name?: string
   text?: string
-  className: string
+  variant: 'icon' | 'primary' | 'card-play'
   size: number
   disabled?: boolean
   onPlay: () => void
 }) {
   const playback = useCollectionPlayback(source)
-  return (
-    <button
-      className={`${className}${playback.active ? ' active' : ''}`}
-      // A labelled button reads from its own text; an icon-only one needs the name.
-      aria-label={text ? undefined : `${playback.playing ? 'Pause' : 'Play'} ${name}`}
-      disabled={disabled}
-      // Already this collection's queue, so resume it. Calling onPlay would refetch and
-      // restart from the first track, losing where the listener paused.
-      onClick={() => (playback.active ? playback.toggle() : onPlay())}
-    >
+  // A labelled button reads from its own text; an icon-only one needs the name.
+  const label = text ? undefined : `${playback.playing ? 'Pause' : 'Play'} ${name}`
+  // Already this collection's queue, so resume it. Calling onPlay would refetch and restart
+  // from the first track, losing where the listener paused.
+  const onClick = () => (playback.active ? playback.toggle() : onPlay())
+  const content = (
+    <>
       {playback.playing ? <Pause size={size} /> : <Play size={size} fill="currentColor" />}
       {text ? ` ${playback.playing ? 'Pause' : text}` : null}
+    </>
+  )
+  if (variant === 'icon')
+    return (
+      <IconButton aria-label={label} disabled={disabled} onClick={onClick}>
+        {content}
+      </IconButton>
+    )
+  if (variant === 'primary')
+    return (
+      <Button
+        variant="primary"
+        aria-pressed={playback.active}
+        aria-label={label}
+        disabled={disabled}
+        onClick={onClick}
+      >
+        {content}
+      </Button>
+    )
+  return (
+    <button
+      className={cx('library-card-play', playback.active && 'active')}
+      aria-label={label}
+      disabled={disabled}
+      onClick={onClick}
+    >
+      {content}
     </button>
   )
 }
@@ -306,19 +341,14 @@ function AlbumItem({
           <CollectionPlayButton
             source={`album:${album.id}`}
             name={album.name}
-            className="icon-button"
+            variant="icon"
             size={17}
             disabled={loading}
             onPlay={onPlay}
           />
-          <button
-            className="icon-button"
-            aria-label={`Shuffle ${album.name}`}
-            onClick={onShuffle}
-            disabled={loading}
-          >
+          <IconButton aria-label={`Shuffle ${album.name}`} onClick={onShuffle} disabled={loading}>
             <Shuffle size={17} />
-          </button>
+          </IconButton>
         </div>
       </div>
     )
@@ -332,7 +362,7 @@ function AlbumItem({
         <CollectionPlayButton
           source={`album:${album.id}`}
           name={album.name}
-          className="library-card-play"
+          variant="card-play"
           size={19}
           disabled={loading}
           onPlay={onPlay}
@@ -381,19 +411,14 @@ function ArtistItem({
         <CollectionPlayButton
           source={`artist:${artist.id}`}
           name={artist.name}
-          className="icon-button"
+          variant="icon"
           size={17}
           disabled={loading}
           onPlay={onPlay}
         />
-        <button
-          className="icon-button"
-          aria-label={`Shuffle ${artist.name}`}
-          onClick={onShuffle}
-          disabled={loading}
-        >
+        <IconButton aria-label={`Shuffle ${artist.name}`} onClick={onShuffle} disabled={loading}>
           <Shuffle size={17} />
-        </button>
+        </IconButton>
       </div>
     </article>
   )
@@ -440,8 +465,8 @@ function TrackList({
               {playing ? <Pause size={15} /> : <Play size={15} fill="currentColor" />}
             </button>
             {onRemove && (
-              <button
-                className="icon-button library-track-remove"
+              <IconButton
+                className="library-track-remove"
                 aria-label={`Remove ${track.title} from playlist`}
                 // Removal is positional, so a second click during the first would send an
                 // index measured against the old list and delete a different song.
@@ -449,7 +474,7 @@ function TrackList({
                 onClick={() => onRemove(index)}
               >
                 <X size={16} />
-              </button>
+              </IconButton>
             )}
           </div>
         )
@@ -579,28 +604,23 @@ function PlaylistRow({
         <CollectionPlayButton
           source={`playlist:${playlist.id}`}
           name={playlist.name}
-          className="icon-button"
+          variant="icon"
           size={17}
           disabled={loading}
           onPlay={onPlay}
         />
-        <button
-          className="icon-button"
-          aria-label={`Shuffle ${playlist.name}`}
-          onClick={onShuffle}
-          disabled={loading}
-        >
+        <IconButton aria-label={`Shuffle ${playlist.name}`} onClick={onShuffle} disabled={loading}>
           <Shuffle size={17} />
-        </button>
+        </IconButton>
         {!liked && (
-          <button
-            className="icon-button library-row-delete"
+          <IconButton
+            className="library-row-delete"
             aria-label={`Delete playlist ${playlist.name}`}
             onClick={onDelete}
             disabled={deleting}
           >
             <Trash2 size={16} />
-          </button>
+          </IconButton>
         )}
       </div>
     </div>
@@ -978,14 +998,14 @@ export function LibraryPage({
   if (capabilities.isLoading) return <p role="status">Connecting to your library…</p>
   if (!capabilities.data?.available)
     return (
-      <section className="empty-panel library-empty">
+      <EmptyPanel className="library-empty">
         <Library size={36} />
         <h1>Your music library lives here.</h1>
         <p>{capabilities.data?.detail ?? 'Navidrome is not ready.'}</p>
-        <Link className="button primary" to="/settings" hash="library">
+        <Link className={buttonClassName('primary', 'mx-auto')} to="/settings" hash="library">
           Connect Navidrome
         </Link>
-      </section>
+      </EmptyPanel>
     )
 
   return (
@@ -995,15 +1015,12 @@ export function LibraryPage({
           <p className="eyebrow">YOUR MUSIC, READY TO PLAY</p>
           <h1>Library</h1>
         </div>
-        <span
-          className={`tag library-status ${capabilities.data.sonic_similarity ? 'good' : ''}`}
-          role="status"
-        >
+        <Tag className="library-status" role="status">
           <span style={{ visibility: busy ? 'hidden' : undefined }}>
             {capabilities.data.sonic_similarity ? 'AUDIOMUSE CONNECTED' : 'NAVIDROME READY'}
           </span>
           {busy && <span>Opening music…</span>}
-        </span>
+        </Tag>
       </div>
       <nav className="library-tabs" aria-label="Library views">
         {(['home', 'albums', 'artists', 'tracks', 'playlists'] as Tab[]).map((item) => (
@@ -1088,7 +1105,8 @@ export function LibraryPage({
               />
               {(selectedGenres.length > 0 || selectedYears.length > 0) && (
                 <button
-                  className="text-link library-clear-filters"
+                  type="button"
+                  className={textLinkClassName('library-clear-filters')}
                   onClick={() => {
                     setSelectedGenres([])
                     setSelectedYears([])
@@ -1108,9 +1126,9 @@ export function LibraryPage({
             {tab !== 'tracks' && <LayoutToggle layout={layout} onChange={setLayout} />}
           </div>
           {tab === 'playlists' && (
-            <button className="button primary" onClick={() => setShowPlaylistForm(true)}>
+            <Button variant="primary" onClick={() => setShowPlaylistForm(true)}>
               <Plus size={16} /> New playlist
-            </button>
+            </Button>
           )}
         </div>
       )}
@@ -1132,39 +1150,39 @@ export function LibraryPage({
               onChange={(event) => setNewName(event.target.value)}
             />
           </label>
-          <button className="button primary" disabled={createPlaylist.isPending}>
+          <Button type="submit" variant="primary" disabled={createPlaylist.isPending}>
             {createPlaylist.isPending ? 'Creating…' : 'Create'}
-          </button>
-          <button
+          </Button>
+          <Button
             type="button"
-            className="button"
             onClick={() => {
               setShowPlaylistForm(false)
               setNewName('')
             }}
           >
             Cancel
-          </button>
-          {createPlaylist.isError && <p className="error">{createPlaylist.error.message}</p>}
+          </Button>
+          {createPlaylist.isError && (
+            <ErrorBanner className="w-full m-0">{createPlaylist.error.message}</ErrorBanner>
+          )}
         </form>
       )}
       {showBrowser && activeQuery.isLoading && (
         <p role="status">Loading {tab === 'home' ? 'albums' : tab}…</p>
       )}
       {showBrowser && activeQuery.isError && (
-        <div className="inline-error" role="alert">
+        <InlineError role="alert">
           <span>{activeQuery.error.message}</span>
-          <button className="button" onClick={() => void activeQuery.refetch()}>
-            Retry
-          </button>
-        </div>
+          <Button onClick={() => void activeQuery.refetch()}>Retry</Button>
+        </InlineError>
       )}
       {(albumId || playlistId) && (
         <section className="library-detail">
           <div className="section-heading">
             <div>
               <button
-                className="text-link"
+                type="button"
+                className={textLinkClassName()}
                 onClick={() => {
                   if (albumParent)
                     void navigate({
@@ -1191,21 +1209,19 @@ export function LibraryPage({
               <CollectionPlayButton
                 source={detailSource}
                 text="Play all"
-                className="button primary"
+                variant="primary"
                 size={15}
                 disabled={!detailTracks.length}
                 onPlay={() => player.playLibrary(detailTracks, 0, detailSource)}
               />
-              <button
-                className="button"
+              <Button
                 onClick={() => player.shuffleLibrary(detailTracks, detailSource)}
                 disabled={!detailTracks.length}
               >
                 <Shuffle size={15} /> Shuffle
-              </button>
+              </Button>
               {playlist && (
-                <button
-                  className="button"
+                <Button
                   onClick={() => {
                     setRenameValue(playlist.name)
                     setRenaming(!renaming)
@@ -1213,16 +1229,16 @@ export function LibraryPage({
                   aria-expanded={renaming}
                 >
                   <Pencil size={15} /> Rename
-                </button>
+                </Button>
               )}
               {playlist && !playlistLiked && (
-                <button
-                  className="button danger"
+                <Button
+                  variant="danger"
                   onClick={() => confirmDelete(playlist)}
                   disabled={deletePlaylist.isPending}
                 >
                   <Trash2 size={15} /> Delete
-                </button>
+                </Button>
               )}
             </div>
           </div>
@@ -1245,33 +1261,32 @@ export function LibraryPage({
                   onChange={(event) => setRenameValue(event.target.value)}
                 />
               </label>
-              <button className="button primary" disabled={renamePlaylist.isPending}>
+              <Button type="submit" variant="primary" disabled={renamePlaylist.isPending}>
                 {renamePlaylist.isPending ? 'Saving…' : 'Save name'}
-              </button>
-              <button type="button" className="button" onClick={() => setRenaming(false)}>
+              </Button>
+              <Button type="button" onClick={() => setRenaming(false)}>
                 Cancel
-              </button>
-              {renamePlaylist.isError && <p className="error">{renamePlaylist.error.message}</p>}
+              </Button>
+              {renamePlaylist.isError && (
+                <ErrorBanner className="w-full m-0">{renamePlaylist.error.message}</ErrorBanner>
+              )}
             </form>
           )}
           {deletePlaylist.isError && (
-            <p className="error" role="alert">
-              {deletePlaylist.error.message}
-            </p>
+            <ErrorBanner role="alert">{deletePlaylist.error.message}</ErrorBanner>
           )}
           {(albumDetail.isLoading || playlistDetail.isLoading) && (
             <p role="status">Loading songs…</p>
           )}
           {detailError && (
-            <div className="inline-error" role="alert">
+            <InlineError role="alert">
               <span>{detailError.message}</span>
-              <button
-                className="button"
+              <Button
                 onClick={() => void (playlistId ? playlistDetail.refetch() : albumDetail.refetch())}
               >
                 Retry
-              </button>
-            </div>
+              </Button>
+            </InlineError>
           )}
           <TrackList
             tracks={detailTracks}
@@ -1299,7 +1314,7 @@ export function LibraryPage({
                 />
               </label>
               {playlistTracks.isLoading && <p role="status">Searching songs…</p>}
-              {playlistTracks.isError && <p className="error">{playlistTracks.error.message}</p>}
+              {playlistTracks.isError && <ErrorBanner>{playlistTracks.error.message}</ErrorBanner>}
               <div className="playlist-add-list">
                 {playlistTracks.data?.items.map((track) => {
                   const index = playlist.entry.findIndex((item) => item.id === track.id)
@@ -1312,8 +1327,8 @@ export function LibraryPage({
                           {track.artist} · {track.album}
                         </small>
                       </span>
-                      <button
-                        className={member ? 'button' : 'button primary'}
+                      <Button
+                        variant={member ? 'default' : 'primary'}
                         aria-label={`${member ? 'Remove' : 'Add'} ${track.title} ${member ? 'from' : 'to'} ${playlist.name}`}
                         onClick={() =>
                           playlistSongs.mutation.mutate(
@@ -1333,29 +1348,31 @@ export function LibraryPage({
                             <Plus size={15} /> Add
                           </>
                         )}
-                      </button>
+                      </Button>
                     </div>
                   )
                 })}
               </div>
               {playlistSongs.mutation.isError && (
-                <p className="error">{playlistSongs.mutation.error.message}</p>
+                <ErrorBanner>{playlistSongs.mutation.error.message}</ErrorBanner>
               )}
             </section>
           )}
         </section>
       )}
       {artistId && artistDetail.isError && (
-        <div className="inline-error" role="alert">
+        <InlineError role="alert">
           <span>{artistDetail.error.message}</span>
-          <button className="button" onClick={() => void artistDetail.refetch()}>
-            Retry
-          </button>
-        </div>
+          <Button onClick={() => void artistDetail.refetch()}>Retry</Button>
+        </InlineError>
       )}
       {artistId && artistDetail.data && (
         <section className="library-detail">
-          <button className="text-link" onClick={() => changeTab('artists')}>
+          <button
+            type="button"
+            className={textLinkClassName()}
+            onClick={() => changeTab('artists')}
+          >
             ← Back to artists
           </button>
           <div className="library-artist-heading">
@@ -1376,7 +1393,7 @@ export function LibraryPage({
               <CollectionPlayButton
                 source={`artist:${artistId}`}
                 text="Play all"
-                className="button primary"
+                variant="primary"
                 size={15}
                 disabled={busy || (artistSongsMode ? !artistSongs.length : !artistAlbums.length)}
                 onPlay={() =>
@@ -1385,8 +1402,7 @@ export function LibraryPage({
                     : playCollection.mutate({ kind: 'artist', id: artistId, shuffled: false })
                 }
               />
-              <button
-                className="button"
+              <Button
                 onClick={() =>
                   artistSongsMode
                     ? player.shuffleLibrary(artistSongs, `artist:${artistId}`)
@@ -1395,9 +1411,8 @@ export function LibraryPage({
                 disabled={busy || (artistSongsMode ? !artistSongs.length : !artistAlbums.length)}
               >
                 <Shuffle size={15} /> Shuffle
-              </button>
-              <button
-                className="button"
+              </Button>
+              <Button
                 onClick={() =>
                   void navigate({
                     to: artistSongsMode
@@ -1409,7 +1424,7 @@ export function LibraryPage({
                 disabled={!artistSongsMode && (artistTracks.isLoading || !artistSongs.length)}
               >
                 <ListMusic size={15} /> {artistSongsMode ? 'Albums' : 'All songs'}
-              </button>
+              </Button>
             </div>
           </div>
           <div className="library-tools artist-tools">
@@ -1434,9 +1449,7 @@ export function LibraryPage({
             {!artistSongsMode && <LayoutToggle layout={layout} onChange={setLayout} />}
           </div>
           {artistSongsMode && artistTracks.isError && (
-            <p className="error" role="alert">
-              {artistTracks.error.message}
-            </p>
+            <ErrorBanner role="alert">{artistTracks.error.message}</ErrorBanner>
           )}
           {artistSongsMode && artistTracks.isLoading && <p role="status">Loading songs…</p>}
           {artistSongsMode ? (
@@ -1542,7 +1555,7 @@ export function LibraryPage({
               <CollectionPlayButton
                 source={trackSource}
                 text="Play all"
-                className="button primary"
+                variant="primary"
                 size={15}
                 disabled={busy || !trackTotal}
                 onPlay={() => playTracks.mutate({ shuffled: false })}
@@ -1554,13 +1567,12 @@ export function LibraryPage({
               )}
             </div>
             <div className="library-action-column">
-              <button
-                className="button"
+              <Button
                 onClick={() => playTracks.mutate({ shuffled: true })}
                 disabled={busy || !trackTotal}
               >
                 <Shuffle size={15} /> Shuffle
-              </button>
+              </Button>
               {trackTotal > 500 && (
                 <small className="muted">
                   Plays a random 500 of {trackTotal.toLocaleString()} matching songs.
@@ -1575,11 +1587,7 @@ export function LibraryPage({
               Covers every matching song, not just the loaded ones.
             </small>
           )}
-          {playTracks.isError && (
-            <p className="error" role="alert">
-              {playTracks.error.message}
-            </p>
-          )}
+          {playTracks.isError && <ErrorBanner role="alert">{playTracks.error.message}</ErrorBanner>}
           <TrackList tracks={trackItems} source={trackSource} />
         </section>
       )}
@@ -1611,9 +1619,7 @@ export function LibraryPage({
         </div>
       )}
       {playCollection.isError && (
-        <p className="error" role="alert">
-          {playCollection.error.message}
-        </p>
+        <ErrorBanner role="alert">{playCollection.error.message}</ErrorBanner>
       )}
       {showBrowser &&
         !activeQuery.isLoading &&
@@ -1652,13 +1658,13 @@ export function NowPlayingPage() {
 
   if (!track)
     return (
-      <section className="empty-panel library-empty">
+      <EmptyPanel className="library-empty">
         <Disc3 size={40} />
         <h1>Nothing playing yet.</h1>
-        <Link className="button primary" to="/library">
+        <Link className={buttonClassName('primary', 'mx-auto')} to="/library">
           Open your library
         </Link>
-      </section>
+      </EmptyPanel>
     )
 
   const words = lyrics.data?.items[0]?.line ?? []
@@ -1692,32 +1698,32 @@ export function NowPlayingPage() {
           </p>
           <div className="button-row now-actions">
             {capabilities.data?.sonic_similarity && (
-              <button
-                className="button primary"
+              <Button
+                variant="primary"
                 onClick={() => audioMuse.mutate()}
                 disabled={audioMuse.isPending}
               >
                 <RadioIcon size={16} />{' '}
                 {audioMuse.isPending ? 'Building radio…' : 'Start AudioMuse radio'}
-              </button>
+              </Button>
             )}
             {/* The footer's own add button is hidden on phones, so the page offers one too. */}
-            <button className="button" onClick={player.openPlaylistPicker}>
+            <Button onClick={player.openPlaylistPicker}>
               <Plus size={16} /> Add to playlist
-            </button>
+            </Button>
           </div>
-          {audioMuse.isError && <p className="error">{audioMuse.error.message}</p>}
+          {audioMuse.isError && <ErrorBanner>{audioMuse.error.message}</ErrorBanner>}
         </div>
       </section>
       <div className="now-columns">
-        <section className="panel queue-panel">
+        <Panel className="queue-panel">
           <div className="section-heading">
             <h2>Up next</h2>
             <span>{player.queue.length} TRACKS</span>
           </div>
           <TrackList tracks={player.queue} source={player.source} />
-        </section>
-        <section className="panel lyrics-panel">
+        </Panel>
+        <Panel className="lyrics-panel">
           <div className="section-heading">
             <h2>Lyrics</h2>
           </div>
@@ -1728,7 +1734,7 @@ export function NowPlayingPage() {
           {words.map((line, index) => (
             <p key={`${line.value}-${index}`}>{line.value || '♪'}</p>
           ))}
-        </section>
+        </Panel>
       </div>
     </div>
   )

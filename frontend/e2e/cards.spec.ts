@@ -374,17 +374,17 @@ test('badge shows distinct states for owned, edition, queued, and downloaded', a
   const rows = page.locator('.track-row')
   await expect(rows).toHaveCount(4)
 
+  const ownership = (row: number) => rows.nth(row).locator("[data-ui='ownership']")
+
   // Owned track shows "In library"
-  await expect(rows.nth(0).locator('.ownership.owned')).toHaveText('In library')
+  await expect(ownership(0)).toHaveText('In library')
 
   // Edition track shows "Another edition in library (Album Deluxe Edition)"
-  await expect(rows.nth(1).locator('.ownership.partial')).toHaveText(
-    'Another edition in library (Album Deluxe Edition)',
-  )
+  await expect(ownership(1)).toHaveText('Another edition in library (Album Deluxe Edition)')
 
   // Queued track shows the job stage
-  await expect(rows.nth(2).locator('.ownership.missing')).toHaveText('Queued')
+  await expect(ownership(2)).toHaveText('Queued')
 
   // Done track shows "Downloaded earlier"
-  await expect(rows.nth(3).locator('.ownership.missing')).toHaveText('Downloaded earlier')
+  await expect(ownership(3)).toHaveText('Downloaded earlier')
 })

@@ -6,6 +6,7 @@ import { z } from 'zod'
 import { api, jobSchema } from './api'
 import type { MusicResult } from './api'
 import { activeJob, updateJob, useJobs } from './downloads'
+import { Button, IconButton } from './ui'
 
 const batchSchema = z.object({
   id: z.string(),
@@ -51,39 +52,48 @@ export function AlbumDownloadButton({
     },
   })
   const result = download.data
+  const disabled = complete || checkingCoverage || download.isPending
+  const ariaLabel = complete
+    ? `Nothing to download for ${item.title}`
+    : checkingCoverage
+      ? `Checking coverage for ${item.title}`
+      : missingOnly
+        ? `Download missing tracks from ${item.title}`
+        : `Download ${item.title}`
+  const title = complete
+    ? 'Already in your library'
+    : missingOnly
+      ? 'Download album, skipping tracks in your library'
+      : 'Download every track on this album'
+  const icon = download.isPending ? (
+    <LoaderCircle size={18} className="spin" />
+  ) : complete ? (
+    <Check size={18} />
+  ) : (
+    <ArrowDownToLine size={18} />
+  )
   return (
     <div className="album-card-download">
-      <button
-        type="button"
-        className={label ? 'button' : 'icon-button'}
-        disabled={complete || checkingCoverage || download.isPending}
-        aria-label={
-          complete
-            ? `Nothing to download for ${item.title}`
-            : checkingCoverage
-              ? `Checking coverage for ${item.title}`
-              : missingOnly
-                ? `Download missing tracks from ${item.title}`
-                : `Download ${item.title}`
-        }
-        title={
-          complete
-            ? 'Already in your library'
-            : missingOnly
-              ? 'Download album, skipping tracks in your library'
-              : 'Download every track on this album'
-        }
-        onClick={() => download.mutate()}
-      >
-        {download.isPending ? (
-          <LoaderCircle size={18} className="spin" />
-        ) : complete ? (
-          <Check size={18} />
-        ) : (
-          <ArrowDownToLine size={18} />
-        )}
-        {label}
-      </button>
+      {label ? (
+        <Button
+          disabled={disabled}
+          aria-label={ariaLabel}
+          title={title}
+          onClick={() => download.mutate()}
+        >
+          {icon}
+          {label}
+        </Button>
+      ) : (
+        <IconButton
+          disabled={disabled}
+          aria-label={ariaLabel}
+          title={title}
+          onClick={() => download.mutate()}
+        >
+          {icon}
+        </IconButton>
+      )}
 
       {(queued > 0 || result) && (
         <span role="status">
