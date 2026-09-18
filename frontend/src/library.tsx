@@ -62,6 +62,7 @@ import {
   buttonClassName,
   EmptyPanel,
   ErrorBanner,
+  Field,
   IconButton,
   InlineError,
   Panel,
@@ -163,6 +164,17 @@ function sortArtistSongs(songs: LibraryTrack[], sort: string) {
   })
 }
 
+// Shared between the album, artist and playlist list rows: an album/artist/playlist art
+// square, a name, a meta line and a trailing action cluster on a sunken pill.
+const collectionRowClass =
+  'group grid min-w-0 grid-cols-[48px_minmax(0,1fr)_auto] items-center gap-[12px] rounded-[8px] border border-line bg-sunken px-[10px] py-[7px] hover:border-[color:var(--line-hover)] focus-within:border-[color:var(--line-hover)] max-phone:grid-cols-[42px_minmax(0,1fr)_auto] max-phone:gap-[9px]'
+const collectionArtClass =
+  'grid h-[48px] w-[48px] place-items-center overflow-hidden rounded-md bg-raised text-faint max-phone:h-[42px] max-phone:w-[42px]'
+const collectionOpenClass =
+  'grid min-w-0 gap-[4px] border-0 bg-none px-0 py-[8px] text-left text-inherit'
+const collectionActionsClass = 'flex items-center gap-[4px] max-phone:gap-0'
+const collectionIconButtonClassName = 'h-[36px] w-[36px]'
+
 function LayoutToggle({
   layout,
   onChange,
@@ -171,11 +183,16 @@ function LayoutToggle({
   onChange: (layout: Layout) => void
 }) {
   return (
-    <div className="library-layout-toggle" role="group" aria-label="Library layout">
+    <div
+      className="flex rounded-[8px] border border-line bg-sunken p-[3px]"
+      role="group"
+      aria-label="Library layout"
+    >
       <IconButton
         aria-label="Grid view"
         aria-pressed={layout === 'grid'}
         onClick={() => onChange('grid')}
+        className="h-[34px] w-[34px] rounded-md aria-pressed:bg-accent aria-pressed:text-accent-ink"
       >
         <Grid2X2 size={17} />
       </IconButton>
@@ -183,6 +200,7 @@ function LayoutToggle({
         aria-label="List view"
         aria-pressed={layout === 'list'}
         onClick={() => onChange('list')}
+        className="h-[34px] w-[34px] rounded-md aria-pressed:bg-accent aria-pressed:text-accent-ink"
       >
         <List size={18} />
       </IconButton>
@@ -229,20 +247,24 @@ function FilterMenu({
   return (
     <details
       ref={root}
-      className="library-filter"
+      className="relative min-w-[125px] rounded-[8px] border border-line bg-sunken text-muted max-phone:flex-1"
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary>
+      <summary className="cursor-pointer py-[11px] pr-[30px] pl-[12px] text-text coarse:flex coarse:min-h-11 coarse:items-center">
         {selected.length ? `${label} (${selected.length})` : `All ${label.toLowerCase()}`}
       </summary>
-      <div>
+      <div className="absolute top-[calc(100%+5px)] left-0 z-overlay grid max-h-[260px] min-w-[190px] overflow-auto overscroll-contain rounded-[8px] border border-line bg-sunken p-[8px] shadow-[0_14px_36px_color-mix(in_oklab,var(--color-shadow)_53%,transparent)] max-phone:w-full max-phone:min-w-0">
         {options.map((option) => (
-          <label key={option}>
+          <label
+            key={option}
+            className="flex items-center gap-[9px] px-[5px] py-[7px] text-small text-text coarse:min-h-11"
+          >
             <input
               type="checkbox"
               checked={selected.includes(option)}
               onChange={() => onToggle(option)}
+              className="accent-accent"
             />
             {option}
           </label>
@@ -302,7 +324,12 @@ function CollectionPlayButton({
     )
   return (
     <button
-      className={cx('library-card-play', playback.active && 'active')}
+      className={cx(
+        'library-card-play absolute right-[10px] bottom-[10px] grid h-[38px] w-[38px] translate-y-[5px] place-items-center rounded-pill border-0 bg-accent text-accent-ink opacity-0 transition-[opacity,transform] duration-[140ms] ease-in-out',
+        'group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100',
+        'no-hover:translate-y-0 no-hover:opacity-100 coarse:h-11 coarse:w-11',
+        playback.active && 'translate-y-0 opacity-100',
+      )}
       aria-label={label}
       disabled={disabled}
       onClick={onClick}
@@ -329,15 +356,26 @@ function AlbumItem({
 }) {
   if (layout === 'list')
     return (
-      <div className="library-collection-row">
-        <span className="library-collection-art">
-          {album.coverArt ? <img src={cover(album.coverArt)} alt="" loading="lazy" /> : <Disc3 />}
+      <div className={collectionRowClass}>
+        <span className={collectionArtClass}>
+          {album.coverArt ? (
+            <img
+              src={cover(album.coverArt)}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <Disc3 />
+          )}
         </span>
-        <button className="library-collection-open" onClick={onOpen}>
-          <strong>{album.name}</strong>
-          <small>{albumMeta(album)}</small>
+        <button className={collectionOpenClass} onClick={onOpen}>
+          <strong className="overflow-hidden text-ellipsis whitespace-nowrap">{album.name}</strong>
+          <small className="overflow-hidden text-ellipsis whitespace-nowrap text-muted">
+            {albumMeta(album)}
+          </small>
         </button>
-        <div className="library-collection-actions">
+        <div className={collectionActionsClass}>
           <CollectionPlayButton
             source={`album:${album.id}`}
             name={album.name}
@@ -346,7 +384,12 @@ function AlbumItem({
             disabled={loading}
             onPlay={onPlay}
           />
-          <IconButton aria-label={`Shuffle ${album.name}`} onClick={onShuffle} disabled={loading}>
+          <IconButton
+            aria-label={`Shuffle ${album.name}`}
+            onClick={onShuffle}
+            disabled={loading}
+            className="h-[36px] w-[36px]"
+          >
             <Shuffle size={17} />
           </IconButton>
         </div>
@@ -354,10 +397,23 @@ function AlbumItem({
     )
 
   return (
-    <article className="library-card">
-      <div className="library-card-art">
-        <button className="library-cover" aria-label={`Open ${album.name}`} onClick={onOpen}>
-          {album.coverArt ? <img src={cover(album.coverArt)} alt="" loading="lazy" /> : <Disc3 />}
+    <article className="library-card group min-w-0">
+      <div className="relative">
+        <button
+          className="library-cover relative grid aspect-square w-full place-items-center overflow-hidden rounded-[10px] border border-line bg-raised p-0 text-faint"
+          aria-label={`Open ${album.name}`}
+          onClick={onOpen}
+        >
+          {album.coverArt ? (
+            <img
+              src={cover(album.coverArt)}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <Disc3 />
+          )}
         </button>
         <CollectionPlayButton
           source={`album:${album.id}`}
@@ -368,9 +424,14 @@ function AlbumItem({
           onPlay={onPlay}
         />
       </div>
-      <button className="library-card-copy" onClick={onOpen}>
-        <strong>{album.name}</strong>
-        <small>
+      <button
+        className="library-card-copy block w-full border-0 bg-none p-0 text-left text-inherit"
+        onClick={onOpen}
+      >
+        <strong className="mt-[8px] block overflow-hidden text-ellipsis whitespace-nowrap">
+          {album.name}
+        </strong>
+        <small className="mt-[4px] block overflow-hidden text-ellipsis whitespace-nowrap text-muted">
           {album.artist}
           {album.year ? ` · ${album.year}` : ''}
         </small>
@@ -395,19 +456,44 @@ function ArtistItem({
   onShuffle: () => void
 }) {
   return (
-    <article className={`library-artist-card ${layout}`}>
-      <button className="library-artist-open" onClick={onOpen}>
-        <span className="library-artist-art">
-          {artist.coverArt ? <img src={cover(artist.coverArt)} alt="" loading="lazy" /> : <Disc3 />}
+    <article
+      className={cx(
+        'library-artist-card min-w-0 gap-[10px] rounded-[9px] border border-line bg-raised p-[12px] hover:border-[color:var(--line-hover)] focus-within:border-[color:var(--line-hover)]',
+        layout === 'grid' ? 'grid justify-items-center text-center' : 'flex items-center',
+      )}
+    >
+      <button
+        className={cx(
+          'min-w-0 flex-1 gap-[10px] border-0 bg-none p-0 text-left text-inherit',
+          layout === 'grid' ? 'grid justify-items-center text-center' : 'flex items-center',
+        )}
+        onClick={onOpen}
+      >
+        <span
+          className={cx(
+            'library-artist-art grid flex-none place-items-center overflow-hidden rounded-pill bg-raised text-faint',
+            layout === 'grid' ? 'h-[104px] w-[104px]' : 'h-[52px] w-[52px]',
+          )}
+        >
+          {artist.coverArt ? (
+            <img
+              src={cover(artist.coverArt)}
+              alt=""
+              loading="lazy"
+              className="h-full w-full object-cover"
+            />
+          ) : (
+            <Disc3 />
+          )}
         </span>
-        <span>
-          <strong>{artist.name}</strong>
-          <small>
+        <span className="grid min-w-0">
+          <strong className="overflow-hidden text-ellipsis whitespace-nowrap">{artist.name}</strong>
+          <small className="overflow-hidden text-ellipsis whitespace-nowrap text-muted">
             {artist.albumCount ?? 0} {artist.albumCount === 1 ? 'album' : 'albums'}
           </small>
         </span>
       </button>
-      <div className="library-collection-actions">
+      <div className={collectionActionsClass}>
         <CollectionPlayButton
           source={`artist:${artist.id}`}
           name={artist.name}
@@ -416,7 +502,12 @@ function ArtistItem({
           disabled={loading}
           onPlay={onPlay}
         />
-        <IconButton aria-label={`Shuffle ${artist.name}`} onClick={onShuffle} disabled={loading}>
+        <IconButton
+          aria-label={`Shuffle ${artist.name}`}
+          onClick={onShuffle}
+          disabled={loading}
+          className={collectionIconButtonClassName}
+        >
           <Shuffle size={17} />
         </IconButton>
       </div>
@@ -437,7 +528,7 @@ function TrackList({
 }) {
   const player = usePlayer()
   return (
-    <div className="library-tracks">
+    <div className="library-tracks grid">
       {tracks.map((track, index) => {
         // A playlist may hold the same song twice, and the same song appears in several
         // collections, so the queue and the position are both part of "the playing row".
@@ -447,26 +538,34 @@ function TrackList({
           player.libraryTrack?.id === track.id
         const playing = current && player.playing
         return (
-          <div className="library-track-row" key={`${track.id}-${index}`}>
+          <div
+            className="library-track-row flex items-center border-b border-line"
+            key={`${track.id}-${index}`}
+          >
             <button
-              className={`library-track-play ${current ? 'playing' : ''}`}
+              className={cx(
+                'library-track-play grid w-full grid-cols-[34px_minmax(170px,2fr)_minmax(100px,1fr)_52px_24px] items-center gap-[12px] rounded-md border-0 bg-transparent px-[12px] py-[10px] text-left text-inherit hover:bg-hover coarse:min-h-11 max-phone:grid-cols-[24px_minmax(0,1fr)_24px]',
+                current && 'bg-hover',
+              )}
               aria-label={`${playing ? 'Pause' : 'Play'} ${track.title}`}
               onClick={() =>
                 current ? player.toggle() : player.playLibrary(tracks, index, source)
               }
             >
-              <span>{track.track ?? index + 1}</span>
-              <span>
+              <span className="text-small text-muted">{track.track ?? index + 1}</span>
+              <span className="grid gap-[3px]">
                 <strong>{track.title}</strong>
-                <small>{track.artist}</small>
+                <small className="text-small text-muted">{track.artist}</small>
               </span>
-              <small>{track.album}</small>
-              <time>{durationText(track.duration)}</time>
+              <small className="text-small text-muted max-phone:hidden">{track.album}</small>
+              <time className="text-small text-muted max-phone:hidden">
+                {durationText(track.duration)}
+              </time>
               {playing ? <Pause size={15} /> : <Play size={15} fill="currentColor" />}
             </button>
             {onRemove && (
               <IconButton
-                className="library-track-remove"
+                className="mr-[5px] w-[38px] flex-none"
                 aria-label={`Remove ${track.title} from playlist`}
                 // Removal is positional, so a second click during the first would send an
                 // index measured against the old list and delete a different song.
@@ -489,7 +588,7 @@ function PopularityChart({ albums }: { albums: LibraryAlbum[] }) {
   const peak = points.reduce((most, album) => Math.max(most, album.playCount), 0)
   if (points.length < 2 || peak === 0)
     return (
-      <p className="muted small">
+      <p className="text-small text-muted">
         Navidrome has not recorded enough plays for these releases to chart yet.
       </p>
     )
@@ -508,24 +607,32 @@ function PopularityChart({ albums }: { albums: LibraryAlbum[] }) {
     )
     .join(' ')
   const busiest = points.reduce((best, album) => (album.playCount > best.playCount ? album : best))
+  const tickClass = 'fill-muted text-[11px]'
   return (
-    <div className="popularity-chart">
+    <div className="grid gap-[8px] overflow-x-auto rounded-[10px] border border-line bg-sunken p-[14px]">
       <svg
         viewBox={`0 0 ${width} ${height}`}
         role="img"
+        className="h-auto w-full min-w-[320px] max-w-[620px]"
         aria-label={`Play counts from ${points[0]?.year} to ${points[points.length - 1]?.year}. ${busiest.name} leads with ${busiest.playCount} plays.`}
       >
-        <line x1={left} y1={y(0)} x2={width - right} y2={y(0)} className="axis" />
-        <line x1={left} y1={top} x2={left} y2={y(0)} className="axis" />
-        <text x={left - 8} y={top + 4} className="tick end">
+        <line x1={left} y1={y(0)} x2={width - right} y2={y(0)} className="stroke-line" />
+        <line x1={left} y1={top} x2={left} y2={y(0)} className="stroke-line" />
+        <text x={left - 8} y={top + 4} className={cx(tickClass, '[text-anchor:end]')}>
           {peak}
         </text>
-        <text x={left - 8} y={y(0) + 4} className="tick end">
+        <text x={left - 8} y={y(0) + 4} className={cx(tickClass, '[text-anchor:end]')}>
           0
         </text>
-        <path d={line} className="trend" />
+        <path d={line} className="fill-none stroke-accent stroke-2 [stroke-linejoin:round]" />
         {points.map((album, index) => (
-          <circle key={album.id} cx={x(index)} cy={y(album.playCount)} r={4} className="node">
+          <circle
+            key={album.id}
+            cx={x(index)}
+            cy={y(album.playCount)}
+            r={4}
+            className="fill-accent"
+          >
             <title>{`${album.name} (${album.year}) · ${album.playCount} plays`}</title>
           </circle>
         ))}
@@ -535,14 +642,14 @@ function PopularityChart({ albums }: { albums: LibraryAlbum[] }) {
               key={`${album.id}-label`}
               x={x(index)}
               y={height - 9}
-              className={`tick ${index === 0 ? 'start' : 'end'}`}
+              className={cx(tickClass, index === 0 ? '[text-anchor:start]' : '[text-anchor:end]')}
             >
               {album.year}
             </text>
           ) : null,
         )}
       </svg>
-      <small>
+      <small className="text-small text-muted">
         {busiest.name} is the most played at {busiest.playCount.toLocaleString()} plays.
       </small>
     </div>
@@ -572,11 +679,13 @@ function PlaylistRow({
 }) {
   const copy = (
     <>
-      <strong>
-        {liked && <Heart size={13} fill="currentColor" />}
-        <span>{playlist.name}</span>
+      <strong className="flex items-center gap-[6px] overflow-hidden">
+        {liked && <Heart size={13} fill="currentColor" className="flex-none" />}
+        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+          {playlist.name}
+        </span>
       </strong>
-      <small>
+      <small className="overflow-hidden text-ellipsis whitespace-nowrap text-muted">
         {songCount(playlist.songCount ?? 0)}
         {playlist.duration ? ` · ${durationText(playlist.duration)}` : ''}
         {playlist.public ? ' · public' : ''}
@@ -584,23 +693,32 @@ function PlaylistRow({
     </>
   )
   return (
-    <div className={layout === 'grid' ? 'library-list-row' : 'library-collection-row'}>
+    <div
+      className={
+        layout === 'grid'
+          ? 'library-list-row group flex items-center gap-[6px] rounded-[9px] border border-line bg-raised hover:border-[color:var(--line-hover)] focus-within:border-[color:var(--line-hover)]'
+          : collectionRowClass
+      }
+    >
       {layout === 'grid' ? (
-        <button className="library-list-open" onClick={onOpen}>
-          <ListMusic size={20} />
+        <button
+          className="library-list-open grid min-w-0 flex-1 grid-cols-[28px_minmax(0,1fr)] items-center gap-x-[10px] gap-y-[3px] rounded-[8px] border-0 bg-raised p-[16px] text-left text-inherit"
+          onClick={onOpen}
+        >
+          <ListMusic size={20} className="row-span-2" />
           {copy}
         </button>
       ) : (
         <>
-          <span className="library-collection-art">
+          <span className={collectionArtClass}>
             <ListMusic size={20} />
           </span>
-          <button className="library-collection-open" onClick={onOpen}>
+          <button className={collectionOpenClass} onClick={onOpen}>
             {copy}
           </button>
         </>
       )}
-      <div className="library-collection-actions">
+      <div className={cx(collectionActionsClass, layout === 'grid' && 'pr-[6px]')}>
         <CollectionPlayButton
           source={`playlist:${playlist.id}`}
           name={playlist.name}
@@ -609,12 +727,17 @@ function PlaylistRow({
           disabled={loading}
           onPlay={onPlay}
         />
-        <IconButton aria-label={`Shuffle ${playlist.name}`} onClick={onShuffle} disabled={loading}>
+        <IconButton
+          aria-label={`Shuffle ${playlist.name}`}
+          onClick={onShuffle}
+          disabled={loading}
+          className={collectionIconButtonClassName}
+        >
           <Shuffle size={17} />
         </IconButton>
         {!liked && (
           <IconButton
-            className="library-row-delete"
+            className="mr-[4px] self-center p-[8px] opacity-0 transition-opacity duration-[140ms] group-hover:opacity-100 group-focus-within:opacity-100 no-hover:opacity-100"
             aria-label={`Delete playlist ${playlist.name}`}
             onClick={onDelete}
             disabled={deleting}
@@ -995,10 +1118,19 @@ export function LibraryPage({
     if (window.confirm(`Delete playlist “${target.name}”?`)) deletePlaylist.mutate(target.id)
   }
 
+  // Renders under the heading it belongs to (e.g. "Fresh in your library") rather than above
+  // the whole browser, so a failed load never reads as if the page itself is broken.
+  const libraryLoadError = showBrowser && activeQuery.isError && (
+    <InlineError role="alert">
+      <span>{activeQuery.error.message}</span>
+      <Button onClick={() => void activeQuery.refetch()}>Retry</Button>
+    </InlineError>
+  )
+
   if (capabilities.isLoading) return <p role="status">Connecting to your library…</p>
   if (!capabilities.data?.available)
     return (
-      <EmptyPanel className="library-empty">
+      <EmptyPanel className="min-h-[55vh]">
         <Library size={36} />
         <h1>Your music library lives here.</h1>
         <p>{capabilities.data?.detail ?? 'Navidrome is not ready.'}</p>
@@ -1015,22 +1147,28 @@ export function LibraryPage({
 
   return (
     <>
-      <div className="page-heading library-heading">
+      <div className="page-heading mb-[24px]">
         <div>
           <p className="eyebrow">YOUR MUSIC, READY TO PLAY</p>
           <h1>Library</h1>
         </div>
-        <Tag className="library-status" role="status">
-          <span style={{ visibility: busy ? 'hidden' : undefined }}>
+        <Tag className="grid" role="status">
+          <span className="[grid-area:1/1]" style={{ visibility: busy ? 'hidden' : undefined }}>
             {capabilities.data.sonic_similarity ? 'AUDIOMUSE CONNECTED' : 'NAVIDROME READY'}
           </span>
-          {busy && <span>Opening music…</span>}
+          {busy && <span className="[grid-area:1/1]">Opening music…</span>}
         </Tag>
       </div>
-      <nav className="library-tabs" aria-label="Library views">
+      <nav
+        className="flex gap-[6px] overflow-x-auto border-b border-line mb-[28px] max-phone:mb-[20px] max-phone:gap-0 max-phone:overflow-visible"
+        aria-label="Library views"
+      >
         {(['home', 'albums', 'artists', 'tracks', 'playlists'] as Tab[]).map((item) => (
           <button
-            className={tab === item ? 'active' : ''}
+            className={cx(
+              'border-0 border-b-2 bg-none px-[14px] py-[11px] capitalize coarse:min-h-11 max-phone:min-w-0 max-phone:flex-1 max-phone:px-[2px] max-phone:py-[12px] max-phone:text-[13px] max-phone:text-center',
+              tab === item ? 'border-accent text-text' : 'border-transparent text-muted',
+            )}
             key={item}
             aria-pressed={tab === item}
             onClick={() => changeTab(item)}
@@ -1040,24 +1178,30 @@ export function LibraryPage({
         ))}
       </nav>
       {showBrowser && (
-        <div className="library-tools">
-          <label className="library-search">
+        <div className="flex flex-wrap items-center gap-[10px] mb-[22px]">
+          <label className="library-search flex w-[min(420px,100%)] items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted">
             <Search size={17} />
             <input
+              className="w-full border-0 bg-transparent p-[11px] text-inherit outline-0"
               aria-label={`Search ${tab === 'home' ? 'albums' : tab}`}
               value={query}
               onChange={(event) => setQuery(event.target.value)}
               placeholder={`Search ${tab === 'home' ? 'albums' : tab}`}
             />
             {query && (
-              <button aria-label="Clear search" onClick={() => setQuery('')}>
+              <button
+                className="grid place-items-center border-0 bg-none p-[7px] text-muted coarse:min-h-11 coarse:min-w-11"
+                aria-label="Clear search"
+                onClick={() => setQuery('')}
+              >
                 <X size={15} />
               </button>
             )}
           </label>
-          <label className="library-select">
+          <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
             <SlidersHorizontal size={16} />
             <select
+              className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-[16px]"
               aria-label={`Sort ${tab}`}
               value={sort}
               onChange={(event) => setSorts({ ...sorts, [tab]: event.target.value })}
@@ -1070,8 +1214,9 @@ export function LibraryPage({
             </select>
           </label>
           {tab === 'playlists' && (
-            <label className="library-select">
+            <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
               <select
+                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-[16px]"
                 aria-label="Filter playlists"
                 value={visibility}
                 onChange={(event) => setVisibility(event.target.value)}
@@ -1112,7 +1257,7 @@ export function LibraryPage({
                 <button
                   type="button"
                   data-ui="text-link"
-                  className={textLinkClassName('library-clear-filters')}
+                  className={textLinkClassName('px-[5px] py-[9px]')}
                   onClick={() => {
                     setSelectedGenres([])
                     setSelectedYears([])
@@ -1123,8 +1268,8 @@ export function LibraryPage({
               )}
             </>
           )}
-          <div className="library-toolbar-end">
-            <span className="library-count">
+          <div className="flex items-center gap-[10px] ml-auto max-phone:ml-0">
+            <span className="library-count text-small whitespace-nowrap text-muted">
               {tab === 'tracks'
                 ? `${trackItems.length} of ${trackTotal} loaded`
                 : `${currentItems.length} loaded`}
@@ -1140,16 +1285,16 @@ export function LibraryPage({
       )}
       {showBrowser && tab === 'playlists' && showPlaylistForm && (
         <form
-          className="playlist-form"
+          className="flex flex-wrap items-end gap-[10px] rounded-[9px] border border-line bg-raised p-[14px] mb-[20px]"
           onSubmit={(event) => {
             event.preventDefault()
             const name = newName.trim()
             if (name) createPlaylist.mutate(name)
           }}
         >
-          <label>
+          <label className="grid min-w-[min(320px,100%)] gap-[6px] text-small text-muted">
             Playlist name
-            <input
+            <Field
               autoFocus
               value={newName}
               maxLength={200}
@@ -1176,14 +1321,8 @@ export function LibraryPage({
       {showBrowser && activeQuery.isLoading && (
         <p role="status">Loading {tab === 'home' ? 'albums' : tab}…</p>
       )}
-      {showBrowser && activeQuery.isError && (
-        <InlineError role="alert">
-          <span>{activeQuery.error.message}</span>
-          <Button onClick={() => void activeQuery.refetch()}>Retry</Button>
-        </InlineError>
-      )}
       {(albumId || playlistId) && (
-        <section className="library-detail">
+        <section className="library-detail grid gap-[16px]">
           <div className="section-heading">
             <div>
               <button
@@ -1201,12 +1340,12 @@ export function LibraryPage({
               >
                 ← Back to {albumParent?.name ?? (playlistId ? 'playlists' : 'albums')}
               </button>
-              <h2>
+              <h2 className="flex items-center gap-[8px]">
                 {playlistLiked && <Heart size={17} fill="currentColor" />}
                 {detailTitle}
               </h2>
               {!(albumDetail.isLoading || playlistDetail.isLoading) && (
-                <small className="library-count">
+                <small className="library-count text-small whitespace-nowrap text-muted">
                   {songCount(detailTracks.length)}
                   {playlist?.duration ? ` · ${durationText(playlist.duration)}` : ''}
                 </small>
@@ -1251,7 +1390,7 @@ export function LibraryPage({
           </div>
           {playlist && renaming && (
             <form
-              className="playlist-form"
+              className="flex flex-wrap items-end gap-[10px] rounded-[9px] border border-line bg-raised p-[14px] mb-[20px]"
               onSubmit={(event) => {
                 event.preventDefault()
                 const name = renameValue.trim()
@@ -1259,9 +1398,9 @@ export function LibraryPage({
                 else setRenaming(false)
               }}
             >
-              <label>
+              <label className="grid min-w-[min(320px,100%)] gap-[6px] text-small text-muted">
                 Playlist name
-                <input
+                <Field
                   autoFocus
                   value={renameValue}
                   maxLength={200}
@@ -1306,14 +1445,15 @@ export function LibraryPage({
             }
           />
           {playlist && (
-            <section className="playlist-add">
+            <section className="border-t border-line pt-[12px]">
               <div className="section-heading">
                 <h3>Add songs</h3>
                 <span>Search your library</span>
               </div>
-              <label className="library-search">
+              <label className="library-search flex w-[min(420px,100%)] items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted">
                 <Search size={17} />
                 <input
+                  className="w-full border-0 bg-transparent p-[11px] text-inherit outline-0"
                   aria-label="Search songs to add"
                   value={playlistTrackQuery}
                   onChange={(event) => setPlaylistTrackQuery(event.target.value)}
@@ -1322,15 +1462,18 @@ export function LibraryPage({
               </label>
               {playlistTracks.isLoading && <p role="status">Searching songs…</p>}
               {playlistTracks.isError && <ErrorBanner>{playlistTracks.error.message}</ErrorBanner>}
-              <div className="playlist-add-list">
+              <div className="playlist-add-list grid gap-[6px] mt-[12px]">
                 {playlistTracks.data?.items.map((track) => {
                   const index = playlist.entry.findIndex((item) => item.id === track.id)
                   const member = index >= 0
                   return (
-                    <div key={track.id}>
-                      <span>
+                    <div
+                      key={track.id}
+                      className="flex items-center justify-between gap-[12px] rounded-md border border-line bg-raised px-[12px] py-[9px]"
+                    >
+                      <span className="grid min-w-0 gap-[3px]">
                         <strong>{track.title}</strong>
-                        <small>
+                        <small className="overflow-hidden text-ellipsis whitespace-nowrap text-muted">
                           {track.artist} · {track.album}
                         </small>
                       </span>
@@ -1374,7 +1517,7 @@ export function LibraryPage({
         </InlineError>
       )}
       {artistId && artistDetail.data && (
-        <section className="library-detail">
+        <section className="library-detail grid gap-[16px]">
           <button
             type="button"
             data-ui="text-link"
@@ -1383,21 +1526,25 @@ export function LibraryPage({
           >
             ← Back to artists
           </button>
-          <div className="library-artist-heading">
-            <span className="library-artist-art large">
+          <div className="library-artist-heading flex items-center gap-[16px] max-phone:flex-wrap max-phone:items-start">
+            <span className="grid h-[84px] w-[84px] flex-none basis-[84px] place-items-center overflow-hidden rounded-pill bg-raised text-faint">
               {artistDetail.data.coverArt ? (
-                <img src={cover(artistDetail.data.coverArt)} alt="" />
+                <img
+                  src={cover(artistDetail.data.coverArt)}
+                  alt=""
+                  className="h-full w-full object-cover"
+                />
               ) : (
                 <Disc3 />
               )}
             </span>
-            <div>
-              <h2>{artistDetail.data.name}</h2>
+            <div className="flex-1">
+              <h2 className="mb-[4px]">{artistDetail.data.name}</h2>
               <span>
                 {artistSongsMode ? `${artistSongs.length} SONGS` : `${artistAlbums.length} ALBUMS`}
               </span>
             </div>
-            <div className="button-row">
+            <div className="button-row max-phone:w-full">
               <CollectionPlayButton
                 source={`artist:${artistId}`}
                 text="Play all"
@@ -1435,10 +1582,11 @@ export function LibraryPage({
               </Button>
             </div>
           </div>
-          <div className="library-tools artist-tools">
-            <label className="library-select">
+          <div className="flex flex-wrap items-center gap-[10px] mt-[4px] mb-[12px]">
+            <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
               <SlidersHorizontal size={16} />
               <select
+                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-[16px]"
                 aria-label={artistSongsMode ? 'Sort songs' : 'Sort albums'}
                 value={artistSongsMode ? artistSongSort : artistAlbumSort}
                 onChange={(event) =>
@@ -1464,7 +1612,13 @@ export function LibraryPage({
             <TrackList tracks={artistSongs} source={`artist:${artistId}`} />
           ) : (
             <>
-              <div className={layout === 'grid' ? 'library-grid' : 'library-collection-list'}>
+              <div
+                className={
+                  layout === 'grid'
+                    ? 'library-grid grid grid-cols-[repeat(auto-fill,minmax(145px,1fr))] gap-x-[16px] gap-y-[22px]'
+                    : 'grid grid-cols-1 gap-[6px]'
+                }
+              >
                 {artistAlbums.map((album) => (
                   <AlbumItem
                     album={album}
@@ -1486,7 +1640,7 @@ export function LibraryPage({
                   />
                 ))}
               </div>
-              <section className="artist-popularity">
+              <section className="grid gap-[10px] mt-[26px]">
                 <div className="section-heading">
                   <h3>Popularity</h3>
                   <span>Navidrome play counts by release year</span>
@@ -1508,7 +1662,14 @@ export function LibraryPage({
                   : 'Albums'}
             </h2>
           </div>
-          <div className={layout === 'grid' ? 'library-grid' : 'library-collection-list'}>
+          {libraryLoadError}
+          <div
+            className={
+              layout === 'grid'
+                ? 'library-grid grid grid-cols-[repeat(auto-fill,minmax(145px,1fr))] gap-x-[16px] gap-y-[22px]'
+                : 'grid grid-cols-1 gap-[6px]'
+            }
+          >
             {albumItems.map((album) => (
               <AlbumItem
                 album={album}
@@ -1533,33 +1694,43 @@ export function LibraryPage({
         </section>
       )}
       {tab === 'artists' && showBrowser && (
-        <div className={layout === 'grid' ? 'library-artist-grid' : 'library-collection-list'}>
-          {artistItems.map((artist: LibraryArtist) => (
-            <ArtistItem
-              artist={artist}
-              key={artist.id}
-              layout={layout}
-              loading={busy}
-              onOpen={() =>
-                void navigate({
-                  to: '/library/artists/$artistId',
-                  params: { artistId: artist.id },
-                })
-              }
-              onPlay={() =>
-                playCollection.mutate({ kind: 'artist', id: artist.id, shuffled: false })
-              }
-              onShuffle={() =>
-                playCollection.mutate({ kind: 'artist', id: artist.id, shuffled: true })
-              }
-            />
-          ))}
+        <div>
+          {libraryLoadError}
+          <div
+            className={
+              layout === 'grid'
+                ? 'library-artist-grid grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-[12px]'
+                : 'grid grid-cols-1 gap-[6px]'
+            }
+          >
+            {artistItems.map((artist: LibraryArtist) => (
+              <ArtistItem
+                artist={artist}
+                key={artist.id}
+                layout={layout}
+                loading={busy}
+                onOpen={() =>
+                  void navigate({
+                    to: '/library/artists/$artistId',
+                    params: { artistId: artist.id },
+                  })
+                }
+                onPlay={() =>
+                  playCollection.mutate({ kind: 'artist', id: artist.id, shuffled: false })
+                }
+                onShuffle={() =>
+                  playCollection.mutate({ kind: 'artist', id: artist.id, shuffled: true })
+                }
+              />
+            ))}
+          </div>
         </div>
       )}
       {tab === 'tracks' && showBrowser && (
-        <section className="library-detail">
-          <div className="library-list-actions">
-            <div className="library-action-column">
+        <section className="library-detail grid gap-[16px]">
+          {libraryLoadError}
+          <div className="library-list-actions flex items-center gap-[4px]">
+            <div className="flex flex-col gap-[6px]">
               <CollectionPlayButton
                 source={trackSource}
                 text="Play all"
@@ -1569,12 +1740,12 @@ export function LibraryPage({
                 onPlay={() => playTracks.mutate({ shuffled: false })}
               />
               {trackTotal > 500 && (
-                <small className="muted">
+                <small className="text-small text-muted">
                   Plays the first 500 of {trackTotal.toLocaleString()} matching songs.
                 </small>
               )}
             </div>
-            <div className="library-action-column">
+            <div className="flex flex-col gap-[6px]">
               <Button
                 onClick={() => playTracks.mutate({ shuffled: true })}
                 disabled={busy || !trackTotal}
@@ -1582,7 +1753,7 @@ export function LibraryPage({
                 <Shuffle size={15} /> Shuffle
               </Button>
               {trackTotal > 500 && (
-                <small className="muted">
+                <small className="text-small text-muted">
                   Plays a random 500 of {trackTotal.toLocaleString()} matching songs.
                 </small>
               )}
@@ -1591,7 +1762,7 @@ export function LibraryPage({
           {/* Both buttons share one note when the whole selection fits; the per-button notes
               only differ once the 500-song queue limit splits their behaviour. */}
           {trackTotal <= 500 && (
-            <small className="muted library-actions-note">
+            <small className="block text-small text-muted mt-[8px] mb-[16px]">
               Covers every matching song, not just the loaded ones.
             </small>
           )}
@@ -1600,30 +1771,39 @@ export function LibraryPage({
         </section>
       )}
       {tab === 'playlists' && showBrowser && (
-        <div className={layout === 'grid' ? 'library-list' : 'library-collection-list'}>
-          {playlistItems.map((item: LibraryPlaylist) => (
-            <PlaylistRow
-              key={item.id}
-              playlist={item}
-              layout={layout}
-              liked={item.id === likedId}
-              loading={busy}
-              deleting={deletePlaylist.isPending}
-              onOpen={() =>
-                void navigate({
-                  to: '/library/playlists/$playlistId',
-                  params: { playlistId: item.id },
-                })
-              }
-              onPlay={() =>
-                playCollection.mutate({ kind: 'playlist', id: item.id, shuffled: false })
-              }
-              onShuffle={() =>
-                playCollection.mutate({ kind: 'playlist', id: item.id, shuffled: true })
-              }
-              onDelete={() => confirmDelete(item)}
-            />
-          ))}
+        <div>
+          {libraryLoadError}
+          <div
+            className={
+              layout === 'grid'
+                ? 'library-list grid grid-cols-[repeat(auto-fill,minmax(330px,1fr))] gap-[10px]'
+                : 'grid grid-cols-1 gap-[6px]'
+            }
+          >
+            {playlistItems.map((item: LibraryPlaylist) => (
+              <PlaylistRow
+                key={item.id}
+                playlist={item}
+                layout={layout}
+                liked={item.id === likedId}
+                loading={busy}
+                deleting={deletePlaylist.isPending}
+                onOpen={() =>
+                  void navigate({
+                    to: '/library/playlists/$playlistId',
+                    params: { playlistId: item.id },
+                  })
+                }
+                onPlay={() =>
+                  playCollection.mutate({ kind: 'playlist', id: item.id, shuffled: false })
+                }
+                onShuffle={() =>
+                  playCollection.mutate({ kind: 'playlist', id: item.id, shuffled: true })
+                }
+                onDelete={() => confirmDelete(item)}
+              />
+            ))}
+          </div>
         </div>
       )}
       {playCollection.isError && (
@@ -1633,7 +1813,9 @@ export function LibraryPage({
         !activeQuery.isLoading &&
         !activeQuery.isError &&
         currentItems.length === 0 && (
-          <p className="library-no-results">No {tab === 'home' ? 'albums' : tab} found.</p>
+          <p className="px-[16px] py-[64px] text-center text-muted">
+            No {tab === 'home' ? 'albums' : tab} found.
+          </p>
         )}
       {showBrowser && hasMore && (
         <InfiniteScroll hasMore={hasMore} loading={loadingMore} onLoadMore={loadMore} />
@@ -1666,7 +1848,7 @@ export function NowPlayingPage() {
 
   if (!track)
     return (
-      <EmptyPanel className="library-empty">
+      <EmptyPanel className="min-h-[55vh]">
         <Disc3 size={40} />
         <h1>Nothing playing yet.</h1>
         <Link data-ui="button" className={buttonClassName('primary', 'mx-auto')} to="/library">

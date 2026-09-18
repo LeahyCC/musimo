@@ -110,6 +110,29 @@ test('loading states name what is on the way and hold the counts back', async ({
   await expect(page.locator('.library-detail .library-count')).toHaveCount(0)
 })
 
+test('a failed load reports under the heading it belongs to', async ({ page }) => {
+  await libraryFixtures(page)
+  await page.route('**/api/library/albums?**', (route) =>
+    route.fulfill({ status: 500, json: { detail: 'The library index is unavailable.' } }),
+  )
+  await page.goto('/library')
+
+  const heading = page.getByRole('heading', { name: 'Fresh in your library' })
+  const error = page.getByRole('alert')
+  await expect(heading).toBeVisible()
+  await expect(error).toContainText('The library index is unavailable.')
+
+  const errorHandle = await error.elementHandle()
+  const headingComesFirst = await heading.evaluate(
+    (headingNode, errorNode) =>
+      errorNode instanceof Node
+        ? Boolean(headingNode.compareDocumentPosition(errorNode) & Node.DOCUMENT_POSITION_FOLLOWING)
+        : false,
+    errorHandle,
+  )
+  expect(headingComesFirst).toBe(true)
+})
+
 test('a filtered selection is its own queue, not the one already playing', async ({ page }) => {
   await libraryFixtures(page)
   await page.goto('/library/tracks')
