@@ -16,17 +16,25 @@ export function LibraryPanel() {
   })
   const data = query.data
   return (
-    <section className="library-panel" aria-label="Library index">
-      <h3>Library index</h3>
+    <section
+      className="my-[20px] rounded-[8px] border border-line p-[20px]"
+      aria-label="Library index"
+    >
+      <h3 className="mb-[12px]">Library index</h3>
       {data && (
         <>
           <strong>{data.total_files.toLocaleString()} audio files indexed</strong>
-          <p role="status">
+          <p role="status" className="my-[10px] text-small">
             {data.detail} · {data.walked.toLocaleString()} walked · {data.indexed.toLocaleString()}{' '}
             indexed · {data.elapsed}s · {data.errors} errors
           </p>
-          {data.status === 'scanning' && <progress aria-label="Library scan in progress" />}
-          <div className="button-row">
+          {data.status === 'scanning' && (
+            <progress
+              aria-label="Library scan in progress"
+              className="mb-[12px] w-full accent-accent"
+            />
+          )}
+          <div className="flex flex-wrap items-center gap-[16px]">
             <Button
               disabled={data.status === 'scanning' || command.isPending}
               onClick={() => command.mutate('scan')}
