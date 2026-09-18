@@ -55,9 +55,10 @@ Still open after the walk:
 
 - A path outside the allow-listed screens (for example `/nope`) gets the backend's JSON 404, so the app's own "Page not found" screen only appears under `/library`. The backend tests assert that 404, so it was left alone.
 - Search sections still offer "View all" when they have no results.
-- Settings renders its section headings and the "Settings are up to date" bar before settings have loaded or when they fail to load.
 - A library request failure retries for several seconds before the inline error appears, and the loading line sits above the "Fresh in your library" heading rather than under it.
 - Long titles in the Now Playing "Up next" list wrap across several lines on desktop.
+
+Closed with its Tailwind phase: Settings no longer renders its section headings or the "Settings are up to date" bar before settings have loaded or when they fail to load; `e2e/app.spec.ts` covers a delayed and a failed `/api/settings` response.
 
 ## Phone walk, 11 September 2026
 
