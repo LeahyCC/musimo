@@ -4,8 +4,11 @@ import type { ButtonHTMLAttributes } from 'react'
 import { cx } from '../cx'
 import type { ClassName } from '../cx'
 
-/** `compact` is the 32 by 36 box a crowded row uses: the footer player and the playlist picker. */
-export type IconButtonSize = 'default' | 'compact'
+/**
+ * `compact` is the 32 by 36 box a crowded row uses: the footer player and the playlist picker.
+ * `box` is the 36px square the library's play, shuffle and delete share in a row's action cluster.
+ */
+export type IconButtonSize = 'default' | 'compact' | 'box'
 /**
  * `outlined` draws a border and takes the surrounding text color: the actions on a job card.
  * `accent` is the album download control: a soft border, accent ink, and on a card a wash of the
@@ -27,6 +30,7 @@ export function iconButtonClassName(
     variant === 'accent' && 'rounded-[8px] border border-line bg-transparent',
     variant === 'accent-washed' && 'rounded-[8px] border border-line bg-canvas/93',
     size === 'compact' && 'min-h-[36px] min-w-[32px]',
+    size === 'box' && 'h-[36px] w-[36px]',
     // After the size, so a touch screen still gets its 44px whatever the row asked for.
     'coarse:min-h-11 coarse:min-w-11',
     active || variant.startsWith('accent')
