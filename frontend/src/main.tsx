@@ -61,6 +61,7 @@ import { PopoutProvider } from './now-playing-popout'
 import { PageTitle } from './page-title'
 import { CommandPalette } from './palette'
 import { PlayerProvider } from './player'
+import { PodcastPage } from './podcasts'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
 import { startTheme } from './theme/store'
@@ -1359,6 +1360,11 @@ const artistRoute = createRoute({
   validateSearch: validateArtistSearch,
   component: ArtistPage,
 })
+const podcastRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/podcasts/$podcastId',
+  component: PodcastPage,
+})
 const downloadsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/downloads',
@@ -1491,6 +1497,7 @@ const router = createRouter({
     searchRoute,
     albumRoute,
     artistRoute,
+    podcastRoute,
     libraryRoute,
     libraryAlbumsRoute,
     libraryAlbumRoute,

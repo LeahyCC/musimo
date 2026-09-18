@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Search and downloads
+
+- Search podcasts from a new Podcasts tab, open a show's latest episodes and download them straight from the publisher's file into `Podcasts/<show>`
+
 ### Library and playback
 
 - Give library playback its own audio element and a Web Audio analyser for the coming visualizer, keeping catalog previews off it (#51)

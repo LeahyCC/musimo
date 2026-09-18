@@ -88,7 +88,8 @@ def probe(path: Path, accurate: bool = False) -> dict[str, object]:
             capture_output=True,
             text=True,
             check=True,
-            timeout=15,
+            # A multi-hour podcast has hundreds of thousands of packets to list.
+            timeout=max(15, duration / 240),
         )
         sizes = [line.split(",")[0] for line in packets.stdout.splitlines()]
         bitrate = round(sum(int(size) for size in sizes if size.isdigit()) * 8 / duration)

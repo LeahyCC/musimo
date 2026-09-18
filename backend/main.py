@@ -31,6 +31,7 @@ from backend.library import Library
 from backend.models import SettingsPatch
 from backend.navidrome import Navidrome
 from backend.player_api import install_player_routes
+from backend.podcast_api import install_podcast_routes
 from backend.search_api import install_search_routes
 from backend.store import LockedSetting, Store
 from backend.version import VERSION
@@ -119,6 +120,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_download_routes(app, lambda: downloads)
     install_artist_download_routes(app, lambda: downloads)
     install_player_routes(app, lambda: navidrome)
+    install_podcast_routes(app, lambda: downloads)
 
     @app.middleware("http")
     async def same_origin(request: Request, call_next: RequestResponseEndpoint) -> Response:
@@ -380,7 +382,10 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 "settings/user",
                 "diagnostics",
             )
-            and not (path.startswith(("albums/", "artists/")) and path.split("/")[-1].isdigit())
+            and not (
+                path.startswith(("albums/", "artists/", "podcasts/"))
+                and path.split("/")[-1].isdigit()
+            )
             and not LIBRARY_SPA_PATH.fullmatch(path)
         ) or not (static / "index.html").is_file():
             raise HTTPException(404, "Not found")

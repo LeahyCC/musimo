@@ -88,6 +88,12 @@ Artist downloads (artist_downloads.py):
 - `GET /api/artists/{id}/download-plan`: checked release list with all_music flag.
 - `POST /api/artist-batches`: artist batch creation with selected releases.
 
+Podcasts (podcast_api.py, podcasts.py):
+
+- `GET /api/podcasts`: show search in Apple's podcast directory.
+- `GET /api/podcasts/{id}`: show and latest episodes.
+- `POST /api/podcast-episodes`: queue one episode as a `podcast` job.
+
 Player (player_api.py):
 
 - `GET /api/player/capabilities`: connection, server version and extensions.

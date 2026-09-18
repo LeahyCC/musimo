@@ -36,6 +36,7 @@ const failed: DownloadJob = {
   batch_id: 'album-batch',
   batch_label: 'Fixture album',
   album_id: 42,
+  catalog: 'deezer',
   track_id: track.id,
   format: 'original',
   target: '/music',

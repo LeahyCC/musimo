@@ -22,6 +22,7 @@ import { DownloadTarget } from './download-target'
 import { DownloadButton, failureMessage, useJobs } from './downloads'
 import { InfiniteScroll } from './infinite-scroll'
 import { durationText, usePlayer, usePreviewPlayback } from './player'
+import { PodcastResults } from './podcasts'
 import {
   Button,
   EmptyPanel,
@@ -37,7 +38,7 @@ import {
 const resultsHeadingClassName = 'mb-[17px] flex items-center justify-between gap-[12px]'
 const resultsTitleClassName = 'mb-[12px] text-base'
 
-const tabs = ['top', 'track', 'album', 'artist'] as const
+const tabs = ['top', 'track', 'album', 'artist', 'podcast'] as const
 type Tab = (typeof tabs)[number]
 const sorts = ['relevance', 'title', 'artist', 'year', 'duration', 'popularity'] as const
 type Sort = (typeof sorts)[number]
@@ -86,7 +87,13 @@ export function validateArtistSearch(search: Record<string, unknown>): ArtistSea
     sort: artistSorts.find((sort) => sort === search.sort),
   }
 }
-const labels = { top: 'Top', track: 'Tracks', album: 'Albums', artist: 'Artists' }
+const labels = {
+  top: 'Top',
+  track: 'Tracks',
+  album: 'Albums',
+  artist: 'Artists',
+  podcast: 'Podcasts',
+}
 
 function saveLastSearch(state: SearchState) {
   try {
@@ -424,7 +431,8 @@ export function TrackList({
   const queue = useJobs()
   const jobs = new Map<number, DownloadJob>()
   for (const job of queue.data?.jobs ?? []) {
-    if (job.hidden) continue
+    // Podcast episodes are numbered by another directory, so only music jobs belong here.
+    if (job.hidden || job.catalog !== 'deezer') continue
     const current = jobs.get(job.track_id)
     if (!current || current.updated_at < job.updated_at) jobs.set(job.track_id, job)
   }
@@ -787,6 +795,20 @@ export function SearchPage() {
   }
   const tab = state.tab ?? 'top'
   const [filters, setFilters] = useState(false)
+  // Podcasts come from another directory, so the music filters and sort do not apply to them.
+  const music = tab !== 'podcast'
+  const filtersShown =
+    music &&
+    Boolean(
+      filters ||
+      state.explicit ||
+      state.from !== undefined ||
+      state.until !== undefined ||
+      state.min !== undefined ||
+      state.max !== undefined ||
+      state.preview ||
+      state.library,
+    )
   useEffect(() => {
     if (state.q) saveLastSearch(state)
   }, [state])
@@ -802,8 +824,8 @@ export function SearchPage() {
           <em className="text-accent not-italic">Make room for it.</em>
         </h1>
         <p className="max-w-[490px] text-section">
-          Search tracks, albums and artists. Listen to a preview and see what’s already in your
-          library.
+          Search tracks, albums, artists and podcasts. Listen to a preview and see what’s already in
+          your library.
         </p>
         <div className="mt-[32px] mb-[60px] flex flex-wrap gap-[10px] max-phone:mb-[35px]">
           {['Daft Punk', 'Khruangbin', 'Nina Simone', 'Radiohead'].map((q) => (
@@ -859,34 +881,31 @@ export function SearchPage() {
             </button>
           ))}
         </div>
-        <Button aria-expanded={filters} onClick={() => setFilters(!filters)}>
-          Filters
-        </Button>
-        <label className="flex items-center gap-[10px] text-body text-muted">
-          Sort{' '}
-          <FieldSelect
-            tone="sunken"
-            fullWidth={false}
-            value={state.sort ?? 'relevance'}
-            onChange={(e) => change({ sort: sorts.find((value) => value === e.target.value) })}
-          >
-            {sorts.map((value) => (
-              <option key={value} value={value}>
-                {value[0]?.toUpperCase()}
-                {value.slice(1)}
-              </option>
-            ))}
-          </FieldSelect>
-        </label>
+        {music && (
+          <>
+            <Button aria-expanded={filters} onClick={() => setFilters(!filters)}>
+              Filters
+            </Button>
+            <label className="flex items-center gap-[10px] text-body text-muted">
+              Sort{' '}
+              <FieldSelect
+                tone="sunken"
+                fullWidth={false}
+                value={state.sort ?? 'relevance'}
+                onChange={(e) => change({ sort: sorts.find((value) => value === e.target.value) })}
+              >
+                {sorts.map((value) => (
+                  <option key={value} value={value}>
+                    {value[0]?.toUpperCase()}
+                    {value.slice(1)}
+                  </option>
+                ))}
+              </FieldSelect>
+            </label>
+          </>
+        )}
       </div>
-      {(filters ||
-        state.explicit ||
-        state.from !== undefined ||
-        state.until !== undefined ||
-        state.min !== undefined ||
-        state.max !== undefined ||
-        state.preview ||
-        state.library) && (
+      {filtersShown && (
         <div className="flex flex-wrap items-end gap-[12px] pt-[20px] pb-[8px]">
           <label className="flex flex-col gap-[5px] text-small text-muted">
             Lyrics
@@ -1010,11 +1029,20 @@ export function SearchPage() {
           </button>
         </div>
       )}
-      <p className="mt-[12px] mb-[24px] text-small">
-        Filters and sort apply to loaded results. Years fill in as album details arrive. Duration
-        and preview filters apply to tracks.
-      </p>
-      {(tab === 'top' ? (['track', 'album', 'artist'] as const) : [tab]).map((kind) => (
+      {music ? (
+        <p className="mt-[12px] mb-[24px] text-small">
+          Filters and sort apply to loaded results. Years fill in as album details arrive. Duration
+          and preview filters apply to tracks.
+        </p>
+      ) : (
+        <PodcastResults q={state.q.trim()} />
+      )}
+      {(tab === 'top'
+        ? (['track', 'album', 'artist'] as const)
+        : tab === 'podcast'
+          ? []
+          : [tab]
+      ).map((kind) => (
         <ResultsSection
           key={kind}
           kind={kind}
