@@ -1084,7 +1084,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               >
                 <Repeat size={17} />
                 {repeat === 'one' && (
-                  <small className="absolute mt-[5px] block translate-x-[7px] translate-y-[7px] text-[8px] text-accent">
+                  <small className="absolute mt-[5px] block translate-x-[7px] translate-y-[7px] text-micro text-accent">
                     1
                   </small>
                 )}

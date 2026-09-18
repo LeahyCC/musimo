@@ -126,9 +126,17 @@ type Walk = {
   path: string
   /** Something that only renders once the route has its data. */
   ready: (page: Page) => Locator
+  /** A route with no card, panel or empty state of its own, so the card check has nothing to read. */
+  cardless?: true
 }
 
 const ROUTES: Walk[] = [
+  {
+    name: 'discover',
+    path: '/',
+    ready: (page) => page.getByRole('heading', { level: 1, name: /Find it/ }),
+    cardless: true,
+  },
   {
     name: 'search',
     path: '/search?q=Fixture',
@@ -136,11 +144,13 @@ const ROUTES: Walk[] = [
   },
   {
     name: 'search-tracks',
+    cardless: true,
     path: '/search?q=Fixture&tab=track',
     ready: (page) => page.getByText('Morning Signal').first(),
   },
   {
     name: 'album',
+    cardless: true,
     path: '/albums/42',
     ready: (page) => page.getByRole('heading', { name: 'Harbor Lights', level: 1 }),
   },
@@ -163,6 +173,7 @@ const ROUTES: Walk[] = [
     name: 'library-album',
     path: '/library/albums/album-1',
     ready: (page) => page.getByRole('heading', { name: 'Clear Water' }),
+    cardless: true,
   },
   {
     name: 'library-artists',
@@ -175,12 +186,20 @@ const ROUTES: Walk[] = [
     ready: (page) => page.getByRole('heading', { name: 'Harbor Static' }),
   },
   {
+    name: 'library-artist-album',
+    path: '/library/artists/artist-1/albums/album-1',
+    ready: (page) => page.getByRole('heading', { name: 'Clear Water' }),
+    cardless: true,
+  },
+  {
     name: 'library-artist-songs',
     path: '/library/artists/artist-1/songs',
     ready: (page) => page.getByRole('main').getByText('Second Tide'),
+    cardless: true,
   },
   {
     name: 'library-tracks',
+    cardless: true,
     path: '/library/tracks',
     ready: (page) => page.getByRole('main').getByText('Second Tide'),
   },
@@ -188,14 +207,17 @@ const ROUTES: Walk[] = [
     name: 'library-playlists',
     path: '/library/playlists',
     ready: (page) => page.getByText('Road trip').first(),
+    cardless: true,
   },
   {
     name: 'library-playlist',
     path: '/library/playlists/road',
     ready: (page) => page.getByRole('heading', { name: 'Road trip' }),
+    cardless: true,
   },
   {
     name: 'now-playing',
+    cardless: true,
     path: '/now-playing',
     ready: (page) => page.getByText('Morning finds the water'),
   },
@@ -273,16 +295,20 @@ for (const route of ROUTES) {
       nav: await backgroundOf(page.locator('.sidebar')),
       player: await backgroundOf(page.locator('footer.live-player')),
     }
+    // The light values themselves for the chrome, not only "not the dark ones": a surface that
+    // went clear would show the light canvas through and pass a weaker check. A card may sit on
+    // the canvas by design (the library grid does), so it is held to not being any dark surface.
     expect(chrome.body).toBe(rgb(LIGHT_THEME.colors['--color-canvas']))
-    expect(chrome.body).not.toBe(rgb(colors['--color-canvas']))
-    expect(chrome.nav).not.toBe(rgb(colors['--color-sidebar']))
-    expect(chrome.player).not.toBe(rgb(colors['--color-raised']))
+    expect(chrome.nav).toBe(rgb(LIGHT_THEME.colors['--color-sidebar']))
+    expect(chrome.player).toBe(rgb(LIGHT_THEME.colors['--color-raised']))
 
     // A card is whichever boxed surface the route has first: a music or library card, a panel.
+    // Only the routes that say so have none; anywhere else a missing card is a missing surface.
     const card = page
       .locator("#main article, #main [data-ui='panel'], #main [data-ui='empty-panel']")
       .first()
-    if ((await card.count()) > 0) {
+    if (!route.cardless) {
+      await expect(card, `${route.name} card`).toHaveCount(1)
       const background = await backgroundOf(card)
       for (const token of ['--color-canvas', '--color-raised', '--color-sunken'] as const) {
         expect(background, `${route.name} card`).not.toBe(rgb(colors[token]))

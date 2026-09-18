@@ -620,7 +620,7 @@ function PopularityChart({ albums }: { albums: LibraryAlbum[] }) {
     )
     .join(' ')
   const busiest = points.reduce((best, album) => (album.playCount > best.playCount ? album : best))
-  const tickClass = 'fill-muted text-[11px]'
+  const tickClass = 'fill-muted text-tiny'
   return (
     <div className="grid gap-[8px] overflow-x-auto rounded-[10px] border border-line bg-sunken p-[14px]">
       <svg
@@ -1213,7 +1213,7 @@ export function LibraryPage({
           <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
             <SlidersHorizontal size={16} />
             <select
-              className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-[16px]"
+              className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
               aria-label={`Sort ${tab}`}
               value={sort}
               onChange={(event) => setSorts({ ...sorts, [tab]: event.target.value })}
@@ -1228,7 +1228,7 @@ export function LibraryPage({
           {tab === 'playlists' && (
             <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
               <select
-                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-[16px]"
+                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
                 aria-label="Filter playlists"
                 value={visibility}
                 onChange={(event) => setVisibility(event.target.value)}
@@ -1352,7 +1352,7 @@ export function LibraryPage({
               >
                 ← Back to {albumParent?.name ?? (playlistId ? 'playlists' : 'albums')}
               </button>
-              <h2 className="flex items-center gap-[8px] text-[16px]">
+              <h2 className="flex items-center gap-[8px] text-base">
                 {playlistLiked && <Heart size={17} fill="currentColor" />}
                 {detailTitle}
               </h2>
@@ -1598,7 +1598,7 @@ export function LibraryPage({
             <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
               <SlidersHorizontal size={16} />
               <select
-                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-[16px]"
+                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
                 aria-label={artistSongsMode ? 'Sort songs' : 'Sort albums'}
                 value={artistSongsMode ? artistSongSort : artistAlbumSort}
                 onChange={(event) =>

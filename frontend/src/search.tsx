@@ -35,7 +35,7 @@ import {
 /* A result section's heading row sits a little tighter than the shared one in `ui/`, and its
    title keeps a gap under it where a count or link wraps below. */
 const resultsHeadingClassName = 'mb-[17px] flex items-center justify-between gap-[12px]'
-const resultsTitleClassName = 'mb-[12px] text-[16px]'
+const resultsTitleClassName = 'mb-[12px] text-base'
 
 const tabs = ['top', 'track', 'album', 'artist'] as const
 type Tab = (typeof tabs)[number]
@@ -200,8 +200,8 @@ function Art({
   return (
     <div
       className={cx(
-        'group relative isolate flex shrink-0 items-center justify-center overflow-hidden rounded-[7px] bg-active',
-        item.kind === 'artist' && 'rounded-pill',
+        'group relative isolate flex shrink-0 items-center justify-center overflow-hidden bg-active',
+        item.kind === 'artist' ? 'rounded-pill' : 'rounded-[7px]',
         size === 'row' ? 'h-[46px] w-[46px]' : 'aspect-square',
         className,
       )}
@@ -298,7 +298,7 @@ export function MusicCard({ item }: { item: MusicResult }) {
       )}
       {item.kind === 'album' && (
         <meter
-          className="h-[4px] w-full accent-accent"
+          className="h-[4px] w-full"
           min={0}
           max={display.track_count || 1}
           value={display.owned_count}
@@ -498,7 +498,7 @@ export function TrackList({
   return (
     <div
       ref={parent}
-      className="virtual-list"
+      className="virtual-list min-h-[280px] overflow-auto overscroll-contain contain-strict"
       role="region"
       aria-label="Tracks"
       tabIndex={0}

@@ -690,7 +690,7 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
   return (
     <div
       ref={parent}
-      className="virtual-list"
+      className="virtual-list min-h-0 overflow-auto overscroll-contain contain-strict"
       role="region"
       aria-label="Download jobs"
       tabIndex={0}

@@ -221,7 +221,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
                 Format
                 <select
-                  className="min-w-0 max-w-full rounded-md border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-[16px]"
+                  className="min-w-0 max-w-full rounded-md border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-base"
                   value={chosenFormat}
                   disabled={download.isPending}
                   onChange={(e) => setFormat(e.target.value)}
@@ -235,7 +235,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
                 Download to
                 <select
-                  className="min-w-0 max-w-full rounded-md border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-[16px]"
+                  className="min-w-0 max-w-full rounded-md border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-base"
                   value={chosenTarget}
                   disabled={download.isPending}
                   onChange={(e) => setTarget(e.target.value)}

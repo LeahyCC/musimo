@@ -184,17 +184,17 @@
     margin: 0;
   }
   h1 {
-    font-size: 32px;
+    font-size: var(--text-page);
     font-weight: 550;
     letter-spacing: -1px;
     line-height: 1.2;
   }
   h2 {
-    font-size: 19px;
+    font-size: var(--text-heading);
     font-weight: 550;
   }
   h3 {
-    font-size: 15px;
+    font-size: var(--text-strong);
     font-weight: 550;
   }
   p {
@@ -207,8 +207,14 @@
   }
   @media (width < theme(--breakpoint-phone)) {
     h1 {
-      font-size: 27px;
+      font-size: var(--text-display);
     }
+  }
+  meter {
+    display: block;
+    width: 100%;
+    height: 7px;
+    margin-bottom: 6px;
   }
 }
 
@@ -245,13 +251,7 @@ input[type='color']::-moz-color-swatch {
   border-radius: var(--radius-sm);
 }
 
-/* Meter vendor bars, for the library index panel. */
-meter {
-  display: block;
-  width: 100%;
-  height: 7px;
-  margin-bottom: 6px;
-}
+/* Meter vendor bars. The box is in the base layer above, where a utility can override it. */
 meter::-webkit-meter-bar {
   background: var(--color-line);
   border: none;
@@ -272,15 +272,10 @@ meter::-webkit-meter-optimum-value {
         var(--safe-bottom) - 72px
     )
   );
-  min-height: 280px;
-  overflow: auto;
-  overscroll-behavior: contain;
-  contain: strict;
 }
 /* Inside the queue sheet the list shares the sheet's own scroll room rather than the page's. */
 .queue-sheet .virtual-list {
   height: min(620px, 50dvh);
-  min-height: 0;
 }
 
 /* A music card's primary link stretches over the whole card, whose `relative` article is the

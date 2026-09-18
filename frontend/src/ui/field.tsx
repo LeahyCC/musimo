@@ -17,7 +17,7 @@ export interface FieldOptions {
 
 const fieldClassName = ({ invalid, fullWidth = true, tone = 'raised' }: FieldOptions) =>
   cx(
-    'border text-small disabled:opacity-[0.55] coarse:min-h-11 coarse:text-[16px]',
+    'border text-small disabled:opacity-[0.55] coarse:min-h-11 coarse:text-base',
     tone === 'sunken'
       ? 'rounded-[7px] bg-sunken p-[8px]'
       : 'rounded-[5px] bg-raised px-[11px] py-[10px]',

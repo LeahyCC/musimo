@@ -5,11 +5,11 @@
 | `frontend/src/style.css` | Before phase 1 | After phase 9 |
 | ------------------------ | -------------- | ------------- |
 | Lines                    | 3,874          | 402           |
-| Class selectors          | 223            | 10            |
+| Class selectors          | 223            | 8             |
 | Distinct hex values      | 151            | 28            |
 | Media query blocks       | 23             | 9             |
 
-The 28 hex values are the 30 color tokens in `@theme` (two pairs share a value: `accent` and `good`, `scrim` and `shadow`). The 10 class selectors all belong to the leftovers under [What stays handwritten CSS](#what-stays-handwritten-css).
+The 28 hex values are the 30 color tokens in `@theme` (two pairs share a value: `accent` and `good`, `scrim` and `shadow`). Class selectors are distinct class names at the start of a rule. The 8 left all belong to the leftovers under [What stays handwritten CSS](#what-stays-handwritten-css).
 
 The plan as it was written follows.
 
@@ -241,8 +241,6 @@ Tailwind utilities will not replace these cleanly. Keep them in `style.css` (or 
 - Dialog / palette / sheet `::backdrop`.
 - `:fullscreen` stage and `.popout-root` / `.popout-body`.
 - Virtual list height `min(620px, 100dvh - chrome)`.
-- Command-palette skip-link off-screen focus move.
-- Popularity-chart SVG strokes (can take theme colors, not utilities).
 
 Do not rewrite those as `@apply` piles.
 
