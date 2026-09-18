@@ -1,7 +1,7 @@
 export { Button, buttonClassName } from './button'
 export type { ButtonProps, ButtonVariant } from './button'
 export { IconButton, iconButtonClassName } from './icon-button'
-export type { IconButtonProps, IconButtonSize } from './icon-button'
+export type { IconButtonProps, IconButtonSize, IconButtonVariant } from './icon-button'
 export { TextLink, textLinkClassName } from './text-link'
 export { Tag, StatusChip, Ownership } from './chip'
 export type { StatusChipProps, StatusChipVariant, OwnershipProps, OwnershipVariant } from './chip'

@@ -571,8 +571,7 @@ meter::-webkit-meter-optimum-value {
   text-decoration: underline;
   color: inherit;
 }
-.versions-section,
-.events-section {
+.versions-section {
   margin-top: 32px;
 }
 .versions {
@@ -598,41 +597,6 @@ meter::-webkit-meter-optimum-value {
   font-size: 12px;
   color: var(--color-text);
   font-family: ui-monospace, monospace;
-}
-.event-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-}
-.activity-scroll {
-  max-height: 320px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-gutter: stable;
-  padding-right: 8px;
-}
-.event-list li {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  font-size: 12px;
-  border-top: 1px solid var(--color-line);
-  padding: 13px 0;
-}
-.event-dot {
-  width: 5px;
-  height: 5px;
-  background: var(--color-muted);
-  border-radius: 50%;
-}
-.event-list time {
-  margin-left: auto;
-  color: var(--color-faint);
-  font-size: 10px;
-}
-.event-list code {
-  color: var(--color-faint);
-  font-size: 10px;
 }
 .spin {
   animation: spin 1s linear infinite;
@@ -721,9 +685,6 @@ meter::-webkit-meter-optimum-value {
   .health-strip p {
     font-size: 11px;
   }
-  .event-list time {
-    font-size: 10px;
-  }
   .disk small {
     font-size: 10px;
   }
@@ -731,9 +692,6 @@ meter::-webkit-meter-optimum-value {
 @media (max-width: 420px) {
   .versions {
     grid-template-columns: 1fr;
-  }
-  .event-list li {
-    gap: 8px;
   }
 }
 @media (prefers-reduced-motion: reduce) {
@@ -910,19 +868,6 @@ meter::-webkit-meter-optimum-value {
     flex: 1;
     padding: 9px;
   }
-  /* Four tabs with counts do not fit one 360px row at the desktop size, so they share it. */
-  .result-tabs.download-tabs {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 4px;
-  }
-  .result-tabs.download-tabs button {
-    min-width: 0;
-    padding: 10px 2px;
-    font-size: 13px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
   .artist-release-heading {
     align-items: start;
     flex-direction: column;
@@ -992,20 +937,6 @@ meter::-webkit-meter-optimum-value {
     display: none;
   }
 }
-.queue-sheet {
-  position: fixed;
-  inset: auto 0 0;
-  margin: 0 auto;
-  width: min(1100px, 100%);
-  max-height: 78dvh;
-  overflow: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 20px 20px 0 0;
-  padding: 24px 24px calc(24px + var(--safe-bottom));
-  background: var(--color-raised);
-  color: var(--color-text);
-}
 /* Inside the sheet the list shares the sheet's own scroll room rather than the page's. */
 .queue-sheet .virtual-list {
   height: min(620px, 50dvh);
@@ -1014,294 +945,13 @@ meter::-webkit-meter-optimum-value {
 .queue-sheet::backdrop {
   background: color-mix(in oklab, var(--color-scrim) 53%, transparent);
 }
-.queue-sheet > header {
-  display: flex;
-  align-items: center;
-  gap: 24px;
-  margin-bottom: 18px;
-}
-.queue-sheet > header h2 {
-  flex: 1;
-}
-.queue-sheet > header button,
-.job-buttons button {
-  background: transparent;
-  color: inherit;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 8px;
-  padding: 7px;
-}
-.queue-actions {
-  display: flex;
-  gap: 8px;
-  flex-wrap: wrap;
-  margin: 16px 0;
-}
-.download-tabs {
-  margin: 24px 0 16px;
-}
-.jobs-list {
-  display: grid;
-  /* A bare 1fr track has a min-content floor, so one long title widened the page. */
-  grid-template-columns: minmax(0, 1fr);
-  gap: 12px;
-}
-.job-card {
-  min-width: 0;
-  padding: 18px;
-  border: 1px solid var(--color-line);
-  border-radius: 12px;
-  background: var(--color-hover);
-}
-.job-heading {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-}
-.job-heading > img {
-  width: 42px;
-  height: 42px;
-  border-radius: 6px;
-  object-fit: cover;
-}
-.job-heading > div:first-of-type {
-  flex: 1;
-  min-width: 0;
-}
-.job-heading strong,
-.job-heading span:not(.job-state) {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.job-heading span:not(.job-state) {
-  font-size: 12px;
-  color: var(--color-muted);
-  margin-top: 5px;
-}
-.job-state {
-  font-size: 11px;
-  text-transform: uppercase;
-  color: var(--color-accent-hot);
-}
-.job-buttons {
-  display: flex;
-  gap: 6px;
-}
-.job-steps {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 15px 0 10px;
-  color: var(--color-faint);
-  font-size: 10px;
-}
-.job-steps .current {
-  color: var(--color-accent-hot);
-  font-weight: 700;
-}
-.job-card progress {
-  width: 100%;
-  height: 5px;
-  accent-color: var(--color-accent-hot);
-}
-.job-stats {
-  display: flex;
-  gap: 16px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--color-muted);
-  margin: 10px 0;
-}
-.job-path {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  font-size: 11px;
-  margin: 12px 0;
-}
-.job-path code {
-  overflow-wrap: anywhere;
-  flex: 1;
-}
-.job-path button {
-  flex-shrink: 0;
-}
-.job-card details {
-  font-size: 12px;
-  margin-top: 12px;
-  color: var(--color-muted);
-}
-.job-card summary {
-  cursor: pointer;
-}
-.job-card pre {
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.match-warning {
-  color: var(--color-warn);
-  font-size: 12px;
-}
-.candidate {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-line);
-}
-.candidate > div {
-  flex: 1;
-}
-.candidate small {
-  display: block;
-  margin-top: 5px;
-}
-.history-filters {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  margin: 16px 0;
-}
-.history-filters label {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
-.history-filters input {
-  background: var(--color-hover);
-  color: var(--color-text);
-  border: 1px solid var(--color-line-strong);
-  padding: 9px;
-  border-radius: 6px;
-}
-.download-action {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  position: relative;
-}
-.download-action select {
-  max-width: 82px;
-  font-size: 11px;
-  background: transparent;
-  color: inherit;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 6px;
-  padding: 6px 3px;
-}
 .download-action option {
   background: var(--color-raised);
-}
-.download-error {
-  display: block;
-  margin-top: 8px;
-  padding: 10px;
-  background: var(--color-danger-bg);
-  border-radius: 6px;
-}
-.batch-summary {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  align-items: center;
-  margin: 12px 0;
-  padding: 12px;
-  background: var(--color-active);
-  border-radius: 8px;
-  font-size: 12px;
-}
-@media (max-width: 700px) {
-  .queue-sheet {
-    padding: 16px 16px calc(16px + var(--safe-bottom));
-  }
-  /* Six controls in three ragged rows become two even columns. */
-  .queue-actions {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .queue-actions .queue-concurrency {
-    grid-column: 1 / -1;
-  }
-  .job-heading {
-    flex-wrap: wrap;
-  }
-  .job-heading > div:first-of-type {
-    min-width: 150px;
-  }
-  .job-steps {
-    gap: 6px;
-  }
-  .candidate {
-    flex-wrap: wrap;
-  }
-}
-.download-options {
-  position: fixed;
-  inset: auto;
-  margin: 0;
-  width: 240px;
-  max-width: calc(100vw - 16px);
-  max-height: calc(100dvh - 16px);
-  overflow: auto;
-  overscroll-behavior: contain;
-  color: inherit;
-  padding: 14px;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 8px;
-  background: var(--color-raised);
-  box-shadow: 0 8px 30px color-mix(in oklab, var(--color-shadow) 53%, transparent);
-}
-.download-options label {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-  font-size: 12px;
-}
-.download-options label + label {
-  margin-top: 10px;
-}
-/* A long mount path must not widen the popover past the screen. */
-.download-options select {
-  width: 100%;
-  min-width: 0;
-  max-width: 100%;
-}
-/* The format lives beside the download button on wide screens and in here on phones. */
-.download-options .download-options-format {
-  display: none;
-}
-@media (width < 48rem) {
-  .download-options .download-options-format {
-    display: grid;
-  }
-}
-.download-options small {
-  display: block;
-  margin-top: 10px;
-  color: var(--color-muted);
-  font-size: 11px;
-  line-height: 1.5;
 }
 .naming-preview {
   overflow-wrap: anywhere;
   font-size: 12px;
   color: var(--color-muted);
-}
-.queue-concurrency {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-}
-.queue-concurrency select {
-  padding: 8px;
-  color: inherit;
-  background: var(--color-hover);
-  border: 1px solid var(--color-line-strong);
-  border-radius: 8px;
 }
 
 .library-heading {
@@ -2227,29 +1877,6 @@ button.library-card-play.active {
   color: var(--color-muted);
   font-size: 12px;
 }
-.failure-groups {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin: 14px 0;
-}
-.failure-groups button {
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding: 7px 12px;
-  color: var(--color-muted);
-  font-size: 12px;
-  background: var(--color-sunken);
-  border: 1px solid var(--color-line);
-  border-radius: 999px;
-}
-.failure-groups button.selected {
-  color: var(--color-accent-ink);
-  background: var(--color-accent);
-  border-color: var(--color-accent);
-}
 .library-detail .section-heading h2 {
   display: flex;
   gap: 8px;
@@ -2263,16 +1890,6 @@ button.library-card-play.active {
 .library-actions-note {
   display: block;
   margin: 8px 0 16px;
-}
-.virtual-window {
-  position: absolute;
-  top: 0;
-  left: 0;
-  width: 100%;
-}
-/* Padding, not a gap: a gap sits outside the box the virtualizer measures. */
-.virtual-row {
-  padding-bottom: 12px;
 }
 
 /* Now Playing stage: the artwork, full screen and the popout share it. */
@@ -2520,13 +2137,11 @@ button.library-card-play.active {
 /* Touch screens: 44px targets, and text controls at 16px so iOS Safari does not zoom the page
    when one gains focus. Last in the file so it outranks the size each control sets for itself. */
 @media (pointer: coarse) {
-  .job-buttons button,
   .stage-controls [data-ui='icon-button'],
   .stage-actions [data-ui='icon-button'],
   .library-layout-toggle [data-ui='icon-button'],
   .library-collection-actions [data-ui='icon-button'],
-  .library-search button,
-  .queue-sheet > header button {
+  .library-search button {
     min-width: 44px;
     min-height: 44px;
   }
@@ -2535,23 +2150,15 @@ button.library-card-play.active {
     width: 44px;
     height: 44px;
   }
-  .download-action select {
-    max-width: 96px;
-    padding: 12px 6px;
-  }
   .track-row button,
   .library-track-row button,
   .result-tabs button,
   .library-tabs button,
-  .failure-groups button,
-  .job-path button,
-  .candidate a,
   .library-filter label {
     min-height: 44px;
   }
   .section-index a,
-  .settings-status a,
-  .queue-sheet > header a {
+  .settings-status a {
     display: inline-flex;
     align-items: center;
     min-height: 44px;
@@ -2564,10 +2171,6 @@ button.library-card-play.active {
   input:not([type='checkbox']):not([type='radio']):not([type='range']),
   select,
   textarea,
-  .download-action select,
-  .download-options select,
-  .queue-concurrency select,
-  .history-filters input,
   .library-select select,
   .playlist-form input,
   .playlist-picker-form input {
