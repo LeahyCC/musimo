@@ -2,7 +2,7 @@ import AxeBuilder from '@axe-core/playwright'
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-import { DEFAULT_THEME } from '../src/theme/themes'
+import { BUILT_IN_THEMES, DEFAULT_THEME } from '../src/theme/themes'
 import { LIGHT_THEME, rgb, themeVars } from './theme-fixtures'
 
 /* The page background is declared on `:root`, so `html` is the element that carries it. `body` only
@@ -260,7 +260,7 @@ test('a saved theme can be edited in place', async ({ page }) => {
   await page.getByRole('button', { name: 'Save' }).click()
 
   await expect(page.getByRole('radio', { name: 'Plum' })).toBeChecked()
-  await expect(page.getByRole('radio')).toHaveCount(2)
+  await expect(page.getByRole('radio')).toHaveCount(BUILT_IN_THEMES.length + 1)
   await page.reload()
   // The boot script's copy was rewritten along with the theme, so the new accent is there on
   // the first frame.
@@ -344,7 +344,7 @@ test('a file that is not a theme is refused and changes nothing', async ({ page 
   })
 
   await expect(page.getByRole('alert')).toContainText('not a Musimo theme')
-  await expect(page.getByRole('radio')).toHaveCount(1)
+  await expect(page.getByRole('radio')).toHaveCount(BUILT_IN_THEMES.length)
   await backdropIs(page, DEFAULT_THEME.colors['--color-canvas'])
   expect(await page.evaluate(() => localStorage.getItem('musimo.custom-themes'))).toBeNull()
 })
