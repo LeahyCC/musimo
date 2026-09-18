@@ -41,8 +41,8 @@ const linear = (value: number): number => {
 export const relativeLuminance = (color: Rgb): number =>
   0.2126 * linear(color.r) + 0.7152 * linear(color.g) + 0.0722 * linear(color.b)
 
-/* 1 for two identical colours, 21 for black on white. Alpha is ignored: WCAG measures what is
-   actually painted, and what sits behind a translucent colour is not knowable from the pair. */
+/* 1 for two identical colors, 21 for black on white. Alpha is ignored: WCAG measures what is
+   actually painted, and what sits behind a translucent color is not knowable from the pair. */
 export function contrastRatio(one: Rgb, two: Rgb): number {
   const first = relativeLuminance(one)
   const second = relativeLuminance(two)
@@ -50,7 +50,7 @@ export function contrastRatio(one: Rgb, two: Rgb): number {
   return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
 }
 
-/** The same ratio from two hex strings, or null if either one is not a colour. */
+/** The same ratio from two hex strings, or null if either one is not a color. */
 export function hexContrast(one: string, two: string): number | null {
   const first = parseHex(one)
   const second = parseHex(two)

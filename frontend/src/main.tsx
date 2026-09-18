@@ -1,5 +1,4 @@
 import { lazy, Suspense, useDeferredValue, useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 
 import { createRoot } from 'react-dom/client'
 
@@ -59,6 +58,7 @@ import { activeCount, DownloadsPage, QueueDock, updateJob, useJobs } from './dow
 import type { QueueData } from './downloads'
 import { LibraryPanel } from './library-panel'
 import { PopoutProvider } from './now-playing-popout'
+import { PageTitle } from './page-title'
 import { CommandPalette } from './palette'
 import { PlayerProvider } from './player'
 import { RecentActivity } from './recent-activity'
@@ -77,6 +77,7 @@ import {
   Tag,
   textLinkClassName,
 } from './ui'
+import { SettingsSwitch, UserSettingsPage } from './user-settings'
 
 import './style.css'
 
@@ -407,26 +408,6 @@ function Shell() {
   )
 }
 
-function PageTitle({
-  eyebrow,
-  title,
-  children,
-}: {
-  eyebrow: string
-  title: string
-  children?: ReactNode
-}) {
-  return (
-    <div className="page-heading">
-      <div>
-        <p className="eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-      </div>
-      {children}
-    </div>
-  )
-}
-
 const controls: {
   key: SettingKey
   label: string
@@ -614,6 +595,7 @@ function SettingsPage() {
       <PageTitle eyebrow="SET IT UP YOUR WAY" title="Settings">
         <Tag>SAVED IN YOUR DATABASE</Tag>
       </PageTitle>
+      <SettingsSwitch />
       <p className="page-intro">
         Preferences save without a restart. Download defaults apply to newly queued tracks.
       </p>
@@ -1354,6 +1336,11 @@ const settingsRoute = createRoute({
   path: '/settings',
   component: SettingsPage,
 })
+const userSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/user',
+  component: UserSettingsPage,
+})
 const diagnosticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/diagnostics',
@@ -1378,6 +1365,7 @@ const router = createRouter({
     nowPlayingRoute,
     downloadsRoute,
     settingsRoute,
+    userSettingsRoute,
     diagnosticsRoute,
   ]),
   defaultPreload: 'intent',
