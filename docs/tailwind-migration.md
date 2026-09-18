@@ -169,7 +169,7 @@ type Theme = {
 }
 ```
 
-**Where things live.** `frontend/src/theme/` holds the token list (name, label and group, used by the editor), the built-in registry, the zod schema for stored and imported themes, the store, and pure helpers (hex parsing, contrast ratio). One built-in ships first, `musimo-dark`. Its values in TypeScript must equal the `@theme` block; a unit test parses `style.css` and compares them, so the two cannot drift. Adding a built-in theme later is adding one object to the registry.
+**Where things live.** `frontend/src/theme/` holds the token list (name, label and group, used by the editor), the built-in registry, the zod schema for stored and imported themes, the store, and pure helpers (hex parsing, contrast ratio). `musimo-dark` is the one every screen was built against; its values in TypeScript must equal the `@theme` block, and a unit test parses `style.css` and compares them, so the two cannot drift. The registry also ships five more families, each a light and a dark pair (Musimo light, Slate, Sunset, Violet, Graphite and a Windows 95 homage), added the same way: one object each in `BUILT_IN_THEMES`, checked against `color.test.ts`'s per-theme contrast check. Adding another built-in later is still just adding one object to the registry.
 
 **Storage.** Themes are a personal preference, like volume and the library layout, so they live in `localStorage` under `musimo.theme` (the active id), `musimo.custom-themes` (the person’s own, versioned) and `musimo.theme-vars` (the resolved properties for the boot script). Server settings are shared, lockable by environment and saved with a save bar; a theme is none of those. Export and import of a JSON file moves a theme between browsers. Syncing through the backend is a later option, not part of this plan.
 
@@ -399,7 +399,6 @@ Do not “clean up” these as part of Tailwind unless a user asks: inline text 
 
 ## Out of scope
 
-- Shipping a second built-in theme. The registry supports it; the first release has one.
 - Syncing themes through the backend, a shared theme gallery, per-theme fonts, radii or spacing, and theming the visualizer scenes.
 - Adding shadcn, Base UI, cmdk, Vaul, sonner or Zustand. Native `dialog`, the existing palette and the existing sheets are enough.
 - Extracting CSS modules per file “as a stepping stone”. That is a second migration.

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { contrastRatio, hexContrast, parseHex, relativeLuminance } from './color'
-import { DEFAULT_THEME } from './themes'
+import { BUILT_IN_THEMES } from './themes'
 
 describe('parseHex', () => {
   it('reads the three lengths a person can type', () => {
@@ -53,8 +53,8 @@ describe('contrast', () => {
     expect(hexContrast('#fff', 'nonsense')).toBeNull()
   })
 
-  it('keeps the default theme readable', () => {
-    const colors = DEFAULT_THEME.colors
+  it.each(BUILT_IN_THEMES)('keeps $name readable', (theme) => {
+    const colors = theme.colors
     const pairs: [string, string][] = [
       [colors['--color-text'], colors['--color-canvas']],
       [colors['--color-text'], colors['--color-raised']],
