@@ -40,7 +40,15 @@ async function libraryFixtures(page: Page) {
   )
 
   await page.route('**/api/library/albums?**', (route) =>
-    route.fulfill({ json: { items: [libraryAlbum], next_offset: null } }),
+    route.fulfill({
+      json: {
+        items: [libraryAlbum],
+        next_offset: null,
+        total: 1,
+        genres: ['Ambient'],
+        years: [2026],
+      },
+    }),
   )
 
   await page.route('**/api/library/albums/album-1', (route) =>
@@ -52,6 +60,7 @@ async function libraryFixtures(page: Page) {
       json: {
         items: [{ id: 'artist-1', name: 'Harbor Static', coverArt: 'a1', albumCount: 1 }],
         next_offset: null,
+        total: 1,
       },
     }),
   )

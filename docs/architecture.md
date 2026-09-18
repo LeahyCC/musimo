@@ -91,8 +91,9 @@ Artist downloads (artist_downloads.py):
 Player (player_api.py):
 
 - `GET /api/player/capabilities`: connection, server version and extensions.
-- `GET /api/library/albums[/{id}]`: paged albums with detail resource.
-- `GET /api/library/artists[/{id}]`: paged artists with detail resource.
+- `GET /api/library/albums[/{id}]`: whole-library album browsing with search, genre, year and sort, plus the detail resource.
+- `GET /api/library/artists[/{id}]`: whole-library artist browsing with search, genre, year, played/favourite and sort, plus the detail resource.
+- `PUT` and `DELETE /api/library/artists/{id}/favourite`: star or unstar an artist.
 - `GET /api/library/artists/{id}/tracks`: all unique tracks from artist's albums.
 - `GET /api/library/tracks`: whole-library track browsing with search, genre, year, sort.
 - `GET /api/library/tracks/search`: one page of matches for playlist picker.
@@ -110,7 +111,7 @@ Player (player_api.py):
 - `POST /api/player/scrobble`: report now playing and completed listens.
 - `GET /api/player/lyrics/{id}`: Navidrome lyrics with LRCLIB fallback.
 - `GET /api/player/stream/{id}`: proxied audio with range forwarding.
-- `GET /api/player/art/{id}`: proxied cover artwork.
+- `GET /api/player/art/{id}`: proxied cover artwork; an artist without a photo gets their newest album cover.
 
 Errors (errors.py):
 
@@ -160,7 +161,7 @@ footer player                         queue count / speed
 On mobile, navigation moves to a bottom bar; the queue opens as a sheet. Search stays visible on all pages. A route unavailable in the current phase says so rather than showing sample results or fake progress.
 
 - **Search:** "Can I find and preview the right recording?" Typeahead, Top/Tracks/Albums/Artists, filters and sort, results with quality and ownership. Keyboard `/` focuses search, Ctrl/Cmd+K opens the palette. Query and tab survive back/refresh. First new query gets skeletons; subsequent data remains while loading. Preview is one shared audio element.
-- **Library:** Home, Albums, Artists, Tracks, Playlists views. Grid and list layouts. Server side Tracks filters. Artist All songs subpage and popularity chart. Linked liked playlist. Playlist CRUD. Add to playlist picker. Play all and Shuffle.
+- **Library:** Home, Albums, Artists, Tracks, Playlists views. Grid and list layouts. Server side Tracks filters. Artist All songs subpage and popularity chart. Artists filter by genre, year, favourites and played, and sort by recently added; the artist page stars an artist as a favourite. Linked liked playlist. Playlist CRUD. Add to playlist picker. Play all and Shuffle.
 - **Album:** "Which tracks am I missing, and what will this download?" Art/header, coverage, format and estimate, then track table. Download missing chooses only unowned tracks. The next step is a visible batch in the drawer, not a blocking match dialog.
 - **Artist:** "Which releases do I want?" Grouped discography; a selection sheet shows release types, missing counts and size before expanding jobs. Unknown release types remain visible as unknown rather than silently excluded.
 - **Now Playing:** Artwork stage with full screen and popout. Queue. Lyrics. Library tracks only.

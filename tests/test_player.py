@@ -1,4 +1,6 @@
 import asyncio
+import gzip
+import hashlib
 import json
 import tempfile
 import unittest
@@ -8,7 +10,7 @@ from unittest.mock import patch
 import httpx
 from fastapi import FastAPI
 
-from backend.navidrome import Navidrome
+from backend.navidrome import Navidrome, sort_artists
 from backend.player_api import install_player_routes
 from backend.store import Store
 
@@ -47,7 +49,11 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                     return subsonic(albumList2={"album": [{"id": "album-1", "name": "One"}]})
                 if path.endswith("/getArtists"):
                     return subsonic(
-                        artists={"index": [{"name": "A", "artist": [{"id": "artist-1"}]}]}
+                        artists={
+                            "index": [
+                                {"name": "A", "artist": [{"id": "artist-1", "name": "Artist"}]}
+                            ]
+                        }
                     )
                 if path.endswith("/search3"):
                     if request.url.params.get("albumCount") != "0":
@@ -290,6 +296,58 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(save_request.url.params.get_list("id"), ["song-1", "song-2"])
             store.close()
 
+    async def test_artist_without_a_photo_shows_their_newest_album_cover(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+            star = b"star"
+            art = {"ar-pictured_0": b"photo", "al-new": b"new cover", "al-old": b"old cover"}
+            albums = {
+                "photoless": [
+                    {"id": "old", "coverArt": "al-old", "year": 2010},
+                    {"id": "bare", "coverArt": "al-bare", "year": 2024},
+                    {"id": "new", "coverArt": "al-new", "year": 2020},
+                    {"id": "none"},
+                ],
+                "coverless": [{"id": "bare", "coverArt": "al-bare", "year": 2024}],
+            }
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                cover_id = request.url.params.get("id", "")
+                if request.url.path.endswith("/getArtist"):
+                    return subsonic(artist={"id": cover_id, "album": albums[cover_id]})
+                # Navidrome answers anything it has no picture for with the same star.
+                return httpx.Response(200, content=art.get(cover_id, star))
+
+            with (
+                patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
+                patch("backend.navidrome.PLACEHOLDER_ART", {hashlib.sha256(star).hexdigest()}),
+            ):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    app = FastAPI()
+                    install_player_routes(app, lambda: navidrome)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app), base_url="http://test"
+                    ) as client:
+
+                        async def picture(cover_id: str) -> bytes:
+                            return (await client.get(f"/api/player/art/{cover_id}")).content
+
+                        self.assertEqual(await picture("ar-photoless_0"), b"new cover")
+                        self.assertEqual(await picture("ar-pictured_0"), b"photo")
+                        self.assertEqual(await picture("ar-coverless_0"), star)
+                        self.assertEqual(await picture("al-bare"), star)
+            store.close()
+
     async def test_missing_configuration_is_a_capability_not_an_error(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "musimo.sqlite3")
@@ -373,9 +431,262 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(requests["created"], 1)
             store.close()
 
+    async def test_artist_browsing_filters_by_what_their_albums_carry(self) -> None:
+        artists = [
+            {"id": "zia", "name": "Zia", "albumCount": 1},
+            {"id": "mox", "name": "Mox", "albumCount": 3, "starred": "2026-01-01T00:00:00Z"},
+            {"id": "ame", "name": "Ame", "albumCount": 2, "sortName": "Ame"},
+        ]
+        albums = [
+            {"id": "a1", "artistId": "zia", "genre": "Jazz", "year": 1999, "created": "2026-03"},
+            {
+                "id": "a2",
+                "artistId": "mox",
+                "genres": [{"name": "Rock"}, {"name": "jazz"}],
+                "year": 2011,
+                "created": "2026-01",
+                "playCount": 4,
+            },
+            # A shared album counts for every artist on it.
+            {
+                "id": "a3",
+                "artists": [{"id": "ame"}, {"id": "zia"}],
+                "genre": "Soul",
+                "year": 2011,
+                "created": "2026-02",
+            },
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+            walks = {"count": 0}
+            stars: list[tuple[str, str]] = []
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                path = request.url.path
+                if path.endswith("/getArtists"):
+                    walks["count"] += 1
+                    return subsonic(artists={"index": [{"name": "A", "artist": artists}]})
+                if path.endswith("/getAlbumList2"):
+                    offset = int(request.url.params.get("offset", 0))
+                    return subsonic(albumList2={"album": albums[offset:]})
+                if path.endswith("/star") or path.endswith("/unstar"):
+                    stars.append((path.rsplit("/", 1)[1], request.url.params["artistId"]))
+                    return subsonic()
+                return subsonic()
+
+            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    app = FastAPI()
+                    install_player_routes(app, lambda: navidrome)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app), base_url="http://test"
+                    ) as client:
+
+                        async def names(search: str) -> list[str]:
+                            response = await client.get(f"/api/library/artists?{search}")
+                            return [row["name"] for row in response.json()["items"]]
+
+                        listing = (await client.get("/api/library/artists")).json()
+                        self.assertEqual(
+                            [row["name"] for row in listing["items"]], ["Ame", "Mox", "Zia"]
+                        )
+                        self.assertEqual(listing["total"], 3)
+                        self.assertEqual(listing["genres"], ["Jazz", "Rock", "Soul"])
+                        self.assertEqual(listing["years"], [2011, 1999])
+                        self.assertEqual(await names("genre=JAZZ"), ["Mox", "Zia"])
+                        self.assertEqual(await names("year=2011"), ["Ame", "Mox", "Zia"])
+                        self.assertEqual(await names("genre=Soul&year=2011"), ["Ame", "Zia"])
+                        self.assertEqual(await names("show=played"), ["Mox"])
+                        self.assertEqual(await names("show=unplayed"), ["Ame", "Zia"])
+                        self.assertEqual(await names("show=favourites"), ["Mox"])
+                        self.assertEqual(await names("q=m"), ["Ame", "Mox"])
+                        self.assertEqual(await names("sort=albums"), ["Mox", "Ame", "Zia"])
+                        self.assertEqual(await names("sort=recent"), ["Zia", "Ame", "Mox"])
+                        page = (await client.get("/api/library/artists?offset=1&size=1")).json()
+                        self.assertEqual(page["next_offset"], 2)
+                        self.assertEqual(
+                            (await client.get("/api/library/artists?sort=plays")).status_code, 422
+                        )
+                        self.assertEqual(
+                            (await client.get("/api/library/artists?show=everyone")).status_code,
+                            422,
+                        )
+
+                        put = await client.put("/api/library/artists/zia/favourite")
+                        self.assertEqual(put.status_code, 204)
+                        self.assertEqual(await names("show=favourites"), ["Mox", "Zia"])
+                        await client.delete("/api/library/artists/mox/favourite")
+                        self.assertEqual(await names("show=favourites"), ["Zia"])
+                        self.assertEqual(stars, [("star", "zia"), ("unstar", "mox")])
+                        # Every call above came from one walk of the library.
+                        self.assertEqual(walks["count"], 1)
+                        navidrome.forget_tracks()
+                        await client.get("/api/library/artists")
+                        self.assertEqual(walks["count"], 2)
+            store.close()
+
+    async def test_album_browsing_filters_and_sorts_the_whole_library(self) -> None:
+        albums = [
+            {
+                "id": "b",
+                "name": "Stone 10",
+                "artist": "Zia",
+                "genre": "Jazz",
+                "year": 1999,
+                "created": "2026-03",
+            },
+            {
+                "id": "a",
+                "name": "Stone 9",
+                "artist": "Mox",
+                "genres": [{"name": "Rock"}],
+                "year": 2011,
+                "created": "2026-01",
+            },
+            {
+                "id": "c",
+                "name": "Anchor",
+                "artist": "Ame",
+                "genre": "jazz",
+                "year": 2011,
+                "created": "2026-02",
+            },
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                if request.url.path.endswith("/getAlbumList2"):
+                    offset = int(request.url.params.get("offset", 0))
+                    return subsonic(albumList2={"album": albums[offset:]})
+                return subsonic(artists={"index": []})
+
+            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    app = FastAPI()
+                    install_player_routes(app, lambda: navidrome)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app), base_url="http://test"
+                    ) as client:
+
+                        async def ids(search: str) -> list[str]:
+                            response = await client.get(f"/api/library/albums?{search}")
+                            return [row["id"] for row in response.json()["items"]]
+
+                        listing = (await client.get("/api/library/albums")).json()
+                        self.assertEqual([row["id"] for row in listing["items"]], ["b", "c", "a"])
+                        self.assertEqual(listing["total"], 3)
+                        self.assertEqual(listing["genres"], ["Jazz", "Rock"])
+                        self.assertEqual(listing["years"], [2011, 1999])
+                        self.assertEqual(await ids("sort=title"), ["c", "a", "b"])
+                        self.assertEqual(await ids("sort=artist"), ["c", "a", "b"])
+                        self.assertEqual(await ids("sort=year"), ["c", "a", "b"])
+                        self.assertEqual(await ids("genre=JAZZ"), ["b", "c"])
+                        self.assertEqual(await ids("year=2011&sort=title"), ["c", "a"])
+                        self.assertEqual(await ids("q=zia"), ["b"])
+                        self.assertEqual(await ids("q=stone&sort=title"), ["a", "b"])
+                        self.assertEqual(
+                            (await client.get("/api/library/albums?sort=random")).status_code,
+                            422,
+                        )
+            store.close()
+
+    async def test_media_errors_are_not_passed_on_as_media(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+            drawing = b"<svg xmlns='http://www.w3.org/2000/svg'/>" * 20
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                cover_id = request.url.params.get("id")
+                if cover_id == "gone":
+                    # What Navidrome sends for an item it does not have.
+                    return httpx.Response(
+                        200,
+                        content=gzip.compress(b'{"subsonic-response":{"status":"failed"}}'),
+                        headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
+                    )
+                packed = gzip.compress(drawing)
+                return httpx.Response(
+                    200,
+                    content=packed,
+                    headers={
+                        "Content-Type": "image/svg+xml",
+                        "Content-Encoding": "gzip",
+                        "Content-Length": str(len(packed)),
+                    },
+                )
+
+            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    app = FastAPI()
+                    install_player_routes(app, lambda: navidrome)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app), base_url="http://test"
+                    ) as client:
+                        self.assertEqual(
+                            (await client.get("/api/player/art/gone")).status_code, 503
+                        )
+                        # The body arrives decoded, so the compressed length must not go with it.
+                        art = await client.get("/api/player/art/drawing")
+                        self.assertEqual(art.content, drawing)
+                        self.assertNotEqual(
+                            art.headers.get("content-length"), str(len(gzip.compress(drawing)))
+                        )
+            store.close()
+
+    def test_artist_names_sort_numbers_as_numbers(self) -> None:
+        rows: list[dict[str, object]] = [
+            {"name": "311"},
+            {"name": "100mg"},
+            {"name": "9 Theory"},
+            {"name": "Abba", "sortName": "abba"},
+        ]
+        self.assertEqual(
+            [row["name"] for row in sort_artists(rows, {}, "name")],
+            ["9 Theory", "100mg", "311", "Abba"],
+        )
+
     async def test_track_browsing_filters_sorts_and_shuffles_the_whole_library(self) -> None:
         library = [
-            {"id": "s1", "title": "Beacon", "artist": "Zia", "genre": "Jazz", "year": 1999},
+            {
+                "id": "s1",
+                "title": "Beacon",
+                "artist": "Zia",
+                "genre": "Jazz",
+                "year": 1999,
+                # The browser never reads this, so the snapshot does not keep it.
+                "path": "Zia/Beacon.flac",
+            },
             {"id": "s2", "title": "Anchor", "artist": "Mox", "genre": "Rock", "year": 2011},
             {"id": "s3", "title": "Cinder", "artist": "Ame", "genre": "Jazz", "year": 2011},
         ]
@@ -414,6 +725,7 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             [row["id"] for row in listing["items"]], ["s2", "s1", "s3"]
                         )
+                        self.assertNotIn("path", listing["items"][1])
                         self.assertEqual(listing["total"], 3)
                         self.assertEqual(listing["genres"], ["Jazz", "Rock"])
                         self.assertEqual(listing["years"], [2011, 1999])

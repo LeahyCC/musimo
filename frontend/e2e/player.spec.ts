@@ -72,6 +72,10 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
           },
         ],
         next_offset: null,
+        total: 2,
+        // The server sends the whole library's filter choices with the first page.
+        genres: ['Ambient', 'Rock'],
+        years: [2026, 2025],
       },
     }),
   )
@@ -88,6 +92,7 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
           },
         ],
         next_offset: null,
+        total: 1,
       },
     }),
   )

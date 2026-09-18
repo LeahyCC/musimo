@@ -211,6 +211,82 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await expect(page.locator('.library-track-play strong').first()).toHaveText('Cinder')
 })
 
+test('the artists view sends its filters to the server and keeps favourites', async ({ page }) => {
+  await libraryFixtures(page)
+  const artists = [
+    { id: 'artist-1', name: 'Harbor Static', albumCount: 2 },
+    { id: 'artist-2', name: 'Low Tide', albumCount: 1 },
+  ]
+  const requests: URL[] = []
+  await page.route(
+    (url) => url.pathname === '/api/library/artists',
+    (route) => {
+      const url = new URL(route.request().url())
+      requests.push(url)
+      const items = url.searchParams.get('show') ? artists.slice(0, 1) : artists
+      route.fulfill({
+        json: {
+          items,
+          next_offset: null,
+          total: items.length,
+          genres: ['Jazz', 'Rock'],
+          years: [2011, 1999],
+        },
+      })
+    },
+  )
+  let starred = false
+  const favourites: string[] = []
+  await page.route('**/api/library/artists/artist-1', (route) =>
+    route.fulfill({
+      json: {
+        id: 'artist-1',
+        name: 'Harbor Static',
+        album: [],
+        ...(starred ? { starred: '2026-09-17T00:00:00Z' } : {}),
+      },
+    }),
+  )
+
+  await page.route('**/api/library/artists/artist-1/tracks', (route) =>
+    route.fulfill({ json: { items: [] } }),
+  )
+
+  await page.route('**/api/library/artists/artist-1/favourite', (route) => {
+    favourites.push(route.request().method())
+    starred = route.request().method() === 'PUT'
+    return route.fulfill({ status: 204 })
+  })
+  await page.goto('/library/artists')
+
+  await expect(page.getByText('2 of 2 loaded')).toBeVisible()
+  await page.getByLabel('Sort artists').selectOption('recent')
+  await page.getByLabel('Show artists').selectOption('unplayed')
+  await expect(page.getByText('1 of 1 loaded')).toBeVisible()
+  await page.getByText('All genres', { exact: true }).click()
+  // The genre choices are the whole library's, sent back with the first page.
+  await page.getByLabel('Jazz').check()
+  await expect
+    .poll(() => {
+      const latest = requests.at(-1)?.searchParams
+      return [latest?.get('sort'), latest?.get('show'), latest?.getAll('genre')]
+    })
+    .toEqual(['recent', 'unplayed', ['Jazz']])
+  await page.getByText('Genres (1)', { exact: true }).click()
+  await page.getByRole('button', { name: 'Clear filters' }).click()
+  await expect(page.getByLabel('Show artists')).toHaveValue('')
+  // The unfiltered list was fetched before, so clearing may reuse it rather than ask again.
+  await expect(page.getByText('2 of 2 loaded')).toBeVisible()
+
+  await page.goto('/library/artists/artist-1')
+  await page.getByRole('button', { name: 'Add to favourites' }).click()
+  const favourite = page.getByRole('button', { name: 'Favourite', exact: true })
+  await expect(favourite).toHaveAttribute('aria-pressed', 'true')
+  await favourite.click()
+  await expect(page.getByRole('button', { name: 'Add to favourites' })).toBeVisible()
+  expect(favourites).toEqual(['PUT', 'DELETE'])
+})
+
 test('library view tabs have aria-pressed state', async ({ page }) => {
   await libraryFixtures(page)
   await page.goto('/library')

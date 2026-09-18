@@ -15,6 +15,13 @@
 - Add six visualizer presets, two per scene, each naming which feature drives which parameter, with a picker in the stage's top bar and `[` and `]` to cycle (#60)
 - Cut the particle and raymarch visualizer scenes and their four presets, leaving the fluid and hiding the scene select while there is one scene to pick (#61)
 - Move the visualizer into [visimo](https://github.com/LeahyCC/visimo) and consume it as a dependency, so scenes and presets can be tuned against a dropped track instead of a library
+- Lay out the Artists grid like the Albums grid: big round picture, name and album count below, play on hover
+- Show an artist's newest album cover in place of Navidrome's star when it has no photo of them
+- Filter the Artists tab by genre, year, favourites and played or never played, sort it by recently added, and mark an artist as a favourite from their page
+- Filter and sort Albums on the server, so genre and year cover the whole library instead of the albums already scrolled past
+- Browse libraries up to 50,000 songs on the Tracks tab (it stopped at 10,000), keeping only the fields the page reads so the larger cap costs less memory than the old one
+- Say "1 album" and "1 song" on an artist page instead of "1 ALBUMS"
+- Show the release year on an artist's popular songs instead of a "…" that never filled in
 
 ### Testing and CI
 
@@ -28,6 +35,7 @@
 - Update the bgutil plugin and helper together to 2.0.0, including the exported runtime lock and native Windows setup instructions
 - Let the dev proxy target another backend with `MUSIMO_API_TARGET`, and keep writes through it from being refused as cross-origin (#50)
 - Let the dev proxy reach an https backend such as Tailscale Serve and still save (#55)
+- Stop passing Navidrome's error for a missing item on as broken artwork, and stop sending a compressed length with a decoded body
 
 ### UI and accessibility
 
