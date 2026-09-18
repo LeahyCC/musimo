@@ -204,6 +204,7 @@ export const libraryArtistSchema = z.object({
   name: z.string().default('Unknown artist'),
   coverArt: z.string().optional(),
   albumCount: z.number().optional(),
+  starred: z.string().optional(),
 })
 export type LibraryArtist = z.infer<typeof libraryArtistSchema>
 export const libraryPlaylistSchema = z.object({
@@ -219,8 +220,16 @@ export const libraryPlaylistSchema = z.object({
 export type LibraryPlaylist = z.infer<typeof libraryPlaylistSchema>
 const page = <T extends z.ZodType>(item: T) =>
   z.object({ items: z.array(item), next_offset: z.number().nullable().optional() })
-export const libraryAlbumsSchema = page(libraryAlbumSchema)
-export const libraryArtistsSchema = page(libraryArtistSchema)
+export const libraryAlbumsSchema = page(libraryAlbumSchema).extend({
+  total: z.number().default(0),
+  genres: z.array(z.string()).default([]),
+  years: z.array(z.number()).default([]),
+})
+export const libraryArtistsSchema = page(libraryArtistSchema).extend({
+  total: z.number().default(0),
+  genres: z.array(z.string()).default([]),
+  years: z.array(z.number()).default([]),
+})
 export const libraryTracksSchema = page(libraryTrackSchema).extend({
   total: z.number().default(0),
   genres: z.array(z.string()).default([]),

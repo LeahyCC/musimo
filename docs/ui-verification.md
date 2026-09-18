@@ -84,7 +84,7 @@ Not verified on a device: the safe-area insets and the 16px zoom rule were reaso
 
 ## Known limits
 
-Library album genre and year filters still apply to the pages loaded so far; only the tracks view filters and sorts on the server. Catalog search on the Search page is unchanged and says so in its own hint. Navidrome's saved play queue holds 500 songs, so Play all and Shuffle over a larger library play a 500-song selection. Whole-library track browsing reads up to 10,000 songs from Navidrome, so a library beyond that size describes the first 10,000 it returns.
+Library albums, artists and tracks filter and sort on the server; playlist sorts still apply to the loaded list. Catalog search on the Search page is unchanged and says so in its own hint. Navidrome's saved play queue holds 500 songs, so Play all and Shuffle over a larger library play a 500-song selection. Whole-library track browsing reads up to 50,000 songs from Navidrome, so a library beyond that size describes the first 50,000 it returns.
 
 Track navigation checks added on 10 September 2026 cover highlighted row focus (including tracks outside the initial virtual window), aria-current marking, "Back to results" restoring search state, and no-preview state showing disabled controls and labels. These join the existing automated browser regression suite.
 

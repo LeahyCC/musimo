@@ -148,7 +148,7 @@ async function libraryFixtures(page: Page) {
   await playerFixtures(page)
   const songs = [librarySong('s1', { title: 'Beacon' }), librarySong('s2', { title: 'Anchor' })]
   await page.route('**/api/library/albums?**', (route) =>
-    route.fulfill({ json: { items: [], next_offset: null } }),
+    route.fulfill({ json: { items: [], next_offset: null, total: 0 } }),
   )
 
   await page.route('**/api/library/albums/album-1', (route) =>

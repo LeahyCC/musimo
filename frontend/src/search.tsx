@@ -1203,7 +1203,17 @@ export function ArtistPage() {
       query.data.pages.flatMap((page) => page.items).map((item) => [item.id, item]),
     ).values(),
   ]
-  const topTracks = top.data?.tracks.slice(0, 5) ?? []
+  // Deezer's top tracks leave the year out. The albums behind them are loaded anyway for the
+  // popular albums row, so their years fill the column instead of leaving it waiting.
+  const albumYears = new Map(
+    popularAlbumQueries.flatMap((result) =>
+      result.data ? [[result.data.album.id, result.data.album.year] as const] : [],
+    ),
+  )
+  const topTracks = (top.data?.tracks.slice(0, 5) ?? []).map((track) => ({
+    ...track,
+    year: track.year ?? albumYears.get(track.album_id) ?? null,
+  }))
   const popularAlbums = popularAlbumQueries
     .map((result) => result.data?.album)
     .filter(

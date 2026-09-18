@@ -22,6 +22,7 @@ import {
   Search,
   Shuffle,
   SlidersHorizontal,
+  Star,
   Trash2,
   X,
 } from 'lucide-react'
@@ -103,6 +104,7 @@ const SORTS: Record<Tab, { value: string; label: string }[]> = {
   artists: [
     { value: 'name', label: 'Artist A to Z' },
     { value: 'albums', label: 'Most albums' },
+    { value: 'recent', label: 'Recently added' },
   ],
   // These values are the sort names the tracks endpoint accepts.
   tracks: [
@@ -452,44 +454,62 @@ function ArtistItem({
   onPlay: () => void
   onShuffle: () => void
 }) {
+  const albums = `${artist.albumCount ?? 0} ${artist.albumCount === 1 ? 'album' : 'albums'}`
+  const art = artist.coverArt ? (
+    <img
+      src={cover(artist.coverArt)}
+      alt=""
+      loading="lazy"
+      className="h-full w-full object-cover"
+    />
+  ) : (
+    <Disc3 />
+  )
+
+  // The grid mirrors the album card (big art, copy below, play on hover) so the two tabs
+  // browse the same way. The art stays round so an artist never reads as an album.
+  if (layout === 'grid')
+    return (
+      <article className="library-artist-card group min-w-0">
+        <div className="relative">
+          <button
+            className="grid aspect-square w-full place-items-center overflow-hidden rounded-pill border border-line bg-raised p-0 text-faint"
+            aria-label={`Open ${artist.name}`}
+            onClick={onOpen}
+          >
+            {art}
+          </button>
+          <CollectionPlayButton
+            source={`artist:${artist.id}`}
+            name={artist.name}
+            variant="card-play"
+            size={19}
+            disabled={loading}
+            onPlay={onPlay}
+          />
+        </div>
+        <button
+          className="block w-full border-0 bg-none p-0 text-center text-inherit"
+          onClick={onOpen}
+        >
+          <strong className="mt-[8px] block truncate">{artist.name}</strong>
+          <small className="mt-[4px] block truncate text-muted">{albums}</small>
+        </button>
+      </article>
+    )
+
   return (
-    <article
-      className={cx(
-        'library-artist-card min-w-0 gap-[10px] rounded-[9px] border border-line bg-raised p-[12px] hover:border-[color:var(--line-hover)] focus-within:border-[color:var(--line-hover)]',
-        layout === 'grid' ? 'grid justify-items-center text-center' : 'flex items-center',
-      )}
-    >
+    <article className="library-artist-card flex min-w-0 items-center gap-[10px] rounded-[9px] border border-line bg-raised p-[12px] hover:border-[color:var(--line-hover)] focus-within:border-[color:var(--line-hover)]">
       <button
-        className={cx(
-          'min-w-0 flex-1 gap-[10px] border-0 bg-none p-0 text-inherit',
-          layout === 'grid'
-            ? 'grid justify-items-center text-center'
-            : 'flex items-center text-left',
-        )}
+        className="flex min-w-0 flex-1 items-center gap-[10px] border-0 bg-none p-0 text-left text-inherit"
         onClick={onOpen}
       >
-        <span
-          className={cx(
-            'grid flex-none place-items-center overflow-hidden rounded-pill bg-raised text-faint',
-            layout === 'grid' ? 'h-[104px] w-[104px]' : 'h-[52px] w-[52px]',
-          )}
-        >
-          {artist.coverArt ? (
-            <img
-              src={cover(artist.coverArt)}
-              alt=""
-              loading="lazy"
-              className="h-full w-full object-cover"
-            />
-          ) : (
-            <Disc3 />
-          )}
+        <span className="grid h-[52px] w-[52px] flex-none place-items-center overflow-hidden rounded-pill bg-raised text-faint">
+          {art}
         </span>
         <span className="grid min-w-0">
           <strong className="truncate">{artist.name}</strong>
-          <small className="truncate text-muted">
-            {artist.albumCount ?? 0} {artist.albumCount === 1 ? 'album' : 'albums'}
-          </small>
+          <small className="truncate text-muted">{albums}</small>
         </span>
       </button>
       <div className={collectionActionsClass}>
@@ -787,6 +807,7 @@ export function LibraryPage({
   const [selectedGenres, setSelectedGenres] = useState<string[]>([])
   const [selectedYears, setSelectedYears] = useState<string[]>([])
   const [visibility, setVisibility] = useState('all')
+  const [artistShow, setArtistShow] = useState('')
   const [artistAlbumSort, setArtistAlbumSort] = useState('year')
   const [artistSongSort, setArtistSongSort] = useState('album')
   const [newName, setNewName] = useState('')
@@ -803,26 +824,37 @@ export function LibraryPage({
     retry: false,
   })
   const ready = capabilities.data?.available === true
+  // Albums, artists and tracks are all filtered and sorted by the server, so a filter covers
+  // the whole library rather than the pages this browser has scrolled through.
+  const albumSearch = useMemo(() => {
+    const params = new URLSearchParams({ q: deferredQuery, sort: sorts[tab] })
+    for (const genre of selectedGenres) params.append('genre', genre)
+    for (const year of selectedYears) params.append('year', year)
+    return params.toString()
+  }, [deferredQuery, selectedGenres, selectedYears, sorts, tab])
   const albums = useInfiniteQuery({
-    queryKey: ['library-albums', tab, deferredQuery, sort],
+    queryKey: ['library-albums', albumSearch],
     queryFn: ({ pageParam, signal }) =>
-      api(
-        `library/albums?q=${encodeURIComponent(deferredQuery)}&sort=${sort === 'newest' ? 'newest' : 'alphabeticalByName'}&offset=${pageParam}&size=60`,
-        libraryAlbumsSchema,
-        { signal },
-      ),
+      api(`library/albums?${albumSearch}&offset=${pageParam}&size=60`, libraryAlbumsSchema, {
+        signal,
+      }),
     initialPageParam: 0,
     getNextPageParam: (page) => page.next_offset ?? undefined,
     enabled: ready && (tab === 'home' || tab === 'albums'),
   })
+  const artistSearch = useMemo(() => {
+    const params = new URLSearchParams({ q: deferredQuery, sort: sorts.artists })
+    for (const genre of selectedGenres) params.append('genre', genre)
+    for (const year of selectedYears) params.append('year', year)
+    if (artistShow) params.set('show', artistShow)
+    return params.toString()
+  }, [artistShow, deferredQuery, selectedGenres, selectedYears, sorts])
   const artists = useInfiniteQuery({
-    queryKey: ['library-artists', deferredQuery],
+    queryKey: ['library-artists', artistSearch],
     queryFn: ({ pageParam, signal }) =>
-      api(
-        `library/artists?q=${encodeURIComponent(deferredQuery)}&offset=${pageParam}&size=100`,
-        libraryArtistsSchema,
-        { signal },
-      ),
+      api(`library/artists?${artistSearch}&offset=${pageParam}&size=100`, libraryArtistsSchema, {
+        signal,
+      }),
     initialPageParam: 0,
     getNextPageParam: (page) => page.next_offset ?? undefined,
     enabled: ready && tab === 'artists',
@@ -935,6 +967,16 @@ export function LibraryPage({
       void client.invalidateQueries({ queryKey: ['library-playlists'] })
     },
   })
+  const favouriteArtist = useMutation({
+    mutationFn: ({ id, favourite }: { id: string; favourite: boolean }) =>
+      api(`library/artists/${encodeURIComponent(id)}/favourite`, emptySchema, {
+        method: favourite ? 'PUT' : 'DELETE',
+      }),
+    onSuccess: (_, { id }) => {
+      void client.invalidateQueries({ queryKey: ['library-artist', id] })
+      void client.invalidateQueries({ queryKey: ['library-artists'] })
+    },
+  })
   const playCollection = useMutation({
     mutationFn: async ({ kind, id }: { kind: Collection; id: string; shuffled: boolean }) => {
       if (kind === 'album')
@@ -966,32 +1008,16 @@ export function LibraryPage({
     },
   })
 
-  const albumItems = useMemo(() => {
-    const items = albums.data?.pages.flatMap((page) => page.items) ?? []
-    const filtered = items.filter(
-      (album) =>
-        (!selectedGenres.length || (album.genre && selectedGenres.includes(album.genre))) &&
-        (!selectedYears.length || (album.year && selectedYears.includes(String(album.year)))),
-    )
-    if (sort === 'title') return [...filtered].sort((a, b) => textCompare(a.name, b.name))
-    if (sort === 'artist')
-      return [...filtered].sort(
-        (a, b) => textCompare(a.artist, b.artist) || textCompare(a.name, b.name),
-      )
-    if (sort === 'year')
-      return [...filtered].sort(
-        (a, b) => (b.year ?? 0) - (a.year ?? 0) || textCompare(a.name, b.name),
-      )
-    return filtered
-  }, [albums.data, selectedGenres, selectedYears, sort])
-  const artistItems = useMemo(() => {
-    const items = artists.data?.pages.flatMap((page) => page.items) ?? []
-    return [...items].sort((a, b) =>
-      sort === 'albums'
-        ? (b.albumCount ?? 0) - (a.albumCount ?? 0) || textCompare(a.name, b.name)
-        : textCompare(a.name, b.name),
-    )
-  }, [artists.data, sort])
+  const albumItems = useMemo(
+    () => albums.data?.pages.flatMap((page) => page.items) ?? [],
+    [albums.data],
+  )
+  const albumTotal = albums.data?.pages[0]?.total ?? 0
+  const artistItems = useMemo(
+    () => artists.data?.pages.flatMap((page) => page.items) ?? [],
+    [artists.data],
+  )
+  const artistTotal = artists.data?.pages[0]?.total ?? 0
   const trackItems = useMemo(
     () => tracks.data?.pages.flatMap((page) => page.items) ?? [],
     [tracks.data],
@@ -1025,28 +1051,15 @@ export function LibraryPage({
     [artistTracks.data, artistSongSort],
   )
 
-  const albumFacets = albums.data?.pages.flatMap((page) => page.items) ?? []
-  const trackFacets = tracks.data?.pages[0]
-  const genres =
+  // Each tab's first page carries the whole library's filter choices.
+  const facets =
     tab === 'tracks'
-      ? (trackFacets?.genres ?? [])
-      : [
-          ...new Set(
-            albumFacets.map((item) => item.genre).filter((item): item is string => Boolean(item)),
-          ),
-        ].sort(textCompare)
-  const years =
-    tab === 'tracks'
-      ? (trackFacets?.years ?? []).map(String)
-      : [
-          ...new Set(
-            albumFacets
-              .map((item) => item.year)
-              .filter((item): item is number => item !== undefined),
-          ),
-        ]
-          .sort((a, b) => b - a)
-          .map(String)
+      ? tracks.data?.pages[0]
+      : tab === 'artists'
+        ? artists.data?.pages[0]
+        : albums.data?.pages[0]
+  const genres = facets?.genres ?? []
+  const years = (facets?.years ?? []).map(String)
   const currentItems =
     tab === 'artists'
       ? artistItems
@@ -1107,6 +1120,7 @@ export function LibraryPage({
     setSelectedGenres([])
     setSelectedYears([])
     setVisibility('all')
+    setArtistShow('')
     setShowPlaylistForm(false)
     const paths = {
       home: '/library',
@@ -1237,7 +1251,22 @@ export function LibraryPage({
               </select>
             </label>
           )}
-          {(tab === 'home' || tab === 'albums' || tab === 'tracks') && (
+          {tab === 'artists' && (
+            <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
+              <select
+                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
+                aria-label="Show artists"
+                value={artistShow}
+                onChange={(event) => setArtistShow(event.target.value)}
+              >
+                <option value="">All artists</option>
+                <option value="favourites">Favourites</option>
+                <option value="played">Played</option>
+                <option value="unplayed">Never played</option>
+              </select>
+            </label>
+          )}
+          {(tab === 'home' || tab === 'albums' || tab === 'artists' || tab === 'tracks') && (
             <>
               <FilterMenu
                 label="Genres"
@@ -1263,7 +1292,7 @@ export function LibraryPage({
                   )
                 }
               />
-              {(selectedGenres.length > 0 || selectedYears.length > 0) && (
+              {(selectedGenres.length > 0 || selectedYears.length > 0 || artistShow) && (
                 <button
                   type="button"
                   data-ui="text-link"
@@ -1271,6 +1300,7 @@ export function LibraryPage({
                   onClick={() => {
                     setSelectedGenres([])
                     setSelectedYears([])
+                    setArtistShow('')
                   }}
                 >
                   Clear filters
@@ -1282,7 +1312,11 @@ export function LibraryPage({
             <span className="library-count text-small whitespace-nowrap text-muted">
               {tab === 'tracks'
                 ? `${trackItems.length} of ${trackTotal} loaded`
-                : `${currentItems.length} loaded`}
+                : tab === 'artists'
+                  ? `${artistItems.length} of ${artistTotal} loaded`
+                  : tab === 'playlists'
+                    ? `${currentItems.length} loaded`
+                    : `${albumItems.length} of ${albumTotal} loaded`}
             </span>
             {tab !== 'tracks' && <LayoutToggle layout={layout} onChange={setLayout} />}
           </div>
@@ -1551,7 +1585,10 @@ export function LibraryPage({
             <div className="flex-1">
               <h2 className="mb-[4px]">{artistDetail.data.name}</h2>
               <span>
-                {artistSongsMode ? `${artistSongs.length} SONGS` : `${artistAlbums.length} ALBUMS`}
+                {(artistSongsMode
+                  ? songCount(artistSongs.length)
+                  : `${artistAlbums.length} ${artistAlbums.length === 1 ? 'album' : 'albums'}`
+                ).toUpperCase()}
               </span>
             </div>
             <div className="flex flex-wrap items-center gap-[16px] max-phone:w-full">
@@ -1576,6 +1613,19 @@ export function LibraryPage({
                 disabled={busy || (artistSongsMode ? !artistSongs.length : !artistAlbums.length)}
               >
                 <Shuffle size={15} /> Shuffle
+              </Button>
+              <Button
+                aria-pressed={Boolean(artistDetail.data.starred)}
+                disabled={favouriteArtist.isPending}
+                onClick={() =>
+                  favouriteArtist.mutate({
+                    id: artistId,
+                    favourite: !artistDetail.data?.starred,
+                  })
+                }
+              >
+                <Star size={15} fill={artistDetail.data.starred ? 'currentColor' : 'none'} />{' '}
+                {artistDetail.data.starred ? 'Favourite' : 'Add to favourites'}
               </Button>
               <Button
                 onClick={() =>
@@ -1711,7 +1761,7 @@ export function LibraryPage({
           <div
             className={
               layout === 'grid'
-                ? 'library-artist-grid grid grid-cols-[repeat(auto-fill,minmax(190px,1fr))] gap-[12px]'
+                ? 'library-artist-grid grid grid-cols-[repeat(auto-fill,minmax(145px,1fr))] gap-x-[16px] gap-y-[22px]'
                 : 'grid grid-cols-1 gap-[6px]'
             }
           >

@@ -30,13 +30,45 @@ LRC_LINE = re.compile(r"^\[(\d+):(\d+(?:\.\d+)?)\](.*)$")
 LIKED_PLAYLIST_KEY = "liked"
 LIKED_PLAYLIST_NAME = "Liked"
 TRACK_PAGE = 500
-TRACK_CAP = 10_000
+TRACK_CAP = 50_000
+# The fields the browser's track schema reads. A full Subsonic song is about 4.5 KB; these
+# are a fraction of that, which is what lets the cap cover large libraries.
+TRACK_FIELDS = (
+    "id",
+    "title",
+    "artist",
+    "artistId",
+    "album",
+    "albumId",
+    "coverArt",
+    "duration",
+    "track",
+    "discNumber",
+    "year",
+    "genre",
+    "created",
+    "playCount",
+)
 TRACK_WINDOWS = 4
 TRACK_CACHE_SECONDS = 60
 TRACK_CACHE_ENTRIES = 4
 # The accepted sort names live here so the request validator and the comparator cannot
 # disagree about which ones exist.
 TRACK_SORTS = ("title", "artist", "album", "year", "duration", "newest")
+ALBUM_SORTS = ("newest", "title", "artist", "year")
+ARTIST_SORTS = ("name", "albums", "recent")
+DIGITS = re.compile(r"(\d+)")
+ARTIST_SHOWS = ("favourites", "played", "unplayed")
+ALBUM_PAGE = 500
+ALBUM_CAP = 50_000
+# Navidrome names an artist's picture ar-<artist id>_<n>.
+ARTIST_COVER = re.compile(r"^ar-(.+)_\d+$")
+# SHA-256 of the star Navidrome sends for an artist it has no photo of (0.63). Navidrome serves
+# it nowhere else, so it can only be recognised by its bytes. If a release changes the star,
+# those artists show it again until its hash is added here.
+PLACEHOLDER_ART = {"521259c652af6d43cb124876106258d93b6b6f7fbe7ad2c73e8345875afe4dcf"}
+# Anything bigger is a real picture and streams through without being read.
+PLACEHOLDER_MAX_BYTES = 4096
 
 
 def lyric_lines(synced: str, plain: str) -> tuple[list[dict[str, object]], bool]:
@@ -114,6 +146,159 @@ def sort_tracks(rows: list[dict[str, object]], sort: str) -> list[dict[str, obje
     return sorted(rows, key=lambda row: (track_text(row, "title"), track_text(row, "artist")))
 
 
+@dataclass
+class ArtistSummary:
+    genres: set[str]
+    years: set[int]
+    added: str
+    played: bool
+
+
+@dataclass
+class CatalogSnapshot:
+    fetched: float
+    artists: list[dict[str, object]]
+    albums: list[dict[str, object]]
+    summaries: dict[str, ArtistSummary]
+    facets: dict[str, object]
+
+
+def album_genres(album: dict[str, object]) -> list[str]:
+    genres = album.get("genres")
+    names = (
+        [genre.get("name") for genre in genres if isinstance(genre, dict)]
+        if isinstance(genres, list)
+        else []
+    )
+    if not names:
+        names = [album.get("genre")]
+    return [name for name in names if isinstance(name, str) and name]
+
+
+def album_artist_ids(album: dict[str, object]) -> set[str]:
+    artists = album.get("artists")
+    ids = {
+        artist["id"]
+        for artist in (artists if isinstance(artists, list) else [])
+        if isinstance(artist, dict) and isinstance(artist.get("id"), str)
+    }
+    artist_id = album.get("artistId")
+    if isinstance(artist_id, str):
+        ids.add(artist_id)
+    return ids
+
+
+def artist_summaries(albums: list[dict[str, object]]) -> dict[str, ArtistSummary]:
+    """What each artist's albums say about them: genres, years, newest addition, any plays."""
+    summaries: dict[str, ArtistSummary] = {}
+    for album in albums:
+        genres = {genre.casefold() for genre in album_genres(album)}
+        year = album.get("year")
+        created = album.get("created")
+        play_count = album.get("playCount")
+        for artist_id in album_artist_ids(album):
+            summary = summaries.setdefault(artist_id, ArtistSummary(set(), set(), "", False))
+            summary.genres |= genres
+            if isinstance(year, int) and not isinstance(year, bool) and year:
+                summary.years.add(year)
+            if isinstance(created, str) and created > summary.added:
+                summary.added = created
+            if isinstance(play_count, int) and play_count > 0:
+                summary.played = True
+    return summaries
+
+
+def artist_facets(albums: list[dict[str, object]]) -> dict[str, object]:
+    """Filter choices for the whole library, so picking one does not hide the others."""
+    genres: dict[str, str] = {}
+    years: set[int] = set()
+    for album in albums:
+        for genre in album_genres(album):
+            genres.setdefault(genre.casefold(), genre)
+        year = album.get("year")
+        if isinstance(year, int) and not isinstance(year, bool) and year:
+            years.add(year)
+    return {
+        "genres": sorted(genres.values(), key=str.casefold),
+        "years": sorted(years, reverse=True),
+    }
+
+
+def filter_artists(
+    snapshot: CatalogSnapshot, query: str, genres: list[str], years: list[int], show: str
+) -> list[dict[str, object]]:
+    needle = query.casefold()
+    wanted_genres = {genre.casefold() for genre in genres}
+    wanted_years = set(years)
+    empty = ArtistSummary(set(), set(), "", False)
+
+    def keep(row: dict[str, object]) -> bool:
+        summary = snapshot.summaries.get(str(row.get("id", "")), empty)
+        return (
+            needle in track_text(row, "name")
+            and (not wanted_genres or bool(summary.genres & wanted_genres))
+            and (not wanted_years or bool(summary.years & wanted_years))
+            and (show != "favourites" or bool(row.get("starred")))
+            and (show != "played" or summary.played)
+            and (show != "unplayed" or not summary.played)
+        )
+
+    return [row for row in snapshot.artists if keep(row)]
+
+
+def natural(text: str) -> list[str | int]:
+    """Sort key that compares runs of digits as numbers, so 9 comes before 100."""
+    return [int(part) if index % 2 else part for index, part in enumerate(DIGITS.split(text))]
+
+
+def filter_albums(
+    rows: list[dict[str, object]], query: str, genres: list[str], years: list[int]
+) -> list[dict[str, object]]:
+    needle = query.casefold()
+    wanted_genres = {genre.casefold() for genre in genres}
+    wanted_years = set(years)
+    return [
+        row
+        for row in rows
+        if (needle in track_text(row, "name") or needle in track_text(row, "artist"))
+        and (
+            not wanted_genres
+            or bool({genre.casefold() for genre in album_genres(row)} & wanted_genres)
+        )
+        and (not wanted_years or int(track_number(row, "year")) in wanted_years)
+    ]
+
+
+def sort_albums(rows: list[dict[str, object]], sort: str) -> list[dict[str, object]]:
+    by_name = sorted(rows, key=lambda row: natural(track_text(row, "name")))
+    if sort == "newest":
+        return sorted(by_name, key=lambda row: track_text(row, "created"), reverse=True)
+    if sort == "artist":
+        return sorted(by_name, key=lambda row: natural(track_text(row, "artist")))
+    if sort == "year":
+        return sorted(by_name, key=lambda row: track_number(row, "year"), reverse=True)
+    return by_name
+
+
+def sort_artists(
+    rows: list[dict[str, object]], summaries: dict[str, ArtistSummary], sort: str
+) -> list[dict[str, object]]:
+    def name(row: dict[str, object]) -> list[str | int]:
+        return natural(track_text(row, "sortName") or track_text(row, "name"))
+
+    by_name = sorted(rows, key=name)
+    if sort == "albums":
+        return sorted(by_name, key=lambda row: track_number(row, "albumCount"), reverse=True)
+    if sort == "recent":
+        empty = ArtistSummary(set(), set(), "", False)
+        return sorted(
+            by_name,
+            key=lambda row: summaries.get(str(row.get("id", "")), empty).added,
+            reverse=True,
+        )
+    return by_name
+
+
 def track_facets(rows: list[dict[str, object]]) -> dict[str, object]:
     """Filter choices for the whole library, so picking one does not hide the others."""
     genres: dict[str, str] = {}
@@ -139,6 +324,8 @@ class Navidrome:
         self.client = client
         self.track_cache: OrderedDict[str, TrackSnapshot] = OrderedDict()
         self.track_locks: dict[str, asyncio.Lock] = {}
+        self.catalog_cache: CatalogSnapshot | None = None
+        self.catalog_lock = asyncio.Lock()
 
     def settings(self) -> Settings:
         with self.store.lock:
@@ -249,64 +436,151 @@ class Navidrome:
             response = await self.client.send(request, stream=True)
         except httpx.HTTPError as exc:
             raise NavidromeError("Navidrome media could not be reached") from exc
-        if response.status_code not in {200, 206}:
+        # Navidrome reports a missing item as a JSON error with status 200.
+        if response.status_code not in {200, 206} or response.headers.get(
+            "content-type", ""
+        ).startswith("application/json"):
             await response.aclose()
             raise NavidromeError("Navidrome refused the media request")
         return response
+
+    async def cover_art(self, cover_id: str) -> httpx.Response:
+        response = await self.media("getCoverArt", cover_id)
+        artist = ARTIST_COVER.fullmatch(cover_id)
+        if not artist:
+            return response
+        # Navidrome shows the same star for every artist it has no photo of. Swap in their
+        # newest album cover so the library shows a picture that is actually theirs.
+        try:
+            if not await self.is_placeholder(response):
+                return response
+            albums = (await self.artist(artist.group(1))).get("album", [])
+            covers = sorted(
+                (album for album in albums if isinstance(album, dict) and album.get("coverArt"))
+                if isinstance(albums, list)
+                else [],
+                key=lambda album: album.get("year") or 0,
+                reverse=True,
+            )
+            for album in covers:
+                try:
+                    candidate = await self.media("getCoverArt", str(album["coverArt"]))
+                except NavidromeError:
+                    continue
+                if not await self.is_placeholder(candidate):
+                    await response.aclose()
+                    return candidate
+                await candidate.aclose()
+        except NavidromeError:
+            pass
+        return response
+
+    async def is_placeholder(self, response: httpx.Response) -> bool:
+        size = response.headers.get("content-length")
+        if size is not None and (not size.isdigit() or int(size) > PLACEHOLDER_MAX_BYTES):
+            return False
+        return hashlib.sha256(await response.aread()).hexdigest() in PLACEHOLDER_ART
 
     async def start_scan(self, target: str) -> None:
         await self.response("startScan", {"target": target})
         # A scan changes what search3 returns, so the browsing snapshot is stale.
         self.forget_tracks()
 
-    async def albums(
-        self, sort: str, query: str, offset: int, size: int
-    ) -> list[dict[str, object]]:
-        if query:
-            body = await self.response(
-                "search3",
-                {
-                    "query": query,
-                    "artistCount": 0,
-                    "albumCount": size,
-                    "albumOffset": offset,
-                    "songCount": 0,
-                },
-            )
-            container = body.get("searchResult3")
-            items = container.get("album", []) if isinstance(container, dict) else []
-            return [cast(dict[str, object], item) for item in items if isinstance(item, dict)]
-        body = await self.response("getAlbumList2", {"type": sort, "offset": offset, "size": size})
+    async def albums(self, offset: int, size: int) -> list[dict[str, object]]:
+        body = await self.response(
+            "getAlbumList2", {"type": "alphabeticalByName", "offset": offset, "size": size}
+        )
         container = body.get("albumList2")
         items = container.get("album", []) if isinstance(container, dict) else []
         return [cast(dict[str, object], item) for item in items if isinstance(item, dict)]
 
-    async def artists(self, query: str, offset: int, size: int) -> list[dict[str, object]]:
-        if query:
-            body = await self.response(
-                "search3",
-                {
-                    "query": query,
-                    "artistCount": size,
-                    "artistOffset": offset,
-                    "albumCount": 0,
-                    "songCount": 0,
-                },
+    async def catalog(self) -> CatalogSnapshot:
+        """Every artist and album, reused for a short window.
+
+        Navidrome cannot filter albums or artists by genre, year or plays across the library,
+        so the albums are walked once and each artist is described by what their albums carry.
+        The lock means concurrent callers share one walk.
+        """
+        async with self.catalog_lock:
+            cached = self.catalog_cache
+            if cached and time.monotonic() - cached.fetched < TRACK_CACHE_SECONDS:
+                return cached
+            body = await self.response("getArtists")
+            container = body.get("artists")
+            indexes = container.get("index", []) if isinstance(container, dict) else []
+            artists = [
+                cast(dict[str, object], artist)
+                for index in indexes
+                if isinstance(index, dict)
+                for artist in index.get("artist", [])
+                if isinstance(artist, dict)
+            ]
+            albums: list[dict[str, object]] = []
+            while len(albums) < ALBUM_CAP:
+                page = await self.albums(len(albums), ALBUM_PAGE)
+                albums.extend(page)
+                if len(page) < ALBUM_PAGE:
+                    break
+            fresh = CatalogSnapshot(
+                time.monotonic(),
+                artists,
+                albums,
+                artist_summaries(albums),
+                artist_facets(albums),
             )
-            container = body.get("searchResult3")
-            items = container.get("artist", []) if isinstance(container, dict) else []
-            return [cast(dict[str, object], item) for item in items if isinstance(item, dict)]
-        body = await self.response("getArtists")
-        container = body.get("artists")
-        indexes = container.get("index", []) if isinstance(container, dict) else []
-        artists = [
-            cast(dict[str, object], artist)
-            for index in indexes
-            if isinstance(index, dict)
-            for artist in index.get("artist", [])
-            if isinstance(artist, dict)
-        ]
-        return artists[offset : offset + size]
+            self.catalog_cache = fresh
+            return fresh
+
+    async def browse_albums(
+        self,
+        query: str,
+        sort: str,
+        genres: list[str],
+        years: list[int],
+        offset: int,
+        size: int,
+    ) -> dict[str, object]:
+        snapshot = await self.catalog()
+        ordered = sort_albums(filter_albums(snapshot.albums, query, genres, years), sort)
+        end = offset + size
+        return {
+            "items": ordered[offset:end],
+            "next_offset": end if end < len(ordered) else None,
+            "total": len(ordered),
+            **snapshot.facets,
+        }
+
+    async def browse_artists(
+        self,
+        query: str,
+        sort: str,
+        genres: list[str],
+        years: list[int],
+        show: str,
+        offset: int,
+        size: int,
+    ) -> dict[str, object]:
+        snapshot = await self.catalog()
+        ordered = sort_artists(
+            filter_artists(snapshot, query, genres, years, show), snapshot.summaries, sort
+        )
+        end = offset + size
+        return {
+            "items": ordered[offset:end],
+            "next_offset": end if end < len(ordered) else None,
+            "total": len(ordered),
+            **snapshot.facets,
+        }
+
+    async def favourite_artist(self, artist_id: str, favourite: bool) -> None:
+        await self.response("star" if favourite else "unstar", {"artistId": artist_id})
+        # Mark the cached row too, so the Favourites filter agrees without a fresh walk.
+        for row in self.catalog_cache.artists if self.catalog_cache else []:
+            if row.get("id") == artist_id:
+                if favourite:
+                    row["starred"] = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+                else:
+                    row.pop("starred", None)
 
     async def tracks(self, query: str, offset: int, size: int) -> list[dict[str, object]]:
         body = await self.response(
@@ -369,12 +643,17 @@ class Navidrome:
                 break
             offset += TRACK_WINDOWS * TRACK_PAGE
         # A scan running mid-request can shift offsets, so overlapping windows repeat a track.
-        unique = {str(row.get("id", "")): row for row in rows if row.get("id")}
+        unique = {
+            str(row["id"]): {key: row[key] for key in TRACK_FIELDS if key in row}
+            for row in rows
+            if row.get("id")
+        }
         bounded = list(unique.values())[:TRACK_CAP]
         return TrackSnapshot(time.monotonic(), bounded, track_facets(bounded))
 
     def forget_tracks(self) -> None:
         self.track_cache.clear()
+        self.catalog_cache = None
 
     async def browse_tracks(
         self,

@@ -2,11 +2,20 @@ import re
 from collections.abc import AsyncIterator, Callable
 from typing import Annotated
 
+import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
-from backend.navidrome import TRACK_SORTS, Navidrome, NavidromeError, PlaylistProtected
+from backend.navidrome import (
+    ALBUM_SORTS,
+    ARTIST_SHOWS,
+    ARTIST_SORTS,
+    TRACK_SORTS,
+    Navidrome,
+    NavidromeError,
+    PlaylistProtected,
+)
 
 ITEM_ID = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
 # Musimo's own ceiling on one saved play queue. Kept from the original queue validator.
@@ -17,6 +26,9 @@ TrackGenres = Annotated[
     list[Annotated[str, StringConstraints(max_length=120)]] | None, Query(max_length=60)
 ]
 TrackYears = Annotated[list[int] | None, Query(max_length=200)]
+AlbumSort = Annotated[str, Query(pattern=f"^({'|'.join(ALBUM_SORTS)})$")]
+ArtistSort = Annotated[str, Query(pattern=f"^({'|'.join(ARTIST_SORTS)})$")]
+ArtistShow = Annotated[str, Query(pattern=f"^({'|'.join(ARTIST_SHOWS)})?$")]
 BYTE_RANGE = re.compile(r"^bytes=\d*-\d*$")
 MEDIA_HEADERS = {
     "accept-ranges",
@@ -127,25 +139,36 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
 
     @app.get("/api/library/albums")
     async def albums(
-        sort: str = Query(
-            default="newest",
-            pattern="^(newest|recent|frequent|random|alphabeticalByName)$",
-        ),
-        q: str = Query(default="", max_length=200),
+        q: TrackQuery = "",
+        sort: AlbumSort = "newest",
+        genre: TrackGenres = None,
+        year: TrackYears = None,
         offset: int = Query(default=0, ge=0),
         size: int = Query(default=50, ge=1, le=100),
     ) -> dict[str, object]:
-        items = await get().albums(sort, q.strip(), offset, size)
-        return {"items": items, "next_offset": offset + size if len(items) == size else None}
+        return await get().browse_albums(q.strip(), sort, genre or [], year or [], offset, size)
 
     @app.get("/api/library/artists")
     async def artists(
-        q: str = Query(default="", max_length=200),
+        q: TrackQuery = "",
+        sort: ArtistSort = "name",
+        genre: TrackGenres = None,
+        year: TrackYears = None,
+        show: ArtistShow = "",
         offset: int = Query(default=0, ge=0),
         size: int = Query(default=100, ge=1, le=200),
     ) -> dict[str, object]:
-        items = await get().artists(q.strip(), offset, size)
-        return {"items": items, "next_offset": offset + size if len(items) == size else None}
+        return await get().browse_artists(
+            q.strip(), sort, genre or [], year or [], show, offset, size
+        )
+
+    @app.put("/api/library/artists/{artist_id}/favourite", status_code=204)
+    async def favourite_artist(artist_id: str) -> None:
+        await get().favourite_artist(checked_id(artist_id), True)
+
+    @app.delete("/api/library/artists/{artist_id}/favourite", status_code=204)
+    async def unfavourite_artist(artist_id: str) -> None:
+        await get().favourite_artist(checked_id(artist_id), False)
 
     @app.get("/api/library/tracks")
     async def tracks(
@@ -247,8 +270,9 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
     async def media_response(endpoint: str, item_id: str, range_header: str) -> StreamingResponse:
         if range_header and not BYTE_RANGE.fullmatch(range_header):
             raise HTTPException(416, "Only one byte range is supported")
-        response = await get().media(endpoint, checked_id(item_id), range_header)
+        return proxied(await get().media(endpoint, checked_id(item_id), range_header))
 
+    def proxied(response: httpx.Response) -> StreamingResponse:
         async def content() -> AsyncIterator[bytes]:
             try:
                 async for chunk in response.aiter_bytes():
@@ -259,6 +283,11 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
         headers = {
             name: value for name, value in response.headers.items() if name.lower() in MEDIA_HEADERS
         }
+        # httpx hands over the decoded body, so a compressed response's length no longer fits.
+        if response.headers.get("content-encoding"):
+            headers = {
+                name: value for name, value in headers.items() if name.lower() != "content-length"
+            }
         return StreamingResponse(content(), status_code=response.status_code, headers=headers)
 
     @app.get("/api/player/stream/{song_id}")
@@ -266,5 +295,5 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
         return await media_response("stream", song_id, request.headers.get("range", ""))
 
     @app.get("/api/player/art/{cover_id}")
-    async def art(cover_id: str, request: Request) -> StreamingResponse:
-        return await media_response("getCoverArt", cover_id, request.headers.get("range", ""))
+    async def art(cover_id: str) -> StreamingResponse:
+        return proxied(await get().cover_art(checked_id(cover_id)))
