@@ -240,8 +240,9 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
     onSuccess: (job) => updateJob(client, job),
   })
   return (
-    // `download-action` is a hook: `.download-action option` in the sheet paints the format list.
-    <div className={cx('download-action', 'relative flex items-center gap-[6px]', className)}>
+    // The native option list takes the select's transparent background otherwise, which some
+    // engines paint white under light text.
+    <div className={cx('relative flex items-center gap-[6px] [&_option]:bg-raised', className)}>
       <select
         aria-label={`Format for ${item.title}`}
         className="max-w-[82px] rounded-md border border-line-strong bg-transparent px-[3px] py-[6px] text-tiny text-inherit coarse:max-w-[96px] coarse:px-[6px] coarse:py-3"
@@ -300,7 +301,6 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
         ref={optionsPanel}
         id={optionsId}
         className={cx(
-          'download-options',
           'fixed inset-auto m-0 w-[240px] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] overflow-auto overscroll-contain rounded-[8px] border border-line-strong bg-raised p-[14px] text-inherit shadow-[0_8px_30px_color-mix(in_oklab,var(--color-shadow)_53%,transparent)]',
         )}
         popover="auto"
@@ -348,12 +348,12 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
         </small>
       </div>
       {mutation.data?.stage === 'done' && (
-        <span className={errorBannerClassName('block', 'download-error mt-2')} role="status">
+        <span className={errorBannerClassName('block', 'mt-2')} role="status">
           Already downloaded. The existing file was kept.
         </span>
       )}
       {mutation.isError && (
-        <span className={errorBannerClassName('block', 'download-error mt-2')} role="alert">
+        <span className={errorBannerClassName('block', 'mt-2')} role="alert">
           {mutation.error.message}
           <button
             disabled={owned || Boolean(existing) || mutation.isPending}

@@ -119,7 +119,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
   return (
     <>
       <div
-        className="artist-download-actions mt-[14px] flex flex-wrap gap-[8px]"
+        className="mt-[14px] flex flex-wrap gap-[8px]"
         role="group"
         aria-label={`Download ${name}`}
       >
@@ -159,7 +159,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
       <dialog
         ref={dialog}
         className={cx(
-          'artist-download-sheet m-auto w-[min(700px,calc(100%-32px))] max-h-[85dvh] overscroll-contain rounded-[16px] border border-line bg-raised p-[24px] text-text',
+          'm-auto w-[min(700px,calc(100%-32px))] max-h-[85dvh] overscroll-contain rounded-[16px] border border-line bg-raised p-[24px] text-text',
           'backdrop:bg-scrim/60',
           'max-phone:inset-x-0 max-phone:top-auto max-phone:bottom-0 max-phone:m-0 max-phone:w-full max-phone:max-w-none max-phone:max-h-[calc(100dvh-24px)] max-phone:rounded-t-[18px] max-phone:rounded-b-none max-phone:border-b-0 max-phone:p-[16px] max-phone:pb-[calc(16px+var(--safe-bottom))]',
         )}
@@ -193,7 +193,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
         {plan.data && (
           <>
             <div
-              className="artist-download-stats my-[16px] grid gap-[8px] rounded-[10px] bg-good-bg p-[18px] max-phone:p-[14px]"
+              className="my-[16px] grid gap-[8px] rounded-[10px] bg-good-bg p-[18px] max-phone:p-[14px]"
               aria-live="polite"
             >
               <strong className="text-[24px] max-phone:text-[20px]">

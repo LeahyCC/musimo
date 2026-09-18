@@ -32,6 +32,11 @@ import {
   textLinkClassName,
 } from './ui'
 
+/* A result section's heading row sits a little tighter than the shared one in `ui/`, and its
+   title keeps a gap under it where a count or link wraps below. */
+const resultsHeadingClassName = 'mb-[17px] flex items-center justify-between gap-[12px]'
+const resultsTitleClassName = 'mb-[12px] text-[16px]'
+
 const tabs = ['top', 'track', 'album', 'artist'] as const
 type Tab = (typeof tabs)[number]
 const sorts = ['relevance', 'title', 'artist', 'year', 'duration', 'popularity'] as const
@@ -236,7 +241,7 @@ export function MusicCard({ item }: { item: MusicResult }) {
   })
   const display = item.kind === 'album' ? (detail.data?.album ?? item) : item
   return (
-    <article className="music-card group relative isolate flex min-w-0 flex-col gap-[9px] rounded-lg border border-transparent bg-raised p-[12px] hover:border-line hover:bg-hover focus-within:border-line focus-within:bg-hover">
+    <article className="group relative isolate flex min-w-0 flex-col gap-[9px] rounded-lg border border-transparent bg-raised p-[12px] hover:border-line hover:bg-hover focus-within:border-line focus-within:bg-hover">
       <Art item={item} />
       {item.kind === 'artist' ? (
         <Link
@@ -329,17 +334,16 @@ export function TrackRow({
     <div
       className={cx(
         'track-row flex h-[76px] items-center gap-[14px] border-b border-line p-[8px] text-small',
-        'hover:bg-hover focus:outline-2 focus:outline-accent focus:[outline-offset:-2px]',
+        'hover:bg-hover focus:outline-2 focus:outline-accent focus:[outline-offset:-2px] coarse:[&_button]:min-h-11',
         'max-phone:grid max-phone:grid-cols-[44px_minmax(0,1fr)_auto] max-phone:grid-rows-[1fr_auto] max-phone:gap-[2px_8px] max-phone:p-[6px_0]',
-        selected &&
-          'selected-track bg-accent/9 outline outline-1 outline-accent [outline-offset:-1px]',
+        selected && 'bg-accent/9 outline outline-1 outline-accent [outline-offset:-1px]',
       )}
       id={`track-${item.id}`}
       aria-current={selected ? 'true' : undefined}
       tabIndex={focusable ? 0 : -1}
     >
       <Art item={item} size="row" className="max-phone:col-start-1 max-phone:row-span-2" />
-      <div className="track-title min-w-0 flex-1 max-phone:col-start-2 max-phone:row-start-1">
+      <div className="min-w-0 flex-1 max-phone:col-start-2 max-phone:row-start-1">
         <strong className="flex items-center gap-[6px] text-lead font-medium">
           <Link
             className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
@@ -367,16 +371,14 @@ export function TrackRow({
         </Link>
       </div>
       <Link
-        className="track-album w-[19%] overflow-hidden text-ellipsis whitespace-nowrap text-muted max-tablet:hidden"
+        className="w-[19%] overflow-hidden text-ellipsis whitespace-nowrap text-muted max-tablet:hidden"
         to="/albums/$albumId"
         params={{ albumId: String(item.album_id) }}
       >
         {item.album}
       </Link>
-      <span className="track-year w-[32px] text-muted max-phone:hidden">{item.year ?? '…'}</span>
-      <span className="track-duration w-[32px] text-muted max-phone:hidden">
-        {durationText(item.duration)}
-      </span>
+      <span className="w-[32px] text-muted max-phone:hidden">{item.year ?? '…'}</span>
+      <span className="w-[32px] text-muted max-phone:hidden">{durationText(item.duration)}</span>
       <Badge
         item={item}
         job={job}
@@ -400,7 +402,7 @@ export function TrackRow({
 
 function CardGrid({ items }: { items: MusicResult[] }) {
   return (
-    <div className="music-grid grid grid-cols-[repeat(auto-fill,minmax(145px,1fr))] gap-[20px] max-phone:grid-cols-2 max-phone:gap-[12px]">
+    <div className="grid grid-cols-[repeat(auto-fill,minmax(145px,1fr))] gap-[20px] max-phone:grid-cols-2 max-phone:gap-[12px]">
       {items.map((item) => (
         <MusicCard key={item.id} item={item} />
       ))}
@@ -684,9 +686,9 @@ function ResultsSection({
     return compact ? filtered.slice(0, kind === 'track' ? 5 : 6) : filtered
   }, [raw, yearQuery.data, state, kind, compact, coverage])
   return (
-    <section className="results-section mb-[36px]" aria-label={labels[kind]}>
-      <div className="section-heading">
-        <h2>{labels[kind]}</h2>
+    <section className="mb-[36px]" aria-label={labels[kind]}>
+      <div className={resultsHeadingClassName}>
+        <h2 className={resultsTitleClassName}>{labels[kind]}</h2>
         {compact && items.length > 0 && (
           <button
             type="button"
@@ -737,7 +739,7 @@ function ResultsSection({
           <CardGrid items={items} />
         ))}
       {!query.isPending && !query.isError && !items.length && (
-        <p className="empty-results">
+        <p className="py-[30px]">
           No {labels[kind].toLowerCase()} match{' '}
           {raw.length ? 'these filters in the loaded results.' : 'this search.'}
         </p>
@@ -1224,9 +1226,11 @@ export function ArtistPage() {
           />
         </div>
       </div>
-      <section className="results-section mb-[36px]" aria-labelledby="popular-songs-title">
-        <div className="section-heading">
-          <h2 id="popular-songs-title">Popular songs</h2>
+      <section className="mb-[36px]" aria-labelledby="popular-songs-title">
+        <div className={resultsHeadingClassName}>
+          <h2 id="popular-songs-title" className={resultsTitleClassName}>
+            Popular songs
+          </h2>
         </div>
         {top.isPending && <p role="status">Loading popular songs…</p>}
         {top.isError && (
@@ -1239,9 +1243,11 @@ export function ArtistPage() {
           <p className="text-muted">No popular songs found.</p>
         )}
       </section>
-      <section className="results-section mb-[36px]" aria-labelledby="popular-albums-title">
-        <div className="section-heading">
-          <h2 id="popular-albums-title">Popular albums</h2>
+      <section className="mb-[36px]" aria-labelledby="popular-albums-title">
+        <div className={resultsHeadingClassName}>
+          <h2 id="popular-albums-title" className={resultsTitleClassName}>
+            Popular albums
+          </h2>
         </div>
         {(top.isPending || popularAlbumQueries.some((result) => result.isPending)) && (
           <p role="status">Finding popular albums…</p>
@@ -1263,10 +1269,12 @@ export function ArtistPage() {
           popularAlbumQueries.every((result) => !result.isPending) &&
           !popularAlbums.length && <p className="text-muted">No popular albums found.</p>}
       </section>
-      <section className="results-section mb-[36px]" aria-labelledby="discography-title">
-        <div className="section-heading artist-release-heading">
-          <div>
-            <h2 id="discography-title">Discography</h2>
+      <section className="mb-[36px]" aria-labelledby="discography-title">
+        <div className="mb-[17px] flex items-end justify-between gap-[12px] max-phone:flex-col max-phone:items-start">
+          <div className="grid gap-[5px]">
+            <h2 id="discography-title" className={resultsTitleClassName}>
+              Discography
+            </h2>
             <small>
               {releases.length} shown · {items.length} releases loaded
             </small>

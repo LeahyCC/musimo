@@ -73,6 +73,9 @@ import {
   FieldSelect,
   Kbd,
   Panel,
+  sectionCaptionClassName,
+  sectionHeadingClassName,
+  sectionTitleClassName,
   StatusChip,
   Tag,
   textLinkClassName,
@@ -112,10 +115,6 @@ const sidebarActionClassName = cx(
   'hover:border-[color:var(--line-hover)] hover:text-accent',
 )
 
-/* Settings and Diagnostics share this row shape for every panel and section heading: a title on
-   the left, an optional chip or note on the right. */
-const sectionHeadingRowClassName = 'mb-[21px] flex items-center justify-between gap-[12px]'
-const sectionHeadingTitleClassName = 'text-[16px]'
 const sectionIndexLinkClassName =
   'hover:text-accent coarse:inline-flex coarse:min-h-11 coarse:items-center'
 const settingsSectionClassName = 'scroll-mt-[115px] mb-[31px]'
@@ -436,7 +435,12 @@ function Shell() {
                   : 'Connecting to live updates…'}
           </div>
         )}
-        <main id="main">
+        {/* The bottom padding follows the player and nav on a phone so the last row is never under
+            them. */}
+        <main
+          id="main"
+          className="m-auto max-w-[1360px] px-[43px] pt-[36px] pb-[130px] wide:pt-[48px] max-tablet:px-[27px] max-phone:pt-[24px] max-phone:pr-[calc(20px+var(--safe-right))] max-phone:pb-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+32px)] max-phone:pl-[calc(20px+var(--safe-left))]"
+        >
           <Outlet />
         </main>
       </div>
@@ -1010,8 +1014,8 @@ function DiagnosticsPage() {
             )
           })()}
           <Panel className="readiness-panel">
-            <div className={sectionHeadingRowClassName}>
-              <h2 className={sectionHeadingTitleClassName}>System readiness</h2>
+            <div className={sectionHeadingClassName}>
+              <h2 className={sectionTitleClassName}>System readiness</h2>
             </div>
             <div className="flex flex-col gap-[16px]">
               {data.library.roots.map((root: string) => {
@@ -1222,8 +1226,8 @@ function DiagnosticsPage() {
           >
             {data.sources.map((source) => (
               <Panel key={source.source}>
-                <div className={sectionHeadingRowClassName}>
-                  <h2 className={sectionHeadingTitleClassName}>
+                <div className={sectionHeadingClassName}>
+                  <h2 className={sectionTitleClassName}>
                     {source.source === 'deezer' ? 'Catalog connection' : 'Download source'}
                   </h2>
                   <StatusChip variant={source.status === 'healthy' ? 'good' : 'default'}>
@@ -1258,8 +1262,8 @@ function DiagnosticsPage() {
               </Panel>
             ))}
             <Panel id="disk">
-              <div className={sectionHeadingRowClassName}>
-                <h2 className={sectionHeadingTitleClassName}>Persistent storage</h2>
+              <div className={sectionHeadingClassName}>
+                <h2 className={sectionTitleClassName}>Persistent storage</h2>
                 <Folder size={18} />
               </div>
               {data.disks.map((disk) => (
@@ -1285,11 +1289,9 @@ function DiagnosticsPage() {
             </Panel>
           </div>
           <section className="mt-[32px]">
-            <div className={sectionHeadingRowClassName}>
-              <h2 className={sectionHeadingTitleClassName}>Under the hood</h2>
-              <span className="text-micro tracking-[1.2px] text-faint max-phone:text-caption">
-                INSTALLED IN THIS CONTAINER
-              </span>
+            <div className={sectionHeadingClassName}>
+              <h2 className={sectionTitleClassName}>Under the hood</h2>
+              <span className={sectionCaptionClassName}>INSTALLED IN THIS CONTAINER</span>
             </div>
             <dl className="grid grid-cols-2 gap-x-[33px] max-phone:gap-x-[20px] max-phone:grid-cols-1">
               {Object.entries(data.versions).map(([name, version]) => (

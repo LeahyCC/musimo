@@ -98,7 +98,7 @@ Checked 10 September 2026. Automated and manual accessibility checks cover keybo
 
 **Keyboard navigation:** Virtual lists (tracks, download queue) maintain focus without remounting on filter changes, with deliberate scroll reset when filters actually change. Escape key closes FilterMenu popovers. All icon-only buttons have aria-label attributes. TrackList uses stable keys to avoid losing focus on filter keystrokes.
 
-**Touch targets:** Under `(pointer: coarse)` media query, all interactive elements meet 44px minimum: icon buttons, job buttons, text preview button, download action select, row actions, tabs, chips, text links, inline Retry buttons, filter rows and form controls. The touch rules are the last block in the stylesheet so they outrank the size each control sets for itself. Text controls are 16px on touch screens so iOS Safari does not zoom on focus. Desktop density unchanged.
+**Touch targets:** Under `(pointer: coarse)` media query, all interactive elements meet 44px minimum: icon buttons, job buttons, text preview button, download action select, row actions, tabs, chips, text links, inline Retry buttons, filter rows and form controls. Each primitive carries its own `coarse:` 44px rule; the 16px text rule for inputs is the last block in the stylesheet, outside every cascade layer, so it outranks the size each control sets for itself. Text controls are 16px on touch screens so iOS Safari does not zoom on focus. Desktop density unchanged.
 
 **Screen reader:** Virtual lists announce with role="region" and aria-label. Queue count changes announce via aria-live="polite" live region. Library tabs carry aria-pressed state. TrackRow elements have aria-current when selected.
 
@@ -108,9 +108,13 @@ Checked 10 September 2026. Automated and manual accessibility checks cover keybo
 
 **Manual checks still needed:** Screen reader announcement quality across all flows (not just presence of ARIA attributes). Keyboard-only navigation completeness across all interactions. Focus visibility under different browser/OS high contrast modes. Touch target effectiveness on actual touch devices (automated check verifies size only).
 
-## Styling follow-up
+## Themed walk, 17 September 2026
 
-Handwritten semantic CSS in `frontend/src/style.css` still owns every screen. Tailwind 4 is imported and unused. The conversion plan, the layout contract the phone suite must keep, and the walk items that should move with a given screen are in [Tailwind migration](tailwind-migration.md).
+The Tailwind migration is finished, so every route was walked under the light fixture theme from `e2e/theme-fixtures.ts`, at 1280x800 and at 390x844 (the iPhone 13 phone project). `e2e/themed-walk.spec.ts` does this on every run now: eighteen routes (search results, search tracks, album, artist, library home, albums, album, artists, artist, artist songs, tracks, playlists, playlist, Now Playing, Downloads, Settings, Your settings and Diagnostics), each with a restored queue so the footer player shows. It checks that the page, the sidebar or bottom bar, the player and the first card or panel no longer paint the default theme's colors, runs axe, and saves a full-page screenshot.
+
+All 36 passed with no axe findings. Every screenshot was looked over for a dark patch. There were none: the only dark areas are the fixture artwork (a dark square the test serves for every cover) and the Now Playing stage, which draws on `--color-media` and `--color-on-media` by design so it stays readable over any picture. Nothing escaped the tokens, so no component needed a fix.
+
+One thing the walk did catch was in the test fixtures, not the app: a glob of `**/api/artists/7*` does not match `/api/artists/7/top`, so the artist page's popular songs went to the live provider. The walk's search fixture uses a regex instead.
 
 ## Further coverage
 

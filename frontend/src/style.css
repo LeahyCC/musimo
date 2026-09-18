@@ -89,9 +89,9 @@
   --z-index-skip: 30; /* the skip link */
   --z-index-dock: 45; /* the floating queue pill */
 
-  /* Three named widths replace the six the sheet used. `phone` is 48rem so `max-phone:` cuts at
-     the same place as the `max-width: 767px` blocks below; `tablet` keeps the narrow sidebar and
-     stacks the Now Playing columns. */
+  /* Three named widths. `phone` is 48rem so `max-phone:` cuts at 767px, where the sidebar becomes
+     a bottom bar; `tablet` keeps the narrow sidebar and stacks the Now Playing columns. The
+     handwritten queries below read the same values through theme(). */
   --breakpoint-*: initial;
   --breakpoint-phone: 48rem; /* 768px */
   --breakpoint-tablet: 68.75rem; /* 1100px */
@@ -133,13 +133,25 @@
   --safe-right: env(safe-area-inset-right, 0px);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
-  /* Short names the rules below were written against. Later phases of the migration retire them
-     in favour of the --color-* tokens. */
 }
-/* Resets for bare elements sit in Tailwind's `base` layer. A rule outside every layer beats any
-   utility whatever its specificity, so left unlayered `font: inherit` on a button would undo the
-   size and weight a primitive in src/ui/ asks for. The class rules further down stay unlayered
-   on purpose: until its screen converts, a contextual rule is meant to win over a primitive. */
+/* The same edges as `max-tablet:` and `max-phone:`, so the variables and the utilities switch at
+   the same pixel, including at zoomed, fractional widths. */
+@media (width < theme(--breakpoint-tablet)) {
+  :root {
+    --sidebar-width: 184px;
+  }
+}
+@media (width < theme(--breakpoint-phone)) {
+  :root {
+    --sidebar-width: 0px;
+    --nav-height: 64px;
+    --topbar-height: 60px;
+  }
+}
+
+/* Resets for bare elements sit in Tailwind's `base` layer, so any utility on the element wins. A
+   rule outside every layer beats every utility whatever its specificity: left unlayered, `font:
+   inherit` on a button would undo the size and weight a primitive in src/ui/ asks for. */
 @layer base {
   * {
     box-sizing: border-box;
@@ -193,12 +205,18 @@
     opacity: 0.5;
     cursor: not-allowed;
   }
-  @media (width < 48rem) {
+  @media (width < theme(--breakpoint-phone)) {
     h1 {
       font-size: 27px;
     }
   }
 }
+
+/* Everything below stays handwritten on purpose (docs/tailwind-migration.md, "What stays
+   handwritten CSS"): pseudo-elements, vendor parts and top-layer states a utility cannot reach,
+   and the few rules that have to beat any utility. None of it is a screen's layout. */
+
+/* Unlayered, so the ring wins over a control's own outline utilities. */
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
@@ -206,9 +224,10 @@ select:focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 4px;
 }
-/* The one control Tailwind cannot dress: a native color input paints its swatch in a shadow part
-   that carries the engine's own padding and border. Each engine needs its own selector, because an
-   unknown pseudo-element throws away the whole selector list it is written in. */
+
+/* A native color input paints its swatch in a shadow part that carries the engine's own padding
+   and border. Each engine needs its own selector, because an unknown pseudo-element throws away
+   the whole selector list it is written in. */
 input[type='color'] {
   padding: 0;
   border: none;
@@ -225,57 +244,8 @@ input[type='color']::-moz-color-swatch {
   border: 1px solid var(--color-line-strong);
   border-radius: var(--radius-sm);
 }
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border-width: 0;
-}
-main {
-  max-width: 1360px;
-  margin: auto;
-  padding: 36px 43px 130px;
-}
-.page-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 20px;
-  margin: 1px 0 23px;
-}
-.eyebrow {
-  font-size: 9px;
-  letter-spacing: 2px;
-  color: var(--color-faint);
-  margin-bottom: 12px;
-  font-weight: 600;
-}
-.button-row {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-}
-.section-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 21px;
-}
-.section-heading h2 {
-  font-size: 16px;
-}
-.section-heading > span:not([data-ui='status-chip']) {
-  color: var(--color-faint);
-  font-size: 9px;
-  letter-spacing: 1.2px;
-}
+
+/* Meter vendor bars, for the library index panel. */
 meter {
   display: block;
   width: 100%;
@@ -289,71 +259,12 @@ meter::-webkit-meter-bar {
 meter::-webkit-meter-optimum-value {
   background: var(--color-good);
 }
-.spin {
-  animation: spin 1s linear infinite;
-}
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-@media (width >= 93.75rem) {
-  main {
-    padding-top: 48px;
-  }
-}
-@media (width < 68.75rem) {
-  :root {
-    --sidebar-width: 184px;
-  }
-  main {
-    padding-inline: 27px;
-  }
-}
-@media (width < 48rem) {
-  :root {
-    --sidebar-width: 0px;
-    --nav-height: 64px;
-    --topbar-height: 60px;
-  }
-  main {
-    /* The bottom padding follows the player and nav so the last row is never under them. */
-    padding: 24px calc(20px + var(--safe-right))
-      calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 32px)
-      calc(20px + var(--safe-left));
-  }
-  .section-heading > span:not([data-ui='status-chip']) {
-    font-size: 10px;
-  }
-  .eyebrow {
-    font-size: 10px;
-  }
-  .page-heading {
-    align-items: flex-start;
-    flex-wrap: wrap;
-    gap: 15px;
-  }
-}
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    animation: none !important;
-    scroll-behavior: auto !important;
-  }
-}
 
-.results-section > .section-heading {
-  margin-bottom: 17px;
-}
-.results-section h2 {
-  margin-bottom: 12px;
-}
+/* The virtual lists (Search tracks, Downloads jobs) take the room left under the top bar and above
+   the player and bottom bar, so a list never has to be scrolled out from under either. The first
+   height stands in where dvh is unknown; the second wins everywhere else. */
 .virtual-list {
-  /* The first height stands in where dvh is unknown; the second wins everywhere else. */
   height: min(620px, 65vh);
-  /* The room left under the top bar and above the player and bottom bar, so the list never
-     has to be scrolled out from under either. */
   height: min(
     620px,
     calc(
@@ -366,73 +277,41 @@ meter::-webkit-meter-optimum-value {
   overscroll-behavior: contain;
   contain: strict;
 }
-.empty-results {
-  padding: 30px 0;
+/* Inside the queue sheet the list shares the sheet's own scroll room rather than the page's. */
+.queue-sheet .virtual-list {
+  height: min(620px, 50dvh);
+  min-height: 0;
 }
-/* Card primary-link hit area and focus ring: stays handwritten (docs/tailwind-migration.md,
-   "What stays handwritten CSS"). The card's positioning context is `.music-card`. */
+
+/* A music card's primary link stretches over the whole card, whose `relative` article is the
+   positioning context, and draws the card's focus ring. */
 .card-primary-link::after {
   content: '';
   position: absolute;
   inset: 0;
   z-index: var(--z-index-base);
-  border-radius: 12px;
+  border-radius: var(--radius-lg);
 }
 .card-primary-link:focus-visible::after {
   outline: 2px solid var(--color-accent);
   outline-offset: 3px;
 }
-.round-play {
-  flex-shrink: 0;
-  border: 0;
-  border-radius: 50%;
-  width: 35px;
-  height: 35px;
-  display: grid;
-  place-items: center;
-  background: var(--color-accent);
-  color: var(--color-accent-ink);
-}
-.preview-label {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  font-size: 10px;
-  color: var(--color-muted);
-}
-.artist-release-heading {
-  align-items: end;
-}
-.artist-release-heading > div:first-child {
-  display: grid;
-  gap: 5px;
-}
+
+/* Dialog backdrops: the command palette, the queue sheet and the playlist picker. */
 .command-palette::backdrop {
   background: color-mix(in oklab, var(--color-scrim) 73%, transparent);
   backdrop-filter: blur(4px);
 }
-@media (width < 68.75rem) {
-  .preview-label {
-    display: none;
-  }
-}
-@media (width < 48rem) {
-  .artist-release-heading {
-    align-items: start;
-    flex-direction: column;
-  }
+.queue-sheet::backdrop,
+.playlist-picker-sheet::backdrop {
+  background: color-mix(in oklab, var(--color-scrim) 53%, transparent);
 }
 
-@media (width < 48rem) {
-  .preview-label {
-    display: none;
-  }
-  /* Leftover by design: a range input's track and thumb are only reachable through vendor
-     pseudo-elements, and WebKit has none for the played portion, so the phone seek bar paints it
-     from --progress, which the footer sets on the input. See docs/tailwind-migration.md,
-     "What stays handwritten CSS". The input's own box is Tailwind utilities in player.tsx. */
-  /* Inset, because the bar runs edge to edge and a ring outside it would be cut off. Here and not
-     a utility: the unlayered focus ring rule above would beat one. */
+/* The phone footer's seek bar. A range input's track and thumb are only reachable through vendor
+   pseudo-elements, and WebKit has none for the played portion, so the bar paints it from
+   --progress, which the footer sets on the input. The input's own box is utilities in player.tsx. */
+@media (width < theme(--breakpoint-phone)) {
+  /* Inset, because the bar runs edge to edge and a ring outside it would be cut off. */
   .live-player .playback-controls input[type='range']:focus-visible {
     outline-offset: -2px;
   }
@@ -468,24 +347,9 @@ meter::-webkit-meter-optimum-value {
     background: var(--color-accent);
   }
 }
-/* Inside the sheet the list shares the sheet's own scroll room rather than the page's. */
-.queue-sheet .virtual-list {
-  height: min(620px, 50dvh);
-  min-height: 0;
-}
-.queue-sheet::backdrop {
-  background: color-mix(in oklab, var(--color-scrim) 53%, transparent);
-}
-.download-action option {
-  background: var(--color-raised);
-}
-.playlist-picker-sheet::backdrop {
-  background: color-mix(in oklab, var(--color-scrim) 53%, transparent);
-}
 
-/* Leftovers by design (docs/tailwind-migration.md, "What stays handwritten CSS"): the Now Playing
-   stage filling the screen or the popout window. The stage's own box is utilities in
-   now-playing-popout.tsx; these rules sit outside every layer, so they win over it when they apply. */
+/* The Now Playing stage filling the screen or the popout window. The stage's own box is utilities
+   in now-playing-popout.tsx; these sit outside every layer, so they win over it when they apply. */
 .stage:fullscreen {
   width: 100vw;
   height: 100vh;
@@ -512,16 +376,19 @@ meter::-webkit-meter-optimum-value {
   box-shadow: none;
 }
 
-/* Touch screens: 44px targets, and text controls at 16px so iOS Safari does not zoom the page
-   when one gains focus. Last in the file so it outranks the size each control sets for itself. */
+/* Reduced motion switches off every animation and smooth scroll, the utilities' included. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation: none !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* Touch screens: text controls 44px tall and at 16px, so iOS Safari does not zoom the page when
+   one gains focus. Unlayered and last, so it outranks the size any control sets for itself. */
 @media (pointer: coarse) {
-  .round-play {
-    width: 44px;
-    height: 44px;
-  }
-  .track-row button {
-    min-height: 44px;
-  }
   input:not([type='checkbox']):not([type='radio']):not([type='range']),
   select,
   textarea {

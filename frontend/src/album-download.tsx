@@ -70,7 +70,7 @@ export function AlbumDownloadButton({
       ? 'Download album, skipping tracks in your library'
       : 'Download every track on this album'
   const icon = download.isPending ? (
-    <LoaderCircle size={18} className="spin" />
+    <LoaderCircle size={18} className="animate-spin" />
   ) : complete ? (
     <Check size={18} />
   ) : (
@@ -79,7 +79,7 @@ export function AlbumDownloadButton({
   return (
     <div
       className={cx(
-        'album-card-download flex min-h-[36px] gap-[8px]',
+        'flex min-h-[36px] gap-[8px]',
         overlay
           ? 'absolute top-[18px] right-[18px] z-float max-w-[calc(100%-36px)] flex-col items-end'
           : 'relative items-center',
@@ -117,7 +117,7 @@ export function AlbumDownloadButton({
           <Link
             to="/downloads"
             className={cx(
-              'album-download-status text-tiny coarse:inline-flex coarse:min-h-11 coarse:items-center',
+              'text-tiny coarse:inline-flex coarse:min-h-11 coarse:items-center',
               overlay && 'rounded-md bg-raised/96 p-[8px]',
             )}
           >
@@ -136,8 +136,8 @@ export function AlbumDownloadButton({
         <span
           className={
             overlay
-              ? 'download-error min-w-0 flex-1 rounded-md bg-raised/96 p-[8px] text-tiny [overflow-wrap:anywhere]'
-              : errorBannerClassName('block', 'download-error')
+              ? 'min-w-0 flex-1 rounded-md bg-raised/96 p-[8px] text-tiny [overflow-wrap:anywhere]'
+              : errorBannerClassName('block')
           }
           role="alert"
         >

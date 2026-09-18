@@ -10,3 +10,8 @@ export { ErrorBanner, errorBannerClassName, InlineError } from './error'
 export type { ErrorBannerProps } from './error'
 export { Field, FieldSelect } from './field'
 export { Kbd } from './kbd'
+export {
+  sectionHeadingClassName,
+  sectionTitleClassName,
+  sectionCaptionClassName,
+} from './section-heading'

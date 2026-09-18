@@ -1,5 +1,18 @@
 # Tailwind migration, theming and styling plan
 
+**Done, 17 September 2026.** Every screen is Tailwind utilities and every color is a theme token. The short guide for new work is [Styling in architecture](architecture.md#styling); this note stays as the record and holds the layout contract.
+
+| `frontend/src/style.css` | Before phase 1 | After phase 9 |
+| ------------------------ | -------------- | ------------- |
+| Lines                    | 3,874          | 402           |
+| Class selectors          | 223            | 10            |
+| Distinct hex values      | 151            | 28            |
+| Media query blocks       | 23             | 9             |
+
+The 28 hex values are the 30 color tokens in `@theme` (two pairs share a value: `accent` and `good`, `scrim` and `shadow`). The 10 class selectors all belong to the leftovers under [What stays handwritten CSS](#what-stays-handwritten-css).
+
+The plan as it was written follows.
+
 Tailwind 4 is already a dependency (`tailwindcss` 4.3.3, `@tailwindcss/vite`, `@import 'tailwindcss'` in `frontend/src/style.css`). It does not style the app yet. Every screen is painted by about 3,900 lines of handwritten CSS and 223 semantic class names. This note is the plan for finishing that move, for letting each person choose or build their own theme, and for fixing the desktop and phone layout work that the current sheet makes expensive.
 
 It is not a visual redesign. The look that ships today becomes the default theme, and it is the only built-in theme at first. What changes is that every color a person sees comes from a token, so a theme is a set of token values: the app can carry several built-in themes later, and a person can make, edit, export and import their own from a new personal settings page. Customization is the main reason for the token work, so a screen that still paints a color a theme cannot reach is not done. Native dialogs, range inputs, meters and the Now Playing popout stay. shadcn / Base UI stay out; [architecture](architecture.md) already chose a smaller set.
@@ -347,6 +360,10 @@ What shipped in phase 8 (closing the Up next, hero title and breakpoint rows in 
 - Grep for old class names in TSX and e2e; leftover matches are either a missed conversion or a locator that should be a role.
 - Record a short “how we style” subsection in [architecture](architecture.md) so new screens start in Tailwind.
 
+What shipped in phase 9: the last class rules left in `style.css` converted where they were used and went where they were not. The page title and its eyebrow are utilities in `page-title.tsx`; `.section-heading`, which Search, Library, Settings and Diagnostics had each copied in their own way, is three class strings in `ui/section-heading.ts` (Search keeps a slightly tighter local version for its result sections); `.round-play` is `IconButton variant="play"`, so the footer and stage play buttons carry `data-ui` and the phone touch-target check no longer needs a class for them; `main`'s padding moved onto the element in `main.tsx`; `.spin` is Tailwind's `animate-spin`; `.sr-only` is Tailwind's own; the format list's option background is an arbitrary variant on the download control; `.button-row`, `.results-section`, `.empty-results`, `.artist-release-heading` and the coarse `.track-row button` rule moved onto their call sites; `.preview-label` had no users. Nineteen bare hook classes that nothing queried any more (`music-card`, `track-title`, `download-options`, `library-cover` and the like) came off their elements. The remaining width queries read `theme(--breakpoint-*)` instead of repeating the rem values, and the three backdrop rules share one block. The `.section-heading` locator in `app.spec.ts` became a heading role, and the sidebar nav locator became its landmark; the class hooks that survive are listed in [Testing](testing.md). `e2e/themed-walk.spec.ts` walks every route under the light fixture theme at both widths, and found no color outside the tokens (logged in [UI verification](ui-verification.md)). The no-raw-color test's allow-list was already empty and is gone; the theme registry is the one file it excuses.
+
+Two places where this plan and the code disagreed. The stylesheet's `.sr-only` duplicated Tailwind's utility of the same name, so it was deleted rather than kept as a leftover. And “What stays handwritten CSS” below does not list the focus ring, the native color swatch, the reduced-motion reset or the coarse-pointer 16px text rule, all of which stay handwritten because they must beat any utility or reach a shadow part; the list in [architecture](architecture.md#styling) is the complete one.
+
 ## UX issues to take with the migration
 
 From the 10–11 September walks in [UI verification](ui-verification.md), plus token bugs found while reading the sheet. Split them so a Tailwind PR is not blocked on product behavior, and a behavior PR is not blocked on Tailwind.
@@ -375,7 +392,7 @@ Do not “clean up” these as part of Tailwind unless a user asks: inline text 
 
 1. **Commit the CSS/TSX change, then run the suite that owns the screen** before calling it done. A production `vite build` does not prove layout.
 2. **Desktop 1280×800 and phone 390×844**, plus 360×780 when chrome or tabs change. `e2e/phone.spec.ts` is the gate for bottom bar, mini player, save bar, download count, 44 px targets, 16 px fields, format-in-popover and the artist sheet.
-3. **Do not rename a class that an e2e file still queries** in the same PR without updating the locator. Prefer switching that locator to a role or label while the markup is open. Current class locators include `.sidebar`, `.download-tabs`, `.save-bar`, `.track-row`, `.explicit`, `.virtual-list`, `.nav-badge`, `.library-list-row`, `.live-player`, `.stage`, `.job-card`, `.readiness-item`, `.health-strip`, `.library-card`, `.library-grid`, `.album-actions`, `.download-target`.
+3. **Do not rename a class that an e2e file still queries** in the same PR without updating the locator. Prefer switching that locator to a role or label while the markup is open. The class hooks the suite still uses are listed in [Testing](testing.md).
 4. **Popout:** after any global CSS move, open Now Playing and pop out once. `copyStyles` must still see the generated Tailwind sheet.
 5. **Coarse pointer:** if you change a control’s size, the `coarse:` (or leftover `@media (pointer: coarse)`) rule must still win. The phone spec measures this.
 6. **No sideways scroll, no element wider than its box** on the screens you touched. That was the 10 September walk’s probe; keep the spirit even without the temporary script.

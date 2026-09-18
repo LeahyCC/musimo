@@ -11,9 +11,11 @@ export function PageTitle({
   children?: ReactNode
 }) {
   return (
-    <div className="page-heading">
+    <div className="mt-[1px] mb-[23px] flex items-center justify-between gap-[20px] max-phone:flex-wrap max-phone:items-start max-phone:gap-[15px]">
       <div>
-        <p className="eyebrow">{eyebrow}</p>
+        <p className="mb-[12px] text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+          {eyebrow}
+        </p>
         <h1>{title}</h1>
       </div>
       {children}
