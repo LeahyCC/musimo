@@ -328,7 +328,10 @@ test('Your settings is one column and stays inside a 360px screen', async ({ pag
   expect(await undersized(page)).toEqual([])
   expect(await pageOverflow(page)).toBe(0)
 
-  await page.getByRole('button', { name: /^Duplicate and edit/ }).first().click()
+  await page
+    .getByRole('button', { name: /^Duplicate and edit/ })
+    .first()
+    .click()
   await expect(page.getByRole('heading', { name: 'Readability' })).toBeVisible()
   expect(await undersized(page)).toEqual([])
   expect(await pageOverflow(page)).toBe(0)
