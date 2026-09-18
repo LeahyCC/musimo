@@ -51,7 +51,7 @@ export function DownloadTarget({ format, target }: { format?: string; target?: s
       {problem && (
         <>
           {' '}
-          <AlertTriangle size={14} aria-hidden="true" />{' '}
+          <AlertTriangle size={14} aria-hidden="true" className="inline-block align-[-2px]" />{' '}
           <Link to="/settings" hash="library">
             not available
           </Link>

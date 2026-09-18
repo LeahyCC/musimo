@@ -17,11 +17,20 @@ import {
 } from './api'
 import type { DownloadJob, MusicResult } from './api'
 import { ArtistDownloadButton } from './artist-download'
+import { cx } from './cx'
 import { DownloadTarget } from './download-target'
 import { DownloadButton, failureMessage, useJobs } from './downloads'
 import { InfiniteScroll } from './infinite-scroll'
 import { durationText, usePlayer, usePreviewPlayback } from './player'
-import { Button, EmptyPanel, ErrorBanner, Ownership, textLinkClassName } from './ui'
+import {
+  Button,
+  EmptyPanel,
+  ErrorBanner,
+  Field,
+  FieldSelect,
+  Ownership,
+  textLinkClassName,
+} from './ui'
 
 const tabs = ['top', 'track', 'album', 'artist'] as const
 type Tab = (typeof tabs)[number]
@@ -111,7 +120,15 @@ function BackToSearch() {
   )
 }
 
-export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
+export function Badge({
+  item,
+  job,
+  className,
+}: {
+  item: MusicResult
+  job?: DownloadJob
+  className?: string
+}) {
   if (item.kind === 'artist') return null
   const failed =
     item.ownership !== 'owned' && item.ownership !== 'edition' && job?.stage === 'failed'
@@ -129,6 +146,7 @@ export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
   return (
     <Ownership
       variant={failed ? 'failed' : item.ownership === 'edition' ? 'partial' : item.ownership}
+      className={className}
       title={
         failed
           ? job.error_hint || failureMessage(job)
@@ -154,7 +172,15 @@ export function Badge({ item, job }: { item: MusicResult; job?: DownloadJob }) {
   )
 }
 
-function Art({ item }: { item: MusicResult }) {
+function Art({
+  item,
+  size = 'card',
+  className,
+}: {
+  item: MusicResult
+  size?: 'card' | 'row'
+  className?: string
+}) {
   const player = usePlayer()
   const active = usePreviewPlayback(item.id).playing
   const previewState = player.previewState(item.id)
@@ -167,11 +193,28 @@ function Art({ item }: { item: MusicResult }) {
         ? `Preview ${item.title}`
         : `Find preview ${item.title}`
   return (
-    <div className={`result-art ${item.kind === 'artist' ? 'artist-art' : ''}`}>
-      {item.art ? <img src={item.art} alt="" loading="lazy" /> : <Disc3 />}
+    <div
+      className={cx(
+        'group relative isolate flex shrink-0 items-center justify-center overflow-hidden rounded-[7px] bg-active',
+        item.kind === 'artist' && 'rounded-pill',
+        size === 'row' ? 'h-[46px] w-[46px]' : 'aspect-square',
+        className,
+      )}
+    >
+      {item.art ? (
+        <img src={item.art} alt="" loading="lazy" className="h-full w-full object-cover" />
+      ) : (
+        <Disc3 />
+      )}
       {item.kind === 'track' && (
         <button
-          className="art-play"
+          className={cx(
+            'absolute inset-0 z-raised grid place-items-center border-0 text-on-media opacity-0 transition-opacity',
+            'bg-scrim/47',
+            'group-hover:opacity-100 group-focus-within:opacity-100',
+            'no-hover:bg-scrim/20 no-hover:opacity-100',
+            'max-phone:bg-scrim/20 max-phone:opacity-100',
+          )}
           aria-label={label}
           onClick={() => player.play(item)}
           disabled={noPreview}
@@ -193,33 +236,37 @@ export function MusicCard({ item }: { item: MusicResult }) {
   })
   const display = item.kind === 'album' ? (detail.data?.album ?? item) : item
   return (
-    <article className="music-card">
+    <article className="music-card group relative isolate flex min-w-0 flex-col gap-[9px] rounded-lg border border-transparent bg-raised p-[12px] hover:border-line hover:bg-hover focus-within:border-line focus-within:bg-hover">
       <Art item={item} />
       {item.kind === 'artist' ? (
         <Link
-          className="card-primary-link"
+          className="card-primary-link block text-lead font-semibold"
           to="/artists/$artistId"
           params={{ artistId: String(item.id) }}
         >
-          <span>{item.title}</span>
+          <span className="block overflow-hidden text-ellipsis whitespace-nowrap">
+            {item.title}
+          </span>
         </Link>
       ) : (
         <Link
-          className="card-primary-link"
+          className="card-primary-link block text-lead font-semibold"
           to="/albums/$albumId"
           params={{ albumId: String(item.kind === 'album' ? item.id : item.album_id) }}
         >
-          <span>{item.title}</span>
+          <span className="block overflow-hidden text-ellipsis whitespace-nowrap">
+            {item.title}
+          </span>
         </Link>
       )}
-      <small>
+      <small className="text-body text-muted">
         {item.kind === 'artist' ? (
           `${item.popularity.toLocaleString()} ${item.popularity === 1 ? 'fan' : 'fans'}`
         ) : (
           <>
             {display.artist_id ? (
               <Link
-                className="card-secondary-link"
+                className="relative z-raised"
                 to="/artists/$artistId"
                 params={{ artistId: String(display.artist_id) }}
               >
@@ -236,7 +283,7 @@ export function MusicCard({ item }: { item: MusicResult }) {
         <button
           type="button"
           data-ui="text-link"
-          className={textLinkClassName('coverage-retry')}
+          className={textLinkClassName('relative z-raised self-start text-tiny')}
           onClick={() => void detail.refetch()}
         >
           Retry coverage
@@ -246,6 +293,7 @@ export function MusicCard({ item }: { item: MusicResult }) {
       )}
       {item.kind === 'album' && (
         <meter
+          className="h-[4px] w-full accent-accent"
           min={0}
           max={display.track_count || 1}
           value={display.owned_count}
@@ -254,7 +302,7 @@ export function MusicCard({ item }: { item: MusicResult }) {
       )}
       {item.kind === 'album' && (
         <>
-          <AlbumDownloadButton item={display} />
+          <AlbumDownloadButton item={display} overlay />
           <DownloadTarget />
         </>
       )}
@@ -279,15 +327,22 @@ export function TrackRow({
   const noPreview = previewState === 'none'
   return (
     <div
-      className={`track-row${selected ? ' selected-track' : ''}`}
+      className={cx(
+        'track-row flex h-[76px] items-center gap-[14px] border-b border-line p-[8px] text-small',
+        'hover:bg-hover focus:outline-2 focus:outline-accent focus:[outline-offset:-2px]',
+        'max-phone:grid max-phone:grid-cols-[44px_minmax(0,1fr)_auto] max-phone:grid-rows-[1fr_auto] max-phone:gap-[2px_8px] max-phone:p-[6px_0]',
+        selected &&
+          'selected-track bg-accent/9 outline outline-1 outline-accent [outline-offset:-1px]',
+      )}
       id={`track-${item.id}`}
       aria-current={selected ? 'true' : undefined}
       tabIndex={focusable ? 0 : -1}
     >
-      <Art item={item} />
-      <div className="track-title">
-        <strong>
+      <Art item={item} size="row" className="max-phone:col-start-1 max-phone:row-span-2" />
+      <div className="track-title min-w-0 flex-1 max-phone:col-start-2 max-phone:row-start-1">
+        <strong className="flex items-center gap-[6px] text-lead font-medium">
           <Link
+            className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
             to="/albums/$albumId"
             params={{ albumId: String(item.album_id) }}
             search={{ track: item.id }}
@@ -295,41 +350,57 @@ export function TrackRow({
             {item.title}
           </Link>{' '}
           {item.explicit && (
-            <span className="explicit" title="Explicit">
+            <span
+              className="explicit shrink-0 rounded-[2px] bg-faint px-[4px] py-px text-micro text-accent-ink"
+              title="Explicit"
+            >
               E
             </span>
           )}
         </strong>
-        <Link to="/artists/$artistId" params={{ artistId: String(item.artist_id) }}>
+        <Link
+          className="mt-[5px] block overflow-hidden text-ellipsis whitespace-nowrap text-body text-muted"
+          to="/artists/$artistId"
+          params={{ artistId: String(item.artist_id) }}
+        >
           {item.artist}
         </Link>
       </div>
       <Link
-        className="track-album"
+        className="track-album w-[19%] overflow-hidden text-ellipsis whitespace-nowrap text-muted max-tablet:hidden"
         to="/albums/$albumId"
         params={{ albumId: String(item.album_id) }}
       >
         {item.album}
       </Link>
-      <span className="track-year">{item.year ?? '…'}</span>
-      <span className="track-duration">{durationText(item.duration)}</span>
-      <Badge item={item} job={job} />
+      <span className="track-year w-[32px] text-muted max-phone:hidden">{item.year ?? '…'}</span>
+      <span className="track-duration w-[32px] text-muted max-phone:hidden">
+        {durationText(item.duration)}
+      </span>
+      <Badge
+        item={item}
+        job={job}
+        className="max-phone:col-start-2 max-phone:row-start-2 max-phone:justify-self-start max-phone:px-[6px] max-phone:py-[4px] max-phone:text-caption"
+      />
       <button
-        className="text-preview"
+        className="w-[65px] border-0 bg-transparent text-tiny text-accent max-phone:hidden coarse:min-h-11 coarse:min-w-11 coarse:px-[6px] coarse:py-[12px]"
         onClick={() => player.play(item)}
         disabled={noPreview}
         title={noPreview ? 'No preview available' : undefined}
       >
         {playing ? 'Pause' : noPreview ? 'No preview' : item.preview ? 'Preview' : 'Find preview'}
       </button>
-      <DownloadButton item={item} />
+      <DownloadButton
+        item={item}
+        className="max-phone:col-start-3 max-phone:row-span-2 max-phone:row-start-1 max-phone:gap-[2px] max-phone:[&>select]:hidden"
+      />
     </div>
   )
 }
 
 function CardGrid({ items }: { items: MusicResult[] }) {
   return (
-    <div className="music-grid">
+    <div className="music-grid grid grid-cols-[repeat(auto-fill,minmax(145px,1fr))] gap-[20px] max-phone:grid-cols-2 max-phone:gap-[12px]">
       {items.map((item) => (
         <MusicCard key={item.id} item={item} />
       ))}
@@ -410,7 +481,7 @@ export function TrackList({
   }
   if (items.length <= 12)
     return (
-      <div className="track-list" onKeyDown={handleKeyDown}>
+      <div onKeyDown={handleKeyDown}>
         {items.map((item, index) => (
           <TrackRow
             key={item.id}
@@ -425,7 +496,7 @@ export function TrackList({
   return (
     <div
       ref={parent}
-      className="track-list virtual-list"
+      className="virtual-list"
       role="region"
       aria-label="Tracks"
       tabIndex={0}
@@ -613,10 +684,10 @@ function ResultsSection({
     return compact ? filtered.slice(0, kind === 'track' ? 5 : 6) : filtered
   }, [raw, yearQuery.data, state, kind, compact, coverage])
   return (
-    <section className="results-section" aria-label={labels[kind]}>
+    <section className="results-section mb-[36px]" aria-label={labels[kind]}>
       <div className="section-heading">
         <h2>{labels[kind]}</h2>
-        {compact && (
+        {compact && items.length > 0 && (
           <button
             type="button"
             data-ui="text-link"
@@ -639,7 +710,10 @@ function ResultsSection({
         </ErrorBanner>
       )}
       {query.isPending && (
-        <div className="search-skeleton" role="status">
+        <div
+          className="[&>i]:mt-[12px] [&>i]:block [&>i]:h-[58px] [&>i]:rounded-[7px] [&>i]:bg-[linear-gradient(100deg,var(--color-raised),var(--color-hover),var(--color-raised))]"
+          role="status"
+        >
           Searching {labels[kind].toLowerCase()}…<i />
           <i />
           <i />
@@ -651,7 +725,7 @@ function ResultsSection({
           <small role="status">Checking release years…</small>
         )}
       {yearQuery.isError && (
-        <p className="muted small">
+        <p className="text-muted text-small">
           Release years unavailable.{' '}
           <button onClick={() => void yearQuery.refetch()}>Retry years</button>
         </p>
@@ -676,12 +750,12 @@ function ResultsSection({
         />
       )}
       {compact && kind === 'track' && items[0] && (
-        <div className="best-result">
-          <Headphones size={27} />
-          <div>
-            <small>TOP TRACK</small>
-            <strong>{items[0].title}</strong>
-            <span>
+        <div className="mt-[22px] flex items-center gap-[20px] rounded-lg border border-good-line bg-[linear-gradient(110deg,var(--color-good-bg),var(--color-raised))] p-[24px] max-phone:gap-[10px] max-phone:p-[18px]">
+          <Headphones size={27} className="max-phone:hidden" />
+          <div className="flex-1">
+            <small className="block text-caption tracking-[1.5px] text-accent">TOP TRACK</small>
+            <strong className="my-[7px] block text-subtitle">{items[0].title}</strong>
+            <span className="block text-small text-muted">
               {items[0].artist} · {durationText(items[0].duration)}
             </span>
           </div>
@@ -716,18 +790,20 @@ export function SearchPage() {
   }, [state])
   if (!state.q || state.q.trim().length < 2)
     return (
-      <div className="discovery-home">
-        <span className="eyebrow">THE NEXT ADDITION TO YOUR COLLECTION</span>
-        <h1>
+      <div className="max-w-[840px] pt-[54px] pb-[30px] max-phone:pt-[25px]">
+        <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+          THE NEXT ADDITION TO YOUR COLLECTION
+        </span>
+        <h1 className="my-[26px] text-[clamp(42px,6vw,78px)] leading-[1.06] tracking-[-3px] max-phone:tracking-[-2px]">
           Find it.
           <br />
-          <em>Make room for it.</em>
+          <em className="text-accent not-italic">Make room for it.</em>
         </h1>
-        <p>
+        <p className="max-w-[490px] text-section">
           Search tracks, albums and artists. Listen to a preview and see what’s already in your
           library.
         </p>
-        <div className="suggestions">
+        <div className="mt-[32px] mb-[60px] flex flex-wrap gap-[10px] max-phone:mb-[35px]">
           {['Daft Punk', 'Khruangbin', 'Nina Simone', 'Radiohead'].map((q) => (
             <Button key={q} onClick={() => change({ q })}>
               <Search size={14} />
@@ -735,11 +811,13 @@ export function SearchPage() {
             </Button>
           ))}
         </div>
-        <div className="discovery-note">
+        <div className="flex gap-[16px] border-t border-line pt-[26px] text-accent">
           <Music2 size={24} />
           <span>
             Deezer catalog · Library-aware search
-            <small>Start typing above. Two characters is enough.</small>
+            <small className="mt-[7px] block text-muted">
+              Start typing above. Two characters is enough.
+            </small>
           </span>
         </div>
       </div>
@@ -754,19 +832,25 @@ export function SearchPage() {
     )
   return (
     <>
-      <div className="page-title">
+      <div className="mb-[25px]">
         <div>
-          <span className="eyebrow">DISCOVER YOUR NEXT FAVOURITE</span>
+          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+            DISCOVER YOUR NEXT FAVOURITE
+          </span>
           <h1>Results for “{state.q}”</h1>
         </div>
       </div>
-      <div className="search-toolbar">
-        <div className="result-tabs" aria-label="Search type">
+      <div className="flex flex-wrap items-center gap-[16px] border-b border-line pb-[18px] max-phone:gap-[10px]">
+        <div className="mr-auto flex flex-wrap gap-[6px] max-phone:w-full" aria-label="Search type">
           {tabs.map((value) => (
             <button
               key={value}
+              data-ui="tab"
               aria-pressed={tab === value}
-              className={tab === value ? 'selected' : ''}
+              className={cx(
+                'rounded-pill border-0 px-[17px] py-[10px] whitespace-nowrap coarse:min-h-11 max-phone:flex-1 max-phone:p-[9px]',
+                tab === value ? 'bg-accent text-accent-ink' : 'bg-transparent text-muted',
+              )}
               onClick={() => change({ tab: value })}
             >
               {labels[value]}
@@ -776,9 +860,11 @@ export function SearchPage() {
         <Button aria-expanded={filters} onClick={() => setFilters(!filters)}>
           Filters
         </Button>
-        <label className="sort-control">
+        <label className="flex items-center gap-[10px] text-body text-muted">
           Sort{' '}
-          <select
+          <FieldSelect
+            tone="sunken"
+            fullWidth={false}
             value={state.sort ?? 'relevance'}
             onChange={(e) => change({ sort: sorts.find((value) => value === e.target.value) })}
           >
@@ -788,7 +874,7 @@ export function SearchPage() {
                 {value.slice(1)}
               </option>
             ))}
-          </select>
+          </FieldSelect>
         </label>
       </div>
       {(filters ||
@@ -799,10 +885,12 @@ export function SearchPage() {
         state.max !== undefined ||
         state.preview ||
         state.library) && (
-        <div className="filter-chips">
-          <label>
+        <div className="flex flex-wrap items-end gap-[12px] pt-[20px] pb-[8px]">
+          <label className="flex flex-col gap-[5px] text-small text-muted">
             Lyrics
-            <select
+            <FieldSelect
+              tone="sunken"
+              fullWidth={false}
               value={state.explicit ?? 'all'}
               onChange={(e) =>
                 change({
@@ -818,11 +906,14 @@ export function SearchPage() {
               <option value="all">All</option>
               <option value="clean">Clean</option>
               <option value="explicit">Explicit</option>
-            </select>
+            </FieldSelect>
           </label>
-          <label>
+          <label className="flex flex-col gap-[5px] text-small text-muted">
             Year from
-            <input
+            <Field
+              tone="sunken"
+              fullWidth={false}
+              className="w-[93px]"
               aria-label="Year from"
               type="number"
               min="0"
@@ -833,9 +924,12 @@ export function SearchPage() {
               }
             />
           </label>
-          <label>
+          <label className="flex flex-col gap-[5px] text-small text-muted">
             Year to
-            <input
+            <Field
+              tone="sunken"
+              fullWidth={false}
+              className="w-[93px]"
               aria-label="Year to"
               type="number"
               min="0"
@@ -846,9 +940,12 @@ export function SearchPage() {
               }
             />
           </label>
-          <label>
+          <label className="flex flex-col gap-[5px] text-small text-muted">
             Minutes from
-            <input
+            <Field
+              tone="sunken"
+              fullWidth={false}
+              className="w-[93px]"
               aria-label="Minimum minutes"
               type="number"
               min="0"
@@ -856,9 +953,12 @@ export function SearchPage() {
               onChange={(e) => change({ min: e.target.value ? Number(e.target.value) : undefined })}
             />
           </label>
-          <label>
+          <label className="flex flex-col gap-[5px] text-small text-muted">
             Minutes to
-            <input
+            <Field
+              tone="sunken"
+              fullWidth={false}
+              className="w-[93px]"
               aria-label="Maximum minutes"
               type="number"
               min="0"
@@ -866,9 +966,11 @@ export function SearchPage() {
               onChange={(e) => change({ max: e.target.value ? Number(e.target.value) : undefined })}
             />
           </label>
-          <label>
+          <label className="flex flex-col gap-[5px] text-small text-muted">
             Library
-            <select
+            <FieldSelect
+              tone="sunken"
+              fullWidth={false}
               value={state.library ?? 'all'}
               onChange={(e) =>
                 change({
@@ -884,9 +986,9 @@ export function SearchPage() {
               <option value="all">All</option>
               <option value="missing">Missing tracks</option>
               <option value="owned">In library</option>
-            </select>
+            </FieldSelect>
           </label>
-          <label className="check-filter">
+          <label className="flex flex-row items-center gap-[5px] p-[10px] text-small text-muted coarse:min-h-11">
             <input
               type="checkbox"
               checked={state.preview ?? false}
@@ -906,7 +1008,7 @@ export function SearchPage() {
           </button>
         </div>
       )}
-      <p className="result-hint">
+      <p className="mt-[12px] mb-[24px] text-small">
         Filters and sort apply to loaded results. Years fill in as album details arrive. Duration
         and preview filters apply to tracks.
       </p>
@@ -960,32 +1062,37 @@ export function AlbumPage() {
   return (
     <>
       <BackToSearch />
-      <div className="album-header">
-        <Art item={album} />
+      <div className="mt-[24px] mb-[32px] flex items-center gap-[28px] max-phone:items-start max-phone:gap-[16px]">
+        <Art item={album} className="w-[210px] max-phone:w-[95px]" />
         <div>
-          <span className="eyebrow">
+          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
             {album.record_type.toUpperCase()} · {album.year ?? 'Year unknown'}
           </span>
-          <h1>{album.title}</h1>
+          <h1 className="my-[12px] max-phone:text-[24px]">{album.title}</h1>
           <Link to="/artists/$artistId" params={{ artistId: String(album.artist_id) }}>
             {album.artist}
           </Link>
-          <p>
+          <p className="my-[15px] text-body">
             {label} · {album.track_count} tracks · {durationText(duration)} · ~
             {Math.round((duration * bitrate) / 8 / 1024)} MB estimated
           </p>
           <Badge item={album} />
         </div>
       </div>
-      <div className="album-actions">
-        <label>
+      <div className="album-actions mb-[25px] flex flex-wrap items-center gap-[15px]">
+        <label className="text-small text-muted">
           Quality{' '}
-          <select value={chosenQuality} onChange={(e) => setQuality(e.target.value)}>
+          <FieldSelect
+            tone="sunken"
+            fullWidth={false}
+            value={chosenQuality}
+            onChange={(e) => setQuality(e.target.value)}
+          >
             <option value="original">Original</option>
             <option value="m4a">M4A</option>
             <option value="opus">Opus</option>
             <option value="mp3">MP3</option>
-          </select>
+          </FieldSelect>
         </label>
         <AlbumDownloadButton
           key={`${album.id}-${hasOwnedTracks ? 'missing' : 'all'}`}
@@ -999,9 +1106,11 @@ export function AlbumPage() {
               : 'Download album'
           }
         />
-        <small>Size assumes {bitrate} kbps; actual source varies.</small>
+        <small className="w-full text-muted">
+          Size assumes {bitrate} kbps; actual source varies.
+        </small>
         {editionCount > 0 && (
-          <small>
+          <small className="w-full text-muted">
             {editionCount} track{editionCount === 1 ? ' has' : 's have'} another edition in your
             library
           </small>
@@ -1098,11 +1207,15 @@ export function ArtistPage() {
   return (
     <>
       <BackToSearch />
-      <div className="artist-header">
-        {artist?.art && <img src={artist.art} alt="" />}
+      <div className="mt-[25px] mb-[40px] flex items-center gap-[25px]">
+        {artist?.art && (
+          <img src={artist.art} alt="" className="w-[150px] rounded-pill max-phone:w-[95px]" />
+        )}
         <div>
-          <span className="eyebrow">ARTIST</span>
-          <h1>{artist?.name}</h1>
+          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+            ARTIST
+          </span>
+          <h1 className="my-[12px]">{artist?.name}</h1>
           <p>{items.length} releases loaded</p>
           <ArtistDownloadButton
             key={artistId}
@@ -1111,7 +1224,7 @@ export function ArtistPage() {
           />
         </div>
       </div>
-      <section className="results-section" aria-labelledby="popular-songs-title">
+      <section className="results-section mb-[36px]" aria-labelledby="popular-songs-title">
         <div className="section-heading">
           <h2 id="popular-songs-title">Popular songs</h2>
         </div>
@@ -1122,9 +1235,11 @@ export function ArtistPage() {
           </ErrorBanner>
         )}
         {topTracks.length > 0 && <TrackList items={topTracks} />}
-        {top.isSuccess && !topTracks.length && <p className="muted">No popular songs found.</p>}
+        {top.isSuccess && !topTracks.length && (
+          <p className="text-muted">No popular songs found.</p>
+        )}
       </section>
-      <section className="results-section" aria-labelledby="popular-albums-title">
+      <section className="results-section mb-[36px]" aria-labelledby="popular-albums-title">
         <div className="section-heading">
           <h2 id="popular-albums-title">Popular albums</h2>
         </div>
@@ -1146,9 +1261,9 @@ export function ArtistPage() {
         {popularAlbums.length > 0 && <CardGrid items={popularAlbums} />}
         {top.isSuccess &&
           popularAlbumQueries.every((result) => !result.isPending) &&
-          !popularAlbums.length && <p className="muted">No popular albums found.</p>}
+          !popularAlbums.length && <p className="text-muted">No popular albums found.</p>}
       </section>
-      <section className="results-section" aria-labelledby="discography-title">
+      <section className="results-section mb-[36px]" aria-labelledby="discography-title">
         <div className="section-heading artist-release-heading">
           <div>
             <h2 id="discography-title">Discography</h2>
@@ -1156,10 +1271,11 @@ export function ArtistPage() {
               {releases.length} shown · {items.length} releases loaded
             </small>
           </div>
-          <div className="artist-release-controls">
-            <label>
+          <div className="flex flex-wrap gap-[10px] max-phone:w-full">
+            <label className="grid gap-[5px] text-caption text-muted uppercase tracking-[0.08em] max-phone:w-full">
               Show
               <select
+                className="min-w-[145px] rounded-[7px] border border-line-strong bg-sunken px-[10px] py-[8px] pr-[30px] text-small tracking-normal text-text normal-case max-phone:w-full"
                 value={releaseType}
                 onChange={(event) => change({ type: event.target.value as ArtistSearch['type'] })}
               >
@@ -1170,9 +1286,10 @@ export function ArtistPage() {
                 <option value="all">All releases</option>
               </select>
             </label>
-            <label>
+            <label className="grid gap-[5px] text-caption text-muted uppercase tracking-[0.08em] max-phone:w-full">
               Sort
               <select
+                className="min-w-[145px] rounded-[7px] border border-line-strong bg-sunken px-[10px] py-[8px] pr-[30px] text-small tracking-normal text-text normal-case max-phone:w-full"
                 value={releaseSort}
                 onChange={(event) => change({ sort: event.target.value as ArtistSearch['sort'] })}
               >
@@ -1187,10 +1304,10 @@ export function ArtistPage() {
         {releases.length > 0 ? (
           <CardGrid items={releases} />
         ) : (
-          <p className="muted">No releases match this view.</p>
+          <p className="text-muted">No releases match this view.</p>
         )}
       </section>
-      <p className="muted small">
+      <p className="text-small text-muted">
         Popular songs come from Deezer. Popular albums are the albums behind those songs. Review
         alternative editions before downloading an artist.
       </p>

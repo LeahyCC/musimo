@@ -190,7 +190,7 @@ const undersized = (page: Page) =>
     }
 
     for (const el of document.querySelectorAll<HTMLElement>(
-      "[data-ui='icon-button'], [data-ui='button'], .round-play, [data-ui='text-link'], .result-tabs button",
+      "[data-ui='icon-button'], [data-ui='button'], .round-play, [data-ui='text-link'], [data-ui='tab']",
     )) {
       const rect = el.getBoundingClientRect()
       if (!rect.width || !rect.height) continue
