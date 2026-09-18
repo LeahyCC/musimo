@@ -28,15 +28,20 @@ import {
   settingsSchema,
 } from './api'
 import type { DownloadJob, MusicResult } from './api'
+import { cx } from './cx'
 import { formatLabel, FormatOptions } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
+import { PageTitle } from './page-title'
 import {
   Button,
   buttonClassName,
   EmptyPanel,
   ErrorBanner,
   errorBannerClassName,
+  Field,
+  FieldSelect,
   IconButton,
+  textLinkClassName,
 } from './ui'
 
 export type QueueData = {
@@ -235,9 +240,11 @@ export function DownloadButton({ item }: { item: MusicResult }) {
     onSuccess: (job) => updateJob(client, job),
   })
   return (
-    <div className="download-action">
+    // `download-action` is a hook: the track row and the album card still style it from the sheet.
+    <div className={cx('download-action', 'relative flex items-center gap-[6px]')}>
       <select
         aria-label={`Format for ${item.title}`}
+        className="max-w-[82px] rounded-md border border-line-strong bg-transparent px-[3px] py-[6px] text-tiny text-inherit coarse:max-w-[96px] coarse:px-[6px] coarse:py-3"
         value={selected}
         onChange={(e) => setFormat(e.target.value)}
       >
@@ -292,7 +299,10 @@ export function DownloadButton({ item }: { item: MusicResult }) {
       <div
         ref={optionsPanel}
         id={optionsId}
-        className="download-options"
+        className={cx(
+          'download-options',
+          'fixed inset-auto m-0 w-[240px] max-w-[calc(100vw-16px)] max-h-[calc(100dvh-16px)] overflow-auto overscroll-contain rounded-[8px] border border-line-strong bg-raised p-[14px] text-inherit shadow-[0_8px_30px_color-mix(in_oklab,var(--color-shadow)_53%,transparent)]',
+        )}
         popover="auto"
         role="dialog"
         aria-label={`Download options for ${item.title}`}
@@ -302,9 +312,13 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         }}
         onToggle={(event) => setOptions(event.newState === 'open')}
       >
-        <label>
+        <label className="grid min-w-0 gap-[6px] text-small">
           Download to
-          <select value={target} onChange={(e) => setTarget(e.target.value)}>
+          <select
+            className="w-full min-w-0 max-w-full"
+            value={target}
+            onChange={(e) => setTarget(e.target.value)}
+          >
             <option value="">{settings.data?.destination.value || '(not set)'}</option>
             {mounts.data?.disks
               .slice(1)
@@ -319,21 +333,27 @@ export function DownloadButton({ item }: { item: MusicResult }) {
         {/* The same choice as the row's select; a phone hides that one to give the title room
             and shows this instead. It follows the destination so the focus rule above lands on
             the same control everywhere. */}
-        <label className="download-options-format">
+        <label className="mt-[10px] hidden min-w-0 gap-[6px] text-small max-phone:grid">
           Format
-          <select value={selected} onChange={(e) => setFormat(e.target.value)}>
+          <select
+            className="w-full min-w-0 max-w-full"
+            value={selected}
+            onChange={(e) => setFormat(e.target.value)}
+          >
             <FormatOptions />
           </select>
         </label>
-        <small>Original keeps source quality. Conversion does not improve it.</small>
+        <small className="mt-[10px] block text-tiny leading-[1.5] text-muted">
+          Original keeps source quality. Conversion does not improve it.
+        </small>
       </div>
       {mutation.data?.stage === 'done' && (
-        <span className="download-error" role="status">
+        <span className={errorBannerClassName('block', 'download-error mt-2')} role="status">
           Already downloaded. The existing file was kept.
         </span>
       )}
       {mutation.isError && (
-        <span className="download-error" role="alert">
+        <span className={errorBannerClassName('block', 'download-error mt-2')} role="alert">
           {mutation.error.message}
           <button
             disabled={owned || Boolean(existing) || mutation.isPending}
@@ -367,70 +387,93 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
   const running = activeJob(job)
   const canPick = ['queued', 'paused', 'failed', 'cancelled', 'done'].includes(job.stage)
   return (
-    <article className={`job-card ${job.stage}`} id={`job-${job.id}`} tabIndex={focusable ? 0 : -1}>
-      <div className="job-heading">
-        {job.meta.art ? <img src={job.meta.art} alt="" /> : <Disc3 size={38} />}
-        <div>
-          <strong>{job.meta.title}</strong>
-          <span>
+    <article
+      className={cx(
+        // `job-card` is the hook the download specs locate cards by. The stage class is for them too.
+        'job-card',
+        job.stage,
+        'min-w-0 rounded-lg border border-line bg-hover p-[18px]',
+      )}
+      id={`job-${job.id}`}
+      tabIndex={focusable ? 0 : -1}
+    >
+      <div className="flex items-center gap-3 max-phone:flex-wrap">
+        {job.meta.art ? (
+          <img className="h-[42px] w-[42px] rounded-md object-cover" src={job.meta.art} alt="" />
+        ) : (
+          <Disc3 size={38} />
+        )}
+        <div className="min-w-0 flex-1 max-phone:min-w-[150px]">
+          <strong className="block truncate">{job.meta.title}</strong>
+          <span className="mt-[5px] block truncate text-small text-muted">
             {job.meta.artist} · {job.meta.album}
           </span>
         </div>
-        <span className="job-state">{job.stage.replaceAll('_', ' ')}</span>
-        <div className="job-buttons">
+        <span className="text-tiny text-accent-hot uppercase">
+          {job.stage.replaceAll('_', ' ')}
+        </span>
+        <div className="flex gap-[6px]">
           {running && !['paused', 'pausing', 'cancelling'].includes(job.stage) && (
-            <button
+            <IconButton
+              variant="outlined"
               title="Pause"
               aria-label={`Pause ${job.meta.title}`}
               disabled={busy}
               onClick={() => action.mutate('pause')}
             >
               <Pause size={16} />
-            </button>
+            </IconButton>
           )}
           {job.stage === 'paused' && (
-            <button
+            <IconButton
+              variant="outlined"
               title="Resume"
               aria-label={`Resume ${job.meta.title}`}
               disabled={busy}
               onClick={() => action.mutate('resume')}
             >
               <Play size={16} />
-            </button>
+            </IconButton>
           )}
           {running && (
-            <button
+            <IconButton
+              variant="outlined"
               title="Cancel"
               aria-label={`Cancel ${job.meta.title}`}
               disabled={busy || job.stage === 'cancelling'}
               onClick={() => action.mutate('cancel')}
             >
               <X size={16} />
-            </button>
+            </IconButton>
           )}
           {['failed', 'cancelled'].includes(job.stage) && (
-            <button
+            <IconButton
+              variant="outlined"
               title="Retry"
               aria-label={`Retry ${job.meta.title}`}
               disabled={busy}
               onClick={() => action.mutate('retry')}
             >
               <RotateCcw size={16} />
-            </button>
+            </IconButton>
           )}
           {!running && (
-            <button
+            <IconButton
+              variant="outlined"
               title="Clear"
               aria-label={`Clear ${job.meta.title}`}
               disabled={busy}
               onClick={() => action.mutate('dismiss')}
             >
               <Trash2 size={16} />
-            </button>
+            </IconButton>
           )}
         </div>
       </div>
-      <div className="job-steps" aria-label={`Current stage: ${job.stage}`}>
+      <div
+        className="mt-[15px] mb-[10px] flex flex-wrap gap-2 text-caption text-faint max-phone:gap-[6px]"
+        aria-label={`Current stage: ${job.stage}`}
+      >
         {[
           'queued',
           'matching',
@@ -441,19 +484,23 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
           'scanning',
           'done',
         ].map((stage) => (
-          <span key={stage} className={job.stage === stage ? 'current' : ''}>
+          <span
+            key={stage}
+            className={job.stage === stage ? 'font-bold text-accent-hot' : undefined}
+          >
             {stage}
           </span>
         ))}
       </div>
       {job.stage === 'downloading' && (
         <progress
+          className="h-[5px] w-full accent-accent-hot"
           aria-label={`${job.meta.title} download progress`}
           max={1}
           value={job.total ? job.progress : undefined}
         />
       )}
-      <div className="job-stats">
+      <div className="my-[10px] flex flex-wrap gap-4 text-tiny text-muted">
         <span>to {job.target}</span>
         <span>{formatLabel(job.format)}</span>
         {job.stage === 'downloading' && (
@@ -475,7 +522,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         </span>
       </div>
       {job.stage === 'retry_wait' && (
-        <p className="small">
+        <p className="text-small">
           Retry scheduled for {new Date(job.retry_at * 1000).toLocaleTimeString()}
         </p>
       )}
@@ -507,12 +554,14 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         </ErrorBanner>
       )}
       {job.check_match && (
-        <p className="match-warning">Check match: the selected recording needs a listen.</p>
+        <p className="text-small text-warn">Check match: the selected recording needs a listen.</p>
       )}
       {job.final_path && (
-        <div className="job-path">
-          <code>{job.final_path}</code>
+        <div className="my-3 flex items-center gap-3 text-tiny">
+          <code className="flex-1 [overflow-wrap:anywhere]">{job.final_path}</code>
           <button
+            data-ui="text-link"
+            className={textLinkClassName('shrink-0')}
             onClick={() => {
               void navigator.clipboard
                 .writeText(job.final_path)
@@ -525,8 +574,10 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         </div>
       )}
       {job.warnings.length > 0 && (
-        <details>
-          <summary>{job.warnings.length} metadata or scanning notes</summary>
+        <details className="mt-3 text-small text-muted">
+          <summary className="cursor-pointer">
+            {job.warnings.length} metadata or scanning notes
+          </summary>
           <ul>
             {job.warnings.map((warning, index) => (
               <li key={index}>{warning}</li>
@@ -535,22 +586,26 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         </details>
       )}
       {job.candidates.length > 0 && (
-        <details>
-          <summary>
+        <details className="mt-3 text-small text-muted">
+          <summary className="cursor-pointer">
             Recording matches ·{' '}
             {job.candidates.find((candidate) => candidate.id === job.selected)?.score.toFixed(2) ??
               'unselected'}
           </summary>
-          {!canPick && <p className="small">Pause the job to change its recording.</p>}
+          {!canPick && <p className="text-small">Pause the job to change its recording.</p>}
           {job.candidates.map((candidate) => (
-            <div className="candidate" key={candidate.id}>
-              <div>
+            <div
+              className="flex items-center gap-3 border-b border-line py-3 max-phone:flex-wrap"
+              key={candidate.id}
+            >
+              <div className="flex-1">
                 <strong>{candidate.title}</strong>
-                <small>
+                <small className="mt-[5px] block">
                   {candidate.artist} · {Math.round(candidate.score * 100)}% · {candidate.reason}
                 </small>
               </div>
               <a
+                className="coarse:inline-flex coarse:min-h-11 coarse:items-center"
                 href={`https://www.youtube.com/watch?v=${candidate.id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -568,9 +623,9 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         </details>
       )}
       {job.tool_tail && (
-        <details>
-          <summary>Tool details · yt-dlp {job.tool_version}</summary>
-          <pre>{job.tool_tail}</pre>
+        <details className="mt-3 text-small text-muted">
+          <summary className="cursor-pointer">Tool details · yt-dlp {job.tool_version}</summary>
+          <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">{job.tool_tail}</pre>
         </details>
       )}
       {(action.isError || pick.isError) && (
@@ -625,7 +680,8 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
 
   if (jobs.length <= 6)
     return (
-      <div className="jobs-list" onKeyDown={handleKeyDown}>
+      // A bare 1fr track has a min-content floor, so one long title widened the page.
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-3" onKeyDown={handleKeyDown}>
         {jobs.map((job, index) => (
           <JobCard key={job.id} job={job} focusable={index === focusedIndex} />
         ))}
@@ -647,7 +703,7 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
             The row separation is padding on the measured element, not a gap between them,
             so it counts towards the height the virtualizer works from. */}
         <div
-          className="virtual-window"
+          className="absolute top-0 left-0 w-full"
           style={{ transform: `translateY(${rows[0]?.start ?? 0}px)` }}
         >
           {rows.map((row) => {
@@ -655,7 +711,7 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
             return job ? (
               <div
                 key={job.id}
-                className="virtual-row"
+                className="pb-3"
                 ref={virtual.measureElement}
                 data-index={row.index}
               >
@@ -692,7 +748,10 @@ function BatchSummary({ jobs }: { jobs: DownloadJob[] }) {
       {[...groups]
         .filter(([, rows]) => rows.some(activeJob))
         .map(([id, rows]) => (
-          <div key={id} className="batch-summary">
+          <div
+            key={id}
+            className="my-3 flex flex-wrap items-center gap-3 rounded-[8px] bg-active p-3 text-small"
+          >
             <strong>{batchName(rows)}</strong>
             <span>
               {rows.filter((job) => job.stage === 'done').length}/{rows.length} complete
@@ -761,11 +820,12 @@ function QueueControls() {
   const failed = queue.data?.summary.failed ?? 0
   return (
     <>
-      <div className="queue-actions">
-        <label className="queue-concurrency">
+      <div className="my-4 flex flex-wrap gap-2 max-phone:grid max-phone:grid-cols-2">
+        <label className="flex items-center gap-2 text-small max-phone:col-span-2">
           Parallel{' '}
-          <select
+          <FieldSelect
             aria-label="Parallel downloads"
+            fullWidth={false}
             value={settings.data?.concurrency.value ?? 2}
             disabled={settings.data?.concurrency.locked || concurrency.isPending}
             onChange={(e) => concurrency.mutate(Number(e.target.value))}
@@ -775,38 +835,38 @@ function QueueControls() {
                 {n}
               </option>
             ))}
-          </select>
+          </FieldSelect>
         </label>
         <Button
-          className="max-[700px]:w-full max-[700px]:px-2"
+          className="max-phone:w-full max-phone:px-2"
           disabled={command.isPending}
           onClick={() => command.mutate(queue.data?.controls.paused ? 'resume' : 'pause')}
         >
           {queue.data?.controls.paused ? 'Resume all' : 'Pause all'}
         </Button>
         <Button
-          className="max-[700px]:w-full max-[700px]:px-2"
+          className="max-phone:w-full max-phone:px-2"
           disabled={command.isPending}
           onClick={() => command.mutate('cancel-queued')}
         >
           Cancel queued
         </Button>
         <Button
-          className="max-[700px]:w-full max-[700px]:px-2"
+          className="max-phone:w-full max-phone:px-2"
           disabled={command.isPending || failed === 0}
           onClick={() => command.mutate('retry-failed')}
         >
           Retry failed ({failed})
         </Button>
         <Button
-          className="max-[700px]:w-full max-[700px]:px-2"
+          className="max-phone:w-full max-phone:px-2"
           disabled={command.isPending || failed === 0}
           onClick={() => command.mutate('clear-failed')}
         >
           Clear failed ({failed})
         </Button>
         <Button
-          className="max-[700px]:w-full max-[700px]:px-2"
+          className="max-phone:w-full max-phone:px-2"
           disabled={command.isPending}
           onClick={() => command.mutate('clear-finished')}
           title="Remove done, failed, and cancelled jobs from the queue"
@@ -850,20 +910,31 @@ function History() {
   })
   return (
     <>
-      <div className="history-filters">
-        <input
+      <div className="my-4 flex flex-wrap gap-3">
+        <Field
           aria-label="Search download history"
+          fullWidth={false}
           placeholder="Search history"
           value={q}
           onChange={(e) => setQ(e.target.value)}
         />
-        <label>
+        <label className="flex items-center gap-2 text-small">
           From
-          <input type="date" value={from} onChange={(e) => setFrom(e.target.value)} />
+          <Field
+            type="date"
+            fullWidth={false}
+            value={from}
+            onChange={(e) => setFrom(e.target.value)}
+          />
         </label>
-        <label>
+        <label className="flex items-center gap-2 text-small">
           To
-          <input type="date" value={until} onChange={(e) => setUntil(e.target.value)} />
+          <Field
+            type="date"
+            fullWidth={false}
+            value={until}
+            onChange={(e) => setUntil(e.target.value)}
+          />
         </label>
       </div>
       {query.isPending && <p>Loading history…</p>}
@@ -926,22 +997,22 @@ export function DownloadsPage() {
   }
   return (
     <>
-      <div className="page-heading">
-        <div>
-          <div className="eyebrow">YOUR COLLECTION, IN MOTION</div>
-          <h1>Downloads</h1>
-        </div>
+      <PageTitle eyebrow="YOUR COLLECTION, IN MOTION" title="Downloads">
         <Link data-ui="button" className={buttonClassName()} to="/settings">
           Download settings
         </Link>
-      </div>
+      </PageTitle>
       <QueueControls />
       <BatchSummary jobs={queue.data?.jobs ?? []} />
-      <div className="result-tabs download-tabs">
+      <div className="download-tabs mt-6 mb-4 flex flex-wrap gap-1.5 max-phone:grid max-phone:grid-cols-4 max-phone:gap-1">
         {['queue', 'done', 'failed', 'history'].map((value) => (
           <button
             key={value}
-            className={tab === value ? 'selected' : ''}
+            className={cx(
+              'rounded-pill border-0 px-[17px] py-[10px] whitespace-nowrap coarse:min-h-11',
+              'max-phone:min-w-0 max-phone:px-[2px] max-phone:text-body max-phone:overflow-hidden max-phone:text-ellipsis',
+              tab === value ? 'bg-accent text-accent-ink' : 'bg-transparent text-muted',
+            )}
             aria-pressed={tab === value}
             onClick={() => setTab(value)}
           >
@@ -989,11 +1060,20 @@ export function DownloadsPage() {
         </section>
       )}
       {tab === 'failed' && grouped && (
-        <div className="failure-groups" role="group" aria-label="Failures by download group">
+        <div
+          className="my-[14px] flex flex-wrap gap-2"
+          role="group"
+          aria-label="Failures by download group"
+        >
           {failureGroups.map(([id, rows]) => (
             <button
               key={id}
-              className={selectedGroup === id ? 'selected' : ''}
+              className={cx(
+                'max-w-full truncate rounded-pill border px-3 py-[7px] text-small coarse:min-h-11',
+                selectedGroup === id
+                  ? 'border-accent bg-accent text-accent-ink'
+                  : 'border-line bg-sunken text-muted',
+              )}
               aria-pressed={selectedGroup === id}
               onClick={() => setGroup(selectedGroup === id ? null : id)}
             >
@@ -1049,27 +1129,39 @@ export function QueueDock() {
         {active.length} active download{active.length === 1 ? '' : 's'}
       </span>
       <dialog
-        className="queue-sheet"
+        className={cx(
+          'queue-sheet',
+          'fixed inset-x-0 top-auto bottom-0 mx-auto w-[min(1100px,100%)] max-h-[78dvh] overflow-auto overscroll-contain rounded-t-[20px] border border-line-strong bg-raised px-6 pt-6 text-text',
+          'pb-[calc(24px+var(--safe-bottom))] max-phone:px-4 max-phone:pt-4 max-phone:pb-[calc(16px+var(--safe-bottom))]',
+        )}
         ref={dialog}
         aria-label="Download queue"
         onClick={(event) => {
           if (event.target === dialog.current) dialog.current?.close()
         }}
       >
-        <header>
-          <h2>Download queue</h2>
-          <Link to="/downloads" onClick={() => dialog.current?.close()}>
+        <header className="mb-[18px] flex items-center gap-6">
+          <h2 className="flex-1">Download queue</h2>
+          <Link
+            className="coarse:inline-flex coarse:min-h-11 coarse:items-center"
+            to="/downloads"
+            onClick={() => dialog.current?.close()}
+          >
             Full page
           </Link>
-          <button aria-label="Close queue" onClick={() => dialog.current?.close()}>
+          <IconButton
+            variant="outlined"
+            aria-label="Close queue"
+            onClick={() => dialog.current?.close()}
+          >
             <X size={20} />
-          </button>
+          </IconButton>
         </header>
         <QueueControls />
         {active.length ? (
           <JobList jobs={active} />
         ) : (
-          <p className="empty-results">Nothing queued. Add a track from search.</p>
+          <p className="py-[30px]">Nothing queued. Add a track from search.</p>
         )}
       </dialog>
     </>

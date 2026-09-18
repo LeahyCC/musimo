@@ -6,19 +6,23 @@ import type { ClassName } from '../cx'
 
 /** `compact` is the 32 by 36 box a crowded row uses: the footer player and the playlist picker. */
 export type IconButtonSize = 'default' | 'compact'
+/** `outlined` draws a border and takes the surrounding text color: the actions on a job card. */
+export type IconButtonVariant = 'plain' | 'outlined'
 
 /** The `.icon-button` look as a class string, for an element the component can't wrap (a routed link). */
 export function iconButtonClassName(
   active?: boolean,
   className?: ClassName,
   size: IconButtonSize = 'default',
+  variant: IconButtonVariant = 'plain',
 ) {
   return cx(
-    'inline-flex items-center justify-center border-0 bg-transparent p-[7px]',
+    'inline-flex items-center justify-center bg-transparent p-[7px]',
+    variant === 'outlined' ? 'rounded-[8px] border border-line-strong' : 'border-0',
     size === 'compact' && 'min-h-[36px] min-w-[32px]',
     // After the size, so a touch screen still gets its 44px whatever the row asked for.
     'coarse:min-h-11 coarse:min-w-11',
-    active ? 'text-accent' : 'text-muted',
+    active ? 'text-accent' : variant === 'outlined' ? 'text-text' : 'text-muted',
     className,
   )
 }
@@ -27,10 +31,11 @@ export interface IconButtonProps extends ButtonHTMLAttributes<HTMLButtonElement>
   /** A toggled-on look (accent color) plus the matching `aria-pressed`, for on/off controls. */
   active?: boolean
   size?: IconButtonSize
+  variant?: IconButtonVariant
 }
 
 export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { active, size, className, type = 'button', ...props },
+  { active, size, variant, className, type = 'button', ...props },
   ref,
 ) {
   return (
@@ -39,7 +44,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       type={type}
       aria-pressed={active}
       data-ui="icon-button"
-      className={iconButtonClassName(active, className, size)}
+      className={iconButtonClassName(active, className, size, variant)}
       {...props}
     />
   )
