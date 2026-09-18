@@ -276,9 +276,6 @@ main {
   font-size: 9px;
   letter-spacing: 1.2px;
 }
-.muted {
-  color: var(--color-muted);
-}
 meter {
   display: block;
   width: 100%;

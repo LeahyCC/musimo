@@ -1885,9 +1885,13 @@ export function NowPlayingPage() {
           >
             {track.title}
           </h1>
-          <p className="[&_a:hover]:underline">
+          <p>
             {track.artistId ? (
-              <Link to="/library/artists/$artistId" params={{ artistId: track.artistId }}>
+              <Link
+                className="hover:underline"
+                to="/library/artists/$artistId"
+                params={{ artistId: track.artistId }}
+              >
                 {track.artist}
               </Link>
             ) : (
@@ -1897,7 +1901,11 @@ export function NowPlayingPage() {
               <>
                 {' · '}
                 {track.albumId ? (
-                  <Link to="/library/albums/$albumId" params={{ albumId: track.albumId }}>
+                  <Link
+                    className="hover:underline"
+                    to="/library/albums/$albumId"
+                    params={{ albumId: track.albumId }}
+                  >
                     {track.album}
                   </Link>
                 ) : (

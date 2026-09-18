@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
 import { DEFAULT_THEME } from '../src/theme/themes'
+import type { Theme } from '../src/theme/themes'
 import { librarySong, playerFixtures } from './library-fixtures'
 import { LIGHT_THEME, rgb, themeVars } from './theme-fixtures'
 
@@ -147,6 +148,14 @@ test('a very long title stays on one line in Up next and stops after three in th
   expect(hero.right).toBeLessThanOrEqual(hero.width)
 })
 
+/** A second custom theme, so a change made while the popout is open has somewhere to go. */
+const PLUM: Theme = {
+  ...LIGHT_THEME,
+  id: 'custom-plum',
+  name: 'Plum',
+  colors: { ...LIGHT_THEME.colors, '--color-media': '#2a0f30', '--color-canvas': '#3a0f3f' },
+}
+
 type PictureInPictureWindow = Window & { documentPictureInPicture?: { window: Window | null } }
 
 for (const theme of [undefined, LIGHT_THEME]) {
@@ -204,6 +213,26 @@ for (const theme of [undefined, LIGHT_THEME]) {
       // The default theme is the absence of an inline value; any other is written onto the popout.
       canvas: theme ? theme.colors['--color-canvas'] : '',
     })
+
+    // A theme picked while the popout is open reaches it too: the popout is a second target the
+    // store writes on every change, not a copy taken once at opening.
+    await page.evaluate(
+      ([id, custom]: readonly [string, string]) => {
+        localStorage.setItem('musimo.custom-themes', custom)
+        window.dispatchEvent(new StorageEvent('storage', { key: 'musimo.custom-themes' }))
+        localStorage.setItem('musimo.theme', id)
+        window.dispatchEvent(new StorageEvent('storage', { key: 'musimo.theme' }))
+      },
+      [PLUM.id, JSON.stringify({ version: 1, themes: [theme ?? LIGHT_THEME, PLUM] })] as const,
+    )
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const win = (window as PictureInPictureWindow).documentPictureInPicture?.window
+          return win?.document.documentElement.style.getPropertyValue('--color-media') ?? null
+        }),
+      )
+      .toBe(PLUM.colors['--color-media'])
 
     await page.getByRole('button', { name: 'Bring back' }).click()
     await expect(page.getByText('Playing in the popout window.')).toHaveCount(0)

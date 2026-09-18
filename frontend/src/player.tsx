@@ -253,15 +253,17 @@ function PlaylistPickerRow({
       <div className="flex items-center justify-between gap-[10px]">
         <IconButton
           size="compact"
-          className={cx(
-            '[&_svg]:transition-transform [&_svg]:duration-[140ms] [&_svg]:ease-[ease]',
-            expanded && '[&_svg]:rotate-180',
-          )}
           aria-label={`${expanded ? 'Hide' : 'Show'} songs in ${playlist.name}`}
           aria-expanded={expanded}
           onClick={() => onExpand(!expanded)}
         >
-          <ChevronDown size={16} />
+          <ChevronDown
+            size={16}
+            className={cx(
+              'transition-transform duration-[140ms] ease-[ease]',
+              expanded && 'rotate-180',
+            )}
+          />
         </IconButton>
         {/* Blocks, not grids: text-overflow only cuts text that sits directly in a block box. */}
         <span className="block min-w-0 flex-1 truncate">

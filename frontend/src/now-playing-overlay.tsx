@@ -246,7 +246,7 @@ export function NowPlayingOverlay({
         ? 'Exit full screen'
         : 'Full screen'
   return (
-    <div className="stage-overlay pointer-events-none absolute inset-0 flex flex-col justify-between opacity-100 transition-opacity duration-250 group-[.idle]:opacity-0">
+    <div className="stage-overlay pointer-events-none absolute inset-0 flex flex-col justify-between transition-opacity duration-250 group-[.idle]:opacity-0">
       <div
         className={cx(
           'stage-top justify-between gap-[8px] bg-linear-to-b from-scrim/67 to-transparent px-[16px] pt-[14px] pb-[24px]',
@@ -406,7 +406,9 @@ export function NowPlayingOverlay({
               onClick={player.cycleRepeat}
             >
               <Repeat size={17} />
-              {player.repeat === 'one' && <small className="-ml-[4px] text-micro">1</small>}
+              {player.repeat === 'one' && (
+                <small className="-ml-[4px] text-micro max-phone:text-caption">1</small>
+              )}
             </StageButton>
           </>
         )}
