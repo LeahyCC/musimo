@@ -17,22 +17,36 @@ export function Tag({ className, ...props }: HTMLAttributes<HTMLSpanElement>) {
   )
 }
 
-export type StatusChipVariant = 'default' | 'good'
+export type StatusChipVariant = 'default' | 'good' | 'danger'
+
+const statusChipVariantClassNames: Record<StatusChipVariant, string> = {
+  default: 'border-partial-line bg-partial-bg text-partial',
+  good: 'border-good-line bg-good-bg text-good',
+  danger: 'border-danger-line bg-danger-bg text-danger',
+}
 
 export interface StatusChipProps extends HTMLAttributes<HTMLSpanElement> {
   variant?: StatusChipVariant
+  /** The readiness badge: an icon beside upper-case text, a little more room. */
+  emphasis?: boolean
 }
 
 /** A source or job status label, e.g. a provider's "healthy" / "degraded" state. */
-export function StatusChip({ variant = 'default', className, ...props }: StatusChipProps) {
+export function StatusChip({
+  variant = 'default',
+  emphasis,
+  className,
+  ...props
+}: StatusChipProps) {
   return (
     <span
       data-ui="status-chip"
       className={cx(
-        'rounded-[5px] border px-[8px] py-[4px] text-caption',
-        variant === 'good'
-          ? 'border-good-line bg-good-bg text-good'
-          : 'border-partial-line bg-partial-bg text-partial',
+        'rounded-[5px] border text-caption',
+        emphasis
+          ? 'flex shrink-0 items-center gap-[6px] px-[10px] py-[5px] font-semibold tracking-[0.5px] uppercase'
+          : 'px-[8px] py-[4px]',
+        statusChipVariantClassNames[variant],
         className,
       )}
       {...props}

@@ -279,6 +279,77 @@ test('navigation guard blocks unsaved changes from being lost', async ({ page })
   await expect(page).toHaveURL(/\/downloads$/)
 })
 
+test('settings headings and the up-to-date bar wait for a delayed settings query', async ({
+  page,
+}) => {
+  // Both the page's own settings query and the shell's snapshot fetch can populate the settings
+  // cache, so both have to be held back to see the screen before it has anything to show.
+  const delay = () => new Promise((resolve) => setTimeout(resolve, 600))
+  await page.route('**/api/snapshot', async (route) => {
+    await delay()
+    await route.fallback()
+  })
+
+  await page.route('**/api/settings', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback()
+      return
+    }
+    await delay()
+    await route.fallback()
+  })
+  await page.goto('/settings')
+  await expect(page.getByRole('status').filter({ hasText: 'Loading settings' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Your library' })).toBeHidden()
+  await expect(page.getByText('Settings are up to date.')).toBeHidden()
+  await expect(page.getByRole('heading', { name: 'Your library' })).toBeVisible()
+  await expect(page.getByText('Settings are up to date.')).toBeVisible()
+})
+
+test('the settings index does not move when the slower diagnostics query lands', async ({
+  page,
+}) => {
+  // Settings answers at once; diagnostics is held back, the way its disk and Navidrome probes hold
+  // it back for real. The banner it feeds sits above the form, so its room is kept in advance.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route('**/api/diagnostics', async (route) => {
+    await held
+    await route.fallback()
+  })
+  await page.goto('/settings')
+  const index = page.getByRole('navigation', { name: 'Settings sections' })
+  await expect(index).toBeVisible()
+  const before = await index.boundingBox()
+
+  release()
+  await expect(page.getByText(/System ready|need attention/)).toBeVisible()
+  const after = await index.boundingBox()
+  expect(after?.y).toBe(before?.y)
+})
+
+test('settings headings and the up-to-date bar stay hidden when the settings query fails', async ({
+  page,
+}) => {
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({ status: 500, json: { detail: 'Snapshot failed' } }),
+  )
+
+  await page.route('**/api/settings', async (route) => {
+    if (route.request().method() !== 'GET') {
+      await route.fallback()
+      return
+    }
+    await route.fulfill({ status: 500, json: { detail: 'Settings failed' } })
+  })
+  await page.goto('/settings')
+  await expect(page.getByRole('alert')).toContainText('Settings failed')
+  await expect(page.getByRole('heading', { name: 'Your library' })).toBeHidden()
+  await expect(page.getByText('Settings are up to date.')).toBeHidden()
+})
+
 test('queue pause and resume persist through refresh', async ({ page, request }) => {
   expect((await request.post('/api/queue/resume')).ok()).toBe(true)
   await page.goto('/downloads')
