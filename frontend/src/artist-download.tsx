@@ -134,7 +134,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
             className={cx(
               'inline-grid min-h-11 grid-cols-[30px_auto] items-center gap-[9px] rounded-[8px] border border-line-strong bg-sunken pt-[7px] pr-[13px] pb-[7px] pl-[7px] text-text',
               'hover:bg-hover hover:border-[color:var(--line-hover)]',
-              '[&>svg]:box-border [&>svg]:h-[30px] [&>svg]:w-[30px] [&>svg]:rounded-[6px] [&>svg]:bg-active [&>svg]:p-[7px] [&>svg]:text-accent',
+              '[&>svg]:box-border [&>svg]:h-[30px] [&>svg]:w-[30px] [&>svg]:rounded-md [&>svg]:bg-active [&>svg]:p-[7px] [&>svg]:text-accent',
               '[&>span]:grid [&>span]:gap-[3px] [&>span]:text-left [&>span]:text-small [&>span]:leading-none [&>span]:font-semibold',
               '[&_small]:font-medium [&_small]:tracking-[0.12em] [&_small]:text-caption [&_small]:text-muted [&_small]:uppercase',
             )}
@@ -160,7 +160,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
         ref={dialog}
         className={cx(
           'artist-download-sheet m-auto w-[min(700px,calc(100%-32px))] max-h-[85dvh] overscroll-contain rounded-[16px] border border-line bg-raised p-[24px] text-text',
-          '[&::backdrop]:bg-[color-mix(in_oklab,var(--color-scrim)_60%,transparent)]',
+          'backdrop:bg-scrim/60',
           'max-phone:inset-x-0 max-phone:top-auto max-phone:bottom-0 max-phone:m-0 max-phone:w-full max-phone:max-w-none max-phone:max-h-[calc(100dvh-24px)] max-phone:rounded-t-[18px] max-phone:rounded-b-none max-phone:border-b-0 max-phone:p-[16px] max-phone:pb-[calc(16px+var(--safe-bottom))]',
         )}
         aria-labelledby="artist-download-title"
@@ -171,7 +171,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
             <p className="mb-[12px] text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
               {name}
             </p>
-            <h2 id="artist-download-title" className="max-phone:text-[17px]">
+            <h2 id="artist-download-title" className="max-phone:text-section">
               {allMusic ? 'Choose music to download' : 'Choose albums to download'}
             </h2>
           </div>
@@ -221,7 +221,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
                 Format
                 <select
-                  className="min-w-0 max-w-full rounded-[6px] border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-[16px]"
+                  className="min-w-0 max-w-full rounded-md border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-[16px]"
                   value={chosenFormat}
                   disabled={download.isPending}
                   onChange={(e) => setFormat(e.target.value)}
@@ -235,7 +235,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
                 Download to
                 <select
-                  className="min-w-0 max-w-full rounded-[6px] border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-[16px]"
+                  className="min-w-0 max-w-full rounded-md border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-[16px]"
                   value={chosenTarget}
                   disabled={download.isPending}
                   onChange={(e) => setTarget(e.target.value)}
@@ -308,7 +308,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
                       src={album.art}
                       alt=""
                       loading="lazy"
-                      className="h-[44px] w-[44px] rounded-[6px]"
+                      className="h-[44px] w-[44px] rounded-md"
                     />
                   )}
                   <span className="grid min-w-0 gap-[6px]">

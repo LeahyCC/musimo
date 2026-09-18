@@ -190,10 +190,15 @@
     color: var(--color-muted);
     line-height: 1.6;
   }
-}
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  @media (width < 48rem) {
+    h1 {
+      font-size: 27px;
+    }
+  }
 }
 button:focus-visible,
 a:focus-visible,
@@ -644,13 +649,10 @@ meter::-webkit-meter-optimum-value {
       calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 32px)
       calc(20px + var(--safe-left));
   }
-  h1 {
-    font-size: 27px;
-  }
-  .eyebrow {
+  .section-heading > span:not([data-ui='status-chip']) {
     font-size: 10px;
   }
-  .section-heading > span:not([data-ui='status-chip']) {
+  .eyebrow {
     font-size: 10px;
   }
   .page-heading {
@@ -703,24 +705,6 @@ meter::-webkit-meter-optimum-value {
   }
 }
 
-.result-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-right: auto;
-}
-.result-tabs button {
-  white-space: nowrap;
-  border: 0;
-  background: transparent;
-  padding: 10px 17px;
-  color: var(--color-muted);
-  border-radius: 22px;
-}
-.result-tabs .selected {
-  color: var(--color-accent-ink);
-  background: var(--color-accent);
-}
 .results-section > .section-heading {
   margin-bottom: 17px;
 }
@@ -861,13 +845,6 @@ meter::-webkit-meter-optimum-value {
   }
 }
 @media (width < 48rem) {
-  .result-tabs {
-    width: 100%;
-  }
-  .result-tabs button {
-    flex: 1;
-    padding: 9px;
-  }
   .artist-release-heading {
     align-items: start;
     flex-direction: column;
@@ -922,19 +899,6 @@ meter::-webkit-meter-optimum-value {
     width: calc(100% - 16px);
     max-height: calc(100dvh - 32px);
     padding: 14px;
-  }
-}
-/* .download-action belongs to the unconverted DownloadButton (downloads.tsx); this leftover
-   positions it inside the still-bare `.track-row` hook at phone width. */
-@media (width < 48rem) {
-  .track-row .download-action {
-    grid-column: 3;
-    grid-row: 1 / 3;
-    gap: 2px;
-  }
-  /* The format moves into the options popover, which gives the title the row's width. */
-  .track-row .download-action > select {
-    display: none;
   }
 }
 /* Inside the sheet the list shares the sheet's own scroll room rather than the page's. */
@@ -2152,7 +2116,6 @@ button.library-card-play.active {
   }
   .track-row button,
   .library-track-row button,
-  .result-tabs button,
   .library-tabs button,
   .library-filter label {
     min-height: 44px;

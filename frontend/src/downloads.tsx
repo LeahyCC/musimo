@@ -142,7 +142,7 @@ function errorLink(fix: string): { href: string; text: string } | null {
   return null
 }
 
-export function DownloadButton({ item }: { item: MusicResult }) {
+export function DownloadButton({ item, className }: { item: MusicResult; className?: string }) {
   const client = useQueryClient()
   const owned = item.ownership === 'owned'
   const settings = useQuery({
@@ -240,8 +240,8 @@ export function DownloadButton({ item }: { item: MusicResult }) {
     onSuccess: (job) => updateJob(client, job),
   })
   return (
-    // `download-action` is a hook: the track row and the album card still style it from the sheet.
-    <div className={cx('download-action', 'relative flex items-center gap-[6px]')}>
+    // `download-action` is a hook: `.download-action option` in the sheet paints the format list.
+    <div className={cx('download-action', 'relative flex items-center gap-[6px]', className)}>
       <select
         aria-label={`Format for ${item.title}`}
         className="max-w-[82px] rounded-md border border-line-strong bg-transparent px-[3px] py-[6px] text-tiny text-inherit coarse:max-w-[96px] coarse:px-[6px] coarse:py-3"
@@ -1008,6 +1008,7 @@ export function DownloadsPage() {
         {['queue', 'done', 'failed', 'history'].map((value) => (
           <button
             key={value}
+            data-ui="tab"
             className={cx(
               'rounded-pill border-0 px-[17px] py-[10px] whitespace-nowrap coarse:min-h-11',
               'max-phone:min-w-0 max-phone:px-[2px] max-phone:text-body max-phone:overflow-hidden max-phone:text-ellipsis',

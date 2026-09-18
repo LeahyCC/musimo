@@ -99,7 +99,9 @@ test('a top-tab section with no results hides its View all link', async ({ page 
   await expect(albums.getByRole('article').first()).toBeVisible()
   await expect(tracks.getByRole('button', { name: 'View all' })).toBeVisible()
   await expect(albums.getByRole('button', { name: 'View all' })).toBeVisible()
-  await expect(artists.getByRole('button', { name: 'View all' })).toBeHidden()
+  // The section is there with its empty state, and only then is the missing link proof.
+  await expect(artists.getByText('No artists match this search.')).toBeVisible()
+  await expect(artists.getByRole('button', { name: 'View all' })).toHaveCount(0)
 })
 
 test('popularity keeps an exact artist name ahead of larger fuzzy matches', async ({ page }) => {

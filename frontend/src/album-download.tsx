@@ -7,7 +7,7 @@ import { api, jobSchema } from './api'
 import type { MusicResult } from './api'
 import { cx } from './cx'
 import { activeJob, updateJob, useJobs } from './downloads'
-import { Button, IconButton } from './ui'
+import { Button, errorBannerClassName, IconButton } from './ui'
 
 const batchSchema = z.object({
   id: z.string(),
@@ -79,10 +79,10 @@ export function AlbumDownloadButton({
   return (
     <div
       className={cx(
-        'album-card-download relative flex min-h-[36px] gap-[8px]',
+        'album-card-download flex min-h-[36px] gap-[8px]',
         overlay
           ? 'absolute top-[18px] right-[18px] z-float max-w-[calc(100%-36px)] flex-col items-end'
-          : 'items-center',
+          : 'relative items-center',
       )}
     >
       {label ? (
@@ -97,10 +97,11 @@ export function AlbumDownloadButton({
         </Button>
       ) : (
         <IconButton
+          variant={overlay ? 'accent-washed' : 'accent'}
           className={cx(
-            '!text-accent min-h-[36px] min-w-[36px] border border-line',
+            'min-h-[36px] min-w-[36px]',
             overlay &&
-              'rounded-md bg-[color-mix(in_oklab,var(--color-canvas)_93%,transparent)] opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto no-hover:opacity-100 no-hover:pointer-events-auto',
+              'opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto no-hover:opacity-100 no-hover:pointer-events-auto',
           )}
           disabled={disabled}
           aria-label={ariaLabel}
@@ -117,8 +118,7 @@ export function AlbumDownloadButton({
             to="/downloads"
             className={cx(
               'album-download-status text-tiny coarse:inline-flex coarse:min-h-11 coarse:items-center',
-              overlay &&
-                'rounded-md bg-[color-mix(in_oklab,var(--color-raised)_96%,transparent)] p-[8px]',
+              overlay && 'rounded-md bg-raised/96 p-[8px]',
             )}
           >
             {queued > 0
@@ -134,11 +134,11 @@ export function AlbumDownloadButton({
 
       {download.isError && (
         <span
-          className={cx(
-            'download-error min-w-0 flex-1 text-tiny [overflow-wrap:anywhere]',
-            overlay &&
-              'rounded-md bg-[color-mix(in_oklab,var(--color-raised)_96%,transparent)] p-[8px]',
-          )}
+          className={
+            overlay
+              ? 'download-error min-w-0 flex-1 rounded-md bg-raised/96 p-[8px] text-tiny [overflow-wrap:anywhere]'
+              : errorBannerClassName('block', 'download-error')
+          }
           role="alert"
         >
           {download.error.message}

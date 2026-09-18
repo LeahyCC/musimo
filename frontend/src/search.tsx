@@ -22,7 +22,15 @@ import { DownloadTarget } from './download-target'
 import { DownloadButton, failureMessage, useJobs } from './downloads'
 import { InfiniteScroll } from './infinite-scroll'
 import { durationText, usePlayer, usePreviewPlayback } from './player'
-import { Button, EmptyPanel, ErrorBanner, Ownership, textLinkClassName } from './ui'
+import {
+  Button,
+  EmptyPanel,
+  ErrorBanner,
+  Field,
+  FieldSelect,
+  Ownership,
+  textLinkClassName,
+} from './ui'
 
 const tabs = ['top', 'track', 'album', 'artist'] as const
 type Tab = (typeof tabs)[number]
@@ -202,10 +210,10 @@ function Art({
         <button
           className={cx(
             'absolute inset-0 z-raised grid place-items-center border-0 text-on-media opacity-0 transition-opacity',
-            'bg-[color-mix(in_oklab,var(--color-scrim)_47%,transparent)]',
+            'bg-scrim/47',
             'group-hover:opacity-100 group-focus-within:opacity-100',
-            'no-hover:bg-[color-mix(in_oklab,var(--color-scrim)_20%,transparent)] no-hover:opacity-100',
-            'max-phone:bg-[color-mix(in_oklab,var(--color-scrim)_20%,transparent)] max-phone:opacity-100',
+            'no-hover:bg-scrim/20 no-hover:opacity-100',
+            'max-phone:bg-scrim/20 max-phone:opacity-100',
           )}
           aria-label={label}
           onClick={() => player.play(item)}
@@ -324,7 +332,7 @@ export function TrackRow({
         'hover:bg-hover focus:outline-2 focus:outline-accent focus:[outline-offset:-2px]',
         'max-phone:grid max-phone:grid-cols-[44px_minmax(0,1fr)_auto] max-phone:grid-rows-[1fr_auto] max-phone:gap-[2px_8px] max-phone:p-[6px_0]',
         selected &&
-          'selected-track bg-[color-mix(in_oklab,var(--color-accent)_9%,transparent)] outline outline-1 outline-accent [outline-offset:-1px]',
+          'selected-track bg-accent/9 outline outline-1 outline-accent [outline-offset:-1px]',
       )}
       id={`track-${item.id}`}
       aria-current={selected ? 'true' : undefined}
@@ -382,7 +390,10 @@ export function TrackRow({
       >
         {playing ? 'Pause' : noPreview ? 'No preview' : item.preview ? 'Preview' : 'Find preview'}
       </button>
-      <DownloadButton item={item} />
+      <DownloadButton
+        item={item}
+        className="max-phone:col-start-3 max-phone:row-span-2 max-phone:row-start-1 max-phone:gap-[2px] max-phone:[&>select]:hidden"
+      />
     </div>
   )
 }
@@ -780,7 +791,7 @@ export function SearchPage() {
   if (!state.q || state.q.trim().length < 2)
     return (
       <div className="max-w-[840px] pt-[54px] pb-[30px] max-phone:pt-[25px]">
-        <span className="mb-[12px] block text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+        <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
           THE NEXT ADDITION TO YOUR COLLECTION
         </span>
         <h1 className="my-[26px] text-[clamp(42px,6vw,78px)] leading-[1.06] tracking-[-3px] max-phone:tracking-[-2px]">
@@ -788,7 +799,7 @@ export function SearchPage() {
           <br />
           <em className="text-accent not-italic">Make room for it.</em>
         </h1>
-        <p className="max-w-[490px] text-[17px]">
+        <p className="max-w-[490px] text-section">
           Search tracks, albums and artists. Listen to a preview and see what’s already in your
           library.
         </p>
@@ -823,7 +834,7 @@ export function SearchPage() {
     <>
       <div className="mb-[25px]">
         <div>
-          <span className="mb-[12px] block text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
             DISCOVER YOUR NEXT FAVOURITE
           </span>
           <h1>Results for “{state.q}”</h1>
@@ -834,10 +845,11 @@ export function SearchPage() {
           {tabs.map((value) => (
             <button
               key={value}
+              data-ui="tab"
               aria-pressed={tab === value}
               className={cx(
-                'rounded-[22px] border-0 bg-transparent px-[17px] py-[10px] whitespace-nowrap text-muted max-phone:flex-1 max-phone:py-[9px]',
-                tab === value && 'bg-accent text-accent-ink',
+                'rounded-pill border-0 px-[17px] py-[10px] whitespace-nowrap coarse:min-h-11 max-phone:flex-1 max-phone:p-[9px]',
+                tab === value ? 'bg-accent text-accent-ink' : 'bg-transparent text-muted',
               )}
               onClick={() => change({ tab: value })}
             >
@@ -850,8 +862,9 @@ export function SearchPage() {
         </Button>
         <label className="flex items-center gap-[10px] text-body text-muted">
           Sort{' '}
-          <select
-            className="rounded-[7px] border border-line bg-sunken p-[8px] text-text"
+          <FieldSelect
+            tone="sunken"
+            fullWidth={false}
             value={state.sort ?? 'relevance'}
             onChange={(e) => change({ sort: sorts.find((value) => value === e.target.value) })}
           >
@@ -861,7 +874,7 @@ export function SearchPage() {
                 {value.slice(1)}
               </option>
             ))}
-          </select>
+          </FieldSelect>
         </label>
       </div>
       {(filters ||
@@ -875,8 +888,9 @@ export function SearchPage() {
         <div className="flex flex-wrap items-end gap-[12px] pt-[20px] pb-[8px]">
           <label className="flex flex-col gap-[5px] text-small text-muted">
             Lyrics
-            <select
-              className="rounded-[7px] border border-line bg-sunken p-[8px] text-text"
+            <FieldSelect
+              tone="sunken"
+              fullWidth={false}
               value={state.explicit ?? 'all'}
               onChange={(e) =>
                 change({
@@ -892,12 +906,14 @@ export function SearchPage() {
               <option value="all">All</option>
               <option value="clean">Clean</option>
               <option value="explicit">Explicit</option>
-            </select>
+            </FieldSelect>
           </label>
           <label className="flex flex-col gap-[5px] text-small text-muted">
             Year from
-            <input
-              className="w-[93px] rounded-[7px] border border-line bg-sunken p-[8px] text-text"
+            <Field
+              tone="sunken"
+              fullWidth={false}
+              className="w-[93px]"
               aria-label="Year from"
               type="number"
               min="0"
@@ -910,8 +926,10 @@ export function SearchPage() {
           </label>
           <label className="flex flex-col gap-[5px] text-small text-muted">
             Year to
-            <input
-              className="w-[93px] rounded-[7px] border border-line bg-sunken p-[8px] text-text"
+            <Field
+              tone="sunken"
+              fullWidth={false}
+              className="w-[93px]"
               aria-label="Year to"
               type="number"
               min="0"
@@ -924,8 +942,10 @@ export function SearchPage() {
           </label>
           <label className="flex flex-col gap-[5px] text-small text-muted">
             Minutes from
-            <input
-              className="w-[93px] rounded-[7px] border border-line bg-sunken p-[8px] text-text"
+            <Field
+              tone="sunken"
+              fullWidth={false}
+              className="w-[93px]"
               aria-label="Minimum minutes"
               type="number"
               min="0"
@@ -935,8 +955,10 @@ export function SearchPage() {
           </label>
           <label className="flex flex-col gap-[5px] text-small text-muted">
             Minutes to
-            <input
-              className="w-[93px] rounded-[7px] border border-line bg-sunken p-[8px] text-text"
+            <Field
+              tone="sunken"
+              fullWidth={false}
+              className="w-[93px]"
               aria-label="Maximum minutes"
               type="number"
               min="0"
@@ -946,8 +968,9 @@ export function SearchPage() {
           </label>
           <label className="flex flex-col gap-[5px] text-small text-muted">
             Library
-            <select
-              className="rounded-[7px] border border-line bg-sunken p-[8px] text-text"
+            <FieldSelect
+              tone="sunken"
+              fullWidth={false}
               value={state.library ?? 'all'}
               onChange={(e) =>
                 change({
@@ -963,7 +986,7 @@ export function SearchPage() {
               <option value="all">All</option>
               <option value="missing">Missing tracks</option>
               <option value="owned">In library</option>
-            </select>
+            </FieldSelect>
           </label>
           <label className="flex flex-row items-center gap-[5px] p-[10px] text-small text-muted coarse:min-h-11">
             <input
@@ -1042,7 +1065,7 @@ export function AlbumPage() {
       <div className="mt-[24px] mb-[32px] flex items-center gap-[28px] max-phone:items-start max-phone:gap-[16px]">
         <Art item={album} className="w-[210px] max-phone:w-[95px]" />
         <div>
-          <span className="mb-[12px] block text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
             {album.record_type.toUpperCase()} · {album.year ?? 'Year unknown'}
           </span>
           <h1 className="my-[12px] max-phone:text-[24px]">{album.title}</h1>
@@ -1059,8 +1082,9 @@ export function AlbumPage() {
       <div className="album-actions mb-[25px] flex flex-wrap items-center gap-[15px]">
         <label className="text-small text-muted">
           Quality{' '}
-          <select
-            className="rounded-[7px] border border-line bg-sunken p-[8px] text-text"
+          <FieldSelect
+            tone="sunken"
+            fullWidth={false}
             value={chosenQuality}
             onChange={(e) => setQuality(e.target.value)}
           >
@@ -1068,7 +1092,7 @@ export function AlbumPage() {
             <option value="m4a">M4A</option>
             <option value="opus">Opus</option>
             <option value="mp3">MP3</option>
-          </select>
+          </FieldSelect>
         </label>
         <AlbumDownloadButton
           key={`${album.id}-${hasOwnedTracks ? 'missing' : 'all'}`}
@@ -1188,7 +1212,7 @@ export function ArtistPage() {
           <img src={artist.art} alt="" className="w-[150px] rounded-pill max-phone:w-[95px]" />
         )}
         <div>
-          <span className="mb-[12px] block text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
             ARTIST
           </span>
           <h1 className="my-[12px]">{artist?.name}</h1>
@@ -1200,7 +1224,7 @@ export function ArtistPage() {
           />
         </div>
       </div>
-      <section className="results-section" aria-labelledby="popular-songs-title">
+      <section className="results-section mb-[36px]" aria-labelledby="popular-songs-title">
         <div className="section-heading">
           <h2 id="popular-songs-title">Popular songs</h2>
         </div>
@@ -1215,7 +1239,7 @@ export function ArtistPage() {
           <p className="text-muted">No popular songs found.</p>
         )}
       </section>
-      <section className="results-section" aria-labelledby="popular-albums-title">
+      <section className="results-section mb-[36px]" aria-labelledby="popular-albums-title">
         <div className="section-heading">
           <h2 id="popular-albums-title">Popular albums</h2>
         </div>
@@ -1239,7 +1263,7 @@ export function ArtistPage() {
           popularAlbumQueries.every((result) => !result.isPending) &&
           !popularAlbums.length && <p className="text-muted">No popular albums found.</p>}
       </section>
-      <section className="results-section" aria-labelledby="discography-title">
+      <section className="results-section mb-[36px]" aria-labelledby="discography-title">
         <div className="section-heading artist-release-heading">
           <div>
             <h2 id="discography-title">Discography</h2>
