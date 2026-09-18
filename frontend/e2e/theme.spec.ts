@@ -427,3 +427,39 @@ test('the page passes axe under the default and a light theme', async ({ page })
   await page.getByRole('heading', { name: 'Appearance' }).waitFor()
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 })
+
+/* Windows 95 is the one built-in with a skin: shape rules keyed on `<html data-skin>`. It has to
+   arrive with the boot script like the colors do, and leave with the theme. */
+test('Windows 95 paints its skin from the first frame and drops it with the theme', async ({
+  page,
+}) => {
+  const html = page.locator('html')
+  await page.goto('/settings/user')
+  await page.getByRole('radio', { name: 'Windows 95 light' }).check()
+  await expect(html).toHaveAttribute('data-skin', 'win95')
+  await expect(page.locator('[data-ui="button"]').first()).toHaveCSS('border-radius', '0px')
+
+  // The same refusal as the first test above: only the boot script runs.
+  await page.route('**/*', (route) =>
+    route.request().resourceType() === 'script' && !route.request().url().endsWith('/theme-boot.js')
+      ? route.abort()
+      : route.continue(),
+  )
+  await page.reload()
+  await expect(page.locator('#root')).toBeEmpty()
+  await expect(html).toHaveAttribute('data-skin', 'win95')
+
+  await page.unrouteAll()
+  await page.reload()
+  await page.getByRole('radio', { name: DEFAULT_THEME.name }).check()
+  await expect(html).not.toHaveAttribute('data-skin')
+})
+
+test('both Windows 95 themes pass axe', async ({ page }) => {
+  for (const name of ['Windows 95 light', 'Windows 95 dark']) {
+    await page.goto('/settings/user')
+    await page.getByRole('radio', { name }).check()
+    await expect(page.locator('html')).toHaveAttribute('data-skin', 'win95')
+    expect((await new AxeBuilder({ page }).analyze()).violations, name).toEqual([])
+  }
+})

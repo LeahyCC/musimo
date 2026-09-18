@@ -1,4 +1,6 @@
 @import 'tailwindcss';
+/* The Windows 95 skin. It does nothing until a theme sets data-skin="win95" on <html>. */
+@import './theme/win95.css';
 
 /* Every color a person sees comes from a token in this block, so a theme is nothing more than a
    set of token values. No rule below, and no component, may name a color any other way:

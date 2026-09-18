@@ -1,0 +1,471 @@
+/* The Windows 95 skin. `themes.ts` turns it on for the two Windows 95 themes by writing
+   `data-skin="win95"` to <html>; nothing else does, so none of this reaches any other theme.
+
+   A theme is colors, and colors are about a third of this look. The rest is shape: square corners,
+   two-pixel bevels, an 11px pixel font, and grey scrollbars. Every rule here sits outside Tailwind's
+   layers, so it beats a component's own utilities without `!important`.
+
+   Colors still come from the theme. The four bevel shades are real Windows 95 system colors
+   (ButtonHilight, 3DLight, ButtonShadow, ButtonDkShadow), and the two Windows 95 themes are built so
+   that each one is a token they already carry. `light-dark()` picks between the Standard scheme and
+   High Contrast Black by the `color-scheme` the theme sets.
+
+   The bevel recipes follow 98.css by Jordan Scales (MIT), see THIRD_PARTY_NOTICES.md. The font is
+   W95FA by Alina Sava (SIL OFL 1.1), from @fontsource/win95fa. The browser only fetches it once a
+   skinned page asks for it. */
+
+@import '@fontsource/win95fa/400.css';
+
+:root[data-skin='win95'] {
+  --bevel-hilight: light-dark(var(--color-sunken), var(--color-muted));
+  --bevel-light: light-dark(var(--color-hover), var(--color-text));
+  --bevel-shadow: var(--color-line);
+  --bevel-dark: var(--color-line-strong);
+  /* Highlight is what a selected item, the active title bar and selected text are painted with.
+     The Standard scheme uses navy, which is the accent. High Contrast Black uses purple, which the
+     dark theme keeps in its selected surface because yellow is its accent. */
+  --highlight: light-dark(var(--color-accent), var(--color-active));
+  --highlight-ink: light-dark(var(--color-accent-ink), var(--color-text));
+  /* The dither a toggled-down toolbar button fills with. High Contrast Black has none. */
+  --dither: light-dark(var(--bevel-hilight), transparent);
+
+  --bevel-raised:
+    inset -1px -1px var(--bevel-dark), inset 1px 1px var(--bevel-hilight),
+    inset -2px -2px var(--bevel-shadow), inset 2px 2px var(--bevel-light);
+  --bevel-pressed:
+    inset -1px -1px var(--bevel-hilight), inset 1px 1px var(--bevel-dark),
+    inset -2px -2px var(--bevel-light), inset 2px 2px var(--bevel-shadow);
+  --bevel-window:
+    inset -1px -1px var(--bevel-dark), inset 1px 1px var(--bevel-light),
+    inset -2px -2px var(--bevel-shadow), inset 2px 2px var(--bevel-hilight);
+  --bevel-field:
+    inset -1px -1px var(--bevel-hilight), inset 1px 1px var(--bevel-shadow),
+    inset -2px -2px var(--bevel-light), inset 2px 2px var(--bevel-dark);
+  /* A status bar panel, and the one-pixel well a list or a group sits in. */
+  --bevel-well: inset -1px -1px var(--bevel-hilight), inset 1px 1px var(--bevel-shadow);
+  /* The group box line: a shadow line with a hilight line one pixel below and right of it. */
+  --bevel-etched: inset 1px 1px var(--bevel-hilight), 1px 1px var(--bevel-hilight);
+
+  font-family: 'WIN95FA', sans-serif;
+  /* The font is drawn on a pixel grid. Smoothing it only blurs it. */
+  -webkit-font-smoothing: none;
+  -moz-osx-font-smoothing: grayscale;
+  /* Windows 95 had one size for nearly everything, 8 point at 96 dpi. The page headings keep some
+     size so a screen still has a top, but they snap to whole multiples of the font's pixel grid. */
+  --text-micro: 11px;
+  --text-caption: 11px;
+  --text-tiny: 11px;
+  --text-small: 11px;
+  --text-body: 11px;
+  --text-lead: 11px;
+  --text-strong: 11px;
+  --text-section: 11px;
+  --text-heading: 16px;
+  --text-subtitle: 16px;
+  --text-display: 22px;
+  --text-page: 22px;
+  --text-hero: 44px;
+}
+
+/* Text with no size of its own takes the body's. On <body>, not <html>, so rem spacing keeps its size. */
+:root[data-skin='win95'] body {
+  font-size: var(--text-body);
+}
+
+/* No curves and no soft shadows anywhere. A bevel below puts back the shadows it wants. */
+:root[data-skin='win95'] *,
+:root[data-skin='win95'] ::before,
+:root[data-skin='win95'] ::after {
+  border-radius: 0;
+  box-shadow: none;
+  letter-spacing: 0;
+}
+:root[data-skin='win95'] h1,
+:root[data-skin='win95'] h2,
+:root[data-skin='win95'] h3 {
+  font-weight: 400;
+  letter-spacing: 0;
+}
+
+:root[data-skin='win95'] ::selection {
+  background: var(--highlight);
+  color: var(--highlight-ink);
+}
+
+/* The focus rectangle: one dotted pixel inside the control. */
+:root[data-skin='win95'] :is(button, a, input, select):focus-visible,
+:root[data-skin='win95'] .card-primary-link:focus-visible::after {
+  outline: 1px dotted var(--color-text);
+  outline-offset: -4px;
+}
+
+/* Push buttons. The bevel is the border, so the CSS border goes. The default button, the one Enter
+   presses, has the extra black ring. */
+:root[data-skin='win95'] :is([data-ui='button'], [data-ui='tab']) {
+  border-width: 0;
+  background: var(--color-raised);
+  color: var(--color-text);
+  box-shadow: var(--bevel-raised);
+}
+:root[data-skin='win95'] [data-ui='button'][data-variant='primary'] {
+  box-shadow:
+    inset 0 0 0 1px var(--bevel-dark),
+    inset -2px -2px var(--bevel-dark),
+    inset 2px 2px var(--bevel-hilight),
+    inset -3px -3px var(--bevel-shadow),
+    inset 3px 3px var(--bevel-light);
+}
+:root[data-skin='win95'] [data-ui='button'][data-variant='danger'] {
+  color: var(--color-danger);
+}
+:root[data-skin='win95'] :is([data-ui='button'], [data-ui='tab']):hover {
+  background: var(--color-raised);
+}
+/* Pressed: the bevel flips and the label moves one pixel down and right. */
+:root[data-skin='win95']
+  :is([data-ui='button'], [data-ui='tab'], [data-ui='icon-button']):active:not(:disabled),
+:root[data-skin='win95'] [data-ui='tab'][aria-pressed='true'] {
+  box-shadow: var(--bevel-pressed);
+  translate: 0;
+}
+:root[data-skin='win95']
+  :is([data-ui='button'], [data-ui='tab'], [data-ui='icon-button']):active:not(:disabled)
+  > * {
+  translate: 1px 1px;
+}
+:root[data-skin='win95'] [data-ui='tab'][aria-pressed='true'] {
+  background-color: var(--color-raised);
+  background-image: conic-gradient(
+    var(--dither) 25%,
+    transparent 0 50%,
+    var(--dither) 0 75%,
+    transparent 0
+  );
+  background-size: 2px 2px;
+  color: var(--color-text);
+}
+/* Disabled text is embossed: a shadow-grey label with a hilight copy under it. */
+:root[data-skin='win95'] button:disabled {
+  opacity: 1;
+  color: var(--bevel-shadow);
+  text-shadow: 1px 1px var(--bevel-hilight);
+}
+
+/* Toolbar buttons are flat until the pointer is over them. The round play button is square. */
+:root[data-skin='win95'] [data-ui='icon-button'] {
+  border-width: 0;
+  background: transparent;
+}
+:root[data-skin='win95'] [data-ui='icon-button']:hover:not(:disabled) {
+  box-shadow: var(--bevel-well);
+}
+:root[data-skin='win95'] [data-ui='icon-button'][aria-pressed='true'] {
+  box-shadow: var(--bevel-pressed);
+}
+:root[data-skin='win95'] [data-ui='icon-button'][data-variant='play'] {
+  background: var(--color-raised);
+  color: var(--color-text);
+  box-shadow: var(--bevel-raised);
+}
+
+/* Text boxes and drop-downs sit in a two-pixel well on the window color. */
+:root[data-skin='win95'] :is([data-ui='field'], textarea),
+:root[data-skin='win95']
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='color']),
+:root[data-skin='win95'] select {
+  border-width: 0;
+  background: var(--color-sunken);
+  color: var(--color-text);
+  box-shadow: var(--bevel-field);
+}
+
+/* A borderless input inside a box (the top bar's search, the library's filter and sort) is the
+   box's text, so the box is the field and the input inside it stays flat. */
+:root[data-skin='win95'] :is(input, select).bg-transparent {
+  background: transparent;
+  box-shadow: none;
+}
+:root[data-skin='win95'] :has(> :is(input, select).bg-transparent) {
+  border-width: 0;
+  background: var(--color-sunken);
+  color: var(--color-text);
+  box-shadow: var(--bevel-field);
+  padding-inline: 6px;
+}
+
+/* A drop-down's arrow is a small raised button inside the well: a face, a one-pixel hilight on the
+   top and left, the dark and shadow lines on the bottom and right, and a 7 by 4 arrow. Background
+   layers, because a <select> has no box of its own to bevel. The two longer selectors are there to
+   outrank the field and flat-input rules above, whose `background` shorthand would clear these. */
+:root[data-skin='win95'] select,
+:root[data-skin='win95'] select[data-ui='field'],
+:root[data-skin='win95'] select.bg-transparent {
+  appearance: none;
+  padding-right: 22px;
+  background-image:
+    conic-gradient(from -45deg at 50% 100%, var(--color-text) 90deg, transparent 0),
+    linear-gradient(var(--bevel-dark), var(--bevel-dark)),
+    linear-gradient(var(--bevel-dark), var(--bevel-dark)),
+    linear-gradient(var(--bevel-shadow), var(--bevel-shadow)),
+    linear-gradient(var(--bevel-shadow), var(--bevel-shadow)),
+    linear-gradient(var(--bevel-hilight), var(--bevel-hilight)),
+    linear-gradient(var(--color-raised), var(--color-raised));
+  background-size:
+    8px 4px,
+    16px 1px,
+    1px calc(100% - 4px),
+    14px 1px,
+    1px calc(100% - 6px),
+    15px calc(100% - 5px),
+    16px calc(100% - 4px);
+  background-position:
+    right 6px center,
+    right 2px bottom 2px,
+    right 2px top 2px,
+    right 3px bottom 3px,
+    right 3px top 3px,
+    right 3px top 2px,
+    right 2px top 2px;
+  background-repeat: no-repeat;
+}
+
+/* Check boxes: a white well with the seven-pixel tick drawn one column at a time. */
+:root[data-skin='win95'] input[type='checkbox'] {
+  appearance: none;
+  flex-shrink: 0;
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  background-color: var(--color-sunken);
+  box-shadow: var(--bevel-field);
+}
+:root[data-skin='win95'] input[type='checkbox']:checked {
+  background-image:
+    linear-gradient(var(--color-text), var(--color-text)),
+    linear-gradient(var(--color-text), var(--color-text)),
+    linear-gradient(var(--color-text), var(--color-text)),
+    linear-gradient(var(--color-text), var(--color-text)),
+    linear-gradient(var(--color-text), var(--color-text)),
+    linear-gradient(var(--color-text), var(--color-text)),
+    linear-gradient(var(--color-text), var(--color-text));
+  background-size: 1px 3px;
+  background-position:
+    3px 5px,
+    4px 6px,
+    5px 7px,
+    6px 6px,
+    7px 5px,
+    8px 4px,
+    9px 3px;
+  background-repeat: no-repeat;
+}
+/* Option buttons: a round well with a dot. */
+:root[data-skin='win95'] input[type='radio'] {
+  appearance: none;
+  flex-shrink: 0;
+  width: 12px;
+  height: 12px;
+  margin: 0;
+  border-radius: 50%;
+  background-color: var(--color-sunken);
+  box-shadow:
+    inset 1px 1px var(--bevel-shadow),
+    inset -1px -1px var(--bevel-hilight),
+    inset 2px 2px var(--bevel-dark),
+    inset -2px -2px var(--bevel-light);
+}
+:root[data-skin='win95'] input[type='radio']:checked {
+  background-image: radial-gradient(var(--color-text) 2px, transparent 2.5px);
+}
+:root[data-skin='win95'] input:is([type='checkbox'], [type='radio']):disabled {
+  background-color: var(--color-raised);
+}
+
+/* Track bars: a two-pixel groove and an upright raised thumb. Windows 95 drew no fill. */
+:root[data-skin='win95'] input[type='range'] {
+  appearance: none;
+  height: 21px;
+  background: transparent;
+}
+:root[data-skin='win95'] input[type='range']::-webkit-slider-runnable-track {
+  height: 4px;
+  background: var(--color-raised);
+  box-shadow: var(--bevel-field);
+}
+:root[data-skin='win95'] input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 11px;
+  height: 21px;
+  margin-top: -9px;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-raised);
+  box-shadow: var(--bevel-raised);
+}
+:root[data-skin='win95'] input[type='range']::-moz-range-track {
+  height: 4px;
+  background: var(--color-raised);
+  box-shadow: var(--bevel-field);
+}
+:root[data-skin='win95'] input[type='range']::-moz-range-progress {
+  background: transparent;
+}
+:root[data-skin='win95'] input[type='range']::-moz-range-thumb {
+  width: 11px;
+  height: 21px;
+  border: 0;
+  border-radius: 0;
+  background: var(--color-raised);
+  box-shadow: var(--bevel-raised);
+}
+
+/* Meters are progress bars: blocks of the highlight color in a status well. */
+:root[data-skin='win95'] meter {
+  appearance: none;
+  height: 16px;
+  padding: 2px;
+  background: var(--color-raised);
+  box-shadow: var(--bevel-well);
+}
+:root[data-skin='win95'] meter::-webkit-meter-bar {
+  height: 12px;
+  background: transparent;
+}
+:root[data-skin='win95'] meter::-webkit-meter-optimum-value,
+:root[data-skin='win95'] meter::-webkit-meter-suboptimum-value,
+:root[data-skin='win95'] meter::-webkit-meter-even-less-good-value {
+  background: repeating-linear-gradient(90deg, var(--highlight) 0 8px, transparent 8px 10px);
+}
+/* On its own, because an engine throws away a whole selector list with one part it does not know. */
+:root[data-skin='win95'] meter::-moz-meter-bar {
+  background: repeating-linear-gradient(90deg, var(--highlight) 0 8px, transparent 8px 10px);
+}
+
+/* Group boxes: the etched line. */
+:root[data-skin='win95'] :is([data-ui='panel'], [data-ui='empty-panel']) {
+  border-color: var(--bevel-shadow);
+  box-shadow: var(--bevel-etched);
+}
+
+/* The key hint is a tiny raised key. */
+:root[data-skin='win95'] [data-ui='kbd'] {
+  border-width: 0;
+  background: var(--color-raised);
+  box-shadow: var(--bevel-raised);
+}
+
+/* The selected thing is the highlight color with the highlight text, the way a selected file is. */
+:root[data-skin='win95'] :is([aria-current='page'], [aria-current='true']):not(.brand) {
+  background: var(--highlight);
+  color: var(--highlight-ink);
+}
+
+/* The shell. The sidebar is a window with a title bar, the top bar is a toolbar, and the player
+   along the bottom is the taskbar. */
+:root[data-skin='win95'] .sidebar {
+  border-width: 0;
+  background: var(--color-raised);
+  box-shadow: var(--bevel-window);
+}
+/* The sidebar's title bar, flush to the window frame the way a real one is. */
+:root[data-skin='win95'] .brand {
+  margin: -30px -16px 0;
+  padding: 3px 4px;
+  background: var(--highlight);
+  color: var(--highlight-ink);
+  font-size: var(--text-body);
+  font-weight: 700;
+  font-synthesis: weight;
+}
+:root[data-skin='win95'] .brand span {
+  color: inherit;
+}
+@media (width < theme(--breakpoint-tablet)) {
+  :root[data-skin='win95'] .brand {
+    margin-inline: -10px;
+  }
+}
+/* The links under the sidebar are push buttons. */
+:root[data-skin='win95'] .sidebar footer a {
+  border-width: 0;
+  background: var(--color-raised);
+  color: var(--color-text);
+  box-shadow: var(--bevel-raised);
+}
+:root[data-skin='win95'] .sidebar footer a:active {
+  box-shadow: var(--bevel-pressed);
+}
+
+:root[data-skin='win95'] .live-player {
+  border-width: 0;
+  background: var(--color-raised);
+  box-shadow:
+    inset 0 1px var(--bevel-light),
+    inset 0 2px var(--bevel-hilight);
+}
+
+/* Scrollbars: a checkerboard track, a raised thumb, and arrow buttons. Chrome drops every
+   `::-webkit-scrollbar` rule the moment `scrollbar-color` is set, so Firefox, which only has
+   `scrollbar-color`, gets it inside a query Chrome does not match. */
+:root[data-skin='win95'] ::-webkit-scrollbar {
+  width: 16px;
+  height: 16px;
+}
+:root[data-skin='win95'] ::-webkit-scrollbar-track {
+  background-color: var(--bevel-hilight);
+  background-image: conic-gradient(
+    var(--color-raised) 25%,
+    transparent 0 50%,
+    var(--color-raised) 0 75%,
+    transparent 0
+  );
+  background-size: 2px 2px;
+}
+:root[data-skin='win95'] ::-webkit-scrollbar-thumb,
+:root[data-skin='win95'] ::-webkit-scrollbar-button:single-button {
+  background-color: var(--color-raised);
+  box-shadow: var(--bevel-raised);
+}
+:root[data-skin='win95'] ::-webkit-scrollbar-corner {
+  background: var(--color-raised);
+}
+/* Each arrow is a 7 by 4 triangle cut from a conic gradient, so it takes the text color. */
+:root[data-skin='win95'] ::-webkit-scrollbar-button:single-button {
+  display: block;
+  width: 16px;
+  height: 16px;
+  background-repeat: no-repeat;
+  background-position: center;
+}
+:root[data-skin='win95'] ::-webkit-scrollbar-button:single-button:vertical:decrement {
+  background-image: conic-gradient(from 135deg at 50% 0, var(--color-text) 90deg, transparent 0);
+  background-size: 8px 4px;
+}
+:root[data-skin='win95'] ::-webkit-scrollbar-button:single-button:vertical:increment {
+  background-image: conic-gradient(from -45deg at 50% 100%, var(--color-text) 90deg, transparent 0);
+  background-size: 8px 4px;
+}
+:root[data-skin='win95'] ::-webkit-scrollbar-button:single-button:horizontal:decrement {
+  background-image: conic-gradient(from 45deg at 0 50%, var(--color-text) 90deg, transparent 0);
+  background-size: 4px 8px;
+}
+:root[data-skin='win95'] ::-webkit-scrollbar-button:single-button:horizontal:increment {
+  background-image: conic-gradient(from 225deg at 100% 50%, var(--color-text) 90deg, transparent 0);
+  background-size: 4px 8px;
+}
+:root[data-skin='win95'] ::-webkit-scrollbar-button:single-button:active {
+  box-shadow: var(--bevel-well);
+}
+@supports not selector(::-webkit-scrollbar) {
+  :root[data-skin='win95'] {
+    scrollbar-color: var(--color-raised) var(--bevel-hilight);
+  }
+}
+
+/* The phone footer's thin seek bar keeps its size from `style.css`, but its thumb goes square. */
+:root[data-skin='win95'] .live-player .playback-controls input[type='range']::-webkit-slider-thumb {
+  border-radius: 0;
+}
+:root[data-skin='win95'] .live-player .playback-controls input[type='range']::-moz-range-thumb {
+  border-radius: 0;
+}

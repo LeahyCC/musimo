@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import { HEX_COLOR } from './schema'
-import { exportTheme, resolveVars } from './store'
-import { DEFAULT_THEME } from './themes'
+import { draftTheme, exportTheme, resolveVars } from './store'
+import { BUILT_IN_THEMES, DEFAULT_THEME } from './themes'
 import { COLOR_TOKENS } from './tokens'
 
 /* The DOM-facing half of the store (applying, storage events, the popout) is browser behaviour and
@@ -43,10 +43,29 @@ describe('resolveVars', () => {
     }
   })
 
+  it('carries a skin only when the theme has one', () => {
+    const skinned = BUILT_IN_THEMES.find((theme) => theme.id === 'win95-light')
+
+    expect(skinned && resolveVars(skinned).skin).toBe('win95')
+    expect('skin' in resolveVars(light)).toBe(false)
+  })
+
   it('survives the round trip through the stored string', () => {
     const stored = JSON.parse(JSON.stringify(resolveVars(light))) as unknown
 
     expect(stored).toEqual(resolveVars(light))
+  })
+})
+
+describe('draftTheme', () => {
+  // A person's own theme is colors only, and an import refuses any other key.
+  it('keeps the colors of a skinned theme and leaves the skin behind', () => {
+    const skinned = BUILT_IN_THEMES.find((theme) => theme.id === 'win95-dark')
+    if (!skinned) throw new Error('No Windows 95 dark theme')
+    const draft = draftTheme(skinned)
+
+    expect(draft.colors).toEqual(skinned.colors)
+    expect('skin' in draft).toBe(false)
   })
 })
 

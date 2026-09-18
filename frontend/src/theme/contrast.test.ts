@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { CONTRAST_PAIRS, MIN_CONTRAST, themeContrast } from './contrast'
-import { DEFAULT_THEME } from './themes'
+import { BUILT_IN_THEMES, DEFAULT_THEME } from './themes'
 import { TOKEN_NAMES } from './tokens'
 
 describe('theme contrast', () => {
@@ -11,6 +11,13 @@ describe('theme contrast', () => {
     expect(readings).toHaveLength(CONTRAST_PAIRS.length)
     for (const reading of readings) {
       expect(reading.ratio, reading.label).not.toBeNull()
+      expect(reading.ratio ?? 0, reading.label).toBeGreaterThanOrEqual(MIN_CONTRAST)
+    }
+  })
+
+  // The editor only warns, so a person's own theme may fail. One that ships with the app may not.
+  it.each(BUILT_IN_THEMES)('passes every pair in $name', (theme) => {
+    for (const reading of themeContrast(theme.colors)) {
       expect(reading.ratio ?? 0, reading.label).toBeGreaterThanOrEqual(MIN_CONTRAST)
     }
   })
