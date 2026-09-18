@@ -10,7 +10,7 @@ import {
   themeSchema,
 } from './schema'
 import { BUILT_IN_THEMES, DEFAULT_THEME, DEFAULT_THEME_ID } from './themes'
-import type { ColorScheme, Theme } from './themes'
+import type { ColorScheme, Skin, Theme } from './themes'
 import { COLOR_TOKENS } from './tokens'
 
 /* The theme service. It owns the three browser keys, the active theme, and the writes that repaint
@@ -26,7 +26,7 @@ const CUSTOM_KEY = 'musimo.custom-themes'
 const VARS_KEY = 'musimo.theme-vars'
 
 /** What the boot script reads. Its shape is duplicated there, in plain JavaScript, on purpose. */
-export type ThemeVars = { scheme: ColorScheme; vars: Record<string, string> }
+export type ThemeVars = { scheme: ColorScheme; skin?: Skin; vars: Record<string, string> }
 
 export type ThemeError = 'invalid-json' | 'invalid-theme' | 'too-many' | 'storage'
 
@@ -93,12 +93,14 @@ export function resolveVars(theme: Theme): ThemeVars {
   const vars: Record<string, string> = {}
   for (const token of COLOR_TOKENS) vars[token.name] = theme.colors[token.name]
 
-  return { scheme: theme.scheme, vars }
+  return theme.skin
+    ? { scheme: theme.scheme, skin: theme.skin, vars }
+    : { scheme: theme.scheme, vars }
 }
 
 /**
- * Paints `theme` onto a document: every `--color-*` property, `color-scheme`, and the browser
- * chrome color. The popout window is the second target.
+ * Paints `theme` onto a document: every `--color-*` property, `color-scheme`, the skin, and the
+ * browser chrome color. The popout window is the second target.
  */
 export function applyTheme(theme: Theme, target: Document = document) {
   const root = target.documentElement
@@ -114,6 +116,8 @@ export function applyTheme(theme: Theme, target: Document = document) {
   }
   if (inline) root.style.setProperty('color-scheme', theme.scheme)
   else root.style.removeProperty('color-scheme')
+  if (theme.skin) root.setAttribute('data-skin', theme.skin)
+  else root.removeAttribute('data-skin')
   // `index.html` ships the tag. A popout document has none, and does not need one.
   const meta = target.querySelector('meta[name="theme-color"]')
   const canvas = theme.colors['--color-canvas']

@@ -292,9 +292,10 @@ function Shell() {
           'max-phone:inset-x-0 max-phone:top-auto max-phone:z-bar max-phone:h-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:w-auto max-phone:border-t max-phone:border-r-0 max-phone:pt-0 max-phone:pr-[var(--safe-right)] max-phone:pb-[var(--safe-bottom)] max-phone:pl-[var(--safe-left)]',
         )}
       >
+        {/* `brand` carries no styling here. The Windows 95 skin draws it as the sidebar's title bar. */}
         <Link
           to="/search"
-          className="flex items-center px-[8px] text-display font-[650] tracking-[-1px] max-phone:hidden"
+          className="brand flex items-center px-[8px] text-display font-[650] tracking-[-1px] max-phone:hidden"
         >
           musimo<span className="text-accent">.</span>
         </Link>

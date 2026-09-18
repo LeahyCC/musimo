@@ -69,6 +69,7 @@ export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(functio
       type={type}
       aria-pressed={active}
       data-ui="icon-button"
+      data-variant={variant}
       className={iconButtonClassName(active, className, size, variant)}
       {...props}
     />

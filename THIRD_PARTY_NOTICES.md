@@ -14,6 +14,10 @@ FFmpeg's applicable licence depends on its build configuration. The project's [l
 
 Before publishing binary/container releases, complete the dependency and source-distribution steps in [Releasing](docs/releasing.md). A source repository and a redistributed container are different distribution artifacts.
 
+## Windows 95 theme
+
+The Windows 95 themes use the W95FA typeface by Alina Sava, licensed under the SIL Open Font License 1.1 and installed from the `@fontsource/win95fa` npm package, which carries the licence text. The bevel recipes in `frontend/src/theme/win95.css` follow [98.css](https://github.com/jdan/98.css), Copyright (c) 2020 Jordan Scales, MIT licence. Windows and Windows 95 are trademarks of Microsoft; the themes are an homage and imply no affiliation or endorsement.
+
 ## Providers and media
 
 Deezer, YouTube, Apple/iTunes, MusicBrainz, LRCLIB and Navidrome names identify integrations or external services. They do not imply affiliation or endorsement. Their APIs, data, trademarks and media have their own terms and rights.
