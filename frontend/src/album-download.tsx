@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import { api, jobSchema } from './api'
 import type { MusicResult } from './api'
+import { cx } from './cx'
 import { activeJob, updateJob, useJobs } from './downloads'
 import { Button, IconButton } from './ui'
 
@@ -21,12 +22,15 @@ export function AlbumDownloadButton({
   format,
   target,
   label,
+  overlay = false,
 }: {
   item: MusicResult
   missingOnly?: boolean
   format?: string
   target?: string
   label?: string
+  /** The card variant: absolutely positioned over the art, hidden until the card is hovered. */
+  overlay?: boolean
 }) {
   const client = useQueryClient()
   const queue = useJobs()
@@ -73,7 +77,14 @@ export function AlbumDownloadButton({
     <ArrowDownToLine size={18} />
   )
   return (
-    <div className="album-card-download">
+    <div
+      className={cx(
+        'album-card-download relative flex min-h-[36px] gap-[8px]',
+        overlay
+          ? 'absolute top-[18px] right-[18px] z-float max-w-[calc(100%-36px)] flex-col items-end'
+          : 'items-center',
+      )}
+    >
       {label ? (
         <Button
           disabled={disabled}
@@ -86,6 +97,11 @@ export function AlbumDownloadButton({
         </Button>
       ) : (
         <IconButton
+          className={cx(
+            '!text-accent min-h-[36px] min-w-[36px] border border-line',
+            overlay &&
+              'rounded-md bg-[color-mix(in_oklab,var(--color-canvas)_93%,transparent)] opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto no-hover:opacity-100 no-hover:pointer-events-auto',
+          )}
           disabled={disabled}
           aria-label={ariaLabel}
           title={title}
@@ -97,7 +113,14 @@ export function AlbumDownloadButton({
 
       {(queued > 0 || result) && (
         <span role="status">
-          <Link to="/downloads" className="album-download-status">
+          <Link
+            to="/downloads"
+            className={cx(
+              'album-download-status text-tiny coarse:inline-flex coarse:min-h-11 coarse:items-center',
+              overlay &&
+                'rounded-md bg-[color-mix(in_oklab,var(--color-raised)_96%,transparent)] p-[8px]',
+            )}
+          >
             {queued > 0
               ? `${queued} queued`
               : result?.jobs.length
@@ -110,7 +133,14 @@ export function AlbumDownloadButton({
       )}
 
       {download.isError && (
-        <span className="download-error" role="alert">
+        <span
+          className={cx(
+            'download-error min-w-0 flex-1 text-tiny [overflow-wrap:anywhere]',
+            overlay &&
+              'rounded-md bg-[color-mix(in_oklab,var(--color-raised)_96%,transparent)] p-[8px]',
+          )}
+          role="alert"
+        >
           {download.error.message}
           <button
             type="button"
