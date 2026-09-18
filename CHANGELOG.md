@@ -43,6 +43,9 @@
 
 - Make every screen work on a phone: mini player, bottom-bar download count, safe-area insets, 44px touch targets, no focus zoom, tabs and sheets that fit (#48)
 - Add a personal settings page at `/settings/user` where you pick a theme, build your own from the color tokens with the whole app as a live preview, and export or import one as a file. Settings is now a Server and Yours switch, and the command palette has Change theme
+- Ship eleven more built-in themes: Musimo light, and Slate, Sunset, Violet, Graphite and Windows 95, each in light and dark
+- Give the Windows 95 themes the whole look, not only its colors: the real Windows Standard and High Contrast Black schemes, square corners, raised and sunken bevels, a navy title bar, the W95FA pixel font, grey scrollbars and Windows 95 check boxes, drop-downs and track bars
+- Make the selected sidebar item readable in Sunset light, Violet light, Graphite light and Windows 95, and add it, sidebar text and the downloads badge to the theme editor's readability report
 
 ## 0.4.0 (2026-09-10)
 

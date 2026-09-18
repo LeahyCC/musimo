@@ -165,17 +165,18 @@ type Theme = {
   id: string // 'musimo-dark' for the built-in, 'custom-<uuid>' for a person's own
   name: string
   scheme: 'dark' | 'light' // sets `color-scheme`, so native dialogs, scrollbars and form controls match
+  skin?: 'win95' // built-ins only: shape rules in a sheet of their own, see below
   colors: Record<ColorToken, string> // one hex value per token in the table above
 }
 ```
 
-**Where things live.** `frontend/src/theme/` holds the token list (name, label and group, used by the editor), the built-in registry, the zod schema for stored and imported themes, the store, and pure helpers (hex parsing, contrast ratio). `musimo-dark` is the one every screen was built against; its values in TypeScript must equal the `@theme` block, and a unit test parses `style.css` and compares them, so the two cannot drift. The registry also ships five more families, each a light and a dark pair (Musimo light, Slate, Sunset, Violet, Graphite and a Windows 95 homage), added the same way: one object each in `BUILT_IN_THEMES`, checked against `color.test.ts`'s per-theme contrast check. Adding another built-in later is still just adding one object to the registry.
+**Where things live.** `frontend/src/theme/` holds the token list (name, label and group, used by the editor), the built-in registry, the zod schema for stored and imported themes, the store, and pure helpers (hex parsing, contrast ratio). `musimo-dark` is the one every screen was built against; its values in TypeScript must equal the `@theme` block, and a unit test parses `style.css` and compares them, so the two cannot drift. The registry also ships five more families, each a light and a dark pair (Musimo light, Slate, Sunset, Violet, Graphite and Windows 95), added the same way: one object each in `BUILT_IN_THEMES`. `contrast.test.ts` holds every built-in to WCAG AA on every pair in the editor's readability report, and `color.test.ts` adds text on the sunken surface. Adding another built-in later is still just adding one object to the registry.
 
 **Storage.** Themes are a personal preference, like volume and the library layout, so they live in `localStorage` under `musimo.theme` (the active id), `musimo.custom-themes` (the person’s own, versioned) and `musimo.theme-vars` (the resolved properties for the boot script). Server settings are shared, lockable by environment and saved with a save bar; a theme is none of those. Export and import of a JSON file moves a theme between browsers. Syncing through the backend is a later option, not part of this plan.
 
-**Applying a theme.** The default needs no JavaScript: `@theme` already holds it. Any other theme sets each `--color-*` property and `color-scheme` on `<html>`, and updates `<meta name="theme-color">` to the canvas color. The store notifies subscribers so the popout document gets the same writes. A `storage` event applies a change made in another tab.
+**Applying a theme.** The default needs no JavaScript: `@theme` already holds it. Any other theme sets each `--color-*` property and `color-scheme` on `<html>`, writes its skin (or removes one) as `data-skin`, and updates `<meta name="theme-color">` to the canvas color. The store notifies subscribers so the popout document gets the same writes. A `storage` event applies a change made in another tab.
 
-**No flash on load.** The Content-Security-Policy allows scripts from `'self'` only, so an inline script is out. A small classic script in `frontend/public/theme-boot.js`, loaded in `<head>` before the module, reads `musimo.theme-vars`, accepts only `--color-*` names with hex values, and sets them before first paint. Anything unexpected falls through to the default.
+**No flash on load.** The Content-Security-Policy allows scripts from `'self'` only, so an inline script is out. A small classic script in `frontend/public/theme-boot.js`, loaded in `<head>` before the module, reads `musimo.theme-vars`, accepts only `--color-*` names with hex values and a skin name from its own short list, and sets them before first paint. Anything unexpected falls through to the default.
 
 **Untrusted input.** A stored or imported theme goes through the schema: known token names only, six or eight digit hex values only, a bounded name length, and a cap on how many custom themes are kept. A value is written with `style.setProperty`, never into a style string. A theme that fails validation is ignored with a message, not half-applied.
 
@@ -200,6 +201,8 @@ Your settings > Appearance
 Changes apply while editing but only persist on Save. Leaving the page with unsaved edits asks first, then restores the saved theme. Deleting the active custom theme falls back to the default. At the cap of fifty themes, Duplicate and Import are off until one is deleted.
 
 **What a theme cannot change, for now.** Type, spacing, radii, layout and the visualizer scenes. The stored format carries a version so radius or font choices can be added without breaking saved themes.
+
+**Skins, the one exception.** Colors are about a third of the Windows 95 look; the rest is square corners, two-pixel bevels, an 11px pixel font and grey scrollbars. So a built-in theme may name a skin, and the store writes it to `<html data-skin>` (and the popout's). `frontend/src/theme/win95.css` is the only skin. Every rule in it starts `:root[data-skin='win95']` and sits outside Tailwind's layers, so it beats a component's utilities without `!important` and reaches no other theme. It targets the primitives by `data-ui` and `data-variant`, plus four shell hooks (`sidebar`, `brand`, `live-player`, `playback-controls`). Its colors are still tokens: the bevel shades are the real Windows 95 system colors, each already a token of the two Windows 95 themes, and `light-dark()` picks the Standard or High Contrast Black mapping from the theme's `color-scheme`. The font is W95FA from `@fontsource/win95fa`, fetched only when a skinned page uses it. A person's own theme carries no skin: the schema has no field for one, so duplicating Windows 95 keeps its colors and loses the shape. `themes.test.ts` checks every skin a theme names exists, has a sheet and is on the boot script's list.
 
 ## Breakpoints
 
@@ -399,7 +402,7 @@ Do not “clean up” these as part of Tailwind unless a user asks: inline text 
 
 ## Out of scope
 
-- Syncing themes through the backend, a shared theme gallery, per-theme fonts, radii or spacing, and theming the visualizer scenes.
+- Syncing themes through the backend, a shared theme gallery, fonts, radii or spacing in a person's own theme (a built-in's skin is the one exception, see Themes), and theming the visualizer scenes.
 - Adding shadcn, Base UI, cmdk, Vaul, sonner or Zustand. Native `dialog`, the existing palette and the existing sheets are enough.
 - Extracting CSS modules per file “as a stepping stone”. That is a second migration.
 - Rewriting visimo / WebGPU stage drawing.

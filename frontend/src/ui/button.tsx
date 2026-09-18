@@ -36,6 +36,7 @@ export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button
       ref={ref}
       type={type}
       data-ui="button"
+      data-variant={variant}
       className={buttonClassName(variant, className)}
       {...props}
     />

@@ -2,10 +2,12 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
 
-import { BUILT_IN_THEMES, DEFAULT_THEME, DEFAULT_THEME_ID } from './themes'
+import { BUILT_IN_THEMES, DEFAULT_THEME, DEFAULT_THEME_ID, SKINS } from './themes'
 import { COLOR_TOKENS, TOKEN_GROUPS } from './tokens'
 
-const sheet = readFileSync(fileURLToPath(new URL('../style.css', import.meta.url)), 'utf8')
+const read = (path: string): string =>
+  readFileSync(fileURLToPath(new URL(path, import.meta.url)), 'utf8')
+const sheet = read('../style.css')
 
 /* The `@theme` block is what paints the app when no theme is applied, so the default theme in
    TypeScript has to say the same thing. Reading the sheet rather than trusting a copy is the whole
@@ -44,6 +46,23 @@ describe('the built-in registry', () => {
 
     expect(Object.keys(fromSheet).sort()).toEqual(COLOR_TOKENS.map((token) => token.name).sort())
     expect(fromSheet).toEqual(DEFAULT_THEME.colors)
+  })
+})
+
+describe('skins', () => {
+  it('names only skins that exist', () => {
+    for (const theme of BUILT_IN_THEMES) {
+      if ('skin' in theme) expect(SKINS, theme.id).toContain(theme.skin)
+    }
+  })
+
+  // The boot script paints before the bundle loads, so it keeps its own copy of the list.
+  it('are all known to the boot script and drawn by a sheet', () => {
+    const boot = read('../../public/theme-boot.js')
+    for (const skin of SKINS) {
+      expect(boot, skin).toContain(`'${skin}'`)
+      expect(read(`./${skin}.css`), skin).toContain(`[data-skin='${skin}']`)
+    }
   })
 })
 
