@@ -518,11 +518,14 @@ function TrackList({
   source,
   removing = false,
   onRemove,
+  oneLine = false,
 }: {
   tracks: LibraryTrack[]
   source: string
   removing?: boolean
   onRemove?: (index: number) => void
+  /** Cut each title, artist and album to one line with an ellipsis instead of wrapping. */
+  oneLine?: boolean
 }) {
   const player = usePlayer()
   return (
@@ -551,11 +554,20 @@ function TrackList({
               }
             >
               <span className="text-small text-muted">{track.track ?? index + 1}</span>
-              <span className="grid gap-[3px]">
-                <strong>{track.title}</strong>
-                <small className="text-small text-muted">{track.artist}</small>
+              <span className="grid min-w-0 gap-[3px]">
+                <strong className={cx(oneLine && 'truncate')}>{track.title}</strong>
+                <small className={cx('text-small text-muted', oneLine && 'truncate')}>
+                  {track.artist}
+                </small>
               </span>
-              <small className="text-small text-muted max-phone:hidden">{track.album}</small>
+              <small
+                className={cx(
+                  'min-w-0 text-small text-muted max-phone:hidden',
+                  oneLine && 'truncate',
+                )}
+              >
+                {track.album}
+              </small>
               <time className="text-small text-muted max-phone:hidden">
                 {durationText(track.duration)}
               </time>
@@ -1821,6 +1833,8 @@ export function LibraryPage({
   )
 }
 
+const lyricLineClassName = 'py-[8px] text-section text-text'
+
 export function NowPlayingPage() {
   const player = usePlayer()
   const track = player.libraryTrack
@@ -1856,13 +1870,22 @@ export function NowPlayingPage() {
 
   const words = lyrics.data?.items[0]?.line ?? []
   return (
-    <div className="now-page">
-      <section className="now-hero">
+    <div className="grid gap-[30px]">
+      <section className="grid grid-cols-[minmax(180px,320px)_1fr] items-end gap-[34px] max-phone:grid-cols-1">
         <NowPlayingStage />
-        <div>
-          <p className="eyebrow">NOW PLAYING</p>
-          <h1>{track.title}</h1>
-          <p className="now-byline">
+        <div className="min-w-0">
+          <p className="mb-[12px] text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+            NOW PLAYING
+          </p>
+          {/* Three lines at the full hero size, then an ellipsis: a long title keeps its size
+              rather than shrinking, and the whole of it is still in the stage and the footer. */}
+          <h1
+            className="my-[8px] line-clamp-3 text-hero leading-[1.2] [overflow-wrap:anywhere]"
+            title={track.title}
+          >
+            {track.title}
+          </h1>
+          <p className="[&_a:hover]:underline">
             {track.artistId ? (
               <Link to="/library/artists/$artistId" params={{ artistId: track.artistId }}>
                 {track.artist}
@@ -1883,7 +1906,7 @@ export function NowPlayingPage() {
               </>
             )}
           </p>
-          <div className="button-row now-actions">
+          <div className="mt-[20px] flex flex-wrap items-center gap-[16px]">
             {capabilities.data?.sonic_similarity && (
               <Button
                 variant="primary"
@@ -1902,24 +1925,28 @@ export function NowPlayingPage() {
           {audioMuse.isError && <ErrorBanner>{audioMuse.error.message}</ErrorBanner>}
         </div>
       </section>
-      <div className="now-columns">
-        <Panel className="queue-panel">
-          <div className="section-heading">
-            <h2>Up next</h2>
-            <span>{player.queue.length} TRACKS</span>
+      <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)] gap-[18px] max-tablet:grid-cols-1">
+        <Panel className="min-w-0">
+          <div className="mb-[21px] flex items-center justify-between gap-[12px]">
+            <h2 className="text-[16px]">Up next</h2>
+            <span className="text-micro tracking-[1.2px] text-faint max-phone:text-caption">
+              {player.queue.length} TRACKS
+            </span>
           </div>
-          <TrackList tracks={player.queue} source={player.source} />
+          <TrackList tracks={player.queue} source={player.source} oneLine />
         </Panel>
-        <Panel className="lyrics-panel">
-          <div className="section-heading">
-            <h2>Lyrics</h2>
+        <Panel className="max-h-[500px] min-w-0 overflow-auto overscroll-contain">
+          <div className="mb-[21px] flex items-center justify-between gap-[12px]">
+            <h2 className="text-[16px]">Lyrics</h2>
           </div>
-          {lyrics.isLoading && <p>Loading lyrics…</p>}
+          {lyrics.isLoading && <p className={lyricLineClassName}>Loading lyrics…</p>}
           {!lyrics.isLoading && !words.length && (
-            <p className="muted">No lyrics found for this track.</p>
+            <p className={lyricLineClassName}>No lyrics found for this track.</p>
           )}
           {words.map((line, index) => (
-            <p key={`${line.value}-${index}`}>{line.value || '♪'}</p>
+            <p key={`${line.value}-${index}`} className={lyricLineClassName}>
+              {line.value || '♪'}
+            </p>
           ))}
         </Panel>
       </div>

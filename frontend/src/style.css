@@ -89,12 +89,11 @@
   --z-index-skip: 30; /* the skip link */
   --z-index-dock: 45; /* the floating queue pill */
 
-  /* Four named widths replace the six the sheet used. `phone` is 48rem so `max-phone:` cuts at
-     the same place as the `max-width: 767px` blocks below; `tablet` and `split` keep the narrow
-     sidebar and the stacked Now Playing columns where they are. */
+  /* Three named widths replace the six the sheet used. `phone` is 48rem so `max-phone:` cuts at
+     the same place as the `max-width: 767px` blocks below; `tablet` keeps the narrow sidebar and
+     stacks the Now Playing columns. */
   --breakpoint-*: initial;
   --breakpoint-phone: 48rem; /* 768px */
-  --breakpoint-split: 56.25rem; /* 900px */
   --breakpoint-tablet: 68.75rem; /* 1100px */
   --breakpoint-wide: 93.75rem; /* 1500px */
 }
@@ -411,57 +410,9 @@ meter::-webkit-meter-optimum-value {
   display: grid;
   gap: 5px;
 }
-.command-palette {
-  position: fixed;
-  top: 20vh;
-  margin: 0 auto;
-  width: min(560px, 92vw);
-  background: var(--color-raised);
-  color: var(--color-text);
-  padding: 18px;
-  border: 1px solid var(--line-hover);
-  border-radius: 14px;
-  box-shadow: 0 20px 90px color-mix(in oklab, var(--color-shadow) 60%, transparent);
-}
 .command-palette::backdrop {
   background: color-mix(in oklab, var(--color-scrim) 73%, transparent);
   backdrop-filter: blur(4px);
-}
-.command-palette form {
-  display: flex;
-  gap: 12px;
-  align-items: center;
-  padding-bottom: 18px;
-  border-bottom: 1px solid var(--color-line);
-}
-.command-palette input {
-  flex: 1;
-  min-width: 0;
-  background: transparent;
-  border: 0;
-  color: inherit;
-  padding: 8px;
-}
-.command-palette button {
-  background: transparent;
-  color: inherit;
-  border: 0;
-  padding: 10px;
-  text-align: left;
-  border-radius: 6px;
-}
-.command-palette > div {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  padding: 15px 0;
-}
-.command-palette button:hover,
-.command-palette button:focus-visible {
-  background: var(--color-active);
-}
-.command-palette small {
-  color: var(--color-muted);
 }
 @media (width < 68.75rem) {
   .preview-label {
@@ -519,11 +470,6 @@ meter::-webkit-meter-optimum-value {
     border-radius: 50%;
     background: var(--color-accent);
   }
-  .playlist-picker-sheet {
-    width: calc(100% - 16px);
-    max-height: calc(100dvh - 32px);
-    padding: 14px;
-  }
 }
 /* Inside the sheet the list shares the sheet's own scroll room rather than the page's. */
 .queue-sheet .virtual-list {
@@ -536,242 +482,13 @@ meter::-webkit-meter-optimum-value {
 .download-action option {
   background: var(--color-raised);
 }
-.now-page {
-  display: grid;
-  gap: 30px;
-}
-.now-hero {
-  display: grid;
-  grid-template-columns: minmax(180px, 320px) 1fr;
-  gap: 34px;
-  align-items: end;
-}
-.now-hero h1 {
-  margin: 8px 0;
-  font-size: clamp(36px, 6vw, 72px);
-}
-.now-hero .now-actions {
-  margin-top: 20px;
-}
-.now-art {
-  display: grid;
-  aspect-ratio: 1;
-  place-items: center;
-  overflow: hidden;
-  color: var(--color-faint);
-  background: var(--color-raised);
-  border-radius: 14px;
-  box-shadow: 0 20px 60px color-mix(in oklab, var(--color-shadow) 47%, transparent);
-}
-.now-art img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.now-art svg {
-  width: 30%;
-  height: 30%;
-}
-.now-byline a {
-  color: inherit;
-  text-decoration: none;
-}
-.now-byline a:hover {
-  text-decoration: underline;
-}
-.now-columns {
-  display: grid;
-  grid-template-columns: minmax(0, 1.6fr) minmax(260px, 1fr);
-  gap: 18px;
-}
-.queue-panel,
-.lyrics-panel {
-  min-width: 0;
-}
-.lyrics-panel {
-  max-height: 500px;
-  overflow: auto;
-  overscroll-behavior: contain;
-}
-.lyrics-panel > p {
-  padding: 8px 0;
-  color: var(--color-text);
-  font-size: 17px;
-}
-.playlist-picker-sheet {
-  position: fixed;
-  inset: 0;
-  margin: auto;
-  width: min(520px, calc(100% - 32px));
-  height: fit-content;
-  max-height: 78dvh;
-  overflow: auto;
-  overscroll-behavior: contain;
-  border: 1px solid var(--color-line-strong);
-  border-radius: 16px;
-  padding: 18px;
-  background: var(--color-raised);
-  color: var(--color-text);
-}
 .playlist-picker-sheet::backdrop {
   background: color-mix(in oklab, var(--color-scrim) 53%, transparent);
 }
-.playlist-picker-sheet header {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  margin-bottom: 12px;
-}
-.playlist-picker-sheet header h2 {
-  flex: 1;
-}
-.playlist-picker-search {
-  display: flex;
-  padding: 0 11px;
-  color: var(--color-muted);
-  background: var(--color-sunken);
-  border: 1px solid var(--color-line);
-  border-radius: 8px;
-}
-.playlist-picker-search input {
-  width: 100%;
-  padding: 10px 2px;
-  background: transparent;
-  border: 0;
-  color: inherit;
-}
-.playlist-picker-list {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 8px;
-  margin-top: 8px;
-  margin-bottom: 10px;
-}
-.playlist-picker-row {
-  border: 1px solid var(--color-line);
-  background: var(--color-raised);
-  border-radius: 8px;
-  padding: 8px 10px;
-}
-.playlist-picker-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  justify-content: space-between;
-}
-/* Blocks, not grids: text-overflow only cuts text that sits directly in a block box. */
-.playlist-picker-head > span {
-  display: block;
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.playlist-picker-head small {
-  display: block;
-  margin-top: 2px;
-  color: var(--color-muted);
-  font-size: 11px;
-}
-.playlist-picker-expand svg {
-  transition: transform 140ms ease;
-}
-.playlist-picker-expand.open svg {
-  transform: rotate(180deg);
-}
-.playlist-picker-songs {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 4px;
-  max-height: 190px;
-  margin-top: 8px;
-  padding-top: 8px;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  border-top: 1px solid var(--color-line);
-}
-.playlist-picker-songs > div {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  justify-content: space-between;
-  padding: 4px 2px;
-  font-size: 12px;
-}
-.playlist-picker-songs > div > span {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.playlist-picker-songs small {
-  display: block;
-  margin-top: 5px;
-  color: var(--color-muted);
-  font-size: 11px;
-}
-.playlist-picker-empty {
-  margin: 6px 0 2px;
-  color: var(--color-muted);
-}
-.playlist-picker-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  align-items: end;
-}
-.playlist-picker-form label {
-  display: grid;
-  gap: 6px;
-  color: var(--color-muted);
-  font-size: 12px;
-  min-width: min(260px, 100%);
-}
-.playlist-picker-form input {
-  min-height: 39px;
-  padding: 0 10px;
-  color: inherit;
-  background: var(--color-canvas);
-  border: 1px solid var(--color-line);
-  border-radius: 6px;
-}
-@media (width < 56.25rem) {
-  .now-columns {
-    grid-template-columns: 1fr;
-  }
-}
-@media (max-width: 700px) {
-  .now-hero {
-    grid-template-columns: 1fr;
-  }
-  .now-art,
-  .stage-slot {
-    width: min(320px, 100%);
-    margin-inline: auto;
-  }
-}
 
-/* Now Playing stage: the artwork, full screen and the popout share it. */
-.stage-slot {
-  display: grid;
-  gap: 10px;
-  min-width: 0;
-}
-.stage {
-  position: relative;
-  aspect-ratio: 1;
-  overflow: hidden;
-  border-radius: 14px;
-  background: var(--color-media);
-  box-shadow: 0 20px 60px color-mix(in oklab, var(--color-shadow) 47%, transparent);
-  outline: none;
-}
-.stage:focus-visible {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 2px;
-}
+/* Leftovers by design (docs/tailwind-migration.md, "What stays handwritten CSS"): the Now Playing
+   stage filling the screen or the popout window. The stage's own box is utilities in
+   now-playing-popout.tsx; these rules sit outside every layer, so they win over it when they apply. */
 .stage:fullscreen {
   width: 100vw;
   height: 100vh;
@@ -779,191 +496,6 @@ meter::-webkit-meter-optimum-value {
   aspect-ratio: auto;
   border-radius: 0;
   box-shadow: none;
-}
-.stage.idle {
-  cursor: none;
-}
-.stage-backdrop {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  color: var(--color-faint);
-}
-.stage-backdrop img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0.35;
-  filter: blur(6px) saturate(0.8);
-  transform: scale(1.05);
-}
-.stage-art {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-.stage-select {
-  height: 32px;
-  padding: 0 8px;
-  border: 1px solid color-mix(in oklab, var(--color-on-media) 20%, transparent);
-  border-radius: 8px;
-  background: color-mix(in oklab, var(--color-scrim) 60%, transparent);
-  color: var(--color-on-media);
-  font: inherit;
-  font-size: 12px;
-}
-.stage-overlay {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  pointer-events: none;
-  opacity: 1;
-  transition: opacity 0.25s;
-}
-.stage.idle .stage-overlay {
-  opacity: 0;
-}
-.stage-top,
-.stage-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  pointer-events: auto;
-}
-.stage.idle .stage-top,
-.stage.idle .stage-controls {
-  pointer-events: none;
-}
-.stage-top {
-  justify-content: space-between;
-  padding: 14px 16px 24px;
-  background: linear-gradient(
-    color-mix(in oklab, var(--color-scrim) 67%, transparent),
-    transparent
-  );
-}
-.stage-status {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 10px;
-  letter-spacing: 1.5px;
-  text-transform: uppercase;
-  color: color-mix(in oklab, var(--color-on-media) 65%, transparent);
-  text-shadow: 0 1px 6px var(--color-shadow);
-}
-.stage-actions {
-  display: flex;
-  gap: 4px;
-}
-.stage-controls {
-  flex-wrap: wrap;
-  padding: 28px 16px 14px;
-  background: linear-gradient(
-    transparent,
-    color-mix(in oklab, var(--color-scrim) 80%, transparent)
-  );
-  color: var(--color-on-media);
-}
-.stage-controls [data-ui='icon-button'],
-.stage-actions [data-ui='icon-button'] {
-  min-width: 32px;
-  min-height: 36px;
-  color: var(--color-on-media);
-}
-.stage-controls [data-ui='icon-button'][aria-pressed='true'] {
-  color: var(--color-accent);
-}
-.stage-controls [data-ui='icon-button'] small {
-  margin-left: -4px;
-  font-size: 9px;
-}
-.stage-track {
-  display: flex;
-  flex: 1 1 160px;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.stage-track img {
-  flex-shrink: 0;
-  width: 40px;
-  height: 40px;
-  border-radius: 6px;
-  object-fit: cover;
-}
-.stage-track > span {
-  display: grid;
-  min-width: 0;
-}
-.stage-track strong,
-.stage-track small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.stage-track strong {
-  font-size: 13px;
-}
-.stage-track small {
-  font-size: 11px;
-  color: var(--color-muted);
-}
-.stage-transport {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.stage-seek {
-  display: flex;
-  flex: 3 1 220px;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-.stage-seek input {
-  flex: 1;
-  min-width: 0;
-}
-.stage-volume {
-  display: flex;
-  align-items: center;
-  gap: 2px;
-}
-.stage-volume input {
-  width: 80px;
-}
-.stage-popped {
-  display: grid;
-  place-items: center;
-}
-.stage-popped-art {
-  position: absolute;
-  inset: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  opacity: 0.25;
-  filter: blur(6px);
-}
-.stage-popped-notice {
-  position: relative;
-  display: grid;
-  gap: 12px;
-  justify-items: center;
-  color: var(--color-muted);
-}
-.stage-notice {
-  font-size: 12px;
 }
 .popout-body {
   margin: 0;
@@ -982,27 +514,10 @@ meter::-webkit-meter-optimum-value {
   border-radius: 0;
   box-shadow: none;
 }
-@media (max-width: 700px) {
-  .stage-controls {
-    gap: 4px;
-  }
-  .stage-seek {
-    flex-basis: 100%;
-    order: 1;
-  }
-  .stage-volume input {
-    display: none;
-  }
-}
 
 /* Touch screens: 44px targets, and text controls at 16px so iOS Safari does not zoom the page
    when one gains focus. Last in the file so it outranks the size each control sets for itself. */
 @media (pointer: coarse) {
-  .stage-controls [data-ui='icon-button'],
-  .stage-actions [data-ui='icon-button'] {
-    min-width: 44px;
-    min-height: 44px;
-  }
   .round-play {
     width: 44px;
     height: 44px;
@@ -1012,8 +527,7 @@ meter::-webkit-meter-optimum-value {
   }
   input:not([type='checkbox']):not([type='radio']):not([type='range']),
   select,
-  textarea,
-  .playlist-picker-form input {
+  textarea {
     min-height: 44px;
     font-size: 16px;
   }

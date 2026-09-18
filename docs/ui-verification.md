@@ -56,9 +56,8 @@ Still open after the walk:
 - A path outside the allow-listed screens (for example `/nope`) gets the backend's JSON 404, so the app's own "Page not found" screen only appears under `/library`. The backend tests assert that 404, so it was left alone.
 - Search sections still offer "View all" when they have no results.
 - A library request failure retries for several seconds before the inline error appears, and the loading line sits above the "Fresh in your library" heading rather than under it.
-- Long titles in the Now Playing "Up next" list wrap across several lines on desktop.
 
-Closed with its Tailwind phase: Settings no longer renders its section headings or the "Settings are up to date" bar before settings have loaded or when they fail to load; `e2e/app.spec.ts` covers a delayed and a failed `/api/settings` response.
+Closed with its Tailwind phase: Settings no longer renders its section headings or the "Settings are up to date" bar before settings have loaded or when they fail to load; `e2e/app.spec.ts` covers a delayed and a failed `/api/settings` response. Now Playing's "Up next" list cuts a long title, artist or album to one line with an ellipsis, the way the playlist picker rows already did, and the hero heading stops a very long title after three lines at its full size.
 
 ## Phone walk, 11 September 2026
 
@@ -79,7 +78,7 @@ Fixed in that pass, each with a check in `e2e/phone.spec.ts` or the spec for its
 - The page declares `viewport-fit=cover`, and the bottom bar, footer, sheets and top bar pad by the safe-area insets so a phone installed to the home screen keeps its controls clear of the home indicator and notch.
 - Inner scrollers (track lists, the lyrics panel, filter menus, sheets and popovers) contain overscroll so a flick does not carry into the page, and the virtual track and job lists size themselves from the room left under the top bar and above the player and bottom bar.
 
-Looked at and left as they are: inline text links (track titles, artist links, the destination path) stay text-sized, as WCAG allows for links in running text; the playlist picker stays a centred modal because a bottom-anchored sheet with a text field at its foot sits under the on-screen keyboard; the Now Playing hero heading still wraps a very long title across several lines.
+Looked at and left as they are: inline text links (track titles, artist links, the destination path) stay text-sized, as WCAG allows for links in running text; the playlist picker stays a centred modal because a bottom-anchored sheet with a text field at its foot sits under the on-screen keyboard.
 
 Not verified on a device: the safe-area insets and the 16px zoom rule were reasoned from platform behaviour and checked only for their CSS effect in Chromium emulation, which reports no insets. A real notched iPhone in standalone mode and an Android phone with the keyboard open still need a look.
 
