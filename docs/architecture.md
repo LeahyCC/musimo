@@ -24,7 +24,7 @@ Shared controls live in `frontend/src/ui/` (`Button`, `IconButton`, `TextLink`, 
 
 Tailwind puts utilities in a cascade layer, and a rule outside every layer beats any layered rule whatever its specificity. The sheet's resets for bare elements therefore sit in `@layer base`, where a utility can override them. The class rules for screens that have not converted yet stay unlayered, so a contextual rule such as `.stage-controls [data-ui='icon-button']` still wins over the primitive until its screen converts and the rule is deleted. Handwritten width queries use the same edges as the variants (`width < 48rem`, `< 56.25rem`, `< 68.75rem`, `>= 93.75rem`), so the `:root` layout variables and the utilities always switch together.
 
-The shell, the footer player, the settings save bar and the queue dock are utilities. The other screens are still painted by semantic classes in that sheet until their phase converts them. [The styling plan](tailwind-migration.md) has the token table, the theme model, the desktop and phone layout contract, what stays handwritten CSS and the order the screens convert in.
+The shell, the footer player, the settings save bar, the queue dock, the Downloads screen and Recent activity are utilities. The other screens are still painted by semantic classes in that sheet until their phase converts them. [The styling plan](tailwind-migration.md) has the token table, the theme model, the desktop and phone layout contract, what stays handwritten CSS and the order the screens convert in.
 
 ## Storage
 

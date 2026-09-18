@@ -6,7 +6,7 @@ import { z } from 'zod'
 import { api, jobSchema } from './api'
 import type { MusicResult } from './api'
 import { activeJob, updateJob, useJobs } from './downloads'
-import { Button, IconButton } from './ui'
+import { Button, errorBannerClassName, IconButton } from './ui'
 
 const batchSchema = z.object({
   id: z.string(),
@@ -110,7 +110,7 @@ export function AlbumDownloadButton({
       )}
 
       {download.isError && (
-        <span className="download-error" role="alert">
+        <span className={errorBannerClassName('block', 'download-error')} role="alert">
           {download.error.message}
           <button
             type="button"

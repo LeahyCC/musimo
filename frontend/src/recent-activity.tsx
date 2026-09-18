@@ -40,7 +40,7 @@ export function RecentActivity() {
   return (
     <section className="mt-8" aria-labelledby="activity-heading">
       <div className="mb-[21px] flex items-center justify-between gap-3">
-        <h2 id="activity-heading" className="text-[16px]">
+        <h2 id="activity-heading" className="text-strong">
           Recent activity
         </h2>
         <Button
@@ -77,7 +77,7 @@ export function RecentActivity() {
                 {activity.data.events.map((event) => (
                   <li
                     key={event.id}
-                    className="flex items-center gap-3 border-t border-line py-[13px] text-small max-[420px]:gap-2"
+                    className="flex items-center gap-3 border-t border-line py-[13px] text-small max-phone:gap-2"
                   >
                     <span className="h-[5px] w-[5px] rounded-full bg-muted" />
                     <span>{labels[event.kind] ?? event.kind.replaceAll('.', ' ')}</span>
