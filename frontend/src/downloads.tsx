@@ -210,6 +210,7 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
   const selected = format ?? settings.data?.output_format.value ?? 'original'
   const existing = queue.data?.jobs.find(
     (job) =>
+      job.catalog === 'deezer' &&
       job.track_id === item.id &&
       job.format === selected &&
       job.target === (target || settings.data?.destination.value) &&
@@ -219,6 +220,7 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
     ? undefined
     : queue.data?.jobs.find(
         (job) =>
+          job.catalog === 'deezer' &&
           job.track_id === item.id &&
           job.format === selected &&
           job.target === (target || settings.data?.destination.value) &&

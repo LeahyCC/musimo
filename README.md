@@ -42,6 +42,7 @@ Musimo keeps discovery close to the library you already own. React provides the 
 Search and library features:
 
 - Deezer catalog search with Top, Tracks, Albums and Artists views.
+- Podcast search and episode downloads from Apple's podcast directory, saved under `Podcasts/<show>`.
 - Typeahead, independent result sections, pagination, filters and sorting.
 - Search state in the URL, so refresh and browser Back preserve the query.
 - Album pages and artist discographies grouped by catalog release type.

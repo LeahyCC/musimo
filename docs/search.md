@@ -18,6 +18,15 @@ Preview buttons read Pause while that clip plays. A track row's badge shows dist
 
 The whole album or artist card is a native link. Artist links, preview, coverage retry and download controls remain separate targets. Card downloads sit over the top-right of the art, appear on hover or keyboard focus, and stay visible on touch screens. Card grids grow with the page instead of using a fixed-height inner scroller; only TrackList virtualizes. Album card icons submit missing-only batches using saved settings, show the destination and format before queueing, and show queue feedback without navigation. Album pages display the destination and format and have one download button using the selected format: Download album when no tracks are owned, Download missing (x) for a partial album, or a disabled Download album when verified coverage shows the entire album is in the library. Track rows reuse the shared download action, which is disabled for songs already in the library. For catalog preview tracks, song links open `/albums/{album_id}?track={track_id}`; library tracks link to `/now-playing` and `/library`. URL imports remain unavailable. Original, M4A and Opus estimates assume 160 kbps; MP3 assumes 320 kbps. These are estimates, not promises about source quality.
 
+## Podcasts
+
+The Podcasts tab searches Apple's public podcast directory, not Deezer. It is not part of Top, so typing does not spend the directory's small request budget (about 20 calls a minute, shared with the iTunes preview fallback). Music filters and sort are hidden on this tab. Search results are cached for ten minutes and episode lists for an hour, in memory only.
+
+A show page at `/podcasts/{id}` lists the latest 200 audio episodes Apple returns, newest first, with date, length and a short description. Video episodes and entries without a web file are left out. A title filter narrows the list in the browser. Each episode has one download button and a badge for its job state: queued or another stage, Downloaded, or Download failed with Retry.
+
+- `GET /api/podcasts?q=...`: up to 50 shows.
+- `GET /api/podcasts/{id}`: the show and its episodes.
+
 ## Index behaviour
 
 The scanner reads Mutagen tags on a background thread and stores path, modification time, size, normalized identity, duration, ISRC and MusicBrainz recording ID. Unchanged files keep their tags without reopening audio. SQLite indexes serve ownership lookups; FTS5 stores searchable tag text for later local-library browsing. The app preserves every matching file path.

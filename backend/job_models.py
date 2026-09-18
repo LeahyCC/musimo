@@ -75,8 +75,10 @@ class Job(BaseModel):
     batch_id: str = ""
     batch_label: str = ""
     album_id: int = 0
-    catalog: str = "deezer"
+    catalog: Literal["deezer", "podcast"] = "deezer"
     track_id: int
+    # Podcast episodes download this publisher file directly instead of matching on YouTube.
+    source_url: str = ""
     format: Format = "original"
     bitrate: int = 0
     target: str
@@ -130,4 +132,11 @@ class BatchRequest(BaseModel):
     album_id: int = Field(gt=0)
     missing_only: bool = True
     format: Format | None = None
+    target: str | None = None
+
+
+class EpisodeRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    podcast_id: int = Field(gt=0)
+    episode_id: int = Field(gt=0)
     target: str | None = None

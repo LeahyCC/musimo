@@ -23,6 +23,7 @@ from backend.library import Library
 from backend.models import Settings
 from backend.naming import Naming
 from backend.navidrome import Navidrome, NavidromeError
+from backend.podcasts import Podcasts
 from backend.store import Store
 
 
@@ -73,6 +74,7 @@ class Downloads:
         self.wake = asyncio.Event()
         self.jobs = Jobs(store, self.notify)
         self.enrichment = Enrichment(catalog)
+        self.podcasts = Podcasts(catalog)
         self.running: dict[str, asyncio.Task[None]] = {}
         self.processes: dict[str, asyncio.subprocess.Process] = {}
         self.stopping = False
@@ -188,9 +190,12 @@ class Downloads:
             self.wake.clear()
             control = self.controls()
             delay = 60.0
-            if not control["paused"] and not control["source_paused"]:
+            if not control["paused"]:
                 slots = self.settings().concurrency - len(self.running)
                 for job in reversed(self.jobs.list(active=True)):
+                    # A YouTube block does not stop podcast episodes, which come from their feed.
+                    if control["source_paused"] and job.catalog != "podcast":
+                        continue
                     if job.stage == "retry_wait" and job.retry_at > time.time():
                         delay = min(delay, max(0.01, job.retry_at - time.time()))
                     if slots <= 0:
@@ -346,7 +351,8 @@ class Downloads:
         failure: DownloadError | None = None
         tail: list[str] = []
         assert process.stdout
-        async with asyncio.timeout(600):
+        # Episodes can run for hours and are one large file, so they get longer than a song.
+        async with asyncio.timeout(3600 if job.catalog == "podcast" else 600):
             while line := await process.stdout.readline():
                 try:
                     raw: object = json.loads(line)
@@ -444,7 +450,11 @@ class Downloads:
         folder = self.folder(job)
         if ready:
             self.jobs.update(job.id, stage="moving", progress=1, speed=0, eta=None)
-            filename = Naming().path(self.settings().naming_template, job.meta, ready.suffix[1:])
+            filename = (
+                Naming().podcast_path(job.meta, ready.suffix[1:])
+                if job.catalog == "podcast"
+                else Naming().path(self.settings().naming_template, job.meta, ready.suffix[1:])
+            )
             target = root / filename
             if not target.resolve().is_relative_to(root):
                 raise DownloadError("MOVE_FAILED", "Output path escaped the library root")
@@ -522,7 +532,7 @@ class Downloads:
                 error_fix="",
                 retry_at=0,
             )
-            if not job.meta.artist:
+            if job.catalog == "deezer" and not job.meta.artist:
                 async with asyncio.timeout(15):
                     meta = await self.enrichment.track(job.track_id)
                     warnings = await self.enrichment.extra(meta)
@@ -530,11 +540,12 @@ class Downloads:
             await self.artwork(job, folder)
             ready, info = await self.worker(self.jobs.get(job_id), folder)
             await self.finish(self.jobs.get(job_id), ready, info)
-            self.store.record_probe(
-                "healthy", 0, "Last YouTube download completed", source="youtube"
-            )
-            with self.store.lock:
-                self.store.db.execute("UPDATE queue_control SET blocking_failures=0 WHERE id=1")
+            if job.catalog == "deezer":
+                self.store.record_probe(
+                    "healthy", 0, "Last YouTube download completed", source="youtube"
+                )
+                with self.store.lock:
+                    self.store.db.execute("UPDATE queue_control SET blocking_failures=0 WHERE id=1")
         except asyncio.CancelledError:
             await self.stop_process(job_id)
             job = self.jobs.get(job_id)
