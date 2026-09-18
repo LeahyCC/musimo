@@ -157,6 +157,17 @@ const ROUTES: Walk[] = [
     ready: (page) => page.getByText('Morning Signal').first(),
   },
   {
+    name: 'search-podcasts',
+    path: '/search?q=Fixture&tab=podcast',
+    ready: (page) => page.getByRole('link', { name: 'Tide Tables' }),
+  },
+  {
+    name: 'podcast',
+    cardless: true,
+    path: '/podcasts/77',
+    ready: (page) => page.getByRole('heading', { name: 'Tide Tables', level: 1 }),
+  },
+  {
     name: 'album',
     cardless: true,
     path: '/albums/42',

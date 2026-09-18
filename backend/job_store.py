@@ -5,6 +5,7 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
+from typing import Literal
 
 from backend.job_models import RUNNING, TERMINAL, Format, Job, Metadata
 from backend.store import Store
@@ -85,26 +86,30 @@ class Jobs:
         *,
         album_id: int = 0,
         replace_match: bool = False,
+        catalog: Literal["deezer", "podcast"] = "deezer",
+        prepared: dict[int, tuple[Metadata, str]] | None = None,
     ) -> builtins.list[Job]:
+        """Queue tracks, reusing active or completed jobs. `prepared` supplies podcast metadata
+        and the episode file, which have no catalog lookup later."""
         jobs: builtins.list[Job] = []
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
                 for track_id in tracks:
                     row = self.store.db.execute(
-                        "SELECT payload FROM jobs WHERE catalog='deezer' AND track_id=? "
+                        "SELECT payload FROM jobs WHERE catalog=? AND track_id=? "
                         "AND format=? AND bitrate=0 AND target=? AND active=1",
-                        (track_id, format, target),
+                        (catalog, track_id, format, target),
                     ).fetchone()
                     if row:
                         jobs.append(Job.model_validate_json(row[0]))
                         continue
                     if not replace_match:
                         saved = self.store.db.execute(
-                            "SELECT payload FROM jobs WHERE catalog='deezer' AND track_id=? "
+                            "SELECT payload FROM jobs WHERE catalog=? AND track_id=? "
                             "AND format=? AND bitrate=0 AND target=? AND active=0 "
                             "AND json_extract(payload,'$.stage')='done' ORDER BY created_at DESC",
-                            (track_id, format, target),
+                            (catalog, track_id, format, target),
                         ).fetchall()
                         complete = next(
                             (
@@ -118,16 +123,19 @@ class Jobs:
                         if complete:
                             jobs.append(complete)
                             continue
+                    meta, source_url = (prepared or {}).get(track_id, (Metadata(id=track_id), ""))
                     now = time.time()
                     job = Job(
                         id=uuid.uuid4().hex,
                         batch_id=batch_id,
                         batch_label=batch_label,
                         album_id=album_id,
+                        catalog=catalog,
                         track_id=track_id,
+                        source_url=source_url,
                         format=format,
                         target=target,
-                        meta=Metadata(id=track_id),
+                        meta=meta,
                         created_at=now,
                         updated_at=now,
                     )

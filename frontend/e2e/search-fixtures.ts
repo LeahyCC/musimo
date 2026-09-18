@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test'
 
-import type { MusicResult } from '../src/api'
+import type { Episode, MusicResult, Podcast } from '../src/api'
 
 /** An invented catalog record, missing from the library unless `over` says otherwise. */
 export const musicResult = (id: number, over: Partial<MusicResult> = {}): MusicResult => ({
@@ -47,6 +47,36 @@ const tracks = [
 ]
 const artist = musicResult(7, { kind: 'artist', title: 'Fixture artist', record_type: '' })
 
+export const podcast: Podcast = {
+  id: 77,
+  title: 'Tide Tables',
+  author: 'Harbor Radio',
+  art: '',
+  genre: 'History',
+  episode_count: 2,
+  explicit: false,
+}
+export const episodes: Episode[] = [
+  {
+    id: 7701,
+    podcast_id: 77,
+    title: 'The Long Ebb',
+    date: '2026-07-31',
+    duration: 14_460,
+    art: '',
+    description: 'Four hours on the slowest tide.',
+  },
+  {
+    id: 7702,
+    podcast_id: 77,
+    title: 'Slack Water',
+    date: '2026-07-24',
+    duration: 1_800,
+    art: '',
+    description: '',
+  },
+]
+
 /**
  * Catalog search, album and artist pages from invented records, so a spec can open every
  * Discover screen without a provider. Register it after the origin guard in `playerFixtures`:
@@ -69,6 +99,9 @@ export async function searchFixtures(page: Page): Promise<void> {
   })
 
   await page.route('**/api/album-years?*', (route) => route.fulfill({ json: {} }))
+
+  await page.route('**/api/podcasts?*', (route) => route.fulfill({ json: [podcast] }))
+  await page.route('**/api/podcasts/77', (route) => route.fulfill({ json: { podcast, episodes } }))
 
   await page.route('**/api/albums/*', (route) => {
     const id = Number(new URL(route.request().url()).pathname.split('/').at(-1))

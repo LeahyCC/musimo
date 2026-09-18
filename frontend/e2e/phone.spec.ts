@@ -41,6 +41,7 @@ const activeJob: DownloadJob = {
   batch_id: '',
   batch_label: '',
   album_id: 42,
+  catalog: 'deezer',
   track_id: 101,
   format: 'original',
   target: '/music',

@@ -7,6 +7,7 @@ export const jobSchema = z.object({
   batch_id: z.string().default(''),
   batch_label: z.string().default(''),
   album_id: z.number().default(0),
+  catalog: z.enum(['deezer', 'podcast']).default('deezer'),
   track_id: z.number(),
   format: z.enum(['original', 'm4a', 'opus', 'mp3']),
   target: z.string(),
@@ -126,6 +127,31 @@ export const artistSchema = z.object({
 export const artistTopSchema = z.object({ tracks: z.array(resultSchema) })
 export const yearsSchema = z.record(z.string(), z.number().nullable())
 export const previewSchema = z.object({ url: z.string().nullable(), source: z.string().nullable() })
+export const podcastSchema = z.object({
+  id: z.number(),
+  title: z.string(),
+  author: z.string(),
+  art: z.string(),
+  genre: z.string(),
+  episode_count: z.number(),
+  explicit: z.boolean(),
+})
+export type Podcast = z.infer<typeof podcastSchema>
+export const podcastsSchema = z.array(podcastSchema)
+export const episodeSchema = z.object({
+  id: z.number(),
+  podcast_id: z.number(),
+  title: z.string(),
+  date: z.string(),
+  duration: z.number(),
+  art: z.string(),
+  description: z.string(),
+})
+export type Episode = z.infer<typeof episodeSchema>
+export const podcastDetailSchema = z.object({
+  podcast: podcastSchema,
+  episodes: z.array(episodeSchema),
+})
 export const librarySchema = z.object({
   status: z.string(),
   walked: z.number(),

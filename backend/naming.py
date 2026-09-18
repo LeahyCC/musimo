@@ -46,6 +46,11 @@ class Naming:
             raise ValueError("Use one to five named path components")
         return template
 
+    def podcast_path(self, meta: Metadata, extension: str) -> str:
+        # Episodes keep a fixed layout; the music template's track and disc fields mean nothing.
+        name = f"{meta.date} - {meta.title}" if meta.date else meta.title
+        return f"Podcasts/{clean_component(meta.album)}/{clean_component(name)}.{extension}"
+
     def path(self, template: str, meta: Metadata, extension: str) -> str:
         self.validate(template)
         values: dict[str, str | int] = {

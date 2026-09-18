@@ -37,6 +37,7 @@ def main() -> None:
     version = importlib.metadata.version("yt-dlp")
     last = 0.0
     stage = "matching"
+    podcast = job.catalog == "podcast"
 
     class Logger:
         def debug(self, message: str) -> None:
@@ -79,7 +80,8 @@ def main() -> None:
         "extractor_args": {"youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]}},
         "progress_hooks": [progress],
         "outtmpl": str(folder / "source.%(ext)s"),
-        "format": "bestaudio",
+        # A podcast feed file is a single format that may not be labelled audio-only.
+        "format": "bestaudio/best" if podcast else "bestaudio",
         "continuedl": True,
         "overwrites": False,
         "nopart": False,
@@ -103,7 +105,7 @@ def main() -> None:
                     source = possible
         if source is None:
             selected = job.selected
-            if not selected:
+            if not selected and not podcast:
                 emit("stage", stage="matching")
                 search_options = options | {"extract_flat": True, "skip_download": True}
                 searcher = cast(Downloader, yt_dlp.YoutubeDL(search_options))
@@ -163,21 +165,27 @@ def main() -> None:
                 )
             emit("stage", stage="downloading")
             stage = "downloading"
-            raw = downloader.extract_info("https://www.youtube.com/watch?v=" + selected)
+            raw = downloader.extract_info(
+                job.source_url if podcast else "https://www.youtube.com/watch?v=" + selected
+            )
             if not isinstance(raw, dict):
                 raise ValueError("Download returned no media")
             sources = [
                 p
                 for p in folder.glob("source.*")
-                if p.suffix in {".webm", ".m4a", ".opus", ".mp3", ".ogg", ".flac"} and p.is_file()
+                if p.suffix in {".webm", ".m4a", ".opus", ".mp3", ".ogg", ".flac", ".aac", ".mp4"}
+                and p.is_file()
             ]
             if len(sources) != 1:
                 raise ValueError("Download did not produce one complete audio file")
             source = sources[0]
             audio_info = probe(source)
             duration = float(str(audio_info["duration"]))
-            if job.meta.duration and abs(duration - job.meta.duration) > max(
-                15, job.meta.duration * 0.12
+            # Feed durations are often rough and ads are stitched in, so episodes skip this check.
+            if (
+                not podcast
+                and job.meta.duration
+                and abs(duration - job.meta.duration) > max(15, job.meta.duration * 0.12)
             ):
                 hint, fix = error_guidance("DURATION_MISMATCH")
                 emit(
@@ -225,6 +233,15 @@ def main() -> None:
             if "timed out" in lower
             else "DOWNLOAD_FAILED"
         )
+        if podcast and code in {
+            "SOURCE_BLOCKED",
+            "RATE_LIMITED",
+            "POT_MISSING",
+            "JS_RUNTIME_MISSING",
+            "COOKIES_EXPIRED",
+        }:
+            # These point at YouTube and would pause its queue; an episode host is not YouTube.
+            code = "DOWNLOAD_FAILED"
         if code == "DOWNLOAD_FAILED" and stage in {"converting", "tagging"}:
             code = "TRANSCODE_FAILED" if stage == "converting" else "TAG_FAILED"
         hint, fix = error_guidance(code)

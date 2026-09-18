@@ -12,6 +12,12 @@ The default is Original. AAC stays M4A and Opus is remuxed into an Opus containe
 
 A lower-confidence recording gets a "check match" flag. Its top three candidates link to YouTube for listening. If automatic matching rejects every candidate, the job now keeps up to three duration-valid rejected candidates for review instead of discarding them. Nothing downloads until the user selects one. Pause before choosing another match. A correction after completion writes a new file and keeps the previous file. Copy path is available; opening a folder on a remote Docker host is not implemented.
 
+## Podcast episodes
+
+An episode downloads the publisher's own file, so there is no YouTube search, match review or duration check (feed lengths are rough and stitched-in ads change them). `POST /api/podcast-episodes` takes the show and episode IDs; the server looks the episode up again and never takes a file address from the browser. Jobs are stored with `catalog` set to `podcast` and the file address in `source_url`, so episode numbers never collide with Deezer track numbers.
+
+Episodes keep the format the show publishes (usually MP3 or AAC) and land at `Podcasts/<show>/<YYYY-MM-DD> - <title>.<ext>` in the chosen folder, ignoring the music naming template. Tags use the host as artist, the show as album, the release date and the genre Podcast, with the show's artwork. The files are indexed like music, so Navidrome shows each show as an album. A worker gets an hour per episode instead of ten minutes. Host errors are reported as `DOWNLOAD_FAILED` and never count toward the YouTube block that pauses the queue; a YouTube pause does not hold back episodes.
+
 ## Storage and safety
 
 Select a writable configured music root in Settings. Staging lives at `<root>/.musimo/<job id>` on the destination filesystem. Only a probed, tagged audio file is published. Existing audio, artwork and lyric sidecars are never overwritten.
