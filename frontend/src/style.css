@@ -280,9 +280,6 @@ main {
 .muted {
   color: var(--color-muted);
 }
-.small {
-  font-size: 12px;
-}
 meter {
   display: block;
   width: 100%;

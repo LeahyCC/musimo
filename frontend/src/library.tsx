@@ -48,6 +48,7 @@ import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from 
 import { cx } from './cx'
 import { InfiniteScroll } from './infinite-scroll'
 import { NowPlayingStage } from './now-playing-popout'
+import { PageTitle } from './page-title'
 import {
   durationText,
   remember,
@@ -173,7 +174,6 @@ const collectionArtClass =
 const collectionOpenClass =
   'grid min-w-0 gap-[4px] border-0 bg-none px-0 py-[8px] text-left text-inherit'
 const collectionActionsClass = 'flex items-center gap-[4px] max-phone:gap-0'
-const collectionIconButtonClassName = 'h-[36px] w-[36px]'
 
 function LayoutToggle({
   layout,
@@ -306,7 +306,7 @@ function CollectionPlayButton({
   )
   if (variant === 'icon')
     return (
-      <IconButton aria-label={label} disabled={disabled} onClick={onClick}>
+      <IconButton size="box" aria-label={label} disabled={disabled} onClick={onClick}>
         {content}
       </IconButton>
     )
@@ -325,10 +325,10 @@ function CollectionPlayButton({
   return (
     <button
       className={cx(
-        'library-card-play absolute right-[10px] bottom-[10px] grid h-[38px] w-[38px] translate-y-[5px] place-items-center rounded-pill border-0 bg-accent text-accent-ink opacity-0 transition-[opacity,transform] duration-[140ms] ease-in-out',
+        'library-card-play absolute right-[10px] bottom-[10px] grid h-[38px] w-[38px] place-items-center rounded-pill border-0 bg-accent text-accent-ink transition-[opacity,transform] duration-[140ms] ease-in-out',
         'group-hover:translate-y-0 group-hover:opacity-100 group-focus-within:translate-y-0 group-focus-within:opacity-100',
         'no-hover:translate-y-0 no-hover:opacity-100 coarse:h-11 coarse:w-11',
-        playback.active && 'translate-y-0 opacity-100',
+        playback.active ? 'translate-y-0 opacity-100' : 'translate-y-[5px] opacity-0',
       )}
       aria-label={label}
       disabled={disabled}
@@ -370,10 +370,8 @@ function AlbumItem({
           )}
         </span>
         <button className={collectionOpenClass} onClick={onOpen}>
-          <strong className="overflow-hidden text-ellipsis whitespace-nowrap">{album.name}</strong>
-          <small className="overflow-hidden text-ellipsis whitespace-nowrap text-muted">
-            {albumMeta(album)}
-          </small>
+          <strong className="truncate">{album.name}</strong>
+          <small className="truncate text-muted">{albumMeta(album)}</small>
         </button>
         <div className={collectionActionsClass}>
           <CollectionPlayButton
@@ -385,10 +383,10 @@ function AlbumItem({
             onPlay={onPlay}
           />
           <IconButton
+            size="box"
             aria-label={`Shuffle ${album.name}`}
             onClick={onShuffle}
             disabled={loading}
-            className="h-[36px] w-[36px]"
           >
             <Shuffle size={17} />
           </IconButton>
@@ -428,10 +426,8 @@ function AlbumItem({
         className="library-card-copy block w-full border-0 bg-none p-0 text-left text-inherit"
         onClick={onOpen}
       >
-        <strong className="mt-[8px] block overflow-hidden text-ellipsis whitespace-nowrap">
-          {album.name}
-        </strong>
-        <small className="mt-[4px] block overflow-hidden text-ellipsis whitespace-nowrap text-muted">
+        <strong className="mt-[8px] block truncate">{album.name}</strong>
+        <small className="mt-[4px] block truncate text-muted">
           {album.artist}
           {album.year ? ` · ${album.year}` : ''}
         </small>
@@ -464,8 +460,10 @@ function ArtistItem({
     >
       <button
         className={cx(
-          'min-w-0 flex-1 gap-[10px] border-0 bg-none p-0 text-left text-inherit',
-          layout === 'grid' ? 'grid justify-items-center text-center' : 'flex items-center',
+          'min-w-0 flex-1 gap-[10px] border-0 bg-none p-0 text-inherit',
+          layout === 'grid'
+            ? 'grid justify-items-center text-center'
+            : 'flex items-center text-left',
         )}
         onClick={onOpen}
       >
@@ -487,8 +485,8 @@ function ArtistItem({
           )}
         </span>
         <span className="grid min-w-0">
-          <strong className="overflow-hidden text-ellipsis whitespace-nowrap">{artist.name}</strong>
-          <small className="overflow-hidden text-ellipsis whitespace-nowrap text-muted">
+          <strong className="truncate">{artist.name}</strong>
+          <small className="truncate text-muted">
             {artist.albumCount ?? 0} {artist.albumCount === 1 ? 'album' : 'albums'}
           </small>
         </span>
@@ -503,10 +501,10 @@ function ArtistItem({
           onPlay={onPlay}
         />
         <IconButton
+          size="box"
           aria-label={`Shuffle ${artist.name}`}
           onClick={onShuffle}
           disabled={loading}
-          className={collectionIconButtonClassName}
         >
           <Shuffle size={17} />
         </IconButton>
@@ -544,8 +542,8 @@ function TrackList({
           >
             <button
               className={cx(
-                'library-track-play grid w-full grid-cols-[34px_minmax(170px,2fr)_minmax(100px,1fr)_52px_24px] items-center gap-[12px] rounded-md border-0 bg-transparent px-[12px] py-[10px] text-left text-inherit hover:bg-hover coarse:min-h-11 max-phone:grid-cols-[24px_minmax(0,1fr)_24px]',
-                current && 'bg-hover',
+                'library-track-play grid w-full grid-cols-[34px_minmax(170px,2fr)_minmax(100px,1fr)_52px_24px] items-center gap-[12px] rounded-md border-0 px-[12px] py-[10px] text-left text-inherit hover:bg-hover coarse:min-h-11 max-phone:grid-cols-[24px_minmax(0,1fr)_24px]',
+                current ? 'bg-hover' : 'bg-transparent',
               )}
               aria-label={`${playing ? 'Pause' : 'Play'} ${track.title}`}
               onClick={() =>
@@ -681,11 +679,9 @@ function PlaylistRow({
     <>
       <strong className="flex items-center gap-[6px] overflow-hidden">
         {liked && <Heart size={13} fill="currentColor" className="flex-none" />}
-        <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
-          {playlist.name}
-        </span>
+        <span className="min-w-0 truncate">{playlist.name}</span>
       </strong>
-      <small className="overflow-hidden text-ellipsis whitespace-nowrap text-muted">
+      <small className="truncate text-muted">
         {songCount(playlist.songCount ?? 0)}
         {playlist.duration ? ` · ${durationText(playlist.duration)}` : ''}
         {playlist.public ? ' · public' : ''}
@@ -728,16 +724,17 @@ function PlaylistRow({
           onPlay={onPlay}
         />
         <IconButton
+          size="box"
           aria-label={`Shuffle ${playlist.name}`}
           onClick={onShuffle}
           disabled={loading}
-          className={collectionIconButtonClassName}
         >
           <Shuffle size={17} />
         </IconButton>
         {!liked && (
           <IconButton
-            className="mr-[4px] self-center p-[8px] opacity-0 transition-opacity duration-[140ms] group-hover:opacity-100 group-focus-within:opacity-100 no-hover:opacity-100"
+            size="box"
+            className="mr-[4px] self-center opacity-0 transition-opacity duration-[140ms] group-hover:opacity-100 group-focus-within:opacity-100 no-hover:opacity-100"
             aria-label={`Delete playlist ${playlist.name}`}
             onClick={onDelete}
             disabled={deleting}
@@ -1130,7 +1127,7 @@ export function LibraryPage({
   if (capabilities.isLoading) return <p role="status">Connecting to your library…</p>
   if (!capabilities.data?.available)
     return (
-      <EmptyPanel className="min-h-[55vh]">
+      <EmptyPanel tall>
         <Library size={36} />
         <h1>Your music library lives here.</h1>
         <p>{capabilities.data?.detail ?? 'Navidrome is not ready.'}</p>
@@ -1147,26 +1144,26 @@ export function LibraryPage({
 
   return (
     <>
-      <div className="page-heading mb-[24px]">
-        <div>
-          <p className="eyebrow">YOUR MUSIC, READY TO PLAY</p>
-          <h1>Library</h1>
-        </div>
-        <Tag className="grid" role="status">
-          <span className="[grid-area:1/1]" style={{ visibility: busy ? 'hidden' : undefined }}>
-            {capabilities.data.sonic_similarity ? 'AUDIOMUSE CONNECTED' : 'NAVIDROME READY'}
+      <PageTitle eyebrow="YOUR MUSIC, READY TO PLAY" title="Library">
+        <Tag role="status">
+          {/* Both labels share one cell so the tag keeps its width while the busy one shows. */}
+          <span className="grid">
+            <span className="[grid-area:1/1]" style={{ visibility: busy ? 'hidden' : undefined }}>
+              {capabilities.data.sonic_similarity ? 'AUDIOMUSE CONNECTED' : 'NAVIDROME READY'}
+            </span>
+            {busy && <span className="[grid-area:1/1]">Opening music…</span>}
           </span>
-          {busy && <span className="[grid-area:1/1]">Opening music…</span>}
         </Tag>
-      </div>
+      </PageTitle>
       <nav
         className="flex gap-[6px] overflow-x-auto border-b border-line mb-[28px] max-phone:mb-[20px] max-phone:gap-0 max-phone:overflow-visible"
         aria-label="Library views"
       >
         {(['home', 'albums', 'artists', 'tracks', 'playlists'] as Tab[]).map((item) => (
           <button
+            data-ui="tab"
             className={cx(
-              'border-0 border-b-2 bg-none px-[14px] py-[11px] capitalize coarse:min-h-11 max-phone:min-w-0 max-phone:flex-1 max-phone:px-[2px] max-phone:py-[12px] max-phone:text-[13px] max-phone:text-center',
+              'border-0 border-b-2 bg-none px-[14px] py-[11px] capitalize coarse:min-h-11 max-phone:min-w-0 max-phone:flex-1 max-phone:px-[2px] max-phone:py-[12px] max-phone:text-body max-phone:text-center',
               tab === item ? 'border-accent text-text' : 'border-transparent text-muted',
             )}
             key={item}
@@ -1473,7 +1470,7 @@ export function LibraryPage({
                     >
                       <span className="grid min-w-0 gap-[3px]">
                         <strong>{track.title}</strong>
-                        <small className="overflow-hidden text-ellipsis whitespace-nowrap text-muted">
+                        <small className="truncate text-muted">
                           {track.artist} · {track.album}
                         </small>
                       </span>
@@ -1848,7 +1845,7 @@ export function NowPlayingPage() {
 
   if (!track)
     return (
-      <EmptyPanel className="min-h-[55vh]">
+      <EmptyPanel tall>
         <Disc3 size={40} />
         <h1>Nothing playing yet.</h1>
         <Link data-ui="button" className={buttonClassName('primary', 'mx-auto')} to="/library">
