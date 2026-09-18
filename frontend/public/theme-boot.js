@@ -26,6 +26,8 @@
     if (saved.scheme === 'dark' || saved.scheme === 'light') {
       root.style.setProperty('color-scheme', saved.scheme)
     }
+    // The one skin there is. `SKINS` in src/theme/themes.ts is the list this has to follow.
+    if (saved.skin === 'win95') root.setAttribute('data-skin', saved.skin)
   } catch {
     /* Blocked storage, a half-written key, anything at all: the default theme is already in the
        stylesheet, so there is nothing to recover from. */

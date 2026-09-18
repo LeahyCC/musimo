@@ -32,7 +32,7 @@ const sources = (directory: string): string[] =>
     // visimo a preset id, and artwork is an <img>.
     if (relative(src, path).replaceAll('\\', '/') === 'theme/themes.ts') return []
 
-    return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
+    return /\.(?:tsx?|css)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
   })
 
 const blank = (match: string): string => match.replace(/[^\n]/g, ' ')
@@ -69,7 +69,8 @@ const arbitrary = (value: string): string => `<i className="bg-${'['}${value}]" 
 
 describe('no raw colors', () => {
   it('leaves every color in the app to a --color-* token', () => {
-    const files = [join(src, 'style.css'), ...sources(src)]
+    // Every sheet, not only style.css: the Windows 95 skin lives in theme/win95.css.
+    const files = sources(src)
     const found = files.flatMap((path) => {
       const name = relative(src, path).replaceAll('\\', '/')
       return rawColors(readFileSync(path, 'utf8'), name.endsWith('.css')).map(

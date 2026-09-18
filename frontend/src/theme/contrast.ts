@@ -33,8 +33,25 @@ export const CONTRAST_PAIRS: readonly ContrastPair[] = [
     foreground: '--color-faint',
     background: '--color-canvas',
   },
+  {
+    label: 'Secondary text in the navigation',
+    foreground: '--color-muted',
+    background: '--color-sidebar',
+  },
   { label: 'Accent on cards', foreground: '--color-accent', background: '--color-raised' },
+  // The selected navigation item and the selected row both draw the accent on this surface.
+  {
+    label: 'Accent on a selected item',
+    foreground: '--color-accent',
+    background: '--color-active',
+  },
   { label: 'Text on accent', foreground: '--color-accent-ink', background: '--color-accent' },
+  // The downloads badge and the queue pill.
+  {
+    label: 'Text on the live accent',
+    foreground: '--color-accent-ink',
+    background: '--color-accent-hot',
+  },
   {
     label: 'Good text on its background',
     foreground: '--color-good',

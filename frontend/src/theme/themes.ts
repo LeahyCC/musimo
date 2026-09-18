@@ -12,16 +12,32 @@ import type { ColorToken } from './tokens'
    from `musimo-dark` for the dark half and from the light e2e fixture, `Paper`, for the light half),
    so an error is always the same red and a warning always the same amber no matter which theme is
    active. Windows 95 is the one family that breaks that rule on purpose, since matching the real
-   Windows 95 palette is the point of it. */
+   Windows 95 palette is the point of it: the light half is the "Windows Standard" scheme and the
+   dark half is "High Contrast Black", the only Windows 95 scheme with dark windows. Where a real
+   value fails contrast (Windows 95 drew little text in color) the nearest shade that passes stands
+   in for it.
+
+   Windows 95 is also the one family with a skin, because colors alone are about a third of that
+   look. See `Skin` below. */
 
 /** Sets `color-scheme`, so native dialogs, scrollbars and form controls follow the theme. */
 export type ColorScheme = 'dark' | 'light'
+
+/**
+ * A block of shape rules in `src/style.css` (corners, bevels, type, scrollbars) that a built-in
+ * theme can turn on, written to `<html data-skin>`. Only built-ins carry one: a person's own theme
+ * is colors and nothing else, so a copy of a skinned theme keeps the colors and drops the skin.
+ */
+export type Skin = 'win95'
+
+export const SKINS: readonly Skin[] = ['win95']
 
 export type Theme = {
   /** `musimo-dark` for the built-in, `custom-<uuid>` for a person's own. */
   id: string
   name: string
   scheme: ColorScheme
+  skin?: Skin
   colors: Record<ColorToken, string>
 }
 
@@ -223,7 +239,7 @@ export const BUILT_IN_THEMES = [
       '--color-raised': '#ffffff',
       '--color-sunken': '#f2ece9',
       '--color-hover': '#e8dcd4',
-      '--color-active': '#dfcbbe',
+      '--color-active': '#e4d3c8',
       '--color-media': '#0b0d0a',
       '--color-on-media': '#ffffff',
       '--color-scrim': '#000000',
@@ -233,9 +249,9 @@ export const BUILT_IN_THEMES = [
       '--color-faint': '#655a53',
       '--color-line': '#dbc9bd',
       '--color-line-strong': '#c4a692',
-      '--color-accent': '#ad5a1a',
+      '--color-accent': '#8f4710',
       '--color-accent-ink': '#ffffff',
-      '--color-accent-hot': '#9b4b0d',
+      '--color-accent-hot': '#7f3c08',
       '--color-good': '#2e5c22',
       '--color-good-bg': '#dfeed6',
       '--color-good-line': '#7d9b71',
@@ -307,9 +323,9 @@ export const BUILT_IN_THEMES = [
       '--color-faint': '#5a5365',
       '--color-line': '#c9beda',
       '--color-line-strong': '#a693c2',
-      '--color-accent': '#653e98',
+      '--color-accent': '#5f3891',
       '--color-accent-ink': '#ffffff',
-      '--color-accent-hot': '#4e2880',
+      '--color-accent-hot': '#4a2479',
       '--color-good': '#2e5c22',
       '--color-good-bg': '#dfeed6',
       '--color-good-line': '#7d9b71',
@@ -381,9 +397,9 @@ export const BUILT_IN_THEMES = [
       '--color-faint': '#535f65',
       '--color-line': '#c6ced2',
       '--color-line-strong': '#a2aeb4',
-      '--color-accent': '#176582',
+      '--color-accent': '#125a74',
       '--color-accent-ink': '#ffffff',
-      '--color-accent-hot': '#0c546e',
+      '--color-accent-hot': '#0a4a61',
       '--color-good': '#2e5c22',
       '--color-good-bg': '#dfeed6',
       '--color-good-line': '#7d9b71',
@@ -402,74 +418,76 @@ export const BUILT_IN_THEMES = [
     id: 'win95-dark',
     name: 'Windows 95 dark',
     scheme: 'dark',
+    skin: 'win95',
     colors: {
       '--color-canvas': '#000000',
       '--color-sidebar': '#000000',
-      '--color-raised': '#0c0c0c',
+      '--color-raised': '#000000',
       '--color-sunken': '#000000',
-      '--color-hover': '#1a1a1a',
-      '--color-active': '#264a7a',
+      '--color-hover': '#000080',
+      '--color-active': '#800080',
       '--color-media': '#000000',
       '--color-on-media': '#ffffff',
       '--color-scrim': '#000000',
       '--color-shadow': '#000000',
       '--color-text': '#ffffff',
       '--color-muted': '#c0c0c0',
-      '--color-faint': '#a6a6a6',
-      '--color-line': '#4d4d4d',
-      '--color-line-strong': '#808080',
-      '--color-accent': '#3fa9f5',
-      '--color-accent-ink': '#001233',
-      '--color-accent-hot': '#ffe066',
-      '--color-good': '#4fd15e',
-      '--color-good-bg': '#0f2a12',
-      '--color-good-line': '#2e6b35',
-      '--color-warn': '#ffe066',
-      '--color-warn-bg': '#332b06',
-      '--color-danger': '#ff6b6b',
-      '--color-danger-bg': '#3a0f0f',
-      '--color-danger-line': '#7a2e2e',
-      '--color-owned-bg': '#0f2a12',
-      '--color-partial': '#ffe066',
-      '--color-partial-bg': '#332b06',
-      '--color-partial-line': '#665711',
+      '--color-faint': '#c0c0c0',
+      '--color-line': '#808080',
+      '--color-line-strong': '#ffffff',
+      '--color-accent': '#ffff00',
+      '--color-accent-ink': '#000000',
+      '--color-accent-hot': '#00ff00',
+      '--color-good': '#00ff00',
+      '--color-good-bg': '#000000',
+      '--color-good-line': '#008000',
+      '--color-warn': '#ffff00',
+      '--color-warn-bg': '#000000',
+      '--color-danger': '#ff0000',
+      '--color-danger-bg': '#000000',
+      '--color-danger-line': '#ff0000',
+      '--color-owned-bg': '#000080',
+      '--color-partial': '#00ffff',
+      '--color-partial-bg': '#000000',
+      '--color-partial-line': '#008080',
     },
   },
   {
     id: 'win95-light',
     name: 'Windows 95 light',
     scheme: 'light',
+    skin: 'win95',
     colors: {
       '--color-canvas': '#c0c0c0',
-      '--color-sidebar': '#008080',
-      '--color-raised': '#ffffff',
-      '--color-sunken': '#dfdfdf',
-      '--color-hover': '#d4d0c8',
-      '--color-active': '#aac4e0',
+      '--color-sidebar': '#c0c0c0',
+      '--color-raised': '#c0c0c0',
+      '--color-sunken': '#ffffff',
+      '--color-hover': '#dfdfdf',
+      '--color-active': '#ffffff',
       '--color-media': '#000000',
       '--color-on-media': '#ffffff',
       '--color-scrim': '#000000',
       '--color-shadow': '#000000',
       '--color-text': '#000000',
       '--color-muted': '#404040',
-      '--color-faint': '#4d4d4d',
+      '--color-faint': '#404040',
       '--color-line': '#808080',
-      '--color-line-strong': '#404040',
+      '--color-line-strong': '#000000',
       '--color-accent': '#000080',
       '--color-accent-ink': '#ffffff',
-      '--color-accent-hot': '#1084d0',
-      '--color-good': '#006400',
-      '--color-good-bg': '#c8e6c9',
-      '--color-good-line': '#4b8b4b',
-      '--color-warn': '#7a5b00',
-      '--color-warn-bg': '#fff3b0',
-      '--color-danger': '#aa0000',
-      '--color-danger-bg': '#ffd6d6',
-      '--color-danger-line': '#c47f7f',
-      '--color-owned-bg': '#c8e6c9',
-      '--color-partial': '#7a5b00',
-      '--color-partial-bg': '#fff3b0',
-      '--color-partial-line': '#c9b877',
+      '--color-accent-hot': '#0000ff',
+      '--color-good': '#005000',
+      '--color-good-bg': '#c0dcc0',
+      '--color-good-line': '#008000',
+      '--color-warn': '#5c4a00',
+      '--color-warn-bg': '#ffffe1',
+      '--color-danger': '#800000',
+      '--color-danger-bg': '#ffffff',
+      '--color-danger-line': '#800000',
+      '--color-owned-bg': '#c0dcc0',
+      '--color-partial': '#5c4a00',
+      '--color-partial-bg': '#fffbf0',
+      '--color-partial-line': '#808000',
     },
   },
 ] as const satisfies readonly Theme[]
