@@ -6,7 +6,9 @@ import { Disc3, ListMusic, X } from 'lucide-react'
 import { z } from 'zod'
 
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from './api'
+import { cx } from './cx'
 import { activeJob, updateJob, useJobs } from './downloads'
+import { Button, ErrorBanner, IconButton, textLinkClassName } from './ui'
 
 const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
 
@@ -116,7 +118,11 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
   })
   return (
     <>
-      <div className="artist-download-actions" role="group" aria-label={`Download ${name}`}>
+      <div
+        className="mt-[14px] flex flex-wrap gap-[8px]"
+        role="group"
+        aria-label={`Download ${name}`}
+      >
         {(
           [
             [false, Disc3, 'Albums only'],
@@ -125,7 +131,13 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
         ).map(([includeAll, Icon, label]) => (
           <button
             type="button"
-            className="artist-download-action"
+            className={cx(
+              'inline-grid min-h-11 grid-cols-[30px_auto] items-center gap-[9px] rounded-[8px] border border-line-strong bg-sunken pt-[7px] pr-[13px] pb-[7px] pl-[7px] text-text',
+              'hover:bg-hover hover:border-[color:var(--line-hover)]',
+              '[&>svg]:box-border [&>svg]:h-[30px] [&>svg]:w-[30px] [&>svg]:rounded-md [&>svg]:bg-active [&>svg]:p-[7px] [&>svg]:text-accent',
+              '[&>span]:grid [&>span]:gap-[3px] [&>span]:text-left [&>span]:text-small [&>span]:leading-none [&>span]:font-semibold',
+              '[&_small]:font-medium [&_small]:tracking-[0.12em] [&_small]:text-caption [&_small]:text-muted [&_small]:uppercase',
+            )}
             aria-label={includeAll ? 'Download all music' : 'Download all albums'}
             key={label}
             onClick={() => {
@@ -146,60 +158,70 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
       </div>
       <dialog
         ref={dialog}
-        className="artist-download-sheet"
+        className={cx(
+          'm-auto w-[min(700px,calc(100%-32px))] max-h-[85dvh] overscroll-contain rounded-[16px] border border-line bg-raised p-[24px] text-text',
+          'backdrop:bg-scrim/60',
+          'max-phone:inset-x-0 max-phone:top-auto max-phone:bottom-0 max-phone:m-0 max-phone:w-full max-phone:max-w-none max-phone:max-h-[calc(100dvh-24px)] max-phone:rounded-t-[18px] max-phone:rounded-b-none max-phone:border-b-0 max-phone:p-[16px] max-phone:pb-[calc(16px+var(--safe-bottom))]',
+        )}
         aria-labelledby="artist-download-title"
         onClose={() => setOpened(false)}
       >
-        <header>
+        <header className="mb-[18px] flex items-start justify-between gap-[20px] max-phone:mb-[12px] max-phone:gap-[12px]">
           <div>
-            <p className="eyebrow">{name}</p>
-            <h2 id="artist-download-title">
+            <p className="mb-[12px] text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+              {name}
+            </p>
+            <h2 id="artist-download-title" className="max-phone:text-section">
               {allMusic ? 'Choose music to download' : 'Choose albums to download'}
             </h2>
           </div>
-          <button
-            className="icon-button"
+          <IconButton
             aria-label="Close download selection"
             disabled={download.isPending}
             onClick={() => dialog.current?.close()}
           >
             <X size={22} />
-          </button>
+          </IconButton>
         </header>
         {plan.isFetching && <p role="status">Checking all albums and songs in your library…</p>}
         {plan.isError && (
-          <p className="error" role="alert">
+          <ErrorBanner role="alert">
             {plan.error.message}
             <button onClick={() => void plan.refetch()}>Retry</button>
-          </p>
+          </ErrorBanner>
         )}
         {plan.data && (
           <>
-            <div className="artist-download-stats" aria-live="polite">
-              <strong>
+            <div
+              className="my-[16px] grid gap-[8px] rounded-[10px] bg-good-bg p-[18px] max-phone:p-[14px]"
+              aria-live="polite"
+            >
+              <strong className="text-[24px] max-phone:text-[20px]">
                 {plural(albumCount, allMusic ? 'release' : 'album')} · {plural(songs, 'song')}
               </strong>
-              <span>
+              <span className="text-small text-muted">
                 About {megabytes.toLocaleString()} MB · estimated at{' '}
                 {chosenFormat === 'mp3' ? 320 : 160} kbps
               </span>
-              <small>
+              <small className="text-small text-muted">
                 {plural(owned, 'song')} already in library · {queued} already queued
               </small>
             </div>
-            <div className="artist-download-options">
-              <label>
+            <div className="flex flex-wrap items-center gap-[16px] text-body max-phone:gap-[10px_16px]">
+              <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
                 <input
                   type="checkbox"
+                  className="accent-accent coarse:h-[20px] coarse:w-[20px]"
                   checked={missingOnly}
                   disabled={download.isPending}
                   onChange={(e) => setMissingOnly(e.target.checked)}
                 />
                 Skip songs already in my library
               </label>
-              <label>
+              <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
                 Format
                 <select
+                  className="min-w-0 max-w-full rounded-md border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-base"
                   value={chosenFormat}
                   disabled={download.isPending}
                   onChange={(e) => setFormat(e.target.value)}
@@ -210,9 +232,10 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
                   <option value="mp3">MP3 · converted</option>
                 </select>
               </label>
-              <label>
+              <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
                 Download to
                 <select
+                  className="min-w-0 max-w-full rounded-md border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-base"
                   value={chosenTarget}
                   disabled={download.isPending}
                   onChange={(e) => setTarget(e.target.value)}
@@ -226,41 +249,49 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
                 </select>
               </label>
             </div>
-            <p className="small muted">
+            <p className="text-small text-muted">
               {allMusic
                 ? 'Includes every release type and alternative edition. Uncheck releases you don’t want.'
                 : 'Includes albums and alternative editions. Singles and EPs are excluded. Uncheck editions you don’t want.'}
             </p>
             {albums.some((album) => album.error) && (
-              <p className="error">
+              <ErrorBanner>
                 Some albums could not be checked and are excluded.{' '}
                 <button disabled={plan.isFetching} onClick={() => void plan.refetch()}>
                   Retry album checks
                 </button>
-              </p>
+              </ErrorBanner>
             )}
-            <div className="button-row">
+            <div className="flex flex-wrap items-center gap-[16px]">
               <button
-                className="text-link"
+                type="button"
+                data-ui="text-link"
+                className={textLinkClassName()}
                 disabled={download.isPending}
                 onClick={() => setExcluded(new Set())}
               >
                 Select all
               </button>
               <button
-                className="text-link"
+                type="button"
+                data-ui="text-link"
+                className={textLinkClassName()}
                 disabled={download.isPending}
                 onClick={() => setExcluded(new Set(albums.map((album) => album.id)))}
               >
                 Select none
               </button>
             </div>
-            <fieldset className="artist-album-selection" disabled={download.isPending}>
+            <fieldset className="my-[14px] min-w-0 border-0 p-0" disabled={download.isPending}>
               <legend className="sr-only">Albums</legend>
               {albums.map((album) => (
-                <label key={album.id}>
+                <label
+                  key={album.id}
+                  className="flex cursor-pointer items-center gap-[12px] border-b border-line py-[12px]"
+                >
                   <input
                     type="checkbox"
+                    className="accent-accent coarse:h-[20px] coarse:w-[20px]"
                     checked={!album.error && !excluded.has(album.id)}
                     disabled={Boolean(album.error)}
                     onChange={(e) =>
@@ -272,10 +303,17 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
                       })
                     }
                   />
-                  {album.art && <img src={album.art} alt="" loading="lazy" />}
-                  <span>
-                    <strong>{album.title}</strong>
-                    <small>
+                  {album.art && (
+                    <img
+                      src={album.art}
+                      alt=""
+                      loading="lazy"
+                      className="h-[44px] w-[44px] rounded-md"
+                    />
+                  )}
+                  <span className="grid min-w-0 gap-[6px]">
+                    <strong className="text-body">{album.title}</strong>
+                    <small className="text-tiny text-muted">
                       {album.year}
                       {album.error
                         ? ` · ${album.error}`
@@ -290,7 +328,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
             )}
           </>
         )}
-        <footer>
+        <footer className="sticky bottom-[-24px] border-t border-line bg-raised py-[16px] before:pointer-events-none before:absolute before:-top-[29px] before:inset-x-0 before:h-[28px] before:bg-[linear-gradient(transparent,var(--color-raised))] before:content-[''] max-phone:bottom-[calc(-16px-var(--safe-bottom))] max-phone:pb-[calc(16px+var(--safe-bottom))]">
           {download.isSuccess ? (
             <p role="status">
               {download.data.jobs.length} songs queued from {download.data.albums}{' '}
@@ -300,8 +338,8 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               </Link>
             </p>
           ) : (
-            <button
-              className="button primary"
+            <Button
+              variant="primary"
               disabled={
                 !songs || plan.isFetching || plan.isError || download.isPending || !chosenTarget
               }
@@ -310,13 +348,9 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               {download.isPending
                 ? `Adding ${allMusic ? 'music' : 'albums'}…`
                 : `Download ${plural(albumCount, allMusic ? 'release' : 'album')} (${plural(songs, 'song')})`}
-            </button>
+            </Button>
           )}
-          {download.isError && (
-            <p className="error" role="alert">
-              {download.error.message}
-            </p>
-          )}
+          {download.isError && <ErrorBanner role="alert">{download.error.message}</ErrorBanner>}
         </footer>
       </dialog>
     </>

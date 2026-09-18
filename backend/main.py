@@ -377,6 +377,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 "now-playing",
                 "downloads",
                 "settings",
+                "settings/user",
                 "diagnostics",
             )
             and not (path.startswith(("albums/", "artists/")) and path.split("/")[-1].isdigit())

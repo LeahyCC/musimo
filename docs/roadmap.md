@@ -52,9 +52,10 @@ Search → inspect recording → choose destination/format → queue → see pro
 
 ## Next improvements
 
-1. **Preview navigation context.** Library playback has previous, next, shuffle and repeat. The open question is whether catalog previews should have previous and next, and if so, whether that follows the album order, search results or an explicit preview queue.
-2. **File replacement flow.** Different album editions are flagged and keep the download control enabled, but the worker currently appends the job ID to the filename when the target exists instead of offering to replace or keep both versions.
-3. **Long-list performance.** Virtualized lists work for accessibility and touch targets but may benefit from further optimization for very large libraries or result sets.
+1. **Tailwind migration and themes: done.** Every screen is Tailwind utilities, every color is a theme token, and people can pick, build, export and import their own theme at `/settings/user`. `style.css` went from 3,874 lines to about 400. [The styling plan](tailwind-migration.md) keeps the record and the layout contract, and [architecture](architecture.md#styling) has the short guide for new screens. Still open from that plan: a second built-in theme and a real-device pass on a notched iPhone and Android with the keyboard up.
+2. **Preview navigation context.** Library playback has previous, next, shuffle and repeat. The open question is whether catalog previews should have previous and next, and if so, whether that follows the album order, search results or an explicit preview queue.
+3. **File replacement flow.** Different album editions are flagged and keep the download control enabled, but the worker currently appends the job ID to the filename when the target exists instead of offering to replace or keep both versions.
+4. **Long-list performance.** Virtualized lists work for accessibility and touch targets but may benefit from further optimization for very large libraries or result sets.
 
 ## Release continuation
 

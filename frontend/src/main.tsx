@@ -1,5 +1,4 @@
 import { lazy, Suspense, useDeferredValue, useEffect, useRef, useState } from 'react'
-import type { ReactNode } from 'react'
 
 import { createRoot } from 'react-dom/client'
 
@@ -54,14 +53,35 @@ import type { SettingKey } from './api'
 import { librarySchema } from './api'
 import { namingSchema } from './api'
 import { controlsSchema, jobSchema } from './api'
+import { cx } from './cx'
 import { activeCount, DownloadsPage, QueueDock, updateJob, useJobs } from './downloads'
 import type { QueueData } from './downloads'
 import { LibraryPanel } from './library-panel'
 import { PopoutProvider } from './now-playing-popout'
+import { PageTitle } from './page-title'
 import { CommandPalette } from './palette'
 import { PlayerProvider } from './player'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
+import { startTheme } from './theme/store'
+import {
+  Button,
+  buttonClassName,
+  EmptyPanel,
+  ErrorBanner,
+  Field,
+  FieldSelect,
+  Kbd,
+  Panel,
+  sectionCaptionClassName,
+  sectionHeadingClassName,
+  sectionTitleClassName,
+  StatusChip,
+  Tag,
+  textLinkClassName,
+} from './ui'
+import type { StatusChipVariant } from './ui'
+import { SettingsSwitch, UserSettingsPage } from './user-settings'
 
 import './style.css'
 
@@ -82,6 +102,49 @@ const navItems = [
   { to: '/settings', label: 'Settings', icon: SlidersHorizontal },
   { to: '/diagnostics', label: 'Diagnostics', icon: Activity },
 ] as const
+
+/* A wide window gets a row per destination down the left edge; a phone gets the same five as a
+   bottom bar, so the link turns into a stacked icon-over-label tile. `relative` is here rather
+   than only on the phone because the count badge above positions against it. */
+const navLinkClassName = cx(
+  'relative flex items-center gap-[12px] rounded-[7px] px-[14px] py-[12px] text-lead',
+  'max-phone:flex-col max-phone:justify-center max-phone:gap-[5px] max-phone:rounded-none max-phone:px-[2px] max-phone:py-[8px] max-phone:text-tiny',
+)
+const sidebarActionClassName = cx(
+  'flex items-center gap-[8px] rounded-md border border-line px-[9px] py-[7px] text-tiny text-muted',
+  'hover:border-[color:var(--line-hover)] hover:text-accent',
+)
+
+const sectionIndexLinkClassName =
+  'hover:text-accent coarse:inline-flex coarse:min-h-11 coarse:items-center'
+const settingsSectionClassName = 'scroll-mt-[115px] mb-[31px]'
+const settingsSectionHeadingClassName = 'border-b border-line pb-[17px] text-section'
+const sourceSummaryClassName = 'my-[20px] flex items-center gap-[15px]'
+const sourceLogoClassName =
+  'grid h-[42px] w-[42px] shrink-0 place-items-center rounded-[8px] bg-partial-bg text-[26px] font-[650] text-partial'
+const versionRowClassName =
+  'flex flex-col gap-[7px] border-t border-line py-[13px] [overflow-wrap:anywhere]'
+
+type ReadinessState = 'ready' | 'not-ready' | 'not-tested'
+const readinessChip: Record<ReadinessState, StatusChipVariant> = {
+  'ready': 'good',
+  'not-ready': 'danger',
+  'not-tested': 'default',
+}
+
+/* `readiness-panel`, `readiness-item` and `readiness-badge` are bare hooks: `e2e/app.spec.ts`
+   finds the panel, its rows and their badges by class. */
+const readinessItemClassName =
+  'readiness-item flex items-start gap-[14px] border-b border-line pb-[16px] last:border-b-0 last:pb-0'
+
+function readinessFeedbackClassName(success: boolean) {
+  return cx(
+    '-mt-[8px] rounded-md border p-[12px] text-tiny',
+    success
+      ? 'border-good-line bg-good-bg text-good'
+      : 'border-danger-line bg-danger-bg text-danger',
+  )
+}
 
 function useLiveEvents() {
   const client = useQueryClient()
@@ -211,33 +274,54 @@ function Shell() {
   }, [])
 
   return (
-    <div className="app">
+    <div className="min-h-screen">
       <CommandPalette />
       <QueueDock />
-      <a className="skip" href="#main">
+      <a
+        className="absolute top-[-60px] z-skip bg-accent p-[10px] text-accent-ink focus:top-0"
+        href="#main"
+      >
         Skip to content
       </a>
-      <aside className="sidebar">
-        <Link to="/search" className="brand">
-          musimo<span className="brand-dot">.</span>
+      {/* `sidebar` carries no styling; it is the hook `e2e/app.spec.ts` and `e2e/phone.spec.ts`
+          measure the bottom bar with. */}
+      <aside
+        className={cx(
+          'sidebar fixed inset-y-0 left-[var(--safe-left)] flex w-[var(--sidebar-width)] flex-col border-r border-line bg-sidebar px-[19px] pt-[33px] pb-[98px]',
+          'max-tablet:px-[13px]',
+          'max-phone:inset-x-0 max-phone:top-auto max-phone:z-bar max-phone:h-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:w-auto max-phone:border-t max-phone:border-r-0 max-phone:pt-0 max-phone:pr-[var(--safe-right)] max-phone:pb-[var(--safe-bottom)] max-phone:pl-[var(--safe-left)]',
+        )}
+      >
+        <Link
+          to="/search"
+          className="flex items-center px-[8px] text-display font-[650] tracking-[-1px] max-phone:hidden"
+        >
+          musimo<span className="text-accent">.</span>
         </Link>
-        <div className="nav-caption">YOUR MUSIC, AT HOME</div>
-        <nav aria-label="Main navigation">
+        <div className="mx-[12px] mt-[51px] mb-[17px] text-micro tracking-[1.6px] text-faint max-phone:hidden">
+          YOUR MUSIC, AT HOME
+        </div>
+        <nav
+          aria-label="Main navigation"
+          className="grid gap-[7px] max-phone:h-full max-phone:auto-cols-fr max-phone:grid-flow-col max-phone:gap-0"
+        >
           {navItems.map(({ to, label, icon: Icon }) => (
             <Link
               key={to}
               to={to}
-              className="nav-link"
+              className={navLinkClassName}
               activeProps={{
-                'className': 'nav-link active',
+                'className': 'bg-active text-accent',
                 'aria-current': 'page',
               }}
+              inactiveProps={{ className: 'text-muted hover:bg-hover hover:text-text' }}
             >
               <Icon size={19} />
               <span>{label}</span>
-              {to === '/search' && <kbd>/</kbd>}
+              {to === '/search' && <Kbd className="ml-auto !text-small opacity-60">/</Kbd>}
               {to === '/downloads' && activeDownloads > 0 && (
-                <span className="nav-badge">
+                // Only the phone bottom bar shows the count; wider layouts have the queue dock.
+                <span className="nav-badge hidden max-phone:absolute max-phone:top-[5px] max-phone:left-[calc(50%+6px)] max-phone:grid max-phone:h-[18px] max-phone:min-w-[18px] max-phone:place-items-center max-phone:rounded-pill max-phone:bg-accent-hot max-phone:px-[5px] max-phone:text-caption max-phone:font-bold max-phone:text-accent-ink">
                   <span className="sr-only">, </span>
                   {activeDownloads}
                   <span className="sr-only"> active</span>
@@ -246,37 +330,55 @@ function Shell() {
             </Link>
           ))}
         </nav>
-        <footer className="sidebar-bottom">
-          <div className="sidebar-note">
+        <footer className="mx-[7px] mt-auto text-small text-muted max-phone:hidden">
+          <div className="flex items-center gap-[10px]">
             <Radio size={18} />
             <div>
-              Made for your library<small>Self-hosted music</small>
+              Made for your library
+              <small className="mt-[5px] block text-faint">Self-hosted music</small>
             </div>
           </div>
-          <div className="sidebar-actions">
+          <div className="mt-[14px] grid gap-[6px]">
             <a
+              className={sidebarActionClassName}
               href="https://www.musicares.org/donations/"
               target="_blank"
               rel="noopener noreferrer"
             >
-              <Heart size={14} fill="#ef4444" stroke="#ef4444" />
+              <Heart size={14} fill="var(--color-danger)" stroke="var(--color-danger)" />
               Donate
             </a>
-            <a href="https://ko-fi.com/colinleahy" target="_blank" rel="noopener noreferrer">
+            <a
+              className={sidebarActionClassName}
+              href="https://ko-fi.com/colinleahy"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <Coffee size={14} />
               Buy me a coffee
             </a>
-            <a href="https://github.com/LeahyCC/musimo" target="_blank" rel="noopener noreferrer">
+            <a
+              className={sidebarActionClassName}
+              href="https://github.com/LeahyCC/musimo"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
               <Star size={14} />
               Star on GitHub
             </a>
           </div>
         </footer>
       </aside>
-      <div className="workspace">
-        <header className="topbar">
+      <div className="ml-[calc(var(--sidebar-width)+var(--safe-left))] pr-[var(--safe-right)] max-phone:ml-0 max-phone:pr-0">
+        <header
+          className={cx(
+            'sticky top-0 z-header flex h-[calc(var(--topbar-height)+var(--safe-top))] items-center justify-between gap-[18px] border-b border-line bg-canvas px-[43px] pt-[var(--safe-top)]',
+            'max-tablet:px-[27px]',
+            'max-phone:gap-[12px] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
+          )}
+        >
           <form
-            className="search-input"
+            className="flex w-[min(660px,80%)] items-center gap-[12px] text-muted max-phone:w-full"
             onSubmit={(e) => {
               e.preventDefault()
               clearTimeout(debounce.current)
@@ -286,6 +388,7 @@ function Shell() {
             <Search size={20} />
             <input
               ref={input}
+              className="min-w-0 flex-1 border-0 bg-transparent py-[12px] text-lead text-text placeholder:text-faint max-phone:py-[10px]"
               aria-label="Search music or paste a link"
               placeholder="Search music or paste a link"
               value={text}
@@ -306,15 +409,23 @@ function Shell() {
                 }, 200)
               }}
             />
-            <kbd>/</kbd>
+            <Kbd>/</Kbd>
           </form>
-          <span className={`connection ${status === 'Live' ? 'online' : ''}`} role="status">
-            <i />
+          <span
+            className="flex items-center gap-[7px] text-tiny whitespace-nowrap text-muted"
+            role="status"
+          >
+            <i
+              className={cx('size-[6px] rounded-full', status === 'Live' ? 'bg-accent' : 'bg-warn')}
+            />
             {status}
           </span>
         </header>
         {status !== 'Live' && (
-          <div className="connection-banner" role="status">
+          <div
+            className="bg-warn-bg px-[43px] py-[8px] text-small text-warn max-phone:pr-[calc(20px+var(--safe-right))] max-phone:pl-[calc(20px+var(--safe-left))]"
+            role="status"
+          >
             {status === 'Offline'
               ? 'Cannot reach Musimo. Reconnecting automatically.'
               : status === 'Reconnecting'
@@ -324,30 +435,15 @@ function Shell() {
                   : 'Connecting to live updates…'}
           </div>
         )}
-        <main id="main">
+        {/* The bottom padding follows the player and nav on a phone so the last row is never under
+            them. */}
+        <main
+          id="main"
+          className="m-auto max-w-[1360px] px-[43px] pt-[36px] pb-[130px] wide:pt-[48px] max-tablet:px-[27px] max-phone:pt-[24px] max-phone:pr-[calc(20px+var(--safe-right))] max-phone:pb-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+32px)] max-phone:pl-[calc(20px+var(--safe-left))]"
+        >
           <Outlet />
         </main>
       </div>
-    </div>
-  )
-}
-
-function PageTitle({
-  eyebrow,
-  title,
-  children,
-}: {
-  eyebrow: string
-  title: string
-  children?: ReactNode
-}) {
-  return (
-    <div className="page-heading">
-      <div>
-        <p className="eyebrow">{eyebrow}</p>
-        <h1>{title}</h1>
-      </div>
-      {children}
     </div>
   )
 }
@@ -447,7 +543,7 @@ function NamingPreview({ template }: { template: string }) {
     retry: false,
   })
   return (
-    <p className="naming-preview">
+    <p className="text-small [overflow-wrap:anywhere]">
       {result.isError ? (
         result.error.message
       ) : (
@@ -537,11 +633,26 @@ function SettingsPage() {
   return (
     <>
       <PageTitle eyebrow="SET IT UP YOUR WAY" title="Settings">
-        <span className="tag">SAVED IN YOUR DATABASE</span>
+        <Tag>SAVED IN YOUR DATABASE</Tag>
       </PageTitle>
-      <p className="page-intro">
+      <SettingsSwitch />
+      <p className="-mt-[8px] mb-[32px] max-w-[650px] text-lead">
         Preferences save without a restart. Download defaults apply to newly queued tracks.
       </p>
+      {/* Until diagnostics answer, the banner's own markup holds its place unseen, with the longer
+          of its two messages so the space is right at every width. */}
+      {!diagnostics.data && (
+        <div
+          className="invisible my-[16px] flex items-center gap-[10px] rounded-md border px-[16px] py-[12px] text-small"
+          aria-hidden="true"
+        >
+          <AlertCircle size={16} />
+          Some components need attention.
+          <span className="ml-auto underline coarse:inline-flex coarse:min-h-11 coarse:items-center">
+            View diagnostics
+          </span>
+        </div>
+      )}
       {diagnostics.data &&
         (() => {
           const rootsReady = diagnostics.data.library.roots.every((root: string) => {
@@ -562,7 +673,14 @@ function SettingsPage() {
             rootsReady && scanReady && navidromeReady !== false && youtubeReady && lastDownloadOk
 
           return (
-            <div className={`settings-status ${overallReady ? 'ready' : 'not-ready'}`}>
+            <div
+              className={cx(
+                'my-[16px] flex items-center gap-[10px] rounded-md px-[16px] py-[12px] text-small',
+                overallReady
+                  ? 'border border-good-line bg-good-bg text-good'
+                  : 'border border-danger-line bg-danger-bg text-danger',
+              )}
+            >
               {overallReady ? (
                 <>
                   <Check size={16} />
@@ -574,200 +692,236 @@ function SettingsPage() {
                   Some components need attention.
                 </>
               )}
-              <Link to="/diagnostics">View diagnostics</Link>
+              <Link
+                to="/diagnostics"
+                className="ml-auto underline coarse:inline-flex coarse:min-h-11 coarse:items-center"
+              >
+                View diagnostics
+              </Link>
             </div>
           )
         })()}
+      {/* The banner shows on any failure, but the form stays as long as there is data behind it:
+          a refetch that fails after a live update must not take a person's draft off the screen. */}
       {settings.isError && (
-        <div className="error" role="alert">
+        <ErrorBanner role="alert">
           {settings.error.message}
           <button onClick={() => void settings.refetch()}>Retry</button>
+        </ErrorBanner>
+      )}
+      {!settings.data ? (
+        !settings.isError && <p role="status">Loading settings…</p>
+      ) : (
+        <div className="grid grid-cols-[145px_1fr] gap-[30px] max-tablet:grid-cols-1 max-phone:gap-[26px]">
+          <nav
+            className="sticky top-[119px] flex flex-col gap-[19px] self-start border-l border-line-strong px-[17px] text-small text-muted max-tablet:static max-tablet:flex-row max-phone:gap-[18px] max-phone:px-[12px] max-phone:text-tiny"
+            aria-label="Settings sections"
+          >
+            <a href="#library" className={sectionIndexLinkClassName}>
+              Library
+            </a>
+            <a href="#audio" className={sectionIndexLinkClassName}>
+              Audio quality
+            </a>
+            <a href="#queue" className={sectionIndexLinkClassName}>
+              Queue & retries
+            </a>
+            <a href="#sources" className={sectionIndexLinkClassName}>
+              Sources
+            </a>
+          </nav>
+          <form
+            onSubmit={(e) => {
+              e.preventDefault()
+              save.mutate()
+            }}
+          >
+            {['library', 'audio', 'queue'].map((section) => (
+              <section id={section} className={settingsSectionClassName} key={section}>
+                <h2 className={settingsSectionHeadingClassName}>
+                  {section === 'library'
+                    ? 'Your library'
+                    : section === 'audio'
+                      ? 'Audio quality'
+                      : 'Queue & retries'}
+                </h2>
+                {controls
+                  .filter((control) => control.section === section)
+                  .map(({ key, label, help, min, max }) => {
+                    const setting = settings.data?.[key]
+                    if (!setting) return null
+                    const value = draft[key] ?? setting.value
+                    return (
+                      <div
+                        className="grid grid-cols-[1fr_220px] items-center gap-[28px] border-b border-line py-[19px] max-tablet:grid-cols-[1fr_200px] max-phone:grid-cols-1 max-phone:gap-[13px]"
+                        key={key}
+                      >
+                        <div>
+                          <label htmlFor={key} className="text-body">
+                            {label}
+                          </label>
+                          <p className="mt-[7px] max-w-[380px] text-tiny">{help}</p>
+                          {setting.locked && (
+                            <small className="mt-[8px] flex items-center gap-[5px] text-caption text-warn">
+                              <LockKeyhole size={12} />
+                              Locked by {setting.origin}
+                            </small>
+                          )}
+                        </div>
+                        <div>
+                          {key === 'destination' || key === 'navidrome_mode' ? (
+                            <FieldSelect
+                              id={key}
+                              value={value}
+                              disabled={setting.locked || save.isPending}
+                              onChange={(e) => {
+                                if (!(key in draft)) {
+                                  setOriginalValues({ ...originalValues, [key]: setting.value })
+                                }
+                                setDraft({ ...draft, [key]: e.target.value })
+                                setSaved(false)
+                              }}
+                            >
+                              {key === 'destination'
+                                ? diagnostics.data?.disks.slice(1).map((disk) => (
+                                    <option
+                                      key={disk.path}
+                                      value={disk.path}
+                                      disabled={!disk.writable}
+                                    >
+                                      {disk.path}
+                                      {disk.writable ? '' : ' (read-only)'}
+                                    </option>
+                                  ))
+                                : ['off', 'watcher', 'api'].map((mode) => (
+                                    <option key={mode} value={mode}>
+                                      {mode}
+                                    </option>
+                                  ))}
+                            </FieldSelect>
+                          ) : key === 'output_format' ? (
+                            <FieldSelect
+                              id={key}
+                              value={value}
+                              disabled={setting.locked || save.isPending}
+                              onChange={(e) => {
+                                if (!(key in draft)) {
+                                  setOriginalValues({ ...originalValues, [key]: setting.value })
+                                }
+                                setDraft({ ...draft, [key]: e.target.value })
+                                setSaved(false)
+                              }}
+                            >
+                              <option value="original">Original · no re-encoding</option>
+                              <option value="m4a">M4A / AAC</option>
+                              <option value="opus">Opus</option>
+                              <option value="mp3">MP3 · lossy conversion</option>
+                            </FieldSelect>
+                          ) : (
+                            <Field
+                              id={key}
+                              type={min === undefined ? 'text' : 'number'}
+                              min={min}
+                              max={max}
+                              maxLength={min === undefined ? 400 : undefined}
+                              required={key !== 'navidrome_url'}
+                              disabled={setting.locked || save.isPending}
+                              value={value}
+                              onChange={(e) => {
+                                if (!(key in draft)) {
+                                  setOriginalValues({ ...originalValues, [key]: setting.value })
+                                }
+                                setDraft({
+                                  ...draft,
+                                  [key]:
+                                    min === undefined ? e.target.value : Number(e.target.value),
+                                })
+                                setSaved(false)
+                              }}
+                            />
+                          )}
+                          {conflicts[key] !== undefined && (
+                            <small className="mt-[6px] block text-tiny text-warn">
+                              Changed elsewhere to {String(conflicts[key])}
+                            </small>
+                          )}
+                        </div>
+                      </div>
+                    )
+                  })}
+                {section === 'library' && (
+                  <NamingPreview
+                    template={String(
+                      draft.naming_template ?? settings.data?.naming_template.value ?? '',
+                    )}
+                  />
+                )}
+                {section === 'library' && <LibraryPanel />}
+                {section === 'library' && (
+                  <div className="mt-[19px] flex gap-[12px] rounded-md bg-raised p-[15px] text-small">
+                    <Folder size={17} />
+                    <div>
+                      Mounted folders
+                      {diagnostics.data?.disks.slice(1).map((disk) => (
+                        <code key={disk.path} className="mt-[8px] block text-accent">
+                          {disk.path} · {disk.exists ? 'available' : 'missing'}
+                        </code>
+                      ))}
+                      <small className="mt-[8px] block leading-[1.6] text-muted">
+                        Mount additional folders in Compose before choosing them here.
+                      </small>
+                    </div>
+                  </div>
+                )}
+              </section>
+            ))}
+            <section id="sources" className={settingsSectionClassName}>
+              <h2 className={settingsSectionHeadingClassName}>Sources</h2>
+              <div className={sourceSummaryClassName}>
+                <span className={sourceLogoClassName}>d.</span>
+                <div>
+                  <h3 className="mb-[4px]">Deezer</h3>
+                  <p className="text-small">Default catalog. No key required.</p>
+                </div>
+                <Link
+                  to="/diagnostics"
+                  data-ui="text-link"
+                  className={textLinkClassName('ml-auto max-phone:text-tiny')}
+                >
+                  Test connection
+                  <ArrowRight size={15} />
+                </Link>
+              </div>
+              <p className="text-muted text-small">
+                YouTube supplies audio through yt-dlp. Original preserves source quality. Paid
+                sources are not enabled.
+              </p>
+            </section>
+            {/* `save-bar` is the hook `e2e/phone.spec.ts` measures against the bottom bar. The
+                offset keeps it clear of the player, and on a phone the bar and home indicator. */}
+            <div className="save-bar sticky bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+8px)] z-sticky flex items-center justify-between gap-[15px] rounded-[7px] border border-good-line bg-good-bg px-[17px] py-[13px] max-phone:p-[12px]">
+              <span className="text-small" role="status">
+                {save.isError
+                  ? save.error.message
+                  : saved
+                    ? 'Saved. You can safely refresh.'
+                    : Object.keys(draft).length
+                      ? 'You have unsaved changes.'
+                      : 'Settings are up to date.'}
+              </span>
+              <Button
+                variant="primary"
+                type="submit"
+                className="max-phone:whitespace-nowrap"
+                disabled={!Object.keys(draft).length || save.isPending}
+              >
+                {save.isPending ? 'Saving…' : 'Save changes'}
+                {saved ? <Check size={16} /> : <ArrowRight size={16} />}
+              </Button>
+            </div>
+          </form>
         </div>
       )}
-      <div className="settings-layout">
-        <nav className="section-index" aria-label="Settings sections">
-          <a href="#library">Library</a>
-          <a href="#audio">Audio quality</a>
-          <a href="#queue">Queue & retries</a>
-          <a href="#sources">Sources</a>
-        </nav>
-        <form
-          onSubmit={(e) => {
-            e.preventDefault()
-            save.mutate()
-          }}
-        >
-          {!settings.data && !settings.isError && <p role="status">Loading settings…</p>}
-          {['library', 'audio', 'queue'].map((section) => (
-            <section id={section} className="settings-section" key={section}>
-              <h2>
-                {section === 'library'
-                  ? 'Your library'
-                  : section === 'audio'
-                    ? 'Audio quality'
-                    : 'Queue & retries'}
-              </h2>
-              {controls
-                .filter((control) => control.section === section)
-                .map(({ key, label, help, min, max }) => {
-                  const setting = settings.data?.[key]
-                  if (!setting) return null
-                  const value = draft[key] ?? setting.value
-                  return (
-                    <div className="setting-row" key={key}>
-                      <div>
-                        <label htmlFor={key}>{label}</label>
-                        <p>{help}</p>
-                        {setting.locked && (
-                          <small className="locked">
-                            <LockKeyhole size={12} />
-                            Locked by {setting.origin}
-                          </small>
-                        )}
-                      </div>
-                      <div>
-                        {key === 'destination' || key === 'navidrome_mode' ? (
-                          <select
-                            id={key}
-                            value={value}
-                            disabled={setting.locked || save.isPending}
-                            onChange={(e) => {
-                              if (!(key in draft)) {
-                                setOriginalValues({ ...originalValues, [key]: setting.value })
-                              }
-                              setDraft({ ...draft, [key]: e.target.value })
-                              setSaved(false)
-                            }}
-                          >
-                            {key === 'destination'
-                              ? diagnostics.data?.disks.slice(1).map((disk) => (
-                                  <option
-                                    key={disk.path}
-                                    value={disk.path}
-                                    disabled={!disk.writable}
-                                  >
-                                    {disk.path}
-                                    {disk.writable ? '' : ' (read-only)'}
-                                  </option>
-                                ))
-                              : ['off', 'watcher', 'api'].map((mode) => (
-                                  <option key={mode} value={mode}>
-                                    {mode}
-                                  </option>
-                                ))}
-                          </select>
-                        ) : key === 'output_format' ? (
-                          <select
-                            id={key}
-                            value={value}
-                            disabled={setting.locked || save.isPending}
-                            onChange={(e) => {
-                              if (!(key in draft)) {
-                                setOriginalValues({ ...originalValues, [key]: setting.value })
-                              }
-                              setDraft({ ...draft, [key]: e.target.value })
-                              setSaved(false)
-                            }}
-                          >
-                            <option value="original">Original · no re-encoding</option>
-                            <option value="m4a">M4A / AAC</option>
-                            <option value="opus">Opus</option>
-                            <option value="mp3">MP3 · lossy conversion</option>
-                          </select>
-                        ) : (
-                          <input
-                            id={key}
-                            type={min === undefined ? 'text' : 'number'}
-                            min={min}
-                            max={max}
-                            maxLength={min === undefined ? 400 : undefined}
-                            required={key !== 'navidrome_url'}
-                            disabled={setting.locked || save.isPending}
-                            value={value}
-                            onChange={(e) => {
-                              if (!(key in draft)) {
-                                setOriginalValues({ ...originalValues, [key]: setting.value })
-                              }
-                              setDraft({
-                                ...draft,
-                                [key]: min === undefined ? e.target.value : Number(e.target.value),
-                              })
-                              setSaved(false)
-                            }}
-                          />
-                        )}
-                        {conflicts[key] !== undefined && (
-                          <small className="conflict">
-                            Changed elsewhere to {String(conflicts[key])}
-                          </small>
-                        )}
-                      </div>
-                    </div>
-                  )
-                })}
-              {section === 'library' && (
-                <NamingPreview
-                  template={String(
-                    draft.naming_template ?? settings.data?.naming_template.value ?? '',
-                  )}
-                />
-              )}
-              {section === 'library' && <LibraryPanel />}
-              {section === 'library' && (
-                <div className="note">
-                  <Folder size={17} />
-                  <div>
-                    Mounted folders
-                    {diagnostics.data?.disks.slice(1).map((disk) => (
-                      <code key={disk.path}>
-                        {disk.path} · {disk.exists ? 'available' : 'missing'}
-                      </code>
-                    ))}
-                    <small>Mount additional folders in Compose before choosing them here.</small>
-                  </div>
-                </div>
-              )}
-            </section>
-          ))}
-          <section id="sources" className="settings-section">
-            <h2>Sources</h2>
-            <div className="source-summary">
-              <span className="source-logo">d.</span>
-              <div>
-                <h3>Deezer</h3>
-                <p>Default catalog. No key required.</p>
-              </div>
-              <Link to="/diagnostics" className="text-link">
-                Test connection
-                <ArrowRight size={15} />
-              </Link>
-            </div>
-            <p className="muted small">
-              YouTube supplies audio through yt-dlp. Original preserves source quality. Paid sources
-              are not enabled.
-            </p>
-          </section>
-          <div className="save-bar">
-            <span role="status">
-              {save.isError
-                ? save.error.message
-                : saved
-                  ? 'Saved. You can safely refresh.'
-                  : Object.keys(draft).length
-                    ? 'You have unsaved changes.'
-                    : 'Settings are up to date.'}
-            </span>
-            <button
-              className="button primary"
-              type="submit"
-              disabled={!Object.keys(draft).length || save.isPending}
-            >
-              {save.isPending ? 'Saving…' : 'Save changes'}
-              {saved ? <Check size={16} /> : <ArrowRight size={16} />}
-            </button>
-          </div>
-        </form>
-      </div>
       <RecentActivity />
     </>
   )
@@ -813,26 +967,18 @@ function DiagnosticsPage() {
   return (
     <>
       <PageTitle eyebrow="KNOW WHAT IS HAPPENING" title="Diagnostics">
-        <div className="button-row">
-          <button
-            className="button"
-            onClick={() => void diagnostics.refetch()}
-            disabled={diagnostics.isFetching}
-          >
-            <RefreshCw size={15} className={diagnostics.isFetching ? 'spin' : ''} />
+        <div className="flex flex-wrap items-center gap-[16px]">
+          <Button onClick={() => void diagnostics.refetch()} disabled={diagnostics.isFetching}>
+            <RefreshCw size={15} className={cx(diagnostics.isFetching && 'animate-spin')} />
             Refresh
-          </button>
-          <a className="button" href="/api/diagnostics/export" download>
+          </Button>
+          <a data-ui="button" className={buttonClassName()} href="/api/diagnostics/export" download>
             <ArrowDownToLine size={15} />
             Export
           </a>
         </div>
       </PageTitle>
-      {diagnostics.isError && (
-        <div className="error" role="alert">
-          {diagnostics.error.message}
-        </div>
-      )}
+      {diagnostics.isError && <ErrorBanner role="alert">{diagnostics.error.message}</ErrorBanner>}
       {!data && !diagnostics.isError && <p role="status">Checking your container…</p>}
       {data && (
         <>
@@ -849,37 +995,46 @@ function DiagnosticsPage() {
             const overallReady =
               rootsReady && scanReady && navidromeReady !== false && youtubeReady && lastDownloadOk
 
+            // `health-strip` is a bare hook: `e2e/app.spec.ts` reads the strip by class.
             return (
-              <div className="health-strip">
-                <span className="health-icon">
+              <div className="health-strip my-[28px] flex items-center gap-[17px] rounded-[8px] border border-good-line bg-good-bg px-[25px] py-[22px] max-phone:p-[19px]">
+                <span className="flex rounded-full border border-good-line p-[7px] text-accent">
                   {overallReady ? <Check size={24} /> : <AlertCircle size={24} />}
                 </span>
                 <div>
-                  <h2>Ready to download?</h2>
-                  <p>{overallReady ? 'All systems ready.' : 'Some components need attention.'}</p>
+                  <h2 className="mb-[4px] text-section max-phone:text-strong">
+                    Ready to download?
+                  </h2>
+                  <p className="text-small max-phone:text-tiny">
+                    {overallReady ? 'All systems ready.' : 'Some components need attention.'}
+                  </p>
                 </div>
-                <span className="tag">v{data.health.version}</span>
+                <Tag className="ml-auto max-phone:hidden">v{data.health.version}</Tag>
               </div>
             )
           })()}
-          <section className="panel readiness-panel">
-            <div className="section-heading">
-              <h2>System readiness</h2>
+          <Panel className="readiness-panel">
+            <div className={sectionHeadingClassName}>
+              <h2 className={sectionTitleClassName}>System readiness</h2>
             </div>
-            <div className="readiness-items">
+            <div className="flex flex-col gap-[16px]">
               {data.library.roots.map((root: string) => {
                 const disk = data.disks.find((d) => d.path === root)
                 const ready = disk?.exists && disk?.writable && disk?.free_bytes !== null
                 return (
-                  <div key={root} className="readiness-item">
-                    <span className={`readiness-badge ${ready ? 'ready' : 'not-ready'}`}>
+                  <div key={root} className={readinessItemClassName}>
+                    <StatusChip
+                      emphasis
+                      className="readiness-badge"
+                      variant={readinessChip[ready ? 'ready' : 'not-ready']}
+                    >
                       {ready ? <Check size={14} /> : <X size={14} />}
                       {ready ? 'Ready' : 'Not ready'}
-                    </span>
-                    <div>
-                      <strong>Library root</strong>
-                      <code>{root}</code>
-                      <small>
+                    </StatusChip>
+                    <div className="flex-1">
+                      <strong className="mb-[4px] block text-small text-text">Library root</strong>
+                      <code className="mb-[4px] block text-tiny text-muted">{root}</code>
+                      <small className="mt-[4px] block text-tiny text-faint">
                         {disk?.exists
                           ? disk?.writable
                             ? `${gb(disk.free_bytes)} free`
@@ -896,15 +1051,21 @@ function DiagnosticsPage() {
                   const disk = data.disks.find((d) => d.path === destPath)
                   const ready = disk?.exists && disk?.writable
                   return (
-                    <div className="readiness-item">
-                      <span className={`readiness-badge ${ready ? 'ready' : 'not-ready'}`}>
+                    <div className={readinessItemClassName}>
+                      <StatusChip
+                        emphasis
+                        className="readiness-badge"
+                        variant={readinessChip[ready ? 'ready' : 'not-ready']}
+                      >
                         {ready ? <Check size={14} /> : <X size={14} />}
                         {ready ? 'Ready' : 'Not ready'}
-                      </span>
-                      <div>
-                        <strong>Download destination</strong>
-                        <code>{destPath}</code>
-                        <small>
+                      </StatusChip>
+                      <div className="flex-1">
+                        <strong className="mb-[4px] block text-small text-text">
+                          Download destination
+                        </strong>
+                        <code className="mb-[4px] block text-tiny text-muted">{destPath}</code>
+                        <small className="mt-[4px] block text-tiny text-faint">
                           {disk?.exists
                             ? disk?.writable
                               ? `${gb(disk.free_bytes)} free`
@@ -913,36 +1074,35 @@ function DiagnosticsPage() {
                         </small>
                       </div>
                       {ready && (
-                        <button
-                          className="button"
+                        <Button
                           onClick={() => testDestination.mutate()}
                           disabled={testDestination.isPending}
                         >
                           {testDestination.isPending ? 'Testing…' : 'Test write'}
-                        </button>
+                        </Button>
                       )}
                     </div>
                   )
                 })()}
               {testDestination.data && (
-                <div
-                  className={`readiness-feedback ${testDestination.data.success ? 'success' : 'error'}`}
-                >
+                <div className={readinessFeedbackClassName(testDestination.data.success)}>
                   {testDestination.data.success
                     ? `Write test succeeded (${testDestination.data.elapsed_ms} ms)`
                     : `Write test failed: ${testDestination.data.error}`}
                 </div>
               )}
-              <div className="readiness-item">
-                <span
-                  className={`readiness-badge ${scanIsReady(data.library.status) ? 'ready' : 'not-ready'}`}
+              <div className={readinessItemClassName}>
+                <StatusChip
+                  emphasis
+                  className="readiness-badge"
+                  variant={readinessChip[scanIsReady(data.library.status) ? 'ready' : 'not-ready']}
                 >
                   {scanIsReady(data.library.status) ? <Check size={14} /> : <X size={14} />}
                   {scanIsReady(data.library.status) ? 'Ready' : 'Not ready'}
-                </span>
-                <div>
-                  <strong>Library scan</strong>
-                  <p>
+                </StatusChip>
+                <div className="flex-1">
+                  <strong className="mb-[4px] block text-small text-text">Library scan</strong>
+                  <p className="text-tiny text-muted">
                     {data.library.status === 'idle'
                       ? `${data.library.total_files} files indexed`
                       : data.library.status === 'scanning'
@@ -952,9 +1112,19 @@ function DiagnosticsPage() {
                 </div>
               </div>
               {data.navidrome && settings.data && (
-                <div className="readiness-item">
-                  <span
-                    className={`readiness-badge ${data.navidrome.available ? 'ready' : data.navidrome.configured ? 'not-ready' : 'not-tested'}`}
+                <div className={readinessItemClassName}>
+                  <StatusChip
+                    emphasis
+                    className="readiness-badge"
+                    variant={
+                      readinessChip[
+                        data.navidrome.available
+                          ? 'ready'
+                          : data.navidrome.configured
+                            ? 'not-ready'
+                            : 'not-tested'
+                      ]
+                    }
                   >
                     {data.navidrome.available ? (
                       <>
@@ -972,10 +1142,10 @@ function DiagnosticsPage() {
                         Not configured
                       </>
                     )}
-                  </span>
-                  <div>
-                    <strong>Navidrome</strong>
-                    <p>
+                  </StatusChip>
+                  <div className="flex-1">
+                    <strong className="mb-[4px] block text-small text-text">Navidrome</strong>
+                    <p className="text-tiny text-muted">
                       {data.navidrome.available
                         ? `${data.navidrome.version} · ${String(settings.data.navidrome_mode.value)} mode`
                         : data.navidrome.detail}
@@ -986,16 +1156,20 @@ function DiagnosticsPage() {
               {data.sources
                 .filter((s) => s.source === 'youtube')
                 .map((source) => (
-                  <div key={source.source} className="readiness-item">
-                    <span
-                      className={`readiness-badge ${source.status === 'healthy' ? 'ready' : 'not-ready'}`}
+                  <div key={source.source} className={readinessItemClassName}>
+                    <StatusChip
+                      emphasis
+                      className="readiness-badge"
+                      variant={readinessChip[source.status === 'healthy' ? 'ready' : 'not-ready']}
                     >
                       {source.status === 'healthy' ? <Check size={14} /> : <X size={14} />}
                       {source.status === 'healthy' ? 'Ready' : 'Not ready'}
-                    </span>
-                    <div>
-                      <strong>YouTube download helper</strong>
-                      <p>
+                    </StatusChip>
+                    <div className="flex-1">
+                      <strong className="mb-[4px] block text-small text-text">
+                        YouTube download helper
+                      </strong>
+                      <p className="text-tiny text-muted">
                         {source.detail}
                         {data.queue.source_paused && ' · Paused'}
                       </p>
@@ -1003,16 +1177,20 @@ function DiagnosticsPage() {
                   </div>
                 ))}
               {data.last_download && (
-                <div className="readiness-item">
-                  <span
-                    className={`readiness-badge ${data.last_download.stage === 'done' ? 'ready' : 'not-ready'}`}
+                <div className={readinessItemClassName}>
+                  <StatusChip
+                    emphasis
+                    className="readiness-badge"
+                    variant={
+                      readinessChip[data.last_download.stage === 'done' ? 'ready' : 'not-ready']
+                    }
                   >
                     {data.last_download.stage === 'done' ? <Check size={14} /> : <X size={14} />}
                     {data.last_download.stage === 'done' ? 'Success' : 'Failed'}
-                  </span>
-                  <div>
-                    <strong>Last download</strong>
-                    <p>
+                  </StatusChip>
+                  <div className="flex-1">
+                    <strong className="mb-[4px] block text-small text-text">Last download</strong>
+                    <p className="text-tiny text-muted">
                       {data.last_download.stage === 'done'
                         ? 'Completed successfully'
                         : data.last_download.stage === 'failed'
@@ -1025,71 +1203,76 @@ function DiagnosticsPage() {
                 </div>
               )}
               {!data.last_download && (
-                <div className="readiness-item">
-                  <span className="readiness-badge not-tested">
+                <div className={readinessItemClassName}>
+                  <StatusChip
+                    emphasis
+                    className="readiness-badge"
+                    variant={readinessChip['not-tested']}
+                  >
                     <Minus size={14} />
                     Not tested
-                  </span>
-                  <div>
-                    <strong>Last download</strong>
-                    <p>No download attempted yet</p>
+                  </StatusChip>
+                  <div className="flex-1">
+                    <strong className="mb-[4px] block text-small text-text">Last download</strong>
+                    <p className="text-tiny text-muted">No download attempted yet</p>
                   </div>
                 </div>
               )}
             </div>
-          </section>
-          <div className="diagnostic-grid" id="sources">
+          </Panel>
+          <div
+            className="grid grid-cols-2 gap-[22px] max-tablet:gap-[15px] max-phone:grid-cols-1"
+            id="sources"
+          >
             {data.sources.map((source) => (
-              <section className="panel" key={source.source}>
-                <div className="section-heading">
-                  <h2>{source.source === 'deezer' ? 'Catalog connection' : 'Download source'}</h2>
-                  <span className={`status-chip ${source.status === 'healthy' ? 'good' : ''}`}>
+              <Panel key={source.source}>
+                <div className={sectionHeadingClassName}>
+                  <h2 className={sectionTitleClassName}>
+                    {source.source === 'deezer' ? 'Catalog connection' : 'Download source'}
+                  </h2>
+                  <StatusChip variant={source.status === 'healthy' ? 'good' : 'default'}>
                     {source.status}
-                  </span>
+                  </StatusChip>
                 </div>
-                <div className="source-summary">
-                  <span className="source-logo">
+                <div className={sourceSummaryClassName}>
+                  <span className={sourceLogoClassName}>
                     {source.source === 'deezer' ? 'd.' : source.source.charAt(0).toUpperCase()}
                   </span>
                   <div>
-                    <h3>{source.source.charAt(0).toUpperCase() + source.source.slice(1)}</h3>
-                    <p>{source.detail}</p>
+                    <h3 className="mb-[4px]">
+                      {source.source.charAt(0).toUpperCase() + source.source.slice(1)}
+                    </h3>
+                    <p className="text-small">{source.detail}</p>
                   </div>
                 </div>
-                <div className="probe-bottom">
-                  <span>
+                <div className="mt-[27px] flex items-center justify-between gap-[10px]">
+                  <span className="text-caption text-muted">
                     {source.latency_ms !== null
                       ? `${source.latency_ms} ms · ${new Date(source.checked_at).toLocaleTimeString()}`
                       : 'Not tested recently'}
                   </span>
                   {source.source === 'deezer' && (
-                    <button
-                      className="button"
-                      onClick={() => probe.mutate(source.source)}
-                      disabled={probe.isPending}
-                    >
+                    <Button onClick={() => probe.mutate(source.source)} disabled={probe.isPending}>
                       {probe.isPending ? 'Testing…' : 'Test now'}
                       <ArrowRight size={14} />
-                    </button>
+                    </Button>
                   )}
                 </div>
-                {probe.isError && (
-                  <p className="error" role="alert">
-                    {probe.error.message}
-                  </p>
-                )}
-              </section>
+                {probe.isError && <ErrorBanner role="alert">{probe.error.message}</ErrorBanner>}
+              </Panel>
             ))}
-            <section className="panel" id="disk">
-              <div className="section-heading">
-                <h2>Persistent storage</h2>
+            <Panel id="disk">
+              <div className={sectionHeadingClassName}>
+                <h2 className={sectionTitleClassName}>Persistent storage</h2>
                 <Folder size={18} />
               </div>
               {data.disks.map((disk) => (
-                <div className="disk" key={disk.path}>
-                  <div>
+                <div className="mt-[18px] first:mt-0" key={disk.path}>
+                  <div className="mb-[7px] flex justify-between gap-[12px] text-tiny">
                     <code>{disk.path}</code>
-                    <span>{disk.exists ? `${gb(disk.free_bytes)} free` : 'Not mounted'}</span>
+                    <span className="text-muted">
+                      {disk.exists ? `${gb(disk.free_bytes)} free` : 'Not mounted'}
+                    </span>
                   </div>
                   <meter
                     aria-label={`Free space in ${disk.path}`}
@@ -1097,29 +1280,31 @@ function DiagnosticsPage() {
                     max={disk.total_bytes ?? 1}
                     value={disk.free_bytes ?? 0}
                   />
-                  <small>
+                  <small className="text-micro text-faint max-phone:text-caption">
                     {disk.writable ? 'Write permission available' : 'Not writable'} · permission
                     check only
                   </small>
                 </div>
               ))}
-            </section>
+            </Panel>
           </div>
-          <section className="versions-section">
-            <div className="section-heading">
-              <h2>Under the hood</h2>
-              <span>INSTALLED IN THIS CONTAINER</span>
+          <section className="mt-[32px]">
+            <div className={sectionHeadingClassName}>
+              <h2 className={sectionTitleClassName}>Under the hood</h2>
+              <span className={sectionCaptionClassName}>INSTALLED IN THIS CONTAINER</span>
             </div>
-            <dl className="versions">
+            <dl className="grid grid-cols-2 gap-x-[33px] max-phone:gap-x-[20px] max-phone:grid-cols-1">
               {Object.entries(data.versions).map(([name, version]) => (
-                <div key={name}>
-                  <dt>{name}</dt>
-                  <dd>{version}</dd>
+                <div key={name} className={versionRowClassName}>
+                  <dt className="text-tiny text-muted">{name}</dt>
+                  <dd className="m-0 font-mono text-small text-text">{version}</dd>
                 </div>
               ))}
-              <div>
-                <dt>SQLite</dt>
-                <dd>WAL · schema {data.database.schema}</dd>
+              <div className={versionRowClassName}>
+                <dt className="text-tiny text-muted">SQLite</dt>
+                <dd className="m-0 font-mono text-small text-text">
+                  WAL · schema {data.database.schema}
+                </dd>
               </div>
             </dl>
           </section>
@@ -1139,10 +1324,10 @@ const rootRoute = createRootRoute({
     </PlayerProvider>
   ),
   notFoundComponent: () => (
-    <section className="empty-panel">
+    <EmptyPanel>
       <h1>Page not found</h1>
       <Link to="/search">Back to Musimo</Link>
-    </section>
+    </EmptyPanel>
   ),
 })
 const indexRoute = createRoute({
@@ -1289,6 +1474,11 @@ const settingsRoute = createRoute({
   path: '/settings',
   component: SettingsPage,
 })
+const userSettingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/settings/user',
+  component: UserSettingsPage,
+})
 const diagnosticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/diagnostics',
@@ -1313,6 +1503,7 @@ const router = createRouter({
     nowPlayingRoute,
     downloadsRoute,
     settingsRoute,
+    userSettingsRoute,
     diagnosticsRoute,
   ]),
   defaultPreload: 'intent',
@@ -1324,6 +1515,9 @@ declare module '@tanstack/react-router' {
 }
 const root = document.getElementById('root')
 if (!root) throw new Error('Missing application root')
+// Before the first render, so the tree never paints against the wrong palette. The boot script in
+// <head> has already put a saved theme on <html>; this is what takes ownership of it.
+startTheme()
 createRoot(root).render(
   <QueryClientProvider client={queryClient}>
     <RouterProvider router={router} />

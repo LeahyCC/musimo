@@ -3,6 +3,7 @@ import { Trash2 } from 'lucide-react'
 import { z } from 'zod'
 
 import { api } from './api'
+import { Button, ErrorBanner } from './ui'
 
 const activitySchema = z.object({
   events: z.array(z.object({ id: z.number(), kind: z.string(), created_at: z.string() })),
@@ -37,65 +38,64 @@ export function RecentActivity() {
     },
   })
   return (
-    <section className="events-section" aria-labelledby="activity-heading">
-      <div className="section-heading">
-        <h2 id="activity-heading">Recent activity</h2>
-        <button
-          type="button"
-          className="button"
+    <section className="mt-8" aria-labelledby="activity-heading">
+      <div className="mb-[21px] flex items-center justify-between gap-3">
+        <h2 id="activity-heading" className="text-strong">
+          Recent activity
+        </h2>
+        <Button
           disabled={!activity.data?.count || clear.isPending}
           onClick={() => activity.data && clear.mutate(activity.data.cursor)}
         >
           <Trash2 size={15} />
           {clear.isPending ? 'Clearing…' : 'Clear all'}
-        </button>
+        </Button>
       </div>
       {activity.isPending && <p role="status">Loading activity…</p>}
       {activity.isError && (
-        <p className="error" role="alert">
+        <ErrorBanner role="alert">
           {activity.error.message}{' '}
           <button type="button" onClick={() => void activity.refetch()}>
             Retry
           </button>
-        </p>
+        </ErrorBanner>
       )}
-      {clear.isError && (
-        <p className="error" role="alert">
-          {clear.error.message}
-        </p>
-      )}
+      {clear.isError && <ErrorBanner role="alert">{clear.error.message}</ErrorBanner>}
       {activity.data &&
         (activity.data.count ? (
           <>
-            <p className="muted small">
+            <p className="text-muted text-small">
               Showing the latest {activity.data.events.length} of {activity.data.count} entries.
             </p>
             <div
-              className="activity-scroll"
+              className="max-h-[320px] overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]"
               role="region"
               aria-label="Recent activity entries"
               tabIndex={0}
             >
-              <ul className="event-list">
+              <ul className="m-0 list-none p-0">
                 {activity.data.events.map((event) => (
-                  <li key={event.id}>
-                    <span className="event-dot" />
+                  <li
+                    key={event.id}
+                    className="flex items-center gap-3 border-t border-line py-[13px] text-small max-phone:gap-2"
+                  >
+                    <span className="h-[5px] w-[5px] rounded-full bg-muted" />
                     <span>{labels[event.kind] ?? event.kind.replaceAll('.', ' ')}</span>
-                    <time dateTime={event.created_at}>
+                    <time className="ml-auto text-caption text-faint" dateTime={event.created_at}>
                       {new Date(event.created_at).toLocaleString()}
                     </time>
-                    <code>#{event.id}</code>
+                    <code className="text-caption text-faint">#{event.id}</code>
                   </li>
                 ))}
               </ul>
             </div>
           </>
         ) : (
-          <p className="muted" role="status">
+          <p className="text-muted" role="status">
             No recent activity. New events will appear here.
           </p>
         ))}
-      <p className="muted small">
+      <p className="text-muted text-small">
         Clears this activity feed. Download history and live update records are kept separately.
       </p>
     </section>

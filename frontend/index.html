@@ -11,6 +11,10 @@
     <link rel="shortcut icon" href="/favicon.ico" />
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png" />
     <link rel="manifest" href="/site.webmanifest" />
+    <!-- Puts a saved theme on <html> before the first frame. Classic and external because the
+         Content-Security-Policy allows scripts from this origin only, and because it has to run
+         ahead of the module below. -->
+    <script src="/theme-boot.js"></script>
     <title>musimo</title>
   </head>
   <body>

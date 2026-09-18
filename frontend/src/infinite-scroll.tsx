@@ -25,7 +25,7 @@ export function InfiniteScroll({
   }, [hasMore, loading, onLoadMore])
 
   return (
-    <div className="infinite-sentinel" ref={sentinel}>
+    <div className="flex min-h-[42px] items-center justify-center text-muted" ref={sentinel}>
       {loading && <small role="status">Loading more…</small>}
     </div>
   )

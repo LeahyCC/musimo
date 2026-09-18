@@ -38,6 +38,8 @@ import {
   previewSchema,
 } from './api'
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from './api'
+import { cx } from './cx'
+import { Button, ErrorBanner, Field, IconButton, iconButtonClassName } from './ui'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 export type PreviewState = 'finding' | 'none' | 'ready'
@@ -180,6 +182,15 @@ export const durationText = (seconds: number) =>
 // One request per row is fine for a picker; filter the list to reach the rest.
 const PICKER_ROWS = 25
 
+/* `live-player` carries no styling of its own. It is the hook the player, playlist and popout
+   specs use, and the one the leftover seek-bar rules in style.css hang off. The idle footer is
+   hidden on a phone where it is rendered, not here. */
+const footerClassName = cx(
+  'live-player fixed right-[var(--safe-right)] bottom-0 left-[calc(var(--sidebar-width)+var(--safe-left))] z-bar flex h-[75px] items-center justify-between gap-[20px] border-t border-line-strong bg-raised px-[33px]',
+  'max-tablet:gap-[10px] max-tablet:px-[16px]',
+  'max-phone:right-0 max-phone:bottom-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:left-0 max-phone:h-auto max-phone:min-h-[60px] max-phone:gap-[6px] max-phone:pt-[10px] max-phone:pr-[calc(12px+var(--safe-right))] max-phone:pb-[8px] max-phone:pl-[calc(12px+var(--safe-left))]',
+)
+
 export const songCount = (count: number) => `${count} ${count === 1 ? 'song' : 'songs'}`
 
 export const artUrl = (track: LibraryTrack) =>
@@ -203,6 +214,8 @@ export function remember(key: string, value: string) {
     /* Browser storage is optional. */
   }
 }
+
+const pickerNoteClassName = 'mt-[6px] mb-[2px] text-muted'
 
 function PlaylistPickerRow({
   playlist,
@@ -236,29 +249,37 @@ function PlaylistPickerRow({
   const member = index >= 0
   const label = busy ? 'Saving…' : !known ? 'Loading…' : member ? 'Remove' : 'Add'
   return (
-    <div className="playlist-picker-row">
-      <div className="playlist-picker-head">
-        <button
-          type="button"
-          className={`icon-button playlist-picker-expand ${expanded ? 'open' : ''}`}
+    <div className="playlist-picker-row rounded-[8px] border border-line bg-raised px-[10px] py-[8px]">
+      <div className="flex items-center justify-between gap-[10px]">
+        <IconButton
+          size="compact"
           aria-label={`${expanded ? 'Hide' : 'Show'} songs in ${playlist.name}`}
           aria-expanded={expanded}
           onClick={() => onExpand(!expanded)}
         >
-          <ChevronDown size={16} />
-        </button>
-        <span>
+          <ChevronDown
+            size={16}
+            className={cx(
+              'transition-transform duration-[140ms] ease-[ease]',
+              expanded && 'rotate-180',
+            )}
+          />
+        </IconButton>
+        {/* Blocks, not grids: text-overflow only cuts text that sits directly in a block box. */}
+        <span className="block min-w-0 flex-1 truncate">
           {playlist.name}
-          <small>{songCount((known ? songs.length : playlist.songCount) ?? 0)}</small>
+          <small className="mt-[2px] block text-tiny text-muted">
+            {songCount((known ? songs.length : playlist.songCount) ?? 0)}
+          </small>
         </span>
         {failed ? (
-          <button type="button" className="button" onClick={onRetry}>
+          <Button className="shrink-0" onClick={onRetry}>
             Retry
-          </button>
+          </Button>
         ) : (
-          <button
-            type="button"
-            className={member ? 'button' : 'button primary'}
+          <Button
+            className="shrink-0"
+            variant={member ? 'default' : 'primary'}
             // Membership decides the action, so the label has to wait for the song list.
             aria-label={
               known
@@ -270,32 +291,32 @@ function PlaylistPickerRow({
           >
             {member && known && !busy && <Check size={14} />}
             {!member && known && !busy && <Plus size={14} />} {label}
-          </button>
+          </Button>
         )}
       </div>
       {expanded && (
-        <div className="playlist-picker-songs">
+        <div className="playlist-picker-songs mt-[8px] grid max-h-[190px] grid-cols-[minmax(0,1fr)] gap-[4px] overflow-y-auto overscroll-contain border-t border-line pt-[8px]">
           {(songs ?? []).map((song, songIndex) => (
-            <div key={`${song.id}-${songIndex}`}>
-              <span>
+            <div
+              key={`${song.id}-${songIndex}`}
+              className="flex items-center justify-between gap-[8px] px-[2px] py-[4px] text-small"
+            >
+              <span className="block min-w-0 truncate">
                 {song.title}
-                <small>{song.artist}</small>
+                <small className="mt-[5px] block text-tiny text-muted">{song.artist}</small>
               </span>
-              <button
-                type="button"
-                className="icon-button"
+              <IconButton
+                size="compact"
                 aria-label={`Remove ${song.title} from ${playlist.name}`}
                 disabled={busy}
                 onClick={() => onRemoveSong(songIndex)}
               >
                 <X size={14} />
-              </button>
+              </IconButton>
             </div>
           ))}
-          {known && !songs.length && (
-            <p className="playlist-picker-empty">This playlist is empty.</p>
-          )}
-          {failed && <p className="error">That playlist could not be read.</p>}
+          {known && !songs.length && <p className={pickerNoteClassName}>This playlist is empty.</p>}
+          {failed && <ErrorBanner>That playlist could not be read.</ErrorBanner>}
           {!known && !failed && <p role="status">Loading songs…</p>}
         </div>
       )}
@@ -880,11 +901,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }}
     >
       {children}
-      <footer ref={footerRef} className={`player live-player${activeTitle ? '' : ' idle'}`}>
-        <div className="now-playing">
-          {activeArt ? <img src={activeArt} alt="" /> : <Disc3 size={30} />}
-          <span>
-            <strong>
+      <footer ref={footerRef} className={cx(footerClassName, !activeTitle && 'max-phone:hidden')}>
+        <div className="flex min-w-0 flex-1 items-center gap-[13px] text-small max-phone:gap-[10px] [&_a:hover]:underline">
+          {activeArt ? (
+            <img className="size-[45px] rounded-md max-phone:size-[40px]" src={activeArt} alt="" />
+          ) : (
+            <Disc3 size={30} className="text-faint" />
+          )}
+          <span className="min-w-0">
+            <strong className="block truncate text-small font-medium max-phone:text-body">
               {isLibrary ? (
                 <Link to="/now-playing">{activeTitle}</Link>
               ) : track?.album_id ? (
@@ -900,7 +925,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               )}
             </strong>
             {activeArtist && (
-              <small className="player-byline">
+              <small className="mt-[5px] block truncate text-caption text-muted max-phone:mt-[2px] max-phone:max-w-full max-phone:text-tiny max-phone:leading-[1.3]">
                 {libraryTrack?.artistId ? (
                   <Link
                     to="/library/artists/$artistId"
@@ -936,33 +961,41 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 )}
               </small>
             )}
-            <small className="playback-notice" role="status">
+            <small
+              className="mt-[2px] block truncate text-caption text-muted max-phone:mt-[2px] max-phone:max-w-full max-phone:text-tiny max-phone:leading-[1.3]"
+              role="status"
+            >
               {notice}
             </small>
           </span>
         </div>
         {isLibrary && (
-          <div className="playlist-actions">
-            <button
-              className={`icon-button ${isLiked ? 'active' : ''}`}
+          <div className="flex items-center gap-[13px] text-small max-phone:hidden">
+            <IconButton
+              active={isLiked}
+              // The label already says which way the press goes, so a pressed state on top of it
+              // would be read out twice.
+              aria-pressed={undefined}
               aria-label={
                 isLiked ? `Remove ${activeTitle} from liked` : `Add ${activeTitle} to liked`
               }
               disabled={!canToggleLiked || playlistSongs.busy(likedPlaylist.data?.id ?? '')}
+              size="compact"
               onClick={() => toggleLikedTrack()}
             >
               <ThumbsUp size={16} fill={isLiked ? 'currentColor' : 'none'} />
-            </button>
-            <button
-              className="icon-button"
+            </IconButton>
+            <IconButton
               aria-label={`Add ${activeTitle} to a playlist`}
               disabled={!isLibrary}
+              size="compact"
               onClick={() => openPlaylistDialog()}
             >
               <Plus size={16} />
-            </button>
+            </IconButton>
             <Link
-              className="icon-button open-now-playing"
+              data-ui="icon-button"
+              className={iconButtonClassName(false, 'shrink-0', 'compact')}
               aria-label="Open Now Playing"
               to="/now-playing"
             >
@@ -970,18 +1003,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             </Link>
           </div>
         )}
-        <div className="playback-controls">
+        <div className="playback-controls flex items-center gap-[12px] text-tiny text-muted max-phone:gap-[2px]">
           {isLibrary ? (
-            <button
-              className="icon-button previous-track"
+            <IconButton
+              size="compact"
+              className="max-phone:hidden"
               aria-label="Previous track"
               onClick={previous}
             >
               <SkipBack size={17} />
-            </button>
+            </IconButton>
           ) : (
-            <button
-              className="icon-button restart-preview"
+            <IconButton
+              size="compact"
+              className="max-phone:hidden"
               aria-label="Restart preview"
               disabled={!ready}
               onClick={() => {
@@ -993,10 +1028,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               }}
             >
               <RotateCcw size={16} />
-            </button>
+            </IconButton>
           )}
-          <button
-            className="round-play"
+          <IconButton
+            variant="play"
             aria-label={
               isLibrary ? (playing ? 'Pause' : 'Play') : playing ? 'Pause preview' : 'Play preview'
             }
@@ -1004,14 +1039,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             onClick={toggle}
           >
             {playing ? <Pause size={19} /> : <Play size={19} />}
-          </button>
+          </IconButton>
           {isLibrary && (
-            <button className="icon-button" aria-label="Next track" onClick={() => next()}>
+            <IconButton size="compact" aria-label="Next track" onClick={() => next()}>
               <SkipForward size={17} />
-            </button>
+            </IconButton>
           )}
-          <span>{durationText(position)}</span>
+          <span className="max-phone:hidden">{durationText(position)}</span>
+          {/* On a phone the seek bar leaves the row and runs along the player's top edge, where
+              the handwritten rules in style.css draw its track from --progress. */}
           <input
+            className={cx(
+              'w-[140px] accent-accent max-tablet:w-[90px]',
+              'max-phone:absolute max-phone:top-[-6px] max-phone:left-0 max-phone:m-0 max-phone:block max-phone:h-[13px] max-phone:w-full max-phone:appearance-none max-phone:bg-transparent max-phone:disabled:opacity-60',
+            )}
             aria-label={isLibrary ? 'Playback position' : 'Preview position'}
             type="range"
             min="0"
@@ -1022,38 +1063,45 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             style={seekStyle}
             onChange={(event) => seek(Number(event.target.value))}
           />
-          <span>{durationText(length)}</span>
+          <span className="max-phone:hidden">{durationText(length)}</span>
         </div>
-        <div className="volume-controls">
+        <div className="flex items-center gap-[4px] text-small max-phone:hidden">
           {isLibrary && (
             <>
-              <button
-                className={`icon-button ${shuffle ? 'active' : ''}`}
+              <IconButton
+                active={shuffle}
+                size="compact"
                 aria-label="Shuffle"
                 onClick={toggleShuffle}
               >
                 <Shuffle size={17} />
-              </button>
-              <button
-                className={`icon-button ${repeat !== 'off' ? 'active' : ''}`}
+              </IconButton>
+              <IconButton
+                active={repeat !== 'off'}
+                size="compact"
                 aria-label={`Repeat ${repeat}`}
                 onClick={cycleRepeat}
               >
                 <Repeat size={17} />
-                {repeat === 'one' && <small>1</small>}
-              </button>
+                {repeat === 'one' && (
+                  <small className="absolute mt-[5px] block translate-x-[7px] translate-y-[7px] text-micro text-accent">
+                    1
+                  </small>
+                )}
+              </IconButton>
             </>
           )}
-          <button
-            className="icon-button"
+          <IconButton
+            size="compact"
             aria-label={
               isLibrary ? (muted ? 'Unmute' : 'Mute') : muted ? 'Unmute preview' : 'Mute preview'
             }
             onClick={toggleMute}
           >
             {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-          </button>
+          </IconButton>
           <input
+            className="w-[80px] accent-accent max-tablet:w-[64px]"
             type="range"
             aria-label={isLibrary ? 'Volume' : 'Preview volume'}
             min="0"
@@ -1064,37 +1112,39 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           />
         </div>
         {(track || libraryTrack) && (
-          <button
-            className="icon-button close-preview"
+          <IconButton
+            size="compact"
             aria-label={isLibrary ? 'Close player' : 'Close preview'}
             onClick={stop}
           >
             <X size={16} />
-          </button>
+          </IconButton>
         )}
         {isLibrary && (
           <dialog
             ref={playlistDialog}
-            className="playlist-picker-sheet"
+            // `playlist-picker-sheet` carries the handwritten ::backdrop rule. Centered at every
+            // width, so on a phone the name field is never trapped under the keyboard.
+            className="playlist-picker-sheet fixed inset-0 m-auto h-fit max-h-[78dvh] w-[min(520px,calc(100%-32px))] overflow-auto overscroll-contain rounded-[16px] border border-line-strong bg-raised p-[18px] text-text max-phone:max-h-[calc(100dvh-32px)] max-phone:w-[calc(100%-16px)] max-phone:p-[14px]"
             aria-label="Add track to playlist"
             onClose={() => setPickerOpen(false)}
             onClick={(event) => {
               if (event.target === playlistDialog.current) closePlaylistDialog()
             }}
           >
-            <header>
-              <h2>Add to playlist</h2>
-              <button
-                type="button"
-                className="icon-button"
+            <header className="mb-[12px] flex items-center gap-[14px]">
+              <h2 className="flex-1">Add to playlist</h2>
+              <IconButton
+                size="compact"
                 aria-label="Close playlist picker"
                 onClick={() => closePlaylistDialog()}
               >
                 <X size={16} />
-              </button>
+              </IconButton>
             </header>
-            <label className="playlist-picker-search">
+            <label className="flex rounded-[8px] border border-line bg-sunken px-[11px] text-muted">
               <input
+                className="w-full border-0 bg-transparent px-[2px] py-[10px] text-inherit"
                 aria-label="Filter playlists"
                 value={playlistSearch}
                 placeholder="Filter playlists"
@@ -1102,8 +1152,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               />
             </label>
             {allPlaylists.isLoading && <p role="status">Loading playlists…</p>}
-            {allPlaylists.isError && <p className="error">{allPlaylists.error.message}</p>}
-            <div className="playlist-picker-list">
+            {allPlaylists.isError && <ErrorBanner>{allPlaylists.error.message}</ErrorBanner>}
+            <div className="mt-[8px] mb-[10px] grid grid-cols-[minmax(0,1fr)] gap-[8px]">
               {availablePlaylists.map((playlist, at) => (
                 <PlaylistPickerRow
                   key={playlist.id}
@@ -1124,37 +1174,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 />
               ))}
               {!allPlaylists.isLoading && !availablePlaylists.length && (
-                <p className="playlist-picker-empty">No playlists yet.</p>
+                <p className={pickerNoteClassName}>No playlists yet.</p>
               )}
               {matchingPlaylists.length > PICKER_ROWS && (
-                <p className="playlist-picker-empty">
+                <p className={pickerNoteClassName}>
                   Showing {PICKER_ROWS} of {matchingPlaylists.length}. Filter above to reach the
                   others.
                 </p>
               )}
             </div>
-            <form className="playlist-picker-form" onSubmit={submitNewPlaylist}>
-              <label>
+            <form className="flex flex-wrap items-end gap-[10px]" onSubmit={submitNewPlaylist}>
+              <label className="grid min-w-[min(260px,100%)] gap-[6px] text-small text-muted">
                 New playlist
-                <input
+                <Field
                   value={newPlaylistName}
                   placeholder="Create and add this track"
                   maxLength={200}
                   onChange={(event) => setNewPlaylistName(event.target.value)}
                 />
               </label>
-              <button
-                className="button"
-                type="submit"
-                disabled={createBusy || !newPlaylistName.trim()}
-              >
+              <Button type="submit" disabled={createBusy || !newPlaylistName.trim()}>
                 {createBusy ? 'Creating…' : 'Create'}
-              </button>
+              </Button>
             </form>
             {(playlistSongs.mutation.isError || createPlaylist.isError) && (
-              <p className="error">
+              <ErrorBanner>
                 {playlistSongs.mutation.error?.message || createPlaylist.error?.message}
-              </p>
+              </ErrorBanner>
             )}
           </dialog>
         )}

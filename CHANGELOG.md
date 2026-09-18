@@ -31,7 +31,10 @@
 
 ### UI and accessibility
 
+- Finish the Tailwind migration: the last handwritten screen rules are gone, so a theme now reaches every page, and a new browser check walks every route at desktop and phone width under a light theme
+
 - Make every screen work on a phone: mini player, bottom-bar download count, safe-area insets, 44px touch targets, no focus zoom, tabs and sheets that fit (#48)
+- Add a personal settings page at `/settings/user` where you pick a theme, build your own from the color tokens with the whole app as a live preview, and export or import one as a file. Settings is now a Server and Yours switch, and the command palette has Change theme
 
 ## 0.4.0 (2026-09-10)
 

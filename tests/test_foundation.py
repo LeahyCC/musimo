@@ -50,9 +50,14 @@ class FoundationTests(unittest.TestCase):
                     "/index.html:secret",
                     "/escape.txt",
                     "/outside.txt",
+                    "/settings/nope",
                 ):
                     with self.subTest(path=path):
                         self.assertEqual(client.get(path).status_code, 404)
+                # Every in-app route has to survive a reload or a pasted link.
+                for path in ("/", "/settings", "/settings/user", "/library/albums"):
+                    with self.subTest(path=path):
+                        self.assertEqual(client.get(path).status_code, 200)
 
     def test_settings_are_atomic_persisted_and_bootstrap_locked(self) -> None:
         with tempfile.TemporaryDirectory() as folder:

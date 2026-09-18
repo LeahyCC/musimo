@@ -55,9 +55,9 @@ Still open after the walk:
 
 - A path outside the allow-listed screens (for example `/nope`) gets the backend's JSON 404, so the app's own "Page not found" screen only appears under `/library`. The backend tests assert that 404, so it was left alone.
 - Search sections still offer "View all" when they have no results.
-- Settings renders its section headings and the "Settings are up to date" bar before settings have loaded or when they fail to load.
 - A library request failure retries for several seconds before the inline error appears, and the loading line sits above the "Fresh in your library" heading rather than under it.
-- Long titles in the Now Playing "Up next" list wrap across several lines on desktop.
+
+Closed with its Tailwind phase: Settings no longer renders its section headings or the "Settings are up to date" bar before settings have loaded or when they fail to load; `e2e/app.spec.ts` covers a delayed and a failed `/api/settings` response. Now Playing's "Up next" list cuts a long title, artist or album to one line with an ellipsis, the way the playlist picker rows already did, and the hero heading stops a very long title after three lines at its full size.
 
 ## Phone walk, 11 September 2026
 
@@ -78,7 +78,7 @@ Fixed in that pass, each with a check in `e2e/phone.spec.ts` or the spec for its
 - The page declares `viewport-fit=cover`, and the bottom bar, footer, sheets and top bar pad by the safe-area insets so a phone installed to the home screen keeps its controls clear of the home indicator and notch.
 - Inner scrollers (track lists, the lyrics panel, filter menus, sheets and popovers) contain overscroll so a flick does not carry into the page, and the virtual track and job lists size themselves from the room left under the top bar and above the player and bottom bar.
 
-Looked at and left as they are: inline text links (track titles, artist links, the destination path) stay text-sized, as WCAG allows for links in running text; the playlist picker stays a centred modal because a bottom-anchored sheet with a text field at its foot sits under the on-screen keyboard; the Now Playing hero heading still wraps a very long title across several lines.
+Looked at and left as they are: inline text links (track titles, artist links, the destination path) stay text-sized, as WCAG allows for links in running text; the playlist picker stays a centred modal because a bottom-anchored sheet with a text field at its foot sits under the on-screen keyboard.
 
 Not verified on a device: the safe-area insets and the 16px zoom rule were reasoned from platform behaviour and checked only for their CSS effect in Chromium emulation, which reports no insets. A real notched iPhone in standalone mode and an Android phone with the keyboard open still need a look.
 
@@ -98,7 +98,7 @@ Checked 10 September 2026. Automated and manual accessibility checks cover keybo
 
 **Keyboard navigation:** Virtual lists (tracks, download queue) maintain focus without remounting on filter changes, with deliberate scroll reset when filters actually change. Escape key closes FilterMenu popovers. All icon-only buttons have aria-label attributes. TrackList uses stable keys to avoid losing focus on filter keystrokes.
 
-**Touch targets:** Under `(pointer: coarse)` media query, all interactive elements meet 44px minimum: icon buttons, job buttons, text preview button, download action select, row actions, tabs, chips, text links, inline Retry buttons, filter rows and form controls. The touch rules are the last block in the stylesheet so they outrank the size each control sets for itself. Text controls are 16px on touch screens so iOS Safari does not zoom on focus. Desktop density unchanged.
+**Touch targets:** Under `(pointer: coarse)` media query, all interactive elements meet 44px minimum: icon buttons, job buttons, text preview button, download action select, row actions, tabs, chips, text links, inline Retry buttons, filter rows and form controls. Each primitive carries its own `coarse:` 44px rule; the 16px text rule for inputs is the last block in the stylesheet, outside every cascade layer, so it outranks the size each control sets for itself. Text controls are 16px on touch screens so iOS Safari does not zoom on focus. Desktop density unchanged.
 
 **Screen reader:** Virtual lists announce with role="region" and aria-label. Queue count changes announce via aria-live="polite" live region. Library tabs carry aria-pressed state. TrackRow elements have aria-current when selected.
 
@@ -107,6 +107,14 @@ Checked 10 September 2026. Automated and manual accessibility checks cover keybo
 **Dynamic layout:** Player footer height tracked via ResizeObserver and published as --player-height CSS variable. Save bar, queue dock, main padding and the virtual lists derive offsets from this variable plus --nav-height (the phone bottom bar) and the safe-area insets, to prevent overlap when footer height changes (library track playing, connection banner shown, error expanded, footer hidden while idle on a phone).
 
 **Manual checks still needed:** Screen reader announcement quality across all flows (not just presence of ARIA attributes). Keyboard-only navigation completeness across all interactions. Focus visibility under different browser/OS high contrast modes. Touch target effectiveness on actual touch devices (automated check verifies size only).
+
+## Themed walk, 17 September 2026
+
+The Tailwind migration is finished, so every route was walked under the light fixture theme from `e2e/theme-fixtures.ts`, at 1280x800 and at 390x844 (the iPhone 13 phone project). `e2e/themed-walk.spec.ts` does this on every run now: eighteen routes (search results, search tracks, album, artist, library home, albums, album, artists, artist, artist songs, tracks, playlists, playlist, Now Playing, Downloads, Settings, Your settings and Diagnostics), each with a restored queue so the footer player shows. It checks that the page, the sidebar or bottom bar, the player and the first card or panel no longer paint the default theme's colors, runs axe, and saves a full-page screenshot.
+
+All 40 passed (20 routes, Chromium at 1280 by 800 and the phone project at 390 by 844) with no axe findings. Every screenshot was looked over for a dark patch. There were none: the only dark areas are the fixture artwork placeholders and the Now Playing stage, which draws on `--color-media` and `--color-on-media` by design so it stays readable over any picture. Nothing escaped the tokens, so no component needed a fix.
+
+One thing the walk did catch was in the test fixtures, not the app: a glob of `**/api/artists/7*` does not match `/api/artists/7/top`, so the artist page's popular songs went to the live provider. The walk's search fixture uses a regex instead.
 
 ## Further coverage
 

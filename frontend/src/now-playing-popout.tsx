@@ -20,9 +20,12 @@ import type { SceneId } from 'visimo/catalog'
 import { findPreset, firstPresetOf, presetOrDefault, stepPreset } from 'visimo/presets'
 import type { Preset } from 'visimo/presets'
 
+import { cx } from './cx'
 import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
 import type { StagePlacement, StageView } from './now-playing-overlay'
 import { artUrl, remember, stored, usePlayer } from './player'
+import { activeTheme, applyTheme, subscribeTheme } from './theme/store'
+import { Button } from './ui'
 
 // The whole WebGPU tree stays out of the main bundle until a stage wants it.
 const VisualizerStage = lazy(() => import('visimo').then((m) => ({ default: m.VisualizerStage })))
@@ -203,11 +206,17 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       .requestWindow({ width: POPOUT_SIZE, height: POPOUT_SIZE })
       .then((win) => {
         copyStyles(win.document)
+        // A theme other than the default lives as inline properties on the tab's <html>, which
+        // copyStyles cannot reach, so the popout document gets its own copy and every later change
+        // until it closes.
+        applyTheme(activeTheme(), win.document)
+        const unsubscribe = subscribeTheme(() => applyTheme(activeTheme(), win.document))
         win.document.title = 'Musimo player'
         win.document.body.className = 'popout-body'
-        win.addEventListener('pagehide', () =>
-          setPipWindow((current) => (current === win ? null : current)),
-        )
+        win.addEventListener('pagehide', () => {
+          unsubscribe()
+          setPipWindow((current) => (current === win ? null : current))
+        })
         setPipWindow(win)
       })
       .catch(() => setNotice('The popout could not open.'))
@@ -304,6 +313,11 @@ type StageProps = {
   onClose?: () => void
 }
 
+/* `stage` is the hook the suite and the handwritten `:fullscreen` and popout rules find it by; those
+   rules sit outside every layer, so they win over the box drawn here when either applies. */
+const stageClassName =
+  'stage relative aspect-square overflow-hidden rounded-[14px] bg-media shadow-[0_20px_60px_color-mix(in_oklab,var(--color-shadow)_47%,transparent)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent focus-visible:outline-solid'
+
 // One box: the visualizer, or a blurred cover fill behind a sharp,
 // letterboxed copy of the same artwork, with the hover controls on top.
 // Docked, full screen and popout all share it.
@@ -324,15 +338,27 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
   })
   const artwork = (
     <>
-      <div className="stage-backdrop">{art ? <img src={art} alt="" /> : <Disc3 size={48} />}</div>
-      {art && <img className="stage-art" src={art} alt="" />}
+      <div className="absolute inset-0 grid place-items-center text-on-media/50">
+        {art ? (
+          <img
+            className="size-full scale-105 object-cover opacity-35 blur-[6px] saturate-80"
+            src={art}
+            alt=""
+          />
+        ) : (
+          <Disc3 size={48} />
+        )}
+      </div>
+      {art && (
+        <img className="stage-art absolute inset-0 size-full object-contain" src={art} alt="" />
+      )}
     </>
   )
 
   return (
     <div
       ref={stageRef}
-      className={`stage ${idle ? 'idle' : ''}`}
+      className={cx(stageClassName, 'group', idle && 'idle cursor-none')}
       tabIndex={0}
       aria-label="Now Playing"
       onDoubleClick={(event) => {
@@ -415,15 +441,19 @@ export function NowPlayingStage() {
   }
 
   return (
-    <div className="stage-slot">
+    <div className="grid min-w-0 gap-[10px] max-phone:mx-auto max-phone:w-[min(320px,100%)]">
       {popout.popout ? (
-        <div className="stage stage-popped">
-          {art && <img className="stage-popped-art" src={art} alt="" />}
-          <div className="stage-popped-notice">
-            <p>Playing in the popout window.</p>
-            <button className="button" onClick={popout.closePopout}>
-              Bring back
-            </button>
+        <div className={cx(stageClassName, 'grid place-items-center')}>
+          {art && (
+            <img
+              className="absolute inset-0 size-full object-cover opacity-25 blur-[6px]"
+              src={art}
+              alt=""
+            />
+          )}
+          <div className="relative grid justify-items-center gap-[12px]">
+            <p className="text-on-media/75">Playing in the popout window.</p>
+            <Button onClick={popout.closePopout}>Bring back</Button>
           </div>
         </div>
       ) : (
@@ -436,7 +466,7 @@ export function NowPlayingStage() {
         />
       )}
       {popout.notice && (
-        <span className="muted stage-notice" role="status">
+        <span className="text-small text-muted" role="status">
           {popout.notice}
         </span>
       )}

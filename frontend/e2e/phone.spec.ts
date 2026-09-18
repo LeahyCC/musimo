@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 import type { DownloadJob, MusicResult } from '../src/api'
+import { COLOR_TOKENS } from '../src/theme/tokens'
 import { librarySong, ORIGIN, playerFixtures } from './library-fixtures'
 
 // Phone-width layout checks. Everything here runs on the mobile project only; the same
@@ -175,6 +176,33 @@ const box = async (locator: Locator) => {
 const pageOverflow = (page: Page) =>
   page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)
 
+/* Every control on screen that a thumb would miss or that iOS Safari would zoom into. A text
+   control under 16px triggers the zoom; a tap target under 44px is the WCAG floor. */
+const undersized = (page: Page) =>
+  page.evaluate(() => {
+    const out: string[] = []
+    for (const el of document.querySelectorAll<HTMLElement>('input, select, textarea')) {
+      if (['checkbox', 'radio', 'range'].includes((el as HTMLInputElement).type)) continue
+      const rect = el.getBoundingClientRect()
+      if (!rect.width || !rect.height) continue
+      const size = parseFloat(getComputedStyle(el).fontSize)
+      if (size < 16) out.push(`${el.tagName} ${el.getAttribute('aria-label') ?? ''} ${size}px`)
+    }
+
+    for (const el of document.querySelectorAll<HTMLElement>(
+      "[data-ui='icon-button'], [data-ui='button'], [data-ui='text-link'], [data-ui='tab']",
+    )) {
+      const rect = el.getBoundingClientRect()
+      if (!rect.width || !rect.height) continue
+      if (rect.height < 44 || rect.width < 44)
+        out.push(
+          `${el.dataset.ui ?? el.className} ${Math.round(rect.width)}x${Math.round(rect.height)}`,
+        )
+    }
+
+    return out
+  })
+
 test('the library and download tabs each fit one row at 360px', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 })
   await libraryFixtures(page)
@@ -290,27 +318,45 @@ test('touch controls are 44px and no text control is small enough to zoom', asyn
   // The explicit badge stays visible beside a truncated title.
   await expect(page.locator('.track-row').first().locator('.explicit')).toBeInViewport()
 
-  const small = await page.evaluate(() => {
-    const out: string[] = []
-    for (const el of document.querySelectorAll<HTMLElement>('input, select, textarea')) {
-      if (['checkbox', 'radio', 'range'].includes((el as HTMLInputElement).type)) continue
-      const rect = el.getBoundingClientRect()
-      if (!rect.width || !rect.height) continue
-      const size = parseFloat(getComputedStyle(el).fontSize)
-      if (size < 16) out.push(`${el.tagName} ${el.getAttribute('aria-label') ?? ''} ${size}px`)
-    }
+  expect(await undersized(page)).toEqual([])
+})
 
-    for (const el of document.querySelectorAll<HTMLElement>(
-      '.icon-button, .button, .round-play, .text-link, .result-tabs button',
-    )) {
-      const rect = el.getBoundingClientRect()
-      if (!rect.width || !rect.height) continue
-      if (rect.height < 44 || rect.width < 44)
-        out.push(`${el.className} ${Math.round(rect.width)}x${Math.round(rect.height)}`)
-    }
-    return out
-  })
-  expect(small).toEqual([])
+test('Your settings is one column and stays inside a 360px screen', async ({ page }) => {
+  await page.setViewportSize({ width: 360, height: 780 })
+  await page.goto('/settings/user')
+  await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible()
+  expect(await undersized(page)).toEqual([])
+  expect(await pageOverflow(page)).toBe(0)
+
+  await page.getByRole('button', { name: /^Duplicate and edit/ }).click()
+  await expect(page.getByRole('heading', { name: 'Readability' })).toBeVisible()
+  expect(await undersized(page)).toEqual([])
+  expect(await pageOverflow(page)).toBe(0)
+
+  // One column: every color swatch starts at the same left edge.
+  const swatches = page.locator("input[type='color']")
+  await expect(swatches).toHaveCount(COLOR_TOKENS.length)
+  const lefts = new Set<number>()
+  for (const swatch of await swatches.all()) lefts.add(Math.round((await box(swatch)).x))
+  expect(lefts.size).toBe(1)
+
+  // Save rides in a sticky bar, so it is on screen and clear of the bottom bar wherever the page
+  // is scrolled: at the top, and at the very end.
+  const save = page.getByRole('button', { name: 'Save', exact: true })
+  const nav = await box(page.locator('.sidebar'))
+  for (const y of [0, 100_000]) {
+    await page.evaluate((top: number) => window.scrollTo(0, top), y)
+    await expect
+      .poll(async () => (await box(save)).y + (await box(save)).height)
+      .toBeLessThanOrEqual(nav.y)
+    expect((await box(save)).y).toBeGreaterThanOrEqual(0)
+  }
+
+  // Picking a theme is the main control on the page, so its row is a full touch target.
+  await page.getByRole('button', { name: 'Cancel' }).click()
+  for (const label of await page.locator('label:has(input[type=radio])').all()) {
+    expect((await box(label)).height).toBeGreaterThanOrEqual(44)
+  }
 })
 
 test('the artist download selection is a bottom sheet', async ({ page }) => {
