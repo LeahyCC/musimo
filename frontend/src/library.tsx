@@ -67,6 +67,9 @@ import {
   IconButton,
   InlineError,
   Panel,
+  sectionCaptionClassName,
+  sectionHeadingClassName,
+  sectionTitleClassName,
   Tag,
   textLinkClassName,
 } from './ui'
@@ -398,7 +401,7 @@ function AlbumItem({
     <article className="library-card group min-w-0">
       <div className="relative">
         <button
-          className="library-cover relative grid aspect-square w-full place-items-center overflow-hidden rounded-[10px] border border-line bg-raised p-0 text-faint"
+          className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-[10px] border border-line bg-raised p-0 text-faint"
           aria-label={`Open ${album.name}`}
           onClick={onOpen}
         >
@@ -469,7 +472,7 @@ function ArtistItem({
       >
         <span
           className={cx(
-            'library-artist-art grid flex-none place-items-center overflow-hidden rounded-pill bg-raised text-faint',
+            'grid flex-none place-items-center overflow-hidden rounded-pill bg-raised text-faint',
             layout === 'grid' ? 'h-[104px] w-[104px]' : 'h-[52px] w-[52px]',
           )}
         >
@@ -617,7 +620,7 @@ function PopularityChart({ albums }: { albums: LibraryAlbum[] }) {
     )
     .join(' ')
   const busiest = points.reduce((best, album) => (album.playCount > best.playCount ? album : best))
-  const tickClass = 'fill-muted text-[11px]'
+  const tickClass = 'fill-muted text-tiny'
   return (
     <div className="grid gap-[8px] overflow-x-auto rounded-[10px] border border-line bg-sunken p-[14px]">
       <svg
@@ -1188,7 +1191,7 @@ export function LibraryPage({
       </nav>
       {showBrowser && (
         <div className="flex flex-wrap items-center gap-[10px] mb-[22px]">
-          <label className="library-search flex w-[min(420px,100%)] items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted">
+          <label className="flex w-[min(420px,100%)] items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted">
             <Search size={17} />
             <input
               className="w-full border-0 bg-transparent p-[11px] text-inherit outline-0"
@@ -1210,7 +1213,7 @@ export function LibraryPage({
           <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
             <SlidersHorizontal size={16} />
             <select
-              className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-[16px]"
+              className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
               aria-label={`Sort ${tab}`}
               value={sort}
               onChange={(event) => setSorts({ ...sorts, [tab]: event.target.value })}
@@ -1225,7 +1228,7 @@ export function LibraryPage({
           {tab === 'playlists' && (
             <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
               <select
-                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-[16px]"
+                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
                 aria-label="Filter playlists"
                 value={visibility}
                 onChange={(event) => setVisibility(event.target.value)}
@@ -1332,7 +1335,7 @@ export function LibraryPage({
       )}
       {(albumId || playlistId) && (
         <section className="library-detail grid gap-[16px]">
-          <div className="section-heading">
+          <div className={sectionHeadingClassName}>
             <div>
               <button
                 type="button"
@@ -1349,7 +1352,7 @@ export function LibraryPage({
               >
                 ← Back to {albumParent?.name ?? (playlistId ? 'playlists' : 'albums')}
               </button>
-              <h2 className="flex items-center gap-[8px]">
+              <h2 className="flex items-center gap-[8px] text-base">
                 {playlistLiked && <Heart size={17} fill="currentColor" />}
                 {detailTitle}
               </h2>
@@ -1360,7 +1363,7 @@ export function LibraryPage({
                 </small>
               )}
             </div>
-            <div className="button-row">
+            <div className="flex flex-wrap items-center gap-[16px]">
               <CollectionPlayButton
                 source={detailSource}
                 text="Play all"
@@ -1455,11 +1458,11 @@ export function LibraryPage({
           />
           {playlist && (
             <section className="border-t border-line pt-[12px]">
-              <div className="section-heading">
+              <div className={sectionHeadingClassName}>
                 <h3>Add songs</h3>
-                <span>Search your library</span>
+                <span className={sectionCaptionClassName}>Search your library</span>
               </div>
-              <label className="library-search flex w-[min(420px,100%)] items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted">
+              <label className="flex w-[min(420px,100%)] items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted">
                 <Search size={17} />
                 <input
                   className="w-full border-0 bg-transparent p-[11px] text-inherit outline-0"
@@ -1553,7 +1556,7 @@ export function LibraryPage({
                 {artistSongsMode ? `${artistSongs.length} SONGS` : `${artistAlbums.length} ALBUMS`}
               </span>
             </div>
-            <div className="button-row max-phone:w-full">
+            <div className="flex flex-wrap items-center gap-[16px] max-phone:w-full">
               <CollectionPlayButton
                 source={`artist:${artistId}`}
                 text="Play all"
@@ -1595,7 +1598,7 @@ export function LibraryPage({
             <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
               <SlidersHorizontal size={16} />
               <select
-                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-[16px]"
+                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
                 aria-label={artistSongsMode ? 'Sort songs' : 'Sort albums'}
                 value={artistSongsMode ? artistSongSort : artistAlbumSort}
                 onChange={(event) =>
@@ -1650,9 +1653,11 @@ export function LibraryPage({
                 ))}
               </div>
               <section className="grid gap-[10px] mt-[26px]">
-                <div className="section-heading">
+                <div className={sectionHeadingClassName}>
                   <h3>Popularity</h3>
-                  <span>Navidrome play counts by release year</span>
+                  <span className={sectionCaptionClassName}>
+                    Navidrome play counts by release year
+                  </span>
                 </div>
                 <PopularityChart albums={artistDetail.data.album} />
               </section>
@@ -1662,8 +1667,8 @@ export function LibraryPage({
       )}
       {(tab === 'home' || tab === 'albums') && showBrowser && (
         <section>
-          <div className="section-heading">
-            <h2>
+          <div className={sectionHeadingClassName}>
+            <h2 className={sectionTitleClassName}>
               {deferredQuery
                 ? 'Album results'
                 : tab === 'home'
@@ -1935,17 +1940,15 @@ export function NowPlayingPage() {
       </section>
       <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)] gap-[18px] max-tablet:grid-cols-1">
         <Panel className="min-w-0">
-          <div className="mb-[21px] flex items-center justify-between gap-[12px]">
-            <h2 className="text-[16px]">Up next</h2>
-            <span className="text-micro tracking-[1.2px] text-faint max-phone:text-caption">
-              {player.queue.length} TRACKS
-            </span>
+          <div className={sectionHeadingClassName}>
+            <h2 className={sectionTitleClassName}>Up next</h2>
+            <span className={sectionCaptionClassName}>{player.queue.length} TRACKS</span>
           </div>
           <TrackList tracks={player.queue} source={player.source} oneLine />
         </Panel>
         <Panel className="max-h-[500px] min-w-0 overflow-auto overscroll-contain">
-          <div className="mb-[21px] flex items-center justify-between gap-[12px]">
-            <h2 className="text-[16px]">Lyrics</h2>
+          <div className={sectionHeadingClassName}>
+            <h2 className={sectionTitleClassName}>Lyrics</h2>
           </div>
           {lyrics.isLoading && <p className={lyricLineClassName}>Loading lyrics…</p>}
           {!lyrics.isLoading && !words.length && (

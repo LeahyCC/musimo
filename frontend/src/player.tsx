@@ -1030,8 +1030,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               <RotateCcw size={16} />
             </IconButton>
           )}
-          <button
-            className="round-play"
+          <IconButton
+            variant="play"
             aria-label={
               isLibrary ? (playing ? 'Pause' : 'Play') : playing ? 'Pause preview' : 'Play preview'
             }
@@ -1039,7 +1039,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             onClick={toggle}
           >
             {playing ? <Pause size={19} /> : <Play size={19} />}
-          </button>
+          </IconButton>
           {isLibrary && (
             <IconButton size="compact" aria-label="Next track" onClick={() => next()}>
               <SkipForward size={17} />
@@ -1084,7 +1084,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               >
                 <Repeat size={17} />
                 {repeat === 'one' && (
-                  <small className="absolute mt-[5px] block translate-x-[7px] translate-y-[7px] text-[8px] text-accent">
+                  <small className="absolute mt-[5px] block translate-x-[7px] translate-y-[7px] text-micro text-accent">
                     1
                   </small>
                 )}

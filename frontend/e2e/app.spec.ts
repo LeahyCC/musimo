@@ -627,11 +627,9 @@ test('artist review counts selections, excludes failed albums and retries submis
     )
   })
   await page.goto('/artists/7')
-  await expect(page.locator('main section > .section-heading h2')).toHaveText([
-    'Popular songs',
-    'Popular albums',
-    'Discography',
-  ])
+  await expect(
+    page.getByRole('main').getByRole('region').getByRole('heading', { level: 2 }),
+  ).toHaveText(['Popular songs', 'Popular albums', 'Discography'])
   await expect(page.getByText('Most popular song', { exact: true })).toBeVisible()
   const popularAlbums = page.getByRole('region', { name: 'Popular albums' })
   await expect(popularAlbums.getByRole('article')).toHaveCount(1)
@@ -683,7 +681,7 @@ test('mobile nav shows all five items within the bottom bar', async ({ page, isM
     test.skip()
   }
   await page.goto('/')
-  const nav = page.locator('.sidebar nav')
+  const nav = page.getByRole('navigation', { name: 'Main navigation' })
   const searchLink = nav.getByRole('link', { name: 'Search' })
   const libraryLink = nav.getByRole('link', { name: 'Library' })
   const downloadsLink = nav.getByRole('link', { name: 'Downloads' })

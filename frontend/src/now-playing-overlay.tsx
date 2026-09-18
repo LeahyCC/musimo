@@ -364,14 +364,14 @@ export function NowPlayingOverlay({
           <StageButton aria-label="Previous track" disabled={!track} onClick={player.previous}>
             <SkipBack size={17} />
           </StageButton>
-          <button
-            className="round-play"
+          <IconButton
+            variant="play"
             aria-label={player.playing ? 'Pause' : 'Play'}
             disabled={!track && !player.track}
             onClick={player.toggle}
           >
             {player.playing ? <Pause size={19} /> : <Play size={19} />}
-          </button>
+          </IconButton>
           <StageButton aria-label="Next track" disabled={!track} onClick={player.next}>
             <SkipForward size={17} />
           </StageButton>

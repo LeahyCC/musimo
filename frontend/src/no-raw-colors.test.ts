@@ -5,12 +5,6 @@ import { describe, expect, it } from 'vitest'
 
 const src = fileURLToPath(new URL('.', import.meta.url))
 
-/* Files allowed to name a color, because the color is not a themed surface. Anything handed to
-   visimo or drawn on the WebGPU stage belongs to a scene, and the migration plan keeps scenes out
-   of the theme. Phase 1 found none: the stage passes visimo a preset id and a size, and the
-   artwork fallback is an <img>. Add a file here only with the reason beside it. */
-const ALLOWED = new Set<string>()
-
 /* A hex color is 3, 4, 6 or 8 digits. The lookbehind leaves a numeric entity and an in-page link
    alone. The function list is every CSS color function, which also catches an arbitrary Tailwind
    value whatever utility carries it. `color-mix(` is not in the list: mixing tokens is how a
@@ -33,7 +27,9 @@ const sources = (directory: string): string[] =>
   readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
     const path = join(directory, entry.name)
     if (entry.isDirectory()) return sources(path)
-    // The theme registry is the one place that spells a theme's colors out.
+    // The theme registry is the one place that spells a theme's colors out, and the only file
+    // excused. The migration finished with nothing else needing an exception: the stage hands
+    // visimo a preset id, and artwork is an <img>.
     if (relative(src, path).replaceAll('\\', '/') === 'theme/themes.ts') return []
 
     return /\.tsx?$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []
@@ -76,8 +72,6 @@ describe('no raw colors', () => {
     const files = [join(src, 'style.css'), ...sources(src)]
     const found = files.flatMap((path) => {
       const name = relative(src, path).replaceAll('\\', '/')
-      if (ALLOWED.has(name)) return []
-
       return rawColors(readFileSync(path, 'utf8'), name.endsWith('.css')).map(
         (finding) => `src/${name}:${finding}`,
       )

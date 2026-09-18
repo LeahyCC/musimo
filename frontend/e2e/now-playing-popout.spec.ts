@@ -225,6 +225,7 @@ for (const theme of [undefined, LIGHT_THEME]) {
       },
       [PLUM.id, JSON.stringify({ version: 1, themes: [theme ?? LIGHT_THEME, PLUM] })] as const,
     )
+
     await expect
       .poll(() =>
         page.evaluate(() => {
