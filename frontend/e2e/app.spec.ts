@@ -306,6 +306,30 @@ test('settings headings and the up-to-date bar wait for a delayed settings query
   await expect(page.getByText('Settings are up to date.')).toBeVisible()
 })
 
+test('the settings index does not move when the slower diagnostics query lands', async ({
+  page,
+}) => {
+  // Settings answers at once; diagnostics is held back, the way its disk and Navidrome probes hold
+  // it back for real. The banner it feeds sits above the form, so its room is kept in advance.
+  let release = () => {}
+  const held = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route('**/api/diagnostics', async (route) => {
+    await held
+    await route.fallback()
+  })
+  await page.goto('/settings')
+  const index = page.getByRole('navigation', { name: 'Settings sections' })
+  await expect(index).toBeVisible()
+  const before = await index.boundingBox()
+
+  release()
+  await expect(page.getByText(/System ready|need attention/)).toBeVisible()
+  const after = await index.boundingBox()
+  expect(after?.y).toBe(before?.y)
+})
+
 test('settings headings and the up-to-date bar stay hidden when the settings query fails', async ({
   page,
 }) => {

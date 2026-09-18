@@ -77,6 +77,7 @@ import {
   Tag,
   textLinkClassName,
 } from './ui'
+import type { StatusChipVariant } from './ui'
 import { SettingsSwitch, UserSettingsPage } from './user-settings'
 
 import './style.css'
@@ -126,19 +127,16 @@ const versionRowClassName =
   'flex flex-col gap-[7px] border-t border-line py-[13px] [overflow-wrap:anywhere]'
 
 type ReadinessState = 'ready' | 'not-ready' | 'not-tested'
-const readinessBadgeVariantClassNames: Record<ReadinessState, string> = {
-  'ready': 'border-good-line bg-good-bg text-good',
-  'not-ready': 'border-danger-line bg-danger-bg text-danger',
-  'not-tested': 'border-partial-line bg-partial-bg text-partial',
+const readinessChip: Record<ReadinessState, StatusChipVariant> = {
+  'ready': 'good',
+  'not-ready': 'danger',
+  'not-tested': 'default',
 }
 
-/** The readiness row's status pill. `readiness-badge` stays a bare hook: `e2e/app.spec.ts` finds it by class. */
-function readinessBadgeClassName(state: ReadinessState) {
-  return cx(
-    'readiness-badge flex shrink-0 items-center gap-[6px] rounded-[5px] border px-[10px] py-[5px] text-caption font-semibold tracking-[0.5px] uppercase',
-    readinessBadgeVariantClassNames[state],
-  )
-}
+/* `readiness-panel`, `readiness-item` and `readiness-badge` are bare hooks: `e2e/app.spec.ts`
+   finds the panel, its rows and their badges by class. */
+const readinessItemClassName =
+  'readiness-item flex items-start gap-[14px] border-b border-line pb-[16px] last:border-b-0 last:pb-0'
 
 function readinessFeedbackClassName(success: boolean) {
   return cx(
@@ -637,6 +635,20 @@ function SettingsPage() {
       <p className="-mt-[8px] mb-[32px] max-w-[650px] text-lead">
         Preferences save without a restart. Download defaults apply to newly queued tracks.
       </p>
+      {/* Until diagnostics answer, the banner's own markup holds its place unseen, with the longer
+          of its two messages so the space is right at every width. */}
+      {!diagnostics.data && (
+        <div
+          className="invisible my-[16px] flex items-center gap-[10px] rounded-md border px-[16px] py-[12px] text-small"
+          aria-hidden="true"
+        >
+          <AlertCircle size={16} />
+          Some components need attention.
+          <span className="ml-auto underline coarse:inline-flex coarse:min-h-11 coarse:items-center">
+            View diagnostics
+          </span>
+        </div>
+      )}
       {diagnostics.data &&
         (() => {
           const rootsReady = diagnostics.data.library.roots.every((root: string) => {
@@ -685,17 +697,20 @@ function SettingsPage() {
             </div>
           )
         })()}
-      {settings.isError ? (
+      {/* The banner shows on any failure, but the form stays as long as there is data behind it:
+          a refetch that fails after a live update must not take a person's draft off the screen. */}
+      {settings.isError && (
         <ErrorBanner role="alert">
           {settings.error.message}
           <button onClick={() => void settings.refetch()}>Retry</button>
         </ErrorBanner>
-      ) : !settings.data ? (
-        <p role="status">Loading settings…</p>
+      )}
+      {!settings.data ? (
+        !settings.isError && <p role="status">Loading settings…</p>
       ) : (
         <div className="grid grid-cols-[145px_1fr] gap-[30px] max-tablet:grid-cols-1 max-phone:gap-[26px]">
           <nav
-            className="section-index sticky top-[119px] flex flex-col gap-[19px] self-start border-l border-line-strong px-[17px] text-small text-muted max-tablet:static max-tablet:flex-row max-phone:gap-[18px] max-phone:px-[12px] max-phone:text-tiny"
+            className="sticky top-[119px] flex flex-col gap-[19px] self-start border-l border-line-strong px-[17px] text-small text-muted max-tablet:static max-tablet:flex-row max-phone:gap-[18px] max-phone:px-[12px] max-phone:text-tiny"
             aria-label="Settings sections"
           >
             <a href="#library" className={sectionIndexLinkClassName}>
@@ -976,6 +991,7 @@ function DiagnosticsPage() {
             const overallReady =
               rootsReady && scanReady && navidromeReady !== false && youtubeReady && lastDownloadOk
 
+            // `health-strip` is a bare hook: `e2e/app.spec.ts` reads the strip by class.
             return (
               <div className="health-strip my-[28px] flex items-center gap-[17px] rounded-[8px] border border-good-line bg-good-bg px-[25px] py-[22px] max-phone:p-[19px]">
                 <span className="flex rounded-full border border-good-line p-[7px] text-accent">
@@ -1002,14 +1018,15 @@ function DiagnosticsPage() {
                 const disk = data.disks.find((d) => d.path === root)
                 const ready = disk?.exists && disk?.writable && disk?.free_bytes !== null
                 return (
-                  <div
-                    key={root}
-                    className="readiness-item flex items-start gap-[14px] border-b border-line pb-[16px] last:border-b-0 last:pb-0"
-                  >
-                    <span className={readinessBadgeClassName(ready ? 'ready' : 'not-ready')}>
+                  <div key={root} className={readinessItemClassName}>
+                    <StatusChip
+                      emphasis
+                      className="readiness-badge"
+                      variant={readinessChip[ready ? 'ready' : 'not-ready']}
+                    >
                       {ready ? <Check size={14} /> : <X size={14} />}
                       {ready ? 'Ready' : 'Not ready'}
-                    </span>
+                    </StatusChip>
                     <div className="flex-1">
                       <strong className="mb-[4px] block text-small text-text">Library root</strong>
                       <code className="mb-[4px] block text-tiny text-muted">{root}</code>
@@ -1030,11 +1047,15 @@ function DiagnosticsPage() {
                   const disk = data.disks.find((d) => d.path === destPath)
                   const ready = disk?.exists && disk?.writable
                   return (
-                    <div className="readiness-item flex items-start gap-[14px] border-b border-line pb-[16px] last:border-b-0 last:pb-0">
-                      <span className={readinessBadgeClassName(ready ? 'ready' : 'not-ready')}>
+                    <div className={readinessItemClassName}>
+                      <StatusChip
+                        emphasis
+                        className="readiness-badge"
+                        variant={readinessChip[ready ? 'ready' : 'not-ready']}
+                      >
                         {ready ? <Check size={14} /> : <X size={14} />}
                         {ready ? 'Ready' : 'Not ready'}
-                      </span>
+                      </StatusChip>
                       <div className="flex-1">
                         <strong className="mb-[4px] block text-small text-text">
                           Download destination
@@ -1066,15 +1087,15 @@ function DiagnosticsPage() {
                     : `Write test failed: ${testDestination.data.error}`}
                 </div>
               )}
-              <div className="readiness-item flex items-start gap-[14px] border-b border-line pb-[16px] last:border-b-0 last:pb-0">
-                <span
-                  className={readinessBadgeClassName(
-                    scanIsReady(data.library.status) ? 'ready' : 'not-ready',
-                  )}
+              <div className={readinessItemClassName}>
+                <StatusChip
+                  emphasis
+                  className="readiness-badge"
+                  variant={readinessChip[scanIsReady(data.library.status) ? 'ready' : 'not-ready']}
                 >
                   {scanIsReady(data.library.status) ? <Check size={14} /> : <X size={14} />}
                   {scanIsReady(data.library.status) ? 'Ready' : 'Not ready'}
-                </span>
+                </StatusChip>
                 <div className="flex-1">
                   <strong className="mb-[4px] block text-small text-text">Library scan</strong>
                   <p className="text-tiny text-muted">
@@ -1087,15 +1108,19 @@ function DiagnosticsPage() {
                 </div>
               </div>
               {data.navidrome && settings.data && (
-                <div className="readiness-item flex items-start gap-[14px] border-b border-line pb-[16px] last:border-b-0 last:pb-0">
-                  <span
-                    className={readinessBadgeClassName(
-                      data.navidrome.available
-                        ? 'ready'
-                        : data.navidrome.configured
-                          ? 'not-ready'
-                          : 'not-tested',
-                    )}
+                <div className={readinessItemClassName}>
+                  <StatusChip
+                    emphasis
+                    className="readiness-badge"
+                    variant={
+                      readinessChip[
+                        data.navidrome.available
+                          ? 'ready'
+                          : data.navidrome.configured
+                            ? 'not-ready'
+                            : 'not-tested'
+                      ]
+                    }
                   >
                     {data.navidrome.available ? (
                       <>
@@ -1113,7 +1138,7 @@ function DiagnosticsPage() {
                         Not configured
                       </>
                     )}
-                  </span>
+                  </StatusChip>
                   <div className="flex-1">
                     <strong className="mb-[4px] block text-small text-text">Navidrome</strong>
                     <p className="text-tiny text-muted">
@@ -1127,18 +1152,15 @@ function DiagnosticsPage() {
               {data.sources
                 .filter((s) => s.source === 'youtube')
                 .map((source) => (
-                  <div
-                    key={source.source}
-                    className="readiness-item flex items-start gap-[14px] border-b border-line pb-[16px] last:border-b-0 last:pb-0"
-                  >
-                    <span
-                      className={readinessBadgeClassName(
-                        source.status === 'healthy' ? 'ready' : 'not-ready',
-                      )}
+                  <div key={source.source} className={readinessItemClassName}>
+                    <StatusChip
+                      emphasis
+                      className="readiness-badge"
+                      variant={readinessChip[source.status === 'healthy' ? 'ready' : 'not-ready']}
                     >
                       {source.status === 'healthy' ? <Check size={14} /> : <X size={14} />}
                       {source.status === 'healthy' ? 'Ready' : 'Not ready'}
-                    </span>
+                    </StatusChip>
                     <div className="flex-1">
                       <strong className="mb-[4px] block text-small text-text">
                         YouTube download helper
@@ -1151,15 +1173,17 @@ function DiagnosticsPage() {
                   </div>
                 ))}
               {data.last_download && (
-                <div className="readiness-item flex items-start gap-[14px] border-b border-line pb-[16px] last:border-b-0 last:pb-0">
-                  <span
-                    className={readinessBadgeClassName(
-                      data.last_download.stage === 'done' ? 'ready' : 'not-ready',
-                    )}
+                <div className={readinessItemClassName}>
+                  <StatusChip
+                    emphasis
+                    className="readiness-badge"
+                    variant={
+                      readinessChip[data.last_download.stage === 'done' ? 'ready' : 'not-ready']
+                    }
                   >
                     {data.last_download.stage === 'done' ? <Check size={14} /> : <X size={14} />}
                     {data.last_download.stage === 'done' ? 'Success' : 'Failed'}
-                  </span>
+                  </StatusChip>
                   <div className="flex-1">
                     <strong className="mb-[4px] block text-small text-text">Last download</strong>
                     <p className="text-tiny text-muted">
@@ -1175,11 +1199,15 @@ function DiagnosticsPage() {
                 </div>
               )}
               {!data.last_download && (
-                <div className="readiness-item flex items-start gap-[14px] border-b border-line pb-[16px] last:border-b-0 last:pb-0">
-                  <span className={readinessBadgeClassName('not-tested')}>
+                <div className={readinessItemClassName}>
+                  <StatusChip
+                    emphasis
+                    className="readiness-badge"
+                    variant={readinessChip['not-tested']}
+                  >
                     <Minus size={14} />
                     Not tested
-                  </span>
+                  </StatusChip>
                   <div className="flex-1">
                     <strong className="mb-[4px] block text-small text-text">Last download</strong>
                     <p className="text-tiny text-muted">No download attempted yet</p>
@@ -1263,7 +1291,7 @@ function DiagnosticsPage() {
                 INSTALLED IN THIS CONTAINER
               </span>
             </div>
-            <dl className="grid grid-cols-2 gap-x-[33px] max-phone:gap-x-[20px] max-[420px]:grid-cols-1">
+            <dl className="grid grid-cols-2 gap-x-[33px] max-phone:gap-x-[20px] max-phone:grid-cols-1">
               {Object.entries(data.versions).map(([name, version]) => (
                 <div key={name} className={versionRowClassName}>
                   <dt className="text-tiny text-muted">{name}</dt>

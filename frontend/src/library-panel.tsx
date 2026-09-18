@@ -1,7 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 
 import { api, librarySchema } from './api'
-import { Button, ErrorBanner } from './ui'
+import { Button, ErrorBanner, Panel } from './ui'
 
 export function LibraryPanel() {
   const client = useQueryClient()
@@ -16,10 +16,7 @@ export function LibraryPanel() {
   })
   const data = query.data
   return (
-    <section
-      className="my-[20px] rounded-[8px] border border-line p-[20px]"
-      aria-label="Library index"
-    >
+    <Panel className="my-[20px]" aria-label="Library index">
       <h3 className="mb-[12px]">Library index</h3>
       {data && (
         <>
@@ -57,6 +54,6 @@ export function LibraryPanel() {
           </button>
         </ErrorBanner>
       )}
-    </section>
+    </Panel>
   )
 }
