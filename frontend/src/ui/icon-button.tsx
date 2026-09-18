@@ -12,9 +12,10 @@ export type IconButtonSize = 'default' | 'compact' | 'box'
 /**
  * `outlined` draws a border and takes the surrounding text color: the actions on a job card.
  * `accent` is the album download control: a soft border, accent ink, and on a card a wash of the
- * page color so the icon reads over artwork.
+ * page color so the icon reads over artwork. `on-media` is the Now Playing stage's controls, drawn
+ * over artwork or the visualizer, so they take the on-media color a theme keeps light.
  */
-export type IconButtonVariant = 'plain' | 'outlined' | 'accent' | 'accent-washed'
+export type IconButtonVariant = 'plain' | 'outlined' | 'accent' | 'accent-washed' | 'on-media'
 
 /** The `.icon-button` look as a class string, for an element the component can't wrap (a routed link). */
 export function iconButtonClassName(
@@ -25,7 +26,7 @@ export function iconButtonClassName(
 ) {
   return cx(
     'inline-flex items-center justify-center p-[7px]',
-    variant === 'plain' && 'border-0 bg-transparent',
+    (variant === 'plain' || variant === 'on-media') && 'border-0 bg-transparent',
     variant === 'outlined' && 'rounded-[8px] border border-line-strong bg-transparent',
     variant === 'accent' && 'rounded-[8px] border border-line bg-transparent',
     variant === 'accent-washed' && 'rounded-[8px] border border-line bg-canvas/93',
@@ -37,7 +38,9 @@ export function iconButtonClassName(
       ? 'text-accent'
       : variant === 'outlined'
         ? 'text-text'
-        : 'text-muted',
+        : variant === 'on-media'
+          ? 'text-on-media'
+          : 'text-muted',
     className,
   )
 }

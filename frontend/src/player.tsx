@@ -39,7 +39,7 @@ import {
 } from './api'
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from './api'
 import { cx } from './cx'
-import { Button, ErrorBanner, IconButton, iconButtonClassName } from './ui'
+import { Button, ErrorBanner, Field, IconButton, iconButtonClassName } from './ui'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 export type PreviewState = 'finding' | 'none' | 'ready'
@@ -215,6 +215,8 @@ export function remember(key: string, value: string) {
   }
 }
 
+const pickerNoteClassName = 'mt-[6px] mb-[2px] text-muted'
+
 function PlaylistPickerRow({
   playlist,
   songs,
@@ -247,20 +249,28 @@ function PlaylistPickerRow({
   const member = index >= 0
   const label = busy ? 'Saving…' : !known ? 'Loading…' : member ? 'Remove' : 'Add'
   return (
-    <div className="playlist-picker-row">
-      <div className="playlist-picker-head">
+    <div className="playlist-picker-row rounded-[8px] border border-line bg-raised px-[10px] py-[8px]">
+      <div className="flex items-center justify-between gap-[10px]">
         <IconButton
           size="compact"
-          className={cx('playlist-picker-expand', expanded && 'open')}
           aria-label={`${expanded ? 'Hide' : 'Show'} songs in ${playlist.name}`}
           aria-expanded={expanded}
           onClick={() => onExpand(!expanded)}
         >
-          <ChevronDown size={16} />
+          <ChevronDown
+            size={16}
+            className={cx(
+              'transition-transform duration-[140ms] ease-[ease]',
+              expanded && 'rotate-180',
+            )}
+          />
         </IconButton>
-        <span>
+        {/* Blocks, not grids: text-overflow only cuts text that sits directly in a block box. */}
+        <span className="block min-w-0 flex-1 truncate">
           {playlist.name}
-          <small>{songCount((known ? songs.length : playlist.songCount) ?? 0)}</small>
+          <small className="mt-[2px] block text-tiny text-muted">
+            {songCount((known ? songs.length : playlist.songCount) ?? 0)}
+          </small>
         </span>
         {failed ? (
           <Button className="shrink-0" onClick={onRetry}>
@@ -285,12 +295,15 @@ function PlaylistPickerRow({
         )}
       </div>
       {expanded && (
-        <div className="playlist-picker-songs">
+        <div className="playlist-picker-songs mt-[8px] grid max-h-[190px] grid-cols-[minmax(0,1fr)] gap-[4px] overflow-y-auto overscroll-contain border-t border-line pt-[8px]">
           {(songs ?? []).map((song, songIndex) => (
-            <div key={`${song.id}-${songIndex}`}>
-              <span>
+            <div
+              key={`${song.id}-${songIndex}`}
+              className="flex items-center justify-between gap-[8px] px-[2px] py-[4px] text-small"
+            >
+              <span className="block min-w-0 truncate">
                 {song.title}
-                <small>{song.artist}</small>
+                <small className="mt-[5px] block text-tiny text-muted">{song.artist}</small>
               </span>
               <IconButton
                 size="compact"
@@ -302,9 +315,7 @@ function PlaylistPickerRow({
               </IconButton>
             </div>
           ))}
-          {known && !songs.length && (
-            <p className="playlist-picker-empty">This playlist is empty.</p>
-          )}
+          {known && !songs.length && <p className={pickerNoteClassName}>This playlist is empty.</p>}
           {failed && <ErrorBanner>That playlist could not be read.</ErrorBanner>}
           {!known && !failed && <p role="status">Loading songs…</p>}
         </div>
@@ -1112,15 +1123,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         {isLibrary && (
           <dialog
             ref={playlistDialog}
-            className="playlist-picker-sheet"
+            // `playlist-picker-sheet` carries the handwritten ::backdrop rule. Centered at every
+            // width, so on a phone the name field is never trapped under the keyboard.
+            className="playlist-picker-sheet fixed inset-0 m-auto h-fit max-h-[78dvh] w-[min(520px,calc(100%-32px))] overflow-auto overscroll-contain rounded-[16px] border border-line-strong bg-raised p-[18px] text-text max-phone:max-h-[calc(100dvh-32px)] max-phone:w-[calc(100%-16px)] max-phone:p-[14px]"
             aria-label="Add track to playlist"
             onClose={() => setPickerOpen(false)}
             onClick={(event) => {
               if (event.target === playlistDialog.current) closePlaylistDialog()
             }}
           >
-            <header>
-              <h2>Add to playlist</h2>
+            <header className="mb-[12px] flex items-center gap-[14px]">
+              <h2 className="flex-1">Add to playlist</h2>
               <IconButton
                 size="compact"
                 aria-label="Close playlist picker"
@@ -1129,8 +1142,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 <X size={16} />
               </IconButton>
             </header>
-            <label className="playlist-picker-search">
+            <label className="flex rounded-[8px] border border-line bg-sunken px-[11px] text-muted">
               <input
+                className="w-full border-0 bg-transparent px-[2px] py-[10px] text-inherit"
                 aria-label="Filter playlists"
                 value={playlistSearch}
                 placeholder="Filter playlists"
@@ -1139,7 +1153,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             </label>
             {allPlaylists.isLoading && <p role="status">Loading playlists…</p>}
             {allPlaylists.isError && <ErrorBanner>{allPlaylists.error.message}</ErrorBanner>}
-            <div className="playlist-picker-list">
+            <div className="mt-[8px] mb-[10px] grid grid-cols-[minmax(0,1fr)] gap-[8px]">
               {availablePlaylists.map((playlist, at) => (
                 <PlaylistPickerRow
                   key={playlist.id}
@@ -1160,19 +1174,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                 />
               ))}
               {!allPlaylists.isLoading && !availablePlaylists.length && (
-                <p className="playlist-picker-empty">No playlists yet.</p>
+                <p className={pickerNoteClassName}>No playlists yet.</p>
               )}
               {matchingPlaylists.length > PICKER_ROWS && (
-                <p className="playlist-picker-empty">
+                <p className={pickerNoteClassName}>
                   Showing {PICKER_ROWS} of {matchingPlaylists.length}. Filter above to reach the
                   others.
                 </p>
               )}
             </div>
-            <form className="playlist-picker-form" onSubmit={submitNewPlaylist}>
-              <label>
+            <form className="flex flex-wrap items-end gap-[10px]" onSubmit={submitNewPlaylist}>
+              <label className="grid min-w-[min(260px,100%)] gap-[6px] text-small text-muted">
                 New playlist
-                <input
+                <Field
                   value={newPlaylistName}
                   placeholder="Create and add this track"
                   maxLength={200}

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { buttonClassName } from './button'
+import { iconButtonClassName } from './icon-button'
 import { textLinkClassName } from './text-link'
 
 describe('buttonClassName', () => {
@@ -25,5 +26,15 @@ describe('textLinkClassName', () => {
 
   it('appends an extra class name', () => {
     expect(textLinkClassName('ml-auto')).toMatch(/\bml-auto$/)
+  })
+})
+
+describe('iconButtonClassName', () => {
+  it('draws the on-media variant in the on-media color, and in the accent once it is on', () => {
+    expect(iconButtonClassName(false, undefined, 'compact', 'on-media')).toContain('text-on-media')
+    expect(iconButtonClassName(true, undefined, 'compact', 'on-media')).toContain('text-accent')
+    expect(iconButtonClassName(true, undefined, 'compact', 'on-media')).not.toContain(
+      'text-on-media',
+    )
   })
 })

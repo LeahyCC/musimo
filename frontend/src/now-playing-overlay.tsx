@@ -23,8 +23,10 @@ import type { SceneId } from 'visimo/catalog'
 import { PRESETS } from 'visimo/presets'
 import type { Preset } from 'visimo/presets'
 
+import { cx } from './cx'
 import { artUrl, durationText, usePlayer } from './player'
 import { IconButton } from './ui'
+import type { IconButtonProps } from './ui'
 
 export type StagePlacement = 'docked' | 'popout'
 export type StageView = 'artwork' | 'visualizer'
@@ -46,6 +48,17 @@ type OverlayProps = {
 }
 
 const IDLE_MS = 2500
+
+/* The overlay's controls sit on artwork or the visualizer, not on the page, so they take the
+   on-media color. `compact` is the 32 by 36 box they had, and still 44px on a touch screen. */
+function StageButton(props: IconButtonProps) {
+  return <IconButton variant="on-media" size="compact" {...props} />
+}
+
+/* `idle` on the stage (its `group`) fades the overlay and stops the bars catching the pointer. */
+const stageBarClassName = 'pointer-events-auto flex items-center group-[.idle]:pointer-events-none'
+const stageSelectClassName =
+  'h-[32px] rounded-[8px] border border-on-media/20 bg-scrim/60 px-[8px] text-small text-on-media'
 
 // The overlay fades out after a short still spell while music plays, and the
 // cursor goes with it. It stays while paused, while the pointer rests on a
@@ -233,15 +246,23 @@ export function NowPlayingOverlay({
         ? 'Exit full screen'
         : 'Full screen'
   return (
-    <div className="stage-overlay">
-      <div className="stage-top">
-        <span className="stage-status" role="status">
+    <div className="stage-overlay pointer-events-none absolute inset-0 flex flex-col justify-between transition-opacity duration-250 group-[.idle]:opacity-0">
+      <div
+        className={cx(
+          'stage-top justify-between gap-[8px] bg-linear-to-b from-scrim/67 to-transparent px-[16px] pt-[14px] pb-[24px]',
+          stageBarClassName,
+        )}
+      >
+        <span
+          className="min-w-0 flex-1 truncate text-caption tracking-[1.5px] text-on-media/65 uppercase [text-shadow:0_1px_6px_var(--color-shadow)]"
+          role="status"
+        >
           {player.playing ? 'Playing' : 'Paused'}
         </span>
-        <div className="stage-actions">
+        <div className="flex gap-[4px]">
           {view === 'visualizer' && preset && onPreset && (
             <select
-              className="stage-select"
+              className={stageSelectClassName}
               aria-label="Preset"
               value={preset.id}
               onChange={(event) => onPreset(event.target.value)}
@@ -260,7 +281,7 @@ export function NowPlayingOverlay({
           {/* Nothing to choose while there is one scene, so it is not shown. */}
           {view === 'visualizer' && onScene && SCENE_IDS.length > 1 && (
             <select
-              className="stage-select"
+              className={stageSelectClassName}
               aria-label="Scene"
               value={scene}
               onChange={(event) => {
@@ -277,7 +298,7 @@ export function NowPlayingOverlay({
           {/* The size control belongs to whichever scene is drawing. */}
           {view === 'visualizer' && scene === 'fluid' && onFluidSize && (
             <select
-              className="stage-select"
+              className={stageSelectClassName}
               aria-label="Fluid grid"
               value={fluidSize}
               onChange={(event) => onFluidSize(Number(event.target.value))}
@@ -290,33 +311,42 @@ export function NowPlayingOverlay({
             </select>
           )}
           {view && onToggleView && (
-            <IconButton
+            <StageButton
               aria-label={view === 'visualizer' ? 'Show artwork' : 'Show visualizer'}
               onClick={onToggleView}
             >
               {view === 'visualizer' ? <ImageIcon size={17} /> : <Sparkles size={17} />}
-            </IconButton>
+            </StageButton>
           )}
           {onPopout && (
-            <IconButton aria-label="Pop out player" onClick={onPopout}>
+            <StageButton aria-label="Pop out player" onClick={onPopout}>
               <PictureInPicture2 size={17} />
-            </IconButton>
+            </StageButton>
           )}
-          <IconButton aria-label={fullscreenLabel} onClick={onFullscreen}>
+          <StageButton aria-label={fullscreenLabel} onClick={onFullscreen}>
             {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-          </IconButton>
+          </StageButton>
         </div>
       </div>
-      <div className="stage-controls">
-        <div className="stage-track">
-          {art ? <img src={art} alt="" /> : <Disc3 size={22} />}
-          <span>
-            <strong>{title}</strong>
-            {byline && <small>{byline}</small>}
+      <div
+        className={cx(
+          'stage-controls flex-wrap gap-[8px] bg-linear-to-b from-transparent to-scrim/80 px-[16px] pt-[28px] pb-[14px] text-on-media max-phone:gap-[4px]',
+          stageBarClassName,
+        )}
+      >
+        <div className="flex min-w-0 flex-[1_1_160px] items-center gap-[10px]">
+          {art ? (
+            <img className="size-[40px] shrink-0 rounded-md object-cover" src={art} alt="" />
+          ) : (
+            <Disc3 size={22} />
+          )}
+          <span className="grid min-w-0">
+            <strong className="truncate text-body">{title}</strong>
+            {byline && <small className="truncate text-tiny text-on-media/70">{byline}</small>}
           </span>
         </div>
         {track && (
-          <IconButton
+          <StageButton
             active={player.liked.isLiked}
             // The label already says which way the press goes, so a pressed state on top of it
             // would be read out twice.
@@ -328,12 +358,12 @@ export function NowPlayingOverlay({
             onClick={player.liked.toggle}
           >
             <ThumbsUp size={16} fill={player.liked.isLiked ? 'currentColor' : 'none'} />
-          </IconButton>
+          </StageButton>
         )}
-        <div className="stage-transport">
-          <IconButton aria-label="Previous track" disabled={!track} onClick={player.previous}>
+        <div className="flex items-center gap-[2px]">
+          <StageButton aria-label="Previous track" disabled={!track} onClick={player.previous}>
             <SkipBack size={17} />
-          </IconButton>
+          </StageButton>
           <button
             className="round-play"
             aria-label={player.playing ? 'Pause' : 'Play'}
@@ -342,13 +372,14 @@ export function NowPlayingOverlay({
           >
             {player.playing ? <Pause size={19} /> : <Play size={19} />}
           </button>
-          <IconButton aria-label="Next track" disabled={!track} onClick={player.next}>
+          <StageButton aria-label="Next track" disabled={!track} onClick={player.next}>
             <SkipForward size={17} />
-          </IconButton>
+          </StageButton>
         </div>
-        <div className="stage-seek">
+        <div className="flex min-w-0 flex-[3_1_220px] items-center gap-[8px] text-tiny tabular-nums max-phone:order-1 max-phone:basis-full">
           <span>{durationText(player.position)}</span>
           <input
+            className="min-w-0 flex-1 accent-accent"
             aria-label="Playback position"
             type="range"
             min="0"
@@ -362,24 +393,31 @@ export function NowPlayingOverlay({
         </div>
         {track && (
           <>
-            <IconButton active={player.shuffle} aria-label="Shuffle" onClick={player.toggleShuffle}>
+            <StageButton
+              active={player.shuffle}
+              aria-label="Shuffle"
+              onClick={player.toggleShuffle}
+            >
               <Shuffle size={17} />
-            </IconButton>
-            <IconButton
+            </StageButton>
+            <StageButton
               active={player.repeat !== 'off'}
               aria-label={`Repeat ${player.repeat}`}
               onClick={player.cycleRepeat}
             >
               <Repeat size={17} />
-              {player.repeat === 'one' && <small>1</small>}
-            </IconButton>
+              {player.repeat === 'one' && (
+                <small className="-ml-[4px] text-micro max-phone:text-caption">1</small>
+              )}
+            </StageButton>
           </>
         )}
-        <div className="stage-volume">
-          <IconButton aria-label={player.muted ? 'Unmute' : 'Mute'} onClick={player.toggleMute}>
+        <div className="flex items-center gap-[2px]">
+          <StageButton aria-label={player.muted ? 'Unmute' : 'Mute'} onClick={player.toggleMute}>
             {player.muted || player.volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-          </IconButton>
+          </StageButton>
           <input
+            className="w-[80px] accent-accent max-phone:hidden"
             type="range"
             aria-label="Volume"
             min="0"
