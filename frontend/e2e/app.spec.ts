@@ -90,6 +90,20 @@ test('keyboard search, tab and sort survive navigation and refresh', async ({ pa
   )
 })
 
+test('a top-tab section with no results hides its View all link', async ({ page }) => {
+  await page.goto('/search?q=Fixture')
+  const tracks = page.getByRole('region', { name: 'Tracks' })
+  const albums = page.getByRole('region', { name: 'Albums' })
+  const artists = page.getByRole('region', { name: 'Artists' })
+  await expect(tracks.locator('.track-row').first()).toBeVisible()
+  await expect(albums.getByRole('article').first()).toBeVisible()
+  await expect(tracks.getByRole('button', { name: 'View all' })).toBeVisible()
+  await expect(albums.getByRole('button', { name: 'View all' })).toBeVisible()
+  // The section is there with its empty state, and only then is the missing link proof.
+  await expect(artists.getByText('No artists match this search.')).toBeVisible()
+  await expect(artists.getByRole('button', { name: 'View all' })).toHaveCount(0)
+})
+
 test('popularity keeps an exact artist name ahead of larger fuzzy matches', async ({ page }) => {
   const exact: MusicResult = {
     ...album,

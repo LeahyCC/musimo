@@ -5,6 +5,7 @@ import { z } from 'zod'
 
 import { api, jobSchema } from './api'
 import type { MusicResult } from './api'
+import { cx } from './cx'
 import { activeJob, updateJob, useJobs } from './downloads'
 import { Button, errorBannerClassName, IconButton } from './ui'
 
@@ -21,12 +22,15 @@ export function AlbumDownloadButton({
   format,
   target,
   label,
+  overlay = false,
 }: {
   item: MusicResult
   missingOnly?: boolean
   format?: string
   target?: string
   label?: string
+  /** The card variant: absolutely positioned over the art, hidden until the card is hovered. */
+  overlay?: boolean
 }) {
   const client = useQueryClient()
   const queue = useJobs()
@@ -73,7 +77,14 @@ export function AlbumDownloadButton({
     <ArrowDownToLine size={18} />
   )
   return (
-    <div className="album-card-download">
+    <div
+      className={cx(
+        'album-card-download flex min-h-[36px] gap-[8px]',
+        overlay
+          ? 'absolute top-[18px] right-[18px] z-float max-w-[calc(100%-36px)] flex-col items-end'
+          : 'relative items-center',
+      )}
+    >
       {label ? (
         <Button
           disabled={disabled}
@@ -86,6 +97,12 @@ export function AlbumDownloadButton({
         </Button>
       ) : (
         <IconButton
+          variant={overlay ? 'accent-washed' : 'accent'}
+          className={cx(
+            'min-h-[36px] min-w-[36px]',
+            overlay &&
+              'opacity-0 pointer-events-none transition-opacity group-hover:opacity-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:pointer-events-auto no-hover:opacity-100 no-hover:pointer-events-auto',
+          )}
           disabled={disabled}
           aria-label={ariaLabel}
           title={title}
@@ -97,7 +114,13 @@ export function AlbumDownloadButton({
 
       {(queued > 0 || result) && (
         <span role="status">
-          <Link to="/downloads" className="album-download-status">
+          <Link
+            to="/downloads"
+            className={cx(
+              'album-download-status text-tiny coarse:inline-flex coarse:min-h-11 coarse:items-center',
+              overlay && 'rounded-md bg-raised/96 p-[8px]',
+            )}
+          >
             {queued > 0
               ? `${queued} queued`
               : result?.jobs.length
@@ -110,7 +133,14 @@ export function AlbumDownloadButton({
       )}
 
       {download.isError && (
-        <span className={errorBannerClassName('block', 'download-error')} role="alert">
+        <span
+          className={
+            overlay
+              ? 'download-error min-w-0 flex-1 rounded-md bg-raised/96 p-[8px] text-tiny [overflow-wrap:anywhere]'
+              : errorBannerClassName('block', 'download-error')
+          }
+          role="alert"
+        >
           {download.error.message}
           <button
             type="button"

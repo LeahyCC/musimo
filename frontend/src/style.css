@@ -190,10 +190,15 @@
     color: var(--color-muted);
     line-height: 1.6;
   }
-}
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
+  button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  @media (width < 48rem) {
+    h1 {
+      font-size: 27px;
+    }
+  }
 }
 button:focus-visible,
 a:focus-visible,
@@ -324,13 +329,10 @@ meter::-webkit-meter-optimum-value {
       calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 32px)
       calc(20px + var(--safe-left));
   }
-  h1 {
-    font-size: 27px;
-  }
-  .eyebrow {
+  .section-heading > span:not([data-ui='status-chip']) {
     font-size: 10px;
   }
-  .section-heading > span:not([data-ui='status-chip']) {
+  .eyebrow {
     font-size: 10px;
   }
   .page-heading {
@@ -348,286 +350,11 @@ meter::-webkit-meter-optimum-value {
   }
 }
 
-.discovery-home {
-  padding: 54px 0 30px;
-  max-width: 840px;
-}
-.discovery-home h1 {
-  font-size: clamp(42px, 6vw, 78px);
-  letter-spacing: -3px;
-  margin: 26px 0;
-  line-height: 1.06;
-}
-.discovery-home em {
-  font-style: normal;
-  color: var(--color-accent);
-}
-.discovery-home p {
-  max-width: 490px;
-  font-size: 17px;
-}
-.suggestions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-  margin: 32px 0 60px;
-}
-.discovery-note {
-  display: flex;
-  gap: 16px;
-  border-top: 1px solid var(--color-line);
-  padding-top: 26px;
-  color: var(--color-accent);
-}
-.discovery-note small {
-  display: block;
-  color: var(--color-muted);
-  margin-top: 7px;
-}
-.search-toolbar {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  flex-wrap: wrap;
-  border-bottom: 1px solid var(--color-line);
-  padding-bottom: 18px;
-}
-.result-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-right: auto;
-}
-.result-tabs button {
-  white-space: nowrap;
-  border: 0;
-  background: transparent;
-  padding: 10px 17px;
-  color: var(--color-muted);
-  border-radius: 22px;
-}
-.result-tabs .selected {
-  color: var(--color-accent-ink);
-  background: var(--color-accent);
-}
-.sort-control {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  color: var(--color-muted);
-  font-size: 13px;
-}
-.sort-control select,
-.filter-chips select,
-.filter-chips input,
-.album-actions select {
-  background: var(--color-sunken);
-  border: 1px solid var(--color-line);
-  border-radius: 7px;
-  padding: 8px;
-  color: var(--color-text);
-}
-.filter-chips {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  padding: 20px 0 8px;
-  align-items: end;
-}
-.filter-chips label {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  font-size: 11px;
-  color: var(--color-muted);
-}
-.filter-chips input[type='number'] {
-  width: 93px;
-}
-.filter-chips .check-filter {
-  flex-direction: row;
-  align-items: center;
-  padding: 10px;
-}
-.result-hint {
-  font-size: 11px;
-  margin: 12px 0 24px;
-}
-.results-section {
-  margin-bottom: 36px;
-}
 .results-section > .section-heading {
   margin-bottom: 17px;
 }
 .results-section h2 {
   margin-bottom: 12px;
-}
-.music-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(145px, 1fr));
-  gap: 20px;
-}
-.music-card {
-  position: relative;
-  isolation: isolate;
-  min-width: 0;
-  padding: 12px;
-  border: 1px solid transparent;
-  background: var(--color-raised);
-  border-radius: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 9px;
-}
-.music-card:hover,
-.music-card:focus-within {
-  background: var(--color-hover);
-  border-color: var(--color-line);
-}
-.result-art {
-  aspect-ratio: 1;
-  position: relative;
-  background: var(--color-active);
-  border-radius: 7px;
-  display: grid;
-  place-items: center;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-.result-art img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-.result-art.artist-art {
-  border-radius: 50%;
-}
-.art-play {
-  position: absolute;
-  inset: 0;
-  display: grid;
-  place-items: center;
-  border: 0;
-  color: var(--color-on-media);
-  background: color-mix(in oklab, var(--color-scrim) 47%, transparent);
-  opacity: 0;
-  transition: opacity 0.15s;
-}
-.result-art:hover .art-play,
-.result-art:focus-within .art-play {
-  opacity: 1;
-}
-.card-primary-link {
-  font-size: 14px;
-  font-weight: 600;
-}
-.card-primary-link > span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.card-primary-link::after {
-  content: '';
-  position: absolute;
-  inset: 0;
-  z-index: var(--z-index-base);
-  border-radius: 12px;
-}
-.card-primary-link:focus-visible::after {
-  outline: 2px solid var(--color-accent);
-  outline-offset: 3px;
-}
-.card-secondary-link,
-.music-card .coverage-retry,
-.music-card .art-play {
-  position: relative;
-  z-index: var(--z-index-raised);
-}
-.music-card .art-play {
-  position: absolute;
-}
-.music-card small {
-  color: var(--color-muted);
-  font-size: 12px;
-}
-.music-card meter {
-  height: 4px;
-  width: 100%;
-  accent-color: var(--color-accent);
-}
-.track-row {
-  height: 76px;
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  border-bottom: 1px solid var(--color-line);
-  font-size: 12px;
-  padding: 8px;
-}
-.track-row:hover {
-  background: var(--color-hover);
-}
-.track-row:focus {
-  outline: 2px solid var(--color-accent);
-  outline-offset: -2px;
-}
-.track-row .result-art {
-  width: 46px;
-  height: 46px;
-}
-.track-title {
-  min-width: 0;
-  flex: 1;
-}
-/* A row, not a block: the explicit badge was the first thing an ellipsis cut off. */
-.track-title strong {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-size: 13px;
-  font-weight: 500;
-}
-.track-title strong > a {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.track-title > a {
-  display: block;
-  color: var(--color-muted);
-  margin-top: 5px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.track-album {
-  width: 19%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  color: var(--color-muted);
-}
-.track-year,
-.track-duration {
-  width: 32px;
-  color: var(--color-muted);
-}
-.explicit {
-  flex-shrink: 0;
-  font-size: 9px;
-  padding: 1px 4px;
-  border-radius: 2px;
-  background: var(--color-faint);
-  color: var(--color-accent-ink);
-}
-.text-preview {
-  border: 0;
-  background: transparent;
-  color: var(--color-accent);
-  font-size: 11px;
-  width: 65px;
 }
 .virtual-list {
   /* The first height stands in where dvh is unknown; the second wins everywhere else. */
@@ -649,43 +376,18 @@ meter::-webkit-meter-optimum-value {
 .empty-results {
   padding: 30px 0;
 }
-.search-skeleton i {
-  display: block;
-  height: 58px;
-  background: linear-gradient(100deg, var(--color-raised), var(--color-hover), var(--color-raised));
-  margin-top: 12px;
-  border-radius: 7px;
-}
-.best-result {
-  display: flex;
-  align-items: center;
-  gap: 20px;
-  background: linear-gradient(110deg, var(--color-good-bg), var(--color-raised));
-  border: 1px solid var(--color-good-line);
-  padding: 24px;
+/* Card primary-link hit area and focus ring: stays handwritten (docs/tailwind-migration.md,
+   "What stays handwritten CSS"). The card's positioning context is `.music-card`. */
+.card-primary-link::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: var(--z-index-base);
   border-radius: 12px;
-  margin-top: 22px;
 }
-.best-result > div {
-  flex: 1;
-}
-.best-result strong,
-.best-result span,
-.best-result small {
-  display: block;
-}
-.best-result small {
-  color: var(--color-accent);
-  font-size: 10px;
-  letter-spacing: 1.5px;
-}
-.best-result strong {
-  font-size: 21px;
-  margin: 7px 0;
-}
-.best-result span {
-  color: var(--color-muted);
-  font-size: 12px;
+.card-primary-link:focus-visible::after {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 3px;
 }
 .round-play {
   flex-shrink: 0;
@@ -705,131 +407,12 @@ meter::-webkit-meter-optimum-value {
   font-size: 10px;
   color: var(--color-muted);
 }
-.album-header {
-  display: flex;
-  gap: 28px;
-  align-items: center;
-  margin: 24px 0 32px;
-}
-.album-header > .result-art {
-  width: 210px;
-}
-.album-header h1 {
-  margin: 12px 0;
-}
-.album-header p {
-  margin: 15px 0;
-  font-size: 13px;
-}
-.album-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 15px;
-  align-items: center;
-  margin-bottom: 25px;
-}
-.album-actions label {
-  color: var(--color-muted);
-  font-size: 12px;
-}
-.album-actions small {
-  width: 100%;
-  color: var(--color-muted);
-}
-/* The base reset makes svg a block, which put the warning icon on a line of its own. */
-.download-target svg {
-  display: inline-block;
-  vertical-align: -2px;
-}
-.artist-header {
-  display: flex;
-  gap: 25px;
-  align-items: center;
-  margin: 25px 0 40px;
-}
-.artist-header img {
-  width: 150px;
-  border-radius: 50%;
-}
-.artist-header h1 {
-  margin: 12px 0;
-}
-.artist-download-actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  margin-top: 14px;
-}
-.artist-download-action {
-  display: inline-grid;
-  grid-template-columns: 30px auto;
-  align-items: center;
-  gap: 9px;
-  min-height: 44px;
-  padding: 7px 13px 7px 7px;
-  color: var(--color-text);
-  background: var(--color-sunken);
-  border: 1px solid var(--color-line-strong);
-  border-radius: 8px;
-}
-.artist-download-action:hover {
-  background: var(--color-hover);
-  border-color: var(--line-hover);
-}
-.artist-download-action > svg {
-  box-sizing: border-box;
-  width: 30px;
-  height: 30px;
-  padding: 7px;
-  color: var(--color-accent);
-  background: var(--color-active);
-  border-radius: 6px;
-}
-.artist-download-action span {
-  display: grid;
-  gap: 3px;
-  font-size: 12px;
-  font-weight: 600;
-  line-height: 1;
-  text-align: left;
-}
-.artist-download-action small {
-  color: var(--color-muted);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
 .artist-release-heading {
   align-items: end;
 }
 .artist-release-heading > div:first-child {
   display: grid;
   gap: 5px;
-}
-.artist-release-controls {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-.artist-release-controls label {
-  display: grid;
-  gap: 5px;
-  color: var(--color-muted);
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-.artist-release-controls select {
-  min-width: 145px;
-  padding: 8px 30px 8px 10px;
-  color: var(--color-text);
-  background: var(--color-sunken);
-  border: 1px solid var(--color-line-strong);
-  border-radius: 7px;
-  font-size: 12px;
-  letter-spacing: normal;
-  text-transform: none;
 }
 .command-palette {
   position: fixed;
@@ -884,110 +467,17 @@ meter::-webkit-meter-optimum-value {
   color: var(--color-muted);
 }
 @media (width < 68.75rem) {
-  .track-album {
-    display: none;
-  }
   .preview-label {
     display: none;
   }
 }
 @media (width < 48rem) {
-  .discovery-home {
-    padding-top: 25px;
-  }
-  .discovery-home h1 {
-    letter-spacing: -2px;
-  }
-  .suggestions {
-    margin-bottom: 35px;
-  }
-  .search-toolbar {
-    gap: 10px;
-  }
-  .result-tabs {
-    width: 100%;
-  }
-  .result-tabs button {
-    flex: 1;
-    padding: 9px;
-  }
-  .music-grid {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 12px;
-  }
-  .track-row {
-    gap: 9px;
-    padding: 6px 0;
-  }
-  .track-year,
-  .text-preview {
-    display: none;
-  }
-  .track-duration {
-    font-size: 11px;
-  }
-  .track-row [data-ui='ownership'] {
-    font-size: 10px;
-    padding: 4px 6px;
-  }
-  .album-header {
-    align-items: flex-start;
-    gap: 16px;
-  }
-  .album-header > .result-art {
-    width: 95px;
-  }
-  .album-header h1 {
-    font-size: 24px;
-  }
-  .artist-header img {
-    width: 95px;
-  }
   .artist-release-heading {
     align-items: start;
     flex-direction: column;
   }
-  .artist-release-controls,
-  .artist-release-controls label,
-  .artist-release-controls select {
-    width: 100%;
-  }
-  .best-result {
-    padding: 18px;
-    gap: 10px;
-  }
-  .best-result > svg {
-    display: none;
-  }
 }
 
-.page-title {
-  margin: 0 0 25px;
-}
-.track-title strong {
-  font-size: 14px;
-}
-.music-card small,
-.track-title > a {
-  font-size: 13px;
-}
-.result-hint {
-  font-size: 12px;
-}
-.filter-chips label {
-  font-size: 12px;
-}
-
-/* Keep preview controls usable on touch screens as well as desktop. */
-.coverage-retry {
-  font-size: 11px;
-  align-self: flex-start;
-}
-.selected-track {
-  background: color-mix(in oklab, var(--color-accent) 9%, transparent);
-  outline: 1px solid var(--color-accent);
-  outline-offset: -1px;
-}
 @media (width < 48rem) {
   .preview-label {
     display: none;
@@ -1038,106 +528,6 @@ meter::-webkit-meter-optimum-value {
     padding: 14px;
   }
 }
-@media (width < 48rem) {
-  .track-row {
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) auto;
-    grid-template-rows: 1fr auto;
-    gap: 2px 8px;
-  }
-  .track-row .result-art {
-    grid-column: 1;
-    grid-row: 1 / 3;
-  }
-  .track-row .track-title {
-    grid-column: 2;
-    grid-row: 1;
-  }
-  .track-row .track-duration {
-    display: none;
-  }
-  .track-row [data-ui='ownership'] {
-    grid-column: 2;
-    grid-row: 2;
-    justify-self: start;
-  }
-  .track-row .download-action {
-    grid-column: 3;
-    grid-row: 1 / 3;
-    gap: 2px;
-  }
-  /* The format moves into the options popover, which gives the title the row's width. */
-  .track-row .download-action > select {
-    display: none;
-  }
-}
-.album-card-download {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  position: relative;
-  min-height: 36px;
-}
-.album-card-download > [data-ui='icon-button'] {
-  color: var(--color-accent);
-  border: 1px solid var(--color-line);
-  min-height: 36px;
-  min-width: 36px;
-}
-.album-download-status {
-  font-size: 11px;
-}
-.album-card-download .download-error {
-  position: static;
-  flex: 1;
-  min-width: 0;
-  font-size: 11px;
-  overflow-wrap: anywhere;
-}
-.music-card > .album-card-download {
-  position: absolute;
-  top: 18px;
-  right: 18px;
-  z-index: var(--z-index-float);
-  flex-direction: column;
-  align-items: flex-end;
-  max-width: calc(100% - 36px);
-}
-.music-card > .album-card-download > [data-ui='icon-button'] {
-  opacity: 0;
-  pointer-events: none;
-  background: color-mix(in oklab, var(--color-canvas) 93%, transparent);
-  border-radius: 8px;
-  transition: opacity 0.15s;
-}
-.music-card:hover > .album-card-download > [data-ui='icon-button'],
-.music-card:focus-within > .album-card-download > [data-ui='icon-button'] {
-  opacity: 1;
-  pointer-events: auto;
-}
-.music-card .album-download-status,
-.music-card .album-card-download .download-error {
-  padding: 8px;
-  border-radius: 6px;
-  background: color-mix(in oklab, var(--color-raised) 96%, transparent);
-}
-@media (hover: none) {
-  .music-card > .album-card-download > [data-ui='icon-button'] {
-    opacity: 1;
-    pointer-events: auto;
-  }
-  /* A tablet has no hover either, so the preview button on track art has to stay visible. */
-  .art-play {
-    opacity: 1;
-    background: color-mix(in oklab, var(--color-scrim) 20%, transparent);
-  }
-}
-@media (width < 48rem) {
-  .art-play {
-    opacity: 1;
-    background: color-mix(in oklab, var(--color-scrim) 20%, transparent);
-  }
-}
 /* Inside the sheet the list shares the sheet's own scroll room rather than the page's. */
 .queue-sheet .virtual-list {
   height: min(620px, 50dvh);
@@ -1149,152 +539,6 @@ meter::-webkit-meter-optimum-value {
 .download-action option {
   background: var(--color-raised);
 }
-.artist-download-sheet {
-  width: min(700px, calc(100% - 32px));
-  max-height: 85dvh;
-  overscroll-behavior: contain;
-  padding: 24px;
-  border: 1px solid var(--color-line);
-  border-radius: 16px;
-  background: var(--color-raised);
-  color: var(--color-text);
-}
-.artist-download-sheet::backdrop {
-  background: color-mix(in oklab, var(--color-scrim) 60%, transparent);
-}
-.artist-download-sheet header {
-  display: flex;
-  align-items: start;
-  justify-content: space-between;
-  gap: 20px;
-  margin-bottom: 18px;
-}
-.artist-download-stats {
-  display: grid;
-  gap: 8px;
-  padding: 18px;
-  background: var(--color-good-bg);
-  border-radius: 10px;
-  margin: 16px 0;
-}
-.artist-download-stats strong {
-  font-size: 24px;
-}
-.artist-download-stats span,
-.artist-download-stats small {
-  font-size: 12px;
-  color: var(--color-muted);
-}
-.artist-download-options {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 16px;
-  font-size: 13px;
-}
-.artist-download-options label {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  max-width: 100%;
-  min-width: 0;
-}
-.artist-download-options select {
-  min-width: 0;
-  max-width: 100%;
-  background: var(--color-canvas);
-  color: inherit;
-  border: 1px solid var(--color-line);
-  border-radius: 6px;
-  padding: 8px;
-}
-.artist-album-selection {
-  border: 0;
-  padding: 0;
-  margin: 14px 0;
-  min-width: 0;
-}
-.artist-album-selection > label {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 12px 0;
-  border-bottom: 1px solid var(--color-line);
-  cursor: pointer;
-}
-.artist-album-selection img {
-  width: 44px;
-  height: 44px;
-  border-radius: 6px;
-}
-.artist-album-selection span {
-  display: grid;
-  gap: 6px;
-  min-width: 0;
-}
-.artist-album-selection strong {
-  font-size: 13px;
-}
-.artist-album-selection small {
-  font-size: 11px;
-  color: var(--color-muted);
-}
-.artist-download-sheet footer {
-  position: sticky;
-  bottom: -24px;
-  padding: 16px 0;
-  background: var(--color-raised);
-  border-top: 1px solid var(--color-line);
-}
-/* A fade above the footer says the album list carries on underneath it. */
-.artist-download-sheet footer::before {
-  content: '';
-  position: absolute;
-  top: -29px;
-  right: 0;
-  left: 0;
-  height: 28px;
-  background: linear-gradient(transparent, var(--color-raised));
-  pointer-events: none;
-}
-.artist-download-sheet input[type='checkbox'] {
-  accent-color: var(--color-accent);
-}
-@media (width < 48rem) {
-  /* On a phone the selection is a bottom sheet: full width, anchored to the bottom edge, with
-     its footer clear of the home indicator. */
-  .artist-download-sheet {
-    width: 100%;
-    max-width: none;
-    max-height: calc(100dvh - 24px);
-    margin: 0;
-    inset: auto 0 0;
-    padding: 16px 16px calc(16px + var(--safe-bottom));
-    border-bottom: 0;
-    border-radius: 18px 18px 0 0;
-  }
-  .artist-download-sheet header {
-    gap: 12px;
-    margin-bottom: 12px;
-  }
-  .artist-download-sheet header h2 {
-    font-size: 17px;
-  }
-  .artist-download-stats {
-    padding: 14px;
-  }
-  .artist-download-stats strong {
-    font-size: 20px;
-  }
-  .artist-download-options {
-    gap: 10px 16px;
-  }
-  .artist-download-sheet footer {
-    bottom: calc(-16px - var(--safe-bottom));
-    padding-bottom: calc(16px + var(--safe-bottom));
-  }
-}
-
 .library-heading {
   margin-bottom: 24px;
 }
@@ -2478,7 +1722,6 @@ button.library-card-play.active {
 /* Touch screens: 44px targets, and text controls at 16px so iOS Safari does not zoom the page
    when one gains focus. Last in the file so it outranks the size each control sets for itself. */
 @media (pointer: coarse) {
-  .album-card-download > [data-ui='icon-button'],
   .stage-controls [data-ui='icon-button'],
   .stage-actions [data-ui='icon-button'],
   .library-layout-toggle [data-ui='icon-button'],
@@ -2492,23 +1735,10 @@ button.library-card-play.active {
     width: 44px;
     height: 44px;
   }
-  .text-preview {
-    min-width: 44px;
-    min-height: 44px;
-    padding: 12px 6px;
-  }
   .track-row button,
   .library-track-row button,
-  .result-tabs button,
   .library-tabs button,
-  .library-filter label,
-  .artist-download-options label,
-  .check-filter {
-    min-height: 44px;
-  }
-  .album-download-status {
-    display: inline-flex;
-    align-items: center;
+  .library-filter label {
     min-height: 44px;
   }
   .library-filter summary {
@@ -2519,20 +1749,13 @@ button.library-card-play.active {
   input:not([type='checkbox']):not([type='radio']):not([type='range']),
   select,
   textarea,
-  .sort-control select,
-  .filter-chips select,
-  .filter-chips input,
-  .album-actions select,
-  .artist-release-controls select,
-  .artist-download-options select,
   .library-select select,
   .playlist-form input,
   .playlist-picker-form input {
     min-height: 44px;
     font-size: 16px;
   }
-  input[type='checkbox'],
-  .artist-download-sheet input[type='checkbox'] {
+  input[type='checkbox'] {
     width: 20px;
     height: 20px;
   }
