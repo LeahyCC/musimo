@@ -227,8 +227,6 @@ export const playerCapabilitiesSchema = z.object({
   configured: z.boolean(),
   available: z.boolean(),
   version: z.string(),
-  extensions: z.array(z.string()),
-  sonic_similarity: z.boolean(),
   detail: z.string(),
 })
 export const lyricsSchema = z.object({
@@ -243,10 +241,6 @@ export const lyricsSchema = z.object({
     }),
   ),
 })
-export const sonicMatchesSchema = z.object({
-  items: z.array(z.object({ entry: libraryTrackSchema, similarity: z.number().optional() })),
-})
-
 const field = <T extends z.ZodType>(value: T) =>
   z.object({ value, origin: z.string(), locked: z.boolean() })
 

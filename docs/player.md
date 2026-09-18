@@ -22,13 +22,13 @@ An artist page sorts its albums by release date, title or play count, and its Al
 
 The liked playlist is the one playlist Musimo maintains, so it is always listed, sorts to the top of every playlist view, and has no delete control. Rename is available for all playlists including the liked playlist; only the delete control is refused for it. `DELETE /api/library/playlists/{id}` refuses it as well, because the thumbs up button depends on it existing. Its identity is the stored link, so the protection begins when Musimo adopts or creates the playlist rather than applying to anything a user happens to name Liked. Other playlists can be created, renamed, emptied and deleted; the delete control appears on hover or focus. Playlist rows show their song count and length and can be filtered by public or private. The playlist picker is a centred modal with a 25 row limit and filter box, opened from the footer player's plus button or, on a phone, from Now Playing. The liked playlist is excluded from the picker. Inline New playlist is available with the current song. Each row shows whether the current song is already in that playlist and toggles between Add and Remove, so the same song cannot be added twice, and each row expands into a scrolling list of that playlist's songs where any of them can be removed. The playlist page also offers an Add songs search box. Playlist reads share one cache with the playlist page, so a change made in the player appears there without a reload.
 
-Now Playing shows the artwork in a stage that can go full screen in the tab or pop out into a floating window, then the queue and lyrics; see [the popout note](now-playing-popout.md). Musimo asks Navidrome first, then checks LRCLIB when the library track has no imported lyrics. Start AudioMuse radio replaces the queue with the current song followed by sonic matches when Navidrome advertises the required extension. The Library badge says AudioMuse is connected because an advertised extension does not prove its analysis and similarity index are ready. AudioMuse connection and index failures receive a short not-ready message instead of exposing the plugin error or its local address. Catalog previews and library tracks have separate audio elements, and only one of them plays at a time. The library element also feeds one Web Audio `AudioContext` and `AnalyserNode` for the Now Playing visualizer, whose scene, a fluid simulation, is drawn through a post stack of feedback trails, bloom, beat-driven chromatic aberration, a tonemap and grain; see [the visualizer note](visualizer.md) for why previews must never touch it.
+Now Playing shows the artwork in a stage that can go full screen in the tab or pop out into a floating window, then the queue and lyrics; see [the popout note](now-playing-popout.md). Musimo asks Navidrome first, then checks LRCLIB when the library track has no imported lyrics. Catalog previews and library tracks have separate audio elements, and only one of them plays at a time. The library element also feeds one Web Audio `AudioContext` and `AnalyserNode` for the Now Playing visualizer, whose scene, a fluid simulation, is drawn through a post stack of feedback trails, bloom, beat-driven chromatic aberration, a tonemap and grain; see [the visualizer note](visualizer.md) for why previews must never touch it.
 
 Starting playback keeps the collection in place. Loading feedback appears in the Library header, and other cards keep their play buttons hidden until hovered or focused. Touch layouts keep the buttons visible.
 
 ## API
 
-- `GET /api/player/capabilities`: connection, server version and advertised OpenSubsonic extensions. `sonic_similarity` is true when Navidrome advertises the `sonicSimilarity` extension.
+- `GET /api/player/capabilities`: connection and server version.
 - `GET /api/library/albums`: paged Navidrome albums with a bounded sort choice and optional search query.
 - `GET /api/library/artists`: paged artists with an optional search query.
 - `GET /api/library/tracks`: whole-library track browsing. `q`, `sort`, repeated `genre` and `year`, `offset` and `size` are applied on the server, which returns the page, the matching `total` and the `genres`/`years` present across the library. Supported sorts are title, artist, album, year, duration and newest.
@@ -45,7 +45,6 @@ Starting playback keeps the collection in place. Loading feedback appears in the
 - `GET` and `PUT /api/player/queue`: restore and save the Navidrome play queue.
 - `POST /api/player/scrobble`: report now playing and completed listens.
 - `GET /api/player/lyrics/{id}`: Navidrome structured lyrics with an LRCLIB fallback.
-- `GET /api/player/radio/{id}` and `GET /api/player/path`: AudioMuse sonic matches and track-to-track journeys. `radio` takes `count` 1 to 100, default 30 (UI sends 40). `path` takes `count` default 20.
 
 ## Playback details
 
@@ -60,12 +59,6 @@ Now Playing is for library tracks only; catalog previews render "Nothing playing
 Every item ID is length and character checked before it reaches Navidrome. The proxy forwards only a small media-header allowlist. Upstream errors become a generic 503 response without exposing the private address or credentials.
 
 Navidrome does not expose standard API calls for deleting songs, albums or artists. Musimo therefore does not show destructive media actions in Library. Remove files through the storage or Navidrome administration workflow, then let the library scan reconcile the index.
-
-## AudioMuse-AI boundary
-
-The AudioMuse integration uses Navidrome's OpenSubsonic `sonicSimilarity` extension. `getSonicSimilarTracks` powers Start Radio and `findSonicPath` provides the API for track-to-track journeys. These actions are feature-gated by `/api/player/capabilities`; ordinary playback does not depend on AudioMuse.
-
-Natural-language mixes and Song Alchemy require AudioMuse-specific APIs. They remain a later, optional adapter so changes in AudioMuse do not destabilize playback. Analysis, clustering and worker administration remain in AudioMuse's own interface.
 
 ## Verification
 

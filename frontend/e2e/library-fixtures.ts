@@ -39,10 +39,7 @@ export function bodyNumber(body: Record<string, unknown>, key: string): number |
  * The player routes every library spec needs: a ready Navidrome, an empty saved queue, and
  * real decodable audio so playback actually starts and pause states appear.
  */
-export async function playerFixtures(
-  page: Page,
-  options: { sonicSimilarity?: boolean } = {},
-): Promise<void> {
+export async function playerFixtures(page: Page): Promise<void> {
   await page.route('**/*', async (route) => {
     // A provider outage or remote asset must never determine a browser test result.
     if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
@@ -55,8 +52,6 @@ export async function playerFixtures(
         configured: true,
         available: true,
         version: '0.63.2',
-        extensions: options.sonicSimilarity ? ['sonicSimilarity', 'songLyrics'] : [],
-        sonic_similarity: options.sonicSimilarity ?? false,
         detail: 'Navidrome is ready',
       },
     }),

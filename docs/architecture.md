@@ -109,8 +109,6 @@ Player (player_api.py):
 - `PUT /api/player/queue`: save queue.
 - `POST /api/player/scrobble`: report now playing and completed listens.
 - `GET /api/player/lyrics/{id}`: Navidrome lyrics with LRCLIB fallback.
-- `GET /api/player/radio/{id}`: AudioMuse sonic matches.
-- `GET /api/player/path`: track-to-track journeys.
 - `GET /api/player/stream/{id}`: proxied audio with range forwarding.
 - `GET /api/player/art/{id}`: proxied cover artwork.
 
@@ -165,7 +163,7 @@ On mobile, navigation moves to a bottom bar; the queue opens as a sheet. Search 
 - **Library:** Home, Albums, Artists, Tracks, Playlists views. Grid and list layouts. Server side Tracks filters. Artist All songs subpage and popularity chart. Linked liked playlist. Playlist CRUD. Add to playlist picker. Play all and Shuffle.
 - **Album:** "Which tracks am I missing, and what will this download?" Art/header, coverage, format and estimate, then track table. Download missing chooses only unowned tracks. The next step is a visible batch in the drawer, not a blocking match dialog.
 - **Artist:** "Which releases do I want?" Grouped discography; a selection sheet shows release types, missing counts and size before expanding jobs. Unknown release types remain visible as unknown rather than silently excluded.
-- **Now Playing:** Artwork stage with full screen and popout. Queue. Lyrics. AudioMuse radio. Library tracks only.
+- **Now Playing:** Artwork stage with full screen and popout. Queue. Lyrics. Library tracks only.
 - **Downloads:** "What is running, and can I control it?" Shared queue state in drawer and full page, batches expand to track rows. Queue/Done/Failed/History views. Control acknowledgement updates immediately, then actual process state follows. Retry retains the selected target and requested quality.
 - **Settings:** "Where will files go, and how will they sound?" Sticky section index for library, audio, queue and sources. Explicit save state, inline errors, locked values with env origin. Readiness summary line at top. Per row "Changed elsewhere" conflict notice. Unsaved draft navigation guard. Format text explains source quality. Destination choice returns to the same search or queue context.
 - **Your settings:** "Make it yours." `/settings/user`, reached from the same Settings entry through a Server / Yours switch. Theme cards, a live-preview editor with its own preview strip and sticky save bar, import, export, delete and reset. Everything on it stays in the browser; see [settings](settings.md).
@@ -196,5 +194,3 @@ See [downloads](downloads.md) for durable job state, worker control, publication
 ## Library player
 
 See [library player](player.md). Navidrome is the playback data plane rather than duplicating streaming, artwork and playable IDs in Musimo. One backend client owns Subsonic authentication, capability discovery, library browsing, media proxying, queue persistence, lyrics, scrobbles and selective scans. Browser code never receives Navidrome credentials. Catalog previews and library playback have separate browser audio elements, and only the library one is routed through Web Audio for the visualizer, because provider preview media has no CORS headers and would be silenced by it. Only one of the two plays at a time.
-
-AudioMuse-AI remains optional. Standard sonic radio and path features route through Navidrome's advertised OpenSubsonic `sonicSimilarity` extension. AudioMuse-specific natural-language and alchemy features remain behind a later adapter.

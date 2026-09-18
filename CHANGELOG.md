@@ -104,10 +104,6 @@ First tagged release of Musimo. This release provides search, library indexing, 
 - Pause pull request CI for the first release cut (#33)
 - Serve an empty download queue from the browser fixtures (#30)
 
-### AudioMuse integration
-
-- Hide AudioMuse connection errors (#17)
-
 ### Known limitations
 
 From docs/measurements.md:

@@ -19,7 +19,6 @@ import {
   Pencil,
   Play,
   Plus,
-  Radio as RadioIcon,
   Search,
   Shuffle,
   SlidersHorizontal,
@@ -42,7 +41,6 @@ import {
   libraryTracksSchema,
   lyricsSchema,
   playerCapabilitiesSchema,
-  sonicMatchesSchema,
 } from './api'
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from './api'
 import { cx } from './cx'
@@ -1164,7 +1162,7 @@ export function LibraryPage({
           {/* Both labels share one cell so the tag keeps its width while the busy one shows. */}
           <span className="grid">
             <span className="[grid-area:1/1]" style={{ visibility: busy ? 'hidden' : undefined }}>
-              {capabilities.data.sonic_similarity ? 'AUDIOMUSE CONNECTED' : 'NAVIDROME READY'}
+              NAVIDROME READY
             </span>
             {busy && <span className="[grid-area:1/1]">Opening music…</span>}
           </span>
@@ -1843,10 +1841,6 @@ const lyricLineClassName = 'py-[8px] text-section text-text'
 export function NowPlayingPage() {
   const player = usePlayer()
   const track = player.libraryTrack
-  const capabilities = useQuery({
-    queryKey: ['player-capabilities'],
-    queryFn: ({ signal }) => api('player/capabilities', playerCapabilitiesSchema, { signal }),
-  })
   const lyrics = useQuery({
     queryKey: ['lyrics', track?.id],
     queryFn: ({ signal }) =>
@@ -1854,14 +1848,6 @@ export function NowPlayingPage() {
     enabled: Boolean(track),
     retry: false,
   })
-  const audioMuse = useMutation({
-    mutationFn: () =>
-      api(`player/radio/${encodeURIComponent(track?.id ?? '')}?count=40`, sonicMatchesSchema),
-    onSuccess: (result) => {
-      if (track) player.playLibrary([track, ...result.items.map((item) => item.entry)], 0, 'radio')
-    },
-  })
-
   if (!track)
     return (
       <EmptyPanel tall>
@@ -1920,22 +1906,11 @@ export function NowPlayingPage() {
             )}
           </p>
           <div className="mt-[20px] flex flex-wrap items-center gap-[16px]">
-            {capabilities.data?.sonic_similarity && (
-              <Button
-                variant="primary"
-                onClick={() => audioMuse.mutate()}
-                disabled={audioMuse.isPending}
-              >
-                <RadioIcon size={16} />{' '}
-                {audioMuse.isPending ? 'Building radio…' : 'Start AudioMuse radio'}
-              </Button>
-            )}
             {/* The footer's own add button is hidden on phones, so the page offers one too. */}
             <Button onClick={player.openPlaylistPicker}>
               <Plus size={16} /> Add to playlist
             </Button>
           </div>
-          {audioMuse.isError && <ErrorBanner>{audioMuse.error.message}</ErrorBanner>}
         </div>
       </section>
       <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)] gap-[18px] max-tablet:grid-cols-1">

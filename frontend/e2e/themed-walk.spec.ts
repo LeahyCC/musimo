@@ -118,7 +118,6 @@ async function libraryFixtures(page: Page) {
       json: { items: [{ line: [{ start: 0, value: 'Morning finds the water' }] }] },
     }),
   )
-  await page.route('**/api/player/radio/**', (route) => route.fulfill({ json: { items: [] } }))
 }
 
 type Walk = {
