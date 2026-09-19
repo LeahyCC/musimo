@@ -755,6 +755,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => observer.disconnect()
   }, [activeTitle, hidden])
 
+  const cover = activeArt ? (
+    <img className="size-[45px] rounded-md max-phone:size-[40px]" src={activeArt} alt="" />
+  ) : (
+    <Disc3 size={30} className="text-faint" />
+  )
+
   function openPlaylistDialog() {
     setPlaylistSearch('')
     setNewPlaylistName('')
@@ -920,26 +926,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         className={cx(footerClassName, !activeTitle && 'max-phone:hidden')}
       >
         <div className="flex min-w-0 flex-1 items-center gap-[13px] text-small max-phone:gap-[10px] [&_a:hover]:underline">
-          {(() => {
-            const cover = activeArt ? (
-              <img className="size-[45px] rounded-md max-phone:size-[40px]" src={activeArt} alt="" />
-            ) : (
-              <Disc3 size={30} className="text-faint" />
-            )
-            // Now Playing is for library tracks only, so a preview's thumbnail stays a picture.
-            // On a phone this is the whole mini player's way in besides the title.
-            if (!isLibrary) return cover
-            return (
-              <Link
-                to="/now-playing"
-                aria-label="Open Now Playing"
-                className="cover-link shrink-0"
-                data-playing={playing}
-              >
-                {cover}
-              </Link>
-            )
-          })()}
+          {/* Now Playing is for library tracks only, so a preview's thumbnail stays a picture.
+              On a phone this is the mini player's way in besides the title. */}
+          {isLibrary ? (
+            <Link
+              to="/now-playing"
+              aria-label="Open Now Playing"
+              className="cover-link shrink-0"
+              data-playing={playing}
+            >
+              {cover}
+            </Link>
+          ) : (
+            cover
+          )}
           <span className="min-w-0">
             <strong className="block truncate text-small font-medium max-phone:text-body">
               {isLibrary ? (
