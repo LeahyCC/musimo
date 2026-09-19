@@ -19,6 +19,7 @@ import type { LibraryTrack } from './api'
 import { durationText, isPassiveNotice, usePlayer } from './player'
 import { parseSleepChoice, SLEEP_MINUTES, sleepChoiceValue } from './sleep-timer'
 import { Button, FieldSelect, IconButton } from './ui'
+import { SeekBar } from './waveform-seek'
 
 // A native select keeps this reachable by keyboard, screen reader and phone picker with no menu
 // code. Picking Off cancels; the cancel button beside a running timer does the same in one press.
@@ -138,16 +139,12 @@ export function NowPlayingControls({ track }: { track: LibraryTrack }) {
       </div>
       <div className="flex items-center gap-[10px] text-tiny text-muted tabular-nums">
         <span>{durationText(player.position)}</span>
-        <input
-          className="min-w-0 flex-1 accent-accent"
-          aria-label="Playback position"
-          type="range"
-          min="0"
-          max={length}
-          step="0.1"
-          value={Math.min(player.position, length)}
-          disabled={!player.ready}
-          onChange={(event) => player.seek(Number(event.target.value))}
+        <SeekBar
+          trackId={track.id}
+          position={player.position}
+          length={length}
+          ready={player.ready}
+          onSeek={player.seek}
         />
         <span>{durationText(player.length)}</span>
       </div>

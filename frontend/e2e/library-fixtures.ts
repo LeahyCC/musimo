@@ -65,6 +65,11 @@ export async function playerFixtures(page: Page): Promise<void> {
     ),
   )
   await page.route('**/api/player/scrobble', (route) => route.fulfill({ status: 204 }))
+  // No waveform unless a spec brings one, so Now Playing draws its plain seek bar everywhere else.
+  await page.route('**/api/player/waveform/**', (route) =>
+    route.fulfill({ status: 404, json: { detail: 'No waveform' } }),
+  )
+
   await page.route('**/api/player/stream/**', async (route) => {
     const silence = await route.fetch({ url: `${ORIGIN}/assets/e2e-silence.wav` })
     await route.fulfill({ response: silence })

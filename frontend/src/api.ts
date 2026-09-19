@@ -308,6 +308,8 @@ export const playerCapabilitiesSchema = z.object({
   version: z.string(),
   detail: z.string(),
 })
+// Two peaks is the least there is to draw; anything shorter is treated as no waveform at all.
+export const waveformSchema = z.object({ peaks: z.array(z.number().min(0).max(1)).min(2) })
 export const lyricsSchema = z.object({
   items: z.array(
     z.object({

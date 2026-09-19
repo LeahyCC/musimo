@@ -30,6 +30,7 @@
 - Edit the play queue: Play next and Add to queue from a song's row menu (and for a whole album or playlist), remove, drag or use the move buttons and Alt with an arrow to reorder Up next, Clear queue, and Save as playlist. Every change is saved to Navidrome, and adding past its 500 song limit is refused with a message instead of dropping songs
 - Say "1 album" and "1 song" on an artist page instead of "1 ALBUMS"
 - Show the release year on an artist's popular songs instead of a "…" that never filled in
+- Draw the track's waveform as the Now Playing seek bar, worked out once with ffmpeg and cached in SQLite (a new `waveforms` table, schema version unchanged), with the plain bar while it loads or when there is none
 
 ### Testing and CI
 
