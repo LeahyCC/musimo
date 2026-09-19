@@ -28,6 +28,7 @@ import {
   ArrowRight,
   Check,
   Coffee,
+  Disc3,
   Folder,
   Heart,
   Library,
@@ -60,7 +61,7 @@ import { LibraryPanel } from './library-panel'
 import { PopoutProvider } from './now-playing-popout'
 import { PageTitle } from './page-title'
 import { CommandPalette } from './palette'
-import { PlayerProvider } from './player'
+import { artUrl, PlayerProvider, usePlayer } from './player'
 import { PodcastPage } from './podcasts'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
@@ -111,6 +112,35 @@ const navLinkClassName = cx(
   'relative flex items-center gap-[12px] rounded-[7px] px-[14px] py-[12px] text-lead',
   'max-phone:flex-col max-phone:justify-center max-phone:gap-[5px] max-phone:rounded-none max-phone:px-[2px] max-phone:py-[8px] max-phone:text-tiny',
 )
+const navLinkActiveProps = { 'className': 'bg-active text-accent', 'aria-current': 'page' } as const
+const navLinkInactiveProps = { className: 'text-muted hover:bg-hover hover:text-text' } as const
+
+/* Now Playing has no bottom bar tile: the bar's five items already fill its 64px, so a phone
+   reaches the page through the mini player's cover. On a wide window it is the last row, shown
+   only while a library track is loaded. Being last means it appearing or leaving moves nothing
+   above it, so a click aimed at Diagnostics never lands on a row that slid. The thumbnail is
+   the icon's size and stands in for it. */
+function NowPlayingNavItem() {
+  const { libraryTrack } = usePlayer()
+  if (!libraryTrack) return null
+  const art = artUrl(libraryTrack)
+  return (
+    <Link
+      to="/now-playing"
+      className={cx(navLinkClassName, 'max-phone:hidden')}
+      activeProps={navLinkActiveProps}
+      inactiveProps={navLinkInactiveProps}
+    >
+      {art ? (
+        <img className="size-[19px] shrink-0 rounded-[4px] object-cover" src={art} alt="" />
+      ) : (
+        <Disc3 size={19} />
+      )}
+      <span>Now Playing</span>
+    </Link>
+  )
+}
+
 const sidebarActionClassName = cx(
   'flex items-center gap-[8px] rounded-md border border-line px-[9px] py-[7px] text-tiny text-muted',
   'hover:border-[color:var(--line-hover)] hover:text-accent',
@@ -312,11 +342,8 @@ function Shell() {
               key={to}
               to={to}
               className={navLinkClassName}
-              activeProps={{
-                'className': 'bg-active text-accent',
-                'aria-current': 'page',
-              }}
-              inactiveProps={{ className: 'text-muted hover:bg-hover hover:text-text' }}
+              activeProps={navLinkActiveProps}
+              inactiveProps={navLinkInactiveProps}
             >
               <Icon size={19} />
               <span>{label}</span>
@@ -331,6 +358,7 @@ function Shell() {
               )}
             </Link>
           ))}
+          <NowPlayingNavItem />
         </nav>
         <footer className="mx-[7px] mt-auto text-small text-muted max-phone:hidden">
           <div className="flex items-center gap-[10px]">
