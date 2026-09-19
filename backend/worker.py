@@ -13,7 +13,7 @@ from typing import Protocol, cast
 from backend.errors import error_guidance, site_label, source_code
 from backend.job_models import Candidate, Job, valid_candidate_id
 from backend.matching import Matcher
-from backend.sources import by_source
+from backend.sources import by_source, match
 from backend.tagging import Tagger, probe
 
 
@@ -112,6 +112,11 @@ def main() -> None:
 
     if job.catalog == "link" and link_site is None:
         refuse("SITE_NOT_ALLOWED", "This site is no longer on the download list")
+        return
+    # The allowlist below covers redirects. This covers the address itself: it has to belong to
+    # the site the job says it is from, not only to some listed site.
+    if link_site and match(job.source_url) is not link_site:
+        refuse("SITE_NOT_ALLOWED", f"The link is not a {site} address")
         return
     options = base_options() | {
         "noplaylist": True,

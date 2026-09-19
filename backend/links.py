@@ -29,6 +29,8 @@ PREVIEW_SECONDS = 600
 MAX_PREVIEWS = 32
 MAX_ENTRIES = 500
 RESOLVE_SECONDS = 20
+# Each resolve starts a yt-dlp child process, so only this many run at once; the rest wait.
+MAX_RESOLVES = 2
 ENTRY_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}")
 DAY = re.compile(r"\d{4}(-\d{2}-\d{2})?")
 LIVE_MESSAGE = "Live streams never finish, so they can't be saved."
@@ -77,6 +79,7 @@ class Links:
     def __init__(self, downloads: Downloads, clock: Callable[[], float] = time.monotonic) -> None:
         self.downloads, self.clock = downloads, clock
         self.previews: OrderedDict[str, Preview] = OrderedDict()
+        self.resolving = asyncio.Semaphore(MAX_RESOLVES)
 
     async def extract(self, url: str, site: Site) -> dict[str, object]:
         """Run the resolver in its own process group and read its one answer."""
@@ -161,7 +164,8 @@ class Links:
         site = match(url)
         if site is None:
             raise LinkError(422, refusal(url))
-        raw = await self.extract(url, site)
+        async with self.resolving:
+            raw = await self.extract(url, site)
         if raw.get("kind") == "error":
             code = raw.get("code")
             if code == "LIVE_STREAM":
@@ -208,6 +212,8 @@ class Links:
             "source": site.source,
             "kind": site.kind,
             "single": single,
+            # A profile is a person's whole catalog, so the review sheet starts with nothing ticked.
+            "profile": not single and site.is_profile(url),
             "title": preview.title,
             "truncated": preview.truncated,
             "expires_in": PREVIEW_SECONDS,
