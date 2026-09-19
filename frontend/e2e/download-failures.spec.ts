@@ -581,6 +581,7 @@ test('a link job shows where its tags came from as a note, not a warning', async
     ...failed,
     catalog: 'link',
     source: 'archive',
+    source_label: 'Internet Archive',
     stage: 'done',
     error_code: '',
     error: '',

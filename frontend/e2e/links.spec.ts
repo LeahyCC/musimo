@@ -29,6 +29,8 @@ interface Preview {
   profile: boolean
   title: string
   truncated: boolean
+  partial?: boolean
+  quality_note?: string
   expires_in: number
   entries: Entry[]
 }
@@ -377,6 +379,82 @@ test.describe('pasted links', () => {
     await expect(sheet(page).getByRole('button', { name: 'Download 1 song' })).toBeEnabled()
   })
 
+  test('a site says what quality to expect, and a profile says when only part of it was read', async ({
+    page,
+  }) => {
+    const note = 'Bandcamp streams are 128 kbps MP3. Buying the album there gets you lossless.'
+    await linkFixtures(page, (url) =>
+      url.endsWith('/music')
+        ? {
+            body: playlist({
+              site: 'Bandcamp',
+              source: 'bandcamp',
+              profile: true,
+              title: 'Discography of band',
+              partial: true,
+              quality_note: note,
+            }),
+          }
+        : {
+            body: preview({ site: 'Bandcamp', source: 'bandcamp', quality_note: note }),
+          },
+    )
+    await page.goto('/')
+    await paste(page, 'https://band.bandcamp.com/track/a')
+    await expect(sheet(page).getByText(note)).toBeVisible()
+    await dismiss(page)
+
+    await paste(page, 'https://band.bandcamp.com/music')
+    await expect(sheet(page).getByText(note)).toBeVisible()
+    await expect(sheet(page).getByText(/Some of this page could not be read in time/)).toBeVisible()
+    await expect(sheet(page).getByRole('checkbox', { checked: true })).toHaveCount(0)
+  })
+
+  test('a site with no note and a full page shows neither', async ({ page }) => {
+    await linkFixtures(page, () => ({ body: playlist() }))
+    await page.goto('/')
+    await paste(page, PLAYLIST)
+    await expect(sheet(page).getByText('2 of 3 songs selected')).toBeVisible()
+    await expect(sheet(page).getByText(/could not be read in time/)).toHaveCount(0)
+    await expect(sheet(page).getByText(/kbps/)).toHaveCount(0)
+  })
+
+  test('a read-only destination keeps Download off and says why', async ({ page }) => {
+    await linkFixtures(page)
+    const settings = (await (await page.request.get('/api/settings')).json()) as {
+      destination: { value: string }
+    }
+    const destination = settings.destination.value
+    let writable = false
+    await page.route('**/api/diagnostics', async (route) => {
+      const live = await route.fetch()
+      const body = (await live.json()) as { disks: object[] }
+      await route.fulfill({
+        json: {
+          ...body,
+          disks: [
+            { path: '', free_bytes: null, total_bytes: null, exists: false, writable: false },
+            { path: destination, free_bytes: 1000, total_bytes: 2000, exists: true, writable },
+          ],
+        },
+      })
+    })
+    await page.goto('/')
+    await paste(page, LINK)
+    const download = sheet(page).getByRole('button', { name: 'Download', exact: true })
+    await expect(sheet(page).getByRole('alert')).toContainText('missing or read-only')
+    await expect(download).toBeDisabled()
+
+    // Once the folder can be written to, the same sheet lets the download through.
+    writable = true
+    await dismiss(page)
+    await page.reload()
+    await paste(page, LINK)
+    await expect(sheet(page).getByRole('heading', { name: 'Review download' })).toBeVisible()
+    await expect(sheet(page).getByRole('button', { name: 'Download', exact: true })).toBeEnabled()
+    await expect(sheet(page).getByText(/missing or read-only/)).toHaveCount(0)
+  })
+
   test('a recording already in the library says so and can still be downloaded', async ({
     page,
   }) => {
@@ -445,7 +523,7 @@ test.describe('pasted links', () => {
     await page.goto('/')
     await paste(page, 'https://example.com/song')
     await expect(sheet(page).getByRole('alert')).toHaveText(
-      "Musimo can't download from example.com. It works with: YouTube, Internet Archive.",
+      "Musimo can't download from example.com. It works with: YouTube, Internet Archive, Bandcamp, SoundCloud, Audiomack, Audius, Jamendo.",
     )
     await dismiss(page)
     await paste(page, 'https://open.spotify.com/album/1')
@@ -649,6 +727,100 @@ test.describe('pasted links', () => {
   })
 })
 
+test.describe('site names', () => {
+  test('a job card names its site the way the server does', async ({ page }) => {
+    await page.route('**/api/snapshot', (route) =>
+      route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
+    )
+
+    await page.route('**/api/jobs*', (route) =>
+      route.fulfill({
+        json: {
+          jobs: [
+            linkJob('a', { source: 'bandcamp', source_label: 'Bandcamp', track_id: 1 }),
+            linkJob('b', { source: 'archive', source_label: 'Internet Archive', track_id: 2 }),
+            // A payload from a server before labels: the name is built from the source.
+            linkJob('c', { source: 'newsite', track_id: 3 }),
+          ].map((job, index) => ({
+            ...job,
+            meta: { ...job.meta, title: `Track ${index}` },
+          })),
+          controls: { paused: false, source_paused: false },
+          summary: { active: 3, failed: 0, failure_reasons: [] },
+        },
+      }),
+    )
+    await page.goto('/downloads')
+    const card = (title: string) =>
+      page.locator('#main').getByRole('article').filter({ hasText: title })
+    await expect(card('Track 0').getByText('from Bandcamp')).toBeVisible()
+    await expect(card('Track 1').getByText('from Internet Archive')).toBeVisible()
+    await expect(card('Track 2').getByText('from Newsite')).toBeVisible()
+  })
+
+  test('diagnostics lists every paused site, not only YouTube', async ({ page }) => {
+    const diagnostics = (queue: object) => ({
+      health: { status: 'ok', version: '1.0.0', uptime_seconds: 100, phase: 1 },
+      versions: {},
+      disks: [
+        { path: '/music', free_bytes: 1000, total_bytes: 2000, exists: true, writable: true },
+      ],
+      sources: [
+        {
+          source: 'youtube',
+          status: 'healthy',
+          latency_ms: 5,
+          detail: 'Last YouTube download completed',
+          checked_at: '2026-09-19T00:00:00Z',
+        },
+      ],
+      events: [],
+      database: { mode: 'wal', schema: 1, retained_events: 0 },
+      library: {
+        status: 'done',
+        walked: 1,
+        indexed: 1,
+        errors: 0,
+        elapsed: 1,
+        detail: 'Scan complete',
+        total_files: 1,
+        roots: ['/music'],
+      },
+      queue,
+      capabilities: { settings: true, events: true, search: true, downloads: true },
+      navidrome: null,
+      last_download: null,
+    })
+    let queue: object = {
+      paused: false,
+      source_paused: false,
+      paused_sources: ['bandcamp', 'soundcloud'],
+      source_labels: { bandcamp: 'Bandcamp', soundcloud: 'SoundCloud' },
+    }
+    await page.route('**/api/diagnostics', (route) => route.fulfill({ json: diagnostics(queue) }))
+    await page.goto('/diagnostics')
+    await expect(page.getByText('Bandcamp downloads')).toBeVisible()
+    await expect(page.getByText('SoundCloud downloads')).toBeVisible()
+    await expect(page.getByText('Paused after repeated blocking errors.')).toHaveCount(2)
+    // YouTube is not paused, so its own line says nothing about a pause.
+    await expect(
+      page.locator('.readiness-item').filter({ hasText: 'YouTube download helper' }),
+    ).not.toContainText('Paused')
+
+    queue = {
+      paused: false,
+      source_paused: true,
+      paused_sources: ['youtube'],
+      source_labels: { youtube: 'YouTube' },
+    }
+    await page.reload()
+    await expect(
+      page.locator('.readiness-item').filter({ hasText: 'YouTube download helper' }),
+    ).toContainText('Paused')
+    await expect(page.getByText('Bandcamp downloads')).toHaveCount(0)
+  })
+})
+
 test.describe('paused sources', () => {
   test('each paused site has its own line and its own resume button', async ({ page }) => {
     let paused = ['youtube', 'bandcamp']
@@ -657,6 +829,7 @@ test.describe('paused sources', () => {
       paused: false,
       source_paused: paused.includes('youtube'),
       paused_sources: paused,
+      source_labels: { youtube: 'YouTube', bandcamp: 'Bandcamp' },
     })
     await page.route('**/api/snapshot', (route) =>
       route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),

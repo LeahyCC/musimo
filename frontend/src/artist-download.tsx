@@ -7,6 +7,7 @@ import { z } from 'zod'
 
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from './api'
 import { cx } from './cx'
+import { DESTINATION_PROBLEM, destinationBroken } from './download-target'
 import { activeJob, updateJob, useJobs } from './downloads'
 import {
   FormatSelect,
@@ -75,6 +76,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
   })
   const chosenFormat = format || settings.data?.output_format.value || 'original'
   const chosenTarget = target || settings.data?.destination.value || ''
+  const brokenTarget = destinationBroken(mounts.data?.disks, chosenTarget)
   const active = new Set(
     (queue.data?.jobs ?? [])
       .filter((job) => activeJob(job) && job.format === chosenFormat && job.target === chosenTarget)
@@ -185,7 +187,12 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
               <Button
                 variant="primary"
                 disabled={
-                  !songs || plan.isFetching || plan.isError || download.isPending || !chosenTarget
+                  !songs ||
+                  plan.isFetching ||
+                  plan.isError ||
+                  download.isPending ||
+                  !chosenTarget ||
+                  brokenTarget
                 }
                 onClick={() => download.mutate()}
               >
@@ -193,6 +200,9 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
                   ? `Adding ${allMusic ? 'music' : 'albums'}…`
                   : `Download ${plural(albumCount, allMusic ? 'release' : 'album')} (${plural(songs, 'song')})`}
               </Button>
+            )}
+            {brokenTarget && !download.isSuccess && (
+              <ErrorBanner role="alert">{DESTINATION_PROBLEM}</ErrorBanner>
             )}
             {download.isError && <ErrorBanner role="alert">{download.error.message}</ErrorBanner>}
           </>

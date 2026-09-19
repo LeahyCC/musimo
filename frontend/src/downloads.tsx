@@ -27,9 +27,9 @@ import {
   jobsSchema,
   settingsSchema,
 } from './api'
-import type { DownloadJob, MusicResult } from './api'
+import type { Controls, DownloadJob, MusicResult } from './api'
 import { cx } from './cx'
-import { formatLabel, FormatOptions, siteLabel } from './download-target'
+import { formatLabel, FormatOptions, pausedSources, siteLabel } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
 import { PageTitle } from './page-title'
 import {
@@ -46,7 +46,7 @@ import {
 
 export type QueueData = {
   jobs: DownloadJob[]
-  controls: { paused: boolean; source_paused: boolean; paused_sources: string[] }
+  controls: Controls
   summary: {
     active: number
     failed: number
@@ -86,7 +86,12 @@ export function updateJob(client: QueryClient, job: DownloadJob) {
       }
     }
     return {
-      controls: old?.controls ?? { paused: false, source_paused: false, paused_sources: [] },
+      controls: old?.controls ?? {
+        paused: false,
+        source_paused: false,
+        paused_sources: [],
+        source_labels: {},
+      },
       summary,
       jobs: [job, ...(old?.jobs ?? []).filter((item) => item.id !== job.id)],
     }
@@ -504,7 +509,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         />
       )}
       <div className="my-[10px] flex flex-wrap gap-4 text-tiny text-muted">
-        {job.catalog === 'link' && <span>from {siteLabel(job.source)}</span>}
+        {job.catalog === 'link' && <span>from {siteLabel(job.source, job.source_label)}</span>}
         <span>to {job.target}</span>
         <span>{formatLabel(job.format)}</span>
         {job.stage === 'downloading' && (
@@ -827,13 +832,8 @@ function QueueControls() {
     },
   })
   const failed = queue.data?.summary.failed ?? 0
-  // One line per paused site. A server that only sends the YouTube flag still gets its line.
-  const controls = queue.data?.controls
-  const pausedSources = controls?.paused_sources.length
-    ? controls.paused_sources
-    : controls?.source_paused
-      ? ['youtube']
-      : []
+  // One line per paused site.
+  const paused = pausedSources(queue.data?.controls)
   return (
     <>
       <div className="my-4 flex flex-wrap gap-2 max-phone:grid max-phone:grid-cols-2">
@@ -890,14 +890,14 @@ function QueueControls() {
           Clear all finished
         </Button>
       </div>
-      {pausedSources.map((source) => (
+      {paused.map(({ source, label }) => (
         <ErrorBanner role="alert" key={source}>
-          {siteLabel(source)} paused after repeated blocking errors.{' '}
+          {label} paused after repeated blocking errors.{' '}
           <Link to="/diagnostics">Check diagnostics</Link>
           <button
             onClick={() => command.mutate(`resume-source?source=${encodeURIComponent(source)}`)}
           >
-            Try {siteLabel(source)} again
+            Try {label} again
           </button>
         </ErrorBanner>
       ))}
