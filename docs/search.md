@@ -16,7 +16,36 @@ Album cards fetch details automatically as they mount, in the paginated, natural
 
 Preview buttons read Pause while that clip plays. A track row's badge shows distinct states: "In library" for exact matches, "Another edition in library (album name)" when a different edition is detected, "Queued" or other job stages for active downloads, and "Downloaded earlier" for completed downloads. Edition matches keep the download button enabled. The download arrow becomes Retry when a download has failed.
 
-The whole album or artist card is a native link. Artist links, preview, coverage retry and download controls remain separate targets. Card downloads sit over the top-right of the art, appear on hover or keyboard focus, and stay visible on touch screens. Card grids grow with the page instead of using a fixed-height inner scroller; only TrackList virtualizes. Album card icons submit missing-only batches using saved settings, show the destination and format before queueing, and show queue feedback without navigation. Album pages display the destination and format and have one download button using the selected format: Download album when no tracks are owned, Download missing (x) for a partial album, or a disabled Download album when verified coverage shows the entire album is in the library. Track rows reuse the shared download action, which is disabled for songs already in the library. For catalog preview tracks, song links open `/albums/{album_id}?track={track_id}`; library tracks link to `/now-playing` and `/library`. URL imports remain unavailable. Original, M4A and Opus estimates assume 160 kbps; MP3 assumes 320 kbps. These are estimates, not promises about source quality.
+The whole album or artist card is a native link. Artist links, preview, coverage retry and download controls remain separate targets. Card downloads sit over the top-right of the art, appear on hover or keyboard focus, and stay visible on touch screens. Card grids grow with the page instead of using a fixed-height inner scroller; only TrackList virtualizes. Album card icons submit missing-only batches using saved settings, show the destination and format before queueing, and show queue feedback without navigation. Album pages display the destination and format and have one download button using the selected format: Download album when no tracks are owned, Download missing (x) for a partial album, or a disabled Download album when verified coverage shows the entire album is in the library. Track rows reuse the shared download action, which is disabled for songs already in the library. For catalog preview tracks, song links open `/albums/{album_id}?track={track_id}`; library tracks link to `/now-playing` and `/library`. A pasted link opens a review sheet instead of a search (see Pasted links). Catalog imports from Spotify or Apple Music links remain unavailable. Original, M4A and Opus estimates assume 160 kbps; MP3 assumes 320 kbps. These are estimates, not promises about source quality.
+
+## Pasted links
+
+A single `http` or `https` address in the search box is not a search. Typing one, even half of one, does not search the catalog and does not look anything up; the link is read when it is complete and the person pastes it or presses Enter. Text with anything besides one address still searches as before. Pressing Enter on `https://` alone shows "That is not a whole link" in the sheet instead of searching.
+
+```text
+paste or Enter on a whole link
+   |
+   v
+"Checking link" sheet: status line, Cancel  ----- Cancel, Escape or the close button: request abandoned, sheet gone
+   |
+   +-- refusal ---> the server's own sentence in the sheet, Close. Nothing is queued.
+   |
+   v
+review sheet
+   one recording: artwork, title, artist and album, length, date, "In library" badge if owned,
+                  where it lands and the format, Format and Download to choices, Download
+   playlist:      "N of M songs selected", Select all, Select none, a tick list, Download N songs
+   profile:       the same list with nothing ticked
+   |
+   v
+Download ---> POST /api/links ---> "N songs queued from YouTube. Open downloads"
+```
+
+- One lookup is in flight at a time. Pasting another link, cancelling or closing the sheet aborts the request still running, and a late answer to an abandoned request is ignored. The server also allows two lookups at once across every browser and makes a third wait.
+- The sheet reuses the artist download sheet's shell, format and destination choices, Select all and Select none and tick rows (`frontend/src/review-sheet.tsx`); the link flow itself is in `frontend/src/links.tsx`. It is a native modal dialog: Escape closes it, focus goes to Cancel while waiting and to the heading when an answer arrives, and closing returns focus to the search box. At phone width it is a bottom sheet.
+- A list starts with the songs not in the library ticked and owned ones unticked with an "In library" badge. A profile link (`profile` in the preview) starts with nothing ticked. A lone recording starts ticked even when it is owned. More than 500 entries shows "Only the first 500 are listed."
+- Queueing shows the same floating queue button and job cards as any download. A link job's card names its site ("from YouTube") and never lists a matching stage.
+- The status lines, the running count and the queued message are live regions.
 
 ## Podcasts
 

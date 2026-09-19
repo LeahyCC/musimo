@@ -2,15 +2,22 @@ import { useRef, useState } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Disc3, ListMusic, X } from 'lucide-react'
+import { Disc3, ListMusic } from 'lucide-react'
 import { z } from 'zod'
 
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from './api'
 import { cx } from './cx'
 import { activeJob, updateJob, useJobs } from './downloads'
-import { Button, ErrorBanner, IconButton, textLinkClassName } from './ui'
-
-const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
+import {
+  FormatSelect,
+  plural,
+  ReviewDialog,
+  ReviewOptions,
+  ReviewRow,
+  SelectAllNone,
+  TargetSelect,
+} from './review-sheet'
+import { Button, ErrorBanner } from './ui'
 
 const planSchema = z.object({
   albums: z.array(
@@ -156,33 +163,41 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
           </button>
         ))}
       </div>
-      <dialog
-        ref={dialog}
-        className={cx(
-          'm-auto w-[min(700px,calc(100%-32px))] max-h-[85dvh] overscroll-contain rounded-[16px] border border-line bg-raised p-[24px] text-text',
-          'backdrop:bg-scrim/60',
-          'max-phone:inset-x-0 max-phone:top-auto max-phone:bottom-0 max-phone:m-0 max-phone:w-full max-phone:max-w-none max-phone:max-h-[calc(100dvh-24px)] max-phone:rounded-t-[18px] max-phone:rounded-b-none max-phone:border-b-0 max-phone:p-[16px] max-phone:pb-[calc(16px+var(--safe-bottom))]',
-        )}
-        aria-labelledby="artist-download-title"
+      <ReviewDialog
+        dialogRef={dialog}
+        titleId="artist-download-title"
+        eyebrow={name}
+        title={allMusic ? 'Choose music to download' : 'Choose albums to download'}
+        closeLabel="Close download selection"
+        closeDisabled={download.isPending}
         onClose={() => setOpened(false)}
+        footer={
+          <>
+            {download.isSuccess ? (
+              <p role="status">
+                {download.data.jobs.length} songs queued from {download.data.albums}{' '}
+                {allMusic ? 'releases' : 'albums'}.{' '}
+                <Link to="/downloads" onClick={() => dialog.current?.close()}>
+                  Open downloads
+                </Link>
+              </p>
+            ) : (
+              <Button
+                variant="primary"
+                disabled={
+                  !songs || plan.isFetching || plan.isError || download.isPending || !chosenTarget
+                }
+                onClick={() => download.mutate()}
+              >
+                {download.isPending
+                  ? `Adding ${allMusic ? 'music' : 'albums'}…`
+                  : `Download ${plural(albumCount, allMusic ? 'release' : 'album')} (${plural(songs, 'song')})`}
+              </Button>
+            )}
+            {download.isError && <ErrorBanner role="alert">{download.error.message}</ErrorBanner>}
+          </>
+        }
       >
-        <header className="mb-[18px] flex items-start justify-between gap-[20px] max-phone:mb-[12px] max-phone:gap-[12px]">
-          <div>
-            <p className="mb-[12px] text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
-              {name}
-            </p>
-            <h2 id="artist-download-title" className="max-phone:text-section">
-              {allMusic ? 'Choose music to download' : 'Choose albums to download'}
-            </h2>
-          </div>
-          <IconButton
-            aria-label="Close download selection"
-            disabled={download.isPending}
-            onClick={() => dialog.current?.close()}
-          >
-            <X size={22} />
-          </IconButton>
-        </header>
         {plan.isFetching && <p role="status">Checking all albums and songs in your library…</p>}
         {plan.isError && (
           <ErrorBanner role="alert">
@@ -207,7 +222,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
                 {plural(owned, 'song')} already in library · {queued} already queued
               </small>
             </div>
-            <div className="flex flex-wrap items-center gap-[16px] text-body max-phone:gap-[10px_16px]">
+            <ReviewOptions>
               <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
                 <input
                   type="checkbox"
@@ -218,37 +233,18 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
                 />
                 Skip songs already in my library
               </label>
-              <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
-                Format
-                <select
-                  className="min-w-0 max-w-full rounded-md border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-base"
-                  value={chosenFormat}
-                  disabled={download.isPending}
-                  onChange={(e) => setFormat(e.target.value)}
-                >
-                  <option value="original">Original source quality</option>
-                  <option value="m4a">M4A / AAC</option>
-                  <option value="opus">Opus</option>
-                  <option value="mp3">MP3 · converted</option>
-                </select>
-              </label>
-              <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
-                Download to
-                <select
-                  className="min-w-0 max-w-full rounded-md border border-line bg-canvas p-[8px] text-inherit coarse:min-h-11 coarse:text-base"
-                  value={chosenTarget}
-                  disabled={download.isPending}
-                  onChange={(e) => setTarget(e.target.value)}
-                >
-                  {mounts.data?.disks.slice(1).map((disk) => (
-                    <option key={disk.path} value={disk.path} disabled={!disk.writable}>
-                      {disk.path}
-                      {disk.writable ? '' : ' (read-only)'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            </div>
+              <FormatSelect
+                value={chosenFormat}
+                disabled={download.isPending}
+                onChange={setFormat}
+              />
+              <TargetSelect
+                value={chosenTarget}
+                disabled={download.isPending}
+                onChange={setTarget}
+                disks={mounts.data?.disks.slice(1) ?? []}
+              />
+            </ReviewOptions>
             <p className="text-small text-muted">
               {allMusic
                 ? 'Includes every release type and alternative edition. Uncheck releases you don’t want.'
@@ -262,65 +258,34 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
                 </button>
               </ErrorBanner>
             )}
-            <div className="flex flex-wrap items-center gap-[16px]">
-              <button
-                type="button"
-                data-ui="text-link"
-                className={textLinkClassName()}
-                disabled={download.isPending}
-                onClick={() => setExcluded(new Set())}
-              >
-                Select all
-              </button>
-              <button
-                type="button"
-                data-ui="text-link"
-                className={textLinkClassName()}
-                disabled={download.isPending}
-                onClick={() => setExcluded(new Set(albums.map((album) => album.id)))}
-              >
-                Select none
-              </button>
-            </div>
+            <SelectAllNone
+              disabled={download.isPending}
+              onAll={() => setExcluded(new Set())}
+              onNone={() => setExcluded(new Set(albums.map((album) => album.id)))}
+            />
             <fieldset className="my-[14px] min-w-0 border-0 p-0" disabled={download.isPending}>
               <legend className="sr-only">Albums</legend>
               {albums.map((album) => (
-                <label
+                <ReviewRow
                   key={album.id}
-                  className="flex cursor-pointer items-center gap-[12px] border-b border-line py-[12px]"
-                >
-                  <input
-                    type="checkbox"
-                    className="accent-accent coarse:h-[20px] coarse:w-[20px]"
-                    checked={!album.error && !excluded.has(album.id)}
-                    disabled={Boolean(album.error)}
-                    onChange={(e) =>
-                      setExcluded((current) => {
-                        const next = new Set(current)
-                        if (e.target.checked) next.delete(album.id)
-                        else next.add(album.id)
-                        return next
-                      })
-                    }
-                  />
-                  {album.art && (
-                    <img
-                      src={album.art}
-                      alt=""
-                      loading="lazy"
-                      className="h-[44px] w-[44px] rounded-md"
-                    />
-                  )}
-                  <span className="grid min-w-0 gap-[6px]">
-                    <strong className="text-body">{album.title}</strong>
-                    <small className="text-tiny text-muted">
-                      {album.year}
-                      {album.error
-                        ? ` · ${album.error}`
-                        : ` · ${counts.get(album.id) ?? 0} of ${album.tracks.length} songs to download`}
-                    </small>
-                  </span>
-                </label>
+                  checked={!album.error && !excluded.has(album.id)}
+                  disabled={Boolean(album.error)}
+                  onChange={(checked) =>
+                    setExcluded((current) => {
+                      const next = new Set(current)
+                      if (checked) next.delete(album.id)
+                      else next.add(album.id)
+                      return next
+                    })
+                  }
+                  art={album.art}
+                  title={album.title}
+                  detail={`${album.year}${
+                    album.error
+                      ? ` · ${album.error}`
+                      : ` · ${counts.get(album.id) ?? 0} of ${album.tracks.length} songs to download`
+                  }`}
+                />
               ))}
             </fieldset>
             {!albums.length && (
@@ -328,31 +293,7 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
             )}
           </>
         )}
-        <footer className="sticky bottom-[-24px] border-t border-line bg-raised py-[16px] before:pointer-events-none before:absolute before:-top-[29px] before:inset-x-0 before:h-[28px] before:bg-[linear-gradient(transparent,var(--color-raised))] before:content-[''] max-phone:bottom-[calc(-16px-var(--safe-bottom))] max-phone:pb-[calc(16px+var(--safe-bottom))]">
-          {download.isSuccess ? (
-            <p role="status">
-              {download.data.jobs.length} songs queued from {download.data.albums}{' '}
-              {allMusic ? 'releases' : 'albums'}.{' '}
-              <Link to="/downloads" onClick={() => dialog.current?.close()}>
-                Open downloads
-              </Link>
-            </p>
-          ) : (
-            <Button
-              variant="primary"
-              disabled={
-                !songs || plan.isFetching || plan.isError || download.isPending || !chosenTarget
-              }
-              onClick={() => download.mutate()}
-            >
-              {download.isPending
-                ? `Adding ${allMusic ? 'music' : 'albums'}…`
-                : `Download ${plural(albumCount, allMusic ? 'release' : 'album')} (${plural(songs, 'song')})`}
-            </Button>
-          )}
-          {download.isError && <ErrorBanner role="alert">{download.error.message}</ErrorBanner>}
-        </footer>
-      </dialog>
+      </ReviewDialog>
     </>
   )
 }
