@@ -541,7 +541,8 @@ class Downloads:
                 return
             job = self.jobs.update(
                 job_id,
-                stage="matching",
+                # Podcast episodes and pasted links skip the search, so they never show it.
+                stage="matching" if job.catalog == "deezer" else "downloading",
                 attempts=job.attempts + 1,
                 error_code="",
                 error="",

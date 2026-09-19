@@ -26,6 +26,12 @@ class Site:
     hosts: tuple[str, ...]
     # Artwork is fetched by the server, so its hosts are allowlisted as well.
     art_hosts: tuple[str, ...] = ()
+    # Path prefixes that mean a person's or channel's page rather than one list.
+    profile_paths: tuple[str, ...] = ()
+
+    def is_profile(self, url: str) -> bool:
+        parts = parse(url)
+        return parts is not None and parts.path.startswith(self.profile_paths)
 
     def allowed_extractors(self) -> list[str]:
         # yt-dlp reads these as regular expressions, and the names contain ':'.
@@ -41,6 +47,7 @@ SITES: tuple[Site, ...] = (
         items=("youtube",),
         hosts=("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"),
         art_hosts=("i.ytimg.com",),
+        profile_paths=("/@", "/channel/", "/c/", "/user/"),
     ),
 )
 

@@ -58,6 +58,7 @@ import { cx } from './cx'
 import { activeCount, DownloadsPage, QueueDock, updateJob, useJobs } from './downloads'
 import type { QueueData } from './downloads'
 import { LibraryPanel } from './library-panel'
+import { isLinkText, useLinkSheet } from './links'
 import { PopoutProvider } from './now-playing-popout'
 import { PageTitle } from './page-title'
 import { CommandPalette } from './palette'
@@ -278,6 +279,7 @@ function Shell() {
   const location = useRouterState({ select: (s) => s.location })
   const params = new URLSearchParams(location.searchStr)
   const [text, setText] = useState(params.get('q') ?? '')
+  const links = useLinkSheet()
   // The phone bottom bar carries the active download count that the dock shows elsewhere.
   // Selecting the count keeps progress ticks from re-rendering the whole shell.
   const activeDownloads = useJobs(activeCount).data ?? 0
@@ -412,6 +414,7 @@ function Shell() {
             onSubmit={(e) => {
               e.preventDefault()
               clearTimeout(debounce.current)
+              if (links.submit(text)) return
               void navigate({ to: '/search', search: { q: text } })
             }}
           >
@@ -422,10 +425,16 @@ function Shell() {
               aria-label="Search music or paste a link"
               placeholder="Search music or paste a link"
               value={text}
+              onPaste={(e) => {
+                clearTimeout(debounce.current)
+                links.paste(e, setText)
+              }}
               onChange={(e) => {
                 const value = e.target.value
                 setText(value)
                 clearTimeout(debounce.current)
+                // A link opens its review sheet when pasted or submitted, and is never searched.
+                if (isLinkText(value)) return
                 debounce.current = setTimeout(() => {
                   void navigate({
                     to: '/search',
@@ -451,6 +460,7 @@ function Shell() {
             {status}
           </span>
         </header>
+        {links.sheet}
         {status !== 'Live' && (
           <div
             className="bg-warn-bg px-[43px] py-[8px] text-small text-warn max-phone:pr-[calc(20px+var(--safe-right))] max-phone:pl-[calc(20px+var(--safe-left))]"

@@ -106,6 +106,24 @@ class AllowlistTests(unittest.TestCase):
         self.assertEqual(sources.safe_art(site, "https://evil.test/a.jpg"), "")
         self.assertEqual(sources.safe_art(site, "http://i.ytimg.com/a.jpg"), "")
 
+    def test_profile_pages_are_told_apart_from_lists(self) -> None:
+        site = sources.SITES[0]
+        for url in (
+            "https://www.youtube.com/@band",
+            "https://www.youtube.com/channel/UC123/videos",
+            "https://www.youtube.com/c/band",
+            "https://www.youtube.com/user/band",
+        ):
+            with self.subTest(url=url):
+                self.assertTrue(site.is_profile(url))
+        for url in (
+            "https://www.youtube.com/playlist?list=PL1",
+            "https://www.youtube.com/watch?v=abcdefghijk&list=PL1",
+            "http://www.youtube.com/@band",
+        ):
+            with self.subTest(url=url):
+                self.assertFalse(site.is_profile(url))
+
     def test_extractor_names_are_matched_literally(self) -> None:
         self.assertIn(r"youtube:tab", sources.SITES[0].allowed_extractors())
         self.assertNotIn("generic", sources.SITES[0].allowed_extractors())
@@ -285,6 +303,68 @@ class LinkApiTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(unknown.status_code, 422)
         self.assertEqual(unknown.json()["detail"], "Choose entries from this link's preview.")
+
+    async def test_profile_links_are_flagged_and_lists_are_not(self) -> None:
+        self.links.answer = {
+            "kind": "preview",
+            "single": False,
+            "title": "Band",
+            "entries": [video("aaaaaaaaaaa"), video("bbbbbbbbbbb")],
+        }
+        profile = (await self.resolve("https://www.youtube.com/@band")).json()
+        playlist = (await self.resolve("https://www.youtube.com/playlist?list=PL1")).json()
+        single = (await self.resolve()).json()
+        self.assertEqual((profile["profile"], playlist["profile"]), (True, False))
+        self.assertFalse(single["profile"])
+
+    async def test_only_two_resolves_run_at_once_and_the_third_waits(self) -> None:
+        gate = asyncio.Event()
+        running = 0
+        peak = 0
+
+        class Slow(FakeLinks):
+            async def extract(self, url: str, site: Site) -> dict[str, object]:
+                nonlocal running, peak
+                running += 1
+                peak = max(peak, running)
+                try:
+                    await gate.wait()
+                finally:
+                    running -= 1
+                return self.answer
+
+        slow = Slow(self.service, lambda: self.now)
+        slow.answer = {"kind": "preview", "single": True, "entries": [video("abcdefghijk")]}
+        tasks = [asyncio.create_task(slow.resolve(f"https://youtu.be/{n:011d}")) for n in range(3)]
+        await until(lambda: running == 2)
+        # Give the third a chance to start. It has to keep waiting for a free place.
+        await asyncio.sleep(0.05)
+        self.assertEqual((running, peak), (2, 2))
+        gate.set()
+        results = await asyncio.gather(*tasks)
+        self.assertEqual(len(results), 3)
+        self.assertEqual(peak, 2)
+
+    async def test_a_cancelled_resolve_frees_its_place(self) -> None:
+        release = asyncio.Event()
+
+        class Stuck(FakeLinks):
+            async def extract(self, url: str, site: Site) -> dict[str, object]:
+                await release.wait()
+                return self.answer
+
+        stuck = Stuck(self.service, lambda: self.now)
+        stuck.answer = {"kind": "preview", "single": True, "entries": [video("abcdefghijk")]}
+        first = [
+            asyncio.create_task(stuck.resolve("https://youtu.be/abcdefghijk")) for _ in range(2)
+        ]
+        await asyncio.sleep(0.02)
+        for task in first:
+            task.cancel()
+        await asyncio.gather(*first, return_exceptions=True)
+        release.set()
+        answer = await asyncio.wait_for(stuck.resolve("https://youtu.be/abcdefghijk"), 1)
+        self.assertEqual(answer["site"], "YouTube")
 
     async def test_expired_or_unknown_tokens_are_refused_plainly(self) -> None:
         self.links.answer = {"kind": "preview", "single": True, "entries": [video("abcdefghijk")]}
@@ -536,6 +616,22 @@ class LinkWorkerTests(unittest.TestCase):
         downloader.assert_not_called()
         self.assertEqual(events[-1]["code"], "SITE_NOT_ALLOWED")
 
+    def test_an_address_off_the_jobs_own_site_is_refused_before_any_request(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            for address in (
+                "https://evil.test/watch?v=abcdefghijk",
+                "http://www.youtube.com/watch?v=abcdefghijk",
+                "https://user:pw@www.youtube.com/watch?v=abcdefghijk",
+                "file:///etc/passwd",
+                "",
+            ):
+                with self.subTest(address=address):
+                    job = self.job(directory, source_url=address)
+                    downloader, events = self.run_worker(directory, job, {}, audio=False)
+                    downloader.assert_not_called()
+                    self.assertEqual(events[-1]["code"], "SITE_NOT_ALLOWED")
+                    self.assertFalse(events[-1]["retryable"])
+
     def test_other_sites_keep_their_block_codes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             job = self.job(directory, catalog="deezer", source="elsewhere", selected="abcdefghijk")
@@ -629,6 +725,36 @@ class LinkQueueTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     await service.close()
             store.close()
+
+    async def test_link_jobs_never_enter_the_matching_stage(self) -> None:
+        seen: list[str] = []
+
+        class Watching(Downloads):
+            async def worker(self, job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                seen.append(self.jobs.get(job.id).stage)
+                raise DownloadError("DOWNLOAD_FAILED", "Went away")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient() as client:
+                service = Watching(
+                    store,
+                    Catalog(store, client),
+                    Library(store, [root], asyncio.Event()),
+                    asyncio.Event(),
+                )
+                prepared = {1: (Metadata(id=1, artist="A"), "https://www.youtube.com/watch?v=x")}
+                job = service.jobs.enqueue_many(
+                    [1], "original", str(root), catalog="link", prepared=prepared, source="youtube"
+                )[0]
+                service.start()
+                try:
+                    await until(lambda: service.jobs.get(job.id).stage == "failed")
+                finally:
+                    await service.close()
+            store.close()
+        self.assertEqual(seen, ["downloading"])
 
     async def test_long_kinds_get_the_episode_budget_and_music_uses_the_template(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

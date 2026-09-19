@@ -153,7 +153,7 @@ any active stage -> retry_wait -> queued
 any active stage -> failed -> queued (manual retry)
 ```
 
-Conversion is skipped when possible; remuxing is recorded distinctly from lossy encoding. A pause during tagging either finishes that artifact or restarts tagging later, never continues a corrupt partial tag write. Pause intent remains durable through process exit and container restart. A restart reconciles active stages against the manifest before dispatch. Errors retain stage, code, retryability, a redacted tool tail and tool version. Three consecutive blocking errors pause a source, not unrelated healthy sources: each job records its `source`, the count and pause are kept per source, and the dispatcher skips a queued job only when its own source is paused. Disk-full/unwritable jobs require a successful destination probe before retry.
+Podcast episodes and pasted links skip `matching` and go straight to `downloading`. Conversion is skipped when possible; remuxing is recorded distinctly from lossy encoding. A pause during tagging either finishes that artifact or restarts tagging later, never continues a corrupt partial tag write. Pause intent remains durable through process exit and container restart. A restart reconciles active stages against the manifest before dispatch. Errors retain stage, code, retryability, a redacted tool tail and tool version. Three consecutive blocking errors pause a source, not unrelated healthy sources: each job records its `source`, the count and pause are kept per source, and the dispatcher skips a queued job only when its own source is paused. Disk-full/unwritable jobs require a successful destination probe before retry.
 
 ## Screens and flow
 

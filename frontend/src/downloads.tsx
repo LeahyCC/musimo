@@ -29,7 +29,7 @@ import {
 } from './api'
 import type { DownloadJob, MusicResult } from './api'
 import { cx } from './cx'
-import { formatLabel, FormatOptions } from './download-target'
+import { formatLabel, FormatOptions, siteLabel } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
 import { PageTitle } from './page-title'
 import {
@@ -478,7 +478,8 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
       >
         {[
           'queued',
-          'matching',
+          // Podcast episodes and pasted links download their own address, so they never match.
+          ...(job.catalog === 'deezer' ? ['matching'] : []),
           'downloading',
           'converting',
           'tagging',
@@ -503,6 +504,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         />
       )}
       <div className="my-[10px] flex flex-wrap gap-4 text-tiny text-muted">
+        {job.catalog === 'link' && <span>from {siteLabel(job.source)}</span>}
         <span>to {job.target}</span>
         <span>{formatLabel(job.format)}</span>
         {job.stage === 'downloading' && (
@@ -820,6 +822,13 @@ function QueueControls() {
     },
   })
   const failed = queue.data?.summary.failed ?? 0
+  // One line per paused site. A server that only sends the YouTube flag still gets its line.
+  const controls = queue.data?.controls
+  const pausedSources = controls?.paused_sources.length
+    ? controls.paused_sources
+    : controls?.source_paused
+      ? ['youtube']
+      : []
   return (
     <>
       <div className="my-4 flex flex-wrap gap-2 max-phone:grid max-phone:grid-cols-2">
@@ -876,13 +885,17 @@ function QueueControls() {
           Clear all finished
         </Button>
       </div>
-      {queue.data?.controls.source_paused && (
-        <ErrorBanner role="alert">
-          YouTube paused after repeated blocking errors.{' '}
+      {pausedSources.map((source) => (
+        <ErrorBanner role="alert" key={source}>
+          {siteLabel(source)} paused after repeated blocking errors.{' '}
           <Link to="/diagnostics">Check diagnostics</Link>
-          <button onClick={() => command.mutate('resume-source')}>Try source again</button>
+          <button
+            onClick={() => command.mutate(`resume-source?source=${encodeURIComponent(source)}`)}
+          >
+            Try {siteLabel(source)} again
+          </button>
         </ErrorBanner>
-      )}
+      ))}
       {(command.isError || Boolean(command.data?.errors.length)) && (
         <ErrorBanner role="alert">
           {command.error?.message ?? command.data?.errors.join(' · ')}
