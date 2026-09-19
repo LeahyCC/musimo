@@ -82,8 +82,16 @@ test('with WebGPU the visualizer is the default, V and the button switch it, and
   await expect(stage.getByRole('button', { name: 'Show artwork' })).toBeVisible()
   await expect(stage.getByRole('combobox', { name: 'Preset' })).toBeVisible()
   await expect(stage.getByRole('combobox', { name: 'Fluid grid' })).toBeVisible()
-  // One scene, so there is nothing to choose and the select is not drawn.
-  await expect(stage.getByRole('combobox', { name: 'Scene' })).toHaveCount(0)
+  // Two scenes, so the select is drawn. Fluid stays the default, and the grid
+  // control belongs to it alone.
+  const scenes = stage.getByRole('combobox', { name: 'Scene' })
+  await expect(scenes).toHaveValue('fluid')
+  await scenes.selectOption('kaleidoscope')
+  await expect(canvas).toHaveAttribute('data-scene', 'kaleidoscope')
+  await expect(canvas).toHaveAttribute('data-preset', 'prism')
+  await expect(stage.getByRole('combobox', { name: 'Fluid grid' })).toHaveCount(0)
+  await scenes.selectOption('fluid')
+  await expect(canvas).toHaveAttribute('data-scene', 'fluid')
 
   // Shortcuts apply while the stage holds focus.
   await stage.focus()

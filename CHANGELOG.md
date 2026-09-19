@@ -19,6 +19,7 @@
 - Add six visualizer presets, two per scene, each naming which feature drives which parameter, with a picker in the stage's top bar and `[` and `]` to cycle (#60)
 - Cut the particle and raymarch visualizer scenes and their four presets, leaving the fluid and hiding the scene select while there is one scene to pick (#61)
 - Move the visualizer into [visimo](https://github.com/LeahyCC/visimo) and consume it as a dependency, so scenes and presets can be tuned against a dropped track instead of a library
+- Add visimo's Kaleidoscope scene and its Prism preset to the visualizer, which brings the scene select back to the stage's top bar
 - Lay out the Artists grid like the Albums grid: big round picture, name and album count below, play on hover
 - Show an artist's newest album cover in place of Navidrome's star when it has no photo of them
 - Filter the Artists tab by genre, year, favourites and played or never played, sort it by recently added, and mark an artist as a favourite from their page
