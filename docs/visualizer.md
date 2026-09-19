@@ -41,6 +41,8 @@ The stage, its keys and what the browser remembers:
 
 A preset names a scene, so choosing a preset moves the scene select under it and choosing a scene moves to that scene's first preset. The scene select is not drawn while `SCENE_IDS` has one entry in it. H toggles the package's debug overlay.
 
+The way into all of this is a labeled Visualizer control on the stage (On or Off, with a `V` hint), and while it is on, the preset's name between `[` and `]` hints, where the name is the preset select. It stays on screen while the rest of the overlay fades when idle, at reduced opacity, and hides with them only in full screen and in the popout window, which is too small to keep it. It is what makes the keys discoverable; the keys themselves are unchanged. See [the popout note](now-playing-popout.md#now-playing).
+
 The two audio elements are Musimo's rule, not the package's: previews stream from provider CDNs without CORS headers, and a media element source on such audio is silenced permanently. `player.tsx` keeps one element for previews and one for library tracks, and only the library element is ever handed to `attachAudio`.
 
 Where WebGPU is missing, or the adapter or device cannot be had, the stage shows artwork exactly as before and says so once. There is no WebGL fallback and none is planned.
