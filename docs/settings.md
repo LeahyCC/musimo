@@ -67,7 +67,7 @@ Export writes `<theme name>.musimo-theme.json` through the browser's own downloa
 
 ### Visualizer
 
-The second section on Your settings. Three selects: Default view (Artwork or Visualizer), Preset (grouped by scene, the same options as the stage's select) and Fluid detail (512 or 1024, used only by the fluid scene). Each applies as it is chosen and is remembered in this browser, like themes. They are the Now Playing stage's own state, not a copy: changing one here updates an open stage at once, and changing one on the stage shows here. Where the browser has no WebGPU, or the device could not be had, the selects are disabled and one line says why. An Open Now Playing link sits under them. The keys and the state behind them are in [the visualizer note](visualizer.md#what-stays-on-musimos-side).
+The second section on Your settings. Three selects: Default view (Artwork or Visualizer; a browser that has stored nothing shows Artwork, since the visualizer is heavy on the GPU), Preset (grouped by scene, the same options as the stage's select) and Fluid detail (512 or 1024, used only by the fluid scene). Each applies as it is chosen and is remembered in this browser, like themes. They are the Now Playing stage's own state, not a copy: changing one here updates an open stage at once, and changing one on the stage shows here. Where the browser has no WebGPU, or the device could not be had, the selects are disabled and one line says why. An Open Now Playing link sits under them. The keys and the state behind them are in [the visualizer note](visualizer.md#what-stays-on-musimos-side).
 
 ## Recent activity
 
