@@ -7,12 +7,14 @@ It moved out so scenes and presets could be worked on against a dropped file rat
 ## How it is wired in
 
 ```
-frontend/package.json          "visimo": "github:LeahyCC/visimo#v0.1.0"
+frontend/package.json          "visimo": "github:LeahyCC/visimo#<commit>"
 now-playing-popout.tsx         visimo/presets, visimo/catalog, and the stage
                                itself from visimo, loaded lazily
 now-playing-overlay.tsx        visimo/presets, visimo/catalog for the top bar
 player.tsx                     visimo/audio on the library element's first play
 ```
+
+The pin is a full commit hash on visimo's `main`, not a tag, because `main` has moved past `v0.1.0` without a release. It currently points at the merge that added the Kaleidoscope scene and its Prism preset, so the stage's Scene select is drawn and Fluid stays the default.
 
 Four entry points, and which one an import uses decides the bundle it lands in. `visimo/presets` and `visimo/catalog` are plain values, so the picker and the selects sit in the main chunk; `visimo` and `visimo/audio` are loaded on demand and the WebGPU tree stays out until a stage wants it. An import of the wrong one adds about 38 KB to the main bundle and nothing will fail, so watch the build output rather than trusting the change.
 
