@@ -61,6 +61,7 @@ type PopoutValue = {
   setNotice: (text: string) => void
   /** Artwork or the visualizer. Lives here so it survives the stage remounting. */
   view: StageView
+  setView: (view: StageView) => void
   toggleView: () => void
   /** False without WebGPU, or once the device could not be had. */
   canVisualize: boolean
@@ -95,6 +96,7 @@ const PopoutContext = createContext<PopoutValue>({
   notice: '',
   setNotice: noop,
   view: 'artwork',
+  setView: noop,
   toggleView: noop,
   canVisualize: false,
   markUnsupported: noop,
@@ -257,6 +259,7 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       notice,
       setNotice,
       view,
+      setView,
       toggleView,
       canVisualize,
       markUnsupported,

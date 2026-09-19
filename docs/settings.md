@@ -65,6 +65,10 @@ In this browser only, under `musimo.theme`, `musimo.custom-themes` and `musimo.t
 
 Export writes `<theme name>.musimo-theme.json` through the browser's own download, with characters a file name cannot hold replaced by a dash. Import takes that file back through the same validation as stored themes: known color names only, six or eight digit hex values, a name of at most 40 characters. An imported theme always arrives as a new theme, so it cannot overwrite one you already have, and it is turned on once it is read. A file that is not a Musimo theme is refused with a message and changes nothing.
 
+### Visualizer
+
+The second section on Your settings. Three selects: Default view (Artwork or Visualizer), Preset (grouped by scene, the same options as the stage's select) and Fluid detail (512 or 1024, used only by the fluid scene). Each applies as it is chosen and is remembered in this browser, like themes. They are the Now Playing stage's own state, not a copy: changing one here updates an open stage at once, and changing one on the stage shows here. Where the browser has no WebGPU, or the device could not be had, the selects are disabled and one line says why. An Open Now Playing link sits under them. The keys and the state behind them are in [the visualizer note](visualizer.md#what-stays-on-musimos-side).
+
 ## Recent activity
 
 Settings and Diagnostics reuse the same activity component. It displays the latest 100 visible events in a keyboard-focusable region with a 320px maximum height. Clear all disables while pending, reports failures and stores a persistent clear point through the snapshot the user saw. Newer events remain visible.
