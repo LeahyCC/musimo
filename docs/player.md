@@ -57,7 +57,7 @@ Library playback is analysed for the visualizer. The first `play` event on the l
 
 Persistence uses browser storage keys `musimo.player-volume`, `musimo.player-shuffle`, `musimo.player-repeat`, `musimo.library-layout`, `musimo.now-playing-view` (artwork or visualizer), `musimo.visualizer-preset` (plume or wash), `musimo.visualizer-scene` (fluid), `musimo.visualizer-fluid-grid` and `musimo.now-playing-visualizer-notice` (the no-WebGPU notice has been shown). The queue autosaves every 10 seconds of playback and on pause or close. Now playing scrobbles on play and submits on track end. Previous restarts the current track after 4 seconds of playback. Repeat one is available. MediaSession handlers provide play, pause, next and previous.
 
-Now Playing is for library tracks only; catalog previews render "Nothing playing yet."
+Now Playing is for library tracks only. While a catalog preview plays, the page says "A preview is playing." and that Now Playing and its visuals play with tracks from your library; with nothing loaded it says "Nothing playing yet."
 
 Every item ID is length and character checked before it reaches Navidrome. The proxy forwards only a small media-header allowlist. Upstream errors become a generic 503 response without exposing the private address or credentials.
 
