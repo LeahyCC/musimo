@@ -260,7 +260,7 @@ test('the mini player is one row and hands the rest to Now Playing', async ({ pa
   await expect
     .poll(() =>
       player
-        .locator('audio.library-audio')
+        .locator('audio.library-audio[data-role="active"]')
         .evaluate((element: HTMLAudioElement) => element.currentTime),
     )
     .toBeGreaterThan(0)
@@ -276,11 +276,11 @@ test('the mini player is one row and hands the rest to Now Playing', async ({ pa
 
   await player.getByRole('link', { name: 'Beacon' }).click()
   await expect(page.getByRole('heading', { name: 'Beacon' })).toBeVisible()
-  await expect(
-    page.locator('.stage-controls').getByRole('button', { name: 'Shuffle' }),
-  ).toBeVisible()
-  // The stage repeats the mini player's title, play, next and seek bar, so the player steps aside.
+  await expect(page.getByRole('button', { name: 'Shuffle' })).toBeVisible()
+  // The page repeats the mini player's title, play, next, close and seek bar, so the player
+  // steps aside.
   await expect(player).toBeHidden()
+  await expect(page.getByRole('button', { name: 'Close player' })).toBeVisible()
   await page.getByRole('button', { name: 'Add to playlist' }).click()
   await expect(page.getByRole('dialog', { name: 'Add track to playlist' })).toBeVisible()
 })

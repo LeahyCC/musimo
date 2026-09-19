@@ -241,7 +241,7 @@ const ROUTES: Walk[] = [
     cardless: true,
     playerHidden: true,
     path: '/now-playing',
-    ready: (page) => page.getByText('Morning finds the water'),
+    ready: (page) => page.getByRole('heading', { name: 'First Light' }),
   },
   {
     name: 'downloads',

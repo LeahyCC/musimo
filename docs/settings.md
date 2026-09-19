@@ -49,7 +49,7 @@ The diagnostics export contains runtime versions, mount paths, library scan stat
 
 Settings has two pages behind one Settings entry, and a Server / Yours switch at the top of both. Everything above is the server's: shared by whoever opens Musimo, saved in SQLite, and locked by environment where the deployment says so. `/settings/user`, "Your settings", is the other page. Nothing on it reaches the server or another person.
 
-Appearance is its first section. It lists every theme as a card with a strip of its page, card, text and accent colors. Choosing a card applies that theme and remembers it at once; there is no save bar. The cards are a radio group, so arrow keys move between them, and the active one is marked with a tick and the word Active rather than by its border alone. "Musimo dark" is the built-in theme and the one the app falls back to.
+Appearance is its first section. While a theme is being edited the sections under Appearance (playback and the visualizer) are not drawn: the editor's Save and Cancel ride in a bar that sticks to the bottom of the Appearance section, and anything below it would let the bar scroll away at the end of the page. They come back when the edit is saved or cancelled; `e2e/phone.spec.ts` holds the bar on screen at both ends of the page. It lists every theme as a card with a strip of its page, card, text and accent colors. Choosing a card applies that theme and remembers it at once; there is no save bar. The cards are a radio group, so arrow keys move between them, and the active one is marked with a tick and the word Active rather than by its border alone. "Musimo dark" is the built-in theme and the one the app falls back to.
 
 - **Duplicate and edit** copies any theme, including the built-in one, and opens the editor. A built-in theme cannot be changed, only copied.
 - **Edit**, **Export** and **Delete** appear on your own themes. Deleting asks once, and deleting the theme you are using puts the default back.
@@ -65,9 +65,17 @@ In this browser only, under `musimo.theme`, `musimo.custom-themes` and `musimo.t
 
 Export writes `<theme name>.musimo-theme.json` through the browser's own download, with characters a file name cannot hold replaced by a dash. Import takes that file back through the same validation as stored themes: known color names only, six or eight digit hex values, a name of at most 40 characters. An imported theme always arrives as a new theme, so it cannot overwrite one you already have, and it is turned on once it is read. A file that is not a Musimo theme is refused with a message and changes nothing.
 
+### Playback
+
+Volume levelling and crossfade for library playback, kept in this browser like the rest. **Volume levelling** is a select: Off, Track (the default) or Album (automatic). **Pre-amp** is a second select, from −6 to +6 dB in 3 dB steps, default 0, and is disabled while levelling is Off. **Crossfade** is a third, Off (the default) or 1 to 12 seconds. All three apply as they are chosen, including to a track already playing, and are stored under `musimo.replay-gain`, `musimo.replay-gain-preamp` and `musimo.crossfade`. A missing or unreadable value means the default. How the gain is worked out is in [Volume levelling](player.md#volume-levelling).
+
+Crossfade overlaps the end of one library track with the start of the next. It is never used between consecutive tracks of the same album played in order, which run on gaplessly, or for repeat one, and it needs the next track to have loaded in time, so on a metered connection (data saver) tracks simply follow one another. How it works is in [Crossfade](player.md#crossfade). The sleep timer is not a setting: it is on the Now Playing controls, and is not kept ([Sleep timer](player.md#sleep-timer)).
+
+Musimo does not write ReplayGain tags when it downloads yet, so only files that were tagged elsewhere are levelled. A file without the tags plays as it is, whatever these say.
+
 ### Visualizer
 
-The second section on Your settings. Three selects: Default view (Artwork or Visualizer), Preset (grouped by scene, the same options as the stage's select) and Fluid detail (512 or 1024, used only by the fluid scene). Each applies as it is chosen and is remembered in this browser, like themes. They are the Now Playing stage's own state, not a copy: changing one here updates an open stage at once, and changing one on the stage shows here. Where the browser has no WebGPU, or the device could not be had, the selects are disabled and one line says why. An Open Now Playing link sits under them. The keys and the state behind them are in [the visualizer note](visualizer.md#what-stays-on-musimos-side).
+The third section on Your settings. Three selects: Default view (Artwork or Visualizer; a browser that has stored nothing shows Artwork, since the visualizer is heavy on the GPU), Preset (grouped by scene, the same options as the stage's select) and Fluid detail (512 or 1024, used only by the fluid scene). Each applies as it is chosen and is remembered in this browser, like themes. They are the Now Playing stage's own state, not a copy: changing one here updates an open stage at once, and changing one on the stage shows here. Where the browser has no WebGPU, or the device could not be had, the selects are disabled and one line says why. An Open Now Playing link sits under them. The keys and the state behind them are in [the visualizer note](visualizer.md#what-stays-on-musimos-side).
 
 ## Recent activity
 

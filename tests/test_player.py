@@ -72,7 +72,13 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 if path.endswith("/updatePlaylist") or path.endswith("/deletePlaylist"):
                     return subsonic()
                 if path.endswith("/getAlbum"):
-                    return subsonic(album={"id": "album-1", "song": [{"id": "song-1"}]})
+                    return subsonic(
+                        album={
+                            "id": "album-1",
+                            "recordLabels": [{"name": "Static Records"}],
+                            "song": [{"id": "song-1"}],
+                        }
+                    )
                 if path.endswith("/getArtist"):
                     return subsonic(artist={"id": "artist-1", "album": [{"id": "album-1"}]})
                 if path.endswith("/getSong"):
@@ -83,6 +89,20 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             "artist": "Artist",
                             "album": "One",
                             "duration": 180,
+                            # What the About tab reads: the file's own facts, the listening
+                            # record and OpenSubsonic's credits.
+                            "suffix": "flac",
+                            "bitRate": 1012,
+                            "samplingRate": 44100,
+                            "bitDepth": 16,
+                            "channelCount": 2,
+                            "size": 35_840_000,
+                            "path": "Artist/One/01 Track.flac",
+                            "playCount": 4,
+                            "played": "2026-09-01T18:30:00Z",
+                            "contributors": [
+                                {"role": "producer", "artist": {"id": "artist-2", "name": "Maker"}}
+                            ],
                         }
                     )
                 if path.endswith("/getPlayQueue"):
@@ -203,10 +223,9 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             (await client.delete("/api/library/playlists/playlist-1")).status_code,
                             204,
                         )
-                        self.assertEqual(
-                            (await client.get("/api/library/albums/album-1")).json()["id"],
-                            "album-1",
-                        )
+                        album = (await client.get("/api/library/albums/album-1")).json()
+                        self.assertEqual(album["id"], "album-1")
+                        self.assertEqual(album["recordLabels"], [{"name": "Static Records"}])
                         self.assertEqual(
                             (await client.get("/api/library/artists/artist-1")).json()["id"],
                             "artist-1",
@@ -217,9 +236,21 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             ][0]["id"],
                             "song-1",
                         )
+                        song = (await client.get("/api/player/song/song-1")).json()
+                        self.assertEqual(song["id"], "song-1")
+                        # The song is passed through whole, so the file and listening facts the
+                        # About tab shows arrive without a trimmed field list to keep in step.
                         self.assertEqual(
-                            (await client.get("/api/player/song/song-1")).json()["id"], "song-1"
+                            {key: song[key] for key in ("suffix", "bitRate", "samplingRate")},
+                            {"suffix": "flac", "bitRate": 1012, "samplingRate": 44100},
                         )
+                        self.assertEqual(
+                            {key: song[key] for key in ("bitDepth", "channelCount", "size")},
+                            {"bitDepth": 16, "channelCount": 2, "size": 35_840_000},
+                        )
+                        self.assertEqual(song["path"], "Artist/One/01 Track.flac")
+                        self.assertEqual(song["played"], "2026-09-01T18:30:00Z")
+                        self.assertEqual(song["contributors"][0]["role"], "producer")
                         self.assertEqual(
                             (await client.get("/api/player/queue")).json()["current"], "song-1"
                         )
@@ -245,6 +276,22 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             ).status_code,
                             422,
                         )
+                        # Navidrome keeps 500 songs, and the queue editor relies on the last one
+                        # being accepted and the next being refused.
+                        for count, status in ((500, 204), (501, 422)):
+                            self.assertEqual(
+                                (
+                                    await client.put(
+                                        "/api/player/queue",
+                                        json={
+                                            "ids": [f"song-{n}" for n in range(count)],
+                                            "current": "song-1",
+                                            "position": 0,
+                                        },
+                                    )
+                                ).status_code,
+                                status,
+                            )
                         self.assertEqual(
                             (
                                 await client.post(
@@ -687,7 +734,14 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 # The browser never reads this, so the snapshot does not keep it.
                 "path": "Zia/Beacon.flac",
             },
-            {"id": "s2", "title": "Anchor", "artist": "Mox", "genre": "Rock", "year": 2011},
+            {
+                "id": "s2",
+                "title": "Anchor",
+                "artist": "Mox",
+                "genre": "Rock",
+                "year": 2011,
+                "replayGain": {"trackGain": -6.5, "albumGain": -7.25, "trackPeak": 0.98},
+            },
             {"id": "s3", "title": "Cinder", "artist": "Ame", "genre": "Jazz", "year": 2011},
         ]
         with tempfile.TemporaryDirectory() as directory:
@@ -726,6 +780,12 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             [row["id"] for row in listing["items"]], ["s2", "s1", "s3"]
                         )
                         self.assertNotIn("path", listing["items"][1])
+                        # ReplayGain rides along when Navidrome has it, and is absent when not.
+                        self.assertEqual(
+                            listing["items"][0]["replayGain"],
+                            {"trackGain": -6.5, "albumGain": -7.25, "trackPeak": 0.98},
+                        )
+                        self.assertNotIn("replayGain", listing["items"][1])
                         self.assertEqual(listing["total"], 3)
                         self.assertEqual(listing["genres"], ["Jazz", "Rock"])
                         self.assertEqual(listing["years"], [2011, 1999])

@@ -37,6 +37,7 @@ from backend.podcast_api import install_podcast_routes
 from backend.search_api import install_search_routes
 from backend.store import LockedSetting, Store
 from backend.version import VERSION
+from backend.waveform import WaveformService, install_waveform_routes
 
 LIBRARY_ITEM = r"[A-Za-z0-9._:-]{1,200}"
 LIBRARY_SPA_PATH = re.compile(
@@ -83,10 +84,11 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     downloads: Downloads
     links: Links
     navidrome: Navidrome
+    waveforms: WaveformService
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        nonlocal store, versions, catalog, library, downloads, links, navidrome
+        nonlocal store, versions, catalog, library, downloads, links, navidrome, waveforms
         store = Store(data / "musimo.sqlite3")
         versions = await asyncio.to_thread(runtime_versions)
         async with (
@@ -106,6 +108,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 for root in os.getenv("MUSIMO_LIBRARY_ROOTS", "/music").split(os.pathsep)
                 if root
             ]
+            waveforms = WaveformService(store, navidrome, roots)
             library = Library(store, roots, changed)
             library.start()
             downloads = Downloads(store, catalog, library, changed, navidrome)
@@ -124,6 +127,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_download_routes(app, lambda: downloads)
     install_artist_download_routes(app, lambda: downloads)
     install_player_routes(app, lambda: navidrome)
+    install_waveform_routes(app, lambda: waveforms)
     install_podcast_routes(app, lambda: downloads)
     install_link_routes(app, lambda: links)
 

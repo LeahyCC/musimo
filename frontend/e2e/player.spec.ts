@@ -261,6 +261,8 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
   // The cover opens Now Playing on every width; the maximise icon beside it is desktop only.
   await page.locator('.live-player').getByRole('link', { name: 'Open Now Playing' }).first().click()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
+  // Lyrics share a panel with Up next, one tap away.
+  await page.getByRole('tab', { name: 'Lyrics' }).click()
   await expect(page.getByText('Morning finds the water')).toBeVisible()
 
   // On desktop the sidebar's last row is Now Playing with the cover as its icon and it is marked

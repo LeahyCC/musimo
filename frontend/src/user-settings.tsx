@@ -5,9 +5,17 @@ import { AlertTriangle, Check, Copy, Download, Pencil, Trash2 } from 'lucide-rea
 import { FLUID_SIZES, SCENE_IDS, SCENE_LABELS } from 'visimo/catalog'
 import { PRESETS } from 'visimo/presets'
 
+import { CROSSFADE_OPTIONS, parseCrossfade } from './crossfade'
+import { setCrossfadeSeconds, useCrossfadeSeconds } from './crossfade-settings'
 import { cx } from './cx'
 import { useNowPlayingPopout } from './now-playing-popout'
 import { PageTitle } from './page-title'
+import { parsePreamp, parseReplayGainMode, PREAMP_OPTIONS } from './replay-gain'
+import {
+  setReplayGainMode,
+  setReplayGainPreamp,
+  useReplayGainSettings,
+} from './replay-gain-settings'
 import { MIN_CONTRAST, themeContrast } from './theme/contrast'
 import { HEX_COLOR, MAX_CUSTOM_THEMES, MAX_THEME_NAME } from './theme/schema'
 import {
@@ -575,6 +583,105 @@ function VisualizerSettings() {
   )
 }
 
+const preampLabel = (decibels: number) =>
+  decibels === 0 ? '0 dB' : `${decibels > 0 ? '+' : '−'}${Math.abs(decibels)} dB`
+
+/*
+ * Volume levelling and crossfade for library playback. They read and write the player's own
+ * settings stores, so a change lands on a track that is already playing. Every control applies as
+ * it is chosen.
+ */
+function PlaybackSettings() {
+  const { mode, preampDb } = useReplayGainSettings()
+  const crossfade = useCrossfadeSeconds()
+
+  return (
+    <section aria-labelledby="playback" className="grid gap-[20px]">
+      <h2 id="playback" className="border-b border-line pb-[17px] text-section">
+        Playback
+      </h2>
+      <p className="max-w-[640px] text-small">
+        Some files carry ReplayGain tags that say how loud they are. Musimo can use them to bring
+        quiet and loud tracks to a similar volume, and can crossfade one track into the next.
+        Changes apply straight away.
+      </p>
+      <div className="grid max-w-[520px] gap-[16px]">
+        <div className="grid gap-[6px]">
+          <label htmlFor="replay-gain-mode" className="text-small">
+            Volume levelling
+          </label>
+          <FieldSelect
+            id="replay-gain-mode"
+            value={mode}
+            fullWidth={false}
+            className="w-[240px]"
+            aria-describedby="replay-gain-note"
+            onChange={(event) => setReplayGainMode(parseReplayGainMode(event.target.value))}
+          >
+            <option value="off">Off</option>
+            <option value="track">Track</option>
+            <option value="album">Album (automatic)</option>
+          </FieldSelect>
+          <p id="replay-gain-note" className="text-tiny">
+            Track levels every song on its own. Album keeps an album’s own balance while it plays in
+            order, and levels each song on its own otherwise. Tracks without tags play as they are.
+            Musimo does not write ReplayGain tags to downloads yet, so only files tagged elsewhere
+            are levelled.
+          </p>
+        </div>
+        <div className="grid gap-[6px]">
+          <label htmlFor="replay-gain-preamp" className="text-small">
+            Pre-amp
+          </label>
+          <FieldSelect
+            id="replay-gain-preamp"
+            value={String(preampDb)}
+            fullWidth={false}
+            className="w-[140px]"
+            disabled={mode === 'off'}
+            aria-describedby="replay-gain-preamp-note"
+            onChange={(event) => setReplayGainPreamp(parsePreamp(event.target.value))}
+          >
+            {PREAMP_OPTIONS.map((decibels) => (
+              <option key={decibels} value={decibels}>
+                {preampLabel(decibels)}
+              </option>
+            ))}
+          </FieldSelect>
+          <p id="replay-gain-preamp-note" className="text-tiny">
+            Added to the tagged gain. A track is never pushed past its tagged peak, and the player
+            cannot go above full volume, so a boost only shows while the volume slider has room.
+          </p>
+        </div>
+        <div className="grid gap-[6px]">
+          <label htmlFor="crossfade" className="text-small">
+            Crossfade
+          </label>
+          <FieldSelect
+            id="crossfade"
+            value={String(crossfade)}
+            fullWidth={false}
+            className="w-[140px]"
+            aria-describedby="crossfade-note"
+            onChange={(event) => setCrossfadeSeconds(parseCrossfade(event.target.value))}
+          >
+            {CROSSFADE_OPTIONS.map((seconds) => (
+              <option key={seconds} value={seconds}>
+                {seconds === 0 ? 'Off' : `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`}
+              </option>
+            ))}
+          </FieldSelect>
+          <p id="crossfade-note" className="text-tiny">
+            Fades the end of one track out while the start of the next fades in. Off by default. It
+            is skipped between consecutive tracks of the same album, which run on without a gap, and
+            for repeat one. If the next track has not loaded in time, it simply follows.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function UserSettingsPage() {
   const themes = useThemes()
   const active = useTheme()
@@ -775,9 +882,19 @@ export function UserSettingsPage() {
           </>
         )}
       </section>
-      <div className="mt-[32px]">
-        <VisualizerSettings />
-      </div>
+      {/* Editing a theme is a mode of its own, with Save and Cancel in a bar that sticks to the
+          bottom of the Appearance section. Anything below that section would let the bar scroll
+          away at the end of the page, so the other settings wait until the edit is done. */}
+      {!edit && (
+        <>
+          <div className="mt-[32px]">
+            <PlaybackSettings />
+          </div>
+          <div className="mt-[32px]">
+            <VisualizerSettings />
+          </div>
+        </>
+      )}
     </>
   )
 }

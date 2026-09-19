@@ -744,11 +744,11 @@ test('the visualizer settings change what Now Playing remembers', async ({ page 
   )
   await page.goto('/settings/user')
   const view = page.getByRole('combobox', { name: 'Default view' })
-  await expect(view).toHaveValue('visualizer')
-  await view.selectOption('artwork')
+  await expect(view).toHaveValue('artwork')
+  await view.selectOption('visualizer')
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem('musimo.now-playing-view')))
-    .toBe('artwork')
+    .toBe('visualizer')
 })
 
 test('the visualizer settings are disabled with a reason where there is no WebGPU', async ({

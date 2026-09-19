@@ -87,6 +87,11 @@ class Store:
                 key TEXT PRIMARY KEY,
                 playlist_id TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS waveforms (
+                song_id TEXT PRIMARY KEY,
+                fingerprint TEXT NOT NULL,
+                peaks BLOB NOT NULL
+            );
             CREATE TABLE IF NOT EXISTS source_control (
                 source TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0,
                 blocking_failures INTEGER NOT NULL DEFAULT 0
@@ -218,6 +223,33 @@ class Store:
     def clear_linked_playlist(self, key: str) -> None:
         with self.lock:
             self.db.execute("DELETE FROM linked_playlists WHERE key=?", (key,))
+
+    def waveform(self, song_id: str, fingerprint: str) -> bytes | None:
+        """Cached peaks, only while the fingerprint (file size and time) is still the file's."""
+        with self.lock:
+            row = self.db.execute(
+                "SELECT peaks FROM waveforms WHERE song_id=? AND fingerprint=?",
+                (song_id, fingerprint),
+            ).fetchone()
+            return bytes(row[0]) if row else None
+
+    def save_waveform(self, song_id: str, fingerprint: str, peaks: bytes) -> None:
+        # One row per song, so a changed file replaces its old peaks instead of adding to them.
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                self.db.execute(
+                    """
+                    INSERT INTO waveforms VALUES (?, ?, ?)
+                    ON CONFLICT(song_id) DO UPDATE SET
+                        fingerprint=excluded.fingerprint, peaks=excluded.peaks
+                    """,
+                    (song_id, fingerprint, peaks),
+                )
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
 
     def update(self, changes: dict[str, object]) -> dict[str, object]:
         with self.lock:

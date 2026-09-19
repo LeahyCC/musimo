@@ -50,6 +50,25 @@ export function contrastRatio(one: Rgb, two: Rgb): number {
   return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
 }
 
+/** `from` moved `amount` (0 to 1) of the way towards `to`, channel by channel in sRGB. Alpha stays `from`'s. */
+export const mixRgb = (from: Rgb, to: Rgb, amount: number): Rgb => ({
+  r: from.r + (to.r - from.r) * amount,
+  g: from.g + (to.g - from.g) * amount,
+  b: from.b + (to.b - from.b) * amount,
+  a: from.a,
+})
+
+/** Six digits, each channel rounded and held to 0-255. Alpha is dropped. */
+export const toHex = (color: Rgb): string =>
+  '#' +
+  [color.r, color.g, color.b]
+    .map((channel) =>
+      Math.round(Math.min(255, Math.max(0, channel)))
+        .toString(16)
+        .padStart(2, '0'),
+    )
+    .join('')
+
 /** The same ratio from two hex strings, or null if either one is not a color. */
 export function hexContrast(one: string, two: string): number | null {
   const first = parseHex(one)

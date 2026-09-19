@@ -175,6 +175,16 @@ export const librarySchema = z.object({
   roots: z.array(z.string()),
 })
 
+// OpenSubsonic's loudness tags, in decibels and as a fraction of full scale. Each is present only
+// when the file carries it.
+export const replayGainSchema = z.object({
+  trackGain: z.number().optional(),
+  albumGain: z.number().optional(),
+  trackPeak: z.number().optional(),
+  albumPeak: z.number().optional(),
+})
+export type ReplayGain = z.infer<typeof replayGainSchema>
+
 export const libraryTrackSchema = z.object({
   id: z.string(),
   title: z.string().default('Unknown track'),
@@ -189,8 +199,41 @@ export const libraryTrackSchema = z.object({
   genre: z.string().optional(),
   created: z.string().optional(),
   playCount: z.number().default(0),
+  replayGain: replayGainSchema.optional(),
 })
 export type LibraryTrack = z.infer<typeof libraryTrackSchema>
+
+// One song as `GET /api/player/song/{id}` passes it through: the file's own facts, the listening
+// record and OpenSubsonic's credits. Each is present only when Navidrome has it.
+export const songDetailSchema = z.object({
+  id: z.string(),
+  suffix: z.string().optional(),
+  contentType: z.string().optional(),
+  bitRate: z.number().optional(),
+  samplingRate: z.number().optional(),
+  bitDepth: z.number().optional(),
+  channelCount: z.number().optional(),
+  size: z.number().optional(),
+  path: z.string().optional(),
+  track: z.number().optional(),
+  discNumber: z.number().optional(),
+  year: z.number().optional(),
+  genre: z.string().optional(),
+  genres: z.array(z.object({ name: z.string() })).optional(),
+  playCount: z.number().optional(),
+  played: z.string().optional(),
+  contributors: z
+    .array(
+      z.object({
+        role: z.string(),
+        subRole: z.string().optional(),
+        artist: z.object({ name: z.string() }),
+      }),
+    )
+    .optional(),
+})
+export type SongDetail = z.infer<typeof songDetailSchema>
+
 export const playerQueueSchema = z.object({
   current: z.string().default(''),
   position: z.number().default(0),
@@ -259,6 +302,7 @@ export const libraryPlaylistsSchema = page(libraryPlaylistSchema).extend({
 })
 export const libraryAlbumDetailSchema = libraryAlbumSchema.extend({
   song: z.array(libraryTrackSchema).default([]),
+  recordLabels: z.array(z.object({ name: z.string() })).optional(),
 })
 export const libraryArtistDetailSchema = libraryArtistSchema.extend({
   album: z.array(libraryAlbumSchema).default([]),
@@ -276,6 +320,8 @@ export const playerCapabilitiesSchema = z.object({
   version: z.string(),
   detail: z.string(),
 })
+// Two peaks is the least there is to draw; anything shorter is treated as no waveform at all.
+export const waveformSchema = z.object({ peaks: z.array(z.number().min(0).max(1)).min(2) })
 export const lyricsSchema = z.object({
   items: z.array(
     z.object({

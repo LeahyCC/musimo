@@ -20,12 +20,15 @@ import type { SceneId } from 'visimo/catalog'
 import { findPreset, firstPresetOf, presetOrDefault, stepPreset } from 'visimo/presets'
 import type { Preset } from 'visimo/presets'
 
+import { ArtworkMenu } from './artwork-menu'
+import type { MenuPoint } from './artwork-menu'
 import { cx } from './cx'
 import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
 import type { StagePlacement, StageView } from './now-playing-overlay'
 import { artUrl, remember, stored, usePlayer } from './player'
 import { activeTheme, applyTheme, subscribeTheme } from './theme/store'
 import { Button } from './ui'
+import { leavingStyle, useLeaving } from './use-leaving'
 
 // The whole WebGPU tree stays out of the main bundle until a stage wants it.
 const VisualizerStage = lazy(() => import('visimo').then((m) => ({ default: m.VisualizerStage })))
@@ -161,8 +164,9 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   const popoutStage = useRef<HTMLDivElement>(null)
   const dockedStage = useRef<HTMLDivElement>(null)
   const popout = pipWindow !== null
+  // Artwork until the browser has been told otherwise: the visualizer is heavy on the GPU.
   const [view, setView] = useState<StageView>(() =>
-    stored(VIEW_KEY, 'visualizer') === 'artwork' ? 'artwork' : 'visualizer',
+    stored(VIEW_KEY, 'artwork') === 'visualizer' ? 'visualizer' : 'artwork',
   )
   const [canVisualize, setCanVisualize] = useState(hasWebGpu)
   const [hud, setHud] = useState(false)
@@ -324,6 +328,8 @@ type StageProps = {
   onFullscreen: () => void
   onPopout?: () => void
   onClose?: () => void
+  /** Layout only: the size the docked stage takes on the page. */
+  className?: string
 }
 
 /* `stage` is the hook the suite and the handwritten `:fullscreen` and popout rules find it by; those
@@ -331,26 +337,52 @@ type StageProps = {
 const stageClassName =
   'stage relative aspect-square overflow-hidden rounded-[14px] bg-media shadow-[0_20px_60px_color-mix(in_oklab,var(--color-shadow)_47%,transparent)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent focus-visible:outline-solid'
 
-// One box: the visualizer, or a blurred cover fill behind a sharp,
-// letterboxed copy of the same artwork, with the hover controls on top.
-// Docked, full screen and popout all share it.
-function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClose }: StageProps) {
-  const player = usePlayer()
-  const popout = useNowPlayingPopout()
-  const track = player.libraryTrack
-  const art = track ? artUrl(track) : (player.track?.art ?? '')
-  const idle = useOverlayIdle(stageRef, player.playing)
-  const view = popout.canVisualize ? popout.view : undefined
-  useStageKeys(stageRef, {
-    placement,
-    onFullscreen,
-    onClose,
-    onToggleView: view ? popout.toggleView : undefined,
-    onToggleHud: view === 'visualizer' ? popout.toggleHud : undefined,
-    onCyclePreset: view === 'visualizer' ? popout.cyclePreset : undefined,
-  })
-  const artwork = (
-    <>
+/* The docked stage is the smaller of two squares: as wide as its column, and as tall as the room
+   its column leaves above the controls. The column is a size container for that, and on a phone,
+   where the page scrolls and has no height to measure, the stage is just the column's width. The
+   `:fullscreen` and popout rules in style.css override both. */
+const dockedStageClassName = 'w-[min(100cqw,100cqh)] max-phone:w-full'
+
+// Whether anyone can see the docked stage: the tab is in front and the stage is on screen (not
+// scrolled away, and not under the phone layout's scroll). The stage has no pause, so the caller
+// unmounts the visualizer while this is false and mounts it again after. The popout window is a
+// document of its own that stays on top while open, so it always counts as visible. Audio is not
+// touched: nothing here reaches the player.
+function useStageVisible(stageRef: RefObject<HTMLDivElement | null>, always: boolean) {
+  const [tabVisible, setTabVisible] = useState(() => document.visibilityState !== 'hidden')
+  const [onScreen, setOnScreen] = useState(true)
+
+  useEffect(() => {
+    if (always) return
+    const onChange = () => setTabVisible(document.visibilityState !== 'hidden')
+    onChange()
+    document.addEventListener('visibilitychange', onChange)
+    return () => document.removeEventListener('visibilitychange', onChange)
+  }, [always])
+
+  useEffect(() => {
+    const element = stageRef.current
+    if (always || !element || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => {
+      const latest = entries[entries.length - 1]
+      if (latest) setOnScreen(latest.isIntersecting)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [stageRef, always])
+
+  return always || (tabVisible && onScreen)
+}
+
+// A blurred cover fill behind a sharp, letterboxed copy of the same artwork. `sharp` is what marks
+// the live copy; a copy that is fading out is drawn without it and hidden from assistive tech.
+function ArtworkLayers({ art, leaving }: { art: string; leaving?: boolean }) {
+  return (
+    <div
+      className={cx('absolute inset-0', leaving && 'leaving')}
+      style={leaving ? leavingStyle : undefined}
+      aria-hidden={leaving ? true : undefined}
+    >
       <div className="absolute inset-0 grid place-items-center text-on-media/50">
         {art ? (
           <img
@@ -363,23 +395,96 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
         )}
       </div>
       {art && (
-        <img className="stage-art absolute inset-0 size-full object-contain" src={art} alt="" />
+        <img
+          className={cx('absolute inset-0 size-full object-contain', !leaving && 'stage-art')}
+          src={art}
+          alt=""
+        />
       )}
+    </div>
+  )
+}
+
+// The artwork, cross-fading to the next cover over about 300 ms when the track changes: the old
+// copy stays on top and fades out over the new one.
+function StageArtwork({ art }: { art: string }) {
+  const leaving = useLeaving(art)
+
+  return (
+    <>
+      <ArtworkLayers art={art} />
+      {leaving && <ArtworkLayers art={leaving.value} leaving />}
     </>
   )
+}
+
+// One box: the visualizer, or the artwork, with the hover controls on top.
+// Docked, full screen and popout all share it.
+function Stage({
+  placement,
+  stageRef,
+  fullscreen,
+  onFullscreen,
+  onPopout,
+  onClose,
+  className,
+}: StageProps) {
+  const player = usePlayer()
+  const popout = useNowPlayingPopout()
+  const track = player.libraryTrack
+  const art = track ? artUrl(track) : (player.track?.art ?? '')
+  const idle = useOverlayIdle(stageRef, player.playing)
+  const view = popout.canVisualize ? popout.view : undefined
+  const seen = useStageVisible(stageRef, placement === 'popout')
+  useStageKeys(stageRef, {
+    placement,
+    onFullscreen,
+    onClose,
+    onToggleView: view ? popout.toggleView : undefined,
+    onToggleHud: view === 'visualizer' ? popout.toggleHud : undefined,
+    onCyclePreset: view === 'visualizer' ? popout.cyclePreset : undefined,
+  })
+  const artwork = <StageArtwork art={art} />
+  // Where a right-click landed, while the artwork menu is open. Docked only: in the popout there is
+  // no page to go to.
+  const [menu, setMenu] = useState<MenuPoint | null>(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
 
   return (
     <div
       ref={stageRef}
-      className={cx(stageClassName, 'group', idle && 'idle cursor-none')}
+      className={cx(stageClassName, 'group', idle && 'idle cursor-none', className)}
       tabIndex={0}
       aria-label="Now Playing"
       onDoubleClick={(event) => {
-        if (event.target instanceof HTMLElement && event.target.closest('.stage-overlay')) return
+        // The menu is drawn inside the stage in full screen, and events bubble out of it.
+        if (
+          event.target instanceof HTMLElement &&
+          event.target.closest('.stage-overlay,[role="menu"]')
+        )
+          return
         onFullscreen()
       }}
+      onContextMenu={(event) => {
+        if (placement !== 'docked' || !track) return
+        // The stage's own controls and the menu itself keep the browser's menu.
+        if (
+          event.target instanceof HTMLElement &&
+          event.target.closest('button,select,input,a,[role="menu"]')
+        )
+          return
+        event.preventDefault()
+        // A key that opens the menu (the Menu key, Shift+F10) reports no position, so the menu
+        // opens at the stage's centre instead of the window's corner.
+        const box = event.currentTarget.getBoundingClientRect()
+        const keyboard = event.clientX === 0 && event.clientY === 0
+        setMenu({
+          x: keyboard ? box.left + box.width / 2 : event.clientX,
+          y: keyboard ? box.top + box.height / 2 : event.clientY,
+        })
+      }}
     >
-      {view === 'visualizer' ? (
+      {view === 'visualizer' && seen ? (
         <Suspense fallback={artwork}>
           <VisualizerStage
             hud={popout.hud}
@@ -397,6 +502,7 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
       <NowPlayingOverlay
         placement={placement}
         fullscreen={fullscreen}
+        controls={fullscreen || placement === 'popout'}
         onFullscreen={onFullscreen}
         onPopout={onPopout}
         view={view}
@@ -408,6 +514,15 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
         fluidSize={popout.fluidSize}
         onFluidSize={popout.setFluidSize}
       />
+      {menu && track && (
+        <ArtworkMenu
+          track={track}
+          at={menu}
+          fullscreen={fullscreen}
+          onFullscreen={onFullscreen}
+          onClose={closeMenu}
+        />
+      )}
     </div>
   )
 }
@@ -454,30 +569,37 @@ export function NowPlayingStage() {
   }
 
   return (
-    <div className="grid min-w-0 gap-[10px]">
-      {popout.popout ? (
-        <div className={cx(stageClassName, 'grid place-items-center')}>
-          {art && (
-            <img
-              className="absolute inset-0 size-full object-cover opacity-25 blur-[6px]"
-              src={art}
-              alt=""
-            />
-          )}
-          <div className="relative grid justify-items-center gap-[12px]">
-            <p className="text-on-media/75">Playing in the popout window.</p>
-            <Button onClick={popout.closePopout}>Bring back</Button>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[10px]">
+      {/* The stage's size container: it takes the height the column leaves and sets the square at
+          its top left, so the art's edge lines up with the title and controls under it when a short
+          window makes the square narrower than the column. A phone has no height to hand out, so
+          there it is only a block. */}
+      <div className="grid min-h-0 flex-1 place-items-start [container-type:size] max-phone:[container-type:normal]">
+        {popout.popout ? (
+          <div className={cx(stageClassName, dockedStageClassName, 'grid place-items-center')}>
+            {art && (
+              <img
+                className="absolute inset-0 size-full object-cover opacity-25 blur-[6px]"
+                src={art}
+                alt=""
+              />
+            )}
+            <div className="relative grid justify-items-center gap-[12px]">
+              <p className="text-on-media/75">Playing in the popout window.</p>
+              <Button onClick={popout.closePopout}>Bring back</Button>
+            </div>
           </div>
-        </div>
-      ) : (
-        <Stage
-          placement="docked"
-          stageRef={container}
-          fullscreen={fullscreen}
-          onFullscreen={toggleFullscreen}
-          onPopout={popout.canPopout ? popout.openPopout : undefined}
-        />
-      )}
+        ) : (
+          <Stage
+            placement="docked"
+            stageRef={container}
+            fullscreen={fullscreen}
+            onFullscreen={toggleFullscreen}
+            onPopout={popout.canPopout ? popout.openPopout : undefined}
+            className={dockedStageClassName}
+          />
+        )}
+      </div>
       {popout.notice && (
         <span className="text-small text-muted" role="status">
           {popout.notice}
