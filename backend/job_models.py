@@ -125,6 +125,9 @@ class Job(BaseModel):
     tool_tail: str = ""
     tool_version: str = ""
     warnings: list[str] = Field(default_factory=list)
+    # Facts about the job that are not problems, such as where its tags came from. Jobs stored
+    # before this existed load with none.
+    notes: list[str] = Field(default_factory=list)
     final_path: str = ""
     artifact_hash: str = ""
     codec: str = ""

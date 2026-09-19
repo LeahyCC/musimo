@@ -577,6 +577,11 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
           </button>
         </div>
       )}
+      {job.notes.map((note, index) => (
+        <p key={index} className="mt-3 text-small text-muted">
+          {note}
+        </p>
+      ))}
       {job.warnings.length > 0 && (
         <details className="mt-3 text-small text-muted">
           <summary className="cursor-pointer">

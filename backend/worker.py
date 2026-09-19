@@ -123,7 +123,11 @@ def main() -> None:
         "progress_hooks": [progress],
         "outtmpl": str(folder / "source.%(ext)s"),
         # Feed files and most other sites offer one format that may not be labelled audio-only.
-        "format": "bestaudio" if job.source == "youtube" else "bestaudio/best",
+        "format": link_site.audio_format
+        if link_site
+        else "bestaudio"
+        if job.source == "youtube"
+        else "bestaudio/best",
         "continuedl": True,
         "overwrites": False,
         "nopart": False,

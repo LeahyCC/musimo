@@ -28,6 +28,13 @@ class Site:
     art_hosts: tuple[str, ...] = ()
     # Path prefixes that mean a person's or channel's page rather than one list.
     profile_paths: tuple[str, ...] = ()
+    # The yt-dlp format selector for a recording from this site.
+    audio_format: str = "bestaudio/best"
+    # A list on this site is one album: its title names the album, its creator is the artist,
+    # and its entries are the tracks, each listed once however many formats it comes in.
+    album_lists: bool = False
+    # Where one entry of a list lives when the list gives no address for it. `{id}` is filled in.
+    entry_url: str = ""
 
     def is_profile(self, url: str) -> bool:
         parts = parse(url)
@@ -48,6 +55,20 @@ SITES: tuple[Site, ...] = (
         hosts=("youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"),
         art_hosts=("i.ytimg.com",),
         profile_paths=("/@", "/channel/", "/c/", "/user/"),
+        audio_format="bestaudio",
+    ),
+    Site(
+        source="archive",
+        label="Internet Archive",
+        kind="music",
+        extractors=("archive.org",),
+        items=("archive.org",),
+        hosts=("archive.org", "www.archive.org"),
+        art_hosts=("archive.org",),
+        # FLAC when the item has it, then the formats the worker keeps, best source first.
+        audio_format="best[ext=flac]/best[ext=mp3]/best[ext=ogg]/best[ext=m4a]",
+        album_lists=True,
+        entry_url="https://archive.org/details/{id}",
     ),
 )
 

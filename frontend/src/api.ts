@@ -56,6 +56,8 @@ export const jobSchema = z.object({
   tool_tail: z.string(),
   tool_version: z.string(),
   warnings: z.array(z.string()),
+  // Facts that are not problems, such as where the tags came from. Older servers send none.
+  notes: z.array(z.string()).default([]),
   final_path: z.string(),
   codec: z.string(),
   actual_bitrate: z.number(),

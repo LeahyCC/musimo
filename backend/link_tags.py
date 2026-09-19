@@ -6,6 +6,7 @@ layout and the ownership badges recognise it. Anything less than confident keeps
 """
 
 import asyncio
+import re
 
 import httpx
 from pydantic import ValidationError
@@ -23,9 +24,48 @@ ARTIST_BAR = 0.9
 NOTE_PREFIX = "Tagged from"
 CATALOG_NOTE = f"{NOTE_PREFIX} the Deezer catalog"
 
+# Words an uploader adds to a title to say what kind of upload it is. None of them changes the
+# music. Version words such as live, remix and acoustic are deliberately absent: they do.
+DECORATION = (
+    r"official|music|video|audio|lyrics?|visuali[sz]er|full|song|with|hd|hq|4k|8k|1080p|720p"
+)
+BRACKETED = re.compile(rf"\s*[(\[]\s*(?:(?:{DECORATION})\s*)+[)\]]", re.IGNORECASE)
+# Decoration hanging off the end of a title: after a bar, after a dash that says "official"
+# (a bare "Artist - Video" is a real song title), or a bare quality tag.
+TRAILING = re.compile(
+    rf"(?:\s+\|\s*(?:(?:{DECORATION})\s*)+"
+    rf"|\s+[-\u2013\u2014]\s*official\s+(?:(?:{DECORATION})\s*)+"
+    r"|\s+(?:hd|hq|4k|8k|1080p|720p))\s*$",
+    re.IGNORECASE,
+)
+# "Artist - Title", with a hyphen or an en or em dash set off by spaces.
+ARTIST_TITLE = re.compile(r"^(?P<artist>.+?)\s+[-\u2013\u2014]\s+(?P<title>.+)$")
+# YouTube names a label's artist channel "<name>VEVO" and an auto-generated one "<name> - Topic".
+CHANNEL_SUFFIX = re.compile(r"\s*(?:-\s*Topic|VEVO)\s*$", re.IGNORECASE)
+
 
 def tidied(job: Job) -> bool:
-    return any(note.startswith(NOTE_PREFIX) for note in job.warnings)
+    # Jobs stored before `notes` existed kept this note in `warnings`.
+    return any(note.startswith(NOTE_PREFIX) for note in [*job.notes, *job.warnings])
+
+
+def undecorated(title: str) -> str:
+    """The title without upload decoration such as "(Official Video)" or "4K"."""
+    while True:
+        plainer = TRAILING.sub("", BRACKETED.sub("", title)).strip()
+        if plainer == title:
+            return title
+        title = plainer
+
+
+def cleaned(meta: Metadata) -> Metadata:
+    """The pasted side as a catalog would spell it. Version words stay, so a remix stays one."""
+    title = undecorated(meta.title)
+    artist = CHANNEL_SUFFIX.sub("", meta.artist).strip()
+    if split := ARTIST_TITLE.match(title):
+        # "Artist - Title" names the artist better than the channel that uploaded it.
+        artist, title = split["artist"].strip(), split["title"].strip()
+    return meta.model_copy(update={"artist": artist, "title": title})
 
 
 class LinkTags:
@@ -44,9 +84,8 @@ class LinkTags:
             return None
         return score
 
-    async def lookup(self, meta: Metadata) -> Metadata | None:
-        # YouTube's auto-generated channels name the artist "<name> - Topic".
-        wanted = meta.model_copy(update={"artist": meta.artist.removesuffix(" - Topic").strip()})
+    async def search(self, wanted: Metadata) -> Result | None:
+        """The best confident catalog hit for one spelling of the recording."""
         # Nothing to search with, or nothing to check a hit's length against: skip the request.
         if not normalize(wanted.artist) or not normalize(wanted.title) or wanted.duration <= 0:
             return None
@@ -58,12 +97,23 @@ class LinkTags:
             score = self.confidence(wanted, hit)
             if score and (best is None or score.total > best[0]):
                 best = (score.total, hit)
-        if best is None:
-            return None
-        full = await self.enrichment.track(best[1].id)
-        # A catalog cover that failed the media check should not throw away the site's own.
-        full.art = full.art or meta.art
-        return full
+        return best[1] if best else None
+
+    async def lookup(self, meta: Metadata) -> Metadata | None:
+        # The cleaned spelling goes first because the raw one of an ordinary upload finds nothing.
+        # Both are held to the same bar, so the second try can only find what the first missed.
+        # The raw spelling still drops YouTube's " - Topic", which is not decoration.
+        raw = meta.model_copy(update={"artist": meta.artist.removesuffix(" - Topic").strip()})
+        spellings = [cleaned(meta)]
+        if raw != spellings[0]:
+            spellings.append(raw)
+        for wanted in spellings:
+            if hit := await self.search(wanted):
+                full = await self.enrichment.track(hit.id)
+                # A catalog cover that failed the media check should not throw away the site's own.
+                full.art = full.art or meta.art
+                return full
+        return None
 
     async def tidy(self, meta: Metadata, site: str) -> tuple[Metadata, str]:
         """The tags to use and the note that says where they came from. Never raises."""

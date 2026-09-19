@@ -8,19 +8,20 @@ import tempfile
 import unittest
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import httpx
 from fastapi import FastAPI
 
 from backend import resolver, sources
-from backend.catalog import Catalog
+from backend.catalog import Catalog, SearchPage
 from backend.downloads import DownloadError, Downloads
 from backend.errors import error_guidance, source_code
 from backend.job_models import Job, Metadata
 from backend.library import Library
 from backend.link_api import install_link_routes
+from backend.link_tags import cleaned
 from backend.links import MAX_RESOLVES, Links, stable_id
 from backend.sources import Kind, Site
 from backend.store import Store
@@ -92,11 +93,11 @@ class AllowlistTests(unittest.TestCase):
     def test_refusals_name_the_host_and_the_supported_sites(self) -> None:
         self.assertEqual(
             sources.refusal("https://example.com/a"),
-            "Musimo can't download from example.com. It works with: YouTube.",
+            "Musimo can't download from example.com. It works with: YouTube, Internet Archive.",
         )
         self.assertEqual(
             sources.refusal("file:///etc/passwd"),
-            "Musimo can't download from this link. It works with: YouTube.",
+            "Musimo can't download from this link. It works with: YouTube, Internet Archive.",
         )
         for url in ("https://open.spotify.com/track/1", "https://music.apple.com/us/album/x/1"):
             self.assertEqual(sources.refusal(url), "Catalog imports are not built yet.")
@@ -198,7 +199,8 @@ class LinkApiTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 422)
                 self.assertEqual(
                     response.json()["detail"],
-                    f"Musimo can't download from {where}. It works with: YouTube.",
+                    f"Musimo can't download from {where}. "
+                    "It works with: YouTube, Internet Archive.",
                 )
         spotify = await self.resolve("https://open.spotify.com/album/1")
         self.assertEqual(spotify.json()["detail"], "Catalog imports are not built yet.")
@@ -420,7 +422,8 @@ class LinkApiTests(unittest.IsolatedAsyncioTestCase):
         self.links.answer = {"kind": "error", "code": "SITE_NOT_ALLOWED", "message": "x"}
         away = await self.resolve()
         self.assertEqual(
-            away.json()["detail"], "The link led away from YouTube. Musimo works with: YouTube."
+            away.json()["detail"],
+            "The link led away from YouTube. Musimo works with: YouTube, Internet Archive.",
         )
 
         self.links.answer = {"kind": "error", "code": "FAILED", "message": "x"}
@@ -467,6 +470,91 @@ class ResolverTests(unittest.TestCase):
         self.assertEqual(entry["date"], "2024-05-01")
         self.assertEqual(entry["art"], ART)
         self.assertFalse(entry["live"])
+
+    def test_youtube_artwork_is_a_named_size_never_a_numbered_frame(self) -> None:
+        def art(*names: str) -> str:
+            base = "https://i.ytimg.com/vi/abcdefghijk/"
+            return resolver.artwork({"thumbnails": [{"url": base + name} for name in names]})
+
+        base = "https://i.ytimg.com/vi/abcdefghijk/"
+        # The order yt-dlp lists them in before it has sorted them: best first, webp beside jpg.
+        every = (
+            "maxresdefault.jpg",
+            "hq720.jpg",
+            "sddefault.jpg",
+            "sd1.jpg",
+            "hqdefault.jpg",
+            "hq1.jpg",
+            "0.jpg",
+            "mqdefault.jpg",
+            "default.jpg",
+            "1.jpg",
+            "2.jpg",
+            "3.jpg",
+        )
+        self.assertEqual(art(*every), base + "maxresdefault.jpg")
+        # Sorted the other way, worst first, it is the same answer and not the last frame grab.
+        self.assertEqual(art(*reversed(every)), base + "maxresdefault.jpg")
+        self.assertEqual(
+            art("1.jpg", "2.jpg", "3.jpg", "hqdefault.jpg?sqp=abc"), base + "hqdefault.jpg?sqp=abc"
+        )
+        self.assertEqual(art("hqdefault.jpg", "sddefault.jpg", "3.jpg"), base + "sddefault.jpg")
+        self.assertEqual(art("sd1.jpg", "hqdefault.jpg", "sd2.jpg"), base + "hqdefault.jpg")
+        # A page that lists only WebP has no JPEG to give, so it gives none.
+        self.assertEqual(
+            resolver.artwork(
+                {
+                    "thumbnails": [
+                        {"url": "https://i.ytimg.com/vi_webp/abcdefghijk/maxresdefault.webp"}
+                    ]
+                }
+            ),
+            "",
+        )
+
+    def test_the_largest_jpeg_wins_when_the_site_gives_sizes(self) -> None:
+        def sized(
+            name: str, width: int | None = None, height: int | None = None
+        ) -> dict[str, object]:
+            return {"url": f"https://example.test/{name}", "width": width, "height": height}
+
+        self.assertEqual(
+            resolver.artwork(
+                {
+                    "thumbnails": [
+                        sized("small.jpg", 100, 100),
+                        sized("large.jpg", 1200, 1200),
+                        sized("medium.jpg", 600, 400),
+                        # Bigger, but not a JPEG: the worker only embeds JPEG covers.
+                        sized("huge.png", 3000, 3000),
+                    ]
+                }
+            ),
+            "https://example.test/large.jpg",
+        )
+        # A wide frame is bigger than a square one of the same width, so both sides count.
+        self.assertEqual(
+            resolver.artwork(
+                {"thumbnails": [sized("square.jpg", 500, 500), sized("wide.jpg", 640, 480)]}
+            ),
+            "https://example.test/wide.jpg",
+        )
+        # Sized ones beat unsized ones, and with no sizes at all the later one is kept.
+        self.assertEqual(
+            resolver.artwork(
+                {"thumbnails": [sized("a.jpg"), sized("b.jpg", 50, 50), sized("c.jpg")]}
+            ),
+            "https://example.test/b.jpg",
+        )
+        self.assertEqual(
+            resolver.artwork({"thumbnails": [sized("a.jpg"), sized("b.jpg")]}),
+            "https://example.test/b.jpg",
+        )
+        self.assertEqual(
+            resolver.artwork({"thumbnail": "https://example.test/t.jpg?v=1"}),
+            "https://example.test/t.jpg?v=1",
+        )
+        self.assertEqual(resolver.artwork({"thumbnail": "https://example.test/t.webp"}), "")
 
     def test_playlist_entries_come_back_flat_and_capped(self) -> None:
         rows = (
@@ -586,6 +674,27 @@ class LinkWorkerTests(unittest.TestCase):
         downloader.return_value.process_ie_result.assert_called_once_with(info, download=True)
         self.assertNotIn("matching", [event.get("stage") for event in events])
         self.assertEqual(events[-1]["kind"], "ready")
+
+    def test_each_site_picks_its_own_format_and_extractors(self) -> None:
+        archive = sources.by_source("archive")
+        assert archive is not None
+        with tempfile.TemporaryDirectory() as directory:
+            job = self.job(
+                directory,
+                source="archive",
+                source_url="https://archive.org/details/item/track.mp3",
+            )
+            info = {"id": "item/track.mp3", "extractor": "archive.org"}
+            downloader, events = self.run_worker(directory, job, info)
+        options = downloader.call_args.args[0]
+        self.assertEqual(options["format"], archive.audio_format)
+        self.assertEqual(options["allowed_extractors"], ["archive\\.org"])
+        self.assertEqual(events[-1]["kind"], "ready")
+        # A YouTube video that led to the Archive, or the other way round, is refused.
+        with tempfile.TemporaryDirectory() as directory:
+            job = self.job(directory, source="archive")
+            _, events = self.run_worker(directory, job, {}, audio=False)
+        self.assertEqual(events[-1]["code"], "SITE_NOT_ALLOWED")
 
     def test_redirects_off_the_list_fail(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -805,6 +914,8 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
         self.store.update({"destination": str(self.root)})
         self.paths: list[str] = []
         self.search: list[dict[str, object]] = []
+        # What a search for one exact query returns, before falling back to `search`.
+        self.answers: dict[str, list[dict[str, object]]] = {}
         self.timeout = False
 
         def respond(request: httpx.Request) -> httpx.Response:
@@ -814,7 +925,8 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
             if self.timeout:
                 raise httpx.ReadTimeout("slow", request=request)
             if request.url.path == "/search/track":
-                return httpx.Response(200, json={"data": self.search, "total": len(self.search)})
+                rows = self.answers.get(request.url.params.get("q", ""), self.search)
+                return httpx.Response(200, json={"data": rows, "total": len(rows)})
             if request.url.path == "/track/9":
                 return httpx.Response(
                     200,
@@ -876,6 +988,10 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
             }
         ]
 
+    async def tidy(self, title: str, artist: str, duration: int = 200) -> tuple[Metadata, str]:
+        meta = Metadata(id=1, title=title, artist=artist, album="Other", duration=duration)
+        return await self.service.link_tags.tidy(meta, "YouTube")
+
     async def run_link(self, kind: Kind = "music", track_id: int = 1, **meta: object) -> Job:
         values: dict[str, object] = {
             "id": track_id,
@@ -905,7 +1021,9 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
         self.hit()
         job = await self.run_link()
         self.assertEqual((job.stage, job.error), ("done", ""))
-        self.assertEqual(job.warnings[0], "Tagged from the Deezer catalog")
+        self.assertEqual(job.notes[0], "Tagged from the Deezer catalog")
+        # The note says where the tags came from. It is not a problem, so it is not a warning.
+        self.assertFalse([w for w in job.warnings if w.startswith("Tagged from")])
         meta = job.meta
         self.assertEqual((meta.title, meta.artist, meta.album), ("Song", "Band", "The Record"))
         self.assertEqual((meta.track, meta.tracks, meta.date), (4, 10, "2023-02-03"))
@@ -926,7 +1044,7 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
                 job = await self.run_link(track_id=number)
                 self.assertEqual(job.stage, "done")
                 self.assertEqual(
-                    job.warnings[0],
+                    job.notes[0],
                     "Tagged from YouTube, no catalog match. "
                     "It is filed as its own album named after the track",
                 )
@@ -936,7 +1054,7 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_recording_with_a_real_album_keeps_it_without_the_single_note(self) -> None:
         job = await self.run_link(album="Somewhere Else")
-        self.assertEqual(job.warnings[0], "Tagged from YouTube, no catalog match")
+        self.assertEqual(job.notes[0], "Tagged from YouTube, no catalog match")
         self.assertEqual(job.meta.album, "Somewhere Else")
 
     async def test_a_remix_is_never_tidied_to_the_original(self) -> None:
@@ -979,7 +1097,7 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
         job = await self.run_link()
         self.assertEqual(job.stage, "done")
         self.assertEqual(
-            job.warnings[0],
+            job.notes[0],
             "Tagged from YouTube, the catalog lookup failed. "
             "It is filed as its own album named after the track",
         )
@@ -993,9 +1111,7 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
         with patch("backend.link_tags.BUDGET_SECONDS", 0.05):
             job = await self.run_link()
         self.assertEqual(job.stage, "done")
-        self.assertTrue(
-            job.warnings[0].startswith("Tagged from YouTube, the catalog lookup failed")
-        )
+        self.assertTrue(job.notes[0].startswith("Tagged from YouTube, the catalog lookup failed"))
 
     async def test_mixes_and_radio_never_call_the_catalog(self) -> None:
         self.hit()
@@ -1004,7 +1120,7 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
             with self.subTest(kind=kind):
                 job = await self.run_link(kind=kind, track_id=number)
                 self.assertEqual(job.stage, "done")
-                self.assertFalse([w for w in job.warnings if w.startswith("Tagged from")])
+                self.assertEqual(job.notes, [])
                 self.assertEqual(job.meta.album, "Song")
         self.assertEqual(self.paths, [])
 
@@ -1014,9 +1130,139 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
         self.paths.clear()
         self.service.jobs.update(job.id, stage="queued", final_path="", artifact_hash="")
         await self.service.run(job.id)
-        notes = [w for w in self.service.jobs.get(job.id).warnings if w.startswith("Tagged from")]
+        notes = self.service.jobs.get(job.id).notes
         self.assertEqual(notes, ["Tagged from the Deezer catalog"])
         self.assertEqual(self.paths, [])
+
+    def queries(self) -> list[str]:
+        """Start recording the catalog searches. The catalog cache would hide repeats from HTTP."""
+        asked: list[str] = []
+        search = self.service.catalog.search
+
+        async def spy(query: str, *rest: Any) -> SearchPage:
+            asked.append(query)
+            return await search(query, *rest)
+
+        self.service.catalog.search = spy  # type: ignore[method-assign,assignment]
+        return asked
+
+    async def test_an_ordinary_upload_is_cleaned_before_the_lookup(self) -> None:
+        self.hit()
+        asked = self.queries()
+        for title, artist in (
+            ("Band - Song (Official Video)", "BandVEVO"),
+            ("Band - Song [Official Audio]", "Band - Topic"),
+            ("Band - Song (Lyrics) [4K]", "Some Channel"),
+            ("Band - Song | Official Video", "Some Channel"),
+            ("Song (Official Music Video) HD", "Band VEVO"),
+        ):
+            with self.subTest(title=title, artist=artist):
+                asked.clear()
+                meta, note = await self.tidy(title, artist)
+                self.assertEqual(note, "Tagged from the Deezer catalog")
+                self.assertEqual((meta.title, meta.artist), ("Song", "Band"))
+                # The cleaned spelling found it, so the raw one was never tried.
+                self.assertEqual(asked, ['artist:"Band" track:"Song"'])
+
+    async def test_the_raw_spelling_is_tried_when_the_cleaned_one_finds_nothing(self) -> None:
+        # A real title with a dash in it: cleaning splits it wrongly and the raw pair is right.
+        self.answers = {'artist:"Intro" track:"Outro"': []}
+        self.hit(title="Intro - Outro", artist="Various")
+        asked = self.queries()
+        _, note = await self.tidy("Intro - Outro", "Various")
+        self.assertEqual(note, "Tagged from the Deezer catalog")
+        self.assertEqual(
+            asked, ['artist:"Intro" track:"Outro"', 'artist:"Various" track:"Intro - Outro"']
+        )
+
+    async def test_cleaning_never_turns_a_remix_or_a_live_take_into_the_original(self) -> None:
+        self.hit(title="Song")
+        asked = self.queries()
+        for title in (
+            "Band - Song (Club Remix) [Official Audio]",
+            "Band - Song (Live) (Official Video)",
+        ):
+            with self.subTest(title=title):
+                meta, note = await self.tidy(title, "BandVEVO")
+                self.assertEqual(
+                    (meta.title, meta.artist, meta.album), (title, "BandVEVO", "Other")
+                )
+                self.assertEqual(note, "Tagged from YouTube, no catalog match")
+        # The version word survived cleaning, and both spellings were tried and refused.
+        self.assertIn('artist:"Band" track:"Song (Club Remix)"', asked)
+        self.assertIn('artist:"Band" track:"Song (Live)"', asked)
+        self.assertEqual(len(asked), 4)
+        self.assertNotIn("/track/9", self.paths)
+
+    async def test_a_cleaned_remix_still_finds_its_own_catalog_entry(self) -> None:
+        self.hit(title="Song (Club Remix)")
+        _, note = await self.tidy("Band - Song (Club Remix) [Official Audio]", "BandVEVO")
+        self.assertEqual(note, "Tagged from the Deezer catalog")
+
+    async def test_cleaning_does_not_lower_the_bar_for_a_near_miss(self) -> None:
+        self.hit(title="Song Two")
+        _, note = await self.tidy("Band - Song (Official Video)", "BandVEVO")
+        self.assertEqual(note, "Tagged from YouTube, no catalog match")
+
+    async def test_both_spellings_share_one_budget(self) -> None:
+        asked: list[str] = []
+        search = self.service.catalog.search
+
+        async def second_one_hangs(query: str, *rest: Any) -> SearchPage:
+            asked.append(query)
+            if len(asked) == 2:
+                await asyncio.sleep(30)
+            return await search(query, *rest)
+
+        self.service.catalog.search = second_one_hangs  # type: ignore[method-assign,assignment]
+        with patch("backend.link_tags.BUDGET_SECONDS", 0.05):
+            _, note = await self.tidy("Band - Song (Official Video)", "BandVEVO")
+        self.assertEqual(len(asked), 2)
+        self.assertTrue(note.startswith("Tagged from YouTube, the catalog lookup failed"))
+
+    async def test_a_note_stored_in_warnings_still_counts_as_tidied(self) -> None:
+        self.hit()
+        job = await self.run_link()
+        self.paths.clear()
+        # An older job kept the note in its warnings, and a job read back has no `notes` key.
+        self.service.jobs.update(
+            job.id,
+            stage="queued",
+            final_path="",
+            artifact_hash="",
+            notes=[],
+            warnings=["Tagged from the Deezer catalog"],
+        )
+        await self.service.run(job.id)
+        again = self.service.jobs.get(job.id)
+        self.assertEqual(again.notes, [])
+        self.assertIn("Tagged from the Deezer catalog", again.warnings)
+        self.assertEqual(self.paths, [])
+        stored = again.model_dump()
+        del stored["notes"]
+        self.assertEqual(Job.model_validate(stored).notes, [])
+
+
+class CleaningTests(unittest.TestCase):
+    def test_upload_decoration_goes_and_musical_differences_stay(self) -> None:
+        for title, artist, want_title, want_artist in (
+            ("Band - Song (Official Video)", "BandVEVO", "Song", "Band"),
+            ("Band - Song [Official Audio] [4K]", "x", "Song", "Band"),
+            ("Band \u2013 Song (Lyrics)", "x", "Song", "Band"),
+            ("Song HD", "Band - Topic", "Song", "Band"),
+            ("Song | Official Music Video", "Band VEVO", "Song", "Band"),
+            ("Band - Song - Official Video", "x", "Song", "Band"),
+            # Version words are musical differences.
+            ("Band - Song (Club Remix) (Official Video)", "x", "Song (Club Remix)", "Band"),
+            ("Band - Song (Live at the Roxy) [HD]", "x", "Song (Live at the Roxy)", "Band"),
+            ("Band - Song (Acoustic)", "x", "Song (Acoustic)", "Band"),
+            # A song that is really called "Video", and a title with nothing to clean.
+            ("Band - Video", "x", "Video", "Band"),
+            ("Song", "Band", "Song", "Band"),
+        ):
+            with self.subTest(title=title, artist=artist):
+                meta = cleaned(Metadata(id=1, title=title, artist=artist, duration=200))
+                self.assertEqual((meta.title, meta.artist), (want_title, want_artist))
 
 
 async def call_and_hang_up(app: FastAPI, url: str, started: asyncio.Event) -> None:

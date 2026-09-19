@@ -561,9 +561,7 @@ class Downloads:
             if job.catalog == "link" and job.kind == "music" and not tidied(job):
                 # Mixes and radio shows are not catalog recordings. A retry keeps its first note.
                 meta, note = await self.link_tags.tidy(job.meta, site_label(job.source))
-                job = self.jobs.update(
-                    job_id, meta=meta.model_dump(), warnings=[*job.warnings, note]
-                )
+                job = self.jobs.update(job_id, meta=meta.model_dump(), notes=[*job.notes, note])
             await self.artwork(job, folder)
             ready, info = await self.worker(self.jobs.get(job_id), folder)
             await self.finish(self.jobs.get(job_id), ready, info)
