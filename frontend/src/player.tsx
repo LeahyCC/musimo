@@ -10,7 +10,7 @@ import {
 import type { CSSProperties, ReactNode, SyntheticEvent } from 'react'
 
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useRouterState } from '@tanstack/react-router'
 import {
   Check,
   ChevronDown,
@@ -82,6 +82,8 @@ type Playback = {
   previewState: (trackId: number) => PreviewState | undefined
   /** Opens the add-to-playlist sheet; a phone's mini player has no button of its own for it. */
   openPlaylistPicker: () => void
+  /** The footer's status line. Now Playing hides the footer, so the page repeats it. */
+  notice: string
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -112,6 +114,7 @@ const PlayerContext = createContext<Playback>({
   liked: { isLiked: false, canToggle: false, busy: false, toggle: () => undefined },
   previewState: () => undefined,
   openPlaylistPicker: () => undefined,
+  notice: '',
 })
 export const usePlayer = () => useContext(PlayerContext)
 
@@ -728,6 +731,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     '--progress': `${Math.min(100, (Math.min(position, seekMax) / seekMax) * 100).toFixed(2)}%`,
   } as CSSProperties
 
+  // The Now Playing stage has its own transport and shows the title, so the footer stands down
+  // beside it at every width. Without a library track the page is empty, and a preview's only
+  // controls are the footer's, so it stays.
+  const onStage = useRouterState({ select: (state) => state.location.pathname === '/now-playing' })
+  const hidden = onStage && isLibrary
+
   useEffect(() => {
     const footer = footerRef.current
     if (!footer) return
@@ -737,13 +746,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         `${footer.getBoundingClientRect().height}px`,
       )
     }
-    // A hidden footer (a phone with nothing playing) gets no first observation, so the
-    // height is published now and again whenever the footer shows or hides.
+    // A hidden footer (a phone with nothing playing, or Now Playing) gets no first observation,
+    // so the height is published now, as 0 while it is hidden, and again whenever it shows or
+    // hides.
     publish()
     const observer = new ResizeObserver(publish)
     observer.observe(footer)
     return () => observer.disconnect()
-  }, [activeTitle])
+  }, [activeTitle, hidden])
 
   function openPlaylistDialog() {
     setPlaylistSearch('')
@@ -898,10 +908,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         },
         previewState: (trackId: number) => previewStates.get(trackId),
         openPlaylistPicker: openPlaylistDialog,
+        notice,
       }}
     >
       {children}
-      <footer ref={footerRef} className={cx(footerClassName, !activeTitle && 'max-phone:hidden')}>
+      <footer
+        ref={footerRef}
+        // The attribute rather than a `hidden` utility: Tailwind's base layer gives it
+        // `display: none !important`, so it wins over the footer's own `flex` in any order.
+        hidden={hidden}
+        className={cx(footerClassName, !activeTitle && 'max-phone:hidden')}
+      >
         <div className="flex min-w-0 flex-1 items-center gap-[13px] text-small max-phone:gap-[10px] [&_a:hover]:underline">
           {activeArt ? (
             <img className="size-[45px] rounded-md max-phone:size-[40px]" src={activeArt} alt="" />
@@ -1120,90 +1137,6 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             <X size={16} />
           </IconButton>
         )}
-        {isLibrary && (
-          <dialog
-            ref={playlistDialog}
-            // `playlist-picker-sheet` carries the handwritten ::backdrop rule. Centered at every
-            // width, so on a phone the name field is never trapped under the keyboard.
-            className="playlist-picker-sheet fixed inset-0 m-auto h-fit max-h-[78dvh] w-[min(520px,calc(100%-32px))] overflow-auto overscroll-contain rounded-[16px] border border-line-strong bg-raised p-[18px] text-text max-phone:max-h-[calc(100dvh-32px)] max-phone:w-[calc(100%-16px)] max-phone:p-[14px]"
-            aria-label="Add track to playlist"
-            onClose={() => setPickerOpen(false)}
-            onClick={(event) => {
-              if (event.target === playlistDialog.current) closePlaylistDialog()
-            }}
-          >
-            <header className="mb-[12px] flex items-center gap-[14px]">
-              <h2 className="flex-1">Add to playlist</h2>
-              <IconButton
-                size="compact"
-                aria-label="Close playlist picker"
-                onClick={() => closePlaylistDialog()}
-              >
-                <X size={16} />
-              </IconButton>
-            </header>
-            <label className="flex rounded-[8px] border border-line bg-sunken px-[11px] text-muted">
-              <input
-                className="w-full border-0 bg-transparent px-[2px] py-[10px] text-inherit"
-                aria-label="Filter playlists"
-                value={playlistSearch}
-                placeholder="Filter playlists"
-                onChange={(event) => setPlaylistSearch(event.target.value)}
-              />
-            </label>
-            {allPlaylists.isLoading && <p role="status">Loading playlists…</p>}
-            {allPlaylists.isError && <ErrorBanner>{allPlaylists.error.message}</ErrorBanner>}
-            <div className="mt-[8px] mb-[10px] grid grid-cols-[minmax(0,1fr)] gap-[8px]">
-              {availablePlaylists.map((playlist, at) => (
-                <PlaylistPickerRow
-                  key={playlist.id}
-                  playlist={playlist}
-                  songs={songsByPlaylist.get(playlist.id)}
-                  failed={failedPlaylists.has(playlist.id)}
-                  onRetry={() => void playlistDetails[at]?.refetch()}
-                  trackId={libraryTrack?.id ?? ''}
-                  trackTitle={activeTitle ?? 'this track'}
-                  busy={playlistSongs.busy(playlist.id)}
-                  blocked={createBusy}
-                  expanded={expandedPlaylist === playlist.id}
-                  onExpand={(open) => setExpandedPlaylist(open ? playlist.id : '')}
-                  onToggleTrack={() => togglePlaylistTrack(playlist)}
-                  onRemoveSong={(index) =>
-                    playlistSongs.mutation.mutate({ playlistId: playlist.id, index })
-                  }
-                />
-              ))}
-              {!allPlaylists.isLoading && !availablePlaylists.length && (
-                <p className={pickerNoteClassName}>No playlists yet.</p>
-              )}
-              {matchingPlaylists.length > PICKER_ROWS && (
-                <p className={pickerNoteClassName}>
-                  Showing {PICKER_ROWS} of {matchingPlaylists.length}. Filter above to reach the
-                  others.
-                </p>
-              )}
-            </div>
-            <form className="flex flex-wrap items-end gap-[10px]" onSubmit={submitNewPlaylist}>
-              <label className="grid min-w-[min(260px,100%)] gap-[6px] text-small text-muted">
-                New playlist
-                <Field
-                  value={newPlaylistName}
-                  placeholder="Create and add this track"
-                  maxLength={200}
-                  onChange={(event) => setNewPlaylistName(event.target.value)}
-                />
-              </label>
-              <Button type="submit" disabled={createBusy || !newPlaylistName.trim()}>
-                {createBusy ? 'Creating…' : 'Create'}
-              </Button>
-            </form>
-            {(playlistSongs.mutation.isError || createPlaylist.isError) && (
-              <ErrorBanner>
-                {playlistSongs.mutation.error?.message || createPlaylist.error?.message}
-              </ErrorBanner>
-            )}
-          </dialog>
-        )}
         <audio
           ref={previewAudio}
           className="preview-audio"
@@ -1217,6 +1150,92 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           {...mediaHandlers('library')}
         />
       </footer>
+      {/* Outside the footer, which Now Playing hides: `display: none` on an ancestor would take the
+          open dialog with it, and the page's Add to playlist button opens this one. */}
+      {isLibrary && (
+        <dialog
+          ref={playlistDialog}
+          // `playlist-picker-sheet` carries the handwritten ::backdrop rule. Centered at every
+          // width, so on a phone the name field is never trapped under the keyboard.
+          className="playlist-picker-sheet fixed inset-0 m-auto h-fit max-h-[78dvh] w-[min(520px,calc(100%-32px))] overflow-auto overscroll-contain rounded-[16px] border border-line-strong bg-raised p-[18px] text-text max-phone:max-h-[calc(100dvh-32px)] max-phone:w-[calc(100%-16px)] max-phone:p-[14px]"
+          aria-label="Add track to playlist"
+          onClose={() => setPickerOpen(false)}
+          onClick={(event) => {
+            if (event.target === playlistDialog.current) closePlaylistDialog()
+          }}
+        >
+          <header className="mb-[12px] flex items-center gap-[14px]">
+            <h2 className="flex-1">Add to playlist</h2>
+            <IconButton
+              size="compact"
+              aria-label="Close playlist picker"
+              onClick={() => closePlaylistDialog()}
+            >
+              <X size={16} />
+            </IconButton>
+          </header>
+          <label className="flex rounded-[8px] border border-line bg-sunken px-[11px] text-muted">
+            <input
+              className="w-full border-0 bg-transparent px-[2px] py-[10px] text-inherit"
+              aria-label="Filter playlists"
+              value={playlistSearch}
+              placeholder="Filter playlists"
+              onChange={(event) => setPlaylistSearch(event.target.value)}
+            />
+          </label>
+          {allPlaylists.isLoading && <p role="status">Loading playlists…</p>}
+          {allPlaylists.isError && <ErrorBanner>{allPlaylists.error.message}</ErrorBanner>}
+          <div className="mt-[8px] mb-[10px] grid grid-cols-[minmax(0,1fr)] gap-[8px]">
+            {availablePlaylists.map((playlist, at) => (
+              <PlaylistPickerRow
+                key={playlist.id}
+                playlist={playlist}
+                songs={songsByPlaylist.get(playlist.id)}
+                failed={failedPlaylists.has(playlist.id)}
+                onRetry={() => void playlistDetails[at]?.refetch()}
+                trackId={libraryTrack?.id ?? ''}
+                trackTitle={activeTitle ?? 'this track'}
+                busy={playlistSongs.busy(playlist.id)}
+                blocked={createBusy}
+                expanded={expandedPlaylist === playlist.id}
+                onExpand={(open) => setExpandedPlaylist(open ? playlist.id : '')}
+                onToggleTrack={() => togglePlaylistTrack(playlist)}
+                onRemoveSong={(index) =>
+                  playlistSongs.mutation.mutate({ playlistId: playlist.id, index })
+                }
+              />
+            ))}
+            {!allPlaylists.isLoading && !availablePlaylists.length && (
+              <p className={pickerNoteClassName}>No playlists yet.</p>
+            )}
+            {matchingPlaylists.length > PICKER_ROWS && (
+              <p className={pickerNoteClassName}>
+                Showing {PICKER_ROWS} of {matchingPlaylists.length}. Filter above to reach the
+                others.
+              </p>
+            )}
+          </div>
+          <form className="flex flex-wrap items-end gap-[10px]" onSubmit={submitNewPlaylist}>
+            <label className="grid min-w-[min(260px,100%)] gap-[6px] text-small text-muted">
+              New playlist
+              <Field
+                value={newPlaylistName}
+                placeholder="Create and add this track"
+                maxLength={200}
+                onChange={(event) => setNewPlaylistName(event.target.value)}
+              />
+            </label>
+            <Button type="submit" disabled={createBusy || !newPlaylistName.trim()}>
+              {createBusy ? 'Creating…' : 'Create'}
+            </Button>
+          </form>
+          {(playlistSongs.mutation.isError || createPlaylist.isError) && (
+            <ErrorBanner>
+              {playlistSongs.mutation.error?.message || createPlaylist.error?.message}
+            </ErrorBanner>
+          )}
+        </dialog>
+      )}
     </PlayerContext.Provider>
   )
 }

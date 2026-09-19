@@ -136,16 +136,108 @@ test('a very long title stays on one line in Up next and stops after three in th
       const box = element.getBoundingClientRect()
       return {
         size: Number.parseFloat(style.fontSize),
-        // The hero's own clamp(36px, 6vw, 72px), worked out for this window.
-        clamp: Math.min(72, Math.max(36, innerWidth * 0.06)),
         lines: box.height / Number.parseFloat(style.lineHeight),
         right: box.right,
         width: innerWidth,
       }
     })
-  expect(hero.size).toBeCloseTo(hero.clamp, 1)
+  // The stage is the page, so the title sits under it in size: a page heading, not a hero.
+  expect(hero.size).toBeLessThanOrEqual(32)
   expect(Math.round(hero.lines)).toBeLessThanOrEqual(3)
   expect(hero.right).toBeLessThanOrEqual(hero.width)
+})
+
+/** The width the page's content has: `main` less its padding. */
+const contentWidth = (page: Page) =>
+  page.locator('main').evaluate((element) => {
+    const style = getComputedStyle(element)
+    return (
+      element.getBoundingClientRect().width -
+      Number.parseFloat(style.paddingLeft) -
+      Number.parseFloat(style.paddingRight)
+    )
+  })
+
+const playerHeight = (page: Page) =>
+  page.evaluate(() => document.documentElement.style.getPropertyValue('--player-height'))
+
+test('on a desktop the stage takes most of the width and the footer player steps aside', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'The phone layout is checked below.')
+  // Wide enough that 60% of the content is not held down by the window's height.
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openNowPlaying(page, [song])
+
+  const stage = page.locator('.stage')
+  const box = await stage.boundingBox()
+  const details = await page.getByRole('heading', { level: 1, name: 'First Light' }).boundingBox()
+  if (!box || !details) throw new Error('Missing stage or heading box')
+  const content = await contentWidth(page)
+  expect(box.width / content).toBeGreaterThanOrEqual(0.58)
+  // Beside the stage, not under it, and smaller than it.
+  expect(details.x).toBeGreaterThanOrEqual(box.x + box.width)
+  expect(details.width).toBeLessThan(box.width)
+  expect(details.y).toBeLessThan(box.y + box.height)
+
+  // Stage controls carry the transport, so the footer is gone and takes no room.
+  await expect(page.getByRole('contentinfo')).toBeHidden()
+  await expect.poll(() => playerHeight(page)).toBe('0px')
+
+  // The picker still opens from the page's own button, with the footer hidden.
+  await page.getByRole('button', { name: 'Add to playlist' }).click()
+  await expect(page.getByRole('dialog', { name: 'Add track to playlist' })).toBeVisible()
+  await page.getByRole('button', { name: 'Close playlist picker' }).click()
+
+  // Leaving brings the footer back and its height with it.
+  await page
+    .getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('link', { name: 'Library' })
+    .click()
+  await expect(page.getByRole('contentinfo')).toContainText('First Light')
+  await expect.poll(() => playerHeight(page)).not.toBe('0px')
+})
+
+test('a short window shrinks the stage to keep its controls in view', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'The phone layout is checked below.')
+  await page.setViewportSize({ width: 1440, height: 600 })
+  await openNowPlaying(page, [song])
+
+  const box = await page.locator('.stage').boundingBox()
+  if (!box) throw new Error('Missing stage box')
+  expect(box.y + box.height).toBeLessThanOrEqual(600)
+  expect(box.width).toBeCloseTo(box.height, 0)
+})
+
+test('on a phone the stage takes the full width and the mini player steps aside', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, 'The desktop layout is checked above.')
+  await openNowPlaying(page, [song])
+
+  const box = await page.locator('.stage').boundingBox()
+  if (!box) throw new Error('Missing stage box')
+  expect(box.width).toBeCloseTo(await contentWidth(page), 0)
+  // The stage has the title, play, next and the seek bar, so the mini player would repeat them.
+  await expect(page.getByRole('contentinfo')).toBeHidden()
+  await expect(
+    page.locator('.stage-controls').getByRole('button', { name: 'Next track' }),
+  ).toBeVisible()
+  // With no footer, the page pads for the bottom bar alone, not for a player that is not there.
+  const nav = await page.locator('.sidebar').boundingBox()
+  if (!nav) throw new Error('Missing bottom bar box')
+  await expect
+    .poll(() =>
+      page
+        .locator('main')
+        .evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingBottom)),
+    )
+    .toBeLessThan(nav.height + 60)
 })
 
 /** A second custom theme, so a change made while the popout is open has somewhere to go. */
