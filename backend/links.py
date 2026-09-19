@@ -57,6 +57,8 @@ class LinkEntry(BaseModel):
     # Kept on the server only. The download address never goes to the browser and back.
     url: str = Field(default="", exclude=True)
     extractor: str = Field(default="", exclude=True)
+    # True for a track listed as part of an album. Its album is known, so it is never retagged.
+    album_list: bool = Field(default=False, exclude=True)
 
 
 @dataclass
@@ -66,6 +68,8 @@ class Preview:
     title: str
     entries: list[LinkEntry]
     truncated: bool
+    # Some of the page could not be read in time, so the list is shorter than the page.
+    partial: bool
     expires: float
 
 
@@ -143,6 +147,7 @@ class Links:
             tracks=place(raw.get("tracks")),
             url=url,
             extractor=extractor,
+            album_list=raw.get("album_list") is True,
         )
 
     def owned(self, entries: list[LinkEntry]) -> None:
@@ -214,6 +219,7 @@ class Links:
             title=text(raw.get("title")) or entries[0].title,
             entries=entries,
             truncated=len(rows) > MAX_ENTRIES,
+            partial=raw.get("partial") is True,
             expires=self.clock() + PREVIEW_SECONDS,
         )
         self.previews[token] = preview
@@ -227,6 +233,9 @@ class Links:
             "profile": not single and site.is_profile(url),
             "title": preview.title,
             "truncated": preview.truncated,
+            "partial": preview.partial,
+            # What to know about the audio before queueing it, from the site's own row.
+            "quality_note": site.quality_note,
             "expires_in": PREVIEW_SECONDS,
             "entries": [row.model_dump() for row in entries],
         }
@@ -249,9 +258,14 @@ class Links:
         service.check_destination(target)
         site = preview.site
         prepared: dict[int, tuple[Metadata, str]] = {}
+        untidied: set[int] = set()
         for entry_id in wanted:
             row = available[entry_id]
             track_id = stable_id(f"{row.extractor}:{row.id}")
+            # An album track already has its album, and a site such as the Internet Archive holds
+            # recordings that a catalog hit would file under the wrong release.
+            if row.album_list or not site.catalog_tidy:
+                untidied.add(track_id)
             meta = Metadata(
                 id=track_id,
                 title=row.title,
@@ -278,6 +292,7 @@ class Links:
             prepared=prepared,
             source=site.source,
             kind=site.kind,
+            untidied=frozenset(untidied),
         )
         done = sum(job.stage == "done" for job in jobs)
         return {

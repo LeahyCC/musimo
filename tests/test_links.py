@@ -93,11 +93,11 @@ class AllowlistTests(unittest.TestCase):
     def test_refusals_name_the_host_and_the_supported_sites(self) -> None:
         self.assertEqual(
             sources.refusal("https://example.com/a"),
-            "Musimo can't download from example.com. It works with: YouTube, Internet Archive.",
+            f"Musimo can't download from example.com. It works with: {sources.labels()}.",
         )
         self.assertEqual(
             sources.refusal("file:///etc/passwd"),
-            "Musimo can't download from this link. It works with: YouTube, Internet Archive.",
+            f"Musimo can't download from this link. It works with: {sources.labels()}.",
         )
         for url in ("https://open.spotify.com/track/1", "https://music.apple.com/us/album/x/1"):
             self.assertEqual(sources.refusal(url), "Catalog imports are not built yet.")
@@ -191,7 +191,7 @@ class LinkApiTests(unittest.IsolatedAsyncioTestCase):
             "file:///etc/passwd": "this link",
             "https://192.168.1.10/watch?v=abcdefghijk": "this link",
             "https://user:pw@www.youtube.com/watch?v=abcdefghijk": "this link",
-            "https://soundcloud.com/artist/track": "soundcloud.com",
+            "https://www.mixcloud.com/artist/track": "www.mixcloud.com",
         }
         for url, where in cases.items():
             with self.subTest(url=url):
@@ -199,8 +199,7 @@ class LinkApiTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(response.status_code, 422)
                 self.assertEqual(
                     response.json()["detail"],
-                    f"Musimo can't download from {where}. "
-                    "It works with: YouTube, Internet Archive.",
+                    f"Musimo can't download from {where}. It works with: {sources.labels()}.",
                 )
         spotify = await self.resolve("https://open.spotify.com/album/1")
         self.assertEqual(spotify.json()["detail"], "Catalog imports are not built yet.")
@@ -423,7 +422,7 @@ class LinkApiTests(unittest.IsolatedAsyncioTestCase):
         away = await self.resolve()
         self.assertEqual(
             away.json()["detail"],
-            "The link led away from YouTube. Musimo works with: YouTube, Internet Archive.",
+            f"The link led away from YouTube. Musimo works with: {sources.labels()}.",
         )
 
         self.links.answer = {"kind": "error", "code": "FAILED", "message": "x"}
@@ -633,7 +632,12 @@ class LinkWorkerTests(unittest.TestCase):
         )
 
     def run_worker(
-        self, directory: str, job: Job, info: object, audio: bool = True
+        self,
+        directory: str,
+        job: Job,
+        info: object,
+        audio: bool = True,
+        processed: dict[str, object] | None = None,
     ) -> tuple[MagicMock, list[dict[str, object]]]:
         folder = Path(directory)
         (folder / "job.json").write_text(job.model_dump_json(), "utf-8")
@@ -656,8 +660,9 @@ class LinkWorkerTests(unittest.TestCase):
                 downloader.return_value.extract_info.side_effect = info
             else:
                 downloader.return_value.extract_info.return_value = info
-            downloader.return_value.process_ie_result.return_value = {}
+            downloader.return_value.process_ie_result.return_value = processed or {}
             tagger.return_value.prepare.return_value = folder / "source.m4a"
+            self.tagger = tagger
             worker_main()
         return downloader, events
 
@@ -674,6 +679,38 @@ class LinkWorkerTests(unittest.TestCase):
         downloader.return_value.process_ie_result.assert_called_once_with(info, download=True)
         self.assertNotIn("matching", [event.get("stage") for event in events])
         self.assertEqual(events[-1]["kind"], "ready")
+
+    def test_a_recording_with_no_artist_is_tagged_with_the_one_its_page_names(self) -> None:
+        cases: tuple[tuple[dict[str, object], str], ...] = (
+            ({"artist": "Ann"}, "Ann"),
+            ({"artists": ["Bob", "Di"], "uploader": "acct"}, "Bob, Di"),
+            ({"uploader": "acct"}, "acct"),
+            ({}, ""),
+        )
+        for processed, artist in cases:
+            with self.subTest(processed=processed):
+                with tempfile.TemporaryDirectory() as directory:
+                    job = self.job(
+                        directory, meta=Metadata(id=1, title="Song", duration=60).model_dump()
+                    )
+                    info = {"id": "abcdefghijk", "extractor": "youtube"}
+                    _, events = self.run_worker(directory, job, info, processed=processed)
+                    saved = json.loads((Path(directory) / "download.json").read_text("utf-8"))
+                self.assertEqual(events[-1]["kind"], "ready")
+                self.assertEqual(events[-1]["artist"], artist)
+                self.assertEqual(saved["artist"], artist)
+                # The tags written are the filled ones, not the blank ones from the list.
+                written = self.tagger.return_value.write.call_args.args[1]
+                self.assertEqual((written.artist, written.album_artist), (artist, artist))
+
+    def test_a_recording_that_has_an_artist_keeps_it(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            info = {"id": "abcdefghijk", "extractor": "youtube"}
+            _, events = self.run_worker(
+                directory, self.job(directory), info, processed={"artist": "Someone Else"}
+            )
+        # It is still reported, and the server only uses it when the list had none.
+        self.assertEqual(events[-1]["artist"], "Someone Else")
 
     def test_each_site_picks_its_own_format_and_extractors(self) -> None:
         archive = sources.by_source("archive")
@@ -992,7 +1029,14 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
         meta = Metadata(id=1, title=title, artist=artist, album="Other", duration=duration)
         return await self.service.link_tags.tidy(meta, "YouTube")
 
-    async def run_link(self, kind: Kind = "music", track_id: int = 1, **meta: object) -> Job:
+    async def run_link(
+        self,
+        kind: Kind = "music",
+        track_id: int = 1,
+        source: str = "youtube",
+        untidied: bool = False,
+        **meta: object,
+    ) -> Job:
         values: dict[str, object] = {
             "id": track_id,
             "title": "Song",
@@ -1011,8 +1055,9 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
             prepared={
                 track_id: (Metadata.model_validate(values | meta), "https://youtu.be/abcdefghijk")
             },
-            source="youtube",
+            source=source,
             kind=kind,
+            untidied=frozenset({track_id}) if untidied else frozenset(),
         )[0]
         await self.service.run(job.id)
         return self.service.jobs.get(job.id)
@@ -1123,6 +1168,52 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(job.notes, [])
                 self.assertEqual(job.meta.album, "Song")
         self.assertEqual(self.paths, [])
+
+    async def test_the_internet_archive_keeps_its_own_tags_even_for_a_certain_hit(self) -> None:
+        self.hit()
+        job = await self.run_link(source="archive", album="A Live Show")
+        self.assertEqual(job.stage, "done")
+        self.assertEqual(self.paths, [])
+        self.assertEqual((job.meta.album, job.meta.isrc), ("A Live Show", ""))
+        self.assertEqual(job.notes, ["Tagged from Internet Archive"])
+
+    async def test_a_track_from_an_album_list_keeps_its_album(self) -> None:
+        self.hit()
+        job = await self.run_link(source="bandcamp", untidied=True, album="The Album")
+        self.assertEqual(self.paths, [])
+        self.assertEqual(job.meta.album, "The Album")
+        self.assertEqual(job.notes, ["Tagged from Bandcamp"])
+
+    async def test_a_loose_track_on_a_site_that_allows_it_is_still_tidied(self) -> None:
+        self.hit()
+        for number, source in enumerate(("bandcamp", "soundcloud", "youtube"), 1):
+            with self.subTest(source=source):
+                job = await self.run_link(source=source, track_id=number)
+                self.assertEqual(job.notes, ["Tagged from the Deezer catalog"])
+                self.assertEqual(job.meta.album, "The Record")
+
+    async def test_an_artist_only_the_page_names_reaches_the_tags_and_the_library_path(
+        self,
+    ) -> None:
+        async def worker(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+            ready = folder / "ready.m4a"
+            ready.write_bytes(b"synthetic audio placeholder")
+            return ready, {"codec": "aac", "bitrate": 128, "artist": "Page Artist"}
+
+        self.service.worker = worker  # type: ignore[method-assign]
+        job = await self.run_link(source="soundcloud", artist="", album_artist="")
+        self.assertEqual(job.stage, "done")
+        self.assertEqual((job.meta.artist, job.meta.album_artist), ("Page Artist", "Page Artist"))
+        self.assertIn("Page Artist", job.final_path)
+        # A list that did name the artist is never overridden by the page.
+        other = await self.run_link(source="soundcloud", track_id=2)
+        self.assertEqual(other.meta.artist, "Band")
+
+    async def test_a_kept_note_is_not_added_twice_on_a_retry(self) -> None:
+        job = await self.run_link(source="archive")
+        self.service.jobs.update(job.id, stage="queued", final_path="", artifact_hash="")
+        await self.service.run(job.id)
+        self.assertEqual(self.service.jobs.get(job.id).notes, ["Tagged from Internet Archive"])
 
     async def test_a_retry_keeps_its_first_note(self) -> None:
         self.hit()

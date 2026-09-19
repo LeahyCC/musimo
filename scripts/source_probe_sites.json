@@ -10,5 +10,35 @@
     "url": "https://archive.org/details/The_Open_Goldberg_Variations-11823/Kimiko_Ishizaka_-_05_-_Variatio_4_a_1_Clav.mp3",
     "format": "best[ext=flac]/best[ext=mp3]/best[ext=ogg]/best[ext=m4a]",
     "why": "One 69 second track of Kimiko Ishizaka's recording of Bach's Goldberg Variations. Bach died in 1750, and the performer released her recording to the public domain under CC0 through the Open Goldberg Variations project (opengoldbergvariations.org, which describes it as a public domain recording). The item also carries the CC0 licence URL, but the Internet Archive lets an uploader put any licence on an item, so that tag alone is not what makes it safe: the performer's own release is. The address names a single file so the probe fetches 1.9 MB, not the whole 180 MB album."
+  },
+  {
+    "source": "bandcamp",
+    "url": "https://chriszabriskie.bandcamp.com/track/short-song-010923",
+    "format": "bestaudio[acodec!=?alac][acodec!=?wav][acodec!=?aiff]/best[acodec!=?alac][acodec!=?wav][acodec!=?aiff]",
+    "why": "One 60 second track from Chris Zabriskie's Short Songs album. The album page states that it is released under Creative Commons Attribution 4.0 (creativecommons.org/licenses/by/4.0), and the artist has switched on free downloads, which is why the file comes back lossless and not as the 128 kbps stream."
+  },
+  {
+    "source": "soundcloud",
+    "url": "https://soundcloud.com/scottbuckley/in-this-moment-cc-by",
+    "format": "bestaudio[acodec!=?alac][acodec!=?wav][acodec!=?aiff]/best[acodec!=?alac][acodec!=?wav][acodec!=?aiff]",
+    "why": "One track by Scott Buckley whose title carries CC-BY and whose description says it is released under Creative Commons Attribution 4.0, with the credit line to use. The licence field on the SoundCloud page itself reads all-rights-reserved, so the artist's own statement in the description is what makes it safe to use, not that field."
+  },
+  {
+    "source": "audiomack",
+    "url": "https://audiomack.com/chris-zabriskie/song/cylinder-four",
+    "format": "bestaudio[acodec!=?alac][acodec!=?wav][acodec!=?aiff]/best[acodec!=?alac][acodec!=?wav][acodec!=?aiff]",
+    "why": "Cylinder Four by Chris Zabriskie, on his verified Audiomack account. Audiomack has no licence field, so what makes it safe is the artist's own release of the same catalog under Creative Commons Attribution 4.0 (creativecommons.org/licenses/by/4.0), stated on his Bandcamp album pages. The yt-dlp extractor for this site failed against the live site on 19 September 2026."
+  },
+  {
+    "source": "audius",
+    "url": "https://audius.co/kochunterzz/huntin-koch-creative-commons-remix-354365",
+    "format": "bestaudio[acodec!=?alac][acodec!=?wav][acodec!=?aiff]/best[acodec!=?alac][acodec!=?wav][acodec!=?aiff]",
+    "why": "A 274 second track that Audius itself lists as licensed CC BY-NC-SA (Attribution-NonCommercial-ShareAlike), by an artist who titled it a Creative Commons remix. Audius keeps a licence field on each track, and this one is not all rights reserved."
+  },
+  {
+    "source": "jamendo",
+    "url": "https://www.jamendo.com/track/196219/stories-from-emona-i",
+    "format": "bestaudio[acodec!=?alac][acodec!=?wav][acodec!=?aiff]/best[acodec!=?alac][acodec!=?wav][acodec!=?aiff]",
+    "why": "One 210 second track by Maya Filipic on Jamendo, which only carries Creative Commons music. The track's own licence field reads by-nc-nd (Attribution-NonCommercial-NoDerivatives), which allows a personal download like this."
   }
 ]

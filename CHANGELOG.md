@@ -10,6 +10,7 @@
 - Tidy the tags of a pasted music link from the Deezer catalog when the match is certain, say which tags a job used, and stop a link lookup when the browser cancels it
 - Paste a link into the search box to review it before it downloads: one recording, or a tick list for a playlist or profile with owned songs unticked; job cards name the site and the queue shows a resume line for each paused site
 - Download tracks from a pasted Internet Archive item, one row per track with FLAC kept and the item's artist, album, date and track order as tags; clean upload titles before the Deezer lookup, pick a larger cover, and show a link job's tag note as a note instead of a warning
+- Download from pasted Bandcamp, SoundCloud, Audius and Jamendo links (Audiomack is listed but yt-dlp cannot read it yet) with a bitrate note and a read-only destination check on the review sheet; a Bandcamp album lands like a catalog album, and the Internet Archive keeps its own tags and gets its cover
 
 ### Library and playback
 

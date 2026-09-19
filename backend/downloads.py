@@ -11,6 +11,7 @@ import sys
 import time
 from functools import partial
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -20,12 +21,19 @@ from backend.errors import BLOCKING_CODES, error_guidance, site_label
 from backend.job_models import TERMINAL, Job
 from backend.job_store import Jobs
 from backend.library import Library
-from backend.link_tags import LinkTags, tidied
+from backend.link_tags import NOTE_PREFIX, LinkTags, tidied, wants_tidy
 from backend.models import Settings
 from backend.naming import Naming
 from backend.navidrome import Navidrome, NavidromeError
 from backend.podcasts import Podcasts
+from backend.sources import Site, by_source, safe_art
 from backend.store import Store
+
+# YouTube lists its largest thumbnail without checking that it exists, and an older video has
+# none. Each size to fall back to is on the same host, smaller than the one before it.
+YOUTUBE_ART = ("maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg")
+ART_HOPS = 3
+ART_BYTES = 5 * 1024**2
 
 
 class DownloadError(Exception):
@@ -34,6 +42,17 @@ class DownloadError(Exception):
     ) -> None:
         self.code, self.detail, self.retryable = code, detail, retryable
         self.hint, self.fix = hint, fix
+
+
+def art_candidates(url: str) -> list[str]:
+    """The addresses to try for one cover, best first."""
+    parts = urlsplit(url)
+    name = parts.path.rsplit("/", 1)[-1]
+    if parts.hostname != "i.ytimg.com" or name not in YOUTUBE_ART:
+        return [url]
+    folder = parts.path[: -len(name)]
+    smaller = YOUTUBE_ART[YOUTUBE_ART.index(name) + 1 :]
+    return [url, *(parts._replace(path=folder + other).geturl() for other in smaller)]
 
 
 def digest(path: Path) -> str:
@@ -331,19 +350,41 @@ class Downloads:
     async def artwork(self, job: Job, folder: Path) -> None:
         if not job.meta.art or (folder / "cover.jpg").exists():
             return
-        try:
-            async with self.catalog.client.stream("GET", job.meta.art, timeout=5) as response:
+        site = by_source(job.source)
+        candidates = art_candidates(job.meta.art)
+        for index, url in enumerate(candidates):
+            try:
+                (folder / "cover.jpg").write_bytes(await self.cover(url, site))
+                return
+            except httpx.HTTPStatusError as exc:
+                # Only "not there" moves on to a smaller size. Anything else would fail again.
+                if exc.response.status_code == 404 and index + 1 < len(candidates):
+                    continue
+                break
+            except (httpx.HTTPError, ValueError):
+                break
+        self.jobs.update(job.id, warnings=[*job.warnings, "Cover art unavailable"])
+
+    async def cover(self, url: str, site: Site | None) -> bytes:
+        """One JPEG cover. A redirect is followed only to another address the job's site owns."""
+        for _ in range(ART_HOPS + 1):
+            async with self.catalog.client.stream("GET", url, timeout=5) as response:
+                if response.is_redirect:
+                    moved = str(response.url.join(response.headers.get("location", "")))
+                    if site is None or not safe_art(site, moved):
+                        raise ValueError("Cover moved to another site")
+                    url = moved
+                    continue
                 response.raise_for_status()
                 chunks = bytearray()
                 async for chunk in response.aiter_bytes():
                     chunks.extend(chunk)
-                    if len(chunks) > 5 * 1024**2:
+                    if len(chunks) > ART_BYTES:
                         raise ValueError("Cover exceeded 5 MB")
                 if chunks[:3] != b"\xff\xd8\xff":
                     raise ValueError("Expected JPEG artwork")
-                (folder / "cover.jpg").write_bytes(chunks)
-        except (httpx.HTTPError, ValueError):
-            self.jobs.update(job.id, warnings=[*job.warnings, "Cover art unavailable"])
+                return bytes(chunks)
+        raise ValueError("Cover moved too many times")
 
     def budget(self, job: Job) -> int:
         """Seconds one worker run may take."""
@@ -473,6 +514,14 @@ class Downloads:
     ) -> None:
         root = self.target(job.target)
         folder = self.folder(job)
+        named = str((info or {}).get("artist") or "")
+        if ready and named and not job.meta.artist:
+            # The list gave no artist, so the file was tagged with the one its own page names. The
+            # library path and the index need the same name.
+            meta = job.meta.model_copy(
+                update={"artist": named, "album_artist": job.meta.album_artist or named}
+            )
+            job = self.jobs.update(job.id, meta=meta.model_dump())
         if ready:
             self.jobs.update(job.id, stage="moving", progress=1, speed=0, eta=None)
             target = root / self.layout(job, ready.suffix[1:])
@@ -558,10 +607,14 @@ class Downloads:
                     meta = await self.enrichment.track(job.track_id)
                     warnings = await self.enrichment.extra(meta)
                 job = self.jobs.update(job_id, meta=meta.model_dump(), warnings=warnings)
-            if job.catalog == "link" and job.kind == "music" and not tidied(job):
+            if wants_tidy(job):
                 # Mixes and radio shows are not catalog recordings. A retry keeps its first note.
                 meta, note = await self.link_tags.tidy(job.meta, site_label(job.source))
                 job = self.jobs.update(job_id, meta=meta.model_dump(), notes=[*job.notes, note])
+            elif job.catalog == "link" and job.kind == "music" and not tidied(job):
+                # The site's tags stay as they are. Say so, so the card shows where they came from.
+                note = f"{NOTE_PREFIX} {site_label(job.source)}"
+                job = self.jobs.update(job_id, notes=[*job.notes, note])
             await self.artwork(job, folder)
             ready, info = await self.worker(self.jobs.get(job_id), folder)
             await self.finish(self.jobs.get(job_id), ready, info)

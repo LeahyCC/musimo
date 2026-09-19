@@ -1,10 +1,12 @@
 """Opt-in live fixture tests. Each publishes one public-domain recording to the specified root.
 
-    python -m scripts.download_smoke ROOT [--case wikimedia|link|all]
+    python -m scripts.download_smoke ROOT [--case wikimedia|link|bandcamp|all]
 
 `wikimedia` feeds a downloaded file into the regular resume, tag and publish path. `link` takes
 the whole pasted-link road: resolve an Internet Archive item, queue one of its tracks, download it
-with the real worker, tag it and index it.
+with the real worker, tag it and index it. `bandcamp` does the same for one track of a Bandcamp
+album and checks that it lands like a catalog album: title, artist, album, date, track number and
+cover.
 """
 
 import argparse
@@ -37,6 +39,10 @@ ITEM_CREDIT = "https://www.opengoldbergvariations.org/"
 # The shortest track, so the download is under 2 MB.
 ITEM_TRACK = "Variatio 4 a 1 Clav."
 ITEM_TRACKS = 32
+# Chris Zabriskie's Short Songs, an album released under Creative Commons Attribution 4.0 (the
+# reasons are in `source_probe_sites.json`). Every track is 60 seconds.
+ALBUM = "https://chriszabriskie.bandcamp.com/album/short-songs-010923-030923"
+ALBUM_TRACK = 3
 TEMPLATE = "Musimo Integration Test/{album}/{track:02d} - {title}"
 
 
@@ -133,8 +139,12 @@ async def wikimedia(root: Path) -> dict[str, object]:
     return result
 
 
-def no_catalog_match(request: httpx.Request) -> httpx.Response:
-    return httpx.Response(200, json={"data": [], "total": 0})
+async def no_catalog_match(request: httpx.Request) -> httpx.Response:
+    """The catalog answers "no match", and everything else, such as a cover, is fetched for real."""
+    if request.url.host == "api.deezer.com":
+        return httpx.Response(200, json={"data": [], "total": 0})
+    async with httpx.AsyncClient(follow_redirects=False) as real:
+        return await real.send(request)
 
 
 async def link(root: Path) -> dict[str, object]:
@@ -194,13 +204,71 @@ async def link(root: Path) -> dict[str, object]:
     return result
 
 
+async def bandcamp(root: Path) -> dict[str, object]:
+    started = time.monotonic()
+    with tempfile.TemporaryDirectory() as directory:
+        store = prepare(root, directory)
+        async with httpx.AsyncClient(transport=httpx.MockTransport(no_catalog_match)) as client:
+            library = Library(store, [root], asyncio.Event())
+            service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+            links = Links(service)
+            preview = await links.resolve(ALBUM)
+            entries = cast(list[dict[str, object]], preview["entries"])
+            assert preview["source"] == "bandcamp" and not preview["single"]
+            assert not preview["profile"], "An album is not a profile"
+            assert preview["quality_note"], "The sheet needs the quality note"
+            track = entries[ALBUM_TRACK - 1]
+            queued = links.enqueue(
+                LinkRequest(
+                    token=str(preview["token"]), entry_ids=[str(track["id"])], format="original"
+                )
+            )
+            jobs = cast(list[dict[str, object]], queued["jobs"])
+            assert len(jobs) == 1
+            final = await run_queue(service, str(jobs[0]["id"]))
+            audio = Path(final.final_path)
+            tags = mutagen.File(audio, easy=True)
+            assert tags is not None and tags.tags is not None
+            assert tags.tags["title"] == [track["title"]]
+            assert tags.tags["artist"] == ["Chris Zabriskie"]
+            assert tags.tags["albumartist"] == ["Chris Zabriskie"]
+            assert tags.tags["album"] == [preview["title"]]
+            # MP3 keeps "3/12" in one tag. FLAC and Ogg keep the number and the total apart.
+            number = tags.tags["tracknumber"][0]
+            total = tags.tags.get("tracktotal", [""])[0]
+            assert number == f"{ALBUM_TRACK}/{len(entries)}" or (
+                number == str(ALBUM_TRACK) and total == str(len(entries))
+            ), (number, total)
+            assert tags.tags["date"], "The album's release date is missing"
+            full = mutagen.File(audio)
+            # A FLAC file carries the cover in its picture block.
+            assert full is not None and getattr(full, "pictures", None), "No cover was embedded"
+            title, artist = indexed(store, audio)
+            assert (title, artist) == (track["title"], "Chris Zabriskie")
+            result: dict[str, object] = {
+                "case": "bandcamp",
+                "file": str(audio),
+                "seconds": round(time.monotonic() - started, 3),
+                "codec": probe(audio, accurate=True),
+                "album": preview["title"],
+                "entries": len(entries),
+                "tags": {key: tags.tags[key] for key in sorted(tags.tags.keys())},
+                "notes": final.notes,
+                "warnings": final.warnings,
+                "source": ALBUM,
+                "credit": "https://chriszabriskie.bandcamp.com/",
+            }
+        store.close()
+    return result
+
+
 async def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("root", type=Path, help="an existing, dedicated, writable test root")
-    parser.add_argument("--case", choices=["wikimedia", "link", "all"], default="all")
+    parser.add_argument("--case", choices=["wikimedia", "link", "bandcamp", "all"], default="all")
     args = parser.parse_args()
     root = args.root.resolve()
-    cases = {"wikimedia": wikimedia, "link": link}
+    cases = {"wikimedia": wikimedia, "link": link, "bandcamp": bandcamp}
     for name in cases if args.case == "all" else [args.case]:
         print(json.dumps(await cases[name](root)), flush=True)
 

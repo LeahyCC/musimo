@@ -33,7 +33,8 @@ paste or Enter on a whole link
    v
 review sheet
    one recording: artwork, title, artist and album, length, date, "In library" badge if owned,
-                  where it lands and the format, Format and Download to choices, Download
+                  where it lands and the format, a note on the audio quality if the site has one,
+                  Format and Download to choices, Download
    playlist:      "N of M songs selected", Select all, Select none, a tick list, Download N songs
    profile:       the same list with nothing ticked
    |
@@ -44,6 +45,7 @@ Download ---> POST /api/links ---> "N songs queued from YouTube. Open downloads"
 - One lookup is in flight at a time. Pasting another link, cancelling or closing the sheet aborts the request still running, and a late answer to an abandoned request is ignored. The server also allows two lookups at once across every browser and makes a third wait.
 - The sheet reuses the artist download sheet's shell, format and destination choices, Select all and Select none and tick rows (`frontend/src/review-sheet.tsx`); the link flow itself is in `frontend/src/links.tsx`. It is a native modal dialog: Escape closes it, focus goes to Cancel while waiting and to the heading when an answer arrives, and closing returns focus to the search box. At phone width it is a bottom sheet.
 - A list starts with the songs not in the library ticked and owned ones unticked with an "In library" badge. A profile link (`profile` in the preview) starts with nothing ticked. A lone recording starts ticked even when it is owned. More than 500 entries shows "Only the first 500 are listed."
+- The site's quality note (for example "Bandcamp streams are 128 kbps MP3. ...") sits under the destination line, before anything is queued. When part of a page could not be read in time the list says so and points to a single album or track link. Download is off, with "That folder is missing or read-only. Choose another destination, or fix it in Settings." beside it, when the chosen destination is missing or read-only. The artist review sheet does the same.
 - Queueing shows the same floating queue button and job cards as any download. A link job's card names its site ("from YouTube") and never lists a matching stage.
 - The status lines, the running count and the queued message are live regions.
 
