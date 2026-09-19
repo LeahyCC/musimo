@@ -1,0 +1,139 @@
+import { expect, test } from '@playwright/test'
+import type { Page } from '@playwright/test'
+
+import type { LibraryTrack } from '../src/api'
+import { bodyText, librarySong, playerFixtures, requestBody } from './library-fixtures'
+
+// The test stream is 30 seconds of silence whatever the song says, so the songs say the same.
+const song = (id: string, title: string) => librarySong(id, { title, duration: 30 })
+const alpha = song('song-a', 'Alpha')
+const bravo = song('song-b', 'Bravo')
+const charlie = song('song-c', 'Charlie')
+const delta = song('song-d', 'Delta')
+
+type Scrobble = { id: string; submission: boolean }
+
+/**
+ * Restores this queue with its first song loaded and not playing, answers 404 for the streams of
+ * `unplayable`, and records every scrobble.
+ */
+async function restoreQueue(page: Page, queue: LibraryTrack[], unplayable: string[] = []) {
+  const scrobbles: Scrobble[] = []
+  // Pinned so the stage does not depend on the machine's WebGPU.
+  await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
+  await playerFixtures(page)
+  await page.route('**/api/player/queue', (route) =>
+    route.fulfill(
+      route.request().method() === 'GET'
+        ? { json: { current: queue[0]?.id ?? '', position: 0, entry: queue } }
+        : { status: 204 },
+    ),
+  )
+
+  await page.route('**/api/player/scrobble', async (route) => {
+    const body = requestBody(route)
+    scrobbles.push({ id: bodyText(body, 'id') ?? '', submission: body.submission === true })
+    await route.fulfill({ status: 204 })
+  })
+  await page.route('**/api/player/lyrics/**', (route) => route.fulfill({ json: { items: [] } }))
+  for (const id of unplayable)
+    await page.route(`**/api/player/stream/${id}`, (route) => route.fulfill({ status: 404 }))
+  return scrobbles
+}
+
+/** Starts the restored queue and moves the playing song to its last seconds. */
+async function playToTheEnd(page: Page) {
+  await page.goto('/')
+  await expect(page.getByRole('contentinfo')).toContainText('Alpha')
+  await page.keyboard.press('Space')
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => !element.paused))
+    .toBe(true)
+
+  await active.evaluate((element: HTMLAudioElement) => {
+    element.currentTime = 27
+  })
+}
+
+test('the next song loads into the standby element and takes over when the song ends', async ({
+  page,
+}) => {
+  const scrobbles = await restoreQueue(page, [alpha, bravo, charlie])
+  await playToTheEnd(page)
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  const standby = page.locator('audio.library-audio[data-role="standby"]')
+
+  // Loaded while Alpha still plays, then the two swap roles.
+  await expect(standby).toHaveAttribute('src', /song-b/)
+  await expect(active).toHaveAttribute('src', /song-b/, { timeout: 15_000 })
+  await expect(page.getByRole('contentinfo')).toContainText('Bravo')
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => !element.paused))
+    .toBe(true)
+
+  // What follows the element is the song, not the element.
+  await expect
+    .poll(() => page.evaluate(() => navigator.mediaSession.metadata?.title ?? ''))
+    .toBe('Bravo')
+  await expect.poll(() => scrobbles).toContainEqual({ id: 'song-a', submission: true })
+  await expect.poll(() => scrobbles).toContainEqual({ id: 'song-b', submission: false })
+})
+
+test('both library elements feed the analyser, so the visualizer survives a handover', async ({
+  page,
+}) => {
+  // Headless has no WebGPU to draw with, but the audio graph is the same: count the distinct
+  // elements that get a source on it. One would mean every other song plays past the analyser.
+  await page.addInitScript(() => {
+    const wired = new Set<HTMLMediaElement>()
+    const create = AudioContext.prototype.createMediaElementSource
+    AudioContext.prototype.createMediaElementSource = function (element) {
+      wired.add(element)
+      document.documentElement.dataset.wired = String(wired.size)
+      return create.call(this, element)
+    }
+  })
+  await restoreQueue(page, [alpha, bravo])
+  await playToTheEnd(page)
+  await expect(page.getByRole('contentinfo')).toContainText('Bravo', { timeout: 15_000 })
+  await expect(page.locator('html')).toHaveAttribute('data-wired', '2')
+})
+
+test('a metered connection preloads the metadata only', async ({ page }) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'connection', {
+      value: { saveData: true },
+      configurable: true,
+    }),
+  )
+  await restoreQueue(page, [alpha, bravo])
+  await playToTheEnd(page)
+  const standby = page.locator('audio.library-audio[data-role="standby"]')
+  await expect(standby).toHaveAttribute('src', /song-b/)
+  await expect
+    .poll(() => standby.evaluate((element: HTMLAudioElement) => element.preload))
+    .toBe('metadata')
+})
+
+test('a song that cannot be played is skipped and the player says which', async ({ page }) => {
+  await restoreQueue(page, [alpha, bravo, charlie], ['song-b'])
+  await playToTheEnd(page)
+  const player = page.getByRole('contentinfo')
+  await expect(player.getByRole('status')).toHaveText('Skipped Bravo, it could not be played', {
+    timeout: 15_000,
+  })
+  await expect(player).toContainText('Charlie')
+})
+
+test('three failures in a row stop the queue with a message', async ({ page }) => {
+  await restoreQueue(page, [alpha, bravo, charlie, delta], ['song-a', 'song-b', 'song-c'])
+  await page.goto('/')
+  const player = page.getByRole('contentinfo')
+  await expect(player.getByRole('status')).toHaveText(
+    /^Stopped after 3 tracks in a row could not be played/,
+  )
+  // The fourth song was never tried.
+  await expect(player).toContainText('Charlie')
+  await expect(player).not.toContainText('Delta')
+})

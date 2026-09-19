@@ -304,6 +304,70 @@ export const artUrl = (track: LibraryTrack) =>
 // The visualizer tree loads on demand so the main bundle stays as it is.
 const audioGraph = () => import('visimo/audio')
 
+// Elements whose sound already reaches the analyser. A media element can be given to
+// `createMediaElementSource` once only, so each is remembered for good.
+const routed = new WeakSet<HTMLMediaElement>()
+
+/**
+ * Sends a library element's sound through the visualizer's analyser. Call it from the element's
+ * `play` event. visimo's `attachAudio` builds the graph and wires up the first element it is given,
+ * and refuses any other, because it was written for one element. Gapless playback has two that
+ * swap roles, so the second is connected here, to the same analyser, the first time it plays.
+ * Without this the stage goes flat on every other track while the music carries on. Only ever
+ * called for the library pair: a preview's cross-origin audio would be silenced for good.
+ */
+async function routeToAnalyser(element: HTMLMediaElement) {
+  const module = await audioGraph()
+  const wasAttached = module.audioGraph()?.attached ?? false
+  const graph = await module.attachAudio(element)
+  if (!graph || routed.has(element)) return
+  if (!wasAttached && graph.attached) {
+    // visimo took this one itself.
+    routed.add(element)
+    return
+  }
+  // Nothing is wired up until the context runs, and visimo goes first so its own state stays
+  // true. The next play tries again.
+  if (!graph.attached || graph.context.state !== 'running') return
+  routed.add(element)
+  graph.context.createMediaElementSource(element).connect(graph.analyser)
+}
+
+/** How long before a track ends the next one starts loading. A shorter track loads it at once. */
+export const PRELOAD_LEAD_SECONDS = 15
+/** Tracks that may fail one after another before playback stops, rather than racing the queue. */
+export const MAX_FAILURES = 3
+// The next track starts this long before the current one ends: about what a buffered element
+// takes to put sound out. Later leaves a gap, earlier an overlap.
+const HANDOVER_LEAD_MS = 40
+// Inside this window the handover is timed. Outside it, or where a timer runs late, the `ended`
+// event does it, which is the safe route and a few milliseconds slower.
+const HANDOVER_WINDOW_SECONDS = 1
+// A stream's own length can differ from the library's. Past this the timed handover would cut a
+// track short, so `ended` decides instead.
+const LENGTH_TOLERANCE_SECONDS = 2
+
+/** True once the next track should be loading: the last seconds of a track, all of a short one. */
+export const preloadDue = (length: number, time: number) =>
+  length > 0 && length - time <= PRELOAD_LEAD_SECONDS
+
+export const skippedNotice = (title: string) => `Skipped ${title}, it could not be played`
+export const failureLimitNotice = `Stopped after ${MAX_FAILURES} tracks in a row could not be played. Check the connection to Navidrome.`
+
+const streamUrl = (track: LibraryTrack) => `/api/player/stream/${encodeURIComponent(track.id)}`
+
+const secondsLeft = (element: HTMLAudioElement) =>
+  Number.isFinite(element.duration) ? element.duration - element.currentTime : Infinity
+
+// Not in every browser's Navigator type. A true `saveData` is the listener asking not to spend
+// data on things they have not asked for.
+const dataSaverOn = () =>
+  (navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData === true
+
+/** Which of the two library elements. One plays while the other holds the next track. */
+type Slot = 0 | 1
+type Preload = { index: number; item: LibraryTrack; slot: Slot; failed: boolean }
+
 export function stored(key: string, fallback: string) {
   try {
     return localStorage.getItem(key) ?? fallback
@@ -430,11 +494,25 @@ function PlaylistPickerRow({
 }
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
-  // Two elements, one per mode. Previews stream from the provider's CDN without
-  // CORS headers, and the Web Audio analyser the visualizer needs would silence
-  // such media for good, so only the library element ever feeds it.
+  // One element for previews and two for the library. Previews stream from the provider's CDN
+  // without CORS headers, and the Web Audio analyser the visualizer needs would silence such media
+  // for good, so only the library elements ever feed it. The library pair swap roles: one plays
+  // while the other loads the next track, so a track can start the moment the last one ends.
   const previewAudio = useRef<HTMLAudioElement>(null)
-  const libraryAudio = useRef<HTMLAudioElement>(null)
+  const libraryA = useRef<HTMLAudioElement>(null)
+  const libraryB = useRef<HTMLAudioElement>(null)
+  const activeSlot = useRef<Slot>(0)
+  // What the standby element is loading, and whether that failed.
+  const preload = useRef<Preload | null>(null)
+  const handoverTimer = useRef<number | undefined>(undefined)
+  // Library tracks in a row that failed to load. Any track that starts playing clears it.
+  const failures = useRef(0)
+  // Whether the loaded track was meant to start, so a skip past a broken one on a restored queue
+  // does not begin playing when the page opens.
+  const wantPlay = useRef(true)
+  // Set when the browser refuses to start the standby element from a script (iOS does, until an
+  // element has been started by a tap). The player then loads each track into one element as before.
+  const standbyBlocked = useRef(false)
   const request = useRef<AbortController | null>(null)
   const previewCurrent = useRef<MusicResult | null>(null)
   const libraryCurrent = useRef<LibraryTrack | null>(null)
@@ -445,8 +523,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // own copy of the song, so the set can tell a song queued twice apart.
   const chosen = useRef(new Set<LibraryTrack>())
   const mode = useRef<'preview' | 'library'>('preview')
-  const current = () => (mode.current === 'library' ? libraryAudio.current : previewAudio.current)
-  const elements = () => [previewAudio.current, libraryAudio.current]
+  const slots = () => [libraryA.current, libraryB.current] as const
+  const library = () => slots()[activeSlot.current]
+  const standby = () => slots()[activeSlot.current === 0 ? 1 : 0]
+  const current = () => (mode.current === 'library' ? library() : previewAudio.current)
+  const elements = () => [previewAudio.current, libraryA.current, libraryB.current]
+
+  // Marks which element is which, for the e2e specs and for anyone inspecting the page.
+  function activate(slot: Slot) {
+    activeSlot.current = slot
+    slots().forEach((element, at) => {
+      if (element) element.dataset.role = at === slot ? 'active' : 'standby'
+    })
+  }
+
   const previewStage = useRef(0)
   const pendingSeek = useRef(0)
   const lastSavedSecond = useRef(-1)
@@ -580,7 +670,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!element) return
     element.src = url
     setReady(false)
-    if (autoplay) void element.play().catch(() => setNotice('Press play when you are ready.'))
+    if (!autoplay) return
+    element.play().catch((error: unknown) => {
+      // Only a refusal to start is the listener's to act on. A source that would not load rejects
+      // too, after its error event has already skipped the song and said so, and a newer load
+      // aborts the old one's play; saying "press play" over either would bury the real message.
+      if (element.src !== new URL(url, location.href).href) return
+      if (error instanceof DOMException && error.name !== 'NotAllowedError') return
+      setNotice('Press play when you are ready.')
+    })
   }
 
   // `announce` is for an edit the listener just made: it is the one save whose failure they need
@@ -593,7 +691,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       body: JSON.stringify({
         ids: queueRef.current.map((item) => item.id),
         current: libraryCurrent.current.id,
-        position: Math.round((libraryAudio.current?.currentTime ?? 0) * 1000),
+        position: Math.round((library()?.currentTime ?? 0) * 1000),
       }),
     })
       .then((response) => {
@@ -633,17 +731,146 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     writeHistory([])
   }
 
+  // The browser's Media Session shows a position for the lock screen and media keys. A browser
+  // that rejects the numbers keeps the last it had, which is fine for a hint.
+  function publishPosition(element: HTMLAudioElement) {
+    if (!('mediaSession' in navigator) || !Number.isFinite(element.duration)) return
+    try {
+      navigator.mediaSession.setPositionState({
+        duration: element.duration,
+        position: Math.min(element.currentTime, element.duration),
+        playbackRate: element.playbackRate,
+      })
+    } catch {
+      /* A hint only. */
+    }
+  }
+
+  // Which queue index plays after the playing one, or -1 at the end of the queue. Shuffle plays
+  // the songs queued by hand first, in order, then chooses at random.
+  function nextIndex() {
+    const queue = queueRef.current
+    if (shuffle && queue.length > 1) {
+      const chosenAt = chosenIndex(queue, indexRef.current, chosen.current)
+      if (chosenAt >= 0) return chosenAt
+      let index: number
+      do index = Math.floor(Math.random() * queue.length)
+      while (index === indexRef.current)
+      return index
+    }
+    const index = indexRef.current + 1
+    if (index >= queue.length && repeat === 'all') return 0
+    return index < queue.length ? index : -1
+  }
+
+  // Forgets what the standby element was loading and stops it downloading. Anything that changes
+  // what plays next (an edit, shuffle, repeat) calls this; the next timeupdate loads the new pick.
+  function discardPreload() {
+    window.clearTimeout(handoverTimer.current)
+    if (!preload.current) return
+    preload.current = null
+    const element = standby()
+    element?.removeAttribute('src')
+    element?.load()
+  }
+
+  // Runs on the playing element's timeupdate. Once the end is close, decides what plays next and
+  // loads it into the standby element. That decision is kept, because shuffle's pick is random
+  // and the handover has to play the song that was loaded.
+  function ensurePreload(active: HTMLAudioElement) {
+    const item = libraryCurrent.current
+    const element = standby()
+    if (!item || !element || standbyBlocked.current) return
+    const length = Number.isFinite(active.duration) ? active.duration : item.duration || 0
+    if (!preloadDue(length, active.currentTime)) return
+    const held = preload.current
+    if (held && held.item === queueRef.current[held.index]) return
+    discardPreload()
+    // Repeat one plays the same song again, and loading it early makes that gapless too.
+    const index = repeat === 'one' ? indexRef.current : nextIndex()
+    const upcoming = queueRef.current[index]
+    if (!upcoming) return
+    const slot: Slot = activeSlot.current === 0 ? 1 : 0
+    preload.current = { index, item: upcoming, slot, failed: false }
+    // A metered connection gets the metadata only. The song then starts as it always did.
+    element.preload = dataSaverOn() ? 'metadata' : 'auto'
+    element.src = streamUrl(upcoming)
+  }
+
+  // Starts the standby element just before the playing one ends. Called on every timeupdate, so a
+  // seek or a pause cancels it by the next one.
+  function scheduleHandover(active: HTMLAudioElement) {
+    window.clearTimeout(handoverTimer.current)
+    const item = libraryCurrent.current
+    const held = preload.current
+    if (!item || !held || held.failed || active.paused) return
+    const left = secondsLeft(active)
+    if (left > HANDOVER_WINDOW_SECONDS) return
+    if (item.duration > 0 && Math.abs(active.duration - item.duration) > LENGTH_TOLERANCE_SECONDS)
+      return
+    handoverTimer.current = window.setTimeout(
+      () => {
+        if (libraryCurrent.current === item && library() === active) finishTrack(active)
+      },
+      Math.max(0, left * 1000 - HANDOVER_LEAD_MS),
+    )
+  }
+
+  // A track has played to its end, or is about to. Its listen is reported and the next one starts.
+  function finishTrack(finished: HTMLAudioElement) {
+    window.clearTimeout(handoverTimer.current)
+    // A track shorter than the listening threshold never reaches it, so its end counts. A
+    // longer one that was scrubbed to its end without playing does not.
+    if (finished.duration <= HISTORY_LISTEN_SECONDS) recordPlay()
+    scrobble(true)
+    if (repeat === 'one') loadLibrary(indexRef.current)
+    else next()
+  }
+
+  // A library track would not load or play. Skips to the next and says which, until too many in a
+  // row have failed, which more likely means Navidrome is out of reach than that every song is bad.
+  function skipUnplayable() {
+    const failed = libraryCurrent.current
+    if (!failed) return
+    failures.current += 1
+    if (failures.current >= MAX_FAILURES) {
+      failures.current = 0
+      setNotice(failureLimitNotice)
+      return
+    }
+    next(wantPlay.current)
+    setNotice(skippedNotice(failed.title))
+  }
+
   function loadLibrary(index: number, autoplay = true, seek = 0) {
     const item = queueRef.current[index]
     if (!item) return
     request.current?.abort()
+    window.clearTimeout(handoverTimer.current)
+    // The standby element already holds this song: hand over to it instead of loading it again.
+    const held = preload.current
+    const handOverTo: Slot | null =
+      held && autoplay && seek === 0 && !held.failed && held.index === index && held.item === item
+        ? held.slot
+        : null
+    const handOver = handOverTo !== null
+    const outgoingSlot = activeSlot.current
+    const outgoing = library()
+    if (handOverTo !== null) activate(handOverTo)
     // Only one of the two plays at a time. The other element's pause event is
-    // ignored once the mode has changed, so the state is set here instead.
-    for (const element of elements()) element?.pause()
+    // ignored once the mode has changed, so the state is set here instead. A track handed over
+    // at its very end is left to finish its last moments rather than cut off.
+    const finishing = handOver && outgoing && secondsLeft(outgoing) <= HANDOVER_WINDOW_SECONDS / 2
+    for (const element of elements()) {
+      if (handOver && element === library()) continue
+      if (finishing && element === outgoing) continue
+      element?.pause()
+    }
     setPlaying(false)
     mode.current = 'library'
     previewCurrent.current = null
     libraryCurrent.current = item
+    wantPlay.current = autoplay
     chosen.current.delete(item)
     indexRef.current = index
     pendingSeek.current = seek
@@ -655,11 +882,39 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setPosition(seek)
     setLength(item.duration || 0)
     setNotice(LIBRARY_NOTICE)
-    startAudio(`/api/player/stream/${encodeURIComponent(item.id)}`, autoplay)
+    if (!handOver) {
+      discardPreload()
+      startAudio(streamUrl(item), autoplay)
+      return
+    }
+    const incoming = library()
+    if (!incoming) return
+    preload.current = null
+    // Its metadata and length arrived while it was standby, and those events were not ours to act
+    // on then.
+    setReady(incoming.readyState >= HTMLMediaElement.HAVE_METADATA)
+    if (Number.isFinite(incoming.duration)) setLength(incoming.duration)
+    publishPosition(incoming)
+    incoming.play().catch((error: unknown) => {
+      if (library() !== incoming) return
+      // A pause or another load cut this start short. That is not a refusal.
+      if (error instanceof DOMException && error.name === 'AbortError') return
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        // The browser will not start this element from a script. Go back to the one that will.
+        standbyBlocked.current = true
+        activate(outgoingSlot)
+        incoming.removeAttribute('src')
+        incoming.load()
+        startAudio(streamUrl(item))
+        return
+      }
+      setNotice('Press play when you are ready.')
+    })
   }
 
   function playLibrary(items: LibraryTrack[], index = 0, origin = '') {
     if (!items.length) return
+    failures.current = 0
     // Playing a row of the queue itself keeps the queue, and what was chosen by hand in it.
     if (items !== queueRef.current) chosen.current.clear()
     queueRef.current = items
@@ -675,6 +930,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     queueRef.current = items
     indexRef.current = index
     sourceRef.current = EDITED_SOURCE
+    // What plays next may have changed, so what the standby element loaded may be wrong.
+    discardPreload()
     setQueue(items)
     setCurrentIndex(index)
     setSource(EDITED_SOURCE)
@@ -764,6 +1021,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     request.current?.abort()
     for (const element of elements()) element?.pause()
+    discardPreload()
     setPlaying(false)
     mode.current = 'preview'
     libraryCurrent.current = null
@@ -782,23 +1040,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function next(autoplay = true) {
     if (mode.current !== 'library' || !queueRef.current.length) return
-    let index = indexRef.current + 1
-    if (shuffle && queueRef.current.length > 1) {
-      // Songs queued by hand come first, in the order Up next shows them; chance takes the rest.
-      index = chosenIndex(queueRef.current, indexRef.current, chosen.current)
-      if (index < 0) {
-        do index = Math.floor(Math.random() * queueRef.current.length)
-        while (index === indexRef.current)
-      }
-    } else if (index >= queueRef.current.length && repeat === 'all') index = 0
-    if (index < queueRef.current.length) loadLibrary(index, autoplay)
+    // The standby element may already hold the pick. Repeat one preloads the same song again,
+    // which is not where a skip goes, so it chooses afresh.
+    const held = repeat === 'one' ? null : preload.current
+    const index = held && held.item === queueRef.current[held.index] ? held.index : nextIndex()
+    if (index >= 0) loadLibrary(index, autoplay)
     else setPlaying(false)
   }
 
   function previous() {
     if (mode.current !== 'library') return
-    if ((libraryAudio.current?.currentTime ?? 0) > 4) {
-      if (libraryAudio.current) libraryAudio.current.currentTime = 0
+    const playing = library()
+    if (playing && playing.currentTime > 4) {
+      playing.currentTime = 0
       return
     }
     loadLibrary(Math.max(0, indexRef.current - 1))
@@ -832,6 +1086,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function stop() {
     request.current?.abort()
     saveQueue()
+    window.clearTimeout(handoverTimer.current)
+    preload.current = null
+    failures.current = 0
     previewCurrent.current = null
     libraryCurrent.current = null
     sourceRef.current = ''
@@ -882,16 +1139,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== 'visible' || mode.current !== 'library') return
-      if (libraryAudio.current && !libraryAudio.current.paused)
-        void audioGraph().then((module) => module.resumeAudio())
+      if (library() && !library()?.paused) void audioGraph().then((module) => module.resumeAudio())
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)
   }, [])
 
+  useEffect(() => activate(0), [])
+
   useEffect(() => {
     remember('musimo.player-shuffle', String(shuffle))
     remember('musimo.player-repeat', repeat)
+    // What plays next depends on both, so a song loaded for the old choice is dropped.
+    discardPreload()
   }, [shuffle, repeat])
 
   useEffect(() => {
@@ -1009,70 +1269,92 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  // Both elements share these. Each ignores events while the other mode is
-  // current, so a preview pausing as a library track starts cannot mark that
-  // track paused, and a stale timeupdate cannot move the seek bar.
-  function mediaHandlers(which: 'preview' | 'library') {
+  // All three elements share these. Each ignores events unless it is the one in play: a preview
+  // pausing as a library track starts cannot mark that track paused, a stale timeupdate cannot move
+  // the seek bar, and the standby library element, which is loading the next track, is not heard
+  // from at all until a handover makes it the active one.
+  function mediaHandlers(which: 'preview' | Slot) {
     type MediaEvent = SyntheticEvent<HTMLAudioElement>
-    const library = which === 'library'
+    const forLibrary = which !== 'preview'
+    const inPlay = () =>
+      forLibrary
+        ? mode.current === 'library' && activeSlot.current === which
+        : mode.current === 'preview'
     return {
       onLoadedMetadata: (event: MediaEvent) => {
-        if (mode.current !== which) return
+        if (!inPlay()) return
         setReady(true)
         if (pendingSeek.current) {
           event.currentTarget.currentTime = pendingSeek.current
           pendingSeek.current = 0
         }
+        if (forLibrary) publishPosition(event.currentTarget)
       },
       onPlay: (event: MediaEvent) => {
-        if (mode.current !== which) return
+        if (!inPlay()) return
         setPlaying(true)
-        if (!library) return
+        if (!forLibrary) return
         scrobble(false)
         const element = event.currentTarget
-        void audioGraph().then((module) => module.attachAudio(element))
+        publishPosition(element)
+        void routeToAnalyser(element)
       },
-      onPause: () => {
-        if (mode.current !== which) return
+      // A track that has started playing ends a run of failures.
+      onPlaying: () => {
+        if (inPlay() && forLibrary) failures.current = 0
+      },
+      onPause: (event: MediaEvent) => {
+        if (!inPlay()) return
+        window.clearTimeout(handoverTimer.current)
         setPlaying(false)
         saveQueue()
+        if (forLibrary) publishPosition(event.currentTarget)
+      },
+      onSeeked: (event: MediaEvent) => {
+        if (inPlay() && forLibrary) publishPosition(event.currentTarget)
       },
       onEnded: (event: MediaEvent) => {
-        if (mode.current !== which) return
-        if (!library) {
+        if (!inPlay()) return
+        if (!forLibrary) {
           setPlaying(false)
           return
         }
-        // A track shorter than the listening threshold never reaches it, so its end counts. A
-        // longer one that was scrubbed to its end without playing does not.
-        if (event.currentTarget.duration <= HISTORY_LISTEN_SECONDS) recordPlay()
-        scrobble(true)
-        if (repeat === 'one') loadLibrary(indexRef.current)
-        else next()
+        finishTrack(event.currentTarget)
       },
       onTimeUpdate: (event: MediaEvent) => {
-        if (mode.current !== which) return
-        const seconds = event.currentTarget.currentTime
+        if (!inPlay()) return
+        const element = event.currentTarget
+        const seconds = element.currentTime
         setPosition(seconds)
+        if (!forLibrary) return
         // Not while paused: restoring a saved queue seeks a paused element past the threshold.
-        if (library && !event.currentTarget.paused && seconds >= HISTORY_LISTEN_SECONDS)
-          recordPlay()
-        if (library && Math.floor(seconds / 10) !== lastSavedSecond.current) {
+        if (!element.paused && seconds >= HISTORY_LISTEN_SECONDS) recordPlay()
+        if (Math.floor(seconds / 10) !== lastSavedSecond.current) {
           lastSavedSecond.current = Math.floor(seconds / 10)
           saveQueue()
         }
+        if (!element.paused) ensurePreload(element)
+        scheduleHandover(element)
       },
       onDurationChange: (event: MediaEvent) => {
-        if (mode.current !== which) return
+        if (!inPlay()) return
         const { duration } = event.currentTarget
         if (Number.isFinite(duration)) setLength(duration)
+        if (forLibrary) publishPosition(event.currentTarget)
       },
       onError: () => {
-        if (mode.current !== which) return
+        if (forLibrary && !inPlay()) {
+          // The standby element could not load what it was given. Nothing is skipped for that: the
+          // song is loaded the ordinary way when its turn comes, and skipped then if it still fails.
+          const held = preload.current
+          if (held?.slot === which) preload.current = { ...held, failed: true }
+          return
+        }
+        if (!inPlay()) return
         setPlaying(false)
         setReady(false)
-        if (library) {
-          setNotice('This library track could not be played.')
+        if (forLibrary) {
+          skipUnplayable()
           return
         }
         const item = previewCurrent.current
@@ -1382,12 +1664,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           preload="metadata"
           {...mediaHandlers('preview')}
         />
-        <audio
-          ref={libraryAudio}
-          className="library-audio"
-          preload="metadata"
-          {...mediaHandlers('library')}
-        />
+        {/* Two, swapping roles: `data-role` says which plays and which holds the next track. */}
+        <audio ref={libraryA} className="library-audio" preload="metadata" {...mediaHandlers(0)} />
+        <audio ref={libraryB} className="library-audio" preload="metadata" {...mediaHandlers(1)} />
       </footer>
       {/* Outside the footer, which Now Playing hides: `display: none` on an ancestor would take the
           open dialog with it, and the page's Add to playlist button opens this one. */}
