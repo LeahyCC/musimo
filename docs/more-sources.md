@@ -1,6 +1,6 @@
 # More sources plan
 
-A plan, not shipped behaviour. It covers five things yt-dlp makes possible beyond the current Deezer to YouTube road: pasted links, a second match source, indie sites, mixes and radio, and the Internet Archive. [Downloads](downloads.md) describes what exists today and the [brief](brief.md) (sections 3, 4.2 and 7) holds the original scope.
+A plan, and only phase 5 (the Internet Archive) is shipped behaviour so far. It covers five things yt-dlp makes possible beyond the current Deezer to YouTube road: pasted links, a second match source, indie sites, mixes and radio, and the Internet Archive. [Downloads](downloads.md) describes what exists today and the [brief](brief.md) (sections 3, 4.2 and 7) holds the original scope.
 
 ```text
 today      Deezer result ----> YouTube search ----> file
@@ -12,7 +12,7 @@ planned    pasted link ---> allowed site? ---> review sheet ---> file     (phase
 
 ## What was checked
 
-Against the pinned yt-dlp 2026.8.19 on 19 September 2026, every extractor below exists and reports itself as working. That flag only means upstream has not marked it broken. No site has been downloaded from yet, so each one still needs a real probe before its phase ships.
+Against the pinned yt-dlp 2026.8.19 on 19 September 2026, every extractor below exists and reports itself as working. That flag only means upstream has not marked it broken. One site has been downloaded from for real since then, the Internet Archive (see below). Every other site still needs its own probe before its phase ships.
 
 | Site             | Extractors                         | Notes                                                        |
 | ---------------- | ---------------------------------- | ------------------------------------------------------------ |
@@ -26,7 +26,18 @@ Against the pinned yt-dlp 2026.8.19 on 19 September 2026, every extractor below 
 | HearThisAt       | track                              |                                                              |
 | BBC Sounds       | `bbc.co.uk`                        | Geo-restricted to the UK. HLS, so FFmpeg does the transport. |
 | TuneIn           | podcast, program, station          | Stations are live streams and never end. Refuse them.        |
-| Internet Archive | `archive.org`                      | Multi-file items. FLAC is often available.                   |
+| Internet Archive | `archive.org`                      | Multi-file items. FLAC is often available. Checked for real. |
+
+### Internet Archive, checked for real
+
+On 19 September 2026 with yt-dlp 2026.8.19, no cookies, from a Windows machine:
+
+- `scripts/source_probe.py --site-list --only archive` made one attempt at one MP3 track (about 1.9 MB) and it succeeded in 3.307 s. One attempt is not a median or a p95.
+- The real resolver read the item `The_Open_Goldberg_Variations-11823` as a playlist of 32 entries, one per track, each an MP3 original with an Ogg copy inside it. The entries have no address and no extractor name, and their IDs are file paths with a slash in them, so the resolver builds the address and the server accepts that ID shape.
+- The link case of `scripts/download_smoke.py` took one track through resolve, queue, the real worker, tagging and indexing in 5.047 s. The file was an MP3 tagged with the item's creator as artist, its title as album, its date and track 5 of 32, and the library index held it.
+- The Archive's licence field is set by the uploader. Items credited to Aphex Twin, Tool and Disney carry a CC0 tag in it, so the test item was chosen because its performer released it to the public domain herself, not because of that field. The reasons are in `scripts/source_probe_sites.json`.
+
+Not checked: an item whose originals are FLAC (the FLAC choice is covered by tests on canned formats and yt-dlp's own format selector, not by a download), an item with two originals of one track, a restricted or private file, the Deezer tidy-up on an Archive track (the smoke test stubs it), and the YouTube entry of the site list, which needs the PO token provider.
 
 Spotify, Apple Music and Tidal audio are DRM and stay out. A pasted Spotify or Apple link is a catalog import (resolve to Deezer, then match as usual), which the brief plans separately. This plan only makes the search box say so plainly.
 
@@ -98,7 +109,7 @@ Mixcloud, NTS, HearThisAt, SoundCloud sets over 20 minutes, BBC Sounds, TuneIn p
 
 ## Phase 5: Internet Archive
 
-Live concert recordings, 78rpm transfers, netlabels. Legal and stable.
+Live concert recordings, 78rpm transfers, netlabels. Legal and stable. Built, and checked for real on 19 September 2026 (see What was checked). [Downloads](downloads.md#internet-archive) describes how it behaves.
 
 - An item is a multi-file playlist, so it uses the phase 1 tick list. Original format keeps FLAC when the item has it; the worker already accepts `.flac`.
 - Tags from the item: creator, title, date, track order.
@@ -109,7 +120,7 @@ Live concert recordings, 78rpm transfers, netlabels. Legal and stable.
 | Order | Phase                              | Size   | Why here                                             |
 | ----- | ---------------------------------- | ------ | ---------------------------------------------------- |
 | 1     | 0 + 1, groundwork and paste a link | Large  | Everything else hangs off it.                        |
-| 2     | 5, Internet Archive                | Small  | Gives the link path a legal end-to-end test fixture. |
+| 2     | 5, Internet Archive (built)        | Small  | Gives the link path a legal end-to-end test fixture. |
 | 3     | 3, indie sites                     | Small  | Mostly allowlist rows and probes.                    |
 | 4     | 4, mixes and radio                 | Medium | New file layout and the geo and live refusals.       |
 | 5     | 2, SoundCloud backup               | Medium | Riskiest for wrong matches, so it needs measuring.   |
@@ -118,7 +129,7 @@ Live concert recordings, 78rpm transfers, netlabels. Legal and stable.
 
 - Unit tests use the existing `Downloader` protocol with canned info dicts per site, so CI never touches a real site.
 - Allowlist tests: a generic URL, a `file://` URL, a private address, and a redirect off the list are all refused at resolve and again in the worker.
-- `scripts/source_probe.py` loses its YouTube-only assumptions (the PO token argument becomes optional) and gains a small list of one public URL per site. Results go into [measurements](measurements.md) with the date and yt-dlp version.
+- `scripts/source_probe.py` loses its YouTube-only assumptions (the PO token argument becomes optional) and gains a small list of one public URL per site. Results go into [measurements](measurements.md) with the date and yt-dlp version. Done: the argument now goes only to YouTube URLs, `--site-list` reads `scripts/source_probe_sites.json`, and the Internet Archive result is recorded.
 - UI checks for the review sheet follow [UI verification](ui-verification.md): phone and desktop, keyboard, axe.
 
 ## Docs to update as each phase lands

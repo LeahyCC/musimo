@@ -1,0 +1,14 @@
+[
+  {
+    "source": "youtube",
+    "url": "https://www.youtube.com/watch?v=aqz-KE-bpKQ",
+    "format": "bestaudio",
+    "why": "Big Buck Bunny, the Blender Foundation's open film, released under Creative Commons Attribution 3.0. It is the same fixture the probe uses by default and the one behind the YouTube figures in docs/measurements.md."
+  },
+  {
+    "source": "archive",
+    "url": "https://archive.org/details/The_Open_Goldberg_Variations-11823/Kimiko_Ishizaka_-_05_-_Variatio_4_a_1_Clav.mp3",
+    "format": "best[ext=flac]/best[ext=mp3]/best[ext=ogg]/best[ext=m4a]",
+    "why": "One 69 second track of Kimiko Ishizaka's recording of Bach's Goldberg Variations. Bach died in 1750, and the performer released her recording to the public domain under CC0 through the Open Goldberg Variations project (opengoldbergvariations.org, which describes it as a public domain recording). The item also carries the CC0 licence URL, but the Internet Archive lets an uploader put any licence on an item, so that tag alone is not what makes it safe: the performer's own release is. The address names a single file so the probe fetches 1.9 MB, not the whole 180 MB album."
+  }
+]
