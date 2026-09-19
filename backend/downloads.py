@@ -16,7 +16,7 @@ import httpx
 
 from backend.catalog import Catalog, CatalogError
 from backend.enrichment import Enrichment
-from backend.errors import error_guidance
+from backend.errors import BLOCKING_CODES, error_guidance, site_label
 from backend.job_models import TERMINAL, Job
 from backend.job_store import Jobs
 from backend.library import Library
@@ -60,6 +60,37 @@ def publish_file(source: Path, target: Path) -> None:
         raise OSError(code, os.strerror(code), str(target))
 
 
+async def stop_tree(process: asyncio.subprocess.Process) -> None:
+    """Stop a child started with its own process group, and everything it started."""
+    if process.returncode is not None:
+        return
+    try:
+        if sys.platform == "win32":
+            # FFmpeg and the token helper are children of the worker and must stop with it.
+            terminator = await asyncio.create_subprocess_exec(
+                "taskkill",
+                "/PID",
+                str(process.pid),
+                "/T",
+                "/F",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await terminator.wait()
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+        try:
+            await asyncio.wait_for(process.wait(), 1)
+        except TimeoutError:
+            if sys.platform == "win32":
+                process.kill()
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
+            await process.wait()
+    except ProcessLookupError:
+        pass
+
+
 class Downloads:
     def __init__(
         self,
@@ -89,12 +120,8 @@ class Downloads:
             rows = self.store.db.execute("SELECT key,value FROM settings").fetchall()
         return Settings.model_validate({row[0]: json.loads(row[1]) for row in rows})
 
-    def controls(self) -> dict[str, bool]:
-        with self.store.lock:
-            row = self.store.db.execute(
-                "SELECT paused,source_paused FROM queue_control WHERE id=1"
-            ).fetchone()
-        return {"paused": bool(row[0]), "source_paused": bool(row[1])}
+    def controls(self) -> dict[str, object]:
+        return self.store.controls()
 
     def last_terminal_job(self) -> dict[str, object] | None:
         with self.store.lock:
@@ -112,7 +139,9 @@ class Downloads:
                 "created_at": float(row[1]),
             }
 
-    def set_controls(self, paused: bool | None = None, source_paused: bool | None = None) -> None:
+    def set_controls(
+        self, paused: bool | None = None, source_paused: bool | None = None, source: str = "youtube"
+    ) -> None:
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
@@ -122,8 +151,10 @@ class Downloads:
                     )
                 if source_paused is not None:
                     self.store.db.execute(
-                        "UPDATE queue_control SET source_paused=?,blocking_failures=0 WHERE id=1",
-                        (int(source_paused),),
+                        "INSERT INTO source_control(source,paused,blocking_failures) "
+                        "VALUES (?,?,0) ON CONFLICT(source) DO UPDATE SET "
+                        "paused=excluded.paused,blocking_failures=0",
+                        (source, int(source_paused)),
                     )
                 self.store._event("queue.updated", self.controls())
                 self.store.db.commit()
@@ -189,12 +220,16 @@ class Downloads:
         while not self.stopping:
             self.wake.clear()
             control = self.controls()
+            listed = control["paused_sources"]
+            paused_sources = (
+                {str(source) for source in listed} if isinstance(listed, list) else set()
+            )
             delay = 60.0
             if not control["paused"]:
                 slots = self.settings().concurrency - len(self.running)
                 for job in reversed(self.jobs.list(active=True)):
-                    # A YouTube block does not stop podcast episodes, which come from their feed.
-                    if control["source_paused"] and job.catalog != "podcast":
+                    # A block on one site must not hold back jobs that download from another.
+                    if job.source in paused_sources:
                         continue
                     if job.stage == "retry_wait" and job.retry_at > time.time():
                         delay = min(delay, max(0.01, job.retry_at - time.time()))
@@ -288,33 +323,8 @@ class Downloads:
 
     async def stop_process(self, job_id: str) -> None:
         process = self.processes.get(job_id)
-        if process is None or process.returncode is not None:
-            return
-        try:
-            if sys.platform == "win32":
-                # FFmpeg and the token helper are children of the worker and must stop with it.
-                terminator = await asyncio.create_subprocess_exec(
-                    "taskkill",
-                    "/PID",
-                    str(process.pid),
-                    "/T",
-                    "/F",
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-                await terminator.wait()
-            else:
-                os.killpg(process.pid, signal.SIGTERM)
-            try:
-                await asyncio.wait_for(process.wait(), 1)
-            except TimeoutError:
-                if sys.platform == "win32":
-                    process.kill()
-                else:
-                    os.killpg(process.pid, signal.SIGKILL)
-                await process.wait()
-        except ProcessLookupError:
-            pass
+        if process is not None:
+            await stop_tree(process)
 
     async def artwork(self, job: Job, folder: Path) -> None:
         if not job.meta.art or (folder / "cover.jpg").exists():
@@ -332,6 +342,12 @@ class Downloads:
                 (folder / "cover.jpg").write_bytes(chunks)
         except (httpx.HTTPError, ValueError):
             self.jobs.update(job.id, warnings=[*job.warnings, "Cover art unavailable"])
+
+    def budget(self, job: Job) -> int:
+        """Seconds one worker run may take."""
+        # Episodes, mixes and radio shows can run for hours as one large file, unlike a song.
+        long = job.catalog == "podcast" or job.kind in {"mix", "radio"}
+        return 3600 if long else 600
 
     async def worker(self, job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
         (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
@@ -351,8 +367,7 @@ class Downloads:
         failure: DownloadError | None = None
         tail: list[str] = []
         assert process.stdout
-        # Episodes can run for hours and are one large file, so they get longer than a song.
-        async with asyncio.timeout(3600 if job.catalog == "podcast" else 600):
+        async with asyncio.timeout(self.budget(job)):
             while line := await process.stdout.readline():
                 try:
                     raw: object = json.loads(line)
@@ -443,6 +458,14 @@ class Downloads:
             return "Navidrome scan failed; file is saved. Check integration settings."
         return None
 
+    def layout(self, job: Job, extension: str) -> str:
+        """Where a finished file lands, relative to the chosen library root."""
+        if job.catalog == "podcast":
+            return Naming().podcast_path(job.meta, extension)
+        # Pasted links of kind `mix` or `radio` will get a fixed `Mixes/` layout here, the way
+        # episodes do. Until then every link lands like music.
+        return Naming().path(self.settings().naming_template, job.meta, extension)
+
     async def finish(
         self, job: Job, ready: Path | None = None, info: dict[str, object] | None = None
     ) -> None:
@@ -450,12 +473,7 @@ class Downloads:
         folder = self.folder(job)
         if ready:
             self.jobs.update(job.id, stage="moving", progress=1, speed=0, eta=None)
-            filename = (
-                Naming().podcast_path(job.meta, ready.suffix[1:])
-                if job.catalog == "podcast"
-                else Naming().path(self.settings().naming_template, job.meta, ready.suffix[1:])
-            )
-            target = root / filename
+            target = root / self.layout(job, ready.suffix[1:])
             if not target.resolve().is_relative_to(root):
                 raise DownloadError("MOVE_FAILED", "Output path escaped the library root")
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -523,7 +541,8 @@ class Downloads:
                 return
             job = self.jobs.update(
                 job_id,
-                stage="matching",
+                # Podcast episodes and pasted links skip the search, so they never show it.
+                stage="matching" if job.catalog == "deezer" else "downloading",
                 attempts=job.attempts + 1,
                 error_code="",
                 error="",
@@ -540,12 +559,14 @@ class Downloads:
             await self.artwork(job, folder)
             ready, info = await self.worker(self.jobs.get(job_id), folder)
             await self.finish(self.jobs.get(job_id), ready, info)
-            if job.catalog == "deezer":
+            if job.source == "youtube":
                 self.store.record_probe(
                     "healthy", 0, "Last YouTube download completed", source="youtube"
                 )
-                with self.store.lock:
-                    self.store.db.execute("UPDATE queue_control SET blocking_failures=0 WHERE id=1")
+            with self.store.lock:
+                self.store.db.execute(
+                    "UPDATE source_control SET blocking_failures=0 WHERE source=?", (job.source,)
+                )
         except asyncio.CancelledError:
             await self.stop_process(job_id)
             job = self.jobs.get(job_id)
@@ -598,8 +619,8 @@ class Downloads:
                     settings.retry_base_seconds * 2 ** max(0, job.attempts - 1),
                 ),
             )
-            hint = error.hint or error_guidance(error.code)[0]
-            fix = error.fix or error_guidance(error.code)[1]
+            hint = error.hint or error_guidance(error.code, site_label(job.source))[0]
+            fix = error.fix or error_guidance(error.code, site_label(job.source))[1]
             self.jobs.update(
                 job_id,
                 stage="retry_wait" if retry else "failed",
@@ -625,22 +646,21 @@ class Downloads:
                     warning = await self.navidrome(job, Path(published.final_path))
                     if warning:
                         self.jobs.update(job.id, warnings=[*job.warnings, warning])
-            if error.code in {
-                "SOURCE_BLOCKED",
-                "POT_MISSING",
-                "JS_RUNTIME_MISSING",
-                "COOKIES_EXPIRED",
-            }:
+            # The worker only reports these for the site that raised them, so the count and the
+            # pause belong to this job's source and leave other sites running.
+            if error.code in BLOCKING_CODES:
                 with self.store.lock:
-                    self.store.db.execute(
-                        "UPDATE queue_control SET blocking_failures=blocking_failures+1 WHERE id=1"
-                    )
+                    # Read every row: a RETURNING statement only finishes, and so commits,
+                    # once its cursor is exhausted.
                     failures = self.store.db.execute(
-                        "SELECT blocking_failures FROM queue_control WHERE id=1"
-                    ).fetchone()[0]
+                        "INSERT INTO source_control(source,blocking_failures) VALUES (?,1) "
+                        "ON CONFLICT(source) DO UPDATE SET "
+                        "blocking_failures=blocking_failures+1 RETURNING blocking_failures",
+                        (job.source,),
+                    ).fetchall()[0][0]
                 if failures >= 3:
-                    self.set_controls(source_paused=True)
-                self.store.record_probe("blocked", 0, error.detail, source="youtube")
+                    self.set_controls(source_paused=True, source=job.source)
+                self.store.record_probe("blocked", 0, error.detail, source=job.source)
         finally:
             self.processes.pop(job_id, None)
             self.running.pop(job_id, None)

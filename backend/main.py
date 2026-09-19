@@ -28,6 +28,8 @@ from backend.catalog import Catalog, CatalogError
 from backend.download_api import install_download_routes
 from backend.downloads import Downloads
 from backend.library import Library
+from backend.link_api import install_link_routes
+from backend.links import Links
 from backend.models import SettingsPatch
 from backend.navidrome import Navidrome
 from backend.player_api import install_player_routes
@@ -80,12 +82,13 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     catalog: Catalog
     library: Library
     downloads: Downloads
+    links: Links
     navidrome: Navidrome
     waveforms: WaveformService
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        nonlocal store, versions, catalog, library, downloads, navidrome, waveforms
+        nonlocal store, versions, catalog, library, downloads, links, navidrome, waveforms
         store = Store(data / "musimo.sqlite3")
         versions = await asyncio.to_thread(runtime_versions)
         async with (
@@ -110,6 +113,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             library.start()
             downloads = Downloads(store, catalog, library, changed, navidrome)
             downloads.start()
+            links = Links(downloads)
             try:
                 yield
             finally:
@@ -125,6 +129,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_player_routes(app, lambda: navidrome)
     install_waveform_routes(app, lambda: waveforms)
     install_podcast_routes(app, lambda: downloads)
+    install_link_routes(app, lambda: links)
 
     @app.middleware("http")
     async def same_origin(request: Request, call_next: RequestResponseEndpoint) -> Response:

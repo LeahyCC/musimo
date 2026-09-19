@@ -1,8 +1,14 @@
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from backend.sources import Kind
 
 Format = Literal["original", "m4a", "opus", "mp3"]
+# `deezer` jobs match a catalog track on YouTube. `podcast` and `link` jobs download the address
+# in `source_url` directly, taken from the server's own lookup and never from the browser.
+CatalogName = Literal["deezer", "podcast", "link"]
 Stage = Literal[
     "queued",
     "matching",
@@ -60,6 +66,16 @@ class Metadata(BaseModel):
     synced_lyrics: str = ""
 
 
+# The ID each source uses for one recording. A candidate from a source missing here is never
+# accepted, so a new site has to add its own pattern before its matches can be picked.
+CANDIDATE_IDS = {"youtube": re.compile(r"[A-Za-z0-9_-]{11}")}
+
+
+def valid_candidate_id(source: str, candidate_id: str) -> bool:
+    pattern = CANDIDATE_IDS.get(source)
+    return pattern is not None and pattern.fullmatch(candidate_id) is not None
+
+
 class Candidate(BaseModel):
     id: str
     title: str
@@ -68,6 +84,8 @@ class Candidate(BaseModel):
     score: float = 0
     topic: bool = False
     reason: str = ""
+    source: str = "youtube"
+    url: str = ""
 
 
 class Job(BaseModel):
@@ -75,10 +93,14 @@ class Job(BaseModel):
     batch_id: str = ""
     batch_label: str = ""
     album_id: int = 0
-    catalog: Literal["deezer", "podcast"] = "deezer"
+    catalog: CatalogName = "deezer"
     track_id: int
-    # Podcast episodes download this publisher file directly instead of matching on YouTube.
+    # The site the audio comes from. Pausing, error mapping and candidate checks key off it.
+    source: str = "youtube"
+    # Podcast episodes and pasted links download this address directly instead of matching.
     source_url: str = ""
+    # Mixes and radio shows run long, so they get the episode timeout.
+    kind: Kind = "music"
     format: Format = "original"
     bitrate: int = 0
     target: str
@@ -111,6 +133,14 @@ class Job(BaseModel):
     updated_at: float
     hidden: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def default_source(cls, data: object) -> object:
+        # Jobs stored before `source` existed were YouTube matches or podcast feed files.
+        if isinstance(data, dict) and "source" not in data:
+            return {**data, "source": "podcast" if data.get("catalog") == "podcast" else "youtube"}
+        return data
+
     def public(self) -> dict[str, object]:
         return self.model_dump(exclude={"meta": {"lyrics", "synced_lyrics"}})
 
@@ -124,13 +154,27 @@ class Enqueue(BaseModel):
 
 class Pick(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    candidate_id: str = Field(pattern=r"^[A-Za-z0-9_-]{11}$")
+    # Only a bounded token here; the candidate's own source checks the exact ID shape.
+    candidate_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class BatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     album_id: int = Field(gt=0)
     missing_only: bool = True
+    format: Format | None = None
+    target: str | None = None
+
+
+class LinkResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    url: str = Field(min_length=1, max_length=2000)
+
+
+class LinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    token: str = Field(pattern=r"^[A-Za-z0-9_-]{16,64}$")
+    entry_ids: list[str] = Field(min_length=1, max_length=500)
     format: Format | None = None
     target: str | None = None
 

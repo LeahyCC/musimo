@@ -14,6 +14,13 @@ export function formatLabel(format: string): string {
         : 'MP3 · converted'
 }
 
+const SITE_LABELS: Record<string, string> = { youtube: 'YouTube', podcast: 'Podcasts' }
+
+/** The name of the site a job downloads from. A site added on the server shows capitalised. */
+export function siteLabel(source: string): string {
+  return SITE_LABELS[source] ?? source.charAt(0).toUpperCase() + source.slice(1)
+}
+
 /** The short format choices a track's download controls offer, in one place. */
 export function FormatOptions() {
   return (

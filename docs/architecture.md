@@ -34,7 +34,7 @@ The database has `settings` and `job_events`. Schema versions use SQLite user_ve
 
 The database also has `library_roots`, `library_files`, `library_state`, FTS5 and `search_cache`. Preserve multiple paths for the same recording. Cache by Deezer request path, query, result kind and page; L1 LRU with TTL, L2 SQLite. Catalog filters and sort operate on loaded provider results, so they do not create separate upstream cache entries. Library track browsing is the exception: see [library player](player.md) for the bounded whole-library snapshot its filters, sort and totals read from. No market selection is implemented. Use lightweight batched ownership joins, never file reads from result rendering.
 
-The database includes `jobs`, `batches`, `sources_health` and artifact manifests. Jobs hold catalog identity, target root, requested quality, selected source, candidates, attempts, desired action, observed stage, progress, final path and codec/bitrate. A partial unique index prevents duplicate active jobs using the specified catalog/id/format/bitrate/root key. Store bitrate as a non-null canonical value to avoid SQLite NULL uniqueness gaps. History persists after the active slot is released. The `linked_playlists` table stores the liked playlist link; schema version remains 3. The `waveforms` table caches the Now Playing seek bar's peaks, one row per song: `song_id` (primary key), a `fingerprint` and 800 bytes of `peaks`. The fingerprint is an algorithm version plus the file's size and modified time, or Navidrome's size and `updated` when the file is read through the stream, so a changed file replaces its row on the next request. Reads and the upsert go through `Store.waveform` and `Store.save_waveform` on the one writer connection, under the lock and `BEGIN IMMEDIATE`. Schema version remains 3: the table is created by `CREATE TABLE IF NOT EXISTS` in the same block, so an existing database gains it on its next start and an older build ignores it. Migration and recovery: nothing to migrate, and because it is only a cache, `DELETE FROM waveforms` (or dropping the table) is a safe reset that the player refills on demand. A row is about 1 KB, so a 50,000 song library adds roughly 50 MB at most.
+The database includes `jobs`, `batches`, `sources_health` and artifact manifests. Jobs hold catalog identity, target root, requested quality, selected source, candidates, attempts, desired action, observed stage, progress, final path and codec/bitrate. A partial unique index prevents duplicate active jobs using the specified catalog/id/format/bitrate/root key. Store bitrate as a non-null canonical value to avoid SQLite NULL uniqueness gaps. History persists after the active slot is released. The `linked_playlists` table stores the liked playlist link. Schema version 4 adds `source_control`, one row per download source with its pause flag and blocking failure count; the upgrade copies the old single `queue_control.source_paused` flag and count across as the `youtube` row, and `queue_control` keeps only the global pause. The `waveforms` table caches the Now Playing seek bar's peaks, one row per song: `song_id` (primary key), a `fingerprint` and 800 bytes of `peaks`. The fingerprint is an algorithm version plus the file's size and modified time, or Navidrome's size and `updated` when the file is read through the stream, so a changed file replaces its row on the next request. Reads and the upsert go through `Store.waveform` and `Store.save_waveform` on the one writer connection, under the lock and `BEGIN IMMEDIATE`. Schema version remains 3: the table is created by `CREATE TABLE IF NOT EXISTS` in the same block, so an existing database gains it on its next start and an older build ignores it. Migration and recovery: nothing to migrate, and because it is only a cache, `DELETE FROM waveforms` (or dropping the table) is a safe reset that the player refills on demand. A row is about 1 KB, so a 50,000 song library adds roughly 50 MB at most.
 
 Events have an increasing ID, type, payload and timestamp. Retain a bounded replay window; a stale or future cursor receives a reset event and must reload the snapshot. SSE heartbeats contain no IDs. One stream per browser tab; no per-track timers. Uvicorn's graceful shutdown is bounded at two seconds so open SSE connections cannot indefinitely hold a restart. File logs and exported diagnostics must redact credentials and token-bearing URLs.
 
@@ -81,7 +81,7 @@ Downloads (download_api.py):
 - `POST /api/batches/{id}/{pause,resume,cancel,retry}`: batch actions.
 - `POST /api/jobs/{id}/pick`: select match candidate.
 - `POST /api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`: job actions.
-- `POST /api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,resume-source}`: queue commands.
+- `POST /api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,resume-source}`: queue commands. `resume-source` takes `?source=` and defaults to `youtube`.
 
 Artist downloads (artist_downloads.py):
 
@@ -93,6 +93,11 @@ Podcasts (podcast_api.py, podcasts.py):
 - `GET /api/podcasts`: show search in Apple's podcast directory.
 - `GET /api/podcasts/{id}`: show and latest episodes.
 - `POST /api/podcast-episodes`: queue one episode as a `podcast` job.
+
+Pasted links (link_api.py, links.py, sources.py, resolver.py):
+
+- `POST /api/links/resolve`: checks the link against the site allowlist, reads it in a child process within 20 seconds without downloading, and returns a preview with a token that lasts ten minutes.
+- `POST /api/links`: queues ticked entries from a saved preview as `link` jobs; more than one becomes a download group.
 
 Player (player_api.py):
 
@@ -122,17 +127,19 @@ Player (player_api.py):
 
 Errors (errors.py):
 
-- `error_guidance(code)`: 16 code hint and fix table used by worker.py, downloads.py and store.py job_summary. Maps error codes to plain language hints and suggested actions.
+- `error_guidance(code)`: 18 code hint and fix table used by worker.py, downloads.py and store.py job_summary. Maps error codes to plain language hints and suggested actions.
+- `source_code(code, source)`: keeps a code only where it means something for the job's source.
 
 Not yet implemented:
 
-- URL imports and pasted-link batches.
+- The review sheet for pasted links, sites other than YouTube, and the Deezer tidy-up of a pasted music link.
+- Catalog imports from Spotify or Apple Music links.
 - Cookie uploads and source test UI.
 - Notification test endpoints.
 - Updater controls.
 - Lyric backfill jobs.
 
-Same-origin JSON writes reject cross-origin browser requests. No wildcard CORS. The service binds loopback and accepts no secrets. Optional password sessions, secret files and encrypted credential storage precede LAN-facing credential features. Arbitrary URLs, output paths, redirects and yt-dlp arguments require allowlists before download APIs ship; deny executable hooks and output overrides.
+Same-origin JSON writes reject cross-origin browser requests. No wildcard CORS. The service binds loopback and accepts no secrets. Optional password sessions, secret files and encrypted credential storage precede LAN-facing credential features. Arbitrary URLs, output paths, redirects and yt-dlp arguments require allowlists before download APIs ship; deny executable hooks and output overrides. Pasted links meet this through `backend/sources.py`: only `https` links to a listed host are read, never an IP address host, a link with a user or password, or a non-default port. yt-dlp gets the site's extractors as `allowed_extractors`, which turns off the generic extractor, so a redirect to an unlisted site fails in both the preview and the worker. The browser sends only the link and then a preview token with entry IDs; titles, file addresses, artwork and output paths come from the server's saved preview, and no cookies or yt-dlp options are accepted.
 
 ## Job state machine
 
@@ -147,7 +154,7 @@ any active stage -> retry_wait -> queued
 any active stage -> failed -> queued (manual retry)
 ```
 
-Conversion is skipped when possible; remuxing is recorded distinctly from lossy encoding. A pause during tagging either finishes that artifact or restarts tagging later, never continues a corrupt partial tag write. Pause intent remains durable through process exit and container restart. A restart reconciles active stages against the manifest before dispatch. Errors retain stage, code, retryability, a redacted tool tail and tool version. Three consecutive blocking errors pause a source, not unrelated healthy sources. Disk-full/unwritable jobs require a successful destination probe before retry.
+Podcast episodes and pasted links skip `matching` and go straight to `downloading`. Conversion is skipped when possible; remuxing is recorded distinctly from lossy encoding. A pause during tagging either finishes that artifact or restarts tagging later, never continues a corrupt partial tag write. Pause intent remains durable through process exit and container restart. A restart reconciles active stages against the manifest before dispatch. Errors retain stage, code, retryability, a redacted tool tail and tool version. Three consecutive blocking errors pause a source, not unrelated healthy sources: each job records its `source`, the count and pause are kept per source, and the dispatcher skips a queued job only when its own source is paused. Disk-full/unwritable jobs require a successful destination probe before retry.
 
 ## Screens and flow
 
@@ -193,7 +200,7 @@ A passing skeleton is not a completed downloader or evidence that the music accu
 
 ## Search and catalog implementation
 
-See [search and indexing](search.md) for API contracts, cache limits, ownership matching, watcher behaviour and the tested journey. Search uses independent concurrent track/album/artist HTTP requests. Each section paints when its request completes; catalog results do not need an additional SSE protocol. The existing SSE stream carries durable library updates. Track downloads, album batches and reviewed artist album selections are available; URL imports remain later work.
+See [search and indexing](search.md) for API contracts, cache limits, ownership matching, watcher behaviour and the tested journey. Search uses independent concurrent track/album/artist HTTP requests. Each section paints when its request completes; catalog results do not need an additional SSE protocol. The existing SSE stream carries durable library updates. Track downloads, album batches and reviewed artist album selections are available. Pasted links have a server API; their review sheet in the search box remains later work.
 
 ## Download worker implementation
 
