@@ -11,7 +11,7 @@ frontend/package.json          "visimo": "github:LeahyCC/visimo#<commit>"
 now-playing-popout.tsx         visimo/presets, visimo/catalog, and the stage
                                itself from visimo, loaded lazily
 now-playing-overlay.tsx        visimo/presets, visimo/catalog for the top bar
-player.tsx                     visimo/audio on the library element's first play
+player.tsx                     visimo/audio on each library element's plays
 ```
 
 The pin is a full commit hash on visimo's `main`, not a tag, because `main` has moved past `v0.1.0` without a release. It currently points at the merge that added the Kaleidoscope scene and its Prism preset, so the stage's Scene select is drawn and Fluid stays the default.
@@ -55,9 +55,20 @@ Fullscreen needs a user gesture, and the palette selection is one. `PopoutProvid
 
 `palette.tsx` imports only `now-playing-popout`, which is already in the main chunk, and nothing from `visimo`, so the palette adds nothing to the main bundle.
 
-The two audio elements are Musimo's rule, not the package's: previews stream from provider CDNs without CORS headers, and a media element source on such audio is silenced permanently. `player.tsx` keeps one element for previews and one for library tracks, and only the library element is ever handed to `attachAudio`. Someone playing a preview who opens Now Playing is told so: the page says a preview is playing and that the visuals play with library tracks, rather than "Nothing playing yet".
+The separate preview element is Musimo's rule, not the package's: previews stream from provider CDNs without CORS headers, and a media element source on such audio is silenced permanently. `player.tsx` keeps one element for previews and a pair for library tracks (next section), and only the library pair is ever handed to `attachAudio`. Someone playing a preview who opens Now Playing is told so: the page says a preview is playing and that the visuals play with library tracks, rather than "Nothing playing yet".
 
 Where WebGPU is missing, or the adapter or device cannot be had, the stage shows artwork exactly as before and says so once. There is no WebGL fallback and none is planned.
+
+## The two library elements
+
+Gapless playback (see [the player note](player.md#gapless-playback)) needs a second element to load the next track while the first plays, so the library has two, and the roles swap at each track change. The visualizer has to survive that, and a media element can be given to `createMediaElementSource` once only, so the split is:
+
+- **visimo** builds the graph and wires up the first element it is given. `attachAudio` was written for one element and refuses any other, which is right for a host with one.
+- **Musimo** (`routeToAnalyser` in `player.tsx`) calls `attachAudio` on every `play` event of a library element, as it always did, and that is also what resumes a suspended context. When the element is not the one visimo took, Musimo creates that element's source itself and connects it to the same analyser, read from `audioGraph()`, once, the first time it plays. The visualizer reads the analyser, so it is unaware of which element feeds it.
+
+Without the second half the visualizer goes flat at the first track change while the music keeps playing, because the second element would play directly, unanalysed. That is the failure to look for whenever the visimo pin moves or this function changes: play two tracks in a row with the visualizer on and check that the stage still moves after the swap. WebGPU is missing from headless browsers, so `e2e/visualizer.spec.ts` cannot see the picture, but `e2e/gapless.spec.ts` checks that both elements end up connected to the analyser. If visimo ever accepts several elements itself, `routeToAnalyser` can go back to a plain `attachAudio` call.
+
+Previews still never reach it. The preview element is separate, is not part of the pair, and is not swapped.
 
 ## When it draws
 

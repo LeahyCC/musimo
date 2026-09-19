@@ -4,12 +4,17 @@ import type { LibraryTrack } from './api'
 import {
   chosenIndex,
   durationText,
+  failureLimitNotice,
   indexAfterMove,
   isPassiveNotice,
+  MAX_FAILURES,
   playNextPosition,
+  PRELOAD_LEAD_SECONDS,
+  preloadDue,
   QUEUE_LIMIT,
   queueEntryKey,
   queueOverflow,
+  skippedNotice,
   songCount,
 } from './player'
 
@@ -122,5 +127,36 @@ describe('isPassiveNotice', () => {
     expect(isPassiveNotice('This library track could not be played.')).toBe(false)
     expect(isPassiveNotice('Created playlist Road trip.')).toBe(false)
     expect(isPassiveNotice('')).toBe(false)
+    expect(isPassiveNotice(skippedNotice('Delta'))).toBe(false)
+    expect(isPassiveNotice(failureLimitNotice)).toBe(false)
+  })
+})
+
+describe('preloadDue', () => {
+  it('waits until the last seconds of a long track', () => {
+    expect(preloadDue(200, 0)).toBe(false)
+    expect(preloadDue(200, 200 - PRELOAD_LEAD_SECONDS - 1)).toBe(false)
+    expect(preloadDue(200, 200 - PRELOAD_LEAD_SECONDS)).toBe(true)
+    expect(preloadDue(200, 199)).toBe(true)
+  })
+
+  it('is due at once for a track shorter than the lead', () => {
+    expect(preloadDue(PRELOAD_LEAD_SECONDS - 5, 0)).toBe(true)
+    expect(preloadDue(PRELOAD_LEAD_SECONDS, 0)).toBe(true)
+  })
+
+  it('does not guess when the length is not known', () => {
+    expect(preloadDue(0, 0)).toBe(false)
+    expect(preloadDue(-1, 0)).toBe(false)
+  })
+})
+
+describe('skippedNotice', () => {
+  it('names the track that was skipped', () => {
+    expect(skippedNotice('Delta')).toBe('Skipped Delta, it could not be played')
+  })
+
+  it('stops after the number of failures in a row that the notice states', () => {
+    expect(failureLimitNotice).toContain(`Stopped after ${MAX_FAILURES} tracks in a row`)
   })
 })

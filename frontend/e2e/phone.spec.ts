@@ -259,7 +259,7 @@ test('the mini player is one row and hands the rest to Now Playing', async ({ pa
   await expect
     .poll(() =>
       player
-        .locator('audio.library-audio')
+        .locator('audio.library-audio[data-role="active"]')
         .evaluate((element: HTMLAudioElement) => element.currentTime),
     )
     .toBeGreaterThan(0)
