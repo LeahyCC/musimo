@@ -18,9 +18,8 @@ test('now playing shows the stage bar and the idle fade, and the transport besid
 
   // This is about the stage bar and the idle fade, which are the same
   // whichever view the stage shows. Pin the view rather than letting the
-  // machine decide it: the stage defaults to the visualizer wherever WebGPU
-  // has an adapter, so a headless run lands on artwork and a headed one does
-  // not, and the artwork assertion below would only hold on the first.
+  // machine decide it: artwork is the default now, but a stored choice wins,
+  // and the artwork assertion below should not depend on what was stored.
   await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
 
   await playerFixtures(page)

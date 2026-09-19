@@ -59,6 +59,14 @@ The two audio elements are Musimo's rule, not the package's: previews stream fro
 
 Where WebGPU is missing, or the adapter or device cannot be had, the stage shows artwork exactly as before and says so once. There is no WebGL fallback and none is planned.
 
+## When it draws
+
+Artwork is the default view, because the visualizer is heavy on the GPU. A browser that has never stored a choice starts on artwork, even where WebGPU exists, and the Visualizer toggle (or V, or the setting) is one click away. A browser that already stored `visualizer` or `artwork` keeps it. The stored key cannot tell an old default from a deliberate choice, so a browser that only ever ran the old default keeps `visualizer` until it is switched.
+
+The docked stage draws only while someone can see it. `useStageVisible` in `now-playing-popout.tsx` turns it off when the document is hidden (`visibilitychange`) and when the stage is scrolled out of view or under the phone layout's scroll (`IntersectionObserver` on the stage element), and turns it back on when both are true again. The stage component has no pause that Musimo uses, so "off" means the visualizer is unmounted and the artwork shows in its place, then it mounts again. The view setting is untouched (the toggle still reads On), the audio element is never touched, and the renderer outlives the stage, so coming back costs a canvas rather than a device. The popout window counts as visible for as long as it is open: it is a document of its own that stays on top, so neither check runs there.
+
+Fluid's grid default and the canvas size are unchanged; a render size cap was considered and declined.
+
 ## How big it draws
 
 On Now Playing the docked stage is as wide as its column or as tall as the height the column leaves above its controls, whichever is smaller, and the full content width on a phone (see [the popout note](now-playing-popout.md#layout)). It used to be at most 320 px, and later 60% of the content width. The canvas and the post stack's offscreen textures follow the stage, so a docked stage in a tall window has several times the pixels a 320 px one had, and the fluid's grid setting does not shrink that. The frame times in visimo's README were taken at the smaller size and have not been measured again at this one; check `data-frame-ms` on the canvas (H shows it) on a low-end machine before trusting them.
@@ -71,6 +79,6 @@ The package writes `data-adapter`, `data-frame-ms`, `data-scene`, `data-detail`,
 
 `e2e/visualizer.spec.ts` passes all four of its tests in headed Chromium, where an adapter exists. Headless Chromium, Firefox and WebKit have no adapter, so they run the artwork fallback test and skip the other three. That is the documented behaviour rather than a gap.
 
-A test that touches the Now Playing stage has to pin the view rather than let the machine decide it, since the stage shows the visualizer wherever there is an adapter and the artwork where there is not. See [the testing note](testing.md).
+A test that touches the Now Playing stage has to pin the view rather than rely on the default: a test that needs the canvas stores `visualizer` first, and one that needs the artwork stores `artwork`. `visualizer.spec.ts` also checks that artwork is the default with an adapter present, and that the canvas goes away while the document is hidden and comes back. See [the testing note](testing.md).
 
 The frame times, the preset screenshots, the popout round trips and the tuning history are all in visimo's README. They were taken while this code lived here and nothing in the move touched a shader, a parameter or a uniform.

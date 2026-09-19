@@ -161,8 +161,9 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   const popoutStage = useRef<HTMLDivElement>(null)
   const dockedStage = useRef<HTMLDivElement>(null)
   const popout = pipWindow !== null
+  // Artwork until the browser has been told otherwise: the visualizer is heavy on the GPU.
   const [view, setView] = useState<StageView>(() =>
-    stored(VIEW_KEY, 'visualizer') === 'artwork' ? 'artwork' : 'visualizer',
+    stored(VIEW_KEY, 'artwork') === 'visualizer' ? 'visualizer' : 'artwork',
   )
   const [canVisualize, setCanVisualize] = useState(hasWebGpu)
   const [hud, setHud] = useState(false)
@@ -339,6 +340,37 @@ const stageClassName =
    `:fullscreen` and popout rules in style.css override both. */
 const dockedStageClassName = 'w-[min(100cqw,100cqh)] max-phone:w-full'
 
+// Whether anyone can see the docked stage: the tab is in front and the stage is on screen (not
+// scrolled away, and not under the phone layout's scroll). The stage has no pause, so the caller
+// unmounts the visualizer while this is false and mounts it again after. The popout window is a
+// document of its own that stays on top while open, so it always counts as visible. Audio is not
+// touched: nothing here reaches the player.
+function useStageVisible(stageRef: RefObject<HTMLDivElement | null>, always: boolean) {
+  const [tabVisible, setTabVisible] = useState(() => document.visibilityState !== 'hidden')
+  const [onScreen, setOnScreen] = useState(true)
+
+  useEffect(() => {
+    if (always) return
+    const onChange = () => setTabVisible(document.visibilityState !== 'hidden')
+    onChange()
+    document.addEventListener('visibilitychange', onChange)
+    return () => document.removeEventListener('visibilitychange', onChange)
+  }, [always])
+
+  useEffect(() => {
+    const element = stageRef.current
+    if (always || !element || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver((entries) => {
+      const latest = entries[entries.length - 1]
+      if (latest) setOnScreen(latest.isIntersecting)
+    })
+    observer.observe(element)
+    return () => observer.disconnect()
+  }, [stageRef, always])
+
+  return always || (tabVisible && onScreen)
+}
+
 // One box: the visualizer, or a blurred cover fill behind a sharp,
 // letterboxed copy of the same artwork, with the hover controls on top.
 // Docked, full screen and popout all share it.
@@ -357,6 +389,7 @@ function Stage({
   const art = track ? artUrl(track) : (player.track?.art ?? '')
   const idle = useOverlayIdle(stageRef, player.playing)
   const view = popout.canVisualize ? popout.view : undefined
+  const seen = useStageVisible(stageRef, placement === 'popout')
   useStageKeys(stageRef, {
     placement,
     onFullscreen,
@@ -395,7 +428,7 @@ function Stage({
         onFullscreen()
       }}
     >
-      {view === 'visualizer' ? (
+      {view === 'visualizer' && seen ? (
         <Suspense fallback={artwork}>
           <VisualizerStage
             hud={popout.hud}
