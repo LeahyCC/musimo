@@ -441,7 +441,7 @@ export function NowPlayingStage() {
   }
 
   return (
-    <div className="grid min-w-0 gap-[10px] max-phone:mx-auto max-phone:w-[min(320px,100%)]">
+    <div className="grid min-w-0 gap-[10px]">
       {popout.popout ? (
         <div className={cx(stageClassName, 'grid place-items-center')}>
           {art && (

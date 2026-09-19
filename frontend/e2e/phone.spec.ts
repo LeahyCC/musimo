@@ -278,6 +278,8 @@ test('the mini player is one row and hands the rest to Now Playing', async ({ pa
   await expect(
     page.locator('.stage-controls').getByRole('button', { name: 'Shuffle' }),
   ).toBeVisible()
+  // The stage repeats the mini player's title, play, next and seek bar, so the player steps aside.
+  await expect(player).toBeHidden()
   await page.getByRole('button', { name: 'Add to playlist' }).click()
   await expect(page.getByRole('dialog', { name: 'Add track to playlist' })).toBeVisible()
 })

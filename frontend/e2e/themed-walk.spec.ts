@@ -136,6 +136,8 @@ type Walk = {
   ready: (page: Page) => Locator
   /** A route with no card, panel or empty state of its own, so the card check has nothing to read. */
   cardless?: true
+  /** A route that hides the footer player, because the page has its own transport. */
+  playerHidden?: true
 }
 
 const ROUTES: Walk[] = [
@@ -237,6 +239,7 @@ const ROUTES: Walk[] = [
   {
     name: 'now-playing',
     cardless: true,
+    playerHidden: true,
     path: '/now-playing',
     ready: (page) => page.getByText('Morning finds the water'),
   },
@@ -306,20 +309,22 @@ for (const route of ROUTES) {
 
     await page.goto(route.path)
     await expect(route.ready(page)).toBeVisible()
-    await expect(page.locator('footer.live-player')).toContainText('First Light')
+    const player = page.locator('footer.live-player')
+    if (route.playerHidden) await expect(player).toBeHidden()
+    else await expect(player).toContainText('First Light')
 
     const colors = DEFAULT_THEME.colors
     const chrome = {
       body: await backgroundOf(page.locator('body')),
       nav: await backgroundOf(page.locator('.sidebar')),
-      player: await backgroundOf(page.locator('footer.live-player')),
+      player: route.playerHidden ? undefined : await backgroundOf(player),
     }
     // The light values themselves for the chrome, not only "not the dark ones": a surface that
     // went clear would show the light canvas through and pass a weaker check. A card may sit on
     // the canvas by design (the library grid does), so it is held to not being any dark surface.
     expect(chrome.body).toBe(rgb(LIGHT_THEME.colors['--color-canvas']))
     expect(chrome.nav).toBe(rgb(LIGHT_THEME.colors['--color-sidebar']))
-    expect(chrome.player).toBe(rgb(LIGHT_THEME.colors['--color-raised']))
+    if (!route.playerHidden) expect(chrome.player).toBe(rgb(LIGHT_THEME.colors['--color-raised']))
 
     // A card is whichever boxed surface the route has first: a music or library card, a panel.
     // Only the routes that say so have none; anywhere else a missing card is a missing surface.

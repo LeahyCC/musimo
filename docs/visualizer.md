@@ -45,6 +45,10 @@ The two audio elements are Musimo's rule, not the package's: previews stream fro
 
 Where WebGPU is missing, or the adapter or device cannot be had, the stage shows artwork exactly as before and says so once. There is no WebGL fallback and none is planned.
 
+## How big it draws
+
+On Now Playing the stage is 60% of the content width, up to about 760 px square on a wide desktop, and the full content width on a phone (see [the popout note](now-playing-popout.md#layout)). It used to be at most 320 px. The canvas and the post stack's offscreen textures follow the stage, so a docked stage now has several times the pixels it had, and the fluid's grid setting does not shrink that. The frame times in visimo's README were taken at the smaller size and have not been measured again at this one; check `data-frame-ms` on the canvas (H shows it) on a low-end machine before trusting them.
+
 ## The canvas attributes
 
 The package writes `data-adapter`, `data-frame-ms`, `data-scene`, `data-detail`, `data-post` and `data-preset` on the scene canvas, and `e2e/visualizer.spec.ts` asserts on all of them. They are visimo's public API, so a version bump that changes one breaks this suite; the class names `stage-visualizer` and `stage-hud` are Musimo's own and are passed to the stage as props.
