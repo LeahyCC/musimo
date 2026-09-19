@@ -71,7 +71,6 @@
   --text-subtitle: 21px;
   --text-display: 27px;
   --text-page: 32px;
-  --text-hero: clamp(36px, 6vw, 72px);
 
   /* Four radii cover the 4/6/8/12/14/22 the sheet grew. */
   --radius-sm: 4px;
