@@ -38,7 +38,10 @@ import {
   previewSchema,
 } from './api'
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from './api'
+import { crossfadeSpan } from './crossfade'
+import { useCrossfadeSeconds } from './crossfade-settings'
 import { cx } from './cx'
+import { fadeInGain, fadeOutGain, rampDown } from './fades'
 import {
   addToHistory,
   HISTORY_LISTEN_SECONDS,
@@ -48,6 +51,8 @@ import {
 } from './play-history'
 import { levelledVolume, playsAlbumInOrder, replayGainMultiplier } from './replay-gain'
 import { useReplayGainSettings } from './replay-gain-settings'
+import { SLEEP_FADE_SECONDS, sleepChoiceLabel } from './sleep-timer'
+import type { SleepChoice, SleepStatus } from './sleep-timer'
 import { Button, ErrorBanner, Field, IconButton, iconButtonClassName } from './ui'
 
 export type RepeatMode = 'off' | 'all' | 'one'
@@ -109,6 +114,10 @@ type Playback = {
   notice: string
   /** Empties the player, the footer's close button. Now Playing has one of its own. */
   stop: () => void
+  /** The sleep timer while one runs, else null. It is not saved: a reload clears it. */
+  sleep: SleepStatus | null
+  /** Starts a sleep timer, replacing any running one. Null cancels it. */
+  setSleep: (choice: SleepChoice | null) => void
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -148,12 +157,18 @@ const PlayerContext = createContext<Playback>({
   openPlaylistPicker: () => undefined,
   notice: '',
   stop: () => undefined,
+  sleep: null,
+  setSleep: () => undefined,
 })
 export const usePlayer = () => useContext(PlayerContext)
 
 const LIBRARY_NOTICE = 'Your Navidrome library'
 const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
 const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
+const SLEEP_ENDED_NOTICE = 'Sleep timer ended. Playback paused.'
+const SLEEP_CANCELLED_NOTICE = 'Sleep timer cancelled.'
+const SLEEP_QUEUE_LOST_NOTICE =
+  'Sleep timer cancelled. Shuffle and repeat never reach the end of the queue.'
 
 /** What Navidrome keeps in one saved play queue. The backend refuses more. */
 export const QUEUE_LIMIT = 500
@@ -369,6 +384,25 @@ const dataSaverOn = () =>
 /** Which of the two library elements. One plays while the other holds the next track. */
 type Slot = 0 | 1
 type Preload = { index: number; item: LibraryTrack; slot: Slot; failed: boolean }
+/**
+ * A crossfade in progress. The element that is fading out keeps playing its old track after the new
+ * one has taken over everywhere else; `out` and `in` are the two levels the fade holds right now,
+ * and `span` is how many seconds it was set to last.
+ */
+type Crossfade = {
+  element: HTMLAudioElement
+  item: LibraryTrack
+  index: number
+  span: number
+  out: number
+  in: number
+}
+type SleepTimer = { choice: SleepChoice; endsAt: number }
+
+// How often the fades are recomputed. Fine enough that a five second fade has no steps to hear.
+const ENVELOPE_TICK_MS = 100
+// A fading-out element with this little left is done: it is paused rather than left to its end.
+const FADE_DONE_SECONDS = 0.05
 
 export function stored(key: string, fallback: string) {
   try {
@@ -507,6 +541,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // What the standby element is loading, and whether that failed.
   const preload = useRef<Preload | null>(null)
   const handoverTimer = useRef<number | undefined>(undefined)
+  // Set while the old track is still fading out under the new one. See `Crossfade`.
+  const fadingOut = useRef<Crossfade | null>(null)
+  // The sleep timer, and the level its last five seconds have brought everything down to.
+  const sleepRef = useRef<SleepTimer | null>(null)
+  const sleepGain = useRef(1)
+  // Recomputes the fades while either is running, and stops itself when neither is.
+  const envelopeTimer = useRef<number | undefined>(undefined)
+  const tickRef = useRef<() => void>(() => undefined)
   // Library tracks in a row that failed to load. Any track that starts playing clears it.
   const failures = useRef(0)
   // Whether the loaded track was meant to start, so a skip past a broken one on a restored queue
@@ -546,16 +588,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function outputVolume(element: HTMLAudioElement | null): number | null {
     const { volume: set, shuffle: shuffled, replay } = levelling.current
     const base = Number.isFinite(set) ? Math.max(0, Math.min(1, set)) : 0.7
-    if (!element || element === previewAudio.current) return base
+    if (!element) return base
+    if (element === previewAudio.current) return base * sleepGain.current
     const slot: Slot = element === libraryA.current ? 0 : 1
     let target: { item: LibraryTrack | null; index: number } | null = null
-    if (slot === activeSlot.current) {
+    const fading = fadingOut.current
+    if (fading && element === fading.element) {
+      // Still playing the track that was handed over from, though the slot now counts as standby.
+      target = fading
+    } else if (slot === activeSlot.current) {
       target = { item: libraryCurrent.current, index: indexRef.current }
     } else if (preload.current?.slot === slot) {
       target = preload.current
     }
     if (!target) return null
-    if (!target.item) return base
+    const faded = base * envelope(element)
+    if (!target.item) return faded
     const inOrder = playsAlbumInOrder(queueRef.current, target.index, shuffled)
     const multiplier = replayGainMultiplier(
       target.item.replayGain,
@@ -563,7 +611,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       inOrder,
       replay.preampDb,
     )
-    return levelledVolume(base, multiplier)
+    return levelledVolume(faded, multiplier)
+  }
+
+  // What the sleep timer's fade and a crossfade take off an element's level, on top of the person's
+  // volume and the ReplayGain. 1 leaves it alone.
+  function envelope(element: HTMLAudioElement): number {
+    const fading = fadingOut.current
+    let crossfade = 1
+    if (fading) {
+      if (element === fading.element) crossfade = fading.out
+      else if (element === library()) crossfade = fading.in
+    }
+    return sleepGain.current * crossfade
   }
 
   function applyVolume() {
@@ -601,6 +661,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   })
   const [notice, setNotice] = useState('Choose a track to start listening.')
   const replaySettings = useReplayGainSettings()
+  const crossfadeSeconds = useCrossfadeSeconds()
+  // What the timer was set to, and for a minutes timer the whole seconds it has left. The running
+  // timer itself is `sleepRef`; these two exist to redraw the control.
+  const [sleepChoice, setSleepChoice] = useState<SleepChoice | null>(null)
+  const [sleepLeft, setSleepLeft] = useState(0)
   // What the volume needs, kept where the functions below (some run from timers and one-off
   // effects) read the latest of it rather than the render they were made in.
   const levelling = useRef({ volume, muted, shuffle, replay: replaySettings })
@@ -828,6 +893,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!preloadDue(length, active.currentTime)) return
     const held = preload.current
     if (held && held.item === queueRef.current[held.index]) return
+    // A crossfade is still playing its old track out of this element. A track too short to have
+    // finished the overlap yet asks for its successor early, and must not cut that off.
+    if (fadingOut.current?.element === element) return
     discardPreload()
     // Repeat one plays the same song again, and loading it early makes that gapless too.
     const index = repeat === 'one' ? indexRef.current : nextIndex()
@@ -860,15 +928,162 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     )
   }
 
-  // A track has played to its end, or is about to. Its listen is reported and the next one starts.
+  // Starts the overlap when the playing track is within the listener's crossfade of its end and the
+  // next one has loaded enough to play. Called on every timeupdate. The new track takes over at once,
+  // everywhere (queue, scrobble, Media Session, seek bar), which is what `finishTrack` does; the old
+  // one is left playing, quieter each tick, until the fade is done. If the next track is not ready
+  // in time this never fires, and the ordinary handover does the job.
+  function maybeCrossfade(active: HTMLAudioElement) {
+    const item = libraryCurrent.current
+    const held = preload.current
+    const incoming = standby()
+    if (!item || !held || held.failed || !incoming || active.paused || fadingOut.current) return
+    if (held.item !== queueRef.current[held.index]) return
+    if (incoming.readyState < HTMLMediaElement.HAVE_FUTURE_DATA) return
+    // A sleep timer ending after this track means there is nothing to overlap into.
+    if (sleepEndsAfterTrack()) return
+    const span = crossfadeSpan({
+      seconds: crossfadeSeconds,
+      repeat,
+      current: item,
+      currentIndex: indexRef.current,
+      upcoming: held.item,
+      upcomingIndex: held.index,
+      length: active.duration,
+      left: secondsLeft(active),
+    })
+    if (span <= 0) return
+    fadingOut.current = { element: active, item, index: indexRef.current, span, out: 1, in: 0 }
+    finishTrack(active)
+    ensureTicking()
+  }
+
+  // Ends the overlap: the old track's element stops and the new one goes to full level.
+  function endCrossfade() {
+    const fading = fadingOut.current
+    if (!fading) return
+    fadingOut.current = null
+    fading.element.pause()
+    applyVolume()
+  }
+
+  // A track has played to its end, or is about to. Its listen is reported and the next one starts,
+  // unless a sleep timer ends here.
   function finishTrack(finished: HTMLAudioElement) {
     window.clearTimeout(handoverTimer.current)
     // A track shorter than the listening threshold never reaches it, so its end counts. A
     // longer one that was scrubbed to its end without playing does not.
     if (finished.duration <= HISTORY_LISTEN_SECONDS) recordPlay()
     scrobble(true)
+    if (sleepEndsAfterTrack()) {
+      sleepAtTrackEnd(finished)
+      return
+    }
     if (repeat === 'one') loadLibrary(indexRef.current)
     else next()
+  }
+
+  // Whether a track or queue sleep timer ends when the playing track does.
+  function sleepEndsAfterTrack() {
+    const kind = sleepRef.current?.choice.kind
+    if (kind === 'track') return true
+    return kind === 'queue' && indexRef.current >= queueRef.current.length - 1
+  }
+
+  // The playing track ran out under a sleep timer. It has been reported like any finished track;
+  // playback pauses, and the track that would have followed is loaded ready, so pressing play
+  // carries on from there rather than replaying what the listener fell asleep to.
+  function sleepAtTrackEnd(finished: HTMLAudioElement) {
+    finished.pause()
+    window.clearTimeout(handoverTimer.current)
+    if (repeat === 'one') loadLibrary(indexRef.current, false)
+    else next(false)
+    clearSleep()
+    setNotice(SLEEP_ENDED_NOTICE)
+    saveQueue()
+  }
+
+  // A minutes timer ran out, possibly in the middle of a track or a crossfade.
+  function sleepPause() {
+    window.clearTimeout(handoverTimer.current)
+    fadingOut.current?.element.pause()
+    fadingOut.current = null
+    for (const element of elements()) element?.pause()
+    clearSleep()
+    setNotice(SLEEP_ENDED_NOTICE)
+  }
+
+  // Forgets the timer and puts the level back. Whatever ends a timer calls this after it has paused,
+  // so the level only comes back once nothing is playing.
+  function clearSleep() {
+    sleepRef.current = null
+    sleepGain.current = 1
+    setSleepChoice(null)
+    applyVolume()
+  }
+
+  function startSleep(choice: SleepChoice | null) {
+    if (!choice) {
+      clearSleep()
+      setNotice(SLEEP_CANCELLED_NOTICE)
+      return
+    }
+    sleepGain.current = 1
+    // The clock is the wall clock, so pausing does not stop a minutes timer.
+    const endsAt = choice.kind === 'minutes' ? Date.now() + choice.minutes * 60_000 : 0
+    sleepRef.current = { choice, endsAt }
+    setSleepChoice(choice)
+    setSleepLeft(choice.kind === 'minutes' ? choice.minutes * 60 : 0)
+    setNotice(`Sleep timer set for ${sleepChoiceLabel(choice)}.`)
+    ensureTicking()
+  }
+
+  // Seconds until the timer's fade should reach silence. Infinity while the timer is not in its last
+  // stretch, which the fade reads as full level.
+  function sleepSecondsLeft(timer: SleepTimer): number {
+    if (timer.choice.kind === 'minutes') return (timer.endsAt - Date.now()) / 1000
+    const playing = mode.current === 'library' ? library() : null
+    if (!playing) return Infinity
+    if (timer.choice.kind === 'queue' && indexRef.current < queueRef.current.length - 1)
+      return Infinity
+    return secondsLeft(playing)
+  }
+
+  function ensureTicking() {
+    if (envelopeTimer.current !== undefined) return
+    envelopeTimer.current = window.setInterval(() => tickRef.current(), ENVELOPE_TICK_MS)
+  }
+
+  // One step of the sleep fade and the crossfade. It reads refs only, because the interval that
+  // calls it outlives the render it was made in.
+  function tickEnvelope() {
+    const timer = sleepRef.current
+    if (timer) {
+      const left = sleepSecondsLeft(timer)
+      if (timer.choice.kind === 'minutes') {
+        if (left <= 0) {
+          sleepPause()
+          return
+        }
+        setSleepLeft(Math.ceil(left))
+      }
+      sleepGain.current = rampDown(left, SLEEP_FADE_SECONDS)
+    }
+    const fading = fadingOut.current
+    if (fading) {
+      const left = secondsLeft(fading.element)
+      if (fading.element.paused || left <= FADE_DONE_SECONDS) endCrossfade()
+      else {
+        const progress = 1 - left / fading.span
+        fading.out = fadeOutGain(progress)
+        fading.in = fadeInGain(progress)
+      }
+    }
+    applyVolume()
+    if (!sleepRef.current && !fadingOut.current) {
+      window.clearInterval(envelopeTimer.current)
+      envelopeTimer.current = undefined
+    }
   }
 
   // A library track would not load or play. Skips to the next and says which, until too many in a
@@ -901,10 +1116,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const outgoingSlot = activeSlot.current
     const outgoing = library()
     if (handOverTo !== null) activate(handOverTo)
+    // A crossfade that starts this handover keeps the old track playing. Any other load ends one
+    // that is still running: this one replaces both tracks.
+    const crossfading = handOver && fadingOut.current?.element === outgoing
+    if (!crossfading) fadingOut.current = null
     // Only one of the two plays at a time. The other element's pause event is
     // ignored once the mode has changed, so the state is set here instead. A track handed over
     // at its very end is left to finish its last moments rather than cut off.
-    const finishing = handOver && outgoing && secondsLeft(outgoing) <= HANDOVER_WINDOW_SECONDS / 2
+    const finishing =
+      handOver && outgoing && (crossfading || secondsLeft(outgoing) <= HANDOVER_WINDOW_SECONDS / 2)
     for (const element of elements()) {
       if (handOver && element === library()) continue
       if (finishing && element === outgoing) continue
@@ -946,8 +1166,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // A pause or another load cut this start short. That is not a refusal.
       if (error instanceof DOMException && error.name === 'AbortError') return
       if (error instanceof DOMException && error.name === 'NotAllowedError') {
-        // The browser will not start this element from a script. Go back to the one that will.
+        // The browser will not start this element from a script. Go back to the one that will. A
+        // crossfade cannot happen then, so the old track is cut for the new one as it was before.
         standbyBlocked.current = true
+        fadingOut.current = null
         activate(outgoingSlot)
         incoming.removeAttribute('src')
         incoming.load()
@@ -1048,8 +1270,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const element = current()
     const hasItem = mode.current === 'library' ? libraryCurrent.current : previewCurrent.current
     if (!element || !hasItem) return
-    if (!element.paused) element.pause()
-    else if (element.getAttribute('src'))
+    if (!element.paused) {
+      // Pausing in the middle of a crossfade cuts the old track rather than freezing two.
+      endCrossfade()
+      element.pause()
+    } else if (element.getAttribute('src'))
       void element.play().catch(() => setNotice('Cannot play this track.'))
     else if (previewCurrent.current) {
       previewStage.current = 1
@@ -1068,6 +1293,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     request.current?.abort()
     for (const element of elements()) element?.pause()
+    fadingOut.current = null
+    // A preview has no end of track or queue for a timer to wait for. A minutes timer still holds.
+    if (sleepRef.current && sleepRef.current.choice.kind !== 'minutes') clearSleep()
     discardPreload()
     setPlaying(false)
     mode.current = 'preview'
@@ -1105,6 +1333,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     loadLibrary(Math.max(0, indexRef.current - 1))
   }
 
+  // The interval reads the latest render's copy, not the one it was started from.
+  tickRef.current = tickEnvelope
+
+  // What the control shows. A track's time left is the seek bar's own clock; an album or queue adds
+  // the songs still to come; a minutes timer counts down on its own.
+  const trackLeft = Math.max(0, length - position)
+  const sleep: SleepStatus | null = sleepChoice
+    ? {
+        choice: sleepChoice,
+        remaining:
+          sleepChoice.kind === 'minutes'
+            ? sleepLeft
+            : sleepChoice.kind === 'track'
+              ? trackLeft
+              : trackLeft +
+                queue.slice(currentIndex + 1).reduce((total, item) => total + item.duration, 0),
+      }
+    : null
+
   const audioElement = useCallback(() => current(), [])
 
   function seek(seconds: number) {
@@ -1140,11 +1387,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     libraryCurrent.current = null
     sourceRef.current = ''
     setSource('')
+    fadingOut.current = null
     for (const element of elements()) {
       element?.pause()
       element?.removeAttribute('src')
       element?.load()
     }
+    // Closing the player ends any timer with it.
+    clearSleep()
     setTrack(null)
     setLibraryTrack(null)
     setPlaying(false)
@@ -1197,7 +1447,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     remember('musimo.player-repeat', repeat)
     // What plays next depends on both, so a song loaded for the old choice is dropped.
     discardPreload()
+    // With either on there is no last track to wait for, so an end of queue timer could never fire.
+    if (sleepRef.current?.choice.kind === 'queue' && (shuffle || repeat !== 'off')) {
+      clearSleep()
+      setNotice(SLEEP_QUEUE_LOST_NOTICE)
+    }
   }, [shuffle, repeat])
+
+  // Nothing is left ticking once the player is gone.
+  useEffect(() => () => window.clearInterval(envelopeTimer.current), [])
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -1379,6 +1637,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           saveQueue()
         }
         if (!element.paused) ensurePreload(element)
+        maybeCrossfade(element)
         scheduleHandover(element)
       },
       onDurationChange: (event: MediaEvent) => {
@@ -1466,6 +1725,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         openPlaylistPicker: openPlaylistDialog,
         notice,
         stop,
+        sleep,
+        setSleep: startSleep,
       }}
     >
       {children}

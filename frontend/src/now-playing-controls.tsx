@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router'
 import {
+  Moon,
   Pause,
   Play,
   Plus,
@@ -15,7 +16,50 @@ import {
 
 import type { LibraryTrack } from './api'
 import { durationText, isPassiveNotice, usePlayer } from './player'
-import { Button, IconButton } from './ui'
+import { parseSleepChoice, SLEEP_MINUTES, sleepChoiceValue } from './sleep-timer'
+import { Button, FieldSelect, IconButton } from './ui'
+
+// A native select keeps this reachable by keyboard, screen reader and phone picker with no menu
+// code. Picking Off cancels; the cancel button beside a running timer does the same in one press.
+function SleepTimerControl() {
+  const { sleep, setSleep, shuffle, repeat } = usePlayer()
+  // Shuffle and repeat never come to the last track, so the timer that waits for it is not offered.
+  const noQueueEnd = shuffle || repeat !== 'off'
+  return (
+    <div className="flex items-center gap-[4px]">
+      <Moon size={16} aria-hidden="true" className="shrink-0" />
+      <FieldSelect
+        tone="sunken"
+        fullWidth={false}
+        className="max-w-[210px] coarse:min-h-11"
+        aria-label="Sleep timer"
+        value={sleep ? sleepChoiceValue(sleep.choice) : 'off'}
+        onChange={(event) => setSleep(parseSleepChoice(event.target.value))}
+      >
+        <option value="off">Sleep timer off</option>
+        <option value="track">End of track</option>
+        <option value="queue" disabled={noQueueEnd}>
+          {noQueueEnd
+            ? 'End of album or queue (not with shuffle or repeat)'
+            : 'End of album or queue'}
+        </option>
+        {SLEEP_MINUTES.map((minutes) => (
+          <option key={minutes} value={minutes}>
+            {minutes} minutes
+          </option>
+        ))}
+      </FieldSelect>
+      {sleep && (
+        <>
+          <span className="text-tiny tabular-nums">{durationText(sleep.remaining)} left</span>
+          <IconButton size="compact" aria-label="Cancel sleep timer" onClick={() => setSleep(null)}>
+            <X size={14} />
+          </IconButton>
+        </>
+      )}
+    </div>
+  )
+}
 
 // Under the stage on Now Playing: what is playing, and every control the footer player has. The
 // footer stands down on this page, so this is the only place they are, and it stays on screen
@@ -138,28 +182,31 @@ export function NowPlayingControls({ track }: { track: LibraryTrack }) {
             {player.repeat === 'one' && <small className="-ml-[4px] text-micro">1</small>}
           </IconButton>
         </div>
-        <div className="flex items-center gap-[4px]">
-          <IconButton
-            size="compact"
-            aria-label={player.muted ? 'Unmute' : 'Mute'}
-            onClick={player.toggleMute}
-          >
-            {player.muted || player.volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-          </IconButton>
-          {/* A phone leaves the volume to the device's own buttons, as the footer's mini player does. */}
-          <input
-            className="w-[80px] accent-accent max-phone:hidden"
-            type="range"
-            aria-label="Volume"
-            min="0"
-            max="1"
-            step="0.01"
-            value={player.muted ? 0 : player.volume}
-            onChange={(event) => player.setVolume(Number(event.target.value))}
-          />
-          <IconButton size="compact" aria-label="Close player" onClick={player.stop}>
-            <X size={16} />
-          </IconButton>
+        <div className="flex flex-wrap items-center gap-x-[12px] gap-y-[4px]">
+          <SleepTimerControl />
+          <div className="flex items-center gap-[4px]">
+            <IconButton
+              size="compact"
+              aria-label={player.muted ? 'Unmute' : 'Mute'}
+              onClick={player.toggleMute}
+            >
+              {player.muted || player.volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+            </IconButton>
+            {/* A phone leaves the volume to the device's own buttons, as the footer's mini player does. */}
+            <input
+              className="w-[80px] accent-accent max-phone:hidden"
+              type="range"
+              aria-label="Volume"
+              min="0"
+              max="1"
+              step="0.01"
+              value={player.muted ? 0 : player.volume}
+              onChange={(event) => player.setVolume(Number(event.target.value))}
+            />
+            <IconButton size="compact" aria-label="Close player" onClick={player.stop}>
+              <X size={16} />
+            </IconButton>
+          </div>
         </div>
       </div>
       {/* Errors and confirmations only. Empty, it leaves the flow, so the column keeps its room

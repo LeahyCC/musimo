@@ -67,7 +67,9 @@ Export writes `<theme name>.musimo-theme.json` through the browser's own downloa
 
 ### Playback
 
-Volume levelling for library playback, kept in this browser like the rest. **Volume levelling** is a select: Off, Track (the default) or Album (automatic). **Pre-amp** is a second select, from −6 to +6 dB in 3 dB steps, default 0, and is disabled while levelling is Off. Both apply as they are chosen, including to a track already playing, and are stored under `musimo.replay-gain` and `musimo.replay-gain-preamp`. A missing or unreadable value means the default. How the gain is worked out is in [Volume levelling](player.md#volume-levelling).
+Volume levelling and crossfade for library playback, kept in this browser like the rest. **Volume levelling** is a select: Off, Track (the default) or Album (automatic). **Pre-amp** is a second select, from −6 to +6 dB in 3 dB steps, default 0, and is disabled while levelling is Off. **Crossfade** is a third, Off (the default) or 1 to 12 seconds. All three apply as they are chosen, including to a track already playing, and are stored under `musimo.replay-gain`, `musimo.replay-gain-preamp` and `musimo.crossfade`. A missing or unreadable value means the default. How the gain is worked out is in [Volume levelling](player.md#volume-levelling).
+
+Crossfade overlaps the end of one library track with the start of the next. It is never used between consecutive tracks of the same album played in order, which run on gaplessly, or for repeat one, and it needs the next track to have loaded in time, so on a metered connection (data saver) tracks simply follow one another. How it works is in [Crossfade](player.md#crossfade). The sleep timer is not a setting: it is on the Now Playing controls, and is not kept ([Sleep timer](player.md#sleep-timer)).
 
 Musimo does not write ReplayGain tags when it downloads yet, so only files that were tagged elsewhere are levelled. A file without the tags plays as it is, whatever these say.
 
