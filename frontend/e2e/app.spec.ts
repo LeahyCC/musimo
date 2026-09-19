@@ -413,6 +413,26 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
   expect(attempts).toBe(2)
 })
 
+test('now playing says a preview is playing instead of nothing', async ({ page }) => {
+  await page.route('**/api/preview/101?*', (route) =>
+    route.fulfill({
+      json: { url: '/assets/e2e-silence.wav', source: 'Generated' },
+    }),
+  )
+  await page.goto('/search?q=Fixture&tab=track')
+  await page.getByRole('button', { name: 'Find preview Test recording' }).click()
+  const player = page.getByRole('contentinfo')
+  await expect(player.getByRole('slider', { name: 'Preview position' })).toBeEnabled()
+
+  // Through the palette, so the tab does not reload and the preview keeps playing.
+  await page.keyboard.press('Control+k')
+  await page.getByRole('dialog').getByRole('button', { name: 'Now Playing', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'A preview is playing.' })).toBeVisible()
+  await expect(page.getByText('play with tracks from your library')).toBeVisible()
+  // The preview's only controls are the footer's, so it stays on this page.
+  await expect(player.getByRole('slider', { name: 'Preview position' })).toBeVisible()
+})
+
 test('preview playback, volume and navigation remain usable', async ({ page, isMobile }) => {
   await page.route('**/api/preview/101?*', (route) =>
     route.fulfill({

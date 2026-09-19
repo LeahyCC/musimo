@@ -1902,7 +1902,18 @@ export function NowPlayingPage() {
     return (
       <EmptyPanel tall>
         <Disc3 size={40} />
-        <h1>Nothing playing yet.</h1>
+        {/* A catalog preview can never reach the stage: its audio has no CORS headers, so the
+            visualizer cannot read it. Say so rather than claim nothing is playing. */}
+        {player.track ? (
+          <>
+            <h1>A preview is playing.</h1>
+            <p className="text-muted">
+              Now Playing and its visuals play with tracks from your library.
+            </p>
+          </>
+        ) : (
+          <h1>Nothing playing yet.</h1>
+        )}
         <Link data-ui="button" className={buttonClassName('primary', 'mx-auto')} to="/library">
           Open your library
         </Link>
