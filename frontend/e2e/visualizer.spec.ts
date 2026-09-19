@@ -32,7 +32,7 @@ async function openNowPlaying(page: Page) {
   )
   await page.goto('/library/albums/album-1')
   await page.getByRole('button', { name: 'Play all' }).click()
-  await page.getByRole('link', { name: 'Open Now Playing' }).click()
+  await page.getByRole('link', { name: 'Open Now Playing' }).first().click()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
   return page.locator('.stage')
 }
@@ -79,7 +79,10 @@ test('with WebGPU the visualizer is the default, V and the button switch it, and
   // Structure only: which post stages are running, not what they look like.
   await expect(canvas).toHaveAttribute('data-post', /feedback bloom chroma tonemap grain/)
   await stage.hover()
-  await expect(stage.getByRole('button', { name: 'Show artwork' })).toBeVisible()
+  await expect(stage.getByRole('button', { name: /^Visualizer/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
   await expect(stage.getByRole('combobox', { name: 'Preset' })).toBeVisible()
   await expect(stage.getByRole('combobox', { name: 'Fluid grid' })).toBeVisible()
   // Two scenes, so the select is drawn. Fluid stays the default, and the grid
@@ -108,7 +111,9 @@ test('with WebGPU the visualizer is the default, V and the button switch it, and
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
   await expect(page.locator('.stage img.stage-art')).toBeVisible()
   await page.locator('.stage').hover()
-  await page.getByRole('button', { name: 'Show visualizer' }).click()
+  const toggle = page.getByRole('button', { name: /^Visualizer/ })
+  await expect(toggle).toHaveAttribute('aria-pressed', 'false')
+  await toggle.click()
   await expect(page.locator('.stage canvas.stage-visualizer')).toBeVisible()
   expect(await page.evaluate(() => localStorage.getItem('musimo.now-playing-view'))).toBe(
     'visualizer',

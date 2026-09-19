@@ -39,11 +39,29 @@ The stage, its keys and what the browser remembers:
 | `musimo.visualizer-fluid-grid`         | 512 or 1024                                       |
 | `musimo.now-playing-visualizer-notice` | the one-time notice shown where WebGPU is missing |
 
+The same choices can be made from `/settings/user`, under Visualizer: default view (Artwork or Visualizer), preset (grouped by scene, the same list the stage's select shows) and fluid detail (512 or 1024). That section does not read or write the keys itself. It calls `useNowPlayingPopout()`, so it shares the provider's state with the stage: an open stage changes at once and the two cannot disagree. It is disabled with a one-line reason while `canVisualize` is false, and links to Now Playing. `e2e/app.spec.ts` checks that the default view control writes `musimo.now-playing-view`, and that the section is disabled with its reason where there is no WebGPU. See [settings](settings.md#your-settings).
+
 A preset names a scene, so choosing a preset moves the scene select under it and choosing a scene moves to that scene's first preset. The scene select is not drawn while `SCENE_IDS` has one entry in it. H toggles the package's debug overlay.
 
-The two audio elements are Musimo's rule, not the package's: previews stream from provider CDNs without CORS headers, and a media element source on such audio is silenced permanently. `player.tsx` keeps one element for previews and one for library tracks, and only the library element is ever handed to `attachAudio`.
+The way into all of this is a labeled Visualizer control on the stage (On or Off, with a `V` hint), and while it is on, the preset's name between `[` and `]` hints, where the name is the preset select. It stays on screen while the rest of the overlay fades when idle, at reduced opacity, and hides with them only in full screen and in the popout window, which is too small to keep it. It is what makes the keys discoverable; the keys themselves are unchanged. See [the popout note](now-playing-popout.md#now-playing).
+
+## The command palette
+
+Ctrl+K also offers four visualizer commands: Toggle visualizer, Next visualizer preset, Previous visualizer preset and Fullscreen visualizer. Each goes to `/now-playing` first if the tab is elsewhere, then calls the same `PopoutProvider` functions the stage's own controls call (`toggleView`, `cyclePreset`), so the palette never writes the keys above itself. The two preset commands and Fullscreen switch the stage to the visualizer first, since a preset change on artwork would show nothing. Toggle visualizer only toggles while Now Playing is in front; from another route it arrives with the visualizer on, since a toggle on a stage nobody can see could land on the page with the visuals just switched off. `e2e/app.spec.ts` checks that, and that the commands are absent without WebGPU.
+
+All four are left out of the list while `canVisualize` is false, so a browser without WebGPU never sees them.
+
+Fullscreen needs a user gesture, and the palette selection is one. `PopoutProvider` exposes the docked stage's element as `dockedStage`. If it is mounted the click handler calls `requestFullscreen()` on it directly. If it is not (another route, or the stage is playing in the popout) the handler calls `popoutToFullscreen`, which closes the popout, navigates, and lets the stage request fullscreen when it mounts. Either way a rejected request leaves the user on Now Playing with the "Press F" notice.
+
+`palette.tsx` imports only `now-playing-popout`, which is already in the main chunk, and nothing from `visimo`, so the palette adds nothing to the main bundle.
+
+The two audio elements are Musimo's rule, not the package's: previews stream from provider CDNs without CORS headers, and a media element source on such audio is silenced permanently. `player.tsx` keeps one element for previews and one for library tracks, and only the library element is ever handed to `attachAudio`. Someone playing a preview who opens Now Playing is told so: the page says a preview is playing and that the visuals play with library tracks, rather than "Nothing playing yet".
 
 Where WebGPU is missing, or the adapter or device cannot be had, the stage shows artwork exactly as before and says so once. There is no WebGL fallback and none is planned.
+
+## How big it draws
+
+On Now Playing the stage is 60% of the content width, up to about 760 px square on a wide desktop, and the full content width on a phone (see [the popout note](now-playing-popout.md#layout)). It used to be at most 320 px. The canvas and the post stack's offscreen textures follow the stage, so a docked stage now has several times the pixels it had, and the fluid's grid setting does not shrink that. The frame times in visimo's README were taken at the smaller size and have not been measured again at this one; check `data-frame-ms` on the canvas (H shows it) on a low-end machine before trusting them.
 
 ## The canvas attributes
 

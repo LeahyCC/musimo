@@ -1902,7 +1902,18 @@ export function NowPlayingPage() {
     return (
       <EmptyPanel tall>
         <Disc3 size={40} />
-        <h1>Nothing playing yet.</h1>
+        {/* A catalog preview can never reach the stage: its audio has no CORS headers, so the
+            visualizer cannot read it. Say so rather than claim nothing is playing. */}
+        {player.track ? (
+          <>
+            <h1>A preview is playing.</h1>
+            <p className="text-muted">
+              Now Playing and its visuals play with tracks from your library.
+            </p>
+          </>
+        ) : (
+          <h1>Nothing playing yet.</h1>
+        )}
         <Link data-ui="button" className={buttonClassName('primary', 'mx-auto')} to="/library">
           Open your library
         </Link>
@@ -1912,21 +1923,25 @@ export function NowPlayingPage() {
   const words = lyrics.data?.items[0]?.line ?? []
   return (
     <div className="grid gap-[30px]">
-      <section className="grid grid-cols-[minmax(180px,320px)_1fr] items-end gap-[34px] max-phone:grid-cols-1">
+      {/* The stage is the page: 60% of the width, the details beside it. The height term keeps a
+          square stage, controls and all, above the fold in a short window, at the cost of some of
+          that width. A phone stacks them, the stage across the full width. */}
+      <section className="grid grid-cols-[minmax(0,min(60%,calc(100dvh_-_var(--topbar-height)_-_84px)))_minmax(0,1fr)] items-end gap-[30px] max-phone:grid-cols-1">
         <NowPlayingStage />
         <div className="min-w-0">
           <p className="mb-[12px] text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
             NOW PLAYING
           </p>
-          {/* Three lines at the full hero size, then an ellipsis: a long title keeps its size
-              rather than shrinking, and the whole of it is still in the stage and the footer. */}
+          {/* The page heading's own size, so the stage stays the biggest thing here. Three lines,
+              then an ellipsis: a long title keeps its size rather than shrinking, and the whole of
+              it is still in the stage's controls. */}
           <h1
-            className="my-[8px] line-clamp-3 text-hero leading-[1.2] [overflow-wrap:anywhere]"
+            className="my-[8px] line-clamp-3 leading-[1.2] [overflow-wrap:anywhere]"
             title={track.title}
           >
             {track.title}
           </h1>
-          <p>
+          <p className="[overflow-wrap:anywhere]">
             {track.artistId ? (
               <Link
                 className="hover:underline"
@@ -1956,11 +1971,16 @@ export function NowPlayingPage() {
             )}
           </p>
           <div className="mt-[20px] flex flex-wrap items-center gap-[16px]">
-            {/* The footer's own add button is hidden on phones, so the page offers one too. */}
+            {/* The footer is hidden here, so the page offers the add button itself. */}
             <Button onClick={player.openPlaylistPicker}>
               <Plus size={16} /> Add to playlist
             </Button>
           </div>
+          {/* The footer's status line, which is hidden with it: a track that will not play, or a
+              playlist just made from the button above, would otherwise say nothing here. */}
+          <p className="mt-[14px] text-small text-muted" role="status">
+            {player.notice}
+          </p>
         </div>
       </section>
       <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)] gap-[18px] max-tablet:grid-cols-1">

@@ -3,7 +3,6 @@ import type { RefObject } from 'react'
 
 import {
   Disc3,
-  Image as ImageIcon,
   Maximize2,
   Minimize2,
   Pause,
@@ -25,7 +24,7 @@ import type { Preset } from 'visimo/presets'
 
 import { cx } from './cx'
 import { artUrl, durationText, usePlayer } from './player'
-import { IconButton } from './ui'
+import { IconButton, Kbd } from './ui'
 import type { IconButtonProps } from './ui'
 
 export type StagePlacement = 'docked' | 'popout'
@@ -55,10 +54,16 @@ function StageButton(props: IconButtonProps) {
   return <IconButton variant="on-media" size="compact" {...props} />
 }
 
-/* `idle` on the stage (its `group`) fades the overlay and stops the bars catching the pointer. */
-const stageBarClassName = 'pointer-events-auto flex items-center group-[.idle]:pointer-events-none'
+/* `idle` on the stage (its `group`) fades the two bars and stops them catching the pointer. The
+   visualizer control sits outside them, so it can stay on screen when they have gone. */
+const stageBarClassName =
+  'pointer-events-auto flex items-center transition-opacity duration-250 group-[.idle]:pointer-events-none group-[.idle]:opacity-0'
 const stageSelectClassName =
   'h-[32px] rounded-[8px] border border-on-media/20 bg-scrim/60 px-[8px] text-small text-on-media'
+/* The visualizer control is always over the picture, so it draws on the media color and not on
+   the page's. */
+const viewControlClassName =
+  'inline-flex h-[32px] items-center rounded-[8px] border border-on-media/30 bg-media/70 text-small text-on-media coarse:min-h-11'
 
 // The overlay fades out after a short still spell while music plays, and the
 // cursor goes with it. It stays while paused, while the pointer rests on a
@@ -246,7 +251,7 @@ export function NowPlayingOverlay({
         ? 'Exit full screen'
         : 'Full screen'
   return (
-    <div className="stage-overlay pointer-events-none absolute inset-0 flex flex-col justify-between transition-opacity duration-250 group-[.idle]:opacity-0">
+    <div className="stage-overlay pointer-events-none absolute inset-0 flex flex-col justify-between">
       <div
         className={cx(
           'stage-top justify-between gap-[8px] bg-linear-to-b from-scrim/67 to-transparent px-[16px] pt-[14px] pb-[24px]',
@@ -260,24 +265,6 @@ export function NowPlayingOverlay({
           {player.playing ? 'Playing' : 'Paused'}
         </span>
         <div className="flex gap-[4px]">
-          {view === 'visualizer' && preset && onPreset && (
-            <select
-              className={stageSelectClassName}
-              aria-label="Preset"
-              value={preset.id}
-              onChange={(event) => onPreset(event.target.value)}
-            >
-              {SCENE_IDS.map((id) => (
-                <optgroup key={id} label={SCENE_LABELS[id]}>
-                  {PRESETS.filter((entry) => entry.scene === id).map((entry) => (
-                    <option key={entry.id} value={entry.id}>
-                      {entry.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </select>
-          )}
           {/* Nothing to choose while there is one scene, so it is not shown. */}
           {view === 'visualizer' && onScene && SCENE_IDS.length > 1 && (
             <select
@@ -310,14 +297,6 @@ export function NowPlayingOverlay({
               ))}
             </select>
           )}
-          {view && onToggleView && (
-            <StageButton
-              aria-label={view === 'visualizer' ? 'Show artwork' : 'Show visualizer'}
-              onClick={onToggleView}
-            >
-              {view === 'visualizer' ? <ImageIcon size={17} /> : <Sparkles size={17} />}
-            </StageButton>
-          )}
           {onPopout && (
             <StageButton aria-label="Pop out player" onClick={onPopout}>
               <PictureInPicture2 size={17} />
@@ -328,6 +307,65 @@ export function NowPlayingOverlay({
           </StageButton>
         </div>
       </div>
+      {/* Outside both bars on purpose: it dims when they fade, but stays. In full screen and in
+          the popout it goes with them, so the visuals are clean and a small window is not covered. */}
+      {view && onToggleView && (
+        <div
+          className={cx(
+            'stage-view-control pointer-events-auto absolute top-[56px] left-[16px] flex max-w-[calc(100%-32px)] flex-wrap items-center gap-[6px] transition-opacity duration-250',
+            // A popout is small, and the control would sit on most of the picture for good.
+            fullscreen || placement === 'popout'
+              ? 'group-[.idle]:pointer-events-none group-[.idle]:opacity-0'
+              : 'group-[.idle]:opacity-70',
+          )}
+        >
+          <button
+            type="button"
+            className={cx(viewControlClassName, 'gap-[6px] pr-[4px] pl-[10px]')}
+            aria-pressed={view === 'visualizer'}
+            onClick={onToggleView}
+          >
+            <Sparkles size={15} />
+            Visualizer
+            {/* `aria-pressed` already says which way it is, so the badge and the key are for the eye. */}
+            <span
+              aria-hidden="true"
+              className={cx(
+                'rounded-[6px] px-[6px] text-tiny font-semibold',
+                view === 'visualizer' ? 'bg-on-media text-media' : 'bg-on-media/20',
+              )}
+            >
+              {view === 'visualizer' ? 'On' : 'Off'}
+            </span>
+            <Kbd aria-hidden="true" className="border-on-media/40! text-on-media/80">
+              V
+            </Kbd>
+          </button>
+          {view === 'visualizer' && preset && onPreset && (
+            <>
+              <Kbd className="border-on-media/40! text-on-media/80">[</Kbd>
+              {/* The name is the select's own text, so a click opens the list natively. */}
+              <select
+                className={cx(viewControlClassName, 'max-w-[180px] truncate px-[8px]')}
+                aria-label="Preset"
+                value={preset.id}
+                onChange={(event) => onPreset(event.target.value)}
+              >
+                {SCENE_IDS.map((id) => (
+                  <optgroup key={id} label={SCENE_LABELS[id]}>
+                    {PRESETS.filter((entry) => entry.scene === id).map((entry) => (
+                      <option key={entry.id} value={entry.id}>
+                        {entry.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </select>
+              <Kbd className="border-on-media/40! text-on-media/80">]</Kbd>
+            </>
+          )}
+        </div>
+      )}
       <div
         className={cx(
           'stage-controls flex-wrap gap-[8px] bg-linear-to-b from-transparent to-scrim/80 px-[16px] pt-[28px] pb-[14px] text-on-media max-phone:gap-[4px]',

@@ -413,6 +413,26 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
   expect(attempts).toBe(2)
 })
 
+test('now playing says a preview is playing instead of nothing', async ({ page }) => {
+  await page.route('**/api/preview/101?*', (route) =>
+    route.fulfill({
+      json: { url: '/assets/e2e-silence.wav', source: 'Generated' },
+    }),
+  )
+  await page.goto('/search?q=Fixture&tab=track')
+  await page.getByRole('button', { name: 'Find preview Test recording' }).click()
+  const player = page.getByRole('contentinfo')
+  await expect(player.getByRole('slider', { name: 'Preview position' })).toBeEnabled()
+
+  // Through the palette, so the tab does not reload and the preview keeps playing.
+  await page.keyboard.press('Control+k')
+  await page.getByRole('dialog').getByRole('button', { name: 'Now Playing', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'A preview is playing.' })).toBeVisible()
+  await expect(page.getByText('play with tracks from your library')).toBeVisible()
+  // The preview's only controls are the footer's, so it stays on this page.
+  await expect(player.getByRole('slider', { name: 'Preview position' })).toBeVisible()
+})
+
 test('preview playback, volume and navigation remain usable', async ({ page, isMobile }) => {
   await page.route('**/api/preview/101?*', (route) =>
     route.fulfill({
@@ -715,6 +735,58 @@ test('command palette includes library and now playing', async ({ page }) => {
   await expect(palette.getByRole('button', { name: /Library/ })).toBeVisible()
   await expect(palette.getByRole('button', { name: /Now Playing/ })).toBeVisible()
   await expect(palette.getByRole('button', { name: /Settings/ })).toBeVisible()
+})
+
+test('the visualizer settings change what Now Playing remembers', async ({ page }) => {
+  // The section only asks whether the browser has the API, so a bare object stands in for it.
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'gpu', { value: {}, configurable: true }),
+  )
+  await page.goto('/settings/user')
+  const view = page.getByRole('combobox', { name: 'Default view' })
+  await expect(view).toHaveValue('visualizer')
+  await view.selectOption('artwork')
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('musimo.now-playing-view')))
+    .toBe('artwork')
+})
+
+test('the visualizer settings are disabled with a reason where there is no WebGPU', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
+  )
+  await page.goto('/settings/user')
+  await expect(page.getByText('The visualizer needs WebGPU')).toBeVisible()
+  await expect(page.getByRole('combobox', { name: 'Default view' })).toBeDisabled()
+})
+
+test('command palette offers the visualizer commands only where WebGPU exists', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
+  )
+  await page.goto('/')
+  await page.keyboard.press('Control+k')
+  const palette = page.getByRole('dialog')
+  await expect(palette.getByRole('button', { name: 'Now Playing' })).toBeVisible()
+  await expect(palette.getByRole('button', { name: 'Toggle visualizer' })).toHaveCount(0)
+})
+
+test('toggle visualizer from another route lands on Now Playing with it on', async ({ page }) => {
+  // The palette only asks whether the browser has the API, so a bare object stands in for it.
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'gpu', { value: {}, configurable: true }),
+  )
+  await page.goto('/')
+  await page.keyboard.press('Control+k')
+  await page.getByRole('dialog').getByRole('button', { name: 'Toggle visualizer' }).click()
+  await expect(page).toHaveURL(/\/now-playing$/)
+  expect(await page.evaluate(() => localStorage.getItem('musimo.now-playing-view'))).toBe(
+    'visualizer',
+  )
 })
 
 test('track link focuses highlighted row and back to results restores search', async ({ page }) => {

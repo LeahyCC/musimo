@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react'
 
-import { useNavigate } from '@tanstack/react-router'
+import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { Search } from 'lucide-react'
 
-const commands = [
+import { useNowPlayingPopout } from './now-playing-popout'
+
+const pages = [
   { label: 'Search music', to: '/search' },
   { label: 'Library', to: '/library' },
   { label: 'Now Playing', to: '/now-playing' },
@@ -13,6 +15,8 @@ const commands = [
   { label: 'Diagnostics', to: '/diagnostics' },
 ] as const
 
+type Command = { label: string; run: () => void }
+
 const commandClassName =
   'rounded-md border-0 bg-transparent p-[10px] text-left text-inherit hover:bg-active focus-visible:bg-active'
 
@@ -21,6 +25,61 @@ export function CommandPalette() {
   const input = useRef<HTMLInputElement>(null)
   const [text, setText] = useState('')
   const navigate = useNavigate()
+  const onStage = useRouterState({ select: (state) => state.location.pathname === '/now-playing' })
+  const popout = useNowPlayingPopout()
+
+  const showStage = () => {
+    if (!onStage) void navigate({ to: '/now-playing' })
+  }
+
+  // Presets are only visible on the visualizer, so the commands that act on
+  // it switch the stage to it first. Everything goes through the provider's
+  // state; it owns what the browser remembers.
+  const showVisualizer = () => {
+    showStage()
+    if (popout.view !== 'visualizer') popout.toggleView()
+  }
+
+  const cycle = (delta: number) => {
+    showVisualizer()
+    popout.cyclePreset(delta)
+  }
+
+  const fullscreenVisualizer = () => {
+    showVisualizer()
+    const stage = popout.dockedStage.current
+    if (stage) {
+      // Already mounted, so ask now, while the click still counts as a gesture.
+      stage
+        .requestFullscreen()
+        .catch(() => popout.setNotice('Press F on the player for full screen.'))
+
+      return
+    }
+    // Not on screen (another route, or playing in the popout). The provider closes the popout,
+    // navigates, and asks once the stage mounts. If that is refused the user is still on Now
+    // Playing with a notice, which is the fallback to plain navigation.
+    popout.popoutToFullscreen()
+  }
+  // No WebGPU means the stage only ever shows artwork, so these would do nothing.
+  const visualizerCommands: Command[] = popout.canVisualize
+    ? [
+        {
+          label: 'Toggle visualizer',
+          // From another route the stage is out of sight, so a toggle there could land on Now
+          // Playing with the visualizer just switched off. Arriving always shows it; toggling
+          // is for when the stage is already in front.
+          run: () => (onStage ? popout.toggleView() : showVisualizer()),
+        },
+        { label: 'Next visualizer preset', run: () => cycle(1) },
+        { label: 'Previous visualizer preset', run: () => cycle(-1) },
+        { label: 'Fullscreen visualizer', run: fullscreenVisualizer },
+      ]
+    : []
+  const commands: Command[] = [
+    ...pages.map((page) => ({ label: page.label, run: () => void navigate({ to: page.to }) })),
+    ...visualizerCommands,
+  ]
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
@@ -70,11 +129,11 @@ export function CommandPalette() {
       <div className="flex flex-col gap-[4px] py-[15px]">
         {options.map((command) => (
           <button
-            key={command.to}
+            key={command.label}
             className={commandClassName}
             onClick={() => {
               dialog.current?.close()
-              void navigate({ to: command.to })
+              command.run()
             }}
           >
             {command.label}

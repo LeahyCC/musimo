@@ -64,7 +64,6 @@
   --text-subtitle: 16px;
   --text-display: 22px;
   --text-page: 22px;
-  --text-hero: 44px;
 }
 
 /* Text with no size of its own takes the body's. On <body>, not <html>, so rem spacing keeps its size. */

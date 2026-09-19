@@ -258,10 +258,20 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
   await page.locator('.live-player').getByRole('link', { name: 'Clear Water' }).click()
   await expect(page).toHaveURL(/\/library\/albums\/album-1$/)
 
-  // The phone mini player has no maximise control; its title is the way in.
-  if (isMobile)
-    await page.locator('.live-player').getByRole('link', { name: 'First Light' }).click()
-  else await page.getByRole('link', { name: 'Open Now Playing' }).click()
+  // The cover opens Now Playing on every width; the maximise icon beside it is desktop only.
+  await page.locator('.live-player').getByRole('link', { name: 'Open Now Playing' }).first().click()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
   await expect(page.getByText('Morning finds the water')).toBeVisible()
+
+  // On desktop the sidebar's last row is Now Playing with the cover as its icon and it is marked
+  // active here. A phone's bottom bar stays at five items, so the row is not there.
+  const navRow = page
+    .getByRole('navigation', { name: 'Main navigation' })
+    .getByRole('link', { name: 'Now Playing' })
+  if (isMobile) {
+    await expect(navRow).toBeHidden()
+  } else {
+    await expect(navRow).toHaveAttribute('aria-current', 'page')
+    await expect(navRow.locator('img')).toBeVisible()
+  }
 })
