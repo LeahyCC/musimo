@@ -882,12 +882,19 @@ export function UserSettingsPage() {
           </>
         )}
       </section>
-      <div className="mt-[32px]">
-        <PlaybackSettings />
-      </div>
-      <div className="mt-[32px]">
-        <VisualizerSettings />
-      </div>
+      {/* Editing a theme is a mode of its own, with Save and Cancel in a bar that sticks to the
+          bottom of the Appearance section. Anything below that section would let the bar scroll
+          away at the end of the page, so the other settings wait until the edit is done. */}
+      {!edit && (
+        <>
+          <div className="mt-[32px]">
+            <PlaybackSettings />
+          </div>
+          <div className="mt-[32px]">
+            <VisualizerSettings />
+          </div>
+        </>
+      )}
     </>
   )
 }
