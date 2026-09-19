@@ -48,6 +48,8 @@ TRACK_FIELDS = (
     "genre",
     "created",
     "playCount",
+    # OpenSubsonic's loudness tags, present only on files that carry them.
+    "replayGain",
 )
 TRACK_WINDOWS = 4
 TRACK_CACHE_SECONDS = 60

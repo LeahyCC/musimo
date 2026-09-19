@@ -46,6 +46,8 @@ import {
   readHistory,
   writeHistory,
 } from './play-history'
+import { levelledVolume, playsAlbumInOrder, replayGainMultiplier } from './replay-gain'
+import { useReplayGainSettings } from './replay-gain-settings'
 import { Button, ErrorBanner, Field, IconButton, iconButtonClassName } from './ui'
 
 export type RepeatMode = 'off' | 'all' | 'one'
@@ -537,6 +539,42 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  // What an element's `volume` should be: the person's setting times the ReplayGain of the track it
+  // holds, so the slider keeps reading what they set. The standby element is levelled for the
+  // track it has preloaded. Null is "leave it": a standby element with nothing loaded may be the
+  // one finishing its last moments, and changing its volume then would be heard.
+  function outputVolume(element: HTMLAudioElement | null): number | null {
+    const { volume: set, shuffle: shuffled, replay } = levelling.current
+    const base = Number.isFinite(set) ? Math.max(0, Math.min(1, set)) : 0.7
+    if (!element || element === previewAudio.current) return base
+    const slot: Slot = element === libraryA.current ? 0 : 1
+    let target: { item: LibraryTrack | null; index: number } | null = null
+    if (slot === activeSlot.current) {
+      target = { item: libraryCurrent.current, index: indexRef.current }
+    } else if (preload.current?.slot === slot) {
+      target = preload.current
+    }
+    if (!target) return null
+    if (!target.item) return base
+    const inOrder = playsAlbumInOrder(queueRef.current, target.index, shuffled)
+    const multiplier = replayGainMultiplier(
+      target.item.replayGain,
+      replay.mode,
+      inOrder,
+      replay.preampDb,
+    )
+    return levelledVolume(base, multiplier)
+  }
+
+  function applyVolume() {
+    for (const element of elements()) {
+      if (!element) continue
+      const level = outputVolume(element)
+      if (level !== null) element.volume = level
+      element.muted = levelling.current.muted
+    }
+  }
+
   const previewStage = useRef(0)
   const pendingSeek = useRef(0)
   const lastSavedSecond = useRef(-1)
@@ -562,6 +600,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return value === 'all' || value === 'one' ? value : 'off'
   })
   const [notice, setNotice] = useState('Choose a track to start listening.')
+  const replaySettings = useReplayGainSettings()
+  // What the volume needs, kept where the functions below (some run from timers and one-off
+  // effects) read the latest of it rather than the render they were made in.
+  const levelling = useRef({ volume, muted, shuffle, replay: replaySettings })
+  levelling.current = { volume, muted, shuffle, replay: replaySettings }
   const [playlistSearch, setPlaylistSearch] = useState('')
   const [newPlaylistName, setNewPlaylistName] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
@@ -795,6 +838,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // A metered connection gets the metadata only. The song then starts as it always did.
     element.preload = dataSaverOn() ? 'metadata' : 'auto'
     element.src = streamUrl(upcoming)
+    applyVolume()
   }
 
   // Starts the standby element just before the playing one ends. Called on every timeupdate, so a
@@ -884,12 +928,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setNotice(LIBRARY_NOTICE)
     if (!handOver) {
       discardPreload()
+      applyVolume()
       startAudio(streamUrl(item), autoplay)
       return
     }
     const incoming = library()
     if (!incoming) return
     preload.current = null
+    applyVolume()
     // Its metadata and length arrived while it was standby, and those events were not ours to act
     // on then.
     setReady(incoming.readyState >= HTMLMediaElement.HAVE_METADATA)
@@ -905,6 +951,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         activate(outgoingSlot)
         incoming.removeAttribute('src')
         incoming.load()
+        applyVolume()
         startAudio(streamUrl(item))
         return
       }
@@ -1124,15 +1171,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       .catch(() => undefined)
   }, [])
 
+  // Also re-runs when what the gain depends on changes: the setting, shuffle (album gain needs the
+  // album in order), and the queue or position in it.
   useEffect(() => {
+    applyVolume()
     const value = Number.isFinite(volume) ? Math.max(0, Math.min(1, volume)) : 0.7
-    for (const element of elements()) {
-      if (!element) continue
-      element.volume = value
-      element.muted = muted
-    }
     remember('musimo.player-volume', String(value))
-  }, [volume, muted])
+  }, [volume, muted, replaySettings, shuffle, queue, currentIndex, libraryTrack])
 
   // Browsers suspend the audio context while a tab is hidden for a while, or on
   // iOS when another app takes the output. Wake it when the tab comes back.

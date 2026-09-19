@@ -1,5 +1,6 @@
 import { z } from 'zod'
 
+import { replayGainSchema } from './api'
 import type { LibraryTrack } from './api'
 
 export const HISTORY_KEY = 'musimo.play-history'
@@ -8,7 +9,8 @@ export const HISTORY_LIMIT = 200
 export const HISTORY_LISTEN_SECONDS = 10
 
 // Only what a row shows and what playing the song again needs. The cover and the artist and album
-// ids are there because the player's footer and Now Playing read them off the track.
+// ids are there because the player's footer and Now Playing read them off the track. The
+// ReplayGain tags are there so a song played again from here is levelled like any other.
 const historyEntrySchema = z.object({
   id: z.string(),
   title: z.string(),
@@ -18,6 +20,7 @@ const historyEntrySchema = z.object({
   artistId: z.string().optional(),
   albumId: z.string().optional(),
   coverArt: z.string().optional(),
+  replayGain: replayGainSchema.optional(),
   playedAt: z.number(),
 })
 export type HistoryEntry = z.infer<typeof historyEntrySchema>
@@ -61,6 +64,7 @@ export function addToHistory(
     artistId: track.artistId,
     albumId: track.albumId,
     coverArt: track.coverArt,
+    replayGain: track.replayGain,
     playedAt,
   }
   return [entry, ...entries].slice(0, HISTORY_LIMIT)
@@ -76,5 +80,6 @@ export const historyTrack = (entry: HistoryEntry): LibraryTrack => ({
   artistId: entry.artistId,
   albumId: entry.albumId,
   coverArt: entry.coverArt,
+  replayGain: entry.replayGain,
   playCount: 0,
 })

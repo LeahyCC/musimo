@@ -62,6 +62,12 @@ describe('historyTrack', () => {
       playCount: 0,
     })
   })
+
+  it('keeps the ReplayGain tags, so a replayed song is levelled', () => {
+    const gain = { trackGain: -6, trackPeak: 0.9 }
+    const [entry] = addToHistory([], { ...song('a'), replayGain: gain }, 1)
+    expect(entry && historyTrack(entry).replayGain).toEqual(gain)
+  })
 })
 
 describe('relativeTime', () => {

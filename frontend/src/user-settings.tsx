@@ -8,6 +8,12 @@ import { PRESETS } from 'visimo/presets'
 import { cx } from './cx'
 import { useNowPlayingPopout } from './now-playing-popout'
 import { PageTitle } from './page-title'
+import { parsePreamp, parseReplayGainMode, PREAMP_OPTIONS } from './replay-gain'
+import {
+  setReplayGainMode,
+  setReplayGainPreamp,
+  useReplayGainSettings,
+} from './replay-gain-settings'
 import { MIN_CONTRAST, themeContrast } from './theme/contrast'
 import { HEX_COLOR, MAX_CUSTOM_THEMES, MAX_THEME_NAME } from './theme/schema'
 import {
@@ -575,6 +581,78 @@ function VisualizerSettings() {
   )
 }
 
+const preampLabel = (decibels: number) =>
+  decibels === 0 ? '0 dB' : `${decibels > 0 ? '+' : '−'}${Math.abs(decibels)} dB`
+
+/*
+ * Volume levelling for library playback. It reads and writes the player's own settings store, so a
+ * change lands on a track that is already playing. Every control applies as it is chosen.
+ */
+function PlaybackSettings() {
+  const { mode, preampDb } = useReplayGainSettings()
+
+  return (
+    <section aria-labelledby="playback" className="grid gap-[20px]">
+      <h2 id="playback" className="border-b border-line pb-[17px] text-section">
+        Playback
+      </h2>
+      <p className="max-w-[640px] text-small">
+        Some files carry ReplayGain tags that say how loud they are. Musimo can use them to bring
+        quiet and loud tracks to a similar volume. Changes apply straight away.
+      </p>
+      <div className="grid max-w-[520px] gap-[16px]">
+        <div className="grid gap-[6px]">
+          <label htmlFor="replay-gain-mode" className="text-small">
+            Volume levelling
+          </label>
+          <FieldSelect
+            id="replay-gain-mode"
+            value={mode}
+            fullWidth={false}
+            className="w-[240px]"
+            aria-describedby="replay-gain-note"
+            onChange={(event) => setReplayGainMode(parseReplayGainMode(event.target.value))}
+          >
+            <option value="off">Off</option>
+            <option value="track">Track</option>
+            <option value="album">Album (automatic)</option>
+          </FieldSelect>
+          <p id="replay-gain-note" className="text-tiny">
+            Track levels every song on its own. Album keeps an album’s own balance while it plays in
+            order, and levels each song on its own otherwise. Tracks without tags play as they are.
+            Musimo does not write ReplayGain tags to downloads yet, so only files tagged elsewhere
+            are levelled.
+          </p>
+        </div>
+        <div className="grid gap-[6px]">
+          <label htmlFor="replay-gain-preamp" className="text-small">
+            Pre-amp
+          </label>
+          <FieldSelect
+            id="replay-gain-preamp"
+            value={String(preampDb)}
+            fullWidth={false}
+            className="w-[140px]"
+            disabled={mode === 'off'}
+            aria-describedby="replay-gain-preamp-note"
+            onChange={(event) => setReplayGainPreamp(parsePreamp(event.target.value))}
+          >
+            {PREAMP_OPTIONS.map((decibels) => (
+              <option key={decibels} value={decibels}>
+                {preampLabel(decibels)}
+              </option>
+            ))}
+          </FieldSelect>
+          <p id="replay-gain-preamp-note" className="text-tiny">
+            Added to the tagged gain. A track is never pushed past its tagged peak, and the player
+            cannot go above full volume, so a boost only shows while the volume slider has room.
+          </p>
+        </div>
+      </div>
+    </section>
+  )
+}
+
 export function UserSettingsPage() {
   const themes = useThemes()
   const active = useTheme()
@@ -775,6 +853,9 @@ export function UserSettingsPage() {
           </>
         )}
       </section>
+      <div className="mt-[32px]">
+        <PlaybackSettings />
+      </div>
       <div className="mt-[32px]">
         <VisualizerSettings />
       </div>

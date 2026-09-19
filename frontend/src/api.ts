@@ -163,6 +163,16 @@ export const librarySchema = z.object({
   roots: z.array(z.string()),
 })
 
+// OpenSubsonic's loudness tags, in decibels and as a fraction of full scale. Each is present only
+// when the file carries it.
+export const replayGainSchema = z.object({
+  trackGain: z.number().optional(),
+  albumGain: z.number().optional(),
+  trackPeak: z.number().optional(),
+  albumPeak: z.number().optional(),
+})
+export type ReplayGain = z.infer<typeof replayGainSchema>
+
 export const libraryTrackSchema = z.object({
   id: z.string(),
   title: z.string().default('Unknown track'),
@@ -177,6 +187,7 @@ export const libraryTrackSchema = z.object({
   genre: z.string().optional(),
   created: z.string().optional(),
   playCount: z.number().default(0),
+  replayGain: replayGainSchema.optional(),
 })
 export type LibraryTrack = z.infer<typeof libraryTrackSchema>
 export const playerQueueSchema = z.object({
