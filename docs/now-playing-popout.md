@@ -24,13 +24,43 @@ desktop                                    phone (under 768px)
 
 **Left column.** The square stage takes the height the column has left above its controls: as wide as the column, or as tall as that room, whichever is smaller, so a short window shrinks the square instead of pushing the controls down. Under it, in this order: the title (drawn here and nowhere else while the stage is docked; two lines, then an ellipsis), the artist and album as links, the like button and Add to playlist, the seek bar, and one row with shuffle, previous, play or pause, next, repeat, mute, volume and the close button. Close empties the player, as the footer's does, and the page then says "Nothing playing yet." These are `NowPlayingControls` in `now-playing-controls.tsx`. The docked stage keeps only its top bar (status, the Visualizer control, popout and full screen); the same transport is drawn over the picture only in full screen and in the popout window, which have nothing else to hold it.
 
-**Right column.** One panel with two tabs, Up next and Lyrics, that fills the column's height. Each tab scrolls inside itself with `overscroll-contain`, so a long queue never moves the page. Up next lists what comes after the playing track, so the playing track is not its first row, and a row still plays from its own place in the whole queue. Above the rows it says how many tracks the queue holds and, when the player knows where the queue came from, "Playing from" and its name: an album, an artist, a playlist or a tracks search. A queue restored after a refresh has no known source, so it says nothing. The player keeps only an id for the source, so the name comes from the same cached reads the library pages make. The chosen tab is remembered in the browser as `musimo.now-playing-tab` (`up-next` or `lyrics`).
+**Right column.** One panel with two tabs, Up next and Lyrics, that fills the column's height. Each tab scrolls inside itself with `overscroll-contain`, so a long queue never moves the page; on Lyrics it is the lines that scroll, under the timing controls. Up next lists what comes after the playing track, so the playing track is not its first row, and a row still plays from its own place in the whole queue. Above the rows it says how many tracks the queue holds and, when the player knows where the queue came from, "Playing from" and its name: an album, an artist, a playlist or a tracks search. A queue restored after a refresh has no known source, so it says nothing. The player keeps only an id for the source, so the name comes from the same cached reads the library pages make. The chosen tab is remembered in the browser as `musimo.now-playing-tab` (`up-next` or `lyrics`).
 
 The tabs follow the ARIA tabs pattern (`TabList` in `ui/tabs.tsx`): `role="tablist"`, `role="tab"` with `aria-selected`, only the chosen tab in the tab order, and the left and right arrows (and Home and End) move between tabs and choose as they go. Both panels stay in the document, so each tab's `aria-controls` names something that exists, and the one not chosen is `hidden`.
 
+## Lyrics
+
+The Lyrics tab is `LyricsPanel` in `frontend/src/lyrics.tsx`, keyed by track so each track starts fresh. The lines come from `GET /api/player/lyrics/{id}`; each line's `start` is in milliseconds and the item's `synced` flag says whether they are timed.
+
+```
++-------------------------------------------+
+| Earlier 0.5 s   +1.0 s   Later 0.5 s   [] |  <- timing, large type
+|                                           |
+|   line that has passed        (dim)       |
+|   line that has passed        (dim)       |
+|                                           |
+|   > the current line          (bright)    |  <- about a third from the top
+|   next line                   (dim)       |
++-------------------------------------------+
+```
+
+**Synced.** The current line is the last one whose start has passed, taken from the player's position. It is bright with `aria-current="true"`; the rest are dim. The list keeps that line about a third of the way down its box. A wheel, touch drag, scrollbar drag or scrolling key stops the following for four seconds, then it moves back to the current line. Choosing a line ends the pause at once. Under `prefers-reduced-motion` the list jumps instead of scrolling smoothly, and the first placement when the tab opens is always a jump. Every line is a button, so it can be reached with the keyboard, and its accessible name is its text (an empty line is announced as an instrumental break and its time). Choosing it calls the player's `seek` with the line's start.
+
+**Timing.** Earlier and Later move every line by 0.5 s a press, and the current offset is shown between them (`+1.5 s`; a positive offset shows lines later). It is kept per track in the browser as one JSON map, track id to seconds, under `musimo.lyrics-offset`. The map holds at most 200 tracks: the newest write goes last and the oldest entries are dropped first, and an offset of zero is not stored. Seeking by a line uses the offset too, so the line you pick is the line that lights up.
+
+**Large type.** The button at the top right, or `L`, fills the panel with large lines. `L` works anywhere on the page unless a text field has focus or a modifier key is held. From the Up next tab it opens Lyrics in large type. The mode is not remembered.
+
+**Not timed.** Lyrics with no times, or a synced flag with no times in it, are plain text under a small "Not timed" note, with no highlight, no timing controls and no seeking.
+
+**No lyrics.** The panel says "No lyrics found for this track." with a **Search again** button that asks the server again. A failed request says "Lyrics could not be loaded." with the same button.
+
+**Ticking.** The player's position changes several times a second. The lyrics panel is memoised on its own props and only the list of lines reads the position, and each line is memoised on its own highlight, so a tick redraws no more than the two lines that change. The player context itself still carries the position, so the page's other consumers (the seek bar above all) redraw with it as before; moving the position out of that context is left for later.
+
+**Phone.** The lines sit in a box of their own (up to 60% of the screen height, 75% in large type) so the list has something to scroll and follow, even though the page scrolls for the rest.
+
 **Fitting the window.** The page is `100dvh` less the top bar and `--page-pad` tall (`main`'s top padding of 36px, or 48px from 1500px, plus 24px at the bottom). `main` also pads its bottom by 130px to clear the footer player, which this page hides, so the page takes back all but 24px of that with a negative margin. If that padding ever changes, the two must change together.
 
-**Phone.** Under 768px there is one column and the page scrolls. The stage takes the full content width, the title and controls follow, and the same two tabs sit directly beneath them, so Lyrics is one tap from the controls however long the queue is. The panel grows with its content and the page does the scrolling; there is no scroll box inside it. The volume slider is left to the device's own buttons, as on the footer's mini player.
+**Phone.** Under 768px there is one column and the page scrolls. The stage takes the full content width, the title and controls follow, and the same two tabs sit directly beneath them, so Lyrics is one tap from the controls however long the queue is. The panel grows with its content and the page does the scrolling; there is no scroll box inside Up next. The lyrics are the exception (see [Lyrics](#lyrics)). The volume slider is left to the device's own buttons, as on the footer's mini player.
 
 **While popped out.** The stage slot shows the dimmed artwork with Bring back, and the left column still shows the title and the whole control row, so the tab is never left without transport.
 
@@ -74,10 +104,14 @@ Shortcuts bind to the window the stage is in. In the tab they apply while the st
 | V     | artwork or visualizer, where WebGPU is available                  |
 | H     | the visualizer's debug overlay, which names the preset            |
 | [ ]   | previous, next visualizer preset                                  |
+| L     | large type for the lyrics, on the Now Playing page                |
+
+L is bound to the page, not the stage, so it works without the stage focused. See [Lyrics](#lyrics).
 
 ## Code
 
-- `frontend/src/library.tsx`: `NowPlayingPage` (the two columns and how they fit the window) and `NowPlayingTabs` (the panel, the Playing from name, the remembered tab).
+- `frontend/src/library.tsx`: `NowPlayingPage` (the two columns and how they fit the window) and `NowPlayingTabs` (the panel, the Playing from name, the remembered tab, the `L` key).
+- `frontend/src/lyrics.tsx`: `LyricsPanel`, the synced list that follows the player, the timing offset and its storage. `frontend/src/lyrics.test.ts` covers the current-line lookup and the offset map.
 - `frontend/src/now-playing-controls.tsx`: the title, byline and control row under the stage.
 - `frontend/src/ui/tabs.tsx`: `TabList`, the tab row and its arrow keys.
 - `frontend/src/now-playing-popout.tsx`: the provider at the app root (the popout window, the request that carries full screen back to the tab) and the stage itself. The docked stage's size is a container query: its slot is a size container and the stage is `min(100cqw, 100cqh)` wide.

@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import {
   keepPreviousData,
@@ -40,12 +40,12 @@ import {
   librarySelectionSchema,
   libraryTrackSearchSchema,
   libraryTracksSchema,
-  lyricsSchema,
   playerCapabilitiesSchema,
 } from './api'
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from './api'
 import { cx } from './cx'
 import { InfiniteScroll } from './infinite-scroll'
+import { LyricsPanel } from './lyrics'
 import { NowPlayingControls } from './now-playing-controls'
 import { NowPlayingStage } from './now-playing-popout'
 import { PageTitle } from './page-title'
@@ -1960,20 +1960,38 @@ function NowPlayingTabs({ track }: { track: LibraryTrack }) {
   const [tab, setTab] = useState<PanelTab>(() =>
     stored(PANEL_TAB_KEY, 'up-next') === 'lyrics' ? 'lyrics' : 'up-next',
   )
-  const lyrics = useQuery({
-    queryKey: ['lyrics', track.id],
-    queryFn: ({ signal }) =>
-      api(`player/lyrics/${encodeURIComponent(track.id)}`, lyricsSchema, { signal }),
-    retry: false,
-  })
+  const [large, setLarge] = useState(false)
   const playingFrom = usePlayingFrom(player.source)
-  const words = lyrics.data?.items[0]?.line ?? []
   // Up next is what comes after the playing track, so the track itself is never its first row.
   const following = player.currentIndex + 1
   const choose = (next: PanelTab) => {
     setTab(next)
     remember(PANEL_TAB_KEY, next)
   }
+  const toggleLarge = useCallback(() => setLarge((on) => !on), [])
+
+  // L flips large type. From the other tab it opens Lyrics in large type, so the key always shows
+  // something. Typing in a field keeps its own letters.
+  useEffect(() => {
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key.toLowerCase() !== 'l' || event.repeat || event.defaultPrevented) return
+      if (event.ctrlKey || event.metaKey || event.altKey) return
+      if (
+        event.target instanceof HTMLElement &&
+        (event.target.matches('input,textarea,select') || event.target.isContentEditable)
+      )
+        return
+      if (tab === 'lyrics') setLarge((on) => !on)
+      else {
+        setTab('lyrics')
+        remember(PANEL_TAB_KEY, 'lyrics')
+        setLarge(true)
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [tab])
+
   return (
     <Panel className="flex min-h-0 min-w-0 flex-col">
       <TabList
@@ -2017,19 +2035,18 @@ function NowPlayingTabs({ track }: { track: LibraryTrack }) {
         role="tabpanel"
         id={tabPanelId(idBase, 'lyrics')}
         aria-labelledby={tabId(idBase, 'lyrics')}
-        tabIndex={0}
         hidden={tab !== 'lyrics'}
-        className={tabPanelClassName}
+        className="min-h-0 flex-1"
       >
-        {lyrics.isLoading && <p className={lyricLineClassName}>Loading lyrics…</p>}
-        {!lyrics.isLoading && !words.length && (
-          <p className={lyricLineClassName}>No lyrics found for this track.</p>
-        )}
-        {words.map((line, index) => (
-          <p key={`${line.value}-${index}`} className={lyricLineClassName}>
-            {line.value || '♪'}
-          </p>
-        ))}
+        {/* The lines scroll in a box of their own inside the panel, so the timing controls stay in
+            view; the box is what takes focus. */}
+        <LyricsPanel
+          key={track.id}
+          track={track}
+          visible={tab === 'lyrics'}
+          large={large}
+          onToggleLarge={toggleLarge}
+        />
       </div>
     </Panel>
   )
