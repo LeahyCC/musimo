@@ -2,8 +2,11 @@ import { useEffect, useId, useRef, useState } from 'react'
 
 import { Link, useBlocker } from '@tanstack/react-router'
 import { AlertTriangle, Check, Copy, Download, Pencil, Trash2 } from 'lucide-react'
+import { FLUID_SIZES, SCENE_IDS, SCENE_LABELS } from 'visimo/catalog'
+import { PRESETS } from 'visimo/presets'
 
 import { cx } from './cx'
+import { useNowPlayingPopout } from './now-playing-popout'
 import { PageTitle } from './page-title'
 import { MIN_CONTRAST, themeContrast } from './theme/contrast'
 import { HEX_COLOR, MAX_CUSTOM_THEMES, MAX_THEME_NAME } from './theme/schema'
@@ -37,6 +40,7 @@ import {
   Panel,
   StatusChip,
   Tag,
+  textLinkClassName,
 } from './ui'
 
 /** The four colors that tell two themes apart at a glance, in the order the strip shows them. */
@@ -471,6 +475,106 @@ function download(theme: Theme) {
 
 const same = (a: Theme, b: Theme): boolean => JSON.stringify(a) === JSON.stringify(b)
 
+/*
+ * These read and write the Now Playing stage's own state, from the provider at the app root, so
+ * nothing here has its own copy of the storage keys: a change lands on an open stage at once, and
+ * a change made on the stage shows up here. Every control applies as it is chosen, like themes.
+ */
+function VisualizerSettings() {
+  const { view, setView, preset, setPreset, fluidSize, setFluidSize, canVisualize } =
+    useNowPlayingPopout()
+
+  return (
+    <section aria-labelledby="visualizer" className="grid gap-[20px]">
+      <h2 id="visualizer" className="border-b border-line pb-[17px] text-section">
+        Visualizer
+      </h2>
+      <p className="max-w-[640px] text-small">
+        What Now Playing shows and how the visualizer draws. Changes apply straight away, including
+        on a Now Playing screen that is already open.
+      </p>
+      {!canVisualize && (
+        <p className="text-small text-warn" role="status">
+          The visualizer needs WebGPU, and this browser cannot provide it, so Now Playing shows the
+          artwork.
+        </p>
+      )}
+      <fieldset
+        disabled={!canVisualize}
+        className="m-0 grid max-w-[520px] gap-[16px] border-0 p-0 disabled:opacity-60"
+      >
+        <div className="grid gap-[6px]">
+          <label htmlFor="visualizer-view" className="text-small">
+            Default view
+          </label>
+          <FieldSelect
+            id="visualizer-view"
+            value={view}
+            fullWidth={false}
+            className="w-[200px]"
+            onChange={(event) =>
+              setView(event.target.value === 'artwork' ? 'artwork' : 'visualizer')
+            }
+          >
+            <option value="artwork">Artwork</option>
+            <option value="visualizer">Visualizer</option>
+          </FieldSelect>
+        </div>
+        <div className="grid gap-[6px]">
+          <label htmlFor="visualizer-preset" className="text-small">
+            Preset
+          </label>
+          <FieldSelect
+            id="visualizer-preset"
+            value={preset.id}
+            fullWidth={false}
+            className="w-[260px] max-w-full"
+            onChange={(event) => setPreset(event.target.value)}
+          >
+            {SCENE_IDS.map((id) => (
+              <optgroup key={id} label={SCENE_LABELS[id]}>
+                {PRESETS.filter((entry) => entry.scene === id).map((entry) => (
+                  <option key={entry.id} value={entry.id}>
+                    {entry.name}
+                  </option>
+                ))}
+              </optgroup>
+            ))}
+          </FieldSelect>
+        </div>
+        <div className="grid gap-[6px]">
+          <label htmlFor="visualizer-fluid" className="text-small">
+            Fluid detail
+          </label>
+          <FieldSelect
+            id="visualizer-fluid"
+            value={fluidSize}
+            fullWidth={false}
+            className="w-[200px]"
+            aria-describedby="visualizer-fluid-note"
+            onChange={(event) => setFluidSize(Number(event.target.value))}
+          >
+            {FLUID_SIZES.map((size) => (
+              <option key={size} value={size}>
+                {size} grid
+              </option>
+            ))}
+          </FieldSelect>
+          <p id="visualizer-fluid-note" className="text-tiny">
+            Only the fluid scene uses this. A larger grid is finer and asks more of the graphics
+            card.
+          </p>
+        </div>
+      </fieldset>
+      <p className="text-small">
+        <Link to="/now-playing" className={textLinkClassName()}>
+          Open Now Playing
+        </Link>
+      </p>
+    </section>
+  )
+}
+
 export function UserSettingsPage() {
   const themes = useThemes()
   const active = useTheme()
@@ -671,6 +775,9 @@ export function UserSettingsPage() {
           </>
         )}
       </section>
+      <div className="mt-[32px]">
+        <VisualizerSettings />
+      </div>
     </>
   )
 }

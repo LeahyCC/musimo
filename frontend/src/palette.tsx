@@ -31,6 +31,7 @@ export function CommandPalette() {
   const showStage = () => {
     if (!onStage) void navigate({ to: '/now-playing' })
   }
+
   // Presets are only visible on the visualizer, so the commands that act on
   // it switch the stage to it first. Everything goes through the provider's
   // state; it owns what the browser remembers.
@@ -38,10 +39,12 @@ export function CommandPalette() {
     showStage()
     if (popout.view !== 'visualizer') popout.toggleView()
   }
+
   const cycle = (delta: number) => {
     showVisualizer()
     popout.cyclePreset(delta)
   }
+
   const fullscreenVisualizer = () => {
     showVisualizer()
     const stage = popout.dockedStage.current
@@ -50,6 +53,7 @@ export function CommandPalette() {
       stage
         .requestFullscreen()
         .catch(() => popout.setNotice('Press F on the player for full screen.'))
+
       return
     }
     // Not on screen (another route, or playing in the popout). The provider closes the popout,

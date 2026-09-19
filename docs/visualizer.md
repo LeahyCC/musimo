@@ -39,6 +39,8 @@ The stage, its keys and what the browser remembers:
 | `musimo.visualizer-fluid-grid`         | 512 or 1024                                       |
 | `musimo.now-playing-visualizer-notice` | the one-time notice shown where WebGPU is missing |
 
+The same choices can be made from `/settings/user`, under Visualizer: default view (Artwork or Visualizer), preset (grouped by scene, the same list the stage's select shows) and fluid detail (512 or 1024). That section does not read or write the keys itself. It calls `useNowPlayingPopout()`, so it shares the provider's state with the stage: an open stage changes at once and the two cannot disagree. It is disabled with a one-line reason while `canVisualize` is false, and links to Now Playing. `e2e/app.spec.ts` checks that the default view control writes `musimo.now-playing-view`, and that the section is disabled with its reason where there is no WebGPU. See [settings](settings.md#your-settings).
+
 A preset names a scene, so choosing a preset moves the scene select under it and choosing a scene moves to that scene's first preset. The scene select is not drawn while `SCENE_IDS` has one entry in it. H toggles the package's debug overlay.
 
 The way into all of this is a labeled Visualizer control on the stage (On or Off, with a `V` hint), and while it is on, the preset's name between `[` and `]` hints, where the name is the preset select. It stays on screen while the rest of the overlay fades when idle, at reduced opacity, and hides with them only in full screen and in the popout window, which is too small to keep it. It is what makes the keys discoverable; the keys themselves are unchanged. See [the popout note](now-playing-popout.md#now-playing).
