@@ -291,9 +291,11 @@ test('the tabs are real tabs, move with the arrow keys and remember the choice',
   await expect(lyrics).toBeFocused()
   await expect(page.getByText('Morning finds the water')).toBeVisible()
   await expect(page.getByRole('tabpanel', { name: 'Up next' })).toBeHidden()
+  // Past the last tab it wraps to the first, however many tabs the panel has grown.
+  await page.keyboard.press('End')
   await page.keyboard.press('ArrowRight')
   await expect(upNext).toBeFocused()
-  await page.keyboard.press('ArrowLeft')
+  await page.keyboard.press('ArrowRight')
   await expect(lyrics).toBeFocused()
   expect(await page.evaluate(() => localStorage.getItem('musimo.now-playing-tab'))).toBe('lyrics')
 

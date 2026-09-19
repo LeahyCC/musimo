@@ -61,6 +61,7 @@ import { LyricsPanel } from './lyrics'
 import { NowPlayingControls } from './now-playing-controls'
 import { NowPlayingStage } from './now-playing-popout'
 import { PageTitle } from './page-title'
+import { historyTrack } from './play-history'
 import {
   durationText,
   queueEntryKey,
@@ -71,6 +72,7 @@ import {
   usePlayer,
   usePlaylistSongs,
 } from './player'
+import { relativeTime } from './relative-time'
 import { RowMenu } from './row-menu'
 import {
   Button,
@@ -1970,14 +1972,17 @@ export function LibraryPage({
 
 const lyricLineClassName = 'py-[8px] text-section text-text'
 
-/* Up next and Lyrics share one panel, so neither starts below the fold and Lyrics is a tap away
-   however long the queue is. */
+/* Up next, Lyrics and History share one panel, so none starts below the fold and Lyrics is a tap
+   away however long the queue is. */
 const PANEL_TABS = [
   { id: 'up-next', label: 'Up next' },
   { id: 'lyrics', label: 'Lyrics' },
+  { id: 'history', label: 'History' },
 ] as const
 type PanelTab = (typeof PANEL_TABS)[number]['id']
 const PANEL_TAB_KEY = 'musimo.now-playing-tab'
+/** Where a history row starts its track, so Up next can say what the queue came from. */
+const HISTORY_SOURCE = 'history'
 /* The panel scrolls inside itself beside the stage. On a phone the page is what scrolls, so the
    panel just grows. */
 const tabPanelClassName =
@@ -2015,6 +2020,7 @@ function usePlayingFrom(source: string) {
     return name ? `playlist ${name}` : ''
   }
   if (kind === 'queue') return 'your queue'
+  if (kind === HISTORY_SOURCE) return 'your history'
   if (kind === 'album') return album.data ? `album ${album.data.name}` : ''
   if (kind === 'artist') return artist.data ? `artist ${artist.data.name}` : ''
   if (kind === 'tracks') {
@@ -2310,12 +2316,92 @@ function UpNext() {
   )
 }
 
-// Up next and Lyrics in one panel that fills the column beside the stage.
+// The times are relative, so they are worked out again each minute the panel is on show.
+const HISTORY_TICK = 60_000
+
+/** What this browser has played, newest first. A row plays the track again. */
+function History({ visible }: { visible: boolean }) {
+  const player = usePlayer()
+  const [now, setNow] = useState(() => Date.now())
+
+  useEffect(() => {
+    if (!visible) return
+    setNow(Date.now())
+    const timer = window.setInterval(() => setNow(Date.now()), HISTORY_TICK)
+    return () => window.clearInterval(timer)
+  }, [visible])
+
+  function clear() {
+    if (window.confirm('Clear your play history? This cannot be undone.')) player.clearHistory()
+  }
+
+  return (
+    <>
+      <div className="mb-[8px] flex flex-wrap items-center justify-between gap-[8px]">
+        <Button onClick={clear} disabled={!player.history.length}>
+          <Trash2 size={15} /> Clear history
+        </Button>
+        <span className={cx(sectionCaptionClassName, 'shrink-0')}>
+          {player.history.length} {player.history.length === 1 ? 'TRACK' : 'TRACKS'}
+        </span>
+      </div>
+      {player.history.length ? (
+        player.history.map((entry) => {
+          const track = historyTrack(entry)
+          return (
+            <div
+              key={`${entry.playedAt}-${entry.id}`}
+              className="flex items-center gap-[2px] border-b border-line"
+            >
+              <button
+                type="button"
+                className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-[12px] rounded-md border-0 bg-transparent px-[8px] py-[10px] text-left text-inherit hover:bg-hover coarse:min-h-11"
+                aria-label={`Play ${entry.title}`}
+                onClick={() => {
+                  // With a queue loaded, the song slots in after the playing one and plays, so
+                  // looking back three songs does not throw away everything that was lined up.
+                  if (player.libraryTrack) {
+                    player.playNext([track])
+                    player.next()
+                  } else player.playLibrary([track], 0, HISTORY_SOURCE)
+                }}
+              >
+                <span className="grid min-w-0 gap-[3px]">
+                  <strong className="truncate">{entry.title}</strong>
+                  <small className="truncate text-small text-muted">{entry.artist}</small>
+                </span>
+                <time
+                  className="text-small text-muted"
+                  dateTime={new Date(entry.playedAt).toISOString()}
+                >
+                  {relativeTime(entry.playedAt, now)}
+                </time>
+              </button>
+              <RowMenu
+                className="mr-[5px]"
+                label={`More actions for ${entry.title}`}
+                actions={queueActions(
+                  () => player.playNext([track]),
+                  () => player.addToQueue([track]),
+                )}
+              />
+            </div>
+          )
+        })
+      ) : (
+        <p className={lyricLineClassName}>Nothing played yet.</p>
+      )}
+    </>
+  )
+}
+
+// Up next, Lyrics and History in one panel that fills the column beside the stage.
 function NowPlayingTabs({ track }: { track: LibraryTrack }) {
   const idBase = useId()
-  const [tab, setTab] = useState<PanelTab>(() =>
-    stored(PANEL_TAB_KEY, 'up-next') === 'lyrics' ? 'lyrics' : 'up-next',
-  )
+  const [tab, setTab] = useState<PanelTab>(() => {
+    const saved = stored(PANEL_TAB_KEY, 'up-next')
+    return PANEL_TABS.find((item) => item.id === saved)?.id ?? 'up-next'
+  })
   const [large, setLarge] = useState(false)
   const choose = (next: PanelTab) => {
     setTab(next)
@@ -2384,6 +2470,16 @@ function NowPlayingTabs({ track }: { track: LibraryTrack }) {
           large={large}
           onToggleLarge={toggleLarge}
         />
+      </div>
+      <div
+        role="tabpanel"
+        id={tabPanelId(idBase, 'history')}
+        aria-labelledby={tabId(idBase, 'history')}
+        tabIndex={0}
+        hidden={tab !== 'history'}
+        className={tabPanelClassName}
+      >
+        <History visible={tab === 'history'} />
       </div>
     </Panel>
   )

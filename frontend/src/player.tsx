@@ -39,6 +39,13 @@ import {
 } from './api'
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from './api'
 import { cx } from './cx'
+import {
+  addToHistory,
+  HISTORY_LISTEN_SECONDS,
+  type HistoryEntry,
+  readHistory,
+  writeHistory,
+} from './play-history'
 import { Button, ErrorBanner, Field, IconButton, iconButtonClassName } from './ui'
 
 export type RepeatMode = 'off' | 'all' | 'one'
@@ -75,6 +82,9 @@ type Playback = {
   moveInQueue: (from: number, to: number) => void
   /** Empties the queue but for the track that is playing. */
   clearQueue: () => void
+  /** Library tracks that played, newest first. Kept in this browser only. */
+  history: readonly HistoryEntry[]
+  clearHistory: () => void
   toggle: () => void
   next: () => void
   previous: () => void
@@ -117,6 +127,8 @@ const PlayerContext = createContext<Playback>({
   removeFromQueue: () => undefined,
   moveInQueue: () => undefined,
   clearQueue: () => undefined,
+  history: [],
+  clearHistory: () => undefined,
   toggle: () => undefined,
   next: () => undefined,
   previous: () => undefined,
@@ -438,10 +450,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const previewStage = useRef(0)
   const pendingSeek = useRef(0)
   const lastSavedSecond = useRef(-1)
+  // Whether the loaded library track has been written to the history yet.
+  const recorded = useRef(false)
+  const historyRef = useRef<readonly HistoryEntry[]>(readHistory())
   const footerRef = useRef<HTMLElement>(null)
   const [track, setTrack] = useState<MusicResult | null>(null)
   const [libraryTrack, setLibraryTrack] = useState<LibraryTrack | null>(null)
   const [queue, setQueue] = useState<LibraryTrack[]>([])
+  const [history, setHistory] = useState(historyRef.current)
   const [source, setSource] = useState('')
   const [currentIndex, setCurrentIndex] = useState(-1)
   const [playing, setPlaying] = useState(false)
@@ -598,6 +614,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  // Called once a track has been heard: past HISTORY_LISTEN_SECONDS, or through to its end when it
+  // is shorter than that. Once per load, so timeupdate can call it freely.
+  function recordPlay() {
+    const item = libraryCurrent.current
+    if (!item || recorded.current) return
+    recorded.current = true
+    const next = addToHistory(historyRef.current, item, Date.now())
+    if (next === historyRef.current) return
+    historyRef.current = next
+    setHistory(next)
+    writeHistory(next)
+  }
+
+  function clearHistory() {
+    historyRef.current = []
+    setHistory([])
+    writeHistory([])
+  }
+
   function loadLibrary(index: number, autoplay = true, seek = 0) {
     const item = queueRef.current[index]
     if (!item) return
@@ -613,6 +648,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     indexRef.current = index
     pendingSeek.current = seek
     lastSavedSecond.current = -1
+    recorded.current = false
     setTrack(null)
     setLibraryTrack(item)
     setCurrentIndex(index)
@@ -1001,12 +1037,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setPlaying(false)
         saveQueue()
       },
-      onEnded: () => {
+      onEnded: (event: MediaEvent) => {
         if (mode.current !== which) return
         if (!library) {
           setPlaying(false)
           return
         }
+        // A track shorter than the listening threshold never reaches it, so its end counts. A
+        // longer one that was scrubbed to its end without playing does not.
+        if (event.currentTarget.duration <= HISTORY_LISTEN_SECONDS) recordPlay()
         scrobble(true)
         if (repeat === 'one') loadLibrary(indexRef.current)
         else next()
@@ -1015,6 +1054,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (mode.current !== which) return
         const seconds = event.currentTarget.currentTime
         setPosition(seconds)
+        // Not while paused: restoring a saved queue seeks a paused element past the threshold.
+        if (library && !event.currentTarget.paused && seconds >= HISTORY_LISTEN_SECONDS)
+          recordPlay()
         if (library && Math.floor(seconds / 10) !== lastSavedSecond.current) {
           lastSavedSecond.current = Math.floor(seconds / 10)
           saveQueue()
@@ -1073,6 +1115,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         removeFromQueue,
         moveInQueue,
         clearQueue,
+        history,
+        clearHistory,
         toggle,
         next: () => next(),
         previous,
