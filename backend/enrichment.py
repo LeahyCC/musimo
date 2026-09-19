@@ -9,6 +9,9 @@ from backend.job_models import Metadata
 from backend.library import normalize
 from backend.version import VERSION
 
+# How long optional lookups may take before a download carries on without them.
+BUDGET_SECONDS = 8
+
 
 class Enrichment:
     def __init__(self, catalog: Catalog) -> None:
@@ -217,7 +220,7 @@ class Enrichment:
                 warnings.append("MusicBrainz lookup failed")
 
         try:
-            async with asyncio.timeout(8):
+            async with asyncio.timeout(BUDGET_SECONDS):
                 await asyncio.gather(lyrics(), musicbrainz())
         except TimeoutError:
             warnings.append("Optional metadata lookup timed out")

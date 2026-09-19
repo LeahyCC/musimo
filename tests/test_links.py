@@ -2,6 +2,7 @@
 
 import asyncio
 import io
+import json
 import sqlite3
 import tempfile
 import unittest
@@ -20,8 +21,8 @@ from backend.errors import error_guidance, source_code
 from backend.job_models import Job, Metadata
 from backend.library import Library
 from backend.link_api import install_link_routes
-from backend.links import Links, stable_id
-from backend.sources import Site
+from backend.links import MAX_RESOLVES, Links, stable_id
+from backend.sources import Kind, Site
 from backend.store import Store
 from backend.worker import main as worker_main
 
@@ -789,6 +790,346 @@ class LinkQueueTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual(service.layout(music, "m4a"), "Band/Song/01 - Song.m4a")
             store.close()
+
+
+JPEG = b"\xff\xd8\xff" + b"\x00" * 16
+
+
+class TidyTests(unittest.IsolatedAsyncioTestCase):
+    """A pasted music link takes the Deezer catalog's tags only when the hit is certain."""
+
+    async def asyncSetUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name).resolve()
+        self.store = Store(self.root / "test.sqlite3")
+        self.store.update({"destination": str(self.root)})
+        self.paths: list[str] = []
+        self.search: list[dict[str, object]] = []
+        self.timeout = False
+
+        def respond(request: httpx.Request) -> httpx.Response:
+            if request.url.host != "api.deezer.com":
+                return httpx.Response(200, content=JPEG)
+            self.paths.append(request.url.path)
+            if self.timeout:
+                raise httpx.ReadTimeout("slow", request=request)
+            if request.url.path == "/search/track":
+                return httpx.Response(200, json={"data": self.search, "total": len(self.search)})
+            if request.url.path == "/track/9":
+                return httpx.Response(
+                    200,
+                    json={
+                        "id": 9,
+                        "title": "Song",
+                        "artist": {"id": 3, "name": "Band"},
+                        "album": {"id": 5, "title": "The Record"},
+                        "duration": 200,
+                        "isrc": "GBAAA2400001",
+                        "track_position": 4,
+                        "release_date": "2023-02-03",
+                    },
+                )
+            if request.url.path == "/album/5":
+                return httpx.Response(
+                    200,
+                    json={
+                        "id": 5,
+                        "title": "The Record",
+                        "artist": {"id": 3, "name": "Band"},
+                        "nb_tracks": 10,
+                        "release_date": "2023-02-03",
+                        "cover_big": "https://cdn-images.dzcdn.net/cover.jpg",
+                        "label": "Small Label",
+                        "genres": {"data": [{"name": "Rock"}]},
+                        "tracks": {"data": [{"disk_number": 1}] * 10},
+                    },
+                )
+            return httpx.Response(404)
+
+        self.client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+        library = Library(self.store, [self.root], asyncio.Event())
+        self.service = Downloads(
+            self.store, Catalog(self.store, self.client), library, asyncio.Event()
+        )
+        self.service.worker = self.fake_worker  # type: ignore[method-assign]
+        # The placeholder audio is not a real file, so the library cannot read tags from it.
+        library.index_published = lambda path, root: None  # type: ignore[method-assign]
+
+    async def asyncTearDown(self) -> None:
+        await self.client.aclose()
+        self.store.close()
+        self.temporary.cleanup()
+
+    async def fake_worker(self, job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+        ready = folder / "ready.m4a"
+        ready.write_bytes(b"synthetic audio placeholder")
+        return ready, {"codec": "aac", "bitrate": 128}
+
+    def hit(self, title: str = "Song", artist: str = "Band", duration: int = 200) -> None:
+        self.search = [
+            {
+                "id": 9,
+                "title": title,
+                "artist": {"id": 3, "name": artist},
+                "album": {"id": 5, "title": "The Record"},
+                "duration": duration,
+            }
+        ]
+
+    async def run_link(self, kind: Kind = "music", track_id: int = 1, **meta: object) -> Job:
+        values: dict[str, object] = {
+            "id": track_id,
+            "title": "Song",
+            "artist": "Band",
+            "album_artist": "Band",
+            "album": "Song",
+            "duration": 201,
+            "date": "2024-05-01",
+            "art": ART,
+        }
+        job = self.service.jobs.enqueue_many(
+            [track_id],
+            "original",
+            str(self.root),
+            catalog="link",
+            prepared={
+                track_id: (Metadata.model_validate(values | meta), "https://youtu.be/abcdefghijk")
+            },
+            source="youtube",
+            kind=kind,
+        )[0]
+        await self.service.run(job.id)
+        return self.service.jobs.get(job.id)
+
+    async def test_a_confident_hit_swaps_in_the_catalog_tags(self) -> None:
+        self.hit()
+        job = await self.run_link()
+        self.assertEqual((job.stage, job.error), ("done", ""))
+        self.assertEqual(job.warnings[0], "Tagged from the Deezer catalog")
+        meta = job.meta
+        self.assertEqual((meta.title, meta.artist, meta.album), ("Song", "Band", "The Record"))
+        self.assertEqual((meta.track, meta.tracks, meta.date), (4, 10, "2023-02-03"))
+        self.assertEqual(
+            (meta.genre, meta.label, meta.isrc), ("Rock", "Small Label", "GBAAA2400001")
+        )
+        self.assertEqual(meta.art, "https://cdn-images.dzcdn.net/cover.jpg")
+        self.assertEqual(job.final_path, str(self.root / "Band" / "The Record" / "04 - Song.m4a"))
+        self.assertEqual(self.paths.count("/search/track"), 1)
+
+    async def test_a_near_miss_keeps_the_site_tags_and_says_so(self) -> None:
+        for number, (title, artist, duration) in enumerate(
+            (("Song Two", "Band", 200), ("Song", "Other Band", 200), ("Song", "Band", 260)), 1
+        ):
+            with self.subTest(title=title, artist=artist, duration=duration):
+                self.hit(title, artist, duration)
+                self.paths.clear()
+                job = await self.run_link(track_id=number)
+                self.assertEqual(job.stage, "done")
+                self.assertEqual(
+                    job.warnings[0],
+                    "Tagged from YouTube, no catalog match. "
+                    "It is filed as its own album named after the track",
+                )
+                self.assertEqual((job.meta.album, job.meta.isrc, job.meta.art), ("Song", "", ART))
+                # The search answers from the catalog cache after the first case.
+                self.assertNotIn("/track/9", self.paths)
+
+    async def test_a_recording_with_a_real_album_keeps_it_without_the_single_note(self) -> None:
+        job = await self.run_link(album="Somewhere Else")
+        self.assertEqual(job.warnings[0], "Tagged from YouTube, no catalog match")
+        self.assertEqual(job.meta.album, "Somewhere Else")
+
+    async def test_a_remix_is_never_tidied_to_the_original(self) -> None:
+        for wanted, found in (("Song (Club Remix)", "Song"), ("Song", "Song (Club Remix)")):
+            with self.subTest(wanted=wanted, found=found):
+                self.hit(title=found)
+                meta, note = await self.service.link_tags.tidy(
+                    Metadata(id=1, title=wanted, artist="Band", album="Other", duration=200),
+                    "YouTube",
+                )
+                self.assertEqual((meta.title, meta.album), (wanted, "Other"))
+                self.assertEqual(note, "Tagged from YouTube, no catalog match")
+        self.assertNotIn("/track/9", self.paths)
+
+    async def test_a_remix_still_matches_its_own_catalog_entry(self) -> None:
+        self.hit(title="Song (Club Remix)")
+        _, note = await self.service.link_tags.tidy(
+            Metadata(id=1, title="Song (Club Remix)", artist="Band", duration=200), "YouTube"
+        )
+        self.assertEqual(note, "Tagged from the Deezer catalog")
+
+    async def test_topic_channels_match_and_an_unknown_length_does_not(self) -> None:
+        self.hit()
+        _, note = await self.service.link_tags.tidy(
+            Metadata(id=1, title="Song", artist="Band - Topic", duration=200), "YouTube"
+        )
+        self.assertEqual(note, "Tagged from the Deezer catalog")
+        self.paths.clear()
+        for artist, duration in (("Band", 0), ("", 200)):
+            _, note = await self.service.link_tags.tidy(
+                Metadata(id=1, title="Song", artist=artist, album="Record", duration=duration),
+                "YouTube",
+            )
+            self.assertEqual(note, "Tagged from YouTube, no catalog match")
+        # With no artist there is nothing to look up, so the catalog is not asked at all.
+        self.assertEqual(self.paths, [])
+
+    async def test_a_catalog_timeout_never_fails_the_download(self) -> None:
+        self.timeout = True
+        job = await self.run_link()
+        self.assertEqual(job.stage, "done")
+        self.assertEqual(
+            job.warnings[0],
+            "Tagged from YouTube, the catalog lookup failed. "
+            "It is filed as its own album named after the track",
+        )
+        self.assertEqual((job.meta.album, job.meta.art), ("Song", ART))
+
+    async def test_a_lookup_past_the_budget_is_dropped(self) -> None:
+        async def stuck(*_: object) -> None:
+            await asyncio.sleep(30)
+
+        self.service.catalog.search = stuck  # type: ignore[method-assign,assignment]
+        with patch("backend.link_tags.BUDGET_SECONDS", 0.05):
+            job = await self.run_link()
+        self.assertEqual(job.stage, "done")
+        self.assertTrue(
+            job.warnings[0].startswith("Tagged from YouTube, the catalog lookup failed")
+        )
+
+    async def test_mixes_and_radio_never_call_the_catalog(self) -> None:
+        self.hit()
+        kinds: tuple[Kind, ...] = ("mix", "radio")
+        for number, kind in enumerate(kinds, 1):
+            with self.subTest(kind=kind):
+                job = await self.run_link(kind=kind, track_id=number)
+                self.assertEqual(job.stage, "done")
+                self.assertFalse([w for w in job.warnings if w.startswith("Tagged from")])
+                self.assertEqual(job.meta.album, "Song")
+        self.assertEqual(self.paths, [])
+
+    async def test_a_retry_keeps_its_first_note(self) -> None:
+        self.hit()
+        job = await self.run_link()
+        self.paths.clear()
+        self.service.jobs.update(job.id, stage="queued", final_path="", artifact_hash="")
+        await self.service.run(job.id)
+        notes = [w for w in self.service.jobs.get(job.id).warnings if w.startswith("Tagged from")]
+        self.assertEqual(notes, ["Tagged from the Deezer catalog"])
+        self.assertEqual(self.paths, [])
+
+
+async def call_and_hang_up(app: FastAPI, url: str, started: asyncio.Event) -> None:
+    """Send one POST straight to the app, and have the client leave once `started` is set."""
+    body = json.dumps({"url": url}).encode()
+    messages: list[dict[str, object]] = [{"type": "http.request", "body": body}]
+    gone = asyncio.Event()
+
+    async def receive() -> dict[str, object]:
+        if messages:
+            return messages.pop(0)
+        await gone.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(_: object) -> None:
+        return None
+
+    scope = {
+        "type": "http",
+        "asgi": {"version": "3.0"},
+        "http_version": "1.1",
+        "method": "POST",
+        "scheme": "http",
+        "path": "/api/links/resolve",
+        "raw_path": b"/api/links/resolve",
+        "root_path": "",
+        "query_string": b"",
+        "headers": [(b"content-type", b"application/json"), (b"content-length", b"%d" % len(body))],
+        "server": ("test", 80),
+        "client": ("test", 1),
+    }
+    call = asyncio.create_task(app(scope, receive, send))
+    await asyncio.wait_for(started.wait(), 3)
+    gone.set()
+    await asyncio.wait_for(call, 3)
+
+
+class DisconnectTests(unittest.IsolatedAsyncioTestCase):
+    """A browser that cancels a lookup gives its place and its yt-dlp process back."""
+
+    async def asyncSetUp(self) -> None:
+        self.temporary = tempfile.TemporaryDirectory()
+        self.root = Path(self.temporary.name).resolve()
+        self.store = Store(self.root / "test.sqlite3")
+        self.client = httpx.AsyncClient()
+        self.service = Downloads(
+            self.store,
+            Catalog(self.store, self.client),
+            Library(self.store, [self.root], asyncio.Event()),
+            asyncio.Event(),
+        )
+
+    async def asyncTearDown(self) -> None:
+        await self.client.aclose()
+        self.store.close()
+        self.temporary.cleanup()
+
+    async def test_hanging_up_cancels_the_lookup_and_frees_its_place(self) -> None:
+        started, cancelled = asyncio.Event(), asyncio.Event()
+
+        class Stuck(Links):
+            async def extract(self, url: str, site: Site) -> dict[str, object]:
+                started.set()
+                try:
+                    await asyncio.sleep(60)
+                except asyncio.CancelledError:
+                    cancelled.set()
+                    raise
+                return {}
+
+        links = Stuck(self.service)
+        app = FastAPI()
+        install_link_routes(app, lambda: links)
+        await call_and_hang_up(app, "https://youtu.be/abcdefghijk", started)
+        self.assertTrue(cancelled.is_set())
+        self.assertEqual(links.resolving._value, MAX_RESOLVES)
+
+    async def test_hanging_up_stops_the_child_process(self) -> None:
+        started = asyncio.Event()
+        children: list[asyncio.subprocess.Process] = []
+        start = asyncio.create_subprocess_exec
+
+        async def sleeper(
+            program: str,
+            *args: str,
+            stdin: int | None = None,
+            stdout: int | None = None,
+            stderr: int | None = None,
+            start_new_session: bool = False,
+        ) -> asyncio.subprocess.Process:
+            # Stand in for the resolver only. The taskkill that stops it runs for real.
+            resolver_call = args[:2] == ("-m", "backend.resolver")
+            process = await start(
+                program,
+                *(("-c", "import time; time.sleep(60)") if resolver_call else args),
+                stdin=stdin,
+                stdout=stdout,
+                stderr=stderr,
+                start_new_session=start_new_session,
+            )
+            if resolver_call:
+                children.append(process)
+                started.set()
+            return process
+
+        links = Links(self.service)
+        app = FastAPI()
+        install_link_routes(app, lambda: links)
+        with patch("backend.links.asyncio.create_subprocess_exec", sleeper):
+            await call_and_hang_up(app, "https://youtu.be/abcdefghijk", started)
+        self.assertEqual(len(children), 1)
+        self.assertIsNotNone(children[0].returncode)
+        self.assertEqual(links.resolving._value, MAX_RESOLVES)
 
 
 if __name__ == "__main__":
