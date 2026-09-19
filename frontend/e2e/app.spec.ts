@@ -717,6 +717,33 @@ test('command palette includes library and now playing', async ({ page }) => {
   await expect(palette.getByRole('button', { name: /Settings/ })).toBeVisible()
 })
 
+test('command palette offers the visualizer commands only where WebGPU exists', async ({
+  page,
+}) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
+  )
+  await page.goto('/')
+  await page.keyboard.press('Control+k')
+  const palette = page.getByRole('dialog')
+  await expect(palette.getByRole('button', { name: 'Now Playing' })).toBeVisible()
+  await expect(palette.getByRole('button', { name: 'Toggle visualizer' })).toHaveCount(0)
+})
+
+test('toggle visualizer from another route lands on Now Playing with it on', async ({ page }) => {
+  // The palette only asks whether the browser has the API, so a bare object stands in for it.
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'gpu', { value: {}, configurable: true }),
+  )
+  await page.goto('/')
+  await page.keyboard.press('Control+k')
+  await page.getByRole('dialog').getByRole('button', { name: 'Toggle visualizer' }).click()
+  await expect(page).toHaveURL(/\/now-playing$/)
+  expect(await page.evaluate(() => localStorage.getItem('musimo.now-playing-view'))).toBe(
+    'visualizer',
+  )
+})
+
 test('track link focuses highlighted row and back to results restores search', async ({ page }) => {
   await page.goto('/search')
   const search = page.getByRole('textbox', { name: 'Search music or paste a link' })

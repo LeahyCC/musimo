@@ -51,6 +51,12 @@ type PopoutValue = {
   popoutToFullscreen: () => void
   pendingFullscreen: boolean
   clearPendingFullscreen: () => void
+  /**
+   * The docked stage's element, or null while it is not mounted (another
+   * route, or playing in the popout). Lets a click handler elsewhere request
+   * fullscreen inside the gesture rather than after the stage has mounted.
+   */
+  dockedStage: RefObject<HTMLDivElement | null>
   notice: string
   setNotice: (text: string) => void
   /** Artwork or the visualizer. Lives here so it survives the stage remounting. */
@@ -85,6 +91,7 @@ const PopoutContext = createContext<PopoutValue>({
   popoutToFullscreen: noop,
   pendingFullscreen: false,
   clearPendingFullscreen: noop,
+  dockedStage: { current: null },
   notice: '',
   setNotice: noop,
   view: 'artwork',
@@ -150,6 +157,7 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   const [pendingFullscreen, setPendingFullscreen] = useState(false)
   const [notice, setNotice] = useState('')
   const popoutStage = useRef<HTMLDivElement>(null)
+  const dockedStage = useRef<HTMLDivElement>(null)
   const popout = pipWindow !== null
   const [view, setView] = useState<StageView>(() =>
     stored(VIEW_KEY, 'visualizer') === 'artwork' ? 'artwork' : 'visualizer',
@@ -245,6 +253,7 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       popoutToFullscreen,
       pendingFullscreen,
       clearPendingFullscreen,
+      dockedStage,
       notice,
       setNotice,
       view,
@@ -268,6 +277,7 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       closePopout,
       popoutToFullscreen,
       pendingFullscreen,
+      dockedStage,
       notice,
       view,
       toggleView,
@@ -404,7 +414,7 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
 export function NowPlayingStage() {
   const popout = useNowPlayingPopout()
   const player = usePlayer()
-  const container = useRef<HTMLDivElement>(null)
+  const container = popout.dockedStage
   const [fullscreen, setFullscreen] = useState(false)
   const track = player.libraryTrack
   const art = track ? artUrl(track) : (player.track?.art ?? '')
