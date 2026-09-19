@@ -20,6 +20,7 @@ import {
   useNavigate,
   useParams,
   useRouterState,
+  useSearch,
 } from '@tanstack/react-router'
 import {
   Activity,
@@ -1406,6 +1407,7 @@ function LibraryScreen({
   playlistId,
   parentArtistId,
   artistSection,
+  highlightTrackId,
 }: {
   view?: 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
   albumId?: string
@@ -1413,6 +1415,7 @@ function LibraryScreen({
   playlistId?: string
   parentArtistId?: string
   artistSection?: 'albums' | 'songs'
+  highlightTrackId?: string
 }) {
   return (
     <Suspense fallback={<p role="status">Opening your library…</p>}>
@@ -1423,6 +1426,7 @@ function LibraryScreen({
         playlistId={playlistId}
         parentArtistId={parentArtistId}
         artistSection={artistSection}
+        highlightTrackId={highlightTrackId}
       />
     </Suspense>
   )
@@ -1441,9 +1445,17 @@ const libraryAlbumsRoute = createRoute({
 const libraryAlbumRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library/albums/$albumId',
+  // The song to mark as playing, put there by Now Playing's About tab. The router reads a value of
+  // only digits as a number, so it is turned back into the id's text.
+  validateSearch: (search: Record<string, unknown>): { track?: string } => {
+    const { track } = search
+    const named = (typeof track === 'string' || typeof track === 'number') && track !== ''
+    return { track: named ? String(track).slice(0, 200) : undefined }
+  },
   component: function LibraryAlbumRoute() {
     const { albumId } = useParams({ from: '/library/albums/$albumId' })
-    return <LibraryScreen view="albums" albumId={albumId} />
+    const { track } = useSearch({ from: '/library/albums/$albumId' })
+    return <LibraryScreen view="albums" albumId={albumId} highlightTrackId={track} />
   },
 })
 const libraryArtistsRoute = createRoute({

@@ -190,6 +190,38 @@ export const libraryTrackSchema = z.object({
   replayGain: replayGainSchema.optional(),
 })
 export type LibraryTrack = z.infer<typeof libraryTrackSchema>
+
+// One song as `GET /api/player/song/{id}` passes it through: the file's own facts, the listening
+// record and OpenSubsonic's credits. Each is present only when Navidrome has it.
+export const songDetailSchema = z.object({
+  id: z.string(),
+  suffix: z.string().optional(),
+  contentType: z.string().optional(),
+  bitRate: z.number().optional(),
+  samplingRate: z.number().optional(),
+  bitDepth: z.number().optional(),
+  channelCount: z.number().optional(),
+  size: z.number().optional(),
+  path: z.string().optional(),
+  track: z.number().optional(),
+  discNumber: z.number().optional(),
+  year: z.number().optional(),
+  genre: z.string().optional(),
+  genres: z.array(z.object({ name: z.string() })).optional(),
+  playCount: z.number().optional(),
+  played: z.string().optional(),
+  contributors: z
+    .array(
+      z.object({
+        role: z.string(),
+        subRole: z.string().optional(),
+        artist: z.object({ name: z.string() }),
+      }),
+    )
+    .optional(),
+})
+export type SongDetail = z.infer<typeof songDetailSchema>
+
 export const playerQueueSchema = z.object({
   current: z.string().default(''),
   position: z.number().default(0),
@@ -258,6 +290,7 @@ export const libraryPlaylistsSchema = page(libraryPlaylistSchema).extend({
 })
 export const libraryAlbumDetailSchema = libraryAlbumSchema.extend({
   song: z.array(libraryTrackSchema).default([]),
+  recordLabels: z.array(z.object({ name: z.string() })).optional(),
 })
 export const libraryArtistDetailSchema = libraryArtistSchema.extend({
   album: z.array(libraryAlbumSchema).default([]),

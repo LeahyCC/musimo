@@ -72,7 +72,13 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 if path.endswith("/updatePlaylist") or path.endswith("/deletePlaylist"):
                     return subsonic()
                 if path.endswith("/getAlbum"):
-                    return subsonic(album={"id": "album-1", "song": [{"id": "song-1"}]})
+                    return subsonic(
+                        album={
+                            "id": "album-1",
+                            "recordLabels": [{"name": "Static Records"}],
+                            "song": [{"id": "song-1"}],
+                        }
+                    )
                 if path.endswith("/getArtist"):
                     return subsonic(artist={"id": "artist-1", "album": [{"id": "album-1"}]})
                 if path.endswith("/getSong"):
@@ -83,6 +89,20 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             "artist": "Artist",
                             "album": "One",
                             "duration": 180,
+                            # What the About tab reads: the file's own facts, the listening
+                            # record and OpenSubsonic's credits.
+                            "suffix": "flac",
+                            "bitRate": 1012,
+                            "samplingRate": 44100,
+                            "bitDepth": 16,
+                            "channelCount": 2,
+                            "size": 35_840_000,
+                            "path": "Artist/One/01 Track.flac",
+                            "playCount": 4,
+                            "played": "2026-09-01T18:30:00Z",
+                            "contributors": [
+                                {"role": "producer", "artist": {"id": "artist-2", "name": "Maker"}}
+                            ],
                         }
                     )
                 if path.endswith("/getPlayQueue"):
@@ -203,10 +223,9 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             (await client.delete("/api/library/playlists/playlist-1")).status_code,
                             204,
                         )
-                        self.assertEqual(
-                            (await client.get("/api/library/albums/album-1")).json()["id"],
-                            "album-1",
-                        )
+                        album = (await client.get("/api/library/albums/album-1")).json()
+                        self.assertEqual(album["id"], "album-1")
+                        self.assertEqual(album["recordLabels"], [{"name": "Static Records"}])
                         self.assertEqual(
                             (await client.get("/api/library/artists/artist-1")).json()["id"],
                             "artist-1",
@@ -217,9 +236,21 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             ][0]["id"],
                             "song-1",
                         )
+                        song = (await client.get("/api/player/song/song-1")).json()
+                        self.assertEqual(song["id"], "song-1")
+                        # The song is passed through whole, so the file and listening facts the
+                        # About tab shows arrive without a trimmed field list to keep in step.
                         self.assertEqual(
-                            (await client.get("/api/player/song/song-1")).json()["id"], "song-1"
+                            {key: song[key] for key in ("suffix", "bitRate", "samplingRate")},
+                            {"suffix": "flac", "bitRate": 1012, "samplingRate": 44100},
                         )
+                        self.assertEqual(
+                            {key: song[key] for key in ("bitDepth", "channelCount", "size")},
+                            {"bitDepth": 16, "channelCount": 2, "size": 35_840_000},
+                        )
+                        self.assertEqual(song["path"], "Artist/One/01 Track.flac")
+                        self.assertEqual(song["played"], "2026-09-01T18:30:00Z")
+                        self.assertEqual(song["contributors"][0]["role"], "producer")
                         self.assertEqual(
                             (await client.get("/api/player/queue")).json()["current"], "song-1"
                         )
