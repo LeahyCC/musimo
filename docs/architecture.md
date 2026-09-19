@@ -94,6 +94,11 @@ Podcasts (podcast_api.py, podcasts.py):
 - `GET /api/podcasts/{id}`: show and latest episodes.
 - `POST /api/podcast-episodes`: queue one episode as a `podcast` job.
 
+Pasted links (link_api.py, links.py, sources.py, resolver.py):
+
+- `POST /api/links/resolve`: checks the link against the site allowlist, reads it in a child process within 20 seconds without downloading, and returns a preview with a token that lasts ten minutes.
+- `POST /api/links`: queues ticked entries from a saved preview as `link` jobs; more than one becomes a download group.
+
 Player (player_api.py):
 
 - `GET /api/player/capabilities`: connection, server version and extensions.
@@ -121,17 +126,19 @@ Player (player_api.py):
 
 Errors (errors.py):
 
-- `error_guidance(code)`: 16 code hint and fix table used by worker.py, downloads.py and store.py job_summary. Maps error codes to plain language hints and suggested actions.
+- `error_guidance(code)`: 18 code hint and fix table used by worker.py, downloads.py and store.py job_summary. Maps error codes to plain language hints and suggested actions.
+- `source_code(code, source)`: keeps a code only where it means something for the job's source.
 
 Not yet implemented:
 
-- URL imports and pasted-link batches.
+- The review sheet for pasted links, sites other than YouTube, and the Deezer tidy-up of a pasted music link.
+- Catalog imports from Spotify or Apple Music links.
 - Cookie uploads and source test UI.
 - Notification test endpoints.
 - Updater controls.
 - Lyric backfill jobs.
 
-Same-origin JSON writes reject cross-origin browser requests. No wildcard CORS. The service binds loopback and accepts no secrets. Optional password sessions, secret files and encrypted credential storage precede LAN-facing credential features. Arbitrary URLs, output paths, redirects and yt-dlp arguments require allowlists before download APIs ship; deny executable hooks and output overrides.
+Same-origin JSON writes reject cross-origin browser requests. No wildcard CORS. The service binds loopback and accepts no secrets. Optional password sessions, secret files and encrypted credential storage precede LAN-facing credential features. Arbitrary URLs, output paths, redirects and yt-dlp arguments require allowlists before download APIs ship; deny executable hooks and output overrides. Pasted links meet this through `backend/sources.py`: only `https` links to a listed host are read, never an IP address host, a link with a user or password, or a non-default port. yt-dlp gets the site's extractors as `allowed_extractors`, which turns off the generic extractor, so a redirect to an unlisted site fails in both the preview and the worker. The browser sends only the link and then a preview token with entry IDs; titles, file addresses, artwork and output paths come from the server's saved preview, and no cookies or yt-dlp options are accepted.
 
 ## Job state machine
 
@@ -192,7 +199,7 @@ A passing skeleton is not a completed downloader or evidence that the music accu
 
 ## Search and catalog implementation
 
-See [search and indexing](search.md) for API contracts, cache limits, ownership matching, watcher behaviour and the tested journey. Search uses independent concurrent track/album/artist HTTP requests. Each section paints when its request completes; catalog results do not need an additional SSE protocol. The existing SSE stream carries durable library updates. Track downloads, album batches and reviewed artist album selections are available; URL imports remain later work.
+See [search and indexing](search.md) for API contracts, cache limits, ownership matching, watcher behaviour and the tested journey. Search uses independent concurrent track/album/artist HTTP requests. Each section paints when its request completes; catalog results do not need an additional SSE protocol. The existing SSE stream carries durable library updates. Track downloads, album batches and reviewed artist album selections are available. Pasted links have a server API; their review sheet in the search box remains later work.
 
 ## Download worker implementation
 

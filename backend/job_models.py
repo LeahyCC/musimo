@@ -3,7 +3,12 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from backend.sources import Kind
+
 Format = Literal["original", "m4a", "opus", "mp3"]
+# `deezer` jobs match a catalog track on YouTube. `podcast` and `link` jobs download the address
+# in `source_url` directly, taken from the server's own lookup and never from the browser.
+CatalogName = Literal["deezer", "podcast", "link"]
 Stage = Literal[
     "queued",
     "matching",
@@ -88,12 +93,14 @@ class Job(BaseModel):
     batch_id: str = ""
     batch_label: str = ""
     album_id: int = 0
-    catalog: Literal["deezer", "podcast"] = "deezer"
+    catalog: CatalogName = "deezer"
     track_id: int
     # The site the audio comes from. Pausing, error mapping and candidate checks key off it.
     source: str = "youtube"
-    # Podcast episodes download this publisher file directly instead of matching on YouTube.
+    # Podcast episodes and pasted links download this address directly instead of matching.
     source_url: str = ""
+    # Mixes and radio shows run long, so they get the episode timeout.
+    kind: Kind = "music"
     format: Format = "original"
     bitrate: int = 0
     target: str
@@ -155,6 +162,19 @@ class BatchRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     album_id: int = Field(gt=0)
     missing_only: bool = True
+    format: Format | None = None
+    target: str | None = None
+
+
+class LinkResolveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    url: str = Field(min_length=1, max_length=2000)
+
+
+class LinkRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    token: str = Field(pattern=r"^[A-Za-z0-9_-]{16,64}$")
+    entry_ids: list[str] = Field(min_length=1, max_length=500)
     format: Format | None = None
     target: str | None = None
 

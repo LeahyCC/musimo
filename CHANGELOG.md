@@ -6,6 +6,7 @@
 
 - Search podcasts from a new Podcasts tab, open a show's latest episodes and download them straight from the publisher's file into `Podcasts/<show>`
 - Pause each download source on its own after repeated blocking errors, and give match candidates their own source and link
+- Add a server API that previews a pasted YouTube link and queues the ticked entries, checked against a site allowlist; the search box does not use it yet
 
 ### Library and playback
 

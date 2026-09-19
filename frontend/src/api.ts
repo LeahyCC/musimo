@@ -7,7 +7,7 @@ export const jobSchema = z.object({
   batch_id: z.string().default(''),
   batch_label: z.string().default(''),
   album_id: z.number().default(0),
-  catalog: z.enum(['deezer', 'podcast']).default('deezer'),
+  catalog: z.enum(['deezer', 'podcast', 'link']).default('deezer'),
   source: z.string().default('youtube'),
   track_id: z.number(),
   format: z.enum(['original', 'm4a', 'opus', 'mp3']),

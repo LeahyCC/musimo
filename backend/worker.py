@@ -10,15 +10,31 @@ import time
 from pathlib import Path
 from typing import Protocol, cast
 
-from backend.errors import YOUTUBE_ONLY_CODES, error_guidance, site_label
+from backend.errors import error_guidance, site_label, source_code
 from backend.job_models import Candidate, Job, valid_candidate_id
 from backend.matching import Matcher
+from backend.sources import by_source
 from backend.tagging import Tagger, probe
 
 
 class Downloader(Protocol):
-    def extract_info(self, url: str, download: bool = True) -> object: ...
+    def extract_info(self, url: str, download: bool = True, process: bool = True) -> object: ...
+    def process_ie_result(self, ie_result: object, download: bool = True) -> object: ...
     def close(self) -> None: ...
+
+
+class Logger:
+    def debug(self, message: str) -> None:
+        pass
+
+    def info(self, message: str) -> None:
+        pass
+
+    def warning(self, message: str) -> None:
+        emit("warning", message=redact(message))
+
+    def error(self, message: str) -> None:
+        emit("log", message=redact(message))
 
 
 def emit(kind: str, **values: object) -> None:
@@ -29,6 +45,32 @@ def redact(text: str) -> str:
     return re.sub(r"https?://\S+", "[URL]", text)[-3000:]
 
 
+def base_options() -> dict[str, object]:
+    """yt-dlp settings shared by downloads and link previews. No browser input reaches these."""
+    options: dict[str, object] = {
+        "quiet": True,
+        "no_warnings": False,
+        "logger": Logger(),
+        "cachedir": False,
+        "socket_timeout": 10,
+        "retries": 0,
+        "fragment_retries": 0,
+        "extractor_retries": 0,
+        "js_runtimes": {"deno": {}},
+        "extractor_args": {"youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]}},
+    }
+    if server_home := os.getenv("MUSIMO_POT_SERVER_HOME"):
+        # Native installs can start the matching helper on demand instead of keeping a server up.
+        options["extractor_args"] = {
+            "youtubepot-bgutilscript": {"server_home": [server_home]},
+        }
+    return options
+
+
+def live(info: dict[str, object]) -> bool:
+    return info.get("is_live") is True or info.get("live_status") in {"is_live", "is_upcoming"}
+
+
 def main() -> None:
     import yt_dlp  # type: ignore[import-untyped]
 
@@ -37,21 +79,22 @@ def main() -> None:
     version = importlib.metadata.version("yt-dlp")
     last = 0.0
     stage = "matching"
-    podcast = job.catalog == "podcast"
+    # Podcast episodes and pasted links download the address in the job: no search, no catalog.
+    direct = job.catalog in {"podcast", "link"}
+    link_site = by_source(job.source) if job.catalog == "link" else None
     site = site_label(job.source)
 
-    class Logger:
-        def debug(self, message: str) -> None:
-            pass
-
-        def info(self, message: str) -> None:
-            pass
-
-        def warning(self, message: str) -> None:
-            emit("warning", message=redact(message))
-
-        def error(self, message: str) -> None:
-            emit("log", message=redact(message))
+    def refuse(code: str, message: str) -> None:
+        hint, fix = error_guidance(code, site)
+        emit(
+            "error",
+            code=code,
+            message=message,
+            retryable=False,
+            hint=hint,
+            fix=fix,
+            version=version,
+        )
 
     def progress(raw: dict[str, object]) -> None:
         nonlocal last
@@ -67,32 +110,23 @@ def main() -> None:
             eta=raw.get("eta"),
         )
 
-    options: dict[str, object] = {
-        "quiet": True,
-        "no_warnings": False,
-        "logger": Logger(),
+    if job.catalog == "link" and link_site is None:
+        refuse("SITE_NOT_ALLOWED", "This site is no longer on the download list")
+        return
+    options = base_options() | {
         "noplaylist": True,
-        "cachedir": False,
-        "socket_timeout": 10,
-        "retries": 0,
-        "fragment_retries": 0,
-        "extractor_retries": 0,
-        "js_runtimes": {"deno": {}},
-        "extractor_args": {"youtubepot-bgutilhttp": {"base_url": ["http://pot-provider:4416"]}},
         "progress_hooks": [progress],
         "outtmpl": str(folder / "source.%(ext)s"),
-        # A podcast feed file is a single format that may not be labelled audio-only.
-        "format": "bestaudio/best" if podcast else "bestaudio",
+        # Feed files and most other sites offer one format that may not be labelled audio-only.
+        "format": "bestaudio" if job.source == "youtube" else "bestaudio/best",
         "continuedl": True,
         "overwrites": False,
         "nopart": False,
         "sleep_interval_requests": random.uniform(0.3, 0.8),
     }
-    if server_home := os.getenv("MUSIMO_POT_SERVER_HOME"):
-        # Native installs can start the matching helper on demand instead of keeping a server up.
-        options["extractor_args"] = {
-            "youtubepot-bgutilscript": {"server_home": [server_home]},
-        }
+    if link_site:
+        # Switches off the generic extractor, so a redirect to an unlisted site fails.
+        options["allowed_extractors"] = link_site.allowed_extractors()
     try:
         downloader = cast(Downloader, yt_dlp.YoutubeDL(options))
         manifest = folder / "download.json"
@@ -106,7 +140,7 @@ def main() -> None:
                     source = possible
         if source is None:
             selected = job.selected
-            if not selected and not podcast:
+            if not selected and not direct:
                 emit("stage", stage="matching")
                 search_options = options | {"extract_flat": True, "skip_download": True}
                 searcher = cast(Downloader, yt_dlp.YoutubeDL(search_options))
@@ -148,16 +182,7 @@ def main() -> None:
                             selected="",
                             check_match=True,
                         )
-                    hint, fix = error_guidance("NO_MATCH", site)
-                    emit(
-                        "error",
-                        code="NO_MATCH",
-                        message="No sufficiently close recording found",
-                        retryable=False,
-                        hint=hint,
-                        fix=fix,
-                        version=version,
-                    )
+                    refuse("NO_MATCH", "No sufficiently close recording found")
                     return
                 selected = ranked[0].id
                 emit(
@@ -168,9 +193,23 @@ def main() -> None:
                 )
             emit("stage", stage="downloading")
             stage = "downloading"
-            raw = downloader.extract_info(
-                job.source_url if podcast else "https://www.youtube.com/watch?v=" + selected
-            )
+            if link_site:
+                # Look before downloading: a live stream never ends and a redirect may have
+                # landed on a list page instead of one recording.
+                info = downloader.extract_info(job.source_url, download=False)
+                if not isinstance(info, dict):
+                    raise ValueError("Download returned no media")
+                if str(info.get("extractor", "")).lower() not in link_site.items:
+                    refuse("SITE_NOT_ALLOWED", f"The link did not lead to one {site} recording")
+                    return
+                if live(info):
+                    refuse("LIVE_STREAM", "Live streams never finish, so they can't be saved.")
+                    return
+                raw = downloader.process_ie_result(info, download=True)
+            else:
+                raw = downloader.extract_info(
+                    job.source_url if direct else "https://www.youtube.com/watch?v=" + selected
+                )
             if not isinstance(raw, dict):
                 raise ValueError("Download returned no media")
             sources = [
@@ -184,22 +223,14 @@ def main() -> None:
             source = sources[0]
             audio_info = probe(source)
             duration = float(str(audio_info["duration"]))
-            # Feed durations are often rough and ads are stitched in, so episodes skip this check.
+            # Direct files have no catalog length to check against: feed lengths are rough,
+            # stitched-in ads change them, and a pasted link's length is the site's own.
             if (
-                not podcast
+                not direct
                 and job.meta.duration
                 and abs(duration - job.meta.duration) > max(15, job.meta.duration * 0.12)
             ):
-                hint, fix = error_guidance("DURATION_MISMATCH", site)
-                emit(
-                    "error",
-                    code="DURATION_MISMATCH",
-                    message="Downloaded audio duration differs from the catalog",
-                    retryable=False,
-                    hint=hint,
-                    fix=fix,
-                    version=version,
-                )
+                refuse("DURATION_MISMATCH", "Downloaded audio duration differs from the catalog")
                 return
             temporary = manifest.with_suffix(".tmp")
             temporary.write_text(
@@ -220,7 +251,9 @@ def main() -> None:
         message = redact(str(exc))
         lower = message.lower()
         code = (
-            "SOURCE_BLOCKED"
+            "SITE_NOT_ALLOWED"
+            if "no suitable extractor" in lower or "unsupported url" in lower
+            else "SOURCE_BLOCKED"
             if "confirm you" in lower or "403" in lower
             else "RATE_LIMITED"
             if "429" in lower
@@ -236,9 +269,9 @@ def main() -> None:
             if "timed out" in lower
             else "DOWNLOAD_FAILED"
         )
-        if job.source != "youtube" and code in YOUTUBE_ONLY_CODES:
-            # These point at YouTube and would pause its queue; another site is not YouTube.
-            code = "DOWNLOAD_FAILED"
+        # A code only stands where it means something for this job's site, so another site's
+        # refusal pauses that site alone and never YouTube.
+        code = source_code(code, job.source)
         if code == "DOWNLOAD_FAILED" and stage in {"converting", "tagging"}:
             code = "TRANSCODE_FAILED" if stage == "converting" else "TAG_FAILED"
         hint, fix = error_guidance(code, site)

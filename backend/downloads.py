@@ -60,6 +60,37 @@ def publish_file(source: Path, target: Path) -> None:
         raise OSError(code, os.strerror(code), str(target))
 
 
+async def stop_tree(process: asyncio.subprocess.Process) -> None:
+    """Stop a child started with its own process group, and everything it started."""
+    if process.returncode is not None:
+        return
+    try:
+        if sys.platform == "win32":
+            # FFmpeg and the token helper are children of the worker and must stop with it.
+            terminator = await asyncio.create_subprocess_exec(
+                "taskkill",
+                "/PID",
+                str(process.pid),
+                "/T",
+                "/F",
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.DEVNULL,
+            )
+            await terminator.wait()
+        else:
+            os.killpg(process.pid, signal.SIGTERM)
+        try:
+            await asyncio.wait_for(process.wait(), 1)
+        except TimeoutError:
+            if sys.platform == "win32":
+                process.kill()
+            else:
+                os.killpg(process.pid, signal.SIGKILL)
+            await process.wait()
+    except ProcessLookupError:
+        pass
+
+
 class Downloads:
     def __init__(
         self,
@@ -189,7 +220,10 @@ class Downloads:
         while not self.stopping:
             self.wake.clear()
             control = self.controls()
-            paused_sources = set(self.store.paused_sources())
+            listed = control["paused_sources"]
+            paused_sources = (
+                {str(source) for source in listed} if isinstance(listed, list) else set()
+            )
             delay = 60.0
             if not control["paused"]:
                 slots = self.settings().concurrency - len(self.running)
@@ -289,33 +323,8 @@ class Downloads:
 
     async def stop_process(self, job_id: str) -> None:
         process = self.processes.get(job_id)
-        if process is None or process.returncode is not None:
-            return
-        try:
-            if sys.platform == "win32":
-                # FFmpeg and the token helper are children of the worker and must stop with it.
-                terminator = await asyncio.create_subprocess_exec(
-                    "taskkill",
-                    "/PID",
-                    str(process.pid),
-                    "/T",
-                    "/F",
-                    stdout=asyncio.subprocess.DEVNULL,
-                    stderr=asyncio.subprocess.DEVNULL,
-                )
-                await terminator.wait()
-            else:
-                os.killpg(process.pid, signal.SIGTERM)
-            try:
-                await asyncio.wait_for(process.wait(), 1)
-            except TimeoutError:
-                if sys.platform == "win32":
-                    process.kill()
-                else:
-                    os.killpg(process.pid, signal.SIGKILL)
-                await process.wait()
-        except ProcessLookupError:
-            pass
+        if process is not None:
+            await stop_tree(process)
 
     async def artwork(self, job: Job, folder: Path) -> None:
         if not job.meta.art or (folder / "cover.jpg").exists():
@@ -333,6 +342,12 @@ class Downloads:
                 (folder / "cover.jpg").write_bytes(chunks)
         except (httpx.HTTPError, ValueError):
             self.jobs.update(job.id, warnings=[*job.warnings, "Cover art unavailable"])
+
+    def budget(self, job: Job) -> int:
+        """Seconds one worker run may take."""
+        # Episodes, mixes and radio shows can run for hours as one large file, unlike a song.
+        long = job.catalog == "podcast" or job.kind in {"mix", "radio"}
+        return 3600 if long else 600
 
     async def worker(self, job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
         (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
@@ -352,8 +367,7 @@ class Downloads:
         failure: DownloadError | None = None
         tail: list[str] = []
         assert process.stdout
-        # Episodes can run for hours and are one large file, so they get longer than a song.
-        async with asyncio.timeout(3600 if job.catalog == "podcast" else 600):
+        async with asyncio.timeout(self.budget(job)):
             while line := await process.stdout.readline():
                 try:
                     raw: object = json.loads(line)
@@ -444,6 +458,14 @@ class Downloads:
             return "Navidrome scan failed; file is saved. Check integration settings."
         return None
 
+    def layout(self, job: Job, extension: str) -> str:
+        """Where a finished file lands, relative to the chosen library root."""
+        if job.catalog == "podcast":
+            return Naming().podcast_path(job.meta, extension)
+        # Pasted links of kind `mix` or `radio` will get a fixed `Mixes/` layout here, the way
+        # episodes do. Until then every link lands like music.
+        return Naming().path(self.settings().naming_template, job.meta, extension)
+
     async def finish(
         self, job: Job, ready: Path | None = None, info: dict[str, object] | None = None
     ) -> None:
@@ -451,12 +473,7 @@ class Downloads:
         folder = self.folder(job)
         if ready:
             self.jobs.update(job.id, stage="moving", progress=1, speed=0, eta=None)
-            filename = (
-                Naming().podcast_path(job.meta, ready.suffix[1:])
-                if job.catalog == "podcast"
-                else Naming().path(self.settings().naming_template, job.meta, ready.suffix[1:])
-            )
-            target = root / filename
+            target = root / self.layout(job, ready.suffix[1:])
             if not target.resolve().is_relative_to(root):
                 raise DownloadError("MOVE_FAILED", "Output path escaped the library root")
             target.parent.mkdir(parents=True, exist_ok=True)
@@ -632,12 +649,14 @@ class Downloads:
             # pause belong to this job's source and leave other sites running.
             if error.code in BLOCKING_CODES:
                 with self.store.lock:
+                    # Read every row: a RETURNING statement only finishes, and so commits,
+                    # once its cursor is exhausted.
                     failures = self.store.db.execute(
                         "INSERT INTO source_control(source,blocking_failures) VALUES (?,1) "
                         "ON CONFLICT(source) DO UPDATE SET "
                         "blocking_failures=blocking_failures+1 RETURNING blocking_failures",
                         (job.source,),
-                    ).fetchone()[0]
+                    ).fetchall()[0][0]
                 if failures >= 3:
                     self.set_controls(source_paused=True, source=job.source)
                 self.store.record_probe("blocked", 0, error.detail, source=job.source)
