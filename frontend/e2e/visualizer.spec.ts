@@ -32,7 +32,7 @@ async function openNowPlaying(page: Page) {
   )
   await page.goto('/library/albums/album-1')
   await page.getByRole('button', { name: 'Play all' }).click()
-  await page.getByRole('link', { name: 'Open Now Playing' }).click()
+  await page.getByRole('link', { name: 'Open Now Playing' }).first().click()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
   return page.locator('.stage')
 }

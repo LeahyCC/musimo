@@ -51,7 +51,7 @@ test('now playing shows hover controls and the idle fade', async ({
   await page.goto('/library/albums/album-1')
   await page.getByRole('button', { name: 'Play all' }).click()
   await expect(page.locator('.live-player')).toContainText('First Light')
-  await page.getByRole('link', { name: 'Open Now Playing' }).click()
+  await page.getByRole('link', { name: 'Open Now Playing' }).first().click()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
 
   const stage = page.locator('.stage')
