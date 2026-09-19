@@ -20,6 +20,7 @@ from backend.errors import BLOCKING_CODES, error_guidance, site_label
 from backend.job_models import TERMINAL, Job
 from backend.job_store import Jobs
 from backend.library import Library
+from backend.link_tags import LinkTags, tidied
 from backend.models import Settings
 from backend.naming import Naming
 from backend.navidrome import Navidrome, NavidromeError
@@ -105,6 +106,7 @@ class Downloads:
         self.wake = asyncio.Event()
         self.jobs = Jobs(store, self.notify)
         self.enrichment = Enrichment(catalog)
+        self.link_tags = LinkTags(catalog, self.enrichment)
         self.podcasts = Podcasts(catalog)
         self.running: dict[str, asyncio.Task[None]] = {}
         self.processes: dict[str, asyncio.subprocess.Process] = {}
@@ -556,6 +558,12 @@ class Downloads:
                     meta = await self.enrichment.track(job.track_id)
                     warnings = await self.enrichment.extra(meta)
                 job = self.jobs.update(job_id, meta=meta.model_dump(), warnings=warnings)
+            if job.catalog == "link" and job.kind == "music" and not tidied(job):
+                # Mixes and radio shows are not catalog recordings. A retry keeps its first note.
+                meta, note = await self.link_tags.tidy(job.meta, site_label(job.source))
+                job = self.jobs.update(
+                    job_id, meta=meta.model_dump(), warnings=[*job.warnings, note]
+                )
             await self.artwork(job, folder)
             ready, info = await self.worker(self.jobs.get(job_id), folder)
             await self.finish(self.jobs.get(job_id), ready, info)
