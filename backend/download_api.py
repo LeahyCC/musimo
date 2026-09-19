@@ -7,7 +7,16 @@ from fastapi.responses import JSONResponse
 
 from backend.catalog import Result
 from backend.downloads import DownloadError, Downloads
-from backend.job_models import RUNNING, TERMINAL, BatchRequest, Enqueue, Job, Metadata, Pick
+from backend.job_models import (
+    RUNNING,
+    TERMINAL,
+    BatchRequest,
+    Enqueue,
+    Job,
+    Metadata,
+    Pick,
+    valid_candidate_id,
+)
 from backend.job_store import JobConflict
 from backend.naming import Naming
 
@@ -150,7 +159,11 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             raise HTTPException(404, "Job not found") from exc
         if job.stage in RUNNING or job.id in service.running:
             raise HTTPException(409, "Pause the job before choosing another recording")
-        if not any(candidate.id == request.candidate_id for candidate in job.candidates):
+        if not any(
+            candidate.id == request.candidate_id
+            and valid_candidate_id(candidate.source, candidate.id)
+            for candidate in job.candidates
+        ):
             raise HTTPException(422, "Choose a candidate from this job's match list")
         if any(
             row.id != job.id
@@ -208,6 +221,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             "clear-failed",
             "resume-source",
         ],
+        source: str = Query("youtube", pattern=r"^[a-z0-9_-]{1,32}$"),
     ) -> dict[str, object]:
         service = get()
         if action == "pause":
@@ -215,7 +229,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         elif action == "resume":
             service.set_controls(paused=False)
         elif action == "resume-source":
-            service.set_controls(source_paused=False)
+            service.set_controls(source_paused=False, source=source)
         failures: list[str] = []
         for job in service.jobs.list():
             try:

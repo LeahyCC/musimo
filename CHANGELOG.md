@@ -5,6 +5,7 @@
 ### Search and downloads
 
 - Search podcasts from a new Podcasts tab, open a show's latest episodes and download them straight from the publisher's file into `Podcasts/<show>`
+- Pause each download source on its own after repeated blocking errors, and give match candidates their own source and link
 
 ### Library and playback
 

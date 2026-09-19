@@ -34,7 +34,7 @@ The database has `settings` and `job_events`. Schema versions use SQLite user_ve
 
 The database also has `library_roots`, `library_files`, `library_state`, FTS5 and `search_cache`. Preserve multiple paths for the same recording. Cache by Deezer request path, query, result kind and page; L1 LRU with TTL, L2 SQLite. Catalog filters and sort operate on loaded provider results, so they do not create separate upstream cache entries. Library track browsing is the exception: see [library player](player.md) for the bounded whole-library snapshot its filters, sort and totals read from. No market selection is implemented. Use lightweight batched ownership joins, never file reads from result rendering.
 
-The database includes `jobs`, `batches`, `sources_health` and artifact manifests. Jobs hold catalog identity, target root, requested quality, selected source, candidates, attempts, desired action, observed stage, progress, final path and codec/bitrate. A partial unique index prevents duplicate active jobs using the specified catalog/id/format/bitrate/root key. Store bitrate as a non-null canonical value to avoid SQLite NULL uniqueness gaps. History persists after the active slot is released. The `linked_playlists` table stores the liked playlist link; schema version remains 3.
+The database includes `jobs`, `batches`, `sources_health` and artifact manifests. Jobs hold catalog identity, target root, requested quality, selected source, candidates, attempts, desired action, observed stage, progress, final path and codec/bitrate. A partial unique index prevents duplicate active jobs using the specified catalog/id/format/bitrate/root key. Store bitrate as a non-null canonical value to avoid SQLite NULL uniqueness gaps. History persists after the active slot is released. The `linked_playlists` table stores the liked playlist link. Schema version 4 adds `source_control`, one row per download source with its pause flag and blocking failure count; the upgrade copies the old single `queue_control.source_paused` flag and count across as the `youtube` row, and `queue_control` keeps only the global pause.
 
 Events have an increasing ID, type, payload and timestamp. Retain a bounded replay window; a stale or future cursor receives a reset event and must reload the snapshot. SSE heartbeats contain no IDs. One stream per browser tab; no per-track timers. Uvicorn's graceful shutdown is bounded at two seconds so open SSE connections cannot indefinitely hold a restart. File logs and exported diagnostics must redact credentials and token-bearing URLs.
 
@@ -81,7 +81,7 @@ Downloads (download_api.py):
 - `POST /api/batches/{id}/{pause,resume,cancel,retry}`: batch actions.
 - `POST /api/jobs/{id}/pick`: select match candidate.
 - `POST /api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`: job actions.
-- `POST /api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,resume-source}`: queue commands.
+- `POST /api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,resume-source}`: queue commands. `resume-source` takes `?source=` and defaults to `youtube`.
 
 Artist downloads (artist_downloads.py):
 
@@ -146,7 +146,7 @@ any active stage -> retry_wait -> queued
 any active stage -> failed -> queued (manual retry)
 ```
 
-Conversion is skipped when possible; remuxing is recorded distinctly from lossy encoding. A pause during tagging either finishes that artifact or restarts tagging later, never continues a corrupt partial tag write. Pause intent remains durable through process exit and container restart. A restart reconciles active stages against the manifest before dispatch. Errors retain stage, code, retryability, a redacted tool tail and tool version. Three consecutive blocking errors pause a source, not unrelated healthy sources. Disk-full/unwritable jobs require a successful destination probe before retry.
+Conversion is skipped when possible; remuxing is recorded distinctly from lossy encoding. A pause during tagging either finishes that artifact or restarts tagging later, never continues a corrupt partial tag write. Pause intent remains durable through process exit and container restart. A restart reconciles active stages against the manifest before dispatch. Errors retain stage, code, retryability, a redacted tool tail and tool version. Three consecutive blocking errors pause a source, not unrelated healthy sources: each job records its `source`, the count and pause are kept per source, and the dispatcher skips a queued job only when its own source is paused. Disk-full/unwritable jobs require a successful destination probe before retry.
 
 ## Screens and flow
 

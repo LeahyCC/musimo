@@ -10,8 +10,8 @@ import time
 from pathlib import Path
 from typing import Protocol, cast
 
-from backend.errors import error_guidance
-from backend.job_models import Candidate, Job
+from backend.errors import YOUTUBE_ONLY_CODES, error_guidance, site_label
+from backend.job_models import Candidate, Job, valid_candidate_id
 from backend.matching import Matcher
 from backend.tagging import Tagger, probe
 
@@ -38,6 +38,7 @@ def main() -> None:
     last = 0.0
     stage = "matching"
     podcast = job.catalog == "podcast"
+    site = site_label(job.source)
 
     class Logger:
         def debug(self, message: str) -> None:
@@ -120,8 +121,8 @@ def main() -> None:
                 candidates: list[Candidate] = []
                 if isinstance(entries, list):
                     for entry in entries:
-                        if not isinstance(entry, dict) or not re.fullmatch(
-                            r"[A-Za-z0-9_-]{11}", str(entry.get("id", ""))
+                        if not isinstance(entry, dict) or not valid_candidate_id(
+                            "youtube", str(entry.get("id", ""))
                         ):
                             continue
                         artist = str(entry.get("channel") or entry.get("uploader") or "")
@@ -132,6 +133,8 @@ def main() -> None:
                                 artist=artist,
                                 duration=float(entry.get("duration") or 0),
                                 topic=artist.endswith(" - Topic"),
+                                source="youtube",
+                                url="https://www.youtube.com/watch?v=" + str(entry["id"]),
                             )
                         )
                 matcher = Matcher()
@@ -145,7 +148,7 @@ def main() -> None:
                             selected="",
                             check_match=True,
                         )
-                    hint, fix = error_guidance("NO_MATCH")
+                    hint, fix = error_guidance("NO_MATCH", site)
                     emit(
                         "error",
                         code="NO_MATCH",
@@ -187,7 +190,7 @@ def main() -> None:
                 and job.meta.duration
                 and abs(duration - job.meta.duration) > max(15, job.meta.duration * 0.12)
             ):
-                hint, fix = error_guidance("DURATION_MISMATCH")
+                hint, fix = error_guidance("DURATION_MISMATCH", site)
                 emit(
                     "error",
                     code="DURATION_MISMATCH",
@@ -233,18 +236,12 @@ def main() -> None:
             if "timed out" in lower
             else "DOWNLOAD_FAILED"
         )
-        if podcast and code in {
-            "SOURCE_BLOCKED",
-            "RATE_LIMITED",
-            "POT_MISSING",
-            "JS_RUNTIME_MISSING",
-            "COOKIES_EXPIRED",
-        }:
-            # These point at YouTube and would pause its queue; an episode host is not YouTube.
+        if job.source != "youtube" and code in YOUTUBE_ONLY_CODES:
+            # These point at YouTube and would pause its queue; another site is not YouTube.
             code = "DOWNLOAD_FAILED"
         if code == "DOWNLOAD_FAILED" and stage in {"converting", "tagging"}:
             code = "TRANSCODE_FAILED" if stage == "converting" else "TAG_FAILED"
-        hint, fix = error_guidance(code)
+        hint, fix = error_guidance(code, site)
         emit(
             "error",
             code=code,

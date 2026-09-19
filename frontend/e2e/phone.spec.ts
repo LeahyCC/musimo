@@ -42,6 +42,7 @@ const activeJob: DownloadJob = {
   batch_label: '',
   album_id: 42,
   catalog: 'deezer',
+  source: 'youtube',
   track_id: 101,
   format: 'original',
   target: '/music',

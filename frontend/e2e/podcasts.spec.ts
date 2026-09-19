@@ -21,6 +21,7 @@ test('a podcast is found in search and one episode queues without the music filt
       batch_label: '',
       album_id: 0,
       catalog: 'podcast',
+      source: 'podcast',
       track_id: episode.id,
       format: 'original',
       target: '/music',

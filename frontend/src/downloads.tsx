@@ -46,7 +46,7 @@ import {
 
 export type QueueData = {
   jobs: DownloadJob[]
-  controls: { paused: boolean; source_paused: boolean }
+  controls: { paused: boolean; source_paused: boolean; paused_sources: string[] }
   summary: {
     active: number
     failed: number
@@ -86,7 +86,7 @@ export function updateJob(client: QueryClient, job: DownloadJob) {
       }
     }
     return {
-      controls: old?.controls ?? { paused: false, source_paused: false },
+      controls: old?.controls ?? { paused: false, source_paused: false, paused_sources: [] },
       summary,
       jobs: [job, ...(old?.jobs ?? []).filter((item) => item.id !== job.id)],
     }
@@ -608,7 +608,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               </div>
               <a
                 className="coarse:inline-flex coarse:min-h-11 coarse:items-center"
-                href={`https://www.youtube.com/watch?v=${candidate.id}`}
+                href={candidate.url || `https://www.youtube.com/watch?v=${candidate.id}`}
                 target="_blank"
                 rel="noreferrer"
               >

@@ -10,13 +10,13 @@ Album-card status lines separate owned and queued counts. They come from the sha
 
 The default is Original. AAC stays M4A and Opus is remuxed into an Opus container without re-encoding. Other requested formats convert only when needed: AAC/Opus at 160 kbps, MP3 at 320 kbps. Conversion cannot improve a lossy source. Finished jobs show the measured audio packet bitrate and codec. Custom quality presets are not implemented yet.
 
-A lower-confidence recording gets a "check match" flag. Its top three candidates link to YouTube for listening. If automatic matching rejects every candidate, the job now keeps up to three duration-valid rejected candidates for review instead of discarding them. Nothing downloads until the user selects one. Pause before choosing another match. A correction after completion writes a new file and keeps the previous file. Copy path is available; opening a folder on a remote Docker host is not implemented.
+A lower-confidence recording gets a "check match" flag. Its top three candidates link out for listening. Each candidate carries its `source` and `url`; the card links to that `url` and falls back to the YouTube watch page for jobs saved before candidates had one. Picking checks the ID against the candidate's own source (an 11 character ID for YouTube) and refuses a source with no ID rule. If automatic matching rejects every candidate, the job now keeps up to three duration-valid rejected candidates for review instead of discarding them. Nothing downloads until the user selects one. Pause before choosing another match. A correction after completion writes a new file and keeps the previous file. Copy path is available; opening a folder on a remote Docker host is not implemented.
 
 ## Podcast episodes
 
 An episode downloads the publisher's own file, so there is no YouTube search, match review or duration check (feed lengths are rough and stitched-in ads change them). `POST /api/podcast-episodes` takes the show and episode IDs; the server looks the episode up again and never takes a file address from the browser. Jobs are stored with `catalog` set to `podcast` and the file address in `source_url`, so episode numbers never collide with Deezer track numbers.
 
-Episodes keep the format the show publishes (usually MP3 or AAC) and land at `Podcasts/<show>/<YYYY-MM-DD> - <title>.<ext>` in the chosen folder, ignoring the music naming template. Tags use the host as artist, the show as album, the release date and the genre Podcast, with the show's artwork. The files are indexed like music, so Navidrome shows each show as an album. A worker gets an hour per episode instead of ten minutes. Host errors are reported as `DOWNLOAD_FAILED` and never count toward the YouTube block that pauses the queue; a YouTube pause does not hold back episodes.
+Episodes keep the format the show publishes (usually MP3 or AAC) and land at `Podcasts/<show>/<YYYY-MM-DD> - <title>.<ext>` in the chosen folder, ignoring the music naming template. Tags use the host as artist, the show as album, the release date and the genre Podcast, with the show's artwork. The files are indexed like music, so Navidrome shows each show as an album. A worker gets an hour per episode instead of ten minutes. Episode jobs have `source` set to `podcast`. Host errors are reported as `DOWNLOAD_FAILED` and never count toward the YouTube block; a YouTube pause does not hold back episodes.
 
 ## Storage and safety
 
@@ -42,7 +42,7 @@ For explicit scanning, select `api`, set the Navidrome URL and library ID, and m
 
 Each song's three-dot button opens download options above the track list, including in scrolling lists. The popup stays inside the viewport and opens above the button when space below is tight. Click outside, press Escape, or scroll the list to dismiss it. Opening another song's options closes the previous popup.
 
-Concurrency is 1–3, default 2. YouTube requests have a random 0.3–0.8 second delay. Retryable network and rate-limit failures use capped full-jitter backoff, up to four total attempts. Disk, permission, tagging, conversion and match failures require intervention. Three consecutive blocking source errors pause new work from YouTube.
+Concurrency is 1–3, default 2. YouTube requests have a random 0.3–0.8 second delay. Retryable network and rate-limit failures use capped full-jitter backoff, up to four total attempts. Disk, permission, tagging, conversion and match failures require intervention. Every job has a `source` (`youtube` for catalog matches, `podcast` for episodes; stored jobs without one take it from their catalog). Three consecutive blocking errors (`SOURCE_BLOCKED`, `POT_MISSING`, `JS_RUNTIME_MISSING`, `COOKIES_EXPIRED`) pause new work from that source only, and a completed download from it resets its count. The YouTube only codes, including `RATE_LIMITED`, are reported only for YouTube jobs; any other source gets `DOWNLOAD_FAILED`. `POST /api/queue/resume-source` resumes YouTube, or the source named in `?source=`. Queue controls keep `source_paused` as the YouTube flag and add `paused_sources`, the list of every paused source.
 
 The server acknowledges pause immediately and finishes stopping its process group asynchronously. Cancellation after publication completes reconciliation instead of deleting a file that has already landed. Paused state survives restart. Abruptly stopped running jobs return to the queue and resume through yt-dlp.
 
@@ -52,7 +52,7 @@ An album with an incomplete catalog track list returns an error before creating 
 
 ## Error codes and recovery
 
-Failed downloads display a plain hint with a link to the relevant setting or diagnostic. Each error code maps to one fix target:
+Failed downloads display a plain hint with a link to the relevant setting or diagnostic. Each error code maps to one fix target. The `SOURCE_BLOCKED`, `RATE_LIMITED` and `NO_MATCH` hints name the job's site; the table shows the YouTube wording:
 
 | Code                 | Hint                                                       | Link target                      |
 | -------------------- | ---------------------------------------------------------- | -------------------------------- |
