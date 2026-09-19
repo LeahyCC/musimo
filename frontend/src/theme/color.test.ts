@@ -1,7 +1,33 @@
 import { describe, expect, it } from 'vitest'
 
-import { contrastRatio, hexContrast, parseHex, relativeLuminance } from './color'
+import { contrastRatio, hexContrast, mixRgb, parseHex, relativeLuminance, toHex } from './color'
 import { BUILT_IN_THEMES } from './themes'
+
+describe('mixRgb and toHex', () => {
+  const black = { r: 0, g: 0, b: 0, a: 1 }
+  const white = { r: 255, g: 255, b: 255, a: 1 }
+
+  it('moves part of the way from one color to the other', () => {
+    expect(mixRgb(black, white, 0)).toEqual(black)
+    expect(mixRgb(black, white, 1)).toEqual(white)
+    expect(mixRgb(black, white, 0.5)).toEqual({ r: 127.5, g: 127.5, b: 127.5, a: 1 })
+  })
+
+  it('writes six digits, rounded and held to the range', () => {
+    expect(toHex(white)).toBe('#ffffff')
+    expect(toHex({ r: 17, g: 23, b: 22, a: 1 })).toBe('#111716')
+    expect(toHex({ r: 127.5, g: -4, b: 300, a: 1 })).toBe('#8000ff')
+  })
+
+  it('reads back what it wrote', () => {
+    expect(parseHex(toHex({ r: 195, g: 228, b: 162, a: 1 }))).toEqual({
+      r: 195,
+      g: 228,
+      b: 162,
+      a: 1,
+    })
+  })
+})
 
 describe('parseHex', () => {
   it('reads the three lengths a person can type', () => {
