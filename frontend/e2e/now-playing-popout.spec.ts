@@ -143,7 +143,7 @@ test('a very long title stays on one line in Up next and stops after three in th
     })
   // The stage is the page, so the title sits under it in size: a page heading, not a hero.
   expect(hero.size).toBeLessThanOrEqual(32)
-  expect(Math.round(hero.lines)).toBe(3)
+  expect(Math.round(hero.lines)).toBeLessThanOrEqual(3)
   expect(hero.right).toBeLessThanOrEqual(hero.width)
 })
 

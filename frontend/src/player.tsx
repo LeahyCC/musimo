@@ -82,6 +82,8 @@ type Playback = {
   previewState: (trackId: number) => PreviewState | undefined
   /** Opens the add-to-playlist sheet; a phone's mini player has no button of its own for it. */
   openPlaylistPicker: () => void
+  /** The footer's status line. Now Playing hides the footer, so the page repeats it. */
+  notice: string
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -112,6 +114,7 @@ const PlayerContext = createContext<Playback>({
   liked: { isLiked: false, canToggle: false, busy: false, toggle: () => undefined },
   previewState: () => undefined,
   openPlaylistPicker: () => undefined,
+  notice: '',
 })
 export const usePlayer = () => useContext(PlayerContext)
 
@@ -905,6 +908,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         },
         previewState: (trackId: number) => previewStates.get(trackId),
         openPlaylistPicker: openPlaylistDialog,
+        notice,
       }}
     >
       {children}

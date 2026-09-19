@@ -1965,6 +1965,11 @@ export function NowPlayingPage() {
               <Plus size={16} /> Add to playlist
             </Button>
           </div>
+          {/* The footer's status line, which is hidden with it: a track that will not play, or a
+              playlist just made from the button above, would otherwise say nothing here. */}
+          <p className="mt-[14px] text-small text-muted" role="status">
+            {player.notice}
+          </p>
         </div>
       </section>
       <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)] gap-[18px] max-tablet:grid-cols-1">
