@@ -31,7 +31,8 @@ MAX_ENTRIES = 500
 RESOLVE_SECONDS = 20
 # Each resolve starts a yt-dlp child process, so only this many run at once; the rest wait.
 MAX_RESOLVES = 2
-ENTRY_ID = re.compile(r"[A-Za-z0-9_.:-]{1,128}")
+# Slashes and percent signs are there for a file inside an item, as the Internet Archive names it.
+ENTRY_ID = re.compile(r"[A-Za-z0-9_.:/%~-]{1,256}")
 DAY = re.compile(r"\d{4}(-\d{2}-\d{2})?")
 LIVE_MESSAGE = "Live streams never finish, so they can't be saved."
 
@@ -50,6 +51,9 @@ class LinkEntry(BaseModel):
     duration: float = 0
     art: str = ""
     owned: bool = False
+    # A track's place on an album. Zero when the site gives none. Kept on the server only.
+    track: int = Field(default=0, exclude=True)
+    tracks: int = Field(default=0, exclude=True)
     # Kept on the server only. The download address never goes to the browser and back.
     url: str = Field(default="", exclude=True)
     extractor: str = Field(default="", exclude=True)
@@ -73,6 +77,11 @@ def stable_id(text: str) -> int:
 
 def text(value: object, limit: int = 300) -> str:
     return str(value or "").strip()[:limit]
+
+
+def place(value: object) -> int:
+    """A track number or count from the resolver, or 0 when it is not a sensible one."""
+    return value if isinstance(value, int) and 0 <= value < 10000 else 0
 
 
 class Links:
@@ -130,6 +139,8 @@ class Links:
             date=date if DAY.fullmatch(date) else "",
             duration=seconds if math.isfinite(seconds) and 0 <= seconds < 86400 * 7 else 0,
             art=safe_art(site, str(raw.get("art", ""))),
+            track=place(raw.get("track")),
+            tracks=place(raw.get("tracks")),
             url=url,
             extractor=extractor,
         )
@@ -251,6 +262,8 @@ class Links:
                 date=row.date,
                 duration=row.duration,
                 art=row.art,
+                track=row.track or 1,
+                tracks=max(row.tracks, row.track, 1),
             )
             prepared[track_id] = (meta, row.url)
         grouped = len(prepared) > 1
