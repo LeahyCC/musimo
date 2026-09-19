@@ -1,6 +1,6 @@
 # Downloads
 
-Musimo provides durable single-track jobs, album batches, queue controls and download history. Artist pages can prepare albums only or every release type in one review sheet with complete catalog counts, release selection and skip-owned defaults. Pasted-link imports remain later work.
+Musimo provides durable single-track jobs, album batches, queue controls and download history. Artist pages can prepare albums only or every release type in one review sheet with complete catalog counts, release selection and skip-owned defaults. Pasted links have a server API (see below); their review sheet in the search box is later work.
 
 ## User flow
 
@@ -17,6 +17,37 @@ A lower-confidence recording gets a "check match" flag. Its top three candidates
 An episode downloads the publisher's own file, so there is no YouTube search, match review or duration check (feed lengths are rough and stitched-in ads change them). `POST /api/podcast-episodes` takes the show and episode IDs; the server looks the episode up again and never takes a file address from the browser. Jobs are stored with `catalog` set to `podcast` and the file address in `source_url`, so episode numbers never collide with Deezer track numbers.
 
 Episodes keep the format the show publishes (usually MP3 or AAC) and land at `Podcasts/<show>/<YYYY-MM-DD> - <title>.<ext>` in the chosen folder, ignoring the music naming template. Tags use the host as artist, the show as album, the release date and the genre Podcast, with the show's artwork. The files are indexed like music, so Navidrome shows each show as an album. A worker gets an hour per episode instead of ten minutes. Episode jobs have `source` set to `podcast`. Host errors are reported as `DOWNLOAD_FAILED` and never count toward the YouTube block; a YouTube pause does not hold back episodes.
+
+## Pasted links
+
+A link to an allowed site downloads that recording directly, like an episode: no search, no match review, no catalog length check. The allowed sites live in one table in `backend/sources.py`. Each row has the site label, the job `source`, a kind (`music`, `mix` or `radio`), the URL hosts it accepts, the yt-dlp extractors a link may pass through, and the ones that mean a single recording. Only YouTube (kind `music`) is listed so far.
+
+```text
+POST /api/links/resolve {url}
+   |
+   +-- not https, IP host, user or password, odd port, host not listed ---> 422, names the allowed sites
+   +-- Spotify or Apple Music ---> 422 "Catalog imports are not built yet."
+   |
+   v
+child process, 20 s, no download ---> live stream? 422.  nothing downloadable? 422.
+   |
+   v
+preview saved on the server for 10 minutes under a random token
+   |
+POST /api/links {token, entry_ids, format?, target?}
+   |
+   v
+jobs with catalog "link" (more than one entry: one download group)
+```
+
+- The preview runs `python -m backend.resolver` in its own process group, the way the download worker runs, so yt-dlp never loads into the server. It is stopped after 20 seconds. It reads a list flat and returns at most 500 entries.
+- Each preview entry has an ID, title, artist or uploader, album when the site gives one, date, length, artwork and an owned flag. Owned uses the library's title, artist and length match, since a site's own IDs have no ISRC. The server keeps an entry only if it is one recording from the same site; list pages, live streams and anything off the site are dropped. Artwork is kept only from the site's own image host (`i.ytimg.com` for YouTube), because the server fetches it later.
+- The server keeps at most 32 previews. An expired or unknown token gets 404 "This link preview has expired. Paste the link again."
+- `POST /api/links` queues only entries from the saved preview. The browser never sends titles, file addresses or paths, and extra fields are refused. Metadata comes from the preview: title, artist (also album artist), album, date and artwork. A recording with no album is filed as its own single, with its title as the album.
+- A link job's `track_id` is a stable 63 bit hash of `extractor:id`, so the same recording from a direct link or a playlist reuses the active or finished job like any other track. The job's `source` comes from the site row, so a YouTube link respects the YouTube pause and keeps the YouTube error codes.
+- The worker passes the row's extractors to yt-dlp as `allowed_extractors`. That switches off the generic extractor, so a redirect to an unlisted site fails with `SITE_NOT_ALLOWED`. It reads the link once without downloading, refuses a live stream with `LIVE_STREAM`, and refuses anything that did not land on one recording of the site. No cookies, yt-dlp options or output paths come from the browser.
+- Kind `music` lands through the normal naming template. Kinds `mix` and `radio` get the hour-long worker budget that episodes have; their `Mixes/` layout is later work and has a marked place in `Downloads.layout`.
+- Not built yet: the review sheet in the search box, the Deezer tidy-up of a pasted music link, and any site besides YouTube.
 
 ## Storage and safety
 
@@ -42,7 +73,7 @@ For explicit scanning, select `api`, set the Navidrome URL and library ID, and m
 
 Each song's three-dot button opens download options above the track list, including in scrolling lists. The popup stays inside the viewport and opens above the button when space below is tight. Click outside, press Escape, or scroll the list to dismiss it. Opening another song's options closes the previous popup.
 
-Concurrency is 1–3, default 2. YouTube requests have a random 0.3–0.8 second delay. Retryable network and rate-limit failures use capped full-jitter backoff, up to four total attempts. Disk, permission, tagging, conversion and match failures require intervention. Every job has a `source` (`youtube` for catalog matches, `podcast` for episodes; stored jobs without one take it from their catalog). Three consecutive blocking errors (`SOURCE_BLOCKED`, `POT_MISSING`, `JS_RUNTIME_MISSING`, `COOKIES_EXPIRED`) pause new work from that source only, and a completed download from it resets its count. The YouTube only codes, including `RATE_LIMITED`, are reported only for YouTube jobs; any other source gets `DOWNLOAD_FAILED`. `POST /api/queue/resume-source` resumes YouTube, or the source named in `?source=`. Queue controls keep `source_paused` as the YouTube flag and add `paused_sources`, the list of every paused source.
+Concurrency is 1–3, default 2. YouTube requests have a random 0.3–0.8 second delay. Retryable network and rate-limit failures use capped full-jitter backoff, up to four total attempts. Disk, permission, tagging, conversion and match failures require intervention. Every job has a `source` (`youtube` for catalog matches, `podcast` for episodes, the site row's source for pasted links; stored jobs without one take it from their catalog). Three consecutive blocking errors (`SOURCE_BLOCKED`, `POT_MISSING`, `JS_RUNTIME_MISSING`, `COOKIES_EXPIRED`) pause new work from that source only, and a completed download from it resets its count. `POT_MISSING`, `JS_RUNTIME_MISSING` and `COOKIES_EXPIRED` name YouTube's own helpers, so any other source gets `DOWNLOAD_FAILED` instead. A 403 or 429 from another allowed site keeps `SOURCE_BLOCKED` or `RATE_LIMITED` for that site, so three blocks in a row pause that site alone. Podcast hosts are the exception: every show has its own host, so their refusals are `DOWNLOAD_FAILED` and never pause anything. `POST /api/queue/resume-source` resumes YouTube, or the source named in `?source=`. Queue controls keep `source_paused` as the YouTube flag and add `paused_sources`, the list of every paused source.
 
 The server acknowledges pause immediately and finishes stopping its process group asynchronously. Cancellation after publication completes reconciliation instead of deleting a file that has already landed. Paused state survives restart. Abruptly stopped running jobs return to the queue and resume through yt-dlp.
 
@@ -69,6 +100,8 @@ Failed downloads display a plain hint with a link to the relevant setting or dia
 | `TAG_FAILED`         | The audio file could not be tagged with metadata.          | Settings → Output format         |
 | `NO_MATCH`           | No matching recording was found on YouTube.                | Job card → Pick candidate        |
 | `DURATION_MISMATCH`  | The downloaded audio length differs from the catalog.      | Job card → Pick candidate        |
+| `LIVE_STREAM`        | Live streams never finish, so they can't be saved.         | None, clear the card             |
+| `SITE_NOT_ALLOWED`   | The link led to a site Musimo does not download from.      | None, clear the card             |
 | `TIMEOUT`            | The download stage timed out before completing.            | Retry button                     |
 | `DOWNLOAD_FAILED`    | The download stopped without a specific cause.             | Retry button                     |
 | `INTERNAL_ERROR`     | An unexpected error occurred during processing.            | Report with tool output          |

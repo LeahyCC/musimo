@@ -5,9 +5,9 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal
 
-from backend.job_models import RUNNING, TERMINAL, Format, Job, Metadata
+from backend.job_models import RUNNING, TERMINAL, CatalogName, Format, Job, Metadata
+from backend.sources import Kind
 from backend.store import Store
 
 
@@ -86,11 +86,14 @@ class Jobs:
         *,
         album_id: int = 0,
         replace_match: bool = False,
-        catalog: Literal["deezer", "podcast"] = "deezer",
+        catalog: CatalogName = "deezer",
         prepared: dict[int, tuple[Metadata, str]] | None = None,
+        source: str = "",
+        kind: Kind = "music",
     ) -> builtins.list[Job]:
-        """Queue tracks, reusing active or completed jobs. `prepared` supplies podcast metadata
-        and the episode file, which have no catalog lookup later."""
+        """Queue tracks, reusing active or completed jobs. `prepared` supplies the metadata and
+        file address for podcast and link jobs, which have no catalog lookup later. An empty
+        `source` lets the job take it from its catalog."""
         jobs: builtins.list[Job] = []
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
@@ -133,12 +136,15 @@ class Jobs:
                         catalog=catalog,
                         track_id=track_id,
                         source_url=source_url,
+                        kind=kind,
                         format=format,
                         target=target,
                         meta=meta,
                         created_at=now,
                         updated_at=now,
                     )
+                    if source:
+                        job = job.model_copy(update={"source": source})
                     self.store.db.execute(
                         "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?)",
                         (
