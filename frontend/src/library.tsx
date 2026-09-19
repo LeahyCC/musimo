@@ -1,4 +1,14 @@
-import { useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
+import {
+  type FormEvent,
+  type PointerEvent as ReactPointerEvent,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from 'react'
 
 import {
   keepPreviousData,
@@ -9,6 +19,8 @@ import {
 } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
+  ChevronDown,
+  ChevronUp,
   Disc3,
   Grid2X2,
   Heart,
@@ -51,6 +63,7 @@ import { NowPlayingStage } from './now-playing-popout'
 import { PageTitle } from './page-title'
 import {
   durationText,
+  queueEntryKey,
   remember,
   songCount,
   stored,
@@ -58,6 +71,7 @@ import {
   usePlayer,
   usePlaylistSongs,
 } from './player'
+import { RowMenu } from './row-menu'
 import {
   Button,
   buttonClassName,
@@ -353,6 +367,7 @@ function AlbumItem({
   onOpen,
   onPlay,
   onShuffle,
+  onQueue,
 }: {
   album: LibraryAlbum
   layout: Layout
@@ -360,7 +375,19 @@ function AlbumItem({
   onOpen: () => void
   onPlay: () => void
   onShuffle: () => void
+  /** Queues the whole album: right after the playing track, or at the end. */
+  onQueue: (upNext: boolean) => void
 }) {
+  const menu = (
+    <RowMenu
+      label={`More actions for ${album.name}`}
+      disabled={loading}
+      actions={queueActions(
+        () => onQueue(true),
+        () => onQueue(false),
+      )}
+    />
+  )
   if (layout === 'list')
     return (
       <div className={collectionRowClass}>
@@ -397,6 +424,7 @@ function AlbumItem({
           >
             <Shuffle size={17} />
           </IconButton>
+          {menu}
         </div>
       </div>
     )
@@ -404,6 +432,11 @@ function AlbumItem({
   return (
     <article className="library-card group min-w-0">
       <div className="relative">
+        {/* Over the artwork, so it takes the page's wash to stay readable, and shows on hover or
+            focus like the play button beside it. */}
+        <div className="absolute top-[6px] right-[6px] z-raised rounded-pill bg-canvas/93 opacity-0 transition-opacity duration-[140ms] group-hover:opacity-100 group-focus-within:opacity-100 no-hover:opacity-100">
+          {menu}
+        </div>
         <button
           className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-[10px] border border-line bg-raised p-0 text-faint"
           aria-label={`Open ${album.name}`}
@@ -538,31 +571,27 @@ function ArtistItem({
   )
 }
 
+/** The two things any song, album or playlist row can do with the queue. */
+const queueActions = (playNext: () => void, addToQueue: () => void) => [
+  { label: 'Play next', onSelect: playNext },
+  { label: 'Add to queue', onSelect: addToQueue },
+]
+
 function TrackList({
   tracks,
   source,
-  from = 0,
   removing = false,
   onRemove,
-  oneLine = false,
 }: {
   tracks: LibraryTrack[]
   source: string
-  /**
-   * Where in `tracks` the rows begin. Up next starts after the playing track, but a row still
-   * plays from its own place in the whole queue, so the list is not cut before it is passed on.
-   */
-  from?: number
   removing?: boolean
   onRemove?: (index: number) => void
-  /** Cut each title, artist and album to one line with an ellipsis instead of wrapping. */
-  oneLine?: boolean
 }) {
   const player = usePlayer()
   return (
     <div className="library-tracks grid">
-      {tracks.slice(from).map((track, position) => {
-        const index = from + position
+      {tracks.map((track, index) => {
         // A playlist may hold the same song twice, and the same song appears in several
         // collections, so the queue and the position are both part of "the playing row".
         const current =
@@ -587,17 +616,10 @@ function TrackList({
             >
               <span className="text-small text-muted">{track.track ?? index + 1}</span>
               <span className="grid min-w-0 gap-[3px]">
-                <strong className={cx(oneLine && 'truncate')}>{track.title}</strong>
-                <small className={cx('text-small text-muted', oneLine && 'truncate')}>
-                  {track.artist}
-                </small>
+                <strong>{track.title}</strong>
+                <small className="text-small text-muted">{track.artist}</small>
               </span>
-              <small
-                className={cx(
-                  'min-w-0 text-small text-muted max-phone:hidden',
-                  oneLine && 'truncate',
-                )}
-              >
+              <small className="min-w-0 text-small text-muted max-phone:hidden">
                 {track.album}
               </small>
               <time className="text-small text-muted max-phone:hidden">
@@ -605,6 +627,14 @@ function TrackList({
               </time>
               {playing ? <Pause size={15} /> : <Play size={15} fill="currentColor" />}
             </button>
+            <RowMenu
+              className="mr-[5px]"
+              label={`More actions for ${track.title}`}
+              actions={queueActions(
+                () => player.playNext([track]),
+                () => player.addToQueue([track]),
+              )}
+            />
             {onRemove && (
               <IconButton
                 className="mr-[5px] w-[38px] flex-none"
@@ -707,6 +737,7 @@ function PlaylistRow({
   onOpen,
   onPlay,
   onShuffle,
+  onQueue,
   onDelete,
 }: {
   playlist: LibraryPlaylist
@@ -717,6 +748,8 @@ function PlaylistRow({
   onOpen: () => void
   onPlay: () => void
   onShuffle: () => void
+  /** Queues the whole playlist: right after the playing track, or at the end. */
+  onQueue: (upNext: boolean) => void
   onDelete: () => void
 }) {
   const copy = (
@@ -775,6 +808,14 @@ function PlaylistRow({
         >
           <Shuffle size={17} />
         </IconButton>
+        <RowMenu
+          label={`More actions for ${playlist.name}`}
+          disabled={loading}
+          actions={queueActions(
+            () => onQueue(true),
+            () => onQueue(false),
+          )}
+        />
         {!liked && (
           <IconButton
             size="box"
@@ -789,6 +830,16 @@ function PlaylistRow({
       </div>
     </div>
   )
+}
+
+async function collectionTracks(kind: Collection, id: string) {
+  if (kind === 'album')
+    return (await api(`library/albums/${encodeURIComponent(id)}`, libraryAlbumDetailSchema)).song
+  if (kind === 'playlist')
+    return (await api(`library/playlists/${encodeURIComponent(id)}`, libraryPlaylistDetailSchema))
+      .entry
+  return (await api(`library/artists/${encodeURIComponent(id)}/tracks`, libraryArtistTracksSchema))
+    .items
 }
 
 export function LibraryPage({
@@ -989,22 +1040,21 @@ export function LibraryPage({
     },
   })
   const playCollection = useMutation({
-    mutationFn: async ({ kind, id }: { kind: Collection; id: string; shuffled: boolean }) => {
-      if (kind === 'album')
-        return (await api(`library/albums/${encodeURIComponent(id)}`, libraryAlbumDetailSchema))
-          .song
-      if (kind === 'playlist')
-        return (
-          await api(`library/playlists/${encodeURIComponent(id)}`, libraryPlaylistDetailSchema)
-        ).entry
-      return (
-        await api(`library/artists/${encodeURIComponent(id)}/tracks`, libraryArtistTracksSchema)
-      ).items
-    },
+    mutationFn: ({ kind, id }: { kind: Collection; id: string; shuffled: boolean }) =>
+      collectionTracks(kind, id),
     onSuccess: (items, { kind, id, shuffled }) => {
       const source = `${kind}:${id}`
       if (shuffled) player.shuffleLibrary(items, source)
       else player.playLibrary(items, 0, source)
+    },
+  })
+  // An album or playlist card has not loaded its songs, so queueing one reads them first.
+  const queueCollection = useMutation({
+    mutationFn: ({ kind, id }: { kind: 'album' | 'playlist'; id: string; upNext: boolean }) =>
+      collectionTracks(kind, id),
+    onSuccess: (items, { upNext }) => {
+      if (upNext) player.playNext(items)
+      else player.addToQueue(items)
     },
   })
   // The filters are part of the identity: a Jazz selection and a Rock selection are two
@@ -1115,6 +1165,7 @@ export function LibraryPage({
   const detailError = playlistId ? playlistDetail.error : albumId ? albumDetail.error : null
   const busy =
     playCollection.isPending ||
+    queueCollection.isPending ||
     playTracks.isPending ||
     albumDetail.isLoading ||
     artistDetail.isLoading ||
@@ -1421,6 +1472,14 @@ export function LibraryPage({
               >
                 <Shuffle size={15} /> Shuffle
               </Button>
+              <RowMenu
+                label={`More actions for ${detailTitle}`}
+                disabled={!detailTracks.length}
+                actions={queueActions(
+                  () => player.playNext(detailTracks),
+                  () => player.addToQueue(detailTracks),
+                )}
+              />
               {playlist && (
                 <Button
                   onClick={() => {
@@ -1708,6 +1767,9 @@ export function LibraryPage({
                     onShuffle={() =>
                       playCollection.mutate({ kind: 'album', id: album.id, shuffled: true })
                     }
+                    onQueue={(upNext) =>
+                      queueCollection.mutate({ kind: 'album', id: album.id, upNext })
+                    }
                   />
                 ))}
               </div>
@@ -1760,6 +1822,9 @@ export function LibraryPage({
                 }
                 onShuffle={() =>
                   playCollection.mutate({ kind: 'album', id: album.id, shuffled: true })
+                }
+                onQueue={(upNext) =>
+                  queueCollection.mutate({ kind: 'album', id: album.id, upNext })
                 }
               />
             ))}
@@ -1873,6 +1938,9 @@ export function LibraryPage({
                 onShuffle={() =>
                   playCollection.mutate({ kind: 'playlist', id: item.id, shuffled: true })
                 }
+                onQueue={(upNext) =>
+                  queueCollection.mutate({ kind: 'playlist', id: item.id, upNext })
+                }
                 onDelete={() => confirmDelete(item)}
               />
             ))}
@@ -1881,6 +1949,9 @@ export function LibraryPage({
       )}
       {playCollection.isError && (
         <ErrorBanner role="alert">{playCollection.error.message}</ErrorBanner>
+      )}
+      {queueCollection.isError && (
+        <ErrorBanner role="alert">{queueCollection.error.message}</ErrorBanner>
       )}
       {showBrowser &&
         !activeQuery.isLoading &&
@@ -1943,6 +2014,7 @@ function usePlayingFrom(source: string) {
     const name = playlists.data?.items.find((item) => item.id === id)?.name
     return name ? `playlist ${name}` : ''
   }
+  if (kind === 'queue') return 'your queue'
   if (kind === 'album') return album.data ? `album ${album.data.name}` : ''
   if (kind === 'artist') return artist.data ? `artist ${artist.data.name}` : ''
   if (kind === 'tracks') {
@@ -1953,17 +2025,298 @@ function usePlayingFrom(source: string) {
   return ''
 }
 
+/** Where a dragged Up next row would land: the gap before row `slot`, counted in the whole queue. */
+type QueueDrag = { from: number; slot: number }
+
+// A drag this close to the panel's top or bottom edge scrolls it, so a long queue can be reached.
+const DRAG_EDGE = 36
+const DRAG_STEP = 14
+
+/**
+ * Up next: what follows the playing track, and the ways to change it. A row is dragged by its
+ * handle, and the same move is on the keyboard as Alt with an arrow key on the row, or as the
+ * move buttons. Each change is announced, since a reordered list looks the same to a screen reader.
+ */
+function UpNext() {
+  const player = usePlayer()
+  const client = useQueryClient()
+  const list = useRef<HTMLDivElement>(null)
+  const focusAfter = useRef<{ key: string; control: string } | null>(null)
+  const dragging = useRef<QueueDrag | null>(null)
+  const [drag, setDrag] = useState<QueueDrag | null>(null)
+  const [announcement, setAnnouncement] = useState('')
+  const [naming, setNaming] = useState(false)
+  const [name, setName] = useState('')
+  const playingFrom = usePlayingFrom(player.source)
+  // Up next is what comes after the playing track, so the track itself is never its first row.
+  const following = player.currentIndex + 1
+  const upcoming = player.queue.slice(following)
+  const savePlaylist = useMutation({
+    mutationFn: (playlistName: string) =>
+      api('library/playlists', libraryPlaylistDetailSchema, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: playlistName, song_ids: player.queue.map((item) => item.id) }),
+      }),
+    onSuccess: (playlist) => {
+      void client.invalidateQueries({ queryKey: ['library-playlists'] })
+      setAnnouncement(`Saved ${songCount(player.queue.length)} as playlist ${playlist.name}.`)
+      setNaming(false)
+      setName('')
+    },
+  })
+
+  // A change can move the row that had focus, or remove it. Put focus back on that control, or on
+  // the panel when there is nothing left to hold it, so the keyboard never starts again from the top.
+  useEffect(() => {
+    const target = focusAfter.current
+    if (!target) return
+    focusAfter.current = null
+    const row = list.current?.querySelector<HTMLElement>(`[data-entry="${CSS.escape(target.key)}"]`)
+    const control =
+      row?.querySelector<HTMLElement>(`[data-control="${target.control}"]:not(:disabled)`) ??
+      row?.querySelector<HTMLElement>('[data-control="play"]')
+    const panel = list.current?.closest<HTMLElement>('[role="tabpanel"]')
+    ;(control ?? panel)?.focus()
+  }, [player.queue])
+
+  useEffect(() => {
+    if (!drag) return
+    const cancel = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') updateDrag(null)
+    }
+    window.addEventListener('keydown', cancel)
+    return () => window.removeEventListener('keydown', cancel)
+  }, [drag !== null])
+
+  function updateDrag(next: QueueDrag | null) {
+    dragging.current = next
+    setDrag(next)
+  }
+
+  /** `control` is the button to hand focus back to; a drag by pointer leaves focus alone. */
+  function moveTo(from: number, to: number, control?: string) {
+    const track = player.queue[from]
+    if (!track || to < following || to >= player.queue.length || to === from) return
+    if (control) focusAfter.current = { key: queueEntryKey(track), control }
+    player.moveInQueue(from, to)
+    setAnnouncement(`Moved ${track.title} to position ${to - following + 1} of ${upcoming.length}.`)
+  }
+
+  function remove(index: number) {
+    const track = player.queue[index]
+    if (!track) return
+    const neighbour =
+      player.queue[index + 1] ?? (index > following ? player.queue[index - 1] : undefined)
+    focusAfter.current = { key: neighbour ? queueEntryKey(neighbour) : '', control: 'remove' }
+    player.removeFromQueue(index)
+    setAnnouncement(`Removed ${track.title}. ${songCount(upcoming.length - 1)} up next.`)
+  }
+
+  function clear() {
+    focusAfter.current = { key: '', control: '' }
+    player.clearQueue()
+    setAnnouncement(`Cleared the queue. ${songCount(upcoming.length)} removed.`)
+  }
+
+  function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault()
+    const trimmed = name.trim()
+    if (trimmed) savePlaylist.mutate(trimmed)
+  }
+
+  // The gap the pointer is over: before the first row whose middle is below it, else the end.
+  function slotAt(clientY: number) {
+    const rows = Array.from(list.current?.querySelectorAll<HTMLElement>('[data-queue-index]') ?? [])
+    const before = rows.find((row) => {
+      const box = row.getBoundingClientRect()
+      return clientY < box.top + box.height / 2
+    })
+    return before ? Number(before.dataset.queueIndex) : player.queue.length
+  }
+
+  function startDrag(event: ReactPointerEvent<HTMLElement>, index: number) {
+    if (event.button !== 0) return
+    event.currentTarget.setPointerCapture(event.pointerId)
+    updateDrag({ from: index, slot: index })
+  }
+
+  function moveDrag(event: ReactPointerEvent<HTMLElement>) {
+    const current = dragging.current
+    if (!current) return
+    const panel = list.current?.closest<HTMLElement>('[role="tabpanel"]')
+    if (panel) {
+      const box = panel.getBoundingClientRect()
+      if (event.clientY < box.top + DRAG_EDGE) panel.scrollBy({ top: -DRAG_STEP })
+      else if (event.clientY > box.bottom - DRAG_EDGE) panel.scrollBy({ top: DRAG_STEP })
+    }
+    const slot = slotAt(event.clientY)
+    if (slot !== current.slot) updateDrag({ ...current, slot })
+  }
+
+  function endDrag() {
+    const current = dragging.current
+    updateDrag(null)
+    if (!current) return
+    // Dropping into the gap after the row itself, or the gap before it, changes nothing. Past it,
+    // the row's own removal shifts the gap up by one.
+    moveTo(current.from, current.slot > current.from ? current.slot - 1 : current.slot)
+  }
+
+  return (
+    <>
+      <div className="mb-[8px] flex items-baseline justify-between gap-[12px]">
+        <p className="min-w-0 truncate text-small">
+          {playingFrom && (
+            <>
+              Playing from <span className="text-text">{playingFrom}</span>
+            </>
+          )}
+        </p>
+        <span className={cx(sectionCaptionClassName, 'shrink-0')}>
+          {player.queue.length} {player.queue.length === 1 ? 'TRACK' : 'TRACKS'}
+        </span>
+      </div>
+      <div className="mb-[8px] flex flex-wrap items-center gap-[8px]">
+        <Button onClick={clear} disabled={!upcoming.length}>
+          <Trash2 size={15} /> Clear queue
+        </Button>
+        <Button
+          aria-expanded={naming}
+          disabled={!player.queue.length}
+          onClick={() => setNaming(!naming)}
+        >
+          <ListMusic size={15} /> Save as playlist
+        </Button>
+      </div>
+      {naming && (
+        <form
+          className="mb-[10px] flex flex-wrap items-end gap-[10px] rounded-[9px] border border-line bg-sunken p-[12px]"
+          onSubmit={submit}
+        >
+          <label className="grid min-w-[min(200px,100%)] flex-1 gap-[6px] text-small text-muted">
+            Playlist name
+            <Field
+              autoFocus
+              value={name}
+              maxLength={200}
+              onChange={(event) => setName(event.target.value)}
+            />
+          </label>
+          <Button type="submit" variant="primary" disabled={savePlaylist.isPending || !name.trim()}>
+            {savePlaylist.isPending ? 'Saving…' : 'Save'}
+          </Button>
+          <Button type="button" onClick={() => setNaming(false)}>
+            Cancel
+          </Button>
+          {savePlaylist.isError && (
+            <ErrorBanner className="m-0 w-full" role="alert">
+              {savePlaylist.error.message}
+            </ErrorBanner>
+          )}
+        </form>
+      )}
+      <div ref={list}>
+        {upcoming.length ? (
+          upcoming.map((track, position) => {
+            const index = following + position
+            const key = queueEntryKey(track)
+            const last = index === player.queue.length - 1
+            return (
+              <div
+                key={key}
+                data-entry={key}
+                data-queue-index={index}
+                className={cx(
+                  'flex items-center gap-[2px] border-b border-line',
+                  drag?.from === index && 'opacity-50',
+                  // A line where the row would land: above this row, or below the last one.
+                  drag?.slot === index && 'shadow-[inset_0_2px_0_0_var(--color-accent)]',
+                  last &&
+                    drag?.slot === player.queue.length &&
+                    'shadow-[inset_0_-2px_0_0_var(--color-accent)]',
+                )}
+              >
+                {/* Pointer only. The keyboard moves a row with the buttons or Alt and an arrow. */}
+                <span
+                  aria-hidden="true"
+                  className="grid w-[22px] flex-none cursor-grab touch-none place-items-center self-stretch text-faint select-none hover:text-muted active:cursor-grabbing coarse:w-[28px]"
+                  onPointerDown={(event) => startDrag(event, index)}
+                  onPointerMove={moveDrag}
+                  onPointerUp={endDrag}
+                  onPointerCancel={() => updateDrag(null)}
+                >
+                  ⠿
+                </span>
+                <button
+                  type="button"
+                  data-control="play"
+                  className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-[12px] rounded-md border-0 bg-transparent px-[8px] py-[10px] text-left text-inherit hover:bg-hover coarse:min-h-11"
+                  aria-label={`Play ${track.title}`}
+                  aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+                  onClick={() => player.playLibrary(player.queue, index, player.source)}
+                  onKeyDown={(event) => {
+                    if (!event.altKey || (event.key !== 'ArrowUp' && event.key !== 'ArrowDown'))
+                      return
+                    event.preventDefault()
+                    moveTo(index, index + (event.key === 'ArrowUp' ? -1 : 1), 'play')
+                  }}
+                >
+                  <span className="grid min-w-0 gap-[3px]">
+                    <strong className="truncate">{track.title}</strong>
+                    <small className="truncate text-small text-muted">{track.artist}</small>
+                  </span>
+                  <time className="text-small text-muted max-phone:hidden">
+                    {durationText(track.duration)}
+                  </time>
+                </button>
+                <IconButton
+                  data-control="up"
+                  size="compact"
+                  aria-label={`Move ${track.title} up`}
+                  disabled={position === 0}
+                  onClick={() => moveTo(index, index - 1, 'up')}
+                >
+                  <ChevronUp size={16} />
+                </IconButton>
+                <IconButton
+                  data-control="down"
+                  size="compact"
+                  aria-label={`Move ${track.title} down`}
+                  disabled={last}
+                  onClick={() => moveTo(index, index + 1, 'down')}
+                >
+                  <ChevronDown size={16} />
+                </IconButton>
+                <IconButton
+                  data-control="remove"
+                  size="compact"
+                  aria-label={`Remove ${track.title} from the queue`}
+                  onClick={() => remove(index)}
+                >
+                  <X size={16} />
+                </IconButton>
+              </div>
+            )
+          })
+        ) : (
+          <p className={lyricLineClassName}>Nothing else is queued.</p>
+        )}
+      </div>
+      <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+        {announcement}
+      </p>
+    </>
+  )
+}
+
 // Up next and Lyrics in one panel that fills the column beside the stage.
 function NowPlayingTabs({ track }: { track: LibraryTrack }) {
-  const player = usePlayer()
   const idBase = useId()
   const [tab, setTab] = useState<PanelTab>(() =>
     stored(PANEL_TAB_KEY, 'up-next') === 'lyrics' ? 'lyrics' : 'up-next',
   )
   const [large, setLarge] = useState(false)
-  const playingFrom = usePlayingFrom(player.source)
-  // Up next is what comes after the playing track, so the track itself is never its first row.
-  const following = player.currentIndex + 1
   const choose = (next: PanelTab) => {
     setTab(next)
     remember(PANEL_TAB_KEY, next)
@@ -2013,23 +2366,7 @@ function NowPlayingTabs({ track }: { track: LibraryTrack }) {
         hidden={tab !== 'up-next'}
         className={tabPanelClassName}
       >
-        <div className="mb-[8px] flex items-baseline justify-between gap-[12px]">
-          <p className="min-w-0 truncate text-small">
-            {playingFrom && (
-              <>
-                Playing from <span className="text-text">{playingFrom}</span>
-              </>
-            )}
-          </p>
-          <span className={cx(sectionCaptionClassName, 'shrink-0')}>
-            {player.queue.length} {player.queue.length === 1 ? 'TRACK' : 'TRACKS'}
-          </span>
-        </div>
-        {following < player.queue.length ? (
-          <TrackList tracks={player.queue} source={player.source} from={following} oneLine />
-        ) : (
-          <p className={lyricLineClassName}>Nothing else is queued.</p>
-        )}
+        <UpNext />
       </div>
       <div
         role="tabpanel"

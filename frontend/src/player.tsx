@@ -64,6 +64,17 @@ type Playback = {
   play: (track: MusicResult) => void
   playLibrary: (tracks: LibraryTrack[], index?: number, source?: string) => void
   shuffleLibrary: (tracks: LibraryTrack[], source?: string) => void
+  /**
+   * Queue edits. Each one saves the queue. The two that add say what happened in `notice`, and
+   * refuse, adding nothing, when the queue would pass the 500 songs Navidrome keeps. Up next
+   * announces the other three itself, where the listener made them.
+   */
+  playNext: (tracks: LibraryTrack[]) => void
+  addToQueue: (tracks: LibraryTrack[]) => void
+  removeFromQueue: (index: number) => void
+  moveInQueue: (from: number, to: number) => void
+  /** Empties the queue but for the track that is playing. */
+  clearQueue: () => void
   toggle: () => void
   next: () => void
   previous: () => void
@@ -101,6 +112,11 @@ const PlayerContext = createContext<Playback>({
   play: () => undefined,
   playLibrary: () => undefined,
   shuffleLibrary: () => undefined,
+  playNext: () => undefined,
+  addToQueue: () => undefined,
+  removeFromQueue: () => undefined,
+  moveInQueue: () => undefined,
+  clearQueue: () => undefined,
   toggle: () => undefined,
   next: () => undefined,
   previous: () => undefined,
@@ -123,6 +139,67 @@ export const usePlayer = () => useContext(PlayerContext)
 
 const LIBRARY_NOTICE = 'Your Navidrome library'
 const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
+const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
+
+/** What Navidrome keeps in one saved play queue. The backend refuses more. */
+export const QUEUE_LIMIT = 500
+/** The queue's source once a listener has edited it: it is no longer any one collection. */
+export const EDITED_SOURCE = 'queue'
+
+/** Empty when `adding` more songs fit beside `size` already queued, else the reason they do not. */
+export function queueOverflow(size: number, adding: number) {
+  if (size + adding <= QUEUE_LIMIT) return ''
+  return `The queue is full. Navidrome saves ${QUEUE_LIMIT} songs and this would make ${size + adding}. Nothing was added.`
+}
+
+/** Where the playing track sits after `from` moves to `to`, so a reorder never loses its place. */
+export function indexAfterMove(current: number, from: number, to: number) {
+  if (current === from) return to
+  if (from < current && to >= current) return current - 1
+  if (from > current && to <= current) return current + 1
+  return current
+}
+
+/**
+ * Where a Play next goes: straight after the playing track, but behind any songs already queued
+ * that way, so two Play nexts play in the order they were chosen.
+ */
+export function playNextPosition(
+  queue: readonly LibraryTrack[],
+  current: number,
+  chosen: ReadonlySet<LibraryTrack>,
+) {
+  let at = current + 1
+  for (let item = queue[at]; item && chosen.has(item); item = queue[at]) at += 1
+  return at
+}
+
+/**
+ * The song shuffle plays next when one was chosen by hand: the nearest chosen song after the
+ * playing one, else the first chosen song anywhere. -1 leaves it to chance.
+ */
+export function chosenIndex(
+  queue: readonly LibraryTrack[],
+  current: number,
+  chosen: ReadonlySet<LibraryTrack>,
+) {
+  const at = queue.findIndex((item, index) => index > current && chosen.has(item))
+  return at >= 0 ? at : queue.findIndex((item) => chosen.has(item))
+}
+
+// A queue entry is its own object, so a song queued twice is two rows with two keys. The key
+// stays with the entry when it moves, which keeps focus and drag state on the right row.
+const entryKeys = new WeakMap<LibraryTrack, number>()
+let entryCount = 0
+export function queueEntryKey(track: LibraryTrack) {
+  let key = entryKeys.get(track)
+  if (key === undefined) {
+    entryCount += 1
+    key = entryCount
+    entryKeys.set(track, key)
+  }
+  return `${track.id}-${key}`
+}
 
 /**
  * The status lines that only say where the sound comes from or how the player woke up. The
@@ -352,6 +429,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const queueRef = useRef<LibraryTrack[]>([])
   const indexRef = useRef(-1)
   const sourceRef = useRef('')
+  // Entries the listener queued by hand, which shuffle plays before the rest. Each entry is its
+  // own copy of the song, so the set can tell a song queued twice apart.
+  const chosen = useRef(new Set<LibraryTrack>())
   const mode = useRef<'preview' | 'library'>('preview')
   const current = () => (mode.current === 'library' ? libraryAudio.current : previewAudio.current)
   const elements = () => [previewAudio.current, libraryAudio.current]
@@ -487,9 +567,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (autoplay) void element.play().catch(() => setNotice('Press play when you are ready.'))
   }
 
-  function saveQueue() {
+  // `announce` is for an edit the listener just made: it is the one save whose failure they need
+  // to hear about, since the queue on screen would then differ from the one that restores.
+  function saveQueue(announce = false) {
     if (mode.current !== 'library' || !libraryCurrent.current) return
-    void fetch('/api/player/queue', {
+    fetch('/api/player/queue', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -498,6 +580,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         position: Math.round((libraryAudio.current?.currentTime ?? 0) * 1000),
       }),
     })
+      .then((response) => {
+        if (announce && !response.ok) setNotice(QUEUE_SAVE_FAILED)
+      })
+      .catch(() => {
+        if (announce) setNotice(QUEUE_SAVE_FAILED)
+      })
   }
 
   function scrobble(submission: boolean) {
@@ -521,6 +609,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     mode.current = 'library'
     previewCurrent.current = null
     libraryCurrent.current = item
+    chosen.current.delete(item)
     indexRef.current = index
     pendingSeek.current = seek
     lastSavedSecond.current = -1
@@ -535,11 +624,78 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function playLibrary(items: LibraryTrack[], index = 0, origin = '') {
     if (!items.length) return
+    // Playing a row of the queue itself keeps the queue, and what was chosen by hand in it.
+    if (items !== queueRef.current) chosen.current.clear()
     queueRef.current = items
     sourceRef.current = origin
     setQueue(items)
     setSource(origin)
     loadLibrary(Math.max(0, Math.min(index, items.length - 1)))
+  }
+
+  // Every edit lands here: the new order, where the playing track now sits, and the save. An
+  // edited queue is no longer the album or playlist it began as, so it stops claiming to be one.
+  function editQueue(items: LibraryTrack[], index: number) {
+    queueRef.current = items
+    indexRef.current = index
+    sourceRef.current = EDITED_SOURCE
+    setQueue(items)
+    setCurrentIndex(index)
+    setSource(EDITED_SOURCE)
+    saveQueue(true)
+  }
+
+  function enqueue(tracks: LibraryTrack[], upNext: boolean) {
+    if (!tracks.length) return
+    const inQueue = libraryCurrent.current ? queueRef.current.length : 0
+    const refusal = queueOverflow(inQueue, tracks.length)
+    if (refusal) {
+      setNotice(refusal)
+      return
+    }
+    const entries = tracks.map((track) => ({ ...track }))
+    // With nothing loaded there is no queue to join, so these songs become it.
+    if (!libraryCurrent.current) {
+      playLibrary(entries, 0, EDITED_SOURCE)
+      return
+    }
+    for (const entry of entries) chosen.current.add(entry)
+    const queue = queueRef.current
+    const at = upNext ? playNextPosition(queue, indexRef.current, chosen.current) : queue.length
+    editQueue([...queue.slice(0, at), ...entries, ...queue.slice(at)], indexRef.current)
+    const what = entries.length === 1 ? (entries[0]?.title ?? 'song') : songCount(entries.length)
+    setNotice(upNext ? `Playing ${what} next.` : `Added ${what} to the queue.`)
+  }
+
+  const playNext = (tracks: LibraryTrack[]) => enqueue(tracks, true)
+  const addToQueue = (tracks: LibraryTrack[]) => enqueue(tracks, false)
+
+  function removeFromQueue(index: number) {
+    const queue = queueRef.current
+    const removed = queue[index]
+    // The playing track is not Up next's to remove; skipping it is the way past it.
+    if (!libraryCurrent.current || !removed || index === indexRef.current) return
+    chosen.current.delete(removed)
+    editQueue(
+      queue.filter((_, at) => at !== index),
+      index < indexRef.current ? indexRef.current - 1 : indexRef.current,
+    )
+  }
+
+  function moveInQueue(from: number, to: number) {
+    const queue = queueRef.current
+    const moved = queue[from]
+    if (!libraryCurrent.current || !moved || from === to || to < 0 || to >= queue.length) return
+    const items = queue.filter((_, at) => at !== from)
+    items.splice(to, 0, moved)
+    editQueue(items, indexAfterMove(indexRef.current, from, to))
+  }
+
+  function clearQueue() {
+    const playing = libraryCurrent.current
+    if (!playing) return
+    chosen.current.clear()
+    editQueue([playing], 0)
   }
 
   function shuffleLibrary(items: LibraryTrack[], origin = '') {
@@ -592,8 +748,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (mode.current !== 'library' || !queueRef.current.length) return
     let index = indexRef.current + 1
     if (shuffle && queueRef.current.length > 1) {
-      do index = Math.floor(Math.random() * queueRef.current.length)
-      while (index === indexRef.current)
+      // Songs queued by hand come first, in the order Up next shows them; chance takes the rest.
+      index = chosenIndex(queueRef.current, indexRef.current, chosen.current)
+      if (index < 0) {
+        do index = Math.floor(Math.random() * queueRef.current.length)
+        while (index === indexRef.current)
+      }
     } else if (index >= queueRef.current.length && repeat === 'all') index = 0
     if (index < queueRef.current.length) loadLibrary(index, autoplay)
     else setPlaying(false)
@@ -908,6 +1068,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         play,
         playLibrary,
         shuffleLibrary,
+        playNext,
+        addToQueue,
+        removeFromQueue,
+        moveInQueue,
+        clearQueue,
         toggle,
         next: () => next(),
         previous,

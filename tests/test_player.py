@@ -245,6 +245,22 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             ).status_code,
                             422,
                         )
+                        # Navidrome keeps 500 songs, and the queue editor relies on the last one
+                        # being accepted and the next being refused.
+                        for count, status in ((500, 204), (501, 422)):
+                            self.assertEqual(
+                                (
+                                    await client.put(
+                                        "/api/player/queue",
+                                        json={
+                                            "ids": [f"song-{n}" for n in range(count)],
+                                            "current": "song-1",
+                                            "position": 0,
+                                        },
+                                    )
+                                ).status_code,
+                                status,
+                            )
                         self.assertEqual(
                             (
                                 await client.post(
