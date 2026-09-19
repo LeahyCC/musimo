@@ -5,6 +5,8 @@ import { AlertTriangle, Check, Copy, Download, Pencil, Trash2 } from 'lucide-rea
 import { FLUID_SIZES, SCENE_IDS, SCENE_LABELS } from 'visimo/catalog'
 import { PRESETS } from 'visimo/presets'
 
+import { CROSSFADE_OPTIONS, parseCrossfade } from './crossfade'
+import { setCrossfadeSeconds, useCrossfadeSeconds } from './crossfade-settings'
 import { cx } from './cx'
 import { useNowPlayingPopout } from './now-playing-popout'
 import { PageTitle } from './page-title'
@@ -585,11 +587,13 @@ const preampLabel = (decibels: number) =>
   decibels === 0 ? '0 dB' : `${decibels > 0 ? '+' : '−'}${Math.abs(decibels)} dB`
 
 /*
- * Volume levelling for library playback. It reads and writes the player's own settings store, so a
- * change lands on a track that is already playing. Every control applies as it is chosen.
+ * Volume levelling and crossfade for library playback. They read and write the player's own
+ * settings stores, so a change lands on a track that is already playing. Every control applies as
+ * it is chosen.
  */
 function PlaybackSettings() {
   const { mode, preampDb } = useReplayGainSettings()
+  const crossfade = useCrossfadeSeconds()
 
   return (
     <section aria-labelledby="playback" className="grid gap-[20px]">
@@ -598,7 +602,8 @@ function PlaybackSettings() {
       </h2>
       <p className="max-w-[640px] text-small">
         Some files carry ReplayGain tags that say how loud they are. Musimo can use them to bring
-        quiet and loud tracks to a similar volume. Changes apply straight away.
+        quiet and loud tracks to a similar volume, and can crossfade one track into the next.
+        Changes apply straight away.
       </p>
       <div className="grid max-w-[520px] gap-[16px]">
         <div className="grid gap-[6px]">
@@ -646,6 +651,30 @@ function PlaybackSettings() {
           <p id="replay-gain-preamp-note" className="text-tiny">
             Added to the tagged gain. A track is never pushed past its tagged peak, and the player
             cannot go above full volume, so a boost only shows while the volume slider has room.
+          </p>
+        </div>
+        <div className="grid gap-[6px]">
+          <label htmlFor="crossfade" className="text-small">
+            Crossfade
+          </label>
+          <FieldSelect
+            id="crossfade"
+            value={String(crossfade)}
+            fullWidth={false}
+            className="w-[140px]"
+            aria-describedby="crossfade-note"
+            onChange={(event) => setCrossfadeSeconds(parseCrossfade(event.target.value))}
+          >
+            {CROSSFADE_OPTIONS.map((seconds) => (
+              <option key={seconds} value={seconds}>
+                {seconds === 0 ? 'Off' : `${seconds} ${seconds === 1 ? 'second' : 'seconds'}`}
+              </option>
+            ))}
+          </FieldSelect>
+          <p id="crossfade-note" className="text-tiny">
+            Fades the end of one track out while the start of the next fades in. Off by default. It
+            is skipped between consecutive tracks of the same album, which run on without a gap, and
+            for repeat one. If the next track has not loaded in time, it simply follows.
           </p>
         </div>
       </div>
