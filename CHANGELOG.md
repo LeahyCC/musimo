@@ -26,6 +26,7 @@
 - Filter and sort Albums on the server, so genre and year cover the whole library instead of the albums already scrolled past
 - Browse libraries up to 50,000 songs on the Tracks tab (it stopped at 10,000), keeping only the fields the page reads so the larger cap costs less memory than the old one
 - Lay Now Playing out as two columns that fit the window: the stage with the title and every player control under it, and one tabbed panel of Up next and Lyrics beside it (under the controls on a phone), so neither starts below the fold. Up next now lists only what follows the playing track and says where the queue came from
+- Follow synced lyrics on Now Playing: the current line is highlighted and kept in view, a line can be clicked to seek there, timing can be nudged half a second at a time and is remembered per track, and `L` switches to large type. Lyrics with no times say so, and a track with none can be searched again
 - Say "1 album" and "1 song" on an artist page instead of "1 ALBUMS"
 - Show the release year on an artist's popular songs instead of a "…" that never filled in
 
