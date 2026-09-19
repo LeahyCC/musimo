@@ -39,6 +39,7 @@ import {
   X,
 } from 'lucide-react'
 
+import { AboutPanel } from './about-track'
 import {
   api,
   emptySchema,
@@ -106,6 +107,8 @@ type LibraryPageProps = {
   playlistId?: string
   parentArtistId?: string
   artistSection?: ArtistSection
+  /** A song of the open album to mark, from the About tab's "Open album" link. */
+  highlightTrackId?: string
 }
 
 const SORTS: Record<Tab, { value: string; label: string }[]> = {
@@ -579,18 +582,25 @@ const queueActions = (playNext: () => void, addToQueue: () => void) => [
   { label: 'Add to queue', onSelect: addToQueue },
 ]
 
+/** Brings the row Now Playing's About tab pointed at into view once it is on screen. */
+const showRow = (row: HTMLElement | null) => row?.scrollIntoView({ block: 'center' })
+
 function TrackList({
   tracks,
   source,
+  highlightId = '',
   removing = false,
   onRemove,
 }: {
   tracks: LibraryTrack[]
   source: string
+  /** A song to mark as the playing one even where the queue did not start from this list. */
+  highlightId?: string
   removing?: boolean
   onRemove?: (index: number) => void
 }) {
   const player = usePlayer()
+  const highlighted = highlightId ? tracks.findIndex((track) => track.id === highlightId) : -1
   return (
     <div className="library-tracks grid">
       {tracks.map((track, index) => {
@@ -601,15 +611,18 @@ function TrackList({
           player.currentIndex === index &&
           player.libraryTrack?.id === track.id
         const playing = current && player.playing
+        const marked = current || index === highlighted
         return (
           <div
             className="library-track-row flex items-center border-b border-line"
             key={`${track.id}-${index}`}
           >
             <button
+              ref={index === highlighted ? showRow : undefined}
+              aria-current={marked ? 'true' : undefined}
               className={cx(
                 'library-track-play grid w-full grid-cols-[34px_minmax(170px,2fr)_minmax(100px,1fr)_52px_24px] items-center gap-[12px] rounded-md border-0 px-[12px] py-[10px] text-left text-inherit hover:bg-hover coarse:min-h-11 max-phone:grid-cols-[24px_minmax(0,1fr)_24px]',
-                current ? 'bg-hover' : 'bg-transparent',
+                marked ? 'bg-hover' : 'bg-transparent',
               )}
               aria-label={`${playing ? 'Pause' : 'Play'} ${track.title}`}
               onClick={() =>
@@ -851,6 +864,7 @@ export function LibraryPage({
   playlistId = '',
   parentArtistId = '',
   artistSection = 'albums',
+  highlightTrackId = '',
 }: LibraryPageProps = {}) {
   const player = usePlayer()
   const client = useQueryClient()
@@ -1553,6 +1567,7 @@ export function LibraryPage({
           <TrackList
             tracks={detailTracks}
             source={detailSource}
+            highlightId={albumId ? highlightTrackId : ''}
             removing={Boolean(playlist) && playlistSongs.busy(playlist?.id ?? '')}
             onRemove={
               playlist
@@ -1972,11 +1987,12 @@ export function LibraryPage({
 
 const lyricLineClassName = 'py-[8px] text-section text-text'
 
-/* Up next, Lyrics and History share one panel, so none starts below the fold and Lyrics is a tap
-   away however long the queue is. */
+/* Up next, Lyrics, About and History share one panel, so none starts below the fold and Lyrics is
+   a tap away however long the queue is. */
 const PANEL_TABS = [
   { id: 'up-next', label: 'Up next' },
   { id: 'lyrics', label: 'Lyrics' },
+  { id: 'about', label: 'About' },
   { id: 'history', label: 'History' },
 ] as const
 type PanelTab = (typeof PANEL_TABS)[number]['id']
@@ -2395,7 +2411,7 @@ function History({ visible }: { visible: boolean }) {
   )
 }
 
-// Up next, Lyrics and History in one panel that fills the column beside the stage.
+// Up next, Lyrics, About and History in one panel that fills the column beside the stage.
 function NowPlayingTabs({ track }: { track: LibraryTrack }) {
   const idBase = useId()
   const [tab, setTab] = useState<PanelTab>(() => {
@@ -2470,6 +2486,16 @@ function NowPlayingTabs({ track }: { track: LibraryTrack }) {
           large={large}
           onToggleLarge={toggleLarge}
         />
+      </div>
+      <div
+        role="tabpanel"
+        id={tabPanelId(idBase, 'about')}
+        aria-labelledby={tabId(idBase, 'about')}
+        tabIndex={0}
+        hidden={tab !== 'about'}
+        className={tabPanelClassName}
+      >
+        <AboutPanel key={track.id} track={track} visible={tab === 'about'} />
       </div>
       <div
         role="tabpanel"

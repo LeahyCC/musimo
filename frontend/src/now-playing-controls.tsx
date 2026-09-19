@@ -14,6 +14,7 @@ import {
   X,
 } from 'lucide-react'
 
+import { TrackFormatLine } from './about-track'
 import type { LibraryTrack } from './api'
 import { durationText, isPassiveNotice, usePlayer } from './player'
 import { parseSleepChoice, SLEEP_MINUTES, sleepChoiceValue } from './sleep-timer'
@@ -111,6 +112,7 @@ export function NowPlayingControls({ track }: { track: LibraryTrack }) {
               </>
             )}
           </p>
+          <TrackFormatLine trackId={track.id} />
         </div>
         <div className="flex shrink-0 items-center gap-[8px]">
           <IconButton
