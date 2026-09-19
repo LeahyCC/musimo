@@ -37,6 +37,7 @@ const failed: DownloadJob = {
   batch_label: 'Fixture album',
   album_id: 42,
   catalog: 'deezer',
+  source: 'youtube',
   track_id: track.id,
   format: 'original',
   target: '/music',
@@ -166,6 +167,9 @@ const varied = (index: number): DownloadJob => {
           score: 0.4,
           topic: false,
           reason: 'duration close',
+          source: 'youtube',
+          // Jobs saved before candidates carried a link have an empty url.
+          url: pick === 0 ? `https://media.example.test/recording-${index}` : '',
         }))
       : [],
     created_at: index,
@@ -265,6 +269,32 @@ test('a long failure queue lists cards without overlapping, and can be grouped o
 
   await page.getByRole('button', { name: 'Clear failed (9)' }).click()
   await expect.poll(() => cleared).toContain('clear-failed')
+})
+
+test('recording matches link to their own page, or to YouTube for older jobs', async ({ page }) => {
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
+  )
+
+  await page.route('**/api/jobs*', (route) =>
+    route.fulfill({
+      json: {
+        jobs: [varied(1)],
+        controls: { paused: false, source_paused: false, paused_sources: [] },
+        summary: { active: 0, failed: 1, failure_reasons: [] },
+      },
+    }),
+  )
+  await page.goto('/downloads')
+  await page.getByRole('button', { name: 'Failed (1)', exact: true }).click()
+  await page.getByText(/Recording matches/).click()
+  const links = page.locator('#main .job-card').getByRole('link', { name: 'Listen ↗' })
+  await expect(links).toHaveCount(3)
+  await expect(links.nth(0)).toHaveAttribute('href', 'https://media.example.test/recording-1')
+  await expect(links.nth(1)).toHaveAttribute(
+    'href',
+    'https://www.youtube.com/watch?v=candidate-1-1',
+  )
 })
 
 test('a queued card keeps its own height when a job above it finishes', async ({ page }) => {

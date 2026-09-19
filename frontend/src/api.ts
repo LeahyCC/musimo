@@ -8,6 +8,7 @@ export const jobSchema = z.object({
   batch_label: z.string().default(''),
   album_id: z.number().default(0),
   catalog: z.enum(['deezer', 'podcast']).default('deezer'),
+  source: z.string().default('youtube'),
   track_id: z.number(),
   format: z.enum(['original', 'm4a', 'opus', 'mp3']),
   target: z.string(),
@@ -30,6 +31,12 @@ export const jobSchema = z.object({
       score: z.number(),
       topic: z.boolean(),
       reason: z.string(),
+      source: z.string().default('youtube'),
+      // Only an https page is ever linked; anything else falls back to the YouTube form.
+      url: z
+        .string()
+        .default('')
+        .transform((url) => (url.startsWith('https://') ? url : '')),
     }),
   ),
   selected: z.string(),
@@ -57,7 +64,12 @@ export const jobSchema = z.object({
   hidden: z.boolean(),
 })
 export type DownloadJob = z.infer<typeof jobSchema>
-export const controlsSchema = z.object({ paused: z.boolean(), source_paused: z.boolean() })
+export const controlsSchema = z.object({
+  paused: z.boolean(),
+  // The YouTube pause. `paused_sources` lists every source paused by blocking errors.
+  source_paused: z.boolean(),
+  paused_sources: z.array(z.string()).default([]),
+})
 export const jobSummarySchema = z.object({
   active: z.number(),
   failed: z.number(),

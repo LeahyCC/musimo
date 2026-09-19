@@ -1,6 +1,7 @@
+import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 Format = Literal["original", "m4a", "opus", "mp3"]
 Stage = Literal[
@@ -60,6 +61,16 @@ class Metadata(BaseModel):
     synced_lyrics: str = ""
 
 
+# The ID each source uses for one recording. A candidate from a source missing here is never
+# accepted, so a new site has to add its own pattern before its matches can be picked.
+CANDIDATE_IDS = {"youtube": re.compile(r"[A-Za-z0-9_-]{11}")}
+
+
+def valid_candidate_id(source: str, candidate_id: str) -> bool:
+    pattern = CANDIDATE_IDS.get(source)
+    return pattern is not None and pattern.fullmatch(candidate_id) is not None
+
+
 class Candidate(BaseModel):
     id: str
     title: str
@@ -68,6 +79,8 @@ class Candidate(BaseModel):
     score: float = 0
     topic: bool = False
     reason: str = ""
+    source: str = "youtube"
+    url: str = ""
 
 
 class Job(BaseModel):
@@ -77,6 +90,8 @@ class Job(BaseModel):
     album_id: int = 0
     catalog: Literal["deezer", "podcast"] = "deezer"
     track_id: int
+    # The site the audio comes from. Pausing, error mapping and candidate checks key off it.
+    source: str = "youtube"
     # Podcast episodes download this publisher file directly instead of matching on YouTube.
     source_url: str = ""
     format: Format = "original"
@@ -111,6 +126,14 @@ class Job(BaseModel):
     updated_at: float
     hidden: bool = False
 
+    @model_validator(mode="before")
+    @classmethod
+    def default_source(cls, data: object) -> object:
+        # Jobs stored before `source` existed were YouTube matches or podcast feed files.
+        if isinstance(data, dict) and "source" not in data:
+            return {**data, "source": "podcast" if data.get("catalog") == "podcast" else "youtube"}
+        return data
+
     def public(self) -> dict[str, object]:
         return self.model_dump(exclude={"meta": {"lyrics", "synced_lyrics"}})
 
@@ -124,7 +147,8 @@ class Enqueue(BaseModel):
 
 class Pick(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
-    candidate_id: str = Field(pattern=r"^[A-Za-z0-9_-]{11}$")
+    # Only a bounded token here; the candidate's own source checks the exact ID shape.
+    candidate_id: str = Field(pattern=r"^[A-Za-z0-9_-]{1,64}$")
 
 
 class BatchRequest(BaseModel):

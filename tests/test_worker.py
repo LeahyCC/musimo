@@ -58,6 +58,8 @@ class WorkerTests(unittest.TestCase):
                 self.assertEqual(events[-2]["selected"], "")
                 items = cast(list[dict[str, object]], events[-2]["items"])
                 self.assertEqual(items[0]["id"], "cover000001")
+                self.assertEqual(items[0]["source"], "youtube")
+                self.assertEqual(items[0]["url"], "https://www.youtube.com/watch?v=cover000001")
                 tagger.assert_not_called()
 
     def test_logs_redact_urls_and_bound_output(self) -> None:

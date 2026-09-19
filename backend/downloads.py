@@ -16,7 +16,7 @@ import httpx
 
 from backend.catalog import Catalog, CatalogError
 from backend.enrichment import Enrichment
-from backend.errors import error_guidance
+from backend.errors import BLOCKING_CODES, error_guidance, site_label
 from backend.job_models import TERMINAL, Job
 from backend.job_store import Jobs
 from backend.library import Library
@@ -89,12 +89,8 @@ class Downloads:
             rows = self.store.db.execute("SELECT key,value FROM settings").fetchall()
         return Settings.model_validate({row[0]: json.loads(row[1]) for row in rows})
 
-    def controls(self) -> dict[str, bool]:
-        with self.store.lock:
-            row = self.store.db.execute(
-                "SELECT paused,source_paused FROM queue_control WHERE id=1"
-            ).fetchone()
-        return {"paused": bool(row[0]), "source_paused": bool(row[1])}
+    def controls(self) -> dict[str, object]:
+        return self.store.controls()
 
     def last_terminal_job(self) -> dict[str, object] | None:
         with self.store.lock:
@@ -112,7 +108,9 @@ class Downloads:
                 "created_at": float(row[1]),
             }
 
-    def set_controls(self, paused: bool | None = None, source_paused: bool | None = None) -> None:
+    def set_controls(
+        self, paused: bool | None = None, source_paused: bool | None = None, source: str = "youtube"
+    ) -> None:
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
@@ -122,8 +120,10 @@ class Downloads:
                     )
                 if source_paused is not None:
                     self.store.db.execute(
-                        "UPDATE queue_control SET source_paused=?,blocking_failures=0 WHERE id=1",
-                        (int(source_paused),),
+                        "INSERT INTO source_control(source,paused,blocking_failures) "
+                        "VALUES (?,?,0) ON CONFLICT(source) DO UPDATE SET "
+                        "paused=excluded.paused,blocking_failures=0",
+                        (source, int(source_paused)),
                     )
                 self.store._event("queue.updated", self.controls())
                 self.store.db.commit()
@@ -189,12 +189,13 @@ class Downloads:
         while not self.stopping:
             self.wake.clear()
             control = self.controls()
+            paused_sources = set(self.store.paused_sources())
             delay = 60.0
             if not control["paused"]:
                 slots = self.settings().concurrency - len(self.running)
                 for job in reversed(self.jobs.list(active=True)):
-                    # A YouTube block does not stop podcast episodes, which come from their feed.
-                    if control["source_paused"] and job.catalog != "podcast":
+                    # A block on one site must not hold back jobs that download from another.
+                    if job.source in paused_sources:
                         continue
                     if job.stage == "retry_wait" and job.retry_at > time.time():
                         delay = min(delay, max(0.01, job.retry_at - time.time()))
@@ -540,12 +541,14 @@ class Downloads:
             await self.artwork(job, folder)
             ready, info = await self.worker(self.jobs.get(job_id), folder)
             await self.finish(self.jobs.get(job_id), ready, info)
-            if job.catalog == "deezer":
+            if job.source == "youtube":
                 self.store.record_probe(
                     "healthy", 0, "Last YouTube download completed", source="youtube"
                 )
-                with self.store.lock:
-                    self.store.db.execute("UPDATE queue_control SET blocking_failures=0 WHERE id=1")
+            with self.store.lock:
+                self.store.db.execute(
+                    "UPDATE source_control SET blocking_failures=0 WHERE source=?", (job.source,)
+                )
         except asyncio.CancelledError:
             await self.stop_process(job_id)
             job = self.jobs.get(job_id)
@@ -598,8 +601,8 @@ class Downloads:
                     settings.retry_base_seconds * 2 ** max(0, job.attempts - 1),
                 ),
             )
-            hint = error.hint or error_guidance(error.code)[0]
-            fix = error.fix or error_guidance(error.code)[1]
+            hint = error.hint or error_guidance(error.code, site_label(job.source))[0]
+            fix = error.fix or error_guidance(error.code, site_label(job.source))[1]
             self.jobs.update(
                 job_id,
                 stage="retry_wait" if retry else "failed",
@@ -625,22 +628,19 @@ class Downloads:
                     warning = await self.navidrome(job, Path(published.final_path))
                     if warning:
                         self.jobs.update(job.id, warnings=[*job.warnings, warning])
-            if error.code in {
-                "SOURCE_BLOCKED",
-                "POT_MISSING",
-                "JS_RUNTIME_MISSING",
-                "COOKIES_EXPIRED",
-            }:
+            # The worker only reports these for the site that raised them, so the count and the
+            # pause belong to this job's source and leave other sites running.
+            if error.code in BLOCKING_CODES:
                 with self.store.lock:
-                    self.store.db.execute(
-                        "UPDATE queue_control SET blocking_failures=blocking_failures+1 WHERE id=1"
-                    )
                     failures = self.store.db.execute(
-                        "SELECT blocking_failures FROM queue_control WHERE id=1"
+                        "INSERT INTO source_control(source,blocking_failures) VALUES (?,1) "
+                        "ON CONFLICT(source) DO UPDATE SET "
+                        "blocking_failures=blocking_failures+1 RETURNING blocking_failures",
+                        (job.source,),
                     ).fetchone()[0]
                 if failures >= 3:
-                    self.set_controls(source_paused=True)
-                self.store.record_probe("blocked", 0, error.detail, source="youtube")
+                    self.set_controls(source_paused=True, source=job.source)
+                self.store.record_probe("blocked", 0, error.detail, source=job.source)
         finally:
             self.processes.pop(job_id, None)
             self.running.pop(job_id, None)

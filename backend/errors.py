@@ -1,8 +1,26 @@
 """Error code to hint and fix target mapping."""
 
+# Codes the worker only reports for YouTube, where they mean the site or its helpers refused.
+YOUTUBE_ONLY_CODES = frozenset(
+    {"SOURCE_BLOCKED", "RATE_LIMITED", "POT_MISSING", "JS_RUNTIME_MISSING", "COOKIES_EXPIRED"}
+)
+# Three of these in a row pause the source that raised them.
+BLOCKING_CODES = frozenset(
+    {"SOURCE_BLOCKED", "POT_MISSING", "JS_RUNTIME_MISSING", "COOKIES_EXPIRED"}
+)
+SITE_LABELS = {"youtube": "YouTube", "podcast": "the podcast host"}
 
-def error_guidance(code: str) -> tuple[str, str]:
-    """Map an error code to a plain hint and a fix target."""
+
+def site_label(source: str) -> str:
+    return SITE_LABELS.get(source, "the download site")
+
+
+def error_guidance(code: str, site: str = "YouTube") -> tuple[str, str]:
+    """Map an error code to a plain hint and a fix target.
+
+    `site` names where the download came from, so the hints read right for any source.
+    """
+    lead = site[:1].upper() + site[1:]
     hints: dict[str, tuple[str, str]] = {
         "DEST_UNWRITABLE": (
             "The destination folder is missing or not writable.",
@@ -17,11 +35,11 @@ def error_guidance(code: str) -> tuple[str, str]:
             "settings:naming_template",
         ),
         "SOURCE_BLOCKED": (
-            "YouTube is blocking requests. Check credentials and tools.",
+            f"{lead} is blocking requests. Check credentials and tools.",
             "diagnostics:sources",
         ),
         "RATE_LIMITED": (
-            "YouTube rate limit reached. Wait before retrying.",
+            f"{lead} rate limit reached. Wait before retrying.",
             "diagnostics:sources",
         ),
         "POT_MISSING": (
@@ -49,7 +67,7 @@ def error_guidance(code: str) -> tuple[str, str]:
             "settings:output_format",
         ),
         "NO_MATCH": (
-            "No matching recording was found on YouTube.",
+            f"No matching recording was found on {site}.",
             "card:pick",
         ),
         "DURATION_MISMATCH": (

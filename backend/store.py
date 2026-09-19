@@ -23,7 +23,7 @@ class Store:
         self.db.execute("PRAGMA busy_timeout=5000")
         self.db.execute("PRAGMA foreign_keys=ON")
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 3:
+        if version > 4:
             raise RuntimeError("Database is newer than this application; do not downgrade in place")
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -87,10 +87,48 @@ class Store:
                 key TEXT PRIMARY KEY,
                 playlist_id TEXT NOT NULL
             );
-            PRAGMA user_version=3;
+            CREATE TABLE IF NOT EXISTS source_control (
+                source TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0,
+                blocking_failures INTEGER NOT NULL DEFAULT 0
+            );
             COMMIT;
         """)
+        if version < 4:
+            # Before version 4 every paused or failing download was YouTube, so the single
+            # queue_control flag moves across as the YouTube row.
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                INSERT OR IGNORE INTO source_control(source,paused,blocking_failures)
+                    SELECT 'youtube',source_paused,blocking_failures FROM queue_control
+                    WHERE id=1 AND (source_paused!=0 OR blocking_failures!=0);
+                PRAGMA user_version=4;
+                COMMIT;
+            """)
         self.seed()
+
+    def paused_sources(self) -> list[str]:
+        with self.lock:
+            return [
+                str(row[0])
+                for row in self.db.execute(
+                    "SELECT source FROM source_control WHERE paused!=0 ORDER BY source"
+                )
+            ]
+
+    def controls(self) -> dict[str, object]:
+        """Queue pause plus the sources paused by blocking errors.
+
+        `source_paused` stays as the YouTube flag so clients from before per-source pausing
+        keep reading it.
+        """
+        with self.lock:
+            paused = self.db.execute("SELECT paused FROM queue_control WHERE id=1").fetchone()[0]
+            sources = self.paused_sources()
+        return {
+            "paused": bool(paused),
+            "source_paused": "youtube" in sources,
+            "paused_sources": sources,
+        }
 
     def save_library_status(self, payload: dict[str, object]) -> None:
         with self.lock:
@@ -230,15 +268,12 @@ class Store:
                     "ORDER BY created_at DESC"
                 )
             ]
-            control = self.db.execute(
-                "SELECT paused,source_paused FROM queue_control WHERE id=1"
-            ).fetchone()
             return {
                 "settings": self.settings(),
                 "jobs": jobs,
                 "summary": self.job_summary(),
                 "cursor": self.bounds()[1],
-                "controls": {"paused": bool(control[0]), "source_paused": bool(control[1])},
+                "controls": self.controls(),
             }
 
     def job_summary(self) -> dict[str, object]:
