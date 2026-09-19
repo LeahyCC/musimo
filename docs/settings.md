@@ -65,9 +65,15 @@ In this browser only, under `musimo.theme`, `musimo.custom-themes` and `musimo.t
 
 Export writes `<theme name>.musimo-theme.json` through the browser's own download, with characters a file name cannot hold replaced by a dash. Import takes that file back through the same validation as stored themes: known color names only, six or eight digit hex values, a name of at most 40 characters. An imported theme always arrives as a new theme, so it cannot overwrite one you already have, and it is turned on once it is read. A file that is not a Musimo theme is refused with a message and changes nothing.
 
+### Playback
+
+Volume levelling for library playback, kept in this browser like the rest. **Volume levelling** is a select: Off, Track (the default) or Album (automatic). **Pre-amp** is a second select, from −6 to +6 dB in 3 dB steps, default 0, and is disabled while levelling is Off. Both apply as they are chosen, including to a track already playing, and are stored under `musimo.replay-gain` and `musimo.replay-gain-preamp`. A missing or unreadable value means the default. How the gain is worked out is in [Volume levelling](player.md#volume-levelling).
+
+Musimo does not write ReplayGain tags when it downloads yet, so only files that were tagged elsewhere are levelled. A file without the tags plays as it is, whatever these say.
+
 ### Visualizer
 
-The second section on Your settings. Three selects: Default view (Artwork or Visualizer; a browser that has stored nothing shows Artwork, since the visualizer is heavy on the GPU), Preset (grouped by scene, the same options as the stage's select) and Fluid detail (512 or 1024, used only by the fluid scene). Each applies as it is chosen and is remembered in this browser, like themes. They are the Now Playing stage's own state, not a copy: changing one here updates an open stage at once, and changing one on the stage shows here. Where the browser has no WebGPU, or the device could not be had, the selects are disabled and one line says why. An Open Now Playing link sits under them. The keys and the state behind them are in [the visualizer note](visualizer.md#what-stays-on-musimos-side).
+The third section on Your settings. Three selects: Default view (Artwork or Visualizer; a browser that has stored nothing shows Artwork, since the visualizer is heavy on the GPU), Preset (grouped by scene, the same options as the stage's select) and Fluid detail (512 or 1024, used only by the fluid scene). Each applies as it is chosen and is remembered in this browser, like themes. They are the Now Playing stage's own state, not a copy: changing one here updates an open stage at once, and changing one on the stage shows here. Where the browser has no WebGPU, or the device could not be had, the selects are disabled and one line says why. An Open Now Playing link sits under them. The keys and the state behind them are in [the visualizer note](visualizer.md#what-stays-on-musimos-side).
 
 ## Recent activity
 

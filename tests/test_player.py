@@ -703,7 +703,14 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 # The browser never reads this, so the snapshot does not keep it.
                 "path": "Zia/Beacon.flac",
             },
-            {"id": "s2", "title": "Anchor", "artist": "Mox", "genre": "Rock", "year": 2011},
+            {
+                "id": "s2",
+                "title": "Anchor",
+                "artist": "Mox",
+                "genre": "Rock",
+                "year": 2011,
+                "replayGain": {"trackGain": -6.5, "albumGain": -7.25, "trackPeak": 0.98},
+            },
             {"id": "s3", "title": "Cinder", "artist": "Ame", "genre": "Jazz", "year": 2011},
         ]
         with tempfile.TemporaryDirectory() as directory:
@@ -742,6 +749,12 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             [row["id"] for row in listing["items"]], ["s2", "s1", "s3"]
                         )
                         self.assertNotIn("path", listing["items"][1])
+                        # ReplayGain rides along when Navidrome has it, and is absent when not.
+                        self.assertEqual(
+                            listing["items"][0]["replayGain"],
+                            {"trackGain": -6.5, "albumGain": -7.25, "trackPeak": 0.98},
+                        )
+                        self.assertNotIn("replayGain", listing["items"][1])
                         self.assertEqual(listing["total"], 3)
                         self.assertEqual(listing["genres"], ["Jazz", "Rock"])
                         self.assertEqual(listing["years"], [2011, 1999])
