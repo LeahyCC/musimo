@@ -20,12 +20,15 @@ import type { SceneId } from 'visimo/catalog'
 import { findPreset, firstPresetOf, presetOrDefault, stepPreset } from 'visimo/presets'
 import type { Preset } from 'visimo/presets'
 
+import { ArtworkMenu } from './artwork-menu'
+import type { MenuPoint } from './artwork-menu'
 import { cx } from './cx'
 import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
 import type { StagePlacement, StageView } from './now-playing-overlay'
 import { artUrl, remember, stored, usePlayer } from './player'
 import { activeTheme, applyTheme, subscribeTheme } from './theme/store'
 import { Button } from './ui'
+import { leavingStyle, useLeaving } from './use-leaving'
 
 // The whole WebGPU tree stays out of the main bundle until a stage wants it.
 const VisualizerStage = lazy(() => import('visimo').then((m) => ({ default: m.VisualizerStage })))
@@ -371,8 +374,51 @@ function useStageVisible(stageRef: RefObject<HTMLDivElement | null>, always: boo
   return always || (tabVisible && onScreen)
 }
 
-// One box: the visualizer, or a blurred cover fill behind a sharp,
-// letterboxed copy of the same artwork, with the hover controls on top.
+// A blurred cover fill behind a sharp, letterboxed copy of the same artwork. `sharp` is what marks
+// the live copy; a copy that is fading out is drawn without it and hidden from assistive tech.
+function ArtworkLayers({ art, leaving }: { art: string; leaving?: boolean }) {
+  return (
+    <div
+      className={cx('absolute inset-0', leaving && 'leaving')}
+      style={leaving ? leavingStyle : undefined}
+      aria-hidden={leaving ? true : undefined}
+    >
+      <div className="absolute inset-0 grid place-items-center text-on-media/50">
+        {art ? (
+          <img
+            className="size-full scale-105 object-cover opacity-35 blur-[6px] saturate-80"
+            src={art}
+            alt=""
+          />
+        ) : (
+          <Disc3 size={48} />
+        )}
+      </div>
+      {art && (
+        <img
+          className={cx('absolute inset-0 size-full object-contain', !leaving && 'stage-art')}
+          src={art}
+          alt=""
+        />
+      )}
+    </div>
+  )
+}
+
+// The artwork, cross-fading to the next cover over about 300 ms when the track changes: the old
+// copy stays on top and fades out over the new one.
+function StageArtwork({ art }: { art: string }) {
+  const leaving = useLeaving(art)
+
+  return (
+    <>
+      <ArtworkLayers art={art} />
+      {leaving && <ArtworkLayers art={leaving.value} leaving />}
+    </>
+  )
+}
+
+// One box: the visualizer, or the artwork, with the hover controls on top.
 // Docked, full screen and popout all share it.
 function Stage({
   placement,
@@ -398,24 +444,11 @@ function Stage({
     onToggleHud: view === 'visualizer' ? popout.toggleHud : undefined,
     onCyclePreset: view === 'visualizer' ? popout.cyclePreset : undefined,
   })
-  const artwork = (
-    <>
-      <div className="absolute inset-0 grid place-items-center text-on-media/50">
-        {art ? (
-          <img
-            className="size-full scale-105 object-cover opacity-35 blur-[6px] saturate-80"
-            src={art}
-            alt=""
-          />
-        ) : (
-          <Disc3 size={48} />
-        )}
-      </div>
-      {art && (
-        <img className="stage-art absolute inset-0 size-full object-contain" src={art} alt="" />
-      )}
-    </>
-  )
+  const artwork = <StageArtwork art={art} />
+  // Where a right-click landed, while the artwork menu is open. Docked only: in the popout there is
+  // no page to go to.
+  const [menu, setMenu] = useState<MenuPoint | null>(null)
+  const closeMenu = useCallback(() => setMenu(null), [])
 
   return (
     <div
@@ -424,8 +457,31 @@ function Stage({
       tabIndex={0}
       aria-label="Now Playing"
       onDoubleClick={(event) => {
-        if (event.target instanceof HTMLElement && event.target.closest('.stage-overlay')) return
+        // The menu is drawn inside the stage in full screen, and events bubble out of it.
+        if (
+          event.target instanceof HTMLElement &&
+          event.target.closest('.stage-overlay,[role="menu"]')
+        )
+          return
         onFullscreen()
+      }}
+      onContextMenu={(event) => {
+        if (placement !== 'docked' || !track) return
+        // The stage's own controls and the menu itself keep the browser's menu.
+        if (
+          event.target instanceof HTMLElement &&
+          event.target.closest('button,select,input,a,[role="menu"]')
+        )
+          return
+        event.preventDefault()
+        // A key that opens the menu (the Menu key, Shift+F10) reports no position, so the menu
+        // opens at the stage's centre instead of the window's corner.
+        const box = event.currentTarget.getBoundingClientRect()
+        const keyboard = event.clientX === 0 && event.clientY === 0
+        setMenu({
+          x: keyboard ? box.left + box.width / 2 : event.clientX,
+          y: keyboard ? box.top + box.height / 2 : event.clientY,
+        })
       }}
     >
       {view === 'visualizer' && seen ? (
@@ -458,6 +514,15 @@ function Stage({
         fluidSize={popout.fluidSize}
         onFluidSize={popout.setFluidSize}
       />
+      {menu && track && (
+        <ArtworkMenu
+          track={track}
+          at={menu}
+          fullscreen={fullscreen}
+          onFullscreen={onFullscreen}
+          onClose={closeMenu}
+        />
+      )}
     </div>
   )
 }

@@ -60,10 +60,13 @@ import { cx } from './cx'
 import { InfiniteScroll } from './infinite-scroll'
 import { LyricsPanel } from './lyrics'
 import { NowPlayingControls } from './now-playing-controls'
-import { NowPlayingStage } from './now-playing-popout'
+import { NowPlayingStage, useNowPlayingPopout } from './now-playing-popout'
+import { pageKeyIsFree, ShortcutsDialog, usePageShortcuts } from './now-playing-shortcuts'
+import { NowPlayingWash } from './now-playing-wash'
 import { PageTitle } from './page-title'
 import { historyTrack } from './play-history'
 import {
+  artUrl,
   durationText,
   queueEntryKey,
   remember,
@@ -2426,17 +2429,18 @@ function NowPlayingTabs({ track }: { track: LibraryTrack }) {
   const toggleLarge = useCallback(() => setLarge((on) => !on), [])
 
   // L flips large type. From the other tab it opens Lyrics in large type, so the key always shows
-  // something. Typing in a field keeps its own letters.
+  // something. Q goes to Up next. Typing in a field keeps its own letters, and so does an open
+  // dialog, the command palette included.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      if (event.key.toLowerCase() !== 'l' || event.repeat || event.defaultPrevented) return
-      if (event.ctrlKey || event.metaKey || event.altKey) return
-      if (
-        event.target instanceof HTMLElement &&
-        (event.target.matches('input,textarea,select') || event.target.isContentEditable)
-      )
-        return
-      if (tab === 'lyrics') setLarge((on) => !on)
+      const letter = event.key.toLowerCase()
+      if ((letter !== 'l' && letter !== 'q') || event.repeat) return
+      if (!pageKeyIsFree(event)) return
+      if (letter === 'q') {
+        if (tab === 'up-next') return
+        setTab('up-next')
+        remember(PANEL_TAB_KEY, 'up-next')
+      } else if (tab === 'lyrics') setLarge((on) => !on)
       else {
         setTab('lyrics')
         remember(PANEL_TAB_KEY, 'lyrics')
@@ -2513,7 +2517,12 @@ function NowPlayingTabs({ track }: { track: LibraryTrack }) {
 
 export function NowPlayingPage() {
   const player = usePlayer()
+  const popout = useNowPlayingPopout()
   const track = player.libraryTrack
+  const [help, setHelp] = useState(false)
+  const openHelp = useCallback(() => setHelp(true), [])
+  const closeHelp = useCallback(() => setHelp(false), [])
+  usePageShortcuts({ enabled: Boolean(track), stage: popout.dockedStage, onHelp: openHelp })
   if (!track)
     return (
       <EmptyPanel tall>
@@ -2542,11 +2551,13 @@ export function NowPlayingPage() {
   // 24px of it. A phone stacks them and lets the page scroll.
   return (
     <div className="-mb-[106px] grid h-[calc(100dvh_-_var(--topbar-height)_-_var(--safe-top)_-_var(--page-pad))] grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-x-[40px] gap-y-[24px] [--page-pad:60px] wide:[--page-pad:72px] max-phone:mb-0 max-phone:h-auto max-phone:grid-cols-1 max-phone:grid-rows-none">
+      <NowPlayingWash art={artUrl(track)} />
       <div className="flex min-h-0 min-w-0 flex-col gap-[16px]">
         <NowPlayingStage />
         <NowPlayingControls track={track} />
       </div>
       <NowPlayingTabs track={track} />
+      <ShortcutsDialog open={help} onClose={closeHelp} />
     </div>
   )
 }

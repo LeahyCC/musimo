@@ -401,6 +401,19 @@ meter::-webkit-meter-optimum-value {
   box-shadow: none;
 }
 
+/* The picture and the wash a track change is leaving behind, drawn over the new ones and faded out.
+   `use-leaving.ts` sets the duration on the element and takes the layer away when it is done, and
+   does not draw one at all under reduced motion. */
+@keyframes leave {
+  to {
+    opacity: 0;
+  }
+}
+.leaving {
+  animation: leave ease-out forwards;
+  pointer-events: none;
+}
+
 /* Reduced motion switches off every animation and smooth scroll, the utilities' included. */
 @media (prefers-reduced-motion: reduce) {
   *,
