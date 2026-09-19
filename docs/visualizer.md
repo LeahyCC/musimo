@@ -61,7 +61,7 @@ Where WebGPU is missing, or the adapter or device cannot be had, the stage shows
 
 ## How big it draws
 
-On Now Playing the stage is 60% of the content width, up to about 760 px square on a wide desktop, and the full content width on a phone (see [the popout note](now-playing-popout.md#layout)). It used to be at most 320 px. The canvas and the post stack's offscreen textures follow the stage, so a docked stage now has several times the pixels it had, and the fluid's grid setting does not shrink that. The frame times in visimo's README were taken at the smaller size and have not been measured again at this one; check `data-frame-ms` on the canvas (H shows it) on a low-end machine before trusting them.
+On Now Playing the docked stage is as wide as its column or as tall as the height the column leaves above its controls, whichever is smaller, and the full content width on a phone (see [the popout note](now-playing-popout.md#layout)). It used to be at most 320 px, and later 60% of the content width. The canvas and the post stack's offscreen textures follow the stage, so a docked stage in a tall window has several times the pixels a 320 px one had, and the fluid's grid setting does not shrink that. The frame times in visimo's README were taken at the smaller size and have not been measured again at this one; check `data-frame-ms` on the canvas (H shows it) on a low-end machine before trusting them.
 
 ## The canvas attributes
 

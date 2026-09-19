@@ -33,6 +33,11 @@ export type StageView = 'artwork' | 'visualizer'
 type OverlayProps = {
   placement: StagePlacement
   fullscreen: boolean
+  /**
+   * Draws the transport over the picture. Docked, the Now Playing page carries it beside the
+   * stage, so only full screen and the popout, which have nothing else to hold it, turn it on.
+   */
+  controls: boolean
   onFullscreen: () => void
   onPopout?: () => void
   /** Undefined where the visualizer is not available, so no toggle is shown. */
@@ -222,9 +227,119 @@ export function useStageKeys(container: RefObject<HTMLDivElement | null>, action
   }, [container])
 }
 
+// The transport drawn over the picture, for full screen and the popout, where the page's own
+// control row is out of reach. It duplicates that row on purpose: it lives in another document.
+function StageControls() {
+  const player = usePlayer()
+  const track = player.libraryTrack
+  const title = track?.title ?? player.track?.title ?? 'Nothing playing'
+  const byline = [track?.artist ?? player.track?.artist, track?.album ?? player.track?.album]
+    .filter(Boolean)
+    .join(' · ')
+  const art = track ? artUrl(track) : (player.track?.art ?? '')
+  const length = player.length || 30
+  return (
+    <div
+      className={cx(
+        'stage-controls flex-wrap gap-[8px] bg-linear-to-b from-transparent to-scrim/80 px-[16px] pt-[28px] pb-[14px] text-on-media max-phone:gap-[4px]',
+        stageBarClassName,
+      )}
+    >
+      <div className="flex min-w-0 flex-[1_1_160px] items-center gap-[10px]">
+        {art ? (
+          <img className="size-[40px] shrink-0 rounded-md object-cover" src={art} alt="" />
+        ) : (
+          <Disc3 size={22} />
+        )}
+        <span className="grid min-w-0">
+          <strong className="truncate text-body">{title}</strong>
+          {byline && <small className="truncate text-tiny text-on-media/70">{byline}</small>}
+        </span>
+      </div>
+      {track && (
+        <StageButton
+          active={player.liked.isLiked}
+          // The label already says which way the press goes, so a pressed state on top of it
+          // would be read out twice.
+          aria-pressed={undefined}
+          aria-label={player.liked.isLiked ? `Remove ${title} from liked` : `Add ${title} to liked`}
+          disabled={!player.liked.canToggle || player.liked.busy}
+          onClick={player.liked.toggle}
+        >
+          <ThumbsUp size={16} fill={player.liked.isLiked ? 'currentColor' : 'none'} />
+        </StageButton>
+      )}
+      <div className="flex items-center gap-[2px]">
+        <StageButton aria-label="Previous track" disabled={!track} onClick={player.previous}>
+          <SkipBack size={17} />
+        </StageButton>
+        <IconButton
+          variant="play"
+          aria-label={player.playing ? 'Pause' : 'Play'}
+          disabled={!track && !player.track}
+          onClick={player.toggle}
+        >
+          {player.playing ? <Pause size={19} /> : <Play size={19} />}
+        </IconButton>
+        <StageButton aria-label="Next track" disabled={!track} onClick={player.next}>
+          <SkipForward size={17} />
+        </StageButton>
+      </div>
+      <div className="flex min-w-0 flex-[3_1_220px] items-center gap-[8px] text-tiny tabular-nums max-phone:order-1 max-phone:basis-full">
+        <span>{durationText(player.position)}</span>
+        <input
+          className="min-w-0 flex-1 accent-accent"
+          aria-label="Playback position"
+          type="range"
+          min="0"
+          max={length}
+          step="0.1"
+          value={Math.min(player.position, length)}
+          disabled={!player.ready}
+          onChange={(event) => player.seek(Number(event.target.value))}
+        />
+        <span>{durationText(player.length)}</span>
+      </div>
+      {track && (
+        <>
+          <StageButton active={player.shuffle} aria-label="Shuffle" onClick={player.toggleShuffle}>
+            <Shuffle size={17} />
+          </StageButton>
+          <StageButton
+            active={player.repeat !== 'off'}
+            aria-label={`Repeat ${player.repeat}`}
+            onClick={player.cycleRepeat}
+          >
+            <Repeat size={17} />
+            {player.repeat === 'one' && (
+              <small className="-ml-[4px] text-micro max-phone:text-caption">1</small>
+            )}
+          </StageButton>
+        </>
+      )}
+      <div className="flex items-center gap-[2px]">
+        <StageButton aria-label={player.muted ? 'Unmute' : 'Mute'} onClick={player.toggleMute}>
+          {player.muted || player.volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+        </StageButton>
+        <input
+          className="w-[80px] accent-accent max-phone:hidden"
+          type="range"
+          aria-label="Volume"
+          min="0"
+          max="1"
+          step="0.01"
+          value={player.muted ? 0 : player.volume}
+          onChange={(event) => player.setVolume(Number(event.target.value))}
+        />
+      </div>
+    </div>
+  )
+}
+
 export function NowPlayingOverlay({
   placement,
   fullscreen,
+  controls,
   onFullscreen,
   onPopout,
   view,
@@ -237,13 +352,6 @@ export function NowPlayingOverlay({
   onFluidSize,
 }: OverlayProps) {
   const player = usePlayer()
-  const track = player.libraryTrack
-  const title = track?.title ?? player.track?.title ?? 'Nothing playing'
-  const byline = [track?.artist ?? player.track?.artist, track?.album ?? player.track?.album]
-    .filter(Boolean)
-    .join(' · ')
-  const art = track ? artUrl(track) : (player.track?.art ?? '')
-  const length = player.length || 30
   const fullscreenLabel =
     placement === 'popout'
       ? 'Full screen in the app'
@@ -366,106 +474,7 @@ export function NowPlayingOverlay({
           )}
         </div>
       )}
-      <div
-        className={cx(
-          'stage-controls flex-wrap gap-[8px] bg-linear-to-b from-transparent to-scrim/80 px-[16px] pt-[28px] pb-[14px] text-on-media max-phone:gap-[4px]',
-          stageBarClassName,
-        )}
-      >
-        <div className="flex min-w-0 flex-[1_1_160px] items-center gap-[10px]">
-          {art ? (
-            <img className="size-[40px] shrink-0 rounded-md object-cover" src={art} alt="" />
-          ) : (
-            <Disc3 size={22} />
-          )}
-          <span className="grid min-w-0">
-            <strong className="truncate text-body">{title}</strong>
-            {byline && <small className="truncate text-tiny text-on-media/70">{byline}</small>}
-          </span>
-        </div>
-        {track && (
-          <StageButton
-            active={player.liked.isLiked}
-            // The label already says which way the press goes, so a pressed state on top of it
-            // would be read out twice.
-            aria-pressed={undefined}
-            aria-label={
-              player.liked.isLiked ? `Remove ${title} from liked` : `Add ${title} to liked`
-            }
-            disabled={!player.liked.canToggle || player.liked.busy}
-            onClick={player.liked.toggle}
-          >
-            <ThumbsUp size={16} fill={player.liked.isLiked ? 'currentColor' : 'none'} />
-          </StageButton>
-        )}
-        <div className="flex items-center gap-[2px]">
-          <StageButton aria-label="Previous track" disabled={!track} onClick={player.previous}>
-            <SkipBack size={17} />
-          </StageButton>
-          <IconButton
-            variant="play"
-            aria-label={player.playing ? 'Pause' : 'Play'}
-            disabled={!track && !player.track}
-            onClick={player.toggle}
-          >
-            {player.playing ? <Pause size={19} /> : <Play size={19} />}
-          </IconButton>
-          <StageButton aria-label="Next track" disabled={!track} onClick={player.next}>
-            <SkipForward size={17} />
-          </StageButton>
-        </div>
-        <div className="flex min-w-0 flex-[3_1_220px] items-center gap-[8px] text-tiny tabular-nums max-phone:order-1 max-phone:basis-full">
-          <span>{durationText(player.position)}</span>
-          <input
-            className="min-w-0 flex-1 accent-accent"
-            aria-label="Playback position"
-            type="range"
-            min="0"
-            max={length}
-            step="0.1"
-            value={Math.min(player.position, length)}
-            disabled={!player.ready}
-            onChange={(event) => player.seek(Number(event.target.value))}
-          />
-          <span>{durationText(player.length)}</span>
-        </div>
-        {track && (
-          <>
-            <StageButton
-              active={player.shuffle}
-              aria-label="Shuffle"
-              onClick={player.toggleShuffle}
-            >
-              <Shuffle size={17} />
-            </StageButton>
-            <StageButton
-              active={player.repeat !== 'off'}
-              aria-label={`Repeat ${player.repeat}`}
-              onClick={player.cycleRepeat}
-            >
-              <Repeat size={17} />
-              {player.repeat === 'one' && (
-                <small className="-ml-[4px] text-micro max-phone:text-caption">1</small>
-              )}
-            </StageButton>
-          </>
-        )}
-        <div className="flex items-center gap-[2px]">
-          <StageButton aria-label={player.muted ? 'Unmute' : 'Mute'} onClick={player.toggleMute}>
-            {player.muted || player.volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
-          </StageButton>
-          <input
-            className="w-[80px] accent-accent max-phone:hidden"
-            type="range"
-            aria-label="Volume"
-            min="0"
-            max="1"
-            step="0.01"
-            value={player.muted ? 0 : player.volume}
-            onChange={(event) => player.setVolume(Number(event.target.value))}
-          />
-        </div>
-      </div>
+      {controls && <StageControls />}
     </div>
   )
 }

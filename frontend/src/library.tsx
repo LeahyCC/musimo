@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useMemo, useRef, useState } from 'react'
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import {
   keepPreviousData,
@@ -46,6 +46,7 @@ import {
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from './api'
 import { cx } from './cx'
 import { InfiniteScroll } from './infinite-scroll'
+import { NowPlayingControls } from './now-playing-controls'
 import { NowPlayingStage } from './now-playing-popout'
 import { PageTitle } from './page-title'
 import {
@@ -69,6 +70,9 @@ import {
   sectionCaptionClassName,
   sectionHeadingClassName,
   sectionTitleClassName,
+  tabId,
+  TabList,
+  tabPanelId,
   Tag,
   textLinkClassName,
 } from './ui'
@@ -537,12 +541,18 @@ function ArtistItem({
 function TrackList({
   tracks,
   source,
+  from = 0,
   removing = false,
   onRemove,
   oneLine = false,
 }: {
   tracks: LibraryTrack[]
   source: string
+  /**
+   * Where in `tracks` the rows begin. Up next starts after the playing track, but a row still
+   * plays from its own place in the whole queue, so the list is not cut before it is passed on.
+   */
+  from?: number
   removing?: boolean
   onRemove?: (index: number) => void
   /** Cut each title, artist and album to one line with an ellipsis instead of wrapping. */
@@ -551,7 +561,8 @@ function TrackList({
   const player = usePlayer()
   return (
     <div className="library-tracks grid">
-      {tracks.map((track, index) => {
+      {tracks.slice(from).map((track, position) => {
+        const index = from + position
         // A playlist may hold the same song twice, and the same song appears in several
         // collections, so the queue and the position are both part of "the playing row".
         const current =
@@ -1888,16 +1899,145 @@ export function LibraryPage({
 
 const lyricLineClassName = 'py-[8px] text-section text-text'
 
+/* Up next and Lyrics share one panel, so neither starts below the fold and Lyrics is a tap away
+   however long the queue is. */
+const PANEL_TABS = [
+  { id: 'up-next', label: 'Up next' },
+  { id: 'lyrics', label: 'Lyrics' },
+] as const
+type PanelTab = (typeof PANEL_TABS)[number]['id']
+const PANEL_TAB_KEY = 'musimo.now-playing-tab'
+/* The panel scrolls inside itself beside the stage. On a phone the page is what scrolls, so the
+   panel just grows. */
+const tabPanelClassName =
+  'min-h-0 flex-1 overflow-auto overscroll-contain max-phone:overflow-visible'
+
+/**
+ * What the queue was started from, worded for after "Playing from", or an empty string where the
+ * player does not know (a restored queue) or the name has not arrived yet. The player keeps only
+ * an id such as `playlist:abc`, so the name comes from the reads the library pages already make
+ * and share through the query cache.
+ */
+function usePlayingFrom(source: string) {
+  const split = source.indexOf(':')
+  const kind = split < 0 ? source : source.slice(0, split)
+  const id = split < 0 ? '' : source.slice(split + 1)
+  const playlists = useQuery({
+    queryKey: ['library-playlists'],
+    queryFn: ({ signal }) => api('library/playlists', libraryPlaylistsSchema, { signal }),
+    enabled: kind === 'playlist',
+  })
+  const album = useQuery({
+    queryKey: ['library-album', id],
+    queryFn: ({ signal }) =>
+      api(`library/albums/${encodeURIComponent(id)}`, libraryAlbumDetailSchema, { signal }),
+    enabled: kind === 'album',
+  })
+  const artist = useQuery({
+    queryKey: ['library-artist', id],
+    queryFn: ({ signal }) =>
+      api(`library/artists/${encodeURIComponent(id)}`, libraryArtistDetailSchema, { signal }),
+    enabled: kind === 'artist',
+  })
+  if (kind === 'playlist') {
+    const name = playlists.data?.items.find((item) => item.id === id)?.name
+    return name ? `playlist ${name}` : ''
+  }
+  if (kind === 'album') return album.data ? `album ${album.data.name}` : ''
+  if (kind === 'artist') return artist.data ? `artist ${artist.data.name}` : ''
+  if (kind === 'tracks') {
+    // The rest of the id is the Tracks view's own query string; only the search is worth saying.
+    const search = new URLSearchParams(id).get('q')
+    return search ? `tracks matching "${search}"` : 'your tracks'
+  }
+  return ''
+}
+
+// Up next and Lyrics in one panel that fills the column beside the stage.
+function NowPlayingTabs({ track }: { track: LibraryTrack }) {
+  const player = usePlayer()
+  const idBase = useId()
+  const [tab, setTab] = useState<PanelTab>(() =>
+    stored(PANEL_TAB_KEY, 'up-next') === 'lyrics' ? 'lyrics' : 'up-next',
+  )
+  const lyrics = useQuery({
+    queryKey: ['lyrics', track.id],
+    queryFn: ({ signal }) =>
+      api(`player/lyrics/${encodeURIComponent(track.id)}`, lyricsSchema, { signal }),
+    retry: false,
+  })
+  const playingFrom = usePlayingFrom(player.source)
+  const words = lyrics.data?.items[0]?.line ?? []
+  // Up next is what comes after the playing track, so the track itself is never its first row.
+  const following = player.currentIndex + 1
+  const choose = (next: PanelTab) => {
+    setTab(next)
+    remember(PANEL_TAB_KEY, next)
+  }
+  return (
+    <Panel className="flex min-h-0 min-w-0 flex-col">
+      <TabList
+        label="Now Playing panel"
+        idBase={idBase}
+        tabs={PANEL_TABS}
+        value={tab}
+        onChange={choose}
+        className="mb-[14px]"
+      />
+      {/* Both panels stay in the document, so every tab's `aria-controls` names something that
+          exists; the one not chosen is hidden. */}
+      <div
+        role="tabpanel"
+        id={tabPanelId(idBase, 'up-next')}
+        aria-labelledby={tabId(idBase, 'up-next')}
+        // A box that scrolls has to be reachable from the keyboard.
+        tabIndex={0}
+        hidden={tab !== 'up-next'}
+        className={tabPanelClassName}
+      >
+        <div className="mb-[8px] flex items-baseline justify-between gap-[12px]">
+          <p className="min-w-0 truncate text-small">
+            {playingFrom && (
+              <>
+                Playing from <span className="text-text">{playingFrom}</span>
+              </>
+            )}
+          </p>
+          <span className={cx(sectionCaptionClassName, 'shrink-0')}>
+            {player.queue.length} {player.queue.length === 1 ? 'TRACK' : 'TRACKS'}
+          </span>
+        </div>
+        {following < player.queue.length ? (
+          <TrackList tracks={player.queue} source={player.source} from={following} oneLine />
+        ) : (
+          <p className={lyricLineClassName}>Nothing else is queued.</p>
+        )}
+      </div>
+      <div
+        role="tabpanel"
+        id={tabPanelId(idBase, 'lyrics')}
+        aria-labelledby={tabId(idBase, 'lyrics')}
+        tabIndex={0}
+        hidden={tab !== 'lyrics'}
+        className={tabPanelClassName}
+      >
+        {lyrics.isLoading && <p className={lyricLineClassName}>Loading lyrics…</p>}
+        {!lyrics.isLoading && !words.length && (
+          <p className={lyricLineClassName}>No lyrics found for this track.</p>
+        )}
+        {words.map((line, index) => (
+          <p key={`${line.value}-${index}`} className={lyricLineClassName}>
+            {line.value || '♪'}
+          </p>
+        ))}
+      </div>
+    </Panel>
+  )
+}
+
 export function NowPlayingPage() {
   const player = usePlayer()
   const track = player.libraryTrack
-  const lyrics = useQuery({
-    queryKey: ['lyrics', track?.id],
-    queryFn: ({ signal }) =>
-      api(`player/lyrics/${encodeURIComponent(track?.id ?? '')}`, lyricsSchema, { signal }),
-    enabled: Boolean(track),
-    retry: false,
-  })
   if (!track)
     return (
       <EmptyPanel tall>
@@ -1920,92 +2060,17 @@ export function NowPlayingPage() {
       </EmptyPanel>
     )
 
-  const words = lyrics.data?.items[0]?.line ?? []
+  // Two columns that together fit the window under the top bar: the stage and its controls on
+  // the left, one tabbed panel on the right that scrolls inside itself. `main` pads its bottom by
+  // 130px to clear the footer player, which this page hides, so the columns take back all but
+  // 24px of it. A phone stacks them and lets the page scroll.
   return (
-    <div className="grid gap-[30px]">
-      {/* The stage is the page: 60% of the width, the details beside it. The height term keeps a
-          square stage, controls and all, above the fold in a short window, at the cost of some of
-          that width. A phone stacks them, the stage across the full width. */}
-      <section className="grid grid-cols-[minmax(0,min(60%,calc(100dvh_-_var(--topbar-height)_-_84px)))_minmax(0,1fr)] items-end gap-[30px] max-phone:grid-cols-1">
+    <div className="-mb-[106px] grid h-[calc(100dvh_-_var(--topbar-height)_-_var(--safe-top)_-_var(--page-pad))] grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-x-[40px] gap-y-[24px] [--page-pad:60px] wide:[--page-pad:72px] max-phone:mb-0 max-phone:h-auto max-phone:grid-cols-1 max-phone:grid-rows-none">
+      <div className="flex min-h-0 min-w-0 flex-col gap-[16px]">
         <NowPlayingStage />
-        <div className="min-w-0">
-          <p className="mb-[12px] text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
-            NOW PLAYING
-          </p>
-          {/* The page heading's own size, so the stage stays the biggest thing here. Three lines,
-              then an ellipsis: a long title keeps its size rather than shrinking, and the whole of
-              it is still in the stage's controls. */}
-          <h1
-            className="my-[8px] line-clamp-3 leading-[1.2] [overflow-wrap:anywhere]"
-            title={track.title}
-          >
-            {track.title}
-          </h1>
-          <p className="[overflow-wrap:anywhere]">
-            {track.artistId ? (
-              <Link
-                className="hover:underline"
-                to="/library/artists/$artistId"
-                params={{ artistId: track.artistId }}
-              >
-                {track.artist}
-              </Link>
-            ) : (
-              track.artist
-            )}
-            {track.album && (
-              <>
-                {' · '}
-                {track.albumId ? (
-                  <Link
-                    className="hover:underline"
-                    to="/library/albums/$albumId"
-                    params={{ albumId: track.albumId }}
-                  >
-                    {track.album}
-                  </Link>
-                ) : (
-                  track.album
-                )}
-              </>
-            )}
-          </p>
-          <div className="mt-[20px] flex flex-wrap items-center gap-[16px]">
-            {/* The footer is hidden here, so the page offers the add button itself. */}
-            <Button onClick={player.openPlaylistPicker}>
-              <Plus size={16} /> Add to playlist
-            </Button>
-          </div>
-          {/* The footer's status line, which is hidden with it: a track that will not play, or a
-              playlist just made from the button above, would otherwise say nothing here. */}
-          <p className="mt-[14px] text-small text-muted" role="status">
-            {player.notice}
-          </p>
-        </div>
-      </section>
-      <div className="grid grid-cols-[minmax(0,1.6fr)_minmax(260px,1fr)] gap-[18px] max-tablet:grid-cols-1">
-        <Panel className="min-w-0">
-          <div className={sectionHeadingClassName}>
-            <h2 className={sectionTitleClassName}>Up next</h2>
-            <span className={sectionCaptionClassName}>{player.queue.length} TRACKS</span>
-          </div>
-          <TrackList tracks={player.queue} source={player.source} oneLine />
-        </Panel>
-        <Panel className="max-h-[500px] min-w-0 overflow-auto overscroll-contain">
-          <div className={sectionHeadingClassName}>
-            <h2 className={sectionTitleClassName}>Lyrics</h2>
-          </div>
-          {lyrics.isLoading && <p className={lyricLineClassName}>Loading lyrics…</p>}
-          {!lyrics.isLoading && !words.length && (
-            <p className={lyricLineClassName}>No lyrics found for this track.</p>
-          )}
-          {words.map((line, index) => (
-            <p key={`${line.value}-${index}`} className={lyricLineClassName}>
-              {line.value || '♪'}
-            </p>
-          ))}
-        </Panel>
+        <NowPlayingControls track={track} />
       </div>
+      <NowPlayingTabs track={track} />
     </div>
   )
 }
