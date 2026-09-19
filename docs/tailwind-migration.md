@@ -66,8 +66,8 @@ These rules were paid for in [UI verification](ui-verification.md) and `e2e/phon
 
 **Chrome**
 
-- Desktop: 215 px sidebar (184 px under 1100 px), sticky 87 px top bar, footer player 75 px tall, queue dock above the player. On Now Playing the footer is hidden while a library track shows (the stage has its own transport), so nothing there may assume the player is on screen.
-- Phone (max 767 px): sidebar becomes a 64 px bottom bar; brand, caption and sidebar footer hide; Downloads shows a count badge; the floating queue dock is hidden.
+- Desktop: 215 px sidebar (184 px under 1100 px), sticky 87 px top bar, footer player 75 px tall, queue dock above the player. On Now Playing the footer is hidden while a library track shows (the stage has its own transport), so nothing there may assume the player is on screen. The sidebar's last row is Now Playing (cover thumbnail, no icon), present only while a library track is loaded.
+- Phone (max 767 px): sidebar becomes a 64 px bottom bar; brand, caption and sidebar footer hide; Downloads shows a count badge; the floating queue dock is hidden. The bar holds exactly five items (Search, Library, Downloads, Settings, Diagnostics) and the desktop Now Playing row is hidden there; the mini player's cover is the phone's way in.
 - `--player-height`, `--nav-height` and the `env(safe-area-inset-*)` variables keep `main` padding, the Settings save bar, the queue dock and virtual lists clear of the player, bottom bar, notch and home indicator. `--player-height` is `0px` while the footer is hidden, so a calc that adds it needs no special case.
 - Phone footer is a one-row mini player with a full-width seek bar on its top edge, hidden while idle and on Now Playing. Previous, shuffle, repeat, like, volume and add-to-playlist live on the Now Playing stage.
 - The playlist picker is rendered beside the footer, never inside it, so hiding the footer cannot take an open dialog with it.
