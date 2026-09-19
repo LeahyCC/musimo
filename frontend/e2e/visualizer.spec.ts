@@ -105,7 +105,8 @@ test('with WebGPU the visualizer is the default, V and the button switch it, and
   await expect(canvas).toHaveCount(0)
   expect(await page.evaluate(() => localStorage.getItem('musimo.now-playing-view'))).toBe('artwork')
   await page.keyboard.press('m')
-  await expect(stage.getByRole('button', { name: 'Unmute' })).toBeVisible()
+  // The mute button is in the page's control row now, not over the picture.
+  await expect(page.getByRole('button', { name: 'Unmute' })).toBeVisible()
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()

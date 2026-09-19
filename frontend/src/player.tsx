@@ -84,6 +84,8 @@ type Playback = {
   openPlaylistPicker: () => void
   /** The footer's status line. Now Playing hides the footer, so the page repeats it. */
   notice: string
+  /** Empties the player, the footer's close button. Now Playing has one of its own. */
+  stop: () => void
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -115,8 +117,19 @@ const PlayerContext = createContext<Playback>({
   previewState: () => undefined,
   openPlaylistPicker: () => undefined,
   notice: '',
+  stop: () => undefined,
 })
 export const usePlayer = () => useContext(PlayerContext)
+
+const LIBRARY_NOTICE = 'Your Navidrome library'
+const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
+
+/**
+ * The status lines that only say where the sound comes from or how the player woke up. The
+ * footer shows them; Now Playing has the title, the source and a play button on screen already,
+ * so it repeats only what is left: errors and confirmations.
+ */
+export const isPassiveNotice = (text: string) => text === LIBRARY_NOTICE || text === RESTORED_NOTICE
 
 /** True while this exact collection owns the queue, so Play can become Pause. */
 export function useCollectionPlayback(source: string) {
@@ -516,7 +529,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCurrentIndex(index)
     setPosition(seek)
     setLength(item.duration || 0)
-    setNotice('Your Navidrome library')
+    setNotice(LIBRARY_NOTICE)
     startAudio(`/api/player/stream/${encodeURIComponent(item.id)}`, autoplay)
   }
 
@@ -653,7 +666,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         sourceRef.current = 'restored'
         setSource('restored')
         loadLibrary(index, false, saved.position / 1000)
-        setNotice('Queue restored. Press play to continue.')
+        setNotice(RESTORED_NOTICE)
       })
       .catch(() => undefined)
   }, [])
@@ -731,7 +744,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     '--progress': `${Math.min(100, (Math.min(position, seekMax) / seekMax) * 100).toFixed(2)}%`,
   } as CSSProperties
 
-  // The Now Playing stage has its own transport and shows the title, so the footer stands down
+  // The Now Playing page has every control the footer has (like, add to playlist, seek, the
+  // transport, shuffle, repeat, volume and close) and shows the title, so the footer stands down
   // beside it at every width. Without a library track the page is empty, and a preview's only
   // controls are the footer's, so it stays.
   const onStage = useRouterState({ select: (state) => state.location.pathname === '/now-playing' })
@@ -915,6 +929,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         previewState: (trackId: number) => previewStates.get(trackId),
         openPlaylistPicker: openPlaylistDialog,
         notice,
+        stop,
       }}
     >
       {children}

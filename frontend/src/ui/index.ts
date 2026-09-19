@@ -10,6 +10,8 @@ export { ErrorBanner, errorBannerClassName, InlineError } from './error'
 export type { ErrorBannerProps } from './error'
 export { Field, FieldSelect } from './field'
 export { Kbd } from './kbd'
+export { TabList, tabId, tabPanelId } from './tabs'
+export type { TabItem } from './tabs'
 export {
   sectionHeadingClassName,
   sectionTitleClassName,

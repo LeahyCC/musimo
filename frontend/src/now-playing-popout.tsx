@@ -324,6 +324,8 @@ type StageProps = {
   onFullscreen: () => void
   onPopout?: () => void
   onClose?: () => void
+  /** Layout only: the size the docked stage takes on the page. */
+  className?: string
 }
 
 /* `stage` is the hook the suite and the handwritten `:fullscreen` and popout rules find it by; those
@@ -331,10 +333,24 @@ type StageProps = {
 const stageClassName =
   'stage relative aspect-square overflow-hidden rounded-[14px] bg-media shadow-[0_20px_60px_color-mix(in_oklab,var(--color-shadow)_47%,transparent)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent focus-visible:outline-solid'
 
+/* The docked stage is the smaller of two squares: as wide as its column, and as tall as the room
+   its column leaves above the controls. The column is a size container for that, and on a phone,
+   where the page scrolls and has no height to measure, the stage is just the column's width. The
+   `:fullscreen` and popout rules in style.css override both. */
+const dockedStageClassName = 'w-[min(100cqw,100cqh)] max-phone:w-full'
+
 // One box: the visualizer, or a blurred cover fill behind a sharp,
 // letterboxed copy of the same artwork, with the hover controls on top.
 // Docked, full screen and popout all share it.
-function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClose }: StageProps) {
+function Stage({
+  placement,
+  stageRef,
+  fullscreen,
+  onFullscreen,
+  onPopout,
+  onClose,
+  className,
+}: StageProps) {
   const player = usePlayer()
   const popout = useNowPlayingPopout()
   const track = player.libraryTrack
@@ -371,7 +387,7 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
   return (
     <div
       ref={stageRef}
-      className={cx(stageClassName, 'group', idle && 'idle cursor-none')}
+      className={cx(stageClassName, 'group', idle && 'idle cursor-none', className)}
       tabIndex={0}
       aria-label="Now Playing"
       onDoubleClick={(event) => {
@@ -397,6 +413,7 @@ function Stage({ placement, stageRef, fullscreen, onFullscreen, onPopout, onClos
       <NowPlayingOverlay
         placement={placement}
         fullscreen={fullscreen}
+        controls={fullscreen || placement === 'popout'}
         onFullscreen={onFullscreen}
         onPopout={onPopout}
         view={view}
@@ -454,30 +471,37 @@ export function NowPlayingStage() {
   }
 
   return (
-    <div className="grid min-w-0 gap-[10px]">
-      {popout.popout ? (
-        <div className={cx(stageClassName, 'grid place-items-center')}>
-          {art && (
-            <img
-              className="absolute inset-0 size-full object-cover opacity-25 blur-[6px]"
-              src={art}
-              alt=""
-            />
-          )}
-          <div className="relative grid justify-items-center gap-[12px]">
-            <p className="text-on-media/75">Playing in the popout window.</p>
-            <Button onClick={popout.closePopout}>Bring back</Button>
+    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[10px]">
+      {/* The stage's size container: it takes the height the column leaves and sets the square at
+          its top left, so the art's edge lines up with the title and controls under it when a short
+          window makes the square narrower than the column. A phone has no height to hand out, so
+          there it is only a block. */}
+      <div className="grid min-h-0 flex-1 place-items-start [container-type:size] max-phone:[container-type:normal]">
+        {popout.popout ? (
+          <div className={cx(stageClassName, dockedStageClassName, 'grid place-items-center')}>
+            {art && (
+              <img
+                className="absolute inset-0 size-full object-cover opacity-25 blur-[6px]"
+                src={art}
+                alt=""
+              />
+            )}
+            <div className="relative grid justify-items-center gap-[12px]">
+              <p className="text-on-media/75">Playing in the popout window.</p>
+              <Button onClick={popout.closePopout}>Bring back</Button>
+            </div>
           </div>
-        </div>
-      ) : (
-        <Stage
-          placement="docked"
-          stageRef={container}
-          fullscreen={fullscreen}
-          onFullscreen={toggleFullscreen}
-          onPopout={popout.canPopout ? popout.openPopout : undefined}
-        />
-      )}
+        ) : (
+          <Stage
+            placement="docked"
+            stageRef={container}
+            fullscreen={fullscreen}
+            onFullscreen={toggleFullscreen}
+            onPopout={popout.canPopout ? popout.openPopout : undefined}
+            className={dockedStageClassName}
+          />
+        )}
+      </div>
       {popout.notice && (
         <span className="text-small text-muted" role="status">
           {popout.notice}
