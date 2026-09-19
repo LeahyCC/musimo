@@ -74,6 +74,7 @@ const activeJob: DownloadJob = {
   tool_tail: '',
   tool_version: '',
   warnings: [],
+  notes: [],
   final_path: '',
   codec: '',
   actual_bitrate: 0,

@@ -69,6 +69,7 @@ const failed: DownloadJob = {
   tool_tail: '',
   tool_version: '',
   warnings: [],
+  notes: [],
   final_path: '',
   codec: '',
   actual_bitrate: 0,
@@ -564,6 +565,73 @@ test('done jobs with warnings show the count in their heading', async ({ page })
 
   const card = page.locator('.job-card')
   await expect(card.getByText('opus · 161 kbps · 2 warnings')).toBeVisible()
+})
+
+test('a link job shows where its tags came from as a note, not a warning', async ({ page }) => {
+  await page.route('**/*', async (route) => {
+    if (new URL(route.request().url()).origin !== ORIGIN) await route.abort()
+    else await route.fallback()
+  })
+
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
+  )
+
+  const done: DownloadJob = {
+    ...failed,
+    catalog: 'link',
+    source: 'archive',
+    stage: 'done',
+    error_code: '',
+    error: '',
+    error_hint: '',
+    error_fix: '',
+    codec: 'mp3',
+    actual_bitrate: 224000,
+  }
+  const clean: DownloadJob = {
+    ...done,
+    id: 'link-clean',
+    notes: ['Tagged from Internet Archive, no catalog match'],
+  }
+  const withWarning: DownloadJob = {
+    ...done,
+    id: 'link-warning',
+    warnings: ['Cover art unavailable'],
+    notes: ['Tagged from the Deezer catalog'],
+  }
+
+  await page.route('**/api/jobs*', (route) =>
+    route.fulfill({
+      json: {
+        jobs: [clean, withWarning],
+        controls: { paused: false, source_paused: false },
+        summary: { active: 0, failed: 0, failure_reasons: [] },
+      },
+    }),
+  )
+
+  await page.goto('/downloads')
+  await page.getByRole('button', { name: 'Done (2)', exact: true }).click()
+
+  const cards = page.locator('.job-card')
+  const first = cards.filter({ has: page.getByText('Tagged from Internet Archive') })
+  const second = cards.filter({ has: page.getByText('Tagged from the Deezer catalog') })
+  await expect(first.getByText('from Internet Archive', { exact: true })).toBeVisible()
+  // A clean download reads as clean: no warning count, and no collapsed list of notes.
+  await expect(first.getByText('mp3 · 224 kbps', { exact: true })).toBeVisible()
+  await expect(first.getByText(/warning/)).toHaveCount(0)
+  await expect(first.locator('details')).toHaveCount(0)
+  // The note is plain muted text on the card, not tucked into a details element.
+  const note = first.getByText('Tagged from Internet Archive, no catalog match')
+  await expect(note).toBeVisible()
+  await expect(note).toHaveClass(/text-muted/)
+  expect(await note.evaluate((element) => element.closest('details'))).toBeNull()
+  // A real warning is still counted, and the note is not counted with it.
+  await expect(second.getByText('mp3 · 224 kbps · 1 warning', { exact: true })).toBeVisible()
+  await expect(second.getByText('Tagged from the Deezer catalog')).toBeVisible()
+  await second.getByText('1 metadata or scanning notes').click()
+  await expect(second.locator('details li')).toHaveText(['Cover art unavailable'])
 })
 
 test('history tab shows empty state when no jobs finished', async ({ page }) => {

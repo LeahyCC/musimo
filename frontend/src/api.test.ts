@@ -42,4 +42,12 @@ describe('jobSchema', () => {
     for (const catalog of ['deezer', 'podcast', 'link'])
       expect(jobSchema.parse({ ...job, catalog }).catalog).toBe(catalog)
   })
+
+  // A server from before notes existed leaves the field out, and the queue still has to load.
+  it('gives a job with no notes an empty list, and keeps the notes a server sends', () => {
+    expect(jobSchema.parse(job).notes).toEqual([])
+    const noted = jobSchema.parse({ ...job, notes: ['Tagged from the Deezer catalog'] })
+    expect(noted.notes).toEqual(['Tagged from the Deezer catalog'])
+    expect(noted.warnings).toEqual([])
+  })
 })

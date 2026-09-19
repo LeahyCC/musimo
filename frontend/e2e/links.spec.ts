@@ -105,6 +105,7 @@ const linkJob = (id: string, over: Partial<DownloadJob> = {}): DownloadJob => ({
   tool_tail: '',
   tool_version: '',
   warnings: [],
+  notes: [],
   final_path: '',
   codec: '',
   actual_bitrate: 0,
@@ -444,7 +445,7 @@ test.describe('pasted links', () => {
     await page.goto('/')
     await paste(page, 'https://example.com/song')
     await expect(sheet(page).getByRole('alert')).toHaveText(
-      "Musimo can't download from example.com. It works with: YouTube.",
+      "Musimo can't download from example.com. It works with: YouTube, Internet Archive.",
     )
     await dismiss(page)
     await paste(page, 'https://open.spotify.com/album/1')
