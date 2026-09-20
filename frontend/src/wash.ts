@@ -3,12 +3,17 @@ import type { Rgb } from './theme/color'
 import { CONTRAST_PAIRS, MIN_CONTRAST } from './theme/contrast'
 import type { Theme } from './theme/themes'
 
-/* The rule for the color behind Now Playing: the cover's color, mixed into the theme's own canvas
-   until every text color that is read on the canvas still reads. */
+/* The rules for the colors behind Now Playing. The wash is the cover's color mixed into the theme's
+   own canvas until every text color that is read on the canvas still reads. The glow is a stronger
+   mix that is only drawn where no canvas text sits, so it has no contrast to keep. */
 
 /** The most of the cover that can show through, and the steps it is backed off by. */
 const MAX_MIX = 0.3
 const STEP = 0.03
+
+/** How much of the cover the glow takes. Fixed, not backed off: it is chosen to be clearly visible
+    on the default theme's dark canvas and on a light one, and no text is ever drawn on it. */
+export const GLOW_MIX = 0.6
 
 /**
  * The wash for a cover: `#rrggbb`, or null when no mix keeps the text readable (or the theme's
@@ -39,4 +44,16 @@ export function washFor(cover: Rgb, colors: Theme['colors']): string | null {
   }
 
   return null
+}
+
+/**
+ * The glow for a cover: `#rrggbb`, the cover mixed `GLOW_MIX` of the way into the theme's canvas,
+ * or null when the canvas is not a color. Unlike `washFor` it does not look at contrast, because
+ * the glow is only drawn behind the artwork, where the page sets no text on the canvas. Keeping it
+ * there is the caller's job.
+ */
+export function glowFor(cover: Rgb, colors: Theme['colors']): string | null {
+  const canvas = parseHex(colors['--color-canvas'])
+
+  return canvas ? toHex(mixRgb(canvas, cover, GLOW_MIX)) : null
 }

@@ -26,6 +26,7 @@ import type { MenuPoint } from './artwork-menu'
 import { cx } from './cx'
 import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
 import type { StagePlacement, StageSize, StageView } from './now-playing-overlay'
+import { NowPlayingGlow } from './now-playing-wash'
 import { artUrl, remember, stored, usePlayer } from './player'
 import { activeTheme, applyTheme, subscribeTheme } from './theme/store'
 import { Button } from './ui'
@@ -646,7 +647,10 @@ export function NowPlayingStage() {
           its top left, so the art's edge lines up with the title and controls under it when a short
           window makes the square narrower than the column (Large fills it instead). A phone has no
           height to hand out, so there it is only a block. */}
-      <div className="grid min-h-0 flex-1 place-items-start [container-type:size] max-phone:[container-type:normal]">
+      <div className="relative grid min-h-0 flex-1 place-items-start [container-type:size] max-phone:[container-type:normal]">
+        {/* Before the stage, so the stage is painted over it. It is the stage's own size and reaches
+            only 16px past it, short of the title below. */}
+        <NowPlayingGlow art={art} className={docked} />
         {popout.popout ? (
           <div className={cx(stageClassName, docked, 'grid place-items-center')}>
             {art && (
