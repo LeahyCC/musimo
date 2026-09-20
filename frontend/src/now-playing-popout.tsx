@@ -8,6 +8,7 @@ import {
   useMemo,
   useRef,
   useState,
+  useSyncExternalStore,
 } from 'react'
 import type { ReactNode, RefObject } from 'react'
 
@@ -24,7 +25,7 @@ import { ArtworkMenu } from './artwork-menu'
 import type { MenuPoint } from './artwork-menu'
 import { cx } from './cx'
 import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
-import type { StagePlacement, StageView } from './now-playing-overlay'
+import type { StagePlacement, StageSize, StageView } from './now-playing-overlay'
 import { NowPlayingGlow } from './now-playing-wash'
 import { artUrl, remember, stored, usePlayer } from './player'
 import { activeTheme, applyTheme, subscribeTheme } from './theme/store'
@@ -85,6 +86,15 @@ type PopoutValue = {
   setScene: (scene: SceneId) => void
   fluidSize: number
   setFluidSize: (size: number) => void
+  /**
+   * The docked stage's size as chosen. A phone has one size, so read `phone` too: the choice is
+   * kept there but does nothing.
+   */
+  size: StageSize
+  setSize: (size: StageSize) => void
+  toggleSize: () => void
+  /** Under the phone breakpoint, where the page is one column and the stage has no size to pick. */
+  phone: boolean
 }
 
 const noop = () => undefined
@@ -113,11 +123,20 @@ const PopoutContext = createContext<PopoutValue>({
   setScene: noop,
   fluidSize: DEFAULT_FLUID_SIZE,
   setFluidSize: noop,
+  size: 'small',
+  setSize: noop,
+  toggleSize: noop,
+  phone: false,
 })
 export const useNowPlayingPopout = () => useContext(PopoutContext)
 
 const POPOUT_SIZE = 420
 const VIEW_KEY = 'musimo.now-playing-view'
+const SIZE_KEY = 'musimo.now-playing-size'
+// A paused stage draws nothing new, so after this long the visualizer gives its canvas back.
+const PAUSE_REST_MS = 10_000
+// The same edge as `max-phone:` (`--breakpoint-phone`, 48rem), so the layout and this agree.
+const PHONE_QUERY = '(width < 48rem)'
 const PRESET_KEY = 'musimo.visualizer-preset'
 const SCENE_KEY = 'musimo.visualizer-scene'
 const FLUID_KEY = 'musimo.visualizer-fluid-grid'
@@ -127,6 +146,20 @@ const UNSUPPORTED = 'This browser has no WebGPU, so the stage shows the artwork.
 // A deliberate copy of visimo's own check. Importing it would pull the
 // WebGPU chunk into the main bundle to answer a question about navigator.
 const hasWebGpu = () => typeof navigator !== 'undefined' && Boolean(navigator.gpu)
+
+const subscribePhone = (notify: () => void) => {
+  const query = window.matchMedia(PHONE_QUERY)
+  query.addEventListener('change', notify)
+  return () => query.removeEventListener('change', notify)
+}
+
+// Whether the window is under the phone breakpoint, following it as the window is resized.
+const usePhone = () =>
+  useSyncExternalStore(
+    subscribePhone,
+    () => window.matchMedia(PHONE_QUERY).matches,
+    () => false,
+  )
 
 // What the browser remembers. A preset names a scene, so it decides; the
 // scene key is only consulted where no preset was ever stored.
@@ -195,7 +228,16 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
     const saved = Number(stored(FLUID_KEY, ''))
     return FLUID_SIZES.includes(saved) ? saved : DEFAULT_FLUID_SIZE
   })
+  const [size, setSize] = useState<StageSize>(() =>
+    stored(SIZE_KEY, 'small') === 'large' ? 'large' : 'small',
+  )
+  const toggleSize = useCallback(
+    () => setSize((current) => (current === 'small' ? 'large' : 'small')),
+    [],
+  )
+  const phone = usePhone()
   useEffect(() => remember(VIEW_KEY, view), [view])
+  useEffect(() => remember(SIZE_KEY, size), [size])
   useEffect(() => remember(PRESET_KEY, preset.id), [preset])
   useEffect(() => remember(SCENE_KEY, scene), [scene])
   useEffect(() => remember(FLUID_KEY, String(fluidSize)), [fluidSize])
@@ -277,6 +319,10 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       setScene,
       fluidSize,
       setFluidSize,
+      size,
+      setSize,
+      toggleSize,
+      phone,
     }),
     [
       popout,
@@ -299,6 +345,9 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       scene,
       setScene,
       fluidSize,
+      size,
+      toggleSize,
+      phone,
     ],
   )
 
@@ -336,22 +385,40 @@ type StageProps = {
 /* `stage` is the hook the suite and the handwritten `:fullscreen` and popout rules find it by; those
    rules sit outside every layer, so they win over the box drawn here when either applies. */
 const stageClassName =
-  'stage relative aspect-square overflow-hidden rounded-[14px] bg-media shadow-[0_20px_60px_color-mix(in_oklab,var(--color-shadow)_47%,transparent)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent focus-visible:outline-solid'
+  'stage relative overflow-hidden rounded-[14px] bg-media shadow-[0_20px_60px_color-mix(in_oklab,var(--color-shadow)_47%,transparent)] outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-accent focus-visible:outline-solid'
 
-/* The docked stage is the smaller of two squares: as wide as its column, and as tall as the room
-   its column leaves above the controls. The column is a size container for that, and on a phone,
-   where the page scrolls and has no height to measure, the stage is just the column's width. The
-   `:fullscreen` and popout rules in style.css override both. */
-const dockedStageClassName = 'w-[min(100cqw,100cqh)] max-phone:w-full'
+/* Small: the docked stage is the smaller of two squares, as wide as its column and as tall as the
+   room its column leaves above the controls. The column is a size container for that, and on a
+   phone, where the page scrolls and has no height to measure, the stage is just the column's width.
+   Large: the whole container, the page's width and the height the window leaves above the controls,
+   and not a square; the artwork letterboxes inside it. The `:fullscreen` and popout rules in
+   style.css override both, which is why the square's ratio is here and not on `stageClassName`. */
+const dockedStageClassName = (large: boolean) =>
+  large ? 'h-[100cqh] w-[100cqw]' : 'aspect-square w-[min(100cqw,100cqh)] max-phone:w-full'
 
 // Whether anyone can see the docked stage: the tab is in front and the stage is on screen (not
 // scrolled away, and not under the phone layout's scroll). The stage has no pause, so the caller
 // unmounts the visualizer while this is false and mounts it again after. The popout window is a
 // document of its own that stays on top while open, so it always counts as visible. Audio is not
-// touched: nothing here reaches the player.
-function useStageVisible(stageRef: RefObject<HTMLDivElement | null>, always: boolean) {
+// touched: nothing here reaches the player. A stage that has been paused for more than ten seconds
+// rests the same way, in the popout too, and comes back on play; a shorter pause keeps the picture.
+function useStageVisible(
+  stageRef: RefObject<HTMLDivElement | null>,
+  always: boolean,
+  playing: boolean,
+) {
   const [tabVisible, setTabVisible] = useState(() => document.visibilityState !== 'hidden')
   const [onScreen, setOnScreen] = useState(true)
+  const [pausedLong, setPausedLong] = useState(false)
+
+  useEffect(() => {
+    if (playing) {
+      setPausedLong(false)
+      return
+    }
+    const timer = window.setTimeout(() => setPausedLong(true), PAUSE_REST_MS)
+    return () => window.clearTimeout(timer)
+  }, [playing])
 
   useEffect(() => {
     if (always) return
@@ -372,7 +439,7 @@ function useStageVisible(stageRef: RefObject<HTMLDivElement | null>, always: boo
     return () => observer.disconnect()
   }, [stageRef, always])
 
-  return always || (tabVisible && onScreen)
+  return (always || (tabVisible && onScreen)) && !pausedLong
 }
 
 // A blurred cover fill behind a sharp, letterboxed copy of the same artwork. `sharp` is what marks
@@ -436,7 +503,7 @@ function Stage({
   const art = track ? artUrl(track) : (player.track?.art ?? '')
   const idle = useOverlayIdle(stageRef, player.playing)
   const view = popout.canVisualize ? popout.view : undefined
-  const seen = useStageVisible(stageRef, placement === 'popout')
+  const seen = useStageVisible(stageRef, placement === 'popout', player.playing)
   useStageKeys(stageRef, {
     placement,
     onFullscreen,
@@ -446,6 +513,8 @@ function Stage({
     onCyclePreset: view === 'visualizer' ? popout.cyclePreset : undefined,
   })
   const artwork = <StageArtwork art={art} />
+  // Full screen, the popout and a phone each have one size, so there is nothing to switch there.
+  const resizable = placement === 'docked' && !fullscreen && !popout.phone
   // Where a right-click landed, while the artwork menu is open. Docked only: in the popout there is
   // no page to go to.
   const [menu, setMenu] = useState<MenuPoint | null>(null)
@@ -506,6 +575,8 @@ function Stage({
         controls={fullscreen || placement === 'popout'}
         onFullscreen={onFullscreen}
         onPopout={onPopout}
+        size={popout.size}
+        onSize={resizable ? popout.toggleSize : undefined}
         view={view}
         onToggleView={popout.toggleView}
         preset={popout.preset}
@@ -537,6 +608,7 @@ export function NowPlayingStage() {
   const [fullscreen, setFullscreen] = useState(false)
   const track = player.libraryTrack
   const art = track ? artUrl(track) : (player.track?.art ?? '')
+  const docked = dockedStageClassName(popout.size === 'large' && !popout.phone)
 
   useEffect(() => {
     const onChange = () => setFullscreen(document.fullscreenElement === container.current)
@@ -573,14 +645,14 @@ export function NowPlayingStage() {
     <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[10px]">
       {/* The stage's size container: it takes the height the column leaves and sets the square at
           its top left, so the art's edge lines up with the title and controls under it when a short
-          window makes the square narrower than the column. A phone has no height to hand out, so
-          there it is only a block. */}
+          window makes the square narrower than the column (Large fills it instead). A phone has no
+          height to hand out, so there it is only a block. */}
       <div className="relative grid min-h-0 flex-1 place-items-start [container-type:size] max-phone:[container-type:normal]">
         {/* Before the stage, so the stage is painted over it. It is the stage's own size and reaches
             only 24px past it, short of the title below. */}
-        <NowPlayingGlow art={art} className={dockedStageClassName} />
+        <NowPlayingGlow art={art} className={docked} />
         {popout.popout ? (
-          <div className={cx(stageClassName, dockedStageClassName, 'grid place-items-center')}>
+          <div className={cx(stageClassName, docked, 'grid place-items-center')}>
             {art && (
               <img
                 className="absolute inset-0 size-full object-cover opacity-25 blur-[6px]"
@@ -600,7 +672,7 @@ export function NowPlayingStage() {
             fullscreen={fullscreen}
             onFullscreen={toggleFullscreen}
             onPopout={popout.canPopout ? popout.openPopout : undefined}
-            className={dockedStageClassName}
+            className={docked}
           />
         )}
       </div>

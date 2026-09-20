@@ -115,6 +115,31 @@ test('the visualizer stops drawing while the tab is hidden and resumes, audio un
   await expect(canvas).toBeVisible()
 })
 
+test('the visualizer rests after a long pause, keeps its picture through a short one, and returns on play', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'The stage controls are checked on desktop.')
+  await showVisualizerFirst(page)
+  const stage = await openNowPlaying(page)
+  const adapter = await page.evaluate(async () =>
+    Boolean(navigator.gpu && (await navigator.gpu.requestAdapter())),
+  )
+  test.skip(!adapter, 'No WebGPU adapter in this browser.')
+
+  const canvas = stage.locator('canvas.stage-visualizer')
+  await expect(canvas).toBeVisible()
+  await page.getByRole('button', { name: 'Pause' }).click()
+  // Well short of ten seconds: the picture stays.
+  await page.waitForTimeout(3000)
+  await expect(canvas).toBeVisible()
+  // Past ten, the artwork takes over, the way it does for a hidden tab.
+  await expect(canvas).toHaveCount(0, { timeout: 15_000 })
+  await expect(stage.locator('img.stage-art')).toBeVisible()
+  await page.getByRole('button', { name: 'Play', exact: true }).click()
+  await expect(canvas).toBeVisible()
+})
+
 test('with WebGPU V and the button switch the view, and the choice sticks', async ({
   page,
   isMobile,

@@ -489,8 +489,17 @@ const same = (a: Theme, b: Theme): boolean => JSON.stringify(a) === JSON.stringi
  * a change made on the stage shows up here. Every control applies as it is chosen, like themes.
  */
 function VisualizerSettings() {
-  const { view, setView, preset, setPreset, fluidSize, setFluidSize, canVisualize } =
-    useNowPlayingPopout()
+  const {
+    view,
+    setView,
+    preset,
+    setPreset,
+    fluidSize,
+    setFluidSize,
+    size: stageSize,
+    setSize: setStageSize,
+    canVisualize,
+  } = useNowPlayingPopout()
 
   return (
     <section aria-labelledby="visualizer" className="grid gap-[20px]">
@@ -507,6 +516,28 @@ function VisualizerSettings() {
           artwork.
         </p>
       )}
+      {/* Outside the fieldset below: the stage's size applies to the artwork as much as to the
+          visualizer, so it stays available where there is no WebGPU. */}
+      <div className="grid max-w-[520px] gap-[6px]">
+        <label htmlFor="visualizer-size" className="text-small">
+          Stage size
+        </label>
+        <FieldSelect
+          id="visualizer-size"
+          value={stageSize}
+          fullWidth={false}
+          className="w-[200px]"
+          aria-describedby="visualizer-size-note"
+          onChange={(event) => setStageSize(event.target.value === 'large' ? 'large' : 'small')}
+        >
+          <option value="small">Small</option>
+          <option value="large">Large</option>
+        </FieldSelect>
+        <p id="visualizer-size-note" className="text-tiny">
+          Large stretches the stage across the page and moves the tabs below it. A phone always uses
+          Small. On Now Playing, S switches it.
+        </p>
+      </div>
       <fieldset
         disabled={!canVisualize}
         className="m-0 grid max-w-[520px] gap-[16px] border-0 p-0 disabled:opacity-60"
