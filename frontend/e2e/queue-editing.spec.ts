@@ -183,7 +183,7 @@ test('removing a row keeps where the queue came from, and the album still shows 
   const pause = detail.getByRole('button', { name: 'Pause', exact: true })
   await detail.getByRole('button', { name: 'Play all' }).click()
   await expect(pause).toBeVisible()
-  await page.getByRole('link', { name: 'Open Now Playing' }).first().click()
+  await page.getByRole('link', { name: 'Open Now Playing' }).click()
   const upNext = page.getByRole('tabpanel', { name: 'Up next' })
   await expect(upNext.getByText(/^Playing from album Clear Water$/)).toBeVisible()
 

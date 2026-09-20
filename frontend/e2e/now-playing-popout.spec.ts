@@ -50,7 +50,7 @@ test('now playing shows the stage bar and the idle fade, and the transport besid
   await page.goto('/library/albums/album-1')
   await page.getByRole('button', { name: 'Play all' }).click()
   await expect(page.locator('.live-player')).toContainText('First Light')
-  await page.getByRole('link', { name: 'Open Now Playing' }).first().click()
+  await page.getByRole('link', { name: 'Open Now Playing' }).click()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
 
   const stage = page.locator('.stage')

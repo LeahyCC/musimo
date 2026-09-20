@@ -2011,10 +2011,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             >
               <Plus size={16} />
             </IconButton>
+            {/* The cover beside the title is the link. This icon shows only where the cover does
+                too, so it is a second way to click, not a second stop for a keyboard or a reader. */}
             <Link
               data-ui="icon-button"
               className={iconButtonClassName(false, 'shrink-0', 'compact')}
-              aria-label="Open Now Playing"
+              aria-hidden="true"
+              tabIndex={-1}
               to="/now-playing"
             >
               <Maximize2 size={17} />
