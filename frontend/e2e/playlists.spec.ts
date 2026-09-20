@@ -359,3 +359,43 @@ test('a playlist remove stays locked until the change lands', async ({ page }) =
   await expect(rows).toHaveCount(1)
   await expect(rows.first().getByRole('button', { name: /^Remove/ })).toBeEnabled()
 })
+
+test('a playlist numbers its rows by place, not by each song’s number on its own album', async ({
+  page,
+}) => {
+  const state = await playlistFixtures(page)
+  // Each song's number on its album is 5, 4, 5, 3, 3: nothing like a place in the playlist.
+  const albumNumbers = [5, 4, 5, 3, 3]
+  const road = state.get('road')
+  if (!road) throw new Error('Missing road playlist fixture')
+  road.entry = albumNumbers.map((track, index) =>
+    librarySong(`n${index}`, { title: `Song ${index}`, track }),
+  )
+
+  await page.goto('/library/playlists/road')
+  const rows = page.locator('.library-track-row')
+  await expect(rows).toHaveCount(albumNumbers.length)
+  await expect(rows.locator('.library-track-play > span:first-child')).toHaveText([
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+  ])
+
+  // An album keeps the numbers the album gave its songs.
+  await page.route('**/api/library/albums/album-1', (route) =>
+    route.fulfill({
+      json: {
+        id: 'album-1',
+        name: 'Clear Water',
+        artist: 'Harbor Static',
+        song: [librarySong('a1', { track: 7 }), librarySong('a2', { track: 2 })],
+      },
+    }),
+  )
+  await page.goto('/library/albums/album-1')
+  await expect(
+    page.locator('.library-track-row .library-track-play > span:first-child'),
+  ).toHaveText(['7', '2'])
+})

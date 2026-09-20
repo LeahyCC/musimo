@@ -2,7 +2,9 @@
 
 Settings are validated and stored in SQLite. Edit the form, then use Save changes. Successful saves apply without a restart and publish a durable event. They survive container recreation when the data volume remains attached.
 
-A status summary at the top of the Settings page shows overall system readiness (ready or needs attention) with a link to Diagnostics for detailed component status.
+The sticky save bar appears only when there is something to say: while there are unsaved changes ("You have unsaved changes." with an enabled Save changes button), after a failed save (the error, with the draft kept), and for six seconds after a successful save ("Saved. You can safely refresh."). With nothing changed there is no bar and no idle Save button. The bar carries the `.save-bar` hook that `e2e/phone.spec.ts` measures against the bottom bar.
+
+A status summary at the top of the Settings page shows overall system readiness (ready or needs attention) with a link to Diagnostics for detailed component status. The Diagnostics "Ready to download?" strip reads the same answer. Both call `systemIsReady` in `frontend/src/readiness.ts`, so they cannot disagree. The system is ready when every library root is mounted, writable and reporting free space, the library scan is `idle`, `scanning` or `done` (a finished scan is healthy, only a failed, cancelled or interrupted one is not), Navidrome is reachable whenever the server reports it at all, the YouTube helper is healthy, and the last download did not fail. `readiness.test.ts` covers each rule.
 
 ## Editable settings
 
@@ -83,5 +85,7 @@ The third section on Your settings. Four selects: Stage size (Small or Large; Sm
 ## Recent activity
 
 Settings and Diagnostics reuse the same activity component. It displays the latest 100 visible events in a keyboard-focusable region with a 320px maximum height. Clear all disables while pending, reports failures and stores a persistent clear point through the snapshot the user saw. Newer events remain visible.
+
+A run of neighbouring events of the same kind, such as a hundred "Library index updated" in a row, is one row: the event name, a count (×100) and the time range from its oldest to its newest event. The row is a button that opens the run's individual events and closes it again (`aria-expanded`). Two runs of one kind with a different event between them stay two rows, so the feed still reads as a timeline. A single event is a plain row as before. The grouping is `groupRuns` in `frontend/src/activity-runs.ts`, which folds the list the server sends; the server and the "latest 100" limit are unchanged, so a run can be cut short by that limit.
 
 `GET /api/activity` returns events, total visible count and cursor. `DELETE /api/activity` accepts `{ "through": <cursor> }`. It validates a nonnegative integer and applies the usual same-origin write checks. Clearing affects the feed and diagnostics export, not job history or the bounded SSE replay records. This prevents clearing a panel from breaking live queue updates in other tabs.

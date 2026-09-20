@@ -129,7 +129,10 @@ test('failed downloads show a count, cause and retry state', async ({ page }) =>
   )
 
   await page.goto('/downloads')
-  await expect(page.getByRole('button', { name: 'Retry failed (1)' })).toBeVisible()
+  // Retry failed sits in the overflow menu, and only while something has failed.
+  await page.getByRole('button', { name: 'More queue actions' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Retry failed (1)' })).toBeVisible()
+  await page.keyboard.press('Escape')
   await expect(page.getByRole('button', { name: 'Failed (1)', exact: true })).toBeVisible()
   await page.getByRole('button', { name: 'Failed (1)', exact: true }).click()
   await expect(page.getByLabel('Failure summary')).toContainText(
@@ -269,8 +272,45 @@ test('a long failure queue lists cards without overlapping, and can be grouped o
   await expect(page.locator('#main .virtual-list')).toBeVisible()
   expect(await overlaps(page)).toEqual([])
 
-  await page.getByRole('button', { name: 'Clear failed (9)' }).click()
+  await page.getByRole('button', { name: 'More queue actions' }).click()
+  await page.getByRole('menuitem', { name: 'Clear failed (9)' }).click()
   await expect.poll(() => cleared).toContain('clear-failed')
+
+  // Clear all finished asks first: dismissing the prompt sends nothing, accepting it does.
+  page.once('dialog', (dialog) => void dialog.dismiss())
+  await page.getByRole('button', { name: 'More queue actions' }).click()
+  await page.getByRole('menuitem', { name: 'Clear all finished' }).click()
+  await page.waitForTimeout(200)
+  expect(cleared).not.toContain('clear-finished')
+  page.once('dialog', (dialog) => void dialog.accept())
+  await page.getByRole('button', { name: 'More queue actions' }).click()
+  await page.getByRole('menuitem', { name: 'Clear all finished' }).click()
+  await expect.poll(() => cleared).toContain('clear-finished')
+})
+
+test('the queue controls keep three buttons and hide overflow actions with nothing to act on', async ({
+  page,
+}) => {
+  await page.route('**/api/snapshot', (route) =>
+    route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
+  )
+
+  await page.route('**/api/jobs*', (route) =>
+    route.fulfill({
+      json: {
+        jobs: [],
+        controls: { paused: false, source_paused: false, paused_sources: [] },
+        summary: { active: 0, failed: 0, failure_reasons: [] },
+      },
+    }),
+  )
+  await page.goto('/downloads')
+  await expect(page.getByRole('combobox', { name: 'Parallel downloads' })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Pause all', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Cancel queued' })).toBeVisible()
+  // Nothing has failed or finished, so there is nothing for a menu to hold.
+  await expect(page.getByRole('button', { name: 'More queue actions' })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: /Retry failed|Clear failed/ })).toHaveCount(0)
 })
 
 test('recording matches link to their own page, or to YouTube for older jobs', async ({ page }) => {
