@@ -1,6 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { keepPreviousData, useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query'
+import {
+  infiniteQueryOptions,
+  keepPreviousData,
+  useInfiniteQuery,
+  useQueries,
+  useQuery,
+} from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useRouterState } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { Check, Disc3, Headphones, Music2, Pause, Play, Search } from 'lucide-react'
@@ -542,23 +548,17 @@ export function TrackList({
   )
 }
 
-function ResultsSection({
-  kind,
-  state,
-  compact,
-  change,
-}: {
-  kind: 'track' | 'album' | 'artist'
-  state: SearchState
-  compact: boolean
-  change: (patch: Partial<SearchState>) => void
-}) {
-  const query = useInfiniteQuery({
-    queryKey: ['search', state.q, kind],
+type ResultKind = 'track' | 'album' | 'artist'
+
+/* The page and each of its sections read the same query, so the page can tell that every section
+   came back empty and say so once. */
+const searchResultsQuery = (q: string | undefined, kind: ResultKind) =>
+  infiniteQueryOptions({
+    queryKey: ['search', q, kind],
     initialPageParam: 0,
     queryFn: ({ signal, pageParam }) =>
       api(
-        `search?${new URLSearchParams({ q: state.q ?? '', kind, index: String(pageParam) })}`,
+        `search?${new URLSearchParams({ q: q ?? '', kind, index: String(pageParam) })}`,
         searchPageSchema,
         { signal },
       ),
@@ -567,6 +567,19 @@ function ResultsSection({
     staleTime: 60_000,
     retry: false,
   })
+
+function ResultsSection({
+  kind,
+  state,
+  compact,
+  change,
+}: {
+  kind: ResultKind
+  state: SearchState
+  compact: boolean
+  change: (patch: Partial<SearchState>) => void
+}) {
+  const query = useInfiniteQuery(searchResultsQuery(state.q, kind))
   const raw = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data])
   // Subscribe at the filter level too: verified coverage must change which albums are shown.
   const coverage = useQueries({
@@ -812,6 +825,36 @@ export function SearchPage() {
   useEffect(() => {
     if (state.q) saveLastSearch(state)
   }, [state])
+  const searching =
+    Boolean(state.q) && (state.q?.trim().length ?? 0) >= 2 && !/^https?:\/\//i.test(state.q ?? '')
+  const kinds: ResultKind[] =
+    tab === 'top' ? ['track', 'album', 'artist'] : tab === 'podcast' ? [] : [tab]
+  // Called for all three kinds every render, since hooks cannot be conditional; the ones this tab
+  // does not show stay disabled.
+  const trackResults = useInfiniteQuery({
+    ...searchResultsQuery(state.q, 'track'),
+    enabled: searching && kinds.includes('track'),
+  })
+  const albumResults = useInfiniteQuery({
+    ...searchResultsQuery(state.q, 'album'),
+    enabled: searching && kinds.includes('album'),
+  })
+  const artistResults = useInfiniteQuery({
+    ...searchResultsQuery(state.q, 'artist'),
+    enabled: searching && kinds.includes('artist'),
+  })
+  const resultQueries = { track: trackResults, album: albumResults, artist: artistResults }
+  // Every section answered and none had a single result: one message beats three empty sections.
+  const nothingFound =
+    kinds.length > 0 &&
+    kinds.every((kind) => {
+      const result = resultQueries[kind]
+      return (
+        result.isSuccess &&
+        !result.isPlaceholderData &&
+        result.data.pages.every((page) => page.items.length === 0)
+      )
+    })
   if (!state.q || state.q.trim().length < 2)
     return (
       <div className="max-w-[840px] pt-[54px] pb-[30px] max-phone:pt-[25px]">
@@ -856,15 +899,17 @@ export function SearchPage() {
     )
   return (
     <>
-      <div className="mb-[25px]">
+      <div className="mb-[25px] max-phone:mb-[10px]">
         <div>
-          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:hidden">
             DISCOVER YOUR NEXT FAVOURITE
           </span>
-          <h1>Results for “{state.q}”</h1>
+          <h1 className="max-phone:text-heading max-phone:[overflow-wrap:anywhere]">
+            Results for “{state.q}”
+          </h1>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-[16px] border-b border-line pb-[18px] max-phone:gap-[10px]">
+      <div className="flex flex-wrap items-center gap-[16px] border-b border-line pb-[18px] max-phone:gap-[8px] max-phone:pb-[10px]">
         <div className="mr-auto flex flex-wrap gap-[6px] max-phone:w-full" aria-label="Search type">
           {tabs.map((value) => (
             <button
@@ -886,7 +931,7 @@ export function SearchPage() {
             <Button aria-expanded={filters} onClick={() => setFilters(!filters)}>
               Filters
             </Button>
-            <label className="flex items-center gap-[10px] text-body text-muted">
+            <label className="flex items-center gap-[10px] text-body text-muted max-phone:ml-auto">
               Sort{' '}
               <FieldSelect
                 tone="sunken"
@@ -1027,30 +1072,32 @@ export function SearchPage() {
           >
             Clear filters
           </button>
+          <p className="w-full text-small text-muted">
+            Filters and sort apply to loaded results. Years fill in as album details arrive.
+            Duration and preview filters apply to tracks.
+          </p>
         </div>
       )}
-      {music ? (
-        <p className="mt-[12px] mb-[24px] text-small">
-          Filters and sort apply to loaded results. Years fill in as album details arrive. Duration
-          and preview filters apply to tracks.
+      {!music && <PodcastResults q={state.q.trim()} />}
+      {nothingFound ? (
+        <p className="py-[30px]" role="status">
+          No results for “{state.q}”. Check the spelling or try a shorter search.
         </p>
       ) : (
-        <PodcastResults q={state.q.trim()} />
+        kinds.length > 0 && (
+          <div className="pt-[20px] max-phone:pt-[14px]">
+            {kinds.map((kind) => (
+              <ResultsSection
+                key={kind}
+                kind={kind}
+                state={state}
+                compact={tab === 'top'}
+                change={change}
+              />
+            ))}
+          </div>
+        )
       )}
-      {(tab === 'top'
-        ? (['track', 'album', 'artist'] as const)
-        : tab === 'podcast'
-          ? []
-          : [tab]
-      ).map((kind) => (
-        <ResultsSection
-          key={kind}
-          kind={kind}
-          state={state}
-          compact={tab === 'top'}
-          change={change}
-        />
-      ))}
     </>
   )
 }

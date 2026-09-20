@@ -85,7 +85,7 @@ Not verified on a device: the safe-area insets and the 16px zoom rule were reaso
 
 A walk of the live app found that a library album page showed the big "Library" heading and the view tabs, then only a small album title and "1 song": no cover, artist or year. The artist page had a small avatar and a count, and the playlist page a title only.
 
-Changed: the album, artist (and its All songs view) and playlist pages now share one header component, laid out like the catalog album page. The album header shows the cover, "ALBUM · year", the title, the artist as a link, and song count, length and genre; the artist header a large round photo with album and song counts; the playlist header a mosaic or first cover, owner, length and public or private. The page heading and eyebrow are dropped on these pages and the tabs shrink to a slim row with the back link. Long titles clamp to two lines and a phone stacks the cover over the text. The description of each header is in [the player note](player.md).
+Changed: the album, artist (and its All songs view) and playlist pages now share one header component, laid out like the catalog album page. The album header shows the cover, "ALBUM · year", the title, the artist as a link, and song count, length and genre; the artist header a large round photo with album and song counts; the playlist header a mosaic or first cover, owner, length and public or private. The page heading and eyebrow are dropped on these pages and the tabs shrink to a slim row with the back link. Long titles clamp to two lines. A phone first stacked the cover over the text; that pushed the track list below the fold and was changed in the next section. The description of each header is in [the player note](player.md).
 
 Also changed with it: the title is now the page's `h1` (it was an `h2` under the Library `h1`), and the "Add songs" and "Popularity" headings moved from `h3` to `h2` so the heading order stays unbroken for axe.
 
@@ -94,14 +94,34 @@ Checks added, all on mocked library routes:
 - `e2e/library-controls.spec.ts`: the album header's cover, "ALBUM · 2018", artist link, meta line and actions, no "Library" heading, and the header starting within 60px of the tab row; the artist header's photo, eyebrow and counts, kept in All songs.
 - `e2e/playlists.spec.ts`: the playlist header's eyebrow, owner, cover, meta line and buttons; the four-cover mosaic and the single-cover fallback.
 - `e2e/themed-walk.spec.ts`: each detail route under the light theme shows its eyebrow, a cover and the artist link, with no axe violations.
-- `e2e/phone.spec.ts`: at 360px the text stacks under the cover on the same left edge, a long title clamps to two lines, and nothing scrolls sideways.
+- `e2e/phone.spec.ts`: a long title clamps to two lines and nothing scrolls sideways at 360px (the stacking check this bullet first described was replaced, see the next section).
 - `e2e/a11y.spec.ts`: axe on the album, artist and playlist pages.
 
 Not yet verified in a browser: this change was written in an environment with no shell, so the builds, the specs above and a screenshot pass at desktop and 360px have still to be run.
 
+## Phone first screens, 19 September 2026
+
+Measured at 390 by 844, the Library's page title, tabs, search, three filters, count and view toggle filled the first screen and the first album was a sliver. Search results put the first track about two thirds of the way down, and a library album page's stacked 150px cover left the track list below the fold.
+
+Changed, on a phone only unless noted (details in [the player note](player.md) and [the search note](search.md)):
+
+- Library list views: one row with the search field and a Filter button. Sort, Show, Genres, Years, the grid or list toggle and Clear filters are in a bottom sheet; the button shows "Filter (n)" for n active filters. The loaded count reads under the list. The page title takes the small heading size.
+- Search results: no eyebrow, "Results for" at the small heading size, Filters and Sort on one row under the tabs.
+- Search results, every width: the "Filters and sort apply to loaded results…" line is gone and its text is help inside the Filters panel. A search where every section is empty shows one "No results for “query”" message instead of a stack of per-section ones.
+- Library album, artist and playlist headers: a cover of about 104px beside the text, the actions on their own row under both.
+
+Checks added or rewritten:
+
+- `e2e/phone.spec.ts`: the header puts the cover (96 to 112px wide) beside the title, the actions row below both on the cover's left edge, a long title clamps, no sideways scroll at 360px; the first track row is inside the viewport, clear of the mini player, at 390 by 844 with a player loaded; the Library's first album card starts above 45% of the screen height and the Filter sheet holds Sort, Genres, Years and the view toggle with no control under 44px or under 16px text and no sideways scroll at 360px; the first search result row starts above 50% of the screen height, Filters and Sort share a row, and the hint is only visible once Filters is open.
+- `e2e/cards.spec.ts`: on a phone the first search album card starts above 45% of the screen height.
+- `e2e/app.spec.ts` (every project): an empty search shows "No results for “Zzzyx”." once and no "match this search" lines, on Top and on a single tab; the hint sits inside the Filters panel.
+- `e2e/library-controls.spec.ts`, `e2e/player.spec.ts` and `e2e/playlists.spec.ts` open the Filter sheet on the phone project before reaching Sort, Genres, Years, Show, the playlist filter or the view toggle (`openLibraryFilters` and `closeLibraryFilters` in `e2e/library-fixtures.ts`), and the tracks spec checks the "Filter (1)" button label.
+
+Not yet verified in a browser: this change was written in an environment with no shell, so the type check, lint, the specs above and screenshots at 390 by 844 and 360 wide have still to be run. The layout numbers (45% and 50% of the screen, the 104px cover) are estimates from the code's own heights until then.
+
 ## Known limits
 
-Library albums, artists and tracks filter and sort on the server; playlist sorts still apply to the loaded list. Catalog search on the Search page is unchanged and says so in its own hint. Navidrome's saved play queue holds 500 songs, so Play all and Shuffle over a larger library play a 500-song selection. Whole-library track browsing reads up to 50,000 songs from Navidrome, so a library beyond that size describes the first 50,000 it returns.
+Library albums, artists and tracks filter and sort on the server; playlist sorts still apply to the loaded list. Catalog search on the Search page is unchanged and says so in the help inside its Filters panel. Navidrome's saved play queue holds 500 songs, so Play all and Shuffle over a larger library play a 500-song selection. Whole-library track browsing reads up to 50,000 songs from Navidrome, so a library beyond that size describes the first 50,000 it returns.
 
 Track navigation checks added on 10 September 2026 cover highlighted row focus (including tracks outside the initial virtual window), aria-current marking, "Back to results" restoring search state, and no-preview state showing disabled controls and labels. These join the existing automated browser regression suite.
 

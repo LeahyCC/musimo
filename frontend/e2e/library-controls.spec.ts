@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-import { librarySong, playerFixtures } from './library-fixtures'
+import {
+  closeLibraryFilters,
+  librarySong,
+  openLibraryFilters,
+  playerFixtures,
+} from './library-fixtures'
 
 const library = [
   librarySong('s1', { title: 'Beacon', genre: 'Jazz', year: 1999, playCount: 12 }),
@@ -52,6 +57,7 @@ async function libraryFixtures(page: Page): Promise<Recorded> {
 
 test('the tracks view sends its search, filter, sort and shuffle to the server', async ({
   page,
+  isMobile,
 }) => {
   const recorded = await libraryFixtures(page)
   await page.goto('/library/tracks')
@@ -61,7 +67,9 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
   await expect(page.getByText('Covers every matching song, not just the loaded ones.')).toHaveCount(
     1,
   )
+  await openLibraryFilters(page, isMobile)
   await page.getByLabel('Sort tracks').selectOption('duration')
+  await closeLibraryFilters(page, isMobile)
   await page.getByLabel('Search tracks').fill('cinder')
   await expect
     .poll(() => {
@@ -71,6 +79,7 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
     .toEqual(['cinder', 'duration'])
 
   await page.getByLabel('Search tracks').fill('')
+  await openLibraryFilters(page, isMobile)
   await page.getByText('All genres', { exact: true }).click()
   // Filter choices come from the whole library, not only the rows on screen.
   await expect(page.getByLabel('Rock')).toBeVisible()
@@ -82,9 +91,16 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
   ).toBe(0)
   await page.getByLabel('Jazz').check()
   await expect.poll(() => recorded.tracks.at(-1)?.searchParams.getAll('genre')).toEqual(['Jazz'])
+  // On a phone the button says how many filters are on once the sheet is closed.
+  if (isMobile) {
+    await closeLibraryFilters(page, isMobile)
+    await expect(page.getByRole('button', { name: 'Filter (1)', exact: true })).toBeVisible()
+    await openLibraryFilters(page, isMobile)
+  }
   // Close the panel first: at narrow widths it sits over the rest of the toolbar.
   await page.getByText('Genres (1)', { exact: true }).click()
   await page.getByRole('button', { name: 'Clear filters' }).click()
+  await closeLibraryFilters(page, isMobile)
 
   await page.getByRole('button', { name: 'Play all' }).click()
   await expect(page.locator('.live-player')).toContainText('Beacon')
@@ -186,7 +202,10 @@ test('a failed load reports under the heading it belongs to', async ({ page }) =
   expect(headingComesFirst).toBe(true)
 })
 
-test('a filtered selection is its own queue, not the one already playing', async ({ page }) => {
+test('a filtered selection is its own queue, not the one already playing', async ({
+  page,
+  isMobile,
+}) => {
   await libraryFixtures(page)
   await page.goto('/library/tracks')
 
@@ -195,9 +214,11 @@ test('a filtered selection is its own queue, not the one already playing', async
   await expect(actions.getByRole('button', { name: 'Pause' })).toBeVisible()
 
   // A different filter is a different selection, so the control cannot claim to be playing it.
+  await openLibraryFilters(page, isMobile)
   await page.getByText('All genres', { exact: true }).click()
   await page.getByLabel('Rock').check()
   await page.getByText('Genres (1)', { exact: true }).click()
+  await closeLibraryFilters(page, isMobile)
   await expect(actions.getByRole('button', { name: 'Play all' })).toBeVisible()
 })
 
@@ -281,7 +302,10 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await expect(page.locator('.library-track-play strong').first()).toHaveText('Cinder')
 })
 
-test('the artists view sends its filters to the server and keeps favourites', async ({ page }) => {
+test('the artists view sends its filters to the server and keeps favourites', async ({
+  page,
+  isMobile,
+}) => {
   await libraryFixtures(page)
   const artists = [
     { id: 'artist-1', name: 'Harbor Static', albumCount: 2 },
@@ -330,6 +354,7 @@ test('the artists view sends its filters to the server and keeps favourites', as
   await page.goto('/library/artists')
 
   await expect(page.getByText('2 of 2 loaded')).toBeVisible()
+  await openLibraryFilters(page, isMobile)
   await page.getByLabel('Sort artists').selectOption('recent')
   await page.getByLabel('Show artists').selectOption('unplayed')
   await expect(page.getByText('1 of 1 loaded')).toBeVisible()
@@ -345,6 +370,7 @@ test('the artists view sends its filters to the server and keeps favourites', as
   await page.getByText('Genres (1)', { exact: true }).click()
   await page.getByRole('button', { name: 'Clear filters' }).click()
   await expect(page.getByLabel('Show artists')).toHaveValue('')
+  await closeLibraryFilters(page, isMobile)
   // The unfiltered list was fetched before, so clearing may reuse it rather than ask again.
   await expect(page.getByText('2 of 2 loaded')).toBeVisible()
 

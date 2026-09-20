@@ -236,28 +236,25 @@ test('the library and download tabs each fit one row at 360px', async ({ page })
   expect(await pageOverflow(page)).toBe(0)
 })
 
-test('a library detail header stacks the cover over the text and clamps a long title', async ({
+const longAlbum = {
+  id: 'album-1',
+  name: 'An Unreasonably Long Album Title That Keeps Going Well Past Any Sensible Width (Deluxe Remastered Anniversary Edition)',
+  artist: 'Harbor Static',
+  artistId: 'artist-1',
+  coverArt: 'cover-1',
+  year: 2018,
+  songCount: 2,
+  duration: 428,
+  genre: 'Ambient',
+  song: [librarySong('s1', { title: 'Beacon' }), librarySong('s2', { title: 'Anchor' })],
+}
+
+test('a library detail header puts the cover beside the text, actions below, and clamps a long title', async ({
   page,
 }) => {
   await page.setViewportSize({ width: 360, height: 780 })
   await libraryFixtures(page)
-  const name =
-    'An Unreasonably Long Album Title That Keeps Going Well Past Any Sensible Width (Deluxe Remastered Anniversary Edition)'
-  await page.route('**/api/library/albums/album-1', (route) =>
-    route.fulfill({
-      json: {
-        id: 'album-1',
-        name,
-        artist: 'Harbor Static',
-        artistId: 'artist-1',
-        coverArt: 'cover-1',
-        year: 2018,
-        songCount: 2,
-        duration: 428,
-        song: [librarySong('s1', { title: 'Beacon' }), librarySong('s2', { title: 'Anchor' })],
-      },
-    }),
-  )
+  await page.route('**/api/library/albums/album-1', (route) => route.fulfill({ json: longAlbum }))
   await page.goto('/library/albums/album-1')
 
   const header = page.locator('.collection-header')
@@ -267,15 +264,150 @@ test('a library detail header stacks the cover over the text and clamps a long t
   await expect(header.getByRole('link', { name: 'Harbor Static' })).toBeVisible()
   const cover = await box(header.locator('.collection-cover'))
   const text = await box(title)
-  // Stacked: the text starts below the cover, on the same left edge.
-  expect(text.y).toBeGreaterThanOrEqual(cover.y + cover.height)
-  expect(Math.abs(text.x - cover.x)).toBeLessThan(2)
+  const meta = await box(header.locator('.library-count'))
+  const playAll = await box(header.getByRole('button', { name: 'Play all' }))
+  // A small cover, with the title to its right and starting inside the cover's height.
+  expect(cover.width).toBeGreaterThanOrEqual(96)
+  expect(cover.width).toBeLessThanOrEqual(112)
+  expect(text.x).toBeGreaterThanOrEqual(cover.x + cover.width)
+  expect(text.y).toBeLessThan(cover.y + cover.height)
+  // The actions get a row of their own under both, on the cover's left edge.
+  expect(playAll.y).toBeGreaterThanOrEqual(cover.y + cover.height)
+  expect(playAll.y).toBeGreaterThanOrEqual(meta.y + meta.height)
+  expect(Math.abs(playAll.x - cover.x)).toBeLessThan(2)
   // Two lines at most, so a long title never pushes the actions off the first screen.
   const lines = await title
     .locator('span')
     .evaluate((element) => getComputedStyle(element).webkitLineClamp)
   expect(lines).toBe('2')
   expect(await pageOverflow(page)).toBe(0)
+})
+
+test('the first track of a library album is on the first screen with a player loaded', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await libraryFixtures(page)
+  await page.route('**/api/library/albums/album-1', (route) => route.fulfill({ json: longAlbum }))
+  await page.goto('/library/albums/album-1')
+  await page.getByRole('button', { name: 'Play all' }).click()
+  const player = page.getByRole('contentinfo')
+  await expect(player).toContainText('Beacon')
+
+  const firstRow = await box(page.locator('.library-track-row').first())
+  // Not under the mini player either: the row's whole height clears its top edge.
+  expect(firstRow.y).toBeLessThan(844)
+  expect(firstRow.y + firstRow.height).toBeLessThanOrEqual((await box(player)).y)
+})
+
+const libraryAlbums = Array.from({ length: 12 }, (_, index) => ({
+  id: `album-${index + 1}`,
+  name: `Album ${index + 1}`,
+  artist: 'Harbor Static',
+  songCount: 8,
+  year: 2000 + index,
+  playCount: index,
+  coverArt: 'cover-1',
+}))
+
+test('the library shows its first album in the top half and keeps its controls in a Filter sheet', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await libraryFixtures(page)
+  await page.route('**/api/library/albums?**', (route) =>
+    route.fulfill({
+      json: {
+        items: libraryAlbums,
+        next_offset: null,
+        total: libraryAlbums.length,
+        genres: ['Ambient', 'Jazz'],
+        years: [2011, 2000],
+      },
+    }),
+  )
+  await page.goto('/library')
+  const firstCard = page.locator('.library-card').first()
+  await expect(firstCard).toBeVisible()
+  expect((await box(firstCard)).y).toBeLessThan(844 * 0.45)
+
+  // One row: the search field and a single Filter button. Sort, genre, years and the view toggle
+  // are not on the page until the sheet opens.
+  const search = await box(page.getByLabel('Search albums'))
+  const filter = page.getByRole('button', { name: 'Filter', exact: true })
+  const filterBox = await box(filter)
+  expect(
+    Math.abs(search.y + search.height / 2 - (filterBox.y + filterBox.height / 2)),
+  ).toBeLessThan(8)
+  expect(filterBox.height).toBeGreaterThanOrEqual(44)
+  await expect(page.getByLabel('Sort home')).toBeHidden()
+  await expect(page.getByText('All genres', { exact: true })).toBeHidden()
+  await expect(page.getByRole('button', { name: 'List view' })).toBeHidden()
+  // The count reads under the list rather than in a toolbar.
+  await expect(page.getByText('12 of 12 loaded')).toBeVisible()
+
+  await filter.click()
+  const sheet = page.getByRole('dialog', { name: 'Filter albums' })
+  await expect(sheet.getByLabel('Sort home')).toBeVisible()
+  await expect(sheet.getByText('All years', { exact: true })).toBeVisible()
+  await expect(sheet.getByRole('button', { name: 'Grid view' })).toBeVisible()
+  await sheet.getByText('All genres', { exact: true }).click()
+  await sheet.getByLabel('Jazz').check()
+  // The sheet sits on the screen's edges and nothing in it is a small tap or a zoom trigger.
+  expect(await undersized(page)).toEqual([])
+  expect(await pageOverflow(page)).toBe(0)
+  await sheet.getByRole('button', { name: 'Done' }).click()
+  await expect(sheet).toBeHidden()
+  // The button now says a filter is on.
+  await expect(page.getByRole('button', { name: 'Filter (1)', exact: true })).toBeVisible()
+
+  await page.setViewportSize({ width: 360, height: 780 })
+  expect(await pageOverflow(page)).toBe(0)
+  expect(await undersized(page)).toEqual([])
+})
+
+test('search results start in the top half with Filters and Sort on one compact row', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 })
+  await catalogFixtures(page)
+  await page.route('**/api/search?*', async (route) => {
+    const kind = new URL(route.request().url()).searchParams.get('kind')
+    const items =
+      kind === 'track'
+        ? [1, 2, 3].map((id) => ({ ...track, id: 100 + id, title: `Recording ${id}` }))
+        : kind === 'album'
+          ? [album]
+          : []
+    await route.fulfill({ json: { items, total: items.length, next_index: null, cached: false } })
+  })
+  await page.goto('/search?q=Fixture')
+  const firstRow = page.locator('.track-row').first()
+  await expect(firstRow).toBeVisible()
+  expect((await box(firstRow)).y).toBeLessThan(844 * 0.5)
+
+  // No eyebrow, and the heading is the small size, so it does not crowd the results.
+  await expect(page.getByText('DISCOVER YOUR NEXT FAVOURITE')).toBeHidden()
+  const heading = page.getByRole('heading', { level: 1, name: /Results for/ })
+  const headingSize = await heading.evaluate((element) =>
+    parseFloat(getComputedStyle(element).fontSize),
+  )
+  expect(headingSize).toBeLessThanOrEqual(20)
+
+  // Filters and Sort share one row under the tabs.
+  const filters = await box(page.getByRole('button', { name: 'Filters', exact: true }))
+  const sort = await box(page.getByRole('combobox', { name: 'Sort' }))
+  const tabs = await box(page.getByRole('button', { name: 'Tracks', exact: true }))
+  expect(Math.abs(filters.y - sort.y)).toBeLessThan(8)
+  expect(filters.y).toBeGreaterThanOrEqual(tabs.y + tabs.height)
+  // The hint is help inside the Filters panel now, not a line on the page.
+  await expect(page.getByText(/Filters and sort apply to loaded results/)).toHaveCount(0)
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  await expect(page.getByText(/Filters and sort apply to loaded results/)).toBeVisible()
+
+  await page.setViewportSize({ width: 360, height: 780 })
+  expect(await pageOverflow(page)).toBe(0)
+  expect(await undersized(page)).toEqual([])
 })
 
 test('the mini player is one row and hands the rest to Now Playing', async ({ page }) => {

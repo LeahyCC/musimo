@@ -41,7 +41,8 @@ export function CollectionCover({
 /**
  * What an album, artist or playlist page opens with, matching the catalog album page: the cover,
  * a small eyebrow, the title, an optional byline and meta line, then the page's actions as
- * children. A long title stops at two lines, and a phone stacks the cover over the text.
+ * children. A long title stops at two lines. A phone puts a smaller cover beside the text and gives
+ * the actions their own row underneath both, so the list below starts on the first screen.
  */
 export function CollectionHeader({
   cover,
@@ -65,22 +66,29 @@ export function CollectionHeader({
   return (
     <div
       className={cx(
-        'collection-header flex items-center gap-[28px] max-phone:flex-col max-phone:items-start max-phone:gap-[16px]',
+        'collection-header flex items-center gap-[28px]',
+        'max-phone:grid max-phone:grid-cols-[104px_minmax(0,1fr)] max-phone:items-start max-phone:gap-x-[14px] max-phone:gap-y-[12px]',
         className,
       )}
     >
-      <div className="w-[190px] flex-none max-phone:w-[150px]">{cover}</div>
-      <div className="grid min-w-0 flex-1 gap-[8px] max-phone:w-full">
-        <p className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
-          {eyebrow}
-        </p>
-        <h1 className="flex items-center gap-[8px] text-display max-phone:text-[24px]">
-          {titleIcon}
-          <span className="line-clamp-2 min-w-0 break-words">{title}</span>
-        </h1>
-        {byline}
-        {meta && <p className="library-count text-body text-muted">{meta}</p>}
-        <div className="mt-[8px] flex flex-wrap items-center gap-[16px]">{children}</div>
+      <div className="w-[190px] flex-none max-phone:w-[104px]">{cover}</div>
+      {/* On a phone this wrapper drops out, so its text and its actions become the header's own
+          grid items: the text beside the cover, the actions across both columns below. */}
+      <div className="grid min-w-0 flex-1 gap-[8px] max-phone:contents">
+        <div className="grid min-w-0 gap-[8px] max-phone:gap-[4px]">
+          <p className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
+            {eyebrow}
+          </p>
+          <h1 className="flex items-center gap-[8px] text-display max-phone:text-[24px]">
+            {titleIcon}
+            <span className="line-clamp-2 min-w-0 break-words">{title}</span>
+          </h1>
+          {byline}
+          {meta && <p className="library-count text-body text-muted">{meta}</p>}
+        </div>
+        <div className="mt-[8px] flex flex-wrap items-center gap-[16px] max-phone:col-span-2 max-phone:mt-0 max-phone:gap-[10px]">
+          {children}
+        </div>
       </div>
     </div>
   )
