@@ -6,7 +6,9 @@ import {
   parsePreamp,
   parseReplayGainMode,
   playsAlbumInOrder,
+  replayGainHasPeak,
   replayGainMultiplier,
+  splitLevel,
 } from './replay-gain'
 
 const song = (id: string, albumId?: string): LibraryTrack => ({
@@ -135,6 +137,69 @@ describe('levelledVolume', () => {
   it('never goes past what an audio element accepts', () => {
     expect(levelledVolume(0.9, 2)).toBe(1)
     expect(levelledVolume(0, 2)).toBe(0)
+  })
+})
+
+describe('replayGainHasPeak', () => {
+  it('needs a peak on the tag that levels the track', () => {
+    expect(replayGainHasPeak({ trackGain: 6, trackPeak: 0.8 }, 'track', false)).toBe(true)
+    expect(replayGainHasPeak({ trackGain: 6 }, 'track', false)).toBe(false)
+    expect(replayGainHasPeak({ trackGain: 6, trackPeak: 0 }, 'track', false)).toBe(false)
+  })
+
+  it('reads the album peak while the album gain is in use, and the track peak otherwise', () => {
+    const gain = { trackGain: 6, albumGain: 6, trackPeak: 0.5 }
+    expect(replayGainHasPeak(gain, 'album', true)).toBe(false)
+    expect(replayGainHasPeak(gain, 'album', false)).toBe(true)
+    expect(replayGainHasPeak({ ...gain, albumPeak: 0.9 }, 'album', true)).toBe(true)
+  })
+
+  it('is false when nothing levels the track', () => {
+    expect(replayGainHasPeak(undefined, 'track', false)).toBe(false)
+    expect(replayGainHasPeak({ trackGain: 6, trackPeak: 0.8 }, 'off', false)).toBe(false)
+    expect(replayGainHasPeak({ trackPeak: 0.8 }, 'track', false)).toBe(false)
+  })
+})
+
+describe('splitLevel', () => {
+  it('leaves everything up to 1 on the element', () => {
+    const boosted = splitLevel(0.4, 1.5, true)
+    expect(boosted.volume).toBeCloseTo(0.6, 5)
+    expect(boosted.gain).toBe(1)
+    expect(splitLevel(0.7, 1, true)).toEqual({ volume: 0.7, gain: 1 })
+    const cut = splitLevel(0.8, 0.5, true)
+    expect(cut.volume).toBeCloseTo(0.4, 5)
+    expect(cut.gain).toBe(1)
+  })
+
+  it('puts only the part above 1 on the gain stage', () => {
+    const split = splitLevel(0.8, 1.5, true)
+    expect(split.volume).toBe(1)
+    expect(split.gain).toBeCloseTo(1.2, 5)
+  })
+
+  it('multiplies back to the level it was given', () => {
+    for (const [volume, multiplier] of [
+      [1, 1.8],
+      [0.9, 1.3],
+      [0.5, 3],
+      [0.2, 2],
+    ] as const) {
+      const split = splitLevel(volume, multiplier, true)
+      expect(split.volume * split.gain).toBeCloseTo(volume * multiplier, 5)
+    }
+  })
+
+  it('keeps the old cap when the boost is not allowed', () => {
+    expect(splitLevel(0.8, 1.5, false)).toEqual({ volume: 1, gain: 1 })
+    const quiet = splitLevel(0.4, 1.5, false)
+    expect(quiet.volume).toBeCloseTo(0.6, 5)
+    expect(quiet.gain).toBe(1)
+  })
+
+  it('never returns a negative or a zero-boost level', () => {
+    expect(splitLevel(0, 2, true)).toEqual({ volume: 0, gain: 1 })
+    expect(splitLevel(-1, 2, true)).toEqual({ volume: 0, gain: 1 })
   })
 })
 

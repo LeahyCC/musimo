@@ -64,12 +64,26 @@ Where WebGPU is missing, or the adapter or device cannot be had, the stage shows
 
 Gapless playback (see [the player note](player.md#gapless-playback)) needs a second element to load the next track while the first plays, so the library has two, and the roles swap at each track change. The visualizer has to survive that, and a media element can be given to `createMediaElementSource` once only, so the split is:
 
-- **visimo** builds the graph and wires up the first element it is given. `attachAudio` was written for one element and refuses any other, which is right for a host with one.
-- **Musimo** (`routeToAnalyser` in `player.tsx`) calls `attachAudio` on every `play` event of a library element, as it always did, and that is also what resumes a suspended context. When the element is not the one visimo took, Musimo creates that element's source itself and connects it to the same analyser, read from `audioGraph()`, once, the first time it plays. The visualizer reads the analyser, so it is unaware of which element feeds it. During a [crossfade](player.md#crossfade) both elements play into it at once, each at its own level, so the analyser sees the blend that is heard.
+- **visimo** builds the graph (the context and the analyser) and wires up the first element it is given. `attachAudio` was written for one element and refuses any other, and the source it makes is inside the package where a host cannot reach it.
+- **Musimo** (`routeToAnalyser` in `player.tsx`) therefore gives `attachAudio` an element of its own that never has a source and never plays, the anchor, on every `play` event of a library element. That call is what builds the graph and what resumes a suspended context. Musimo then makes each library element's source itself and connects it to the analyser, read from `audioGraph()`, once, the first time that element plays. Both library elements go the same way, so neither is special. The visualizer reads the analyser, so it is unaware of which element feeds it.
 
-Without the second half the visualizer goes flat at the first track change while the music keeps playing, because the second element would play directly, unanalysed. That is the failure to look for whenever the visimo pin moves or this function changes: play two tracks in a row with the visualizer on and check that the stage still moves after the swap. WebGPU is missing from headless browsers, so `e2e/visualizer.spec.ts` cannot see the picture, but `e2e/gapless.spec.ts` checks that both elements end up connected to the analyser. If visimo ever accepts several elements itself, `routeToAnalyser` can go back to a plain `attachAudio` call.
+If a real library element were handed to `attachAudio`, visimo would keep it, the other would be wired here, and the two would differ (see the boost below). If neither were wired here, the visualizer would go flat while the music kept playing, because the elements would play directly, unanalysed. That is the failure to look for whenever the visimo pin moves or this function changes: play two tracks in a row with the visualizer on and check that the stage still moves after the swap. WebGPU is missing from headless browsers, so `e2e/visualizer.spec.ts` cannot see the picture, but `e2e/gapless.spec.ts` checks that both library elements get a source on the graph. If visimo ever accepts several elements itself, or lets a host connect its own sources, the anchor can go.
 
 Previews still never reach it. The preview element is separate, is not part of the pair, and is not swapped.
+
+### The ReplayGain boost
+
+An element's `volume` cannot pass 1, so a [ReplayGain](player.md#volume-levelling) gain above 1 has to be applied in the graph. Because Musimo makes both library elements' sources, both get the same chain:
+
+```
+each library element:  source -> GainNode -> analyser -> speakers
+                                  ^ carries only the part above 1
+the anchor:            source (in visimo, silent) -> analyser
+```
+
+`routeToAnalyser` puts a gain node between each element's source and the analyser, at 1 until `applyVolume` sets it. The element keeps its own volume for everything up to 1 (`splitLevel`), and the node carries only the part above it. The analyser sits after the node, so the stage sees the boosted level that is heard.
+
+The boost is used only when the track has a peak tag, only while the context is running, and never for a preview. With no graph yet (nothing has played) or a suspended context, no node is used and the volume is set as before. `e2e/gapless.spec.ts` checks that a quiet fixture track gets the same gain on both elements across a handover. When the visimo pin moves, check that each element's chain is still source, gain node, analyser.
 
 ## When it draws
 

@@ -52,7 +52,12 @@ import {
   readHistory,
   writeHistory,
 } from './play-history'
-import { levelledVolume, playsAlbumInOrder, replayGainMultiplier } from './replay-gain'
+import {
+  playsAlbumInOrder,
+  replayGainHasPeak,
+  replayGainMultiplier,
+  splitLevel,
+} from './replay-gain'
 import { useReplayGainSettings } from './replay-gain-settings'
 import { SLEEP_FADE_SECONDS, sleepChoiceLabel } from './sleep-timer'
 import type { SleepChoice, SleepStatus } from './sleep-timer'
@@ -393,30 +398,44 @@ const audioGraph = () => import('visimo/audio')
 // Elements whose sound already reaches the analyser. A media element can be given to
 // `createMediaElementSource` once only, so each is remembered for good.
 const routed = new WeakSet<HTMLMediaElement>()
+// The gain stage of each library element, between its source and the analyser. It carries a
+// ReplayGain boost past what an element's `volume` can hold.
+const boosters = new WeakMap<HTMLMediaElement, GainNode>()
+// visimo's `attachAudio` builds the graph and keeps the first element it is given for itself, with
+// a source Musimo cannot reach. It is given this one, which never has a source and never plays, so
+// that both library elements are wired up here, the same way, each with its own gain stage. Handing
+// it a real library element would leave that one without a gain stage, and every other track would
+// miss its boost.
+let anchor: HTMLAudioElement | undefined
 
 /**
  * Sends a library element's sound through the visualizer's analyser. Call it from the element's
- * `play` event. visimo's `attachAudio` builds the graph and wires up the first element it is given,
- * and refuses any other, because it was written for one element. Gapless playback has two that
- * swap roles, so the second is connected here, to the same analyser, the first time it plays.
- * Without this the stage goes flat on every other track while the music carries on. Only ever
- * called for the library pair: a preview's cross-origin audio would be silenced for good.
+ * `play` event, which is also what lets a suspended context resume. visimo owns the graph and the
+ * analyser; Musimo makes each library element's source itself and connects it through a gain node
+ * of its own, at 1 until `applyVolume` sets it, so the sound is unchanged until a boost is asked
+ * for. Gapless playback has two elements that swap roles, and without both wired up the stage goes
+ * flat on every other track while the music carries on. Only ever called for the library pair: a
+ * preview's cross-origin audio would be silenced for good.
  */
 async function routeToAnalyser(element: HTMLMediaElement) {
   const module = await audioGraph()
-  const wasAttached = module.audioGraph()?.attached ?? false
-  const graph = await module.attachAudio(element)
+  anchor ??= new Audio()
+  const graph = await module.attachAudio(anchor)
   if (!graph || routed.has(element)) return
-  if (!wasAttached && graph.attached) {
-    // visimo took this one itself.
-    routed.add(element)
-    return
-  }
-  // Nothing is wired up until the context runs, and visimo goes first so its own state stays
-  // true. The next play tries again.
+  // Nothing is wired up until the context runs and visimo has the graph built. The next play
+  // tries again.
   if (!graph.attached || graph.context.state !== 'running') return
   routed.add(element)
-  graph.context.createMediaElementSource(element).connect(graph.analyser)
+  const booster = graph.context.createGain()
+  graph.context.createMediaElementSource(element).connect(booster)
+  booster.connect(graph.analyser)
+  boosters.set(element, booster)
+}
+
+/** The gain stage to boost through, or undefined where there is no running graph to boost in. */
+const runningBooster = (element: HTMLMediaElement) => {
+  const booster = boosters.get(element)
+  return booster?.context.state === 'running' ? booster : undefined
 }
 
 /** How long before a track ends the next one starts loading. A shorter track loads it at once. */
@@ -659,11 +678,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // holds, so the slider keeps reading what they set. The standby element is levelled for the
   // track it has preloaded. Null is "leave it": a standby element with nothing loaded may be the
   // one finishing its last moments, and changing its volume then would be heard.
-  function outputVolume(element: HTMLAudioElement | null): number | null {
+  //
+  // `gain` is the part of a ReplayGain boost an element's volume cannot hold, for a library element
+  // that has been wired up (see `boosters`). It is 1 everywhere else: a preview, and any element
+  // while there is no running graph.
+  function outputLevel(element: HTMLAudioElement | null): { volume: number; gain: number } | null {
     const { volume: set, shuffle: shuffled, replay } = levelling.current
     const base = Number.isFinite(set) ? Math.max(0, Math.min(1, set)) : 0.7
-    if (!element) return base
-    if (element === previewAudio.current) return base * sleepGain.current
+    if (!element) return { volume: base, gain: 1 }
+    if (element === previewAudio.current) return { volume: base * sleepGain.current, gain: 1 }
     const slot: Slot = element === libraryA.current ? 0 : 1
     let target: { item: LibraryTrack | null; index: number } | null = null
     const fading = fadingOut.current
@@ -677,7 +700,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     if (!target) return null
     const faded = base * envelope(element)
-    if (!target.item) return faded
+    if (!target.item) return { volume: faded, gain: 1 }
     const inOrder = playsAlbumInOrder(queueRef.current, target.index, shuffled)
     const multiplier = replayGainMultiplier(
       target.item.replayGain,
@@ -685,7 +708,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       inOrder,
       replay.preampDb,
     )
-    return levelledVolume(faded, multiplier)
+    // The multiplier is already held to 1 / peak, so a boost through the gain stage cannot clip. A
+    // track with no peak tag has no such bound and is not boosted.
+    const boostable =
+      runningBooster(element) !== undefined &&
+      replayGainHasPeak(target.item.replayGain, replay.mode, inOrder)
+    return splitLevel(faded, multiplier, boostable)
   }
 
   // What the sleep timer's fade and a crossfade take off an element's level, on top of the person's
@@ -703,8 +731,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function applyVolume() {
     for (const element of elements()) {
       if (!element) continue
-      const level = outputVolume(element)
-      if (level !== null) element.volume = level
+      const level = outputLevel(element)
+      if (level !== null) {
+        element.volume = level.volume
+        const booster = boosters.get(element)
+        if (booster) booster.gain.value = level.gain
+      }
       element.muted = levelling.current.muted
     }
   }
@@ -1731,7 +1763,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         scrobble(false)
         const element = event.currentTarget
         publishPosition(element)
-        void routeToAnalyser(element)
+        // The gain stage exists only once this has run, so the level is applied again after it.
+        void routeToAnalyser(element).then(applyVolume)
         // A resume in the last second arms the handover now rather than at the next timeupdate.
         scheduleHandover(element)
       },
