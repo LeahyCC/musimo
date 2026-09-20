@@ -43,6 +43,7 @@ Search and library features:
 
 - Deezer catalog search with Top, Tracks, Albums and Artists views.
 - Podcast search and episode downloads from Apple's podcast directory, saved under `Podcasts/<show>`.
+- Paste a link into the search box to review it and download it directly. It works with YouTube, the Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, Mixcloud, NTS, HearThisAt and BBC Sounds. DJ mixes and radio shows are saved under `Mixes/<uploader>`. Audiomack and TuneIn are in the code but switched off, because the download tool cannot read them today.
 - Typeahead, independent result sections, pagination, filters and sorting.
 - Search state in the URL, so refresh and browser Back preserve the query.
 - Album pages and artist discographies grouped by catalog release type.
@@ -60,7 +61,7 @@ Search and library features:
 
 The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card and bulk Clear failed, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Download verification requires testing with your chosen provider and Navidrome setup.
 
-These are **not finished features**: personalized Discover, automatic release-edition filters, pasted links/playlists, paid audio sources, notifications, cookie management, built-in login, multiple users and complete release benchmarks (cold search latency, match accuracy labeling, permitted-music throughput, representative 50k library, native arm64 performance). See [Discover planning](docs/discover.md), [the roadmap](docs/roadmap.md) and [known limitations](CHANGELOG.md#known-limitations).
+These are **not finished features**: personalized Discover, automatic release-edition filters, Spotify and Apple Music link imports, paid audio sources, notifications, cookie management, built-in login, multiple users and complete release benchmarks (cold search latency, match accuracy labeling, permitted-music throughput, representative 50k library, native arm64 performance). See [Discover planning](docs/discover.md), [the roadmap](docs/roadmap.md) and [known limitations](CHANGELOG.md#known-limitations).
 
 ## Requirements
 
@@ -443,6 +444,7 @@ API groups:
 - Player foundation: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/stream/{id}`, `/api/player/art/{id}`. Navidrome-backed library routes at `/api/library/{albums,artists,tracks,playlists}` for browsing; local index routes at `/api/library` GET, `/api/library/scan`, `/api/library/cancel` remain separate.
 - Jobs/batches: `/api/naming-preview`, `/api/jobs` GET and POST, `/api/history`, `/api/batches` POST, `/api/batches/{id}/{pause,resume,cancel,retry}`, `/api/jobs/{id}/pick`, `/api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`, `/api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,resume-source}`.
 - Artist downloads: `/api/artists/{id}/download-plan`, `/api/artist-batches`.
+- Podcasts and pasted links: `/api/podcasts`, `/api/podcasts/{id}`, `/api/podcast-episodes` POST, `/api/links/resolve` POST, `/api/links` POST.
 - Activity: `/api/activity` GET and DELETE; deletion takes the observed `through` cursor.
 - Operations: `/api/events`, `/api/diagnostics`, `/api/diagnostics/test/deezer`, `/api/diagnostics/test/destination`, `/api/diagnostics/export`.
 

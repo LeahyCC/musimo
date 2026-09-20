@@ -6,14 +6,16 @@
 
 - Search podcasts from a new Podcasts tab, open a show's latest episodes and download them straight from the publisher's file into `Podcasts/<show>`
 - Pause each download source on its own after repeated blocking errors, and give match candidates their own source and link
+- Search SoundCloud for a catalog track when YouTube has no match, or while YouTube is paused, behind a new off-by-default setting; matches there need a higher score, a job that takes one moves to SoundCloud for pausing and errors, and review candidates name their site
+
+### Pasted links
+
 - Add a server API that previews a pasted YouTube link and queues the ticked entries, checked against a site allowlist
-- Tidy the tags of a pasted music link from the Deezer catalog when the match is certain, say which tags a job used, and stop a link lookup when the browser cancels it
 - Paste a link into the search box to review it before it downloads: one recording, or a tick list for a playlist or profile with owned songs unticked; job cards name the site and the queue shows a resume line for each paused site
+- Tidy the tags of a pasted music link from the Deezer catalog when the match is certain, say which tags a job used, and stop a link lookup when the browser cancels it
 - Download tracks from a pasted Internet Archive item, one row per track with FLAC kept and the item's artist, album, date and track order as tags; clean upload titles before the Deezer lookup, pick a larger cover, and show a link job's tag note as a note instead of a warning
 - Download from pasted Bandcamp, SoundCloud, Audius and Jamendo links (Audiomack is listed but yt-dlp cannot read it yet) with a bitrate note and a read-only destination check on the review sheet; a Bandcamp album lands like a catalog album, and the Internet Archive keeps its own tags and gets its cover
-
 - Download DJ mixes and radio shows from pasted Mixcloud, NTS, HearThisAt and BBC Sounds links, and SoundCloud tracks over 20 minutes, into `Mixes/<uploader>/<date> - <title>` with the uploader as artist and no catalog tidy-up; the review sheet shows the landing path, a UK-only BBC show says so, and Audiomack and TuneIn are switched off while yt-dlp cannot read them
-- Search SoundCloud for a catalog track when YouTube has no match, or while YouTube is paused, behind a new off-by-default setting; matches there need a higher score, a job that takes one moves to SoundCloud for pausing and errors, and review candidates name their site
 - Say plainly when a profile or list page took too long to read instead of offering a retry that cannot work, take a HearThisAt artist from a "Name - Title" heading when the address gives only an account code, and use the show name a station gives rather than splitting the episode title
 
 ### Library and playback

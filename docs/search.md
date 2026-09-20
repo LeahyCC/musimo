@@ -39,7 +39,7 @@ review sheet
    profile:       the same list with nothing ticked
    |
    v
-Download ---> POST /api/links ---> "N songs queued from YouTube. Open downloads"
+Download ---> POST /api/links ---> "N songs queued from <site>. Open downloads"
 ```
 
 - One lookup is in flight at a time. Pasting another link, cancelling or closing the sheet aborts the request still running, and a late answer to an abandoned request is ignored. The server also allows two lookups at once across every browser and makes a third wait.
