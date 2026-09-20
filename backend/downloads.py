@@ -326,8 +326,13 @@ class Downloads:
             if job.stage not in {"failed", "cancelled"}:
                 raise ValueError("Only failed or cancelled jobs can be retried")
             self.check_destination(self.target(job.target))
+            # A catalog track that fell back to the backup source starts over on YouTube, so a
+            # pause that has since lifted does not leave it on the weaker source for good. A
+            # recording chosen by hand keeps the site it was chosen from.
+            restart = job.catalog == "deezer" and not job.selected
             return self.jobs.update(
                 job_id,
+                source="youtube" if restart else job.source,
                 stage="queued",
                 desired="run",
                 attempts=0,

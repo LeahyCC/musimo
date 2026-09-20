@@ -18,6 +18,9 @@ from backend.tagging import Tagger, probe
 
 # How each source is searched for a catalog track. A source missing here is never searched.
 SEARCHES = {"youtube": "ytsearch8:", "soundcloud": "scsearch8:"}
+# Words added to the search. "official audio" steers YouTube toward label uploads. SoundCloud
+# titles do not carry it, so there it only filters real results out.
+SEARCH_HINT = {"youtube": " official audio"}
 
 
 class Downloader(Protocol):
@@ -203,7 +206,8 @@ def main() -> None:
         searcher = cast(Downloader, yt_dlp.YoutubeDL(options | search_options))
         try:
             raw = searcher.extract_info(
-                f"{SEARCHES[source_name]}{job.meta.artist} {job.meta.title} official audio",
+                f"{SEARCHES[source_name]}{job.meta.artist} {job.meta.title}"
+                f"{SEARCH_HINT.get(source_name, '')}",
                 download=False,
             )
         finally:

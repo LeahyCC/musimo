@@ -243,6 +243,9 @@ class BackupSourceTests(unittest.TestCase):
             )
             self.assertTrue(asked[0].startswith("ytsearch8:"))
             self.assertTrue(asked[1].startswith("scsearch8:"))
+            # "official audio" is a YouTube habit and would only hide SoundCloud results.
+            self.assertTrue(asked[0].endswith(" official audio"))
+            self.assertNotIn("official audio", asked[1])
             self.assertEqual(asked[2], TRACK)
             switched = [row for row in events if row["kind"] == "source"]
             self.assertEqual(switched[0]["source"], "soundcloud")

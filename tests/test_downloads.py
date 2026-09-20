@@ -637,6 +637,27 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                         await service.close()
                     store.close()
 
+    async def test_a_retry_sends_a_catalog_track_back_to_youtube(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                store.update({"destination": str(root)})
+                fell_back = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(fell_back.id, source="soundcloud", stage="failed")
+                picked = service.jobs.enqueue(2, "original", str(root))
+                service.jobs.update(
+                    picked.id, source="soundcloud", selected="123456", stage="failed"
+                )
+                self.assertEqual(service.command(fell_back.id, "retry").source, "youtube")
+                # A recording chosen by hand stays on the site it was chosen from.
+                self.assertEqual(service.command(picked.id, "retry").source, "soundcloud")
+                await service.close()
+            store.close()
+
     async def test_a_block_on_one_source_never_pauses_the_other(self) -> None:
         class Blocked(Downloads):
             async def worker(self, job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
