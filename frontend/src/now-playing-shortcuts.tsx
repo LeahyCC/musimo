@@ -147,7 +147,7 @@ const PAGE_SHORTCUTS: Shortcut[] = [
   { keys: ['Shift ←', 'Shift →'], action: 'Previous or next track' },
   { keys: ['↑', '↓'], action: 'Volume up or down' },
   { keys: ['M'], action: 'Mute' },
-  { keys: ['L'], action: 'Lyrics, and again for large type' },
+  { keys: ['L'], action: 'Lyrics, and again for the large view' },
   { keys: ['Q'], action: 'Up next' },
   { keys: ['S'], action: 'Small or large stage' },
   { keys: ['?'], action: 'This list' },
