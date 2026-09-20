@@ -67,8 +67,13 @@ type Playback = {
   track: MusicResult | null
   libraryTrack: LibraryTrack | null
   queue: LibraryTrack[]
-  /** Which collection filled the queue, so its own play button can show pause. */
+  /**
+   * Which collection filled the queue, so its own play button can show pause. It survives edits
+   * while the playing track is one of the collection's own, and is `queue` once it is not.
+   */
   source: string
+  /** True once the queue has been changed by hand since it was filled from `source`. */
+  edited: boolean
   currentIndex: number
   playing: boolean
   position: number
@@ -124,6 +129,7 @@ const PlayerContext = createContext<Playback>({
   libraryTrack: null,
   queue: [],
   source: '',
+  edited: false,
   currentIndex: -1,
   playing: false,
   position: 0,
@@ -172,8 +178,68 @@ const SLEEP_QUEUE_LOST_NOTICE =
 
 /** What Navidrome keeps in one saved play queue. The backend refuses more. */
 export const QUEUE_LIMIT = 500
-/** The queue's source once a listener has edited it: it is no longer any one collection. */
+/** The queue's source when it is no longer any one collection: the listener's own. */
 export const EDITED_SOURCE = 'queue'
+/** The source of a queue brought back after a reload, which does not remember where it began. */
+export const RESTORED_SOURCE = 'restored'
+/** Where the entries queued by hand are kept, by position, across a reload. */
+const CHOSEN_KEY = 'musimo.queue-chosen'
+
+/**
+ * What the queue counts as coming from. An edit does not take the collection away: it is still the
+ * album while the playing track is one of the album's own. It is the listener's queue once the
+ * playing track is one they added, and for a queue whose collection was never known.
+ */
+export function queueSource(origin: string, edited: boolean, playingAdded: boolean) {
+  if (playingAdded) return EDITED_SOURCE
+  if (edited && (origin === '' || origin === RESTORED_SOURCE)) return EDITED_SOURCE
+  return origin
+}
+
+/** A fingerprint of the songs in the queue and their order, so saved positions know what they fit. */
+export function queueHash(ids: readonly string[]) {
+  // FNV-1a over the joined ids. Not secure, only a cheap way to notice that the queue changed.
+  let hash = 0x811c9dc5
+  const text = ids.join('\n')
+  for (let at = 0; at < text.length; at += 1) {
+    hash = Math.imul(hash ^ text.charCodeAt(at), 0x01000193)
+  }
+  return `${ids.length}:${(hash >>> 0).toString(16)}`
+}
+
+/**
+ * The entries queued by hand, as text to keep. Navidrome's saved queue holds ids only, so the
+ * places of these entries are kept beside a fingerprint of the queue they belong to. Empty text
+ * when nothing was chosen, which is nothing to keep.
+ */
+export function encodeChosen(queue: readonly LibraryTrack[], chosen: ReadonlySet<LibraryTrack>) {
+  const at = queue.flatMap((item, place) => (chosen.has(item) ? [place] : []))
+  if (!at.length) return ''
+  return JSON.stringify({ hash: queueHash(queue.map((item) => item.id)), at })
+}
+
+/**
+ * The entries of `queue` that `saved` (from `encodeChosen`) marks as chosen. Nothing is chosen when
+ * the text is unreadable or was written for a different queue: places that no longer point at the
+ * same songs would put the wrong ones first.
+ */
+export function decodeChosen(queue: readonly LibraryTrack[], saved: string) {
+  const chosen = new Set<LibraryTrack>()
+  let value: unknown
+  try {
+    value = JSON.parse(saved)
+  } catch {
+    return chosen
+  }
+  if (value === null || typeof value !== 'object') return chosen
+  const { hash, at } = value as Record<string, unknown>
+  if (hash !== queueHash(queue.map((item) => item.id)) || !Array.isArray(at)) return chosen
+  for (const place of at) {
+    const item = typeof place === 'number' ? queue[place] : undefined
+    if (item) chosen.add(item)
+  }
+  return chosen
+}
 
 /** Empty when `adding` more songs fit beside `size` already queued, else the reason they do not. */
 export function queueOverflow(size: number, adding: number) {
@@ -420,6 +486,14 @@ export function remember(key: string, value: string) {
   }
 }
 
+function forget(key: string) {
+  try {
+    localStorage.removeItem(key)
+  } catch {
+    /* Browser storage is optional. */
+  }
+}
+
 const pickerNoteClassName = 'mt-[6px] mb-[2px] text-muted'
 
 function PlaylistPickerRow({
@@ -562,10 +636,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const libraryCurrent = useRef<LibraryTrack | null>(null)
   const queueRef = useRef<LibraryTrack[]>([])
   const indexRef = useRef(-1)
+  // The collection that filled the queue. Edits leave it alone; `queueSource` says what it counts as.
   const sourceRef = useRef('')
+  const editedRef = useRef(false)
   // Entries the listener queued by hand, which shuffle plays before the rest. Each entry is its
   // own copy of the song, so the set can tell a song queued twice apart.
   const chosen = useRef(new Set<LibraryTrack>())
+  // The same entries for good: `chosen` forgets one when it plays, this remembers it was not the
+  // collection's own song, so the source can follow the playing track.
+  const added = useRef(new WeakSet<LibraryTrack>())
   const mode = useRef<'preview' | 'library'>('preview')
   const slots = () => [libraryA.current, libraryB.current] as const
   const library = () => slots()[activeSlot.current]
@@ -647,6 +726,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<LibraryTrack[]>([])
   const [history, setHistory] = useState(historyRef.current)
   const [source, setSource] = useState('')
+  const [edited, setEdited] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(-1)
   const [playing, setPlaying] = useState(false)
   const [position, setPosition] = useState(0)
@@ -808,6 +888,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       .catch(() => {
         if (announce) setNotice(QUEUE_SAVE_FAILED)
       })
+  }
+
+  // What was queued by hand is not in the saved queue, which holds ids only. Keep it beside the
+  // fingerprint of the queue it belongs to, and let the restore check that the two still match.
+  function saveChosen() {
+    const saved = encodeChosen(queueRef.current, chosen.current)
+    if (saved) remember(CHOSEN_KEY, saved)
+    else forget(CHOSEN_KEY)
+  }
+
+  // Tells the rest of the app which collection the queue counts as coming from right now. It
+  // depends on the playing track, so it runs whenever that changes and whenever an edit lands.
+  function publishSource() {
+    const playing = libraryCurrent.current
+    setSource(
+      queueSource(
+        sourceRef.current,
+        editedRef.current,
+        playing !== null && added.current.has(playing),
+      ),
+    )
   }
 
   function scrobble(submission: boolean) {
@@ -1136,6 +1237,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     libraryCurrent.current = item
     wantPlay.current = autoplay
     chosen.current.delete(item)
+    saveChosen()
+    publishSource()
     indexRef.current = index
     pendingSeek.current = seek
     lastSavedSecond.current = -1
@@ -1184,26 +1287,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function playLibrary(items: LibraryTrack[], index = 0, origin = '') {
     if (!items.length) return
     failures.current = 0
-    // Playing a row of the queue itself keeps the queue, and what was chosen by hand in it.
-    if (items !== queueRef.current) chosen.current.clear()
+    // Playing a row of the queue itself keeps the queue, what was chosen by hand in it, and where
+    // it came from. Any other list starts a queue of its own.
+    if (items !== queueRef.current) {
+      chosen.current.clear()
+      sourceRef.current = origin
+      editedRef.current = false
+      setEdited(false)
+    }
     queueRef.current = items
-    sourceRef.current = origin
     setQueue(items)
-    setSource(origin)
     loadLibrary(Math.max(0, Math.min(index, items.length - 1)))
   }
 
-  // Every edit lands here: the new order, where the playing track now sits, and the save. An
-  // edited queue is no longer the album or playlist it began as, so it stops claiming to be one.
+  // Every edit lands here: the new order, where the playing track now sits, and the save. The queue
+  // keeps the collection it began as, marked edited, for as long as the playing track is one of
+  // that collection's own.
   function editQueue(items: LibraryTrack[], index: number) {
     queueRef.current = items
     indexRef.current = index
-    sourceRef.current = EDITED_SOURCE
+    editedRef.current = true
     // What plays next may have changed, so what the standby element loaded may be wrong.
     discardPreload()
     setQueue(items)
     setCurrentIndex(index)
-    setSource(EDITED_SOURCE)
+    setEdited(true)
+    publishSource()
+    saveChosen()
     saveQueue(true)
   }
 
@@ -1221,7 +1331,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       playLibrary(entries, 0, EDITED_SOURCE)
       return
     }
-    for (const entry of entries) chosen.current.add(entry)
+
+    for (const entry of entries) {
+      chosen.current.add(entry)
+      added.current.add(entry)
+    }
     const queue = queueRef.current
     const at = upNext ? playNextPosition(queue, indexRef.current, chosen.current) : queue.length
     editQueue([...queue.slice(0, at), ...entries, ...queue.slice(at)], indexRef.current)
@@ -1257,6 +1371,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const playing = libraryCurrent.current
     if (!playing) return
     chosen.current.clear()
+    // What is left is one song and nothing to say it came with a collection.
+    sourceRef.current = EDITED_SOURCE
     editQueue([playing], 0)
   }
 
@@ -1386,7 +1502,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     previewCurrent.current = null
     libraryCurrent.current = null
     sourceRef.current = ''
+    editedRef.current = false
     setSource('')
+    setEdited(false)
     fadingOut.current = null
     for (const element of elements()) {
       element?.pause()
@@ -1413,8 +1531,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         )
         queueRef.current = saved.entry
         setQueue(saved.entry)
-        sourceRef.current = 'restored'
-        setSource('restored')
+        sourceRef.current = RESTORED_SOURCE
+        // Only the ids came back, so the songs queued by hand are found again by their places.
+        // They are dropped, not guessed at, when the queue is no longer the one they were saved for.
+        chosen.current = decodeChosen(saved.entry, stored(CHOSEN_KEY, ''))
         loadLibrary(index, false, saved.position / 1000)
         setNotice(RESTORED_NOTICE)
       })
@@ -1687,6 +1807,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         libraryTrack,
         queue,
         source,
+        edited,
         currentIndex,
         playing,
         position,

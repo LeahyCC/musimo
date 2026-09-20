@@ -611,8 +611,10 @@ function TrackList({
       {tracks.map((track, index) => {
         // A playlist may hold the same song twice, and the same song appears in several
         // collections, so the queue and the position are both part of "the playing row".
+        // An edited queue no longer lines up with the list, so its places say nothing about a row.
         const current =
           player.source === source &&
+          !player.edited &&
           player.currentIndex === index &&
           player.libraryTrack?.id === track.id
         const playing = current && player.playing
@@ -2013,9 +2015,10 @@ const tabPanelClassName =
  * What the queue was started from, worded for after "Playing from", or an empty string where the
  * player does not know (a restored queue) or the name has not arrived yet. The player keeps only
  * an id such as `playlist:abc`, so the name comes from the reads the library pages already make
- * and share through the query cache.
+ * and share through the query cache. A queue changed by hand since it began still says what it
+ * began as, with "edited" after it.
  */
-function usePlayingFrom(source: string) {
+function usePlayingFrom(source: string, edited: boolean) {
   const split = source.indexOf(':')
   const kind = split < 0 ? source : source.slice(0, split)
   const id = split < 0 ? '' : source.slice(split + 1)
@@ -2036,20 +2039,25 @@ function usePlayingFrom(source: string) {
       api(`library/artists/${encodeURIComponent(id)}`, libraryArtistDetailSchema, { signal }),
     enabled: kind === 'artist',
   })
-  if (kind === 'playlist') {
-    const name = playlists.data?.items.find((item) => item.id === id)?.name
-    return name ? `playlist ${name}` : ''
+  const describe = () => {
+    if (kind === 'playlist') {
+      const name = playlists.data?.items.find((item) => item.id === id)?.name
+      return name ? `playlist ${name}` : ''
+    }
+    if (kind === 'queue') return 'your queue'
+    if (kind === HISTORY_SOURCE) return 'your history'
+    if (kind === 'album') return album.data ? `album ${album.data.name}` : ''
+    if (kind === 'artist') return artist.data ? `artist ${artist.data.name}` : ''
+    if (kind === 'tracks') {
+      // The rest of the id is the Tracks view's own query string; only the search is worth saying.
+      const search = new URLSearchParams(id).get('q')
+      return search ? `tracks matching "${search}"` : 'your tracks'
+    }
+    return ''
   }
-  if (kind === 'queue') return 'your queue'
-  if (kind === HISTORY_SOURCE) return 'your history'
-  if (kind === 'album') return album.data ? `album ${album.data.name}` : ''
-  if (kind === 'artist') return artist.data ? `artist ${artist.data.name}` : ''
-  if (kind === 'tracks') {
-    // The rest of the id is the Tracks view's own query string; only the search is worth saying.
-    const search = new URLSearchParams(id).get('q')
-    return search ? `tracks matching "${search}"` : 'your tracks'
-  }
-  return ''
+  const from = describe()
+  // "Your queue" is already the edited one, so it needs no second word for it.
+  return from && edited && kind !== 'queue' ? `${from}, edited` : from
 }
 
 /** Where a dragged Up next row would land: the gap before row `slot`, counted in the whole queue. */
@@ -2074,7 +2082,7 @@ function UpNext() {
   const [announcement, setAnnouncement] = useState('')
   const [naming, setNaming] = useState(false)
   const [name, setName] = useState('')
-  const playingFrom = usePlayingFrom(player.source)
+  const playingFrom = usePlayingFrom(player.source, player.edited)
   // Up next is what comes after the playing track, so the track itself is never its first row.
   const following = player.currentIndex + 1
   const upcoming = player.queue.slice(following)

@@ -3,7 +3,10 @@ import { describe, expect, it } from 'vitest'
 import type { LibraryTrack } from './api'
 import {
   chosenIndex,
+  decodeChosen,
   durationText,
+  EDITED_SOURCE,
+  encodeChosen,
   failureLimitNotice,
   indexAfterMove,
   isPassiveNotice,
@@ -13,7 +16,10 @@ import {
   preloadDue,
   QUEUE_LIMIT,
   queueEntryKey,
+  queueHash,
   queueOverflow,
+  queueSource,
+  RESTORED_SOURCE,
   skippedNotice,
   songCount,
 } from './player'
@@ -105,6 +111,93 @@ describe('chosenIndex', () => {
 
   it('goes back to the first chosen song when none is left ahead', () => {
     expect(chosenIndex(queue, 3, chosenAt(1))).toBe(1)
+  })
+})
+
+describe('queueSource', () => {
+  it('keeps the collection through edits while the playing song is its own', () => {
+    expect(queueSource('album:1', false, false)).toBe('album:1')
+    expect(queueSource('album:1', true, false)).toBe('album:1')
+  })
+
+  it('is the listener’s queue while the playing song is one they added', () => {
+    expect(queueSource('album:1', true, true)).toBe(EDITED_SOURCE)
+  })
+
+  it('makes an edited queue of unknown origin the listener’s own', () => {
+    expect(queueSource(RESTORED_SOURCE, false, false)).toBe(RESTORED_SOURCE)
+    expect(queueSource(RESTORED_SOURCE, true, false)).toBe(EDITED_SOURCE)
+    expect(queueSource('', true, false)).toBe(EDITED_SOURCE)
+  })
+
+  it('leaves the sources that already stand for themselves alone', () => {
+    expect(queueSource(EDITED_SOURCE, true, false)).toBe(EDITED_SOURCE)
+    expect(queueSource('history', true, false)).toBe('history')
+  })
+})
+
+describe('queueHash', () => {
+  it('is the same for the same songs in the same order', () => {
+    expect(queueHash(['a', 'b', 'c'])).toBe(queueHash(['a', 'b', 'c']))
+  })
+
+  it('changes with the order, the songs and the length', () => {
+    const base = queueHash(['a', 'b', 'c'])
+    expect(queueHash(['a', 'c', 'b'])).not.toBe(base)
+    expect(queueHash(['a', 'b', 'd'])).not.toBe(base)
+    expect(queueHash(['a', 'b'])).not.toBe(base)
+    expect(queueHash([])).not.toBe(base)
+  })
+
+  it('does not run ids together', () => {
+    expect(queueHash(['ab', 'c'])).not.toBe(queueHash(['a', 'bc']))
+  })
+})
+
+describe('encodeChosen and decodeChosen', () => {
+  it('keeps nothing when nothing was chosen', () => {
+    expect(encodeChosen(queue, chosenAt())).toBe('')
+  })
+
+  it('finds the same entries again in a queue restored from the same ids', () => {
+    const saved = encodeChosen(queue, chosenAt(1, 3))
+    // A restore builds new entries from the saved ids, so only their places can carry over.
+    const restored = queue.map((item) => ({ ...item }))
+    const found = decodeChosen(restored, saved)
+    expect(found.size).toBe(2)
+    expect(found.has(restored[1] as LibraryTrack)).toBe(true)
+    expect(found.has(restored[3] as LibraryTrack)).toBe(true)
+  })
+
+  it('keeps a song queued twice apart by its place', () => {
+    const twice = [song('a'), song('b'), song('a')]
+    const found = decodeChosen(twice, encodeChosen(twice, new Set([twice[2] as LibraryTrack])))
+    expect(found.size).toBe(1)
+    expect(found.has(twice[2] as LibraryTrack)).toBe(true)
+    expect(found.has(twice[0] as LibraryTrack)).toBe(false)
+  })
+
+  it('drops the lot when the restored queue is not the one they were saved for', () => {
+    const saved = encodeChosen(queue, chosenAt(1))
+    expect(decodeChosen([...queue].reverse(), saved).size).toBe(0)
+    expect(decodeChosen(queue.slice(0, 3), saved).size).toBe(0)
+    expect(decodeChosen([...queue, song('e')], saved).size).toBe(0)
+  })
+
+  it('reads nothing from text that is missing, broken or the wrong shape', () => {
+    expect(decodeChosen(queue, '').size).toBe(0)
+    expect(decodeChosen(queue, 'not json').size).toBe(0)
+    expect(decodeChosen(queue, 'null').size).toBe(0)
+    expect(decodeChosen(queue, '[1,2]').size).toBe(0)
+    expect(
+      decodeChosen(queue, JSON.stringify({ hash: queueHash(['a', 'b', 'c', 'd']) })).size,
+    ).toBe(0)
+  })
+
+  it('ignores places that are not in the queue', () => {
+    const hash = queueHash(queue.map((item) => item.id))
+    const saved = JSON.stringify({ hash, at: [1, 9, -1, 1.5, 'x', null] })
+    expect([...decodeChosen(queue, saved)]).toEqual([queue[1]])
   })
 })
 
