@@ -57,6 +57,11 @@ Not yet in a release; the [changelog](../CHANGELOG.md#unreleased) has the full l
 - ✓ Deezer tidy-up of a pasted music link when the catalog match is certain
 - ✓ Each download source pauses on its own after repeated blocking errors
 - ✓ SoundCloud as an off-by-default second match source when YouTube has no match
+- ✓ Settings and Diagnostics share one readiness rule, and the Settings save bar shows only when there is something to save
+- ✓ Downloads keeps Parallel, Pause all and Cancel queued in view, with Retry failed, Clear failed and a confirmed Clear all finished in an overflow menu
+- ✓ The activity feed collapses runs of the same event into one expandable row with a count and time range
+- ✓ Home shows recent searches and the newest library albums, with the four starter artists as the fallback for a new install
+- ✓ Library Tracks A to Z has no track number column and clamps album names to two lines; playlists number rows by place
 
 Two sites are in the list but switched off because yt-dlp cannot read them today: Audiomack and TuneIn. The SoundCloud match source has not been run against the live site or measured. [More sources](more-sources.md) records what was checked against real sites and what was not.
 

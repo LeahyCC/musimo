@@ -222,6 +222,58 @@ test('a filtered selection is its own queue, not the one already playing', async
   await expect(actions.getByRole('button', { name: 'Play all' })).toBeVisible()
 })
 
+test('tracks A to Z has no number column, and a long album name stops at two lines', async ({
+  page,
+  isMobile,
+}) => {
+  await libraryFixtures(page)
+  const album = 'A Very Long Album Title '.repeat(8).trim()
+  await page.route(
+    (url) => url.pathname === '/api/library/tracks',
+    (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            librarySong('s1', { title: 'Anchor', track: 9, album }),
+            librarySong('s2', { title: 'Beacon', track: 4 }),
+          ],
+          next_offset: null,
+          total: 2,
+          genres: [],
+          years: [],
+        },
+      }),
+  )
+  await page.goto('/library/tracks')
+
+  const rows = page.locator('.library-track-row')
+  await expect(rows).toHaveCount(2)
+  // The first cell is the title, not a song's number on some other album.
+  await expect(rows.first().locator('.library-track-play > span:first-child')).toContainText(
+    'Anchor',
+  )
+
+  // The album column is hidden on a phone, so there is nothing to clamp there.
+  if (!isMobile) {
+    // The artist's small text is the first in the row and the album's is the second.
+    const name = rows.first().locator('.library-track-play small').nth(1)
+    await expect(name).toHaveText(album)
+    expect(await name.evaluate((node) => getComputedStyle(node).webkitLineClamp)).toBe('2')
+    // Clamped to two lines, so the row is no taller than two lines of it plus the row's padding.
+    const heights = await name.evaluate((node) => ({
+      text: node.getBoundingClientRect().height,
+      full: node.scrollHeight,
+    }))
+    expect(heights.full).toBeGreaterThan(heights.text)
+  }
+
+  // Album order is the one sort where a song's number on its album still reads right.
+  await openLibraryFilters(page, isMobile)
+  await page.getByLabel('Sort tracks').selectOption('album')
+  await closeLibraryFilters(page, isMobile)
+  await expect(rows.first().locator('.library-track-play > span:first-child')).toHaveText('9')
+})
+
 test('pausing a collection resumes it instead of starting over', async ({ page }) => {
   const recorded = await libraryFixtures(page)
   await page.goto('/library/tracks')

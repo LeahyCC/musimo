@@ -648,15 +648,23 @@ const queueActions = (playNext: () => void, addToQueue: () => void) => [
 /** Brings the row Now Playing's About tab pointed at into view once it is on screen. */
 const showRow = (row: HTMLElement | null) => row?.scrollIntoView({ block: 'center' })
 
+/** What the first column of a track row counts:
+ *  - `track`: each song's number on its own album, which reads right in album order.
+ *  - `position`: its place in this list, for a list a person ordered themselves.
+ *  - `none`: nothing, for a list sorted by something a number says nothing about. */
+type TrackNumbering = 'track' | 'position' | 'none'
+
 function TrackList({
   tracks,
   source,
+  numbering = 'track',
   highlightId = '',
   removing = false,
   onRemove,
 }: {
   tracks: LibraryTrack[]
   source: string
+  numbering?: TrackNumbering
   /** A song to mark as the playing one even where the queue did not start from this list. */
   highlightId?: string
   removing?: boolean
@@ -686,7 +694,10 @@ function TrackList({
               ref={index === highlighted ? showRow : undefined}
               aria-current={marked ? 'true' : undefined}
               className={cx(
-                'library-track-play grid w-full grid-cols-[34px_minmax(170px,2fr)_minmax(100px,1fr)_52px_24px] items-center gap-[12px] rounded-md border-0 px-[12px] py-[10px] text-left text-inherit hover:bg-hover coarse:min-h-11 max-phone:grid-cols-[24px_minmax(0,1fr)_24px]',
+                'library-track-play grid w-full items-center gap-[12px] rounded-md border-0 px-[12px] py-[10px] text-left text-inherit hover:bg-hover coarse:min-h-11',
+                numbering === 'none'
+                  ? 'grid-cols-[minmax(170px,2fr)_minmax(100px,1fr)_52px_24px] max-phone:grid-cols-[minmax(0,1fr)_24px]'
+                  : 'grid-cols-[34px_minmax(170px,2fr)_minmax(100px,1fr)_52px_24px] max-phone:grid-cols-[24px_minmax(0,1fr)_24px]',
                 marked ? 'bg-hover' : 'bg-transparent',
               )}
               aria-label={`${playing ? 'Pause' : 'Play'} ${track.title}`}
@@ -694,12 +705,20 @@ function TrackList({
                 current ? player.toggle() : player.playLibrary(tracks, index, source)
               }
             >
-              <span className="text-small text-muted">{track.track ?? index + 1}</span>
+              {numbering !== 'none' && (
+                <span className="text-small text-muted">
+                  {numbering === 'position' ? index + 1 : (track.track ?? index + 1)}
+                </span>
+              )}
               <span className="grid min-w-0 gap-[3px]">
                 <strong>{track.title}</strong>
                 <small className="text-small text-muted">{track.artist}</small>
               </span>
-              <small className="min-w-0 text-small text-muted max-phone:hidden">
+              {/* A long album name wraps to two lines and then stops, so it cannot stretch the row. */}
+              <small
+                className="line-clamp-2 min-w-0 text-small text-muted [overflow-wrap:anywhere] max-phone:hidden"
+                title={track.album}
+              >
                 {track.album}
               </small>
               <time className="text-small text-muted max-phone:hidden">
@@ -1848,6 +1867,9 @@ export function LibraryPage({
           <TrackList
             tracks={detailTracks}
             source={detailSource}
+            // A playlist is in the order its owner chose, so its rows count places in it. An album's
+            // rows keep the numbers the album gave them.
+            numbering={playlist ? 'position' : 'track'}
             highlightId={albumId ? highlightTrackId : ''}
             removing={Boolean(playlist) && playlistSongs.busy(playlist?.id ?? '')}
             onRemove={
@@ -2261,7 +2283,13 @@ export function LibraryPage({
             </small>
           )}
           {playTracks.isError && <ErrorBanner role="alert">{playTracks.error.message}</ErrorBanner>}
-          <TrackList tracks={trackItems} source={trackSource} />
+          {/* A song's number on its own album means nothing beside songs from other albums, so it
+              is shown only when the list is in album order. */}
+          <TrackList
+            tracks={trackItems}
+            source={trackSource}
+            numbering={sort === 'album' ? 'track' : 'none'}
+          />
         </section>
       )}
       {tab === 'playlists' && showBrowser && (

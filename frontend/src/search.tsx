@@ -9,7 +9,7 @@ import {
 } from '@tanstack/react-query'
 import { Link, useNavigate, useParams, useRouterState } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Check, Disc3, Headphones, Music2, Pause, Play, Search } from 'lucide-react'
+import { Check, Disc3, Headphones, Music2, Pause, Play } from 'lucide-react'
 
 import { AlbumDownloadButton } from './album-download'
 import {
@@ -26,9 +26,11 @@ import { ArtistDownloadButton } from './artist-download'
 import { cx } from './cx'
 import { DownloadTarget } from './download-target'
 import { DownloadButton, failureMessage, useJobs } from './downloads'
+import { HomeShelves } from './home-shelves'
 import { InfiniteScroll } from './infinite-scroll'
 import { durationText, usePlayer, usePreviewPlayback } from './player'
 import { PodcastResults } from './podcasts'
+import { addSearch, readSearches, writeSearches } from './recent-searches'
 import {
   Button,
   EmptyPanel,
@@ -43,6 +45,9 @@ import {
    title keeps a gap under it where a count or link wraps below. */
 const resultsHeadingClassName = 'mb-[17px] flex items-center justify-between gap-[12px]'
 const resultsTitleClassName = 'mb-[12px] text-base'
+
+/** How long a query must stand before the home page remembers it. */
+const RECENT_SETTLE_MS = 1200
 
 const tabs = ['top', 'track', 'album', 'artist', 'podcast'] as const
 type Tab = (typeof tabs)[number]
@@ -830,6 +835,15 @@ export function SearchPage() {
   }, [state])
   const searching =
     Boolean(state.q) && (state.q?.trim().length ?? 0) >= 2 && !/^https?:\/\//i.test(state.q ?? '')
+  // A search is kept for the home page once it has stood for a moment, since the box searches as
+  // a person types and every keystroke on the way would otherwise be remembered.
+  useEffect(() => {
+    const query = state.q
+    if (!searching || !query) return
+    const remember = () => writeSearches(addSearch(readSearches(), query))
+    const timer = setTimeout(remember, RECENT_SETTLE_MS)
+    return () => clearTimeout(timer)
+  }, [searching, state.q])
   const kinds: ResultKind[] =
     tab === 'top' ? ['track', 'album', 'artist'] : tab === 'podcast' ? [] : [tab]
   // Called for all three kinds every render, since hooks cannot be conditional; the ones this tab
@@ -873,14 +887,7 @@ export function SearchPage() {
           Search tracks, albums, artists and podcasts. Listen to a preview and see what’s already in
           your library.
         </p>
-        <div className="mt-[32px] mb-[60px] flex flex-wrap gap-[10px] max-phone:mb-[35px]">
-          {['Daft Punk', 'Khruangbin', 'Nina Simone', 'Radiohead'].map((q) => (
-            <Button key={q} onClick={() => change({ q })}>
-              <Search size={14} />
-              {q}
-            </Button>
-          ))}
-        </div>
+        <HomeShelves onSearch={(q) => change({ q })} />
         <div className="flex gap-[16px] border-t border-line pt-[26px] text-accent">
           <Music2 size={24} />
           <span>

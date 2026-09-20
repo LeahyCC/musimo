@@ -313,7 +313,7 @@ test('navigation guard blocks unsaved changes from being lost', async ({ page })
   await expect(page).toHaveURL(/\/downloads$/)
 })
 
-test('settings headings and the up-to-date bar wait for a delayed settings query', async ({
+test('settings headings wait for a delayed settings query, and the save bar stays away until an edit', async ({
   page,
 }) => {
   // Both the page's own settings query and the shell's snapshot fetch can populate the settings
@@ -335,9 +335,14 @@ test('settings headings and the up-to-date bar wait for a delayed settings query
   await page.goto('/settings')
   await expect(page.getByRole('status').filter({ hasText: 'Loading settings' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Your library' })).toBeHidden()
-  await expect(page.getByText('Settings are up to date.')).toBeHidden()
+  await expect(page.locator('.save-bar')).toBeHidden()
   await expect(page.getByRole('heading', { name: 'Your library' })).toBeVisible()
-  await expect(page.getByText('Settings are up to date.')).toBeVisible()
+  // Nothing has changed, so there is no bar and no idle Save button.
+  await expect(page.locator('.save-bar')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(0)
+  await page.getByRole('textbox', { name: 'Library label' }).fill('Edited')
+  await expect(page.locator('.save-bar')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save changes' })).toBeEnabled()
 })
 
 test('the settings index does not move when the slower diagnostics query lands', async ({
@@ -364,7 +369,7 @@ test('the settings index does not move when the slower diagnostics query lands',
   expect(after?.y).toBe(before?.y)
 })
 
-test('settings headings and the up-to-date bar stay hidden when the settings query fails', async ({
+test('settings headings and the save bar stay hidden when the settings query fails', async ({
   page,
 }) => {
   await page.route('**/api/snapshot', (route) =>
@@ -381,7 +386,7 @@ test('settings headings and the up-to-date bar stay hidden when the settings que
   await page.goto('/settings')
   await expect(page.getByRole('alert')).toContainText('Settings failed')
   await expect(page.getByRole('heading', { name: 'Your library' })).toBeHidden()
-  await expect(page.getByText('Settings are up to date.')).toBeHidden()
+  await expect(page.locator('.save-bar')).toBeHidden()
 })
 
 test('queue pause and resume persist through refresh', async ({ page, request }) => {
@@ -423,6 +428,93 @@ test('activity clear persists and diagnostics export is valid JSON', async ({ pa
     navidrome: expect.any(Object),
   })
 })
+
+test('a run of the same event is one row with a count, and opens to its events', async ({
+  page,
+}) => {
+  const event = (id: number, kind: string) => ({
+    id,
+    kind,
+    created_at: new Date(Date.UTC(2026, 8, 19, 10, 0, id)).toISOString(),
+  })
+  // Newest first, like the server: twelve index updates, one save, then two more index updates.
+  const events = [
+    ...Array.from({ length: 12 }, (_, index) => event(20 - index, 'library.updated')),
+    event(8, 'settings.updated'),
+    event(7, 'library.updated'),
+    event(6, 'library.updated'),
+  ]
+  await page.route('**/api/activity', (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ json: { events, count: events.length, cursor: 20 } })
+      : route.fallback(),
+  )
+  await page.goto('/diagnostics')
+
+  const feed = page.getByRole('region', { name: 'Recent activity entries' })
+  await expect(feed).toBeVisible()
+  const runs = feed.getByRole('button', { name: /Library index updated/ })
+  // Two runs of the same event, kept apart by the save between them.
+  await expect(runs).toHaveCount(2)
+  await expect(runs.first()).toContainText('×12')
+  await expect(runs.first()).toHaveAttribute('aria-expanded', 'false')
+  await expect(runs.nth(1)).toContainText('×2')
+  // Collapsed, a run shows one row, so a hundred repeats cannot bury the rest.
+  await expect(feed.getByRole('listitem')).toHaveCount(3)
+  await expect(feed.getByText('#20')).toBeHidden()
+
+  await runs.first().click()
+  await expect(runs.first()).toHaveAttribute('aria-expanded', 'true')
+  await expect(feed.getByText('#20', { exact: true })).toBeVisible()
+  await expect(feed.getByText('#9', { exact: true })).toBeAttached()
+  await runs.first().click()
+  await expect(feed.getByText('#20')).toBeHidden()
+})
+
+for (const [scan, ready] of [
+  ['done', true],
+  ['failed', false],
+] as const) {
+  test(`settings and diagnostics agree after a ${scan} library scan`, async ({ page }) => {
+    const healthy = {
+      health: { status: 'ok', version: '1.0.0', uptime_seconds: 10, phase: 1 },
+      versions: {},
+      disks: [{ path: '/music', free_bytes: 100, total_bytes: 200, exists: true, writable: true }],
+      sources: [
+        {
+          source: 'youtube',
+          status: 'healthy',
+          latency_ms: 10,
+          detail: 'ok',
+          checked_at: '2026-09-19T10:00:00Z',
+        },
+      ],
+      events: [],
+      database: { mode: 'wal', schema: 1, retained_events: 0 },
+      library: {
+        status: scan,
+        walked: 0,
+        indexed: 0,
+        errors: 0,
+        elapsed: 0,
+        detail: 'Scan finished',
+        total_files: 5,
+        roots: ['/music'],
+      },
+      queue: { paused: false, source_paused: false },
+      capabilities: { settings: true, events: true, search: true, downloads: true },
+      navidrome: null,
+      last_download: null,
+    }
+    await page.route('**/api/diagnostics', (route) => route.fulfill({ json: healthy }))
+
+    const attention = 'Some components need attention.'
+    await page.goto('/settings')
+    await expect(page.getByText(ready ? 'System ready.' : attention)).toBeVisible()
+    await page.goto('/diagnostics')
+    await expect(page.getByText(ready ? 'All systems ready.' : attention)).toBeVisible()
+  })
+}
 
 test('album download skips owned tracks and recovers from failure', async ({ page }) => {
   let attempts = 0

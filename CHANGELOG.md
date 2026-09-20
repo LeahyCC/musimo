@@ -61,6 +61,13 @@
 ### UI and accessibility
 
 - Finish the Tailwind migration: the last handwritten screen rules are gone, so a theme now reaches every page, and a new browser check walks every route at desktop and phone width under a light theme
+- Settings and Diagnostics now share one "is the system ready" rule, so a finished library scan no longer reads "Some components need attention" on Settings while Diagnostics says "All systems ready"
+- Show the Settings save bar only while there are unsaved changes, after a failed save, or just after a save, instead of an idle "Settings are up to date" bar with a Save button
+- Keep Parallel, Pause all and Cancel queued in view on Downloads and move Retry failed, Clear failed and Clear all finished into a menu that lists only what has something to act on; Clear all finished asks first
+- Collapse a run of the same event in the activity feed into one row with a count and time range that opens to its events
+- Show recent searches (kept in this browser, up to eight, clearable) and the newest library albums under the home page hero, keeping the four starter artists for a new install
+- Drop the meaningless track number column from Library Tracks sorted A to Z, and stop a long album name there taking more than two lines
+- Number a library playlist's rows by their place in the playlist instead of each song's number on its own album
 
 - Make every screen work on a phone: mini player, bottom-bar download count, safe-area insets, 44px touch targets, no focus zoom, tabs and sheets that fit (#48)
 - Add a personal settings page at `/settings/user` where you pick a theme, build your own from the color tokens with the whole app as a live preview, and export or import one as a file. Settings is now a Server and Yours switch, and the command palette has Change theme

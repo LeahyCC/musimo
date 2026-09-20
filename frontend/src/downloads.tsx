@@ -32,6 +32,8 @@ import { cx } from './cx'
 import { formatLabel, FormatOptions, pausedSources, siteLabel } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
 import { PageTitle } from './page-title'
+import { RowMenu } from './row-menu'
+import type { RowMenuAction } from './row-menu'
 import {
   Button,
   buttonClassName,
@@ -819,6 +821,28 @@ function QueueControls() {
     },
   })
   const failed = queue.data?.summary.failed ?? 0
+  const hasFinished = queue.data?.jobs.some((job) => !job.hidden && !activeJob(job)) ?? false
+  const moreActions: RowMenuAction[] = [
+    ...(failed > 0
+      ? [
+          { label: `Retry failed (${failed})`, onSelect: () => command.mutate('retry-failed') },
+          { label: `Clear failed (${failed})`, onSelect: () => command.mutate('clear-failed') },
+        ]
+      : []),
+    ...(hasFinished
+      ? [
+          {
+            label: 'Clear all finished',
+            onSelect: () => {
+              // It hides every done, failed and cancelled card at once, so ask first. History keeps
+              // them.
+              const ask = 'Clear all finished jobs from the queue? They stay in History.'
+              if (window.confirm(ask)) command.mutate('clear-finished')
+            },
+          },
+        ]
+      : []),
+  ]
   // One line per paused site.
   const paused = pausedSources(queue.data?.controls)
   return (
@@ -854,28 +878,11 @@ function QueueControls() {
         >
           Cancel queued
         </Button>
-        <Button
-          className="max-phone:w-full max-phone:px-2"
-          disabled={command.isPending || failed === 0}
-          onClick={() => command.mutate('retry-failed')}
-        >
-          Retry failed ({failed})
-        </Button>
-        <Button
-          className="max-phone:w-full max-phone:px-2"
-          disabled={command.isPending || failed === 0}
-          onClick={() => command.mutate('clear-failed')}
-        >
-          Clear failed ({failed})
-        </Button>
-        <Button
-          className="max-phone:w-full max-phone:px-2"
-          disabled={command.isPending}
-          onClick={() => command.mutate('clear-finished')}
-          title="Remove done, failed, and cancelled jobs from the queue"
-        >
-          Clear all finished
-        </Button>
+        {/* The three that clean up after a run live in a menu, and only the ones with something to
+            act on are listed. With none, there is no menu at all. */}
+        {moreActions.length > 0 && (
+          <RowMenu label="More queue actions" actions={moreActions} disabled={command.isPending} />
+        )}
       </div>
       {paused.map(({ source, label }) => (
         <ErrorBanner role="alert" key={source}>
