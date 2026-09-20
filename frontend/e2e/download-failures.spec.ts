@@ -169,6 +169,7 @@ const varied = (index: number): DownloadJob => {
           topic: false,
           reason: 'duration close',
           source: 'youtube',
+          source_label: 'YouTube',
           // Jobs saved before candidates carried a link have an empty url.
           url: pick === 0 ? `https://media.example.test/recording-${index}` : '',
         }))

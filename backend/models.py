@@ -33,6 +33,9 @@ class Settings(BaseModel):
     retry_cap_seconds: int = Field(default=60, ge=30, le=300)
     destination: str = "/music"
     naming_template: str = "{album_artist}/{album}/{track:02d} - {title}"
+    # Search SoundCloud for a catalog track when YouTube has no match or cannot be used. Off
+    # until the match benchmark has measured SoundCloud precision.
+    soundcloud_fallback: bool = False
     navidrome_url: str = ""
     navidrome_mode: Literal["off", "watcher", "api"] = "off"
     navidrome_library_id: int = Field(default=1, ge=1)
@@ -59,6 +62,7 @@ class SettingsPatch(BaseModel):
     retry_cap_seconds: int | None = Field(default=None, ge=30, le=300)
     destination: str | None = None
     naming_template: str | None = None
+    soundcloud_fallback: bool | None = None
     navidrome_url: str | None = None
     navidrome_mode: Literal["off", "watcher", "api"] | None = None
     navidrome_library_id: int | None = Field(default=None, ge=1)

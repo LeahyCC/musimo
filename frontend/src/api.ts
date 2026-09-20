@@ -34,6 +34,8 @@ export const jobSchema = z.object({
       topic: z.boolean(),
       reason: z.string(),
       source: z.string().default('youtube'),
+      // The server names the site, so a review list holding two of them can label each row.
+      source_label: z.string().default(''),
       // Only an https page is ever linked; anything else falls back to the YouTube form.
       url: z
         .string()
@@ -353,6 +355,7 @@ export const settingsSchema = z.object({
   retry_cap_seconds: field(z.number()),
   destination: field(z.string()),
   naming_template: field(z.string()),
+  soundcloud_fallback: field(z.boolean()),
   navidrome_url: field(z.string()),
   navidrome_mode: field(z.enum(['off', 'watcher', 'api'])),
   navidrome_library_id: field(z.number()),

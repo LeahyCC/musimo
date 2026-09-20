@@ -590,3 +590,149 @@ class AudioTagTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
+    """Dispatch, pausing and hand picking when SoundCloud stands in for YouTube."""
+
+    async def service(self, root: Path, store: Store, client: httpx.AsyncClient) -> Downloads:
+        library = Library(store, [root], asyncio.Event())
+        return Downloads(store, Catalog(store, client), library, asyncio.Event())
+
+    async def test_a_paused_youtube_dispatches_catalog_jobs_to_soundcloud(self) -> None:
+        class Recording(Downloads):
+            started: list[str] = []
+
+            async def run(self, job_id: str) -> None:
+                self.started.append(job_id)
+                self.jobs.update(job_id, stage="done")
+
+        for fallback, expected in ((True, "soundcloud"), (False, "youtube")):
+            with self.subTest(fallback=fallback):
+                with tempfile.TemporaryDirectory() as directory:
+                    root = Path(directory).resolve()
+                    store = Store(root / "db.sqlite3")
+                    async with httpx.AsyncClient(
+                        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+                    ) as client:
+                        library = Library(store, [root], asyncio.Event())
+                        service = Recording(store, Catalog(store, client), library, asyncio.Event())
+                        service.started = []
+                        store.update({"destination": str(root), "soundcloud_fallback": fallback})
+                        job = service.jobs.enqueue(1, "original", str(root))
+                        service.set_controls(source_paused=True, source="youtube")
+                        service.start()
+                        try:
+                            async with asyncio.timeout(2):
+                                while service.jobs.get(job.id).source != expected:
+                                    await asyncio.sleep(0.01)
+                                if fallback:
+                                    while job.id not in service.started:
+                                        await asyncio.sleep(0.01)
+                        except TimeoutError:
+                            pass
+                        self.assertEqual(service.jobs.get(job.id).source, expected)
+                        # Nothing on YouTube may start while YouTube is paused.
+                        self.assertEqual(service.started, [job.id] if fallback else [])
+                        await service.close()
+                    store.close()
+
+    async def test_a_retry_sends_a_catalog_track_back_to_youtube(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                store.update({"destination": str(root)})
+                fell_back = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(fell_back.id, source="soundcloud", stage="failed")
+                picked = service.jobs.enqueue(2, "original", str(root))
+                service.jobs.update(
+                    picked.id, source="soundcloud", selected="123456", stage="failed"
+                )
+                self.assertEqual(service.command(fell_back.id, "retry").source, "youtube")
+                # A recording chosen by hand stays on the site it was chosen from.
+                self.assertEqual(service.command(picked.id, "retry").source, "soundcloud")
+                await service.close()
+            store.close()
+
+    async def test_a_block_on_one_source_never_pauses_the_other(self) -> None:
+        class Blocked(Downloads):
+            async def worker(self, job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                raise DownloadError("SOURCE_BLOCKED", "The site refused the request")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                service = Blocked(store, Catalog(store, client), library, asyncio.Event())
+                store.update({"destination": str(root)})
+                for track in (1, 2, 3):
+                    job = service.jobs.enqueue(track, "original", str(root))
+                    service.jobs.update(
+                        job.id,
+                        source="soundcloud",
+                        meta=Metadata(id=track, title="x", artist="A").model_dump(),
+                    )
+                    await service.run(job.id)
+                self.assertEqual(service.paused_sources(), {"soundcloud"})
+                youtube = service.jobs.enqueue(4, "original", str(root))
+                service.jobs.update(
+                    youtube.id, meta=Metadata(id=4, title="x", artist="A").model_dump()
+                )
+                await service.run(youtube.id)
+                self.assertEqual(service.paused_sources(), {"soundcloud"})
+                for track in (5, 6):
+                    job = service.jobs.enqueue(track, "original", str(root))
+                    service.jobs.update(
+                        job.id, meta=Metadata(id=track, title="x", artist="A").model_dump()
+                    )
+                    await service.run(job.id)
+                self.assertEqual(service.paused_sources(), {"soundcloud", "youtube"})
+            store.close()
+
+    async def test_picking_a_soundcloud_recording_moves_the_job_to_soundcloud(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                store.update({"destination": str(root)})
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    stage="failed",
+                    error_code="NO_MATCH",
+                    candidates=[
+                        Candidate(id="abcdefghijk", title="A cover", source="youtube").model_dump(),
+                        Candidate(
+                            id="123456789",
+                            title="The song",
+                            source="soundcloud",
+                            url="https://soundcloud.com/artist/the-song",
+                        ).model_dump(),
+                    ],
+                )
+                app = FastAPI()
+                install_download_routes(app, lambda: service)
+                async with httpx.AsyncClient(
+                    transport=httpx.ASGITransport(app=app), base_url="http://test"
+                ) as api:
+                    picked = await api.post(
+                        f"/api/jobs/{job.id}/pick", json={"candidate_id": "123456789"}
+                    )
+                    self.assertEqual(picked.status_code, 200)
+                    self.assertEqual(picked.json()["source"], "soundcloud")
+                    unknown = await api.post(
+                        f"/api/jobs/{job.id}/pick", json={"candidate_id": "999999999"}
+                    )
+                    self.assertEqual(unknown.status_code, 422)
+            store.close()

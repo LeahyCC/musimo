@@ -1,6 +1,6 @@
 # More sources plan
 
-A plan, and phase 5 (the Internet Archive), phase 3 (indie sites) and phase 4 (mixes and radio) are shipped behaviour so far. It covers five things yt-dlp makes possible beyond the current Deezer to YouTube road: pasted links, a second match source, indie sites, mixes and radio, and the Internet Archive. [Downloads](downloads.md) describes what exists today and the [brief](brief.md) (sections 3, 4.2 and 7) holds the original scope.
+A plan, and phase 5 (the Internet Archive), phase 3 (indie sites), phase 4 (mixes and radio) and phase 2 (the SoundCloud backup) are shipped behaviour so far. It covers five things yt-dlp makes possible beyond the current Deezer to YouTube road: pasted links, a second match source, indie sites, mixes and radio, and the Internet Archive. [Downloads](downloads.md) describes what exists today and the [brief](brief.md) (sections 3, 4.2 and 7) holds the original scope.
 
 ```text
 today      Deezer result ----> YouTube search ----> file
@@ -121,12 +121,13 @@ queue ---> same job cards, pause, retry, history
 
 ## Phase 2: SoundCloud as a backup match source
 
-For normal Deezer downloads. SoundCloud is tried only when YouTube is paused or blocked, or when YouTube returns `NO_MATCH`. It is not searched in parallel: SoundCloud is full of remixes, reuploads and sped-up edits, and there is no equivalent of YouTube's "Topic" channels to trust.
+For normal Deezer downloads. Built. SoundCloud is tried only when YouTube is paused or blocked, or when YouTube returns `NO_MATCH`. It is not searched in parallel: SoundCloud is full of remixes, reuploads and sped-up edits, and there is no equivalent of YouTube's "Topic" channels to trust. [Downloads](downloads.md#soundcloud-as-a-backup-match) describes how it behaves.
 
 - The worker runs `scsearch8:` and feeds the same `Matcher`. The version-word penalty already covers remix, live, cover and slowed.
-- A higher bar than YouTube: minimum score 0.70, and "check match" below 0.90. Both numbers are guesses until measured.
-- Settings gets a SoundCloud source card with one toggle, default off. It turns on by default only after `scripts/match_benchmark.py` has run the 100-case corpus against SoundCloud and the precision is written into [measurements](measurements.md).
-- Quality is lower than YouTube (about 128 kbps MP3 or 160 kbps AAC for free streams). Job cards already show the measured bitrate, so no new UI, but the source card says it up front.
+- A higher bar than YouTube: minimum score 0.70, and "check match" below 0.90. Both numbers are guesses until measured, and they sit beside the YouTube pair in `backend/matching.py` saying so.
+- Settings gets one switch, "Use SoundCloud when YouTube has no match", default off, with the quality line under it. It turns on by default only after `scripts/match_benchmark.py --source soundcloud` has run the 100-case corpus against SoundCloud and the precision is written into [measurements](measurements.md). The option exists; the corpus holds no SoundCloud rows yet, so nothing is measured and the setting stays off.
+- Quality is lower than YouTube (about 128 kbps MP3 or 160 kbps AAC for free streams). Job cards already show the measured bitrate, so no new UI, but the switch says it up front.
+- A job that matches on SoundCloud takes `source` `soundcloud`, so a SoundCloud block pauses SoundCloud alone and never YouTube, and the reverse.
 
 ## Phase 3: indie and unsigned music
 
@@ -162,7 +163,7 @@ Live concert recordings, 78rpm transfers, netlabels. Legal and stable. Built, an
 | 2     | 5, Internet Archive (built)        | Small  | Gives the link path a legal end-to-end test fixture. |
 | 3     | 3, indie sites (built)             | Small  | Mostly allowlist rows and probes.                    |
 | 4     | 4, mixes and radio (built)         | Medium | New file layout and the geo and live refusals.       |
-| 5     | 2, SoundCloud backup               | Medium | Riskiest for wrong matches, so it needs measuring.   |
+| 5     | 2, SoundCloud backup (built)       | Medium | Riskiest for wrong matches, so it needs measuring.   |
 
 ## Testing
 
@@ -180,6 +181,6 @@ Live concert recordings, 78rpm transfers, netlabels. Legal and stable. Built, an
 These are defaults picked to get going. Each is cheap to change later.
 
 1. Deezer tidy-up on a pasted music link is automatic. The job card says which tags it used.
-2. The SoundCloud backup runs after a YouTube `NO_MATCH` or while YouTube is paused. It does not run after `DURATION_MISMATCH`.
+2. The SoundCloud backup runs after a YouTube `NO_MATCH` or while YouTube is paused. It does not run after `DURATION_MISMATCH`. Built as written.
 3. A profile or playlist link is capped at 500 entries.
 4. `Mixes/` sits beside `Podcasts/` in the chosen music root. There is no separate destination setting.

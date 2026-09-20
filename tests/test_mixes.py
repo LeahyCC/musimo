@@ -275,6 +275,54 @@ class TagTests(unittest.TestCase):
         )
         self.assertEqual(named.artist, "Quicke")
 
+    def test_a_title_that_leads_with_a_name_beats_an_address_uploader(self) -> None:
+        for title, artist in (
+            ("Quicke Deluxe - Summer Session", "Quicke Deluxe"),
+            ("Quicke Deluxe @ Lost Village 2026", "Quicke Deluxe"),
+        ):
+            with self.subTest(title=title):
+                meta = mixes.retag(
+                    self.meta(title=title, artist=""),
+                    site_of("hearthis"),
+                    "mix",
+                    "https://hearthis.at/ab12cd34/a-set/",
+                    False,
+                )
+                self.assertEqual((meta.artist, meta.album_artist, meta.album), (artist,) * 3)
+                self.assertTrue(mixes.landing(meta, TODAY).startswith(f"Mixes/{artist}/"))
+        # No such form in the title, so the address still stands in.
+        plain = mixes.retag(
+            self.meta(title="Summer Session", artist=""),
+            site_of("hearthis"),
+            "mix",
+            "https://hearthis.at/ab12cd34/a-set/",
+            False,
+        )
+        self.assertEqual(plain.artist, "ab12cd34")
+
+    def test_the_show_the_site_names_beats_splitting_the_title(self) -> None:
+        bbc = mixes.retag(
+            self.meta(title="Late Junction, Nine Hours of Tape", artist=""),
+            site_of("bbc"),
+            "radio",
+            "https://www.bbc.co.uk/programmes/b00772lv",
+            False,
+            "Freeness",
+        )
+        self.assertEqual(bbc.album, "Freeness")
+        entry = resolver.entry(
+            {
+                "id": "b00772lv",
+                "title": "Late Junction, Nine Hours of Tape",
+                "series": "Freeness",
+                "webpage_url": "https://www.bbc.co.uk/programmes/b00772lv",
+            },
+            site_of("bbc"),
+        )
+        self.assertEqual(entry["show"], "Freeness")
+        # The site's own album is left where it was, so a set's album still decides an album.
+        self.assertEqual(entry["album"], "")
+
     def test_a_long_soundcloud_track_keeps_the_album_its_set_gives_it(self) -> None:
         soundcloud = site_of("soundcloud")
         url = "https://soundcloud.com/dj/a-long-set"

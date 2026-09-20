@@ -14,7 +14,7 @@ from unittest.mock import MagicMock, patch
 import httpx
 from fastapi import FastAPI
 
-from backend import resolver, sources
+from backend import links, resolver, sources
 from backend.catalog import Catalog, SearchPage
 from backend.downloads import DownloadError, Downloads
 from backend.errors import error_guidance, source_code
@@ -793,7 +793,21 @@ class LinkWorkerTests(unittest.TestCase):
 
     def test_other_sites_keep_their_block_codes(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            job = self.job(directory, catalog="deezer", source="elsewhere", selected="abcdefghijk")
+            # A catalog track matched on the backup source: not YouTube, so not its codes.
+            job = self.job(
+                directory,
+                catalog="deezer",
+                source="soundcloud",
+                selected="123456789",
+                candidates=[
+                    {
+                        "id": "123456789",
+                        "title": "Song",
+                        "source": "soundcloud",
+                        "url": "https://soundcloud.com/band/song",
+                    }
+                ],
+            )
             for message, code in (
                 ("HTTP Error 403", "SOURCE_BLOCKED"),
                 ("HTTP Error 429", "RATE_LIMITED"),
@@ -1455,6 +1469,7 @@ class DisconnectTests(unittest.IsolatedAsyncioTestCase):
             stdout: int | None = None,
             stderr: int | None = None,
             start_new_session: bool = False,
+            limit: int = 2**16,
         ) -> asyncio.subprocess.Process:
             # Stand in for the resolver only. The taskkill that stops it runs for real.
             resolver_call = args[:2] == ("-m", "backend.resolver")
@@ -1465,6 +1480,7 @@ class DisconnectTests(unittest.IsolatedAsyncioTestCase):
                 stdout=stdout,
                 stderr=stderr,
                 start_new_session=start_new_session,
+                limit=limit,
             )
             if resolver_call:
                 children.append(process)
@@ -1483,3 +1499,55 @@ class DisconnectTests(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ResolveTimeoutTests(unittest.TestCase):
+    """What a resolve that ran out of time says. A list page is read in full before yt-dlp
+    answers, so a large account never finishes and trying again cannot help."""
+
+    def site(self, source: str) -> Site:
+        found = sources.by_source(source)
+        assert found is not None
+        return found
+
+    def test_a_profile_or_list_page_asks_for_one_recording_instead(self) -> None:
+        mixcloud = self.site("mixcloud")
+        listed = "Mixcloud took too long to list this page. Paste one show or track instead."
+        self.assertEqual(
+            links.timed_out(mixcloud, "https://www.mixcloud.com/bigdj/", "mixcloud:user"), listed
+        )
+        # A list page that is not a profile is known by the extractor yt-dlp picked for it.
+        self.assertEqual(
+            links.timed_out(
+                mixcloud, "https://www.mixcloud.com/bigdj/playlists/best/", "mixcloud:playlist"
+            ),
+            listed,
+        )
+        # The address alone is enough for a profile, even when the extractor is not known.
+        self.assertEqual(links.timed_out(mixcloud, "https://www.mixcloud.com/bigdj/", ""), listed)
+
+    def test_one_recording_keeps_the_try_again_wording(self) -> None:
+        mixcloud = self.site("mixcloud")
+        again = "Mixcloud took too long to answer. Try again."
+        self.assertEqual(
+            links.timed_out(mixcloud, "https://www.mixcloud.com/bigdj/a-show/", "mixcloud"), again
+        )
+        self.assertEqual(
+            links.timed_out(mixcloud, "https://www.mixcloud.com/bigdj/a-show/", ""), again
+        )
+
+    def test_the_resolvers_first_line_names_its_extractor(self) -> None:
+        self.assertEqual(
+            links.page_extractor(b'{"kind": "page", "extractor": "Mixcloud:user"}'),
+            "mixcloud:user",
+        )
+        self.assertEqual(links.page_extractor(b'{"kind": "preview", "entries": []}'), "")
+        self.assertEqual(links.page_extractor(b"not json at all"), "")
+        self.assertEqual(links.page_extractor(b""), "")
+        # The name comes from yt-dlp's own address patterns, with nothing read.
+        self.assertEqual(
+            resolver.page_extractor("https://www.mixcloud.com/bigdj/"), "mixcloud:user"
+        )
+        self.assertEqual(
+            resolver.page_extractor("https://www.mixcloud.com/bigdj/a-show/"), "mixcloud"
+        )
