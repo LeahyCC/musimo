@@ -318,12 +318,7 @@ export function MusicCard({ item }: { item: MusicResult }) {
           aria-label={`${item.title} library coverage`}
         />
       )}
-      {item.kind === 'album' && (
-        <>
-          <AlbumDownloadButton item={display} overlay />
-          <DownloadTarget />
-        </>
-      )}
+      {item.kind === 'album' && <AlbumDownloadButton item={display} overlay />}
     </article>
   )
 }
@@ -407,10 +402,15 @@ export function TrackRow({
       </button>
       <DownloadButton
         item={item}
-        className="max-phone:col-start-3 max-phone:row-span-2 max-phone:row-start-1 max-phone:gap-[2px] max-phone:[&>select]:hidden"
+        className="max-phone:col-start-3 max-phone:row-span-2 max-phone:row-start-1 max-phone:gap-[2px]"
       />
     </div>
   )
+}
+
+/** Where an album card's download goes, said once above the cards instead of on every one. */
+function AlbumDestination() {
+  return <DownloadTarget lead="Downloads go to" className="mb-[12px] block" />
 }
 
 function CardGrid({ items }: { items: MusicResult[] }) {
@@ -757,7 +757,10 @@ function ResultsSection({
         (kind === 'track' ? (
           <TrackList items={items} resetScroll={resetScroll} />
         ) : (
-          <CardGrid items={items} />
+          <>
+            {kind === 'album' && <AlbumDestination />}
+            <CardGrid items={items} />
+          </>
         ))}
       {!query.isPending && !query.isError && !items.length && (
         <p className="py-[30px]">
@@ -1349,7 +1352,12 @@ export function ArtistPage() {
             </button>
           </ErrorBanner>
         )}
-        {popularAlbums.length > 0 && <CardGrid items={popularAlbums} />}
+        {popularAlbums.length > 0 && (
+          <>
+            <AlbumDestination />
+            <CardGrid items={popularAlbums} />
+          </>
+        )}
         {top.isSuccess &&
           popularAlbumQueries.every((result) => !result.isPending) &&
           !popularAlbums.length && <p className="text-muted">No popular albums found.</p>}
@@ -1395,7 +1403,11 @@ export function ArtistPage() {
           </div>
         </div>
         {releases.length > 0 ? (
-          <CardGrid items={releases} />
+          <>
+            {/* The popular albums grid above already said it, when it has cards. */}
+            {popularAlbums.length === 0 && <AlbumDestination />}
+            <CardGrid items={releases} />
+          </>
         ) : (
           <p className="text-muted">No releases match this view.</p>
         )}

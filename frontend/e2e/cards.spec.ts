@@ -132,11 +132,15 @@ test('card links and download controls work independently in a natural-height gr
   await expect(download).toHaveCSS('opacity', isMobile ? '1' : '0')
   await download.focus()
   await expect(download).toHaveCSS('opacity', '1')
-  await expect(cards.first().getByText('to /music · Original source quality')).toBeVisible()
+  // The destination and format are said once above the grid, not on every card.
+  const destination = page.getByText('Downloads go to /music · Original source quality')
+  await expect(destination).toHaveCount(1)
+  await expect(destination).toBeVisible()
+  await expect(cards.first().locator('.download-target')).toHaveCount(0)
   await download.click()
   await expect(page).toHaveURL(/\/search\?/)
   await expect(cards.first().getByText('1 queued')).toBeVisible()
-  await expect(cards.first().getByText('to /music · Original source quality')).toBeVisible()
+  await expect(destination).toHaveCount(1)
   await cards.first().getByRole('link', { name: 'Fixture artist' }).click()
   await expect(page).toHaveURL(/\/artists\/7$/)
   await page.goBack()
@@ -408,4 +412,13 @@ test('badge shows distinct states for owned, edition, queued, and downloaded', a
   // Done track shows "Downloaded earlier"
   await expect(ownership(3)).toHaveText('Downloaded earlier')
   await expect(ownership(3)).toHaveAttribute('data-variant', 'missing')
+
+  // The format choice lives in the options popover, so no row carries a select of its own.
+  await expect(page.getByRole('combobox', { name: /^Format for / })).toHaveCount(0)
+  // An owned track has its badge and no download button; its "In library" is not repeated as a tick.
+  await expect(rows.nth(0).getByRole('button', { name: /^Download Owned Track/ })).toHaveCount(0)
+  await expect(rows.nth(0).getByRole('button', { name: /in your library/ })).toHaveCount(0)
+  await expect(rows.nth(0).getByRole('button', { name: /^Download options for/ })).toBeVisible()
+  // An edition match can still be downloaded.
+  await expect(rows.nth(1).getByRole('button', { name: /^Download Edition Track/ })).toBeEnabled()
 })

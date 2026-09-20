@@ -4,6 +4,7 @@ import { AlertTriangle } from 'lucide-react'
 
 import { api, diagnosticsSchema, settingsSchema } from './api'
 import type { Controls } from './api'
+import { cx } from './cx'
 
 export function formatLabel(format: string): string {
   return format === 'original'
@@ -66,7 +67,18 @@ export function FormatOptions() {
   )
 }
 
-export function DownloadTarget({ format, target }: { format?: string; target?: string }) {
+export function DownloadTarget({
+  format,
+  target,
+  lead = 'to',
+  className,
+}: {
+  format?: string
+  target?: string
+  /** The words before the destination. A page that shows the line once says "Downloads go to". */
+  lead?: string
+  className?: string
+}) {
   const settings = useQuery({
     queryKey: ['settings'],
     queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
@@ -81,8 +93,8 @@ export function DownloadTarget({ format, target }: { format?: string; target?: s
   const problem = destinationBroken(diagnostics.data?.disks, chosenTarget)
 
   return (
-    <small className="download-target">
-      to{' '}
+    <small className={cx('download-target', className)}>
+      {lead}{' '}
       <Link to="/settings" hash="library">
         {chosenTarget || '(not set)'}
       </Link>{' '}

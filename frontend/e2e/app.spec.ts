@@ -104,6 +104,10 @@ test('a top-tab section with no results hides its View all link', async ({ page 
   // The section is there with its empty state, and only then is the missing link proof.
   await expect(artists.getByText('No artists match this search.')).toBeVisible()
   await expect(artists.getByRole('button', { name: 'View all' })).toHaveCount(0)
+  // The destination is said once above the album cards, and the track rows hold no format select.
+  await expect(albums.getByText(/^Downloads go to /)).toHaveCount(1)
+  await expect(albums.locator('article .download-target')).toHaveCount(0)
+  await expect(tracks.getByRole('combobox')).toHaveCount(0)
 })
 
 test('a search with no results says so once, with the query', async ({ page }) => {
