@@ -80,6 +80,50 @@ test('the next song loads into the standby element and takes over when the song 
   await expect.poll(() => scrobbles).toContainEqual({ id: 'song-b', submission: false })
 })
 
+test('a hidden tab with slow timers starts the next song before the last one ends', async ({
+  page,
+}) => {
+  // A hidden tab holds the page's timers to about one a second. The clock is installed before the
+  // page loads and frozen once the song plays, which is slower still: the only timer that can run
+  // is the worker's. Media events are not timers, so the audio and its events carry on.
+  await page.clock.install()
+  await page.addInitScript(() => {
+    Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true })
+    Object.defineProperty(document, 'hidden', { get: () => true, configurable: true })
+    // What the media elements report, in order. Media events do not bubble, so this listens while
+    // they travel down.
+    const log: string[] = []
+    Object.assign(window, { audioLog: log })
+    for (const type of ['play', 'ended'])
+      document.addEventListener(
+        type,
+        (event) => {
+          const src = (event.target as HTMLAudioElement).getAttribute('src') ?? ''
+          log.push(`${type}:${src.split('/').pop()}`)
+        },
+        true,
+      )
+  })
+  await restoreQueue(page, [alpha, bravo, charlie])
+  await playToTheEnd(page)
+  await expect(page.locator('audio.library-audio[data-role="standby"]')).toHaveAttribute(
+    'src',
+    /song-b/,
+  )
+  const now = await page.evaluate(() => Date.now())
+  await page.clock.pauseAt(now + 1000)
+
+  const log = () => page.evaluate(() => (window as unknown as { audioLog: string[] }).audioLog)
+  await expect
+    .poll(async () => (await log()).includes('ended:song-a'), { timeout: 15_000 })
+    .toBe(true)
+
+  // Bravo started while Alpha was still playing, so it was the worker that did it, not `ended`.
+  const events = await log()
+  expect(events).toContain('play:song-b')
+  expect(events.indexOf('play:song-b')).toBeLessThan(events.indexOf('ended:song-a'))
+})
+
 test('both library elements feed the analyser, so the visualizer survives a handover', async ({
   page,
 }) => {
