@@ -713,7 +713,10 @@ function ResultsSection({
   }, [raw, yearQuery.data, state, kind, compact, coverage])
   return (
     <section className="mb-[36px]" aria-label={labels[kind]}>
-      <div className={resultsHeadingClassName}>
+      {/* On its own tab the heading only repeats the chosen tab, and on a phone that row is a
+          good part of what keeps the first result off the first screen. It stays for a screen
+          reader; the Top tab keeps it, where it tells the sections apart. */}
+      <div className={cx(resultsHeadingClassName, !compact && 'max-phone:sr-only')}>
         <h2 className={resultsTitleClassName}>{labels[kind]}</h2>
         {compact && items.length > 0 && (
           <button

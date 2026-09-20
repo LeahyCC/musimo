@@ -82,7 +82,11 @@ test('the next song loads into the standby element and takes over when the song 
 
 test('a hidden tab with slow timers starts the next song before the last one ends', async ({
   page,
+  browserName,
 }) => {
+  // Chromium lets a worker's timers run while audio plays in a hidden tab. WebKit and Firefox hold
+  // them back too, and there the `ended` event does the handover, as it did before the worker.
+  test.skip(browserName !== 'chromium', 'Only Chromium keeps worker timers unthrottled.')
   // A hidden tab holds the page's timers to about one a second. The clock is installed before the
   // page loads and frozen once the song plays, which is slower still: the only timer that can run
   // is the worker's. Media events are not timers, so the audio and its events carry on.

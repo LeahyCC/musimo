@@ -117,7 +117,8 @@ test('the liked playlist leads the list and cannot be deleted from it', async ({
   await expect.poll(() => trash.evaluate((element) => getComputedStyle(element).opacity)).toBe('1')
 
   await openLibraryFilters(page, isMobile)
-  await page.getByLabel('Filter playlists').selectOption('private')
+  // A phone has this select twice in the document: the toolbar's, hidden there, and the sheet's.
+  await page.locator('select[aria-label="Filter playlists"]:visible').selectOption('private')
   await closeLibraryFilters(page, isMobile)
   await expect(rows).toHaveCount(1)
   await expect(rows.first()).toContainText('Liked')
