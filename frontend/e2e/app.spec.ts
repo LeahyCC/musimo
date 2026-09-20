@@ -814,6 +814,23 @@ test('the visualizer settings change what Now Playing remembers', async ({ page 
     .toBe('visualizer')
 })
 
+test('the stage size setting writes what Now Playing remembers, with or without WebGPU', async ({
+  page,
+}) => {
+  // The size belongs to the artwork as much as to the visualizer, so it is not disabled here.
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
+  )
+  await page.goto('/settings/user')
+  const size = page.getByRole('combobox', { name: 'Stage size' })
+  await expect(size).toBeEnabled()
+  await expect(size).toHaveValue('small')
+  await size.selectOption('large')
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('musimo.now-playing-size')))
+    .toBe('large')
+})
+
 test('the visualizer settings are disabled with a reason where there is no WebGPU', async ({
   page,
 }) => {

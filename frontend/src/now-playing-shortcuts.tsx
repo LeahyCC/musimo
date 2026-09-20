@@ -46,36 +46,50 @@ function scrollsItself(target: EventTarget | null): boolean {
 /**
  * The Now Playing page's own keys, for as long as the page is open and `enabled`: Left and Right
  * seek five seconds, Shift with either goes to the previous or next track, Up and Down change the
- * volume, M mutes, and `?` opens the cheat sheet. L and Q, which choose a tab, live with the tabs.
- * Space is the player's own, and already play or pause everywhere but on a control that uses it.
+ * volume, M mutes, S switches the stage between small and large, and `?` opens the cheat sheet.
+ * L and Q, which choose a tab, live with the tabs. Space is the player's own, and already play or
+ * pause everywhere but on a control that uses it.
  *
  * Only the keys the stage does not answer for: while the stage is full screen or holds focus its
  * own shortcuts (the same arrows and M, and N, P, F, V, H and the brackets) are in charge, so a
- * press is never handled twice. `?` is the exception, and works from either.
+ * press is never handled twice. `?` and S are the exceptions, and work from either, except that S
+ * leaves full screen alone, which has one size.
  */
 export function usePageShortcuts({
   enabled,
   stage,
   onHelp,
+  onSize,
 }: {
   enabled: boolean
   /** The docked stage, or a ref that is empty while it is not mounted. */
   stage: RefObject<HTMLElement | null>
   onHelp: () => void
+  /** Undefined where the stage has one size (a phone), so S does nothing. */
+  onSize?: () => void
 }) {
   const player = usePlayer()
-  const latest = useRef({ enabled, stage, onHelp, player })
-  latest.current = { enabled, stage, onHelp, player }
+  const latest = useRef({ enabled, stage, onHelp, onSize, player })
+  latest.current = { enabled, stage, onHelp, onSize, player }
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { enabled: on, stage: stageRef, onHelp: help, player: playback } = latest.current
+      const { enabled: on, stage: stageRef, onHelp: help, onSize: size, player: playback } =
+        latest.current
       if (!on) return
 
       if (event.key === '?') {
         if (event.repeat || !pageKeyIsFree(event)) return
         event.preventDefault()
         help()
+
+        return
+      }
+
+      if (event.key === 's' || event.key === 'S') {
+        if (!size || event.repeat || document.fullscreenElement || !pageKeyIsFree(event)) return
+        event.preventDefault()
+        size()
 
         return
       }
@@ -130,6 +144,7 @@ const PAGE_SHORTCUTS: Shortcut[] = [
   { keys: ['M'], action: 'Mute' },
   { keys: ['L'], action: 'Lyrics, and again for large type' },
   { keys: ['Q'], action: 'Up next' },
+  { keys: ['S'], action: 'Small or large stage' },
   { keys: ['?'], action: 'This list' },
 ]
 

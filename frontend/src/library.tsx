@@ -2414,8 +2414,9 @@ function History({ visible }: { visible: boolean }) {
   )
 }
 
-// Up next, Lyrics, About and History in one panel that fills the column beside the stage.
-function NowPlayingTabs({ track }: { track: LibraryTrack }) {
+// Up next, Lyrics, About and History in one panel that fills the column beside the stage, or a
+// screen's height of its own under a large stage. `className` sets which.
+function NowPlayingTabs({ track, className }: { track: LibraryTrack; className?: string }) {
   const idBase = useId()
   const [tab, setTab] = useState<PanelTab>(() => {
     const saved = stored(PANEL_TAB_KEY, 'up-next')
@@ -2452,7 +2453,7 @@ function NowPlayingTabs({ track }: { track: LibraryTrack }) {
   }, [tab])
 
   return (
-    <Panel className="flex min-h-0 min-w-0 flex-col">
+    <Panel className={cx('flex min-w-0 flex-col', className)}>
       <TabList
         label="Now Playing panel"
         idBase={idBase}
@@ -2515,6 +2516,10 @@ function NowPlayingTabs({ track }: { track: LibraryTrack }) {
   )
 }
 
+// What the window leaves under the top bar and the page's own padding (see `--page-pad` below).
+const nowPlayingScreenClassName =
+  'h-[calc(100dvh_-_var(--topbar-height)_-_var(--safe-top)_-_var(--page-pad))]'
+
 export function NowPlayingPage() {
   const player = usePlayer()
   const popout = useNowPlayingPopout()
@@ -2522,7 +2527,14 @@ export function NowPlayingPage() {
   const [help, setHelp] = useState(false)
   const openHelp = useCallback(() => setHelp(true), [])
   const closeHelp = useCallback(() => setHelp(false), [])
-  usePageShortcuts({ enabled: Boolean(track), stage: popout.dockedStage, onHelp: openHelp })
+  // A phone has one layout, so the choice is kept but not applied there, and S is not offered.
+  const large = popout.size === 'large' && !popout.phone
+  usePageShortcuts({
+    enabled: Boolean(track),
+    stage: popout.dockedStage,
+    onHelp: openHelp,
+    onSize: popout.phone ? undefined : popout.toggleSize,
+  })
   if (!track)
     return (
       <EmptyPanel tall>
@@ -2549,14 +2561,37 @@ export function NowPlayingPage() {
   // the left, one tabbed panel on the right that scrolls inside itself. `main` pads its bottom by
   // 130px to clear the footer player, which this page hides, so the columns take back all but
   // 24px of it. A phone stacks them and lets the page scroll.
+  //
+  // A large stage stacks them too, but keeps a window's height for the stage and its controls, so
+  // the stage takes what is left above them, and the panel gets a window's height of its own to
+  // scroll in. The page scrolls to reach it. Only classes differ from the small layout, so the
+  // stage is not remounted and its visualizer keeps running through the switch.
   return (
-    <div className="-mb-[106px] grid h-[calc(100dvh_-_var(--topbar-height)_-_var(--safe-top)_-_var(--page-pad))] grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] gap-x-[40px] gap-y-[24px] [--page-pad:60px] wide:[--page-pad:72px] max-phone:mb-0 max-phone:h-auto max-phone:grid-cols-1 max-phone:grid-rows-none">
+    <div
+      className={cx(
+        '-mb-[106px] grid gap-x-[40px] gap-y-[24px] [--page-pad:60px] wide:[--page-pad:72px] max-phone:mb-0 max-phone:h-auto max-phone:grid-cols-1 max-phone:grid-rows-none',
+        large
+          ? 'grid-cols-1'
+          : cx(
+              nowPlayingScreenClassName,
+              'grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]',
+            ),
+      )}
+    >
       <NowPlayingWash art={artUrl(track)} />
-      <div className="flex min-h-0 min-w-0 flex-col gap-[16px]">
+      <div
+        className={cx(
+          'flex min-w-0 flex-col gap-[16px]',
+          large ? cx(nowPlayingScreenClassName, 'min-h-[520px]') : 'min-h-0',
+        )}
+      >
         <NowPlayingStage />
         <NowPlayingControls track={track} />
       </div>
-      <NowPlayingTabs track={track} />
+      <NowPlayingTabs
+        track={track}
+        className={large ? cx(nowPlayingScreenClassName, 'min-h-[420px]') : 'min-h-0'}
+      />
       <ShortcutsDialog open={help} onClose={closeHelp} />
     </div>
   )
