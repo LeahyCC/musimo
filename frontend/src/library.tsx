@@ -1,6 +1,8 @@
 import {
+  type Dispatch,
   type FormEvent,
   type PointerEvent as ReactPointerEvent,
+  type SetStateAction,
   useCallback,
   useDeferredValue,
   useEffect,
@@ -2416,41 +2418,53 @@ function History({ visible }: { visible: boolean }) {
 
 // Up next, Lyrics, About and History in one panel that fills the column beside the stage, or a
 // screen's height of its own under a large stage. `className` sets which.
-function NowPlayingTabs({ track, className }: { track: LibraryTrack; className?: string }) {
+function NowPlayingTabs({
+  track,
+  className,
+  lyricsView,
+  onLyricsView,
+}: {
+  track: LibraryTrack
+  className?: string
+  /** Whether the lyrics view (large type) is open. The page owns it, to hide itself beneath it. */
+  lyricsView: boolean
+  onLyricsView: Dispatch<SetStateAction<boolean>>
+}) {
   const idBase = useId()
   const [tab, setTab] = useState<PanelTab>(() => {
     const saved = stored(PANEL_TAB_KEY, 'up-next')
     return PANEL_TABS.find((item) => item.id === saved)?.id ?? 'up-next'
   })
-  const [large, setLarge] = useState(false)
   const choose = (next: PanelTab) => {
     setTab(next)
     remember(PANEL_TAB_KEY, next)
   }
-  const toggleLarge = useCallback(() => setLarge((on) => !on), [])
+  const toggleLarge = useCallback(() => onLyricsView((on) => !on), [onLyricsView])
 
-  // L flips large type. From the other tab it opens Lyrics in large type, so the key always shows
-  // something. Q goes to Up next. Typing in a field keeps its own letters, and so does an open
-  // dialog, the command palette included.
+  // L opens the lyrics view, and closes it. From the other tab it opens Lyrics and the view, so the
+  // key always shows something; the view's own Escape is in `lyrics.tsx`. Q goes to Up next, and
+  // closes the view. Typing in a field keeps its own letters, and so does an open dialog, the
+  // command palette included. A full screen stage has the whole screen, so L leaves it alone.
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       const letter = event.key.toLowerCase()
       if ((letter !== 'l' && letter !== 'q') || event.repeat) return
-      if (!pageKeyIsFree(event)) return
+      if (document.fullscreenElement || !pageKeyIsFree(event)) return
       if (letter === 'q') {
         if (tab === 'up-next') return
         setTab('up-next')
         remember(PANEL_TAB_KEY, 'up-next')
-      } else if (tab === 'lyrics') setLarge((on) => !on)
+        onLyricsView(false)
+      } else if (tab === 'lyrics') onLyricsView((on) => !on)
       else {
         setTab('lyrics')
         remember(PANEL_TAB_KEY, 'lyrics')
-        setLarge(true)
+        onLyricsView(true)
       }
     }
     window.addEventListener('keydown', onKey)
     return () => window.removeEventListener('keydown', onKey)
-  }, [tab])
+  }, [tab, onLyricsView])
 
   return (
     <Panel className={cx('flex min-w-0 flex-col', className)}>
@@ -2488,7 +2502,7 @@ function NowPlayingTabs({ track, className }: { track: LibraryTrack; className?:
           key={track.id}
           track={track}
           visible={tab === 'lyrics'}
-          large={large}
+          large={lyricsView}
           onToggleLarge={toggleLarge}
         />
       </div>
@@ -2527,6 +2541,13 @@ export function NowPlayingPage() {
   const [help, setHelp] = useState(false)
   const openHelp = useCallback(() => setHelp(true), [])
   const closeHelp = useCallback(() => setHelp(false), [])
+  // The lyrics view takes over the content area. It lives here because the page hides its two
+  // columns under it. Not remembered, and gone with the track.
+  const [lyricsView, setLyricsView] = useState(false)
+  const hasTrack = Boolean(track)
+  useEffect(() => {
+    if (!hasTrack) setLyricsView(false)
+  }, [hasTrack])
   // A phone has one layout, so the choice is kept but not applied there, and S is not offered.
   const large = popout.size === 'large' && !popout.phone
   usePageShortcuts({
@@ -2579,10 +2600,14 @@ export function NowPlayingPage() {
       )}
     >
       <NowPlayingWash art={artUrl(track)} />
+      {/* Under the lyrics view the columns stay laid out, so the page is where it was on return,
+          but `invisible` takes them out of sight, the tab order, the pointer and the accessibility
+          tree. The wash is left showing through the view. */}
       <div
         className={cx(
           'flex min-w-0 flex-col gap-[16px]',
           large ? cx(nowPlayingScreenClassName, 'min-h-[520px]') : 'min-h-0',
+          lyricsView && 'invisible',
         )}
       >
         <NowPlayingStage />
@@ -2590,7 +2615,12 @@ export function NowPlayingPage() {
       </div>
       <NowPlayingTabs
         track={track}
-        className={large ? cx(nowPlayingScreenClassName, 'min-h-[420px]') : 'min-h-0'}
+        lyricsView={lyricsView}
+        onLyricsView={setLyricsView}
+        className={cx(
+          large ? cx(nowPlayingScreenClassName, 'min-h-[420px]') : 'min-h-0',
+          lyricsView && 'invisible',
+        )}
       />
       <ShortcutsDialog open={help} onClose={closeHelp} />
     </div>

@@ -62,7 +62,7 @@ The Lyrics tab is `LyricsPanel` in `frontend/src/lyrics.tsx`, keyed by track so 
 
 ```
 +-------------------------------------------+
-| Earlier 0.5 s   +1.0 s   Later 0.5 s   [] |  <- timing, large type
+| Earlier 0.5 s   +1.0 s   Later 0.5 s   [] |  <- timing, open the large view
 |                                           |
 |   line that has passed        (dim)       |
 |   line that has passed        (dim)       |
@@ -76,15 +76,37 @@ The Lyrics tab is `LyricsPanel` in `frontend/src/lyrics.tsx`, keyed by track so 
 
 **Timing.** Earlier and Later move every line by 0.5 s a press, and the current offset is shown between them (`+1.5 s`; a positive offset shows lines later). It is kept per track in the browser as one JSON map, track id to seconds, under `musimo.lyrics-offset`. The map holds at most 200 tracks: the newest write goes last and the oldest entries are dropped first, and an offset of zero is not stored. Seeking by a line uses the offset too, so the line you pick is the line that lights up.
 
-**Large type.** The button at the top right, or `L`, fills the panel with large lines. `L` works anywhere on the page unless a text field has focus, a dialog is open or a modifier key is held. From the Up next tab it opens Lyrics in large type. The mode is not remembered. `Q` goes back to Up next.
+**Large type, the lyrics view.** The Large type button at the top right of the panel, or `L`, opens a view that takes over the page's content area (under the top bar, beside the sidebar; above the bottom bar on a phone). The panel's own text is never enlarged any more, since the panel is half the window.
+
+```
+desktop                                          phone
++-----------------------------------------+      +------------------+
+|            Earlier  +0.0 s  Later       |      | Earlier  Later   |
+|                                         |      |                  |
+|        a line that has passed  (dim)    |      |   line (dim)     |
+|      > the current line     (bright)    |      | > current line   |
+|        next line               (dim)    |      |   next line      |
+|                                         |      |                  |
+| [cover] Title  |<  (>)  >|  0:12 ==== X |      | [c] Title |< > X |
+|         Artist                          |      |   0:12 ======    |
++-----------------------------------------+      +------------------+
+                                                 |  bottom bar      |
+                                                 +------------------+
+```
+
+The lines are centred in a column up to 1200px wide, at `clamp(1.75rem, 3.2vw, 3rem)`. A strip along the bottom holds the cover thumbnail, title and artist, previous, play or pause and next, the seek bar with both times, and a close button. The timing nudge (or "Not timed") sits above the lines. The cover-tinted wash of the page stays behind it, and the page's two columns are kept laid out but `invisible`, so the scroll position is as it was on return and nothing under the view takes focus or a click. The view is `role="dialog"` with the name "Lyrics view", drawn in the body and fixed over the content area (`LyricsView` in `lyrics.tsx`, opened by `LyricsPanel` when `large` is on).
+
+Everything the panel does still works: the current line follows and scrolls, a click on a line seeks, a wheel, touch, scrollbar or key scroll holds the list for four seconds, the nudge is reachable and reduced motion jumps. Untimed lyrics get the same view without following. The lines box takes focus when the view opens, so the arrow keys scroll it.
+
+`L` opens it, from any tab (from Up next it also switches to Lyrics), and closes it again. Escape and the close button close it too, and focus goes back to the Large type button. Escape does not close it while a dialog is open (the cheat sheet) or a text field has focus. `Q` closes it and goes to Up next. `L` does nothing while the stage is full screen, which already has the whole screen. The rest of the page's keys still work with the view open: Space, the arrows, M, `?`. The state (`lyricsView`) belongs to `NowPlayingPage`, which hides its columns under the view; it is not remembered, and it ends with the track. Where the view is open, the tab draws no lines of its own, so only one list follows the clock.
 
 **Not timed.** Lyrics with no times, or a synced flag with no times in it, are plain text under a small "Not timed" note, with no highlight, no timing controls and no seeking.
 
 **No lyrics.** The panel says "No lyrics found for this track." with a **Search again** button that asks the server again. A failed request says "Lyrics could not be loaded." with the same button.
 
-**Ticking.** The player's position changes several times a second. The lyrics panel is memoised on its own props and only the list of lines reads the position, and each line is memoised on its own highlight, so a tick redraws no more than the two lines that change. The player context itself still carries the position, so the page's other consumers (the seek bar above all) redraw with it as before; moving the position out of that context is left for later.
+**Ticking.** The player's position changes several times a second. The lyrics panel is memoised on its own props and only the list of lines reads the position, and each line is memoised on its own highlight, so a tick redraws no more than the two lines that change. The lyrics view keeps to that: the view itself, the timing controls and the cover and title do not call `usePlayer`, so a tick redraws only the list (`SyncedLines`) and the two small pieces of the strip that read the player, the seek bar with its times (`StripSeek`) and the three transport buttons (`StripTransport`, which needs `playing` and so cannot be cut off from the clock). The player context itself still carries the position, so every consumer redraws with it; moving the position out of that context is left for later.
 
-**Phone.** The lines sit in a box of their own (up to 60% of the screen height, 75% in large type) so the list has something to scroll and follow, even though the page scrolls for the rest.
+**Phone.** In the tab the lines sit in a box of their own (up to 60% of the screen height) so the list has something to scroll and follow, even though the page scrolls for the rest. The view is the same view: the strip's seek bar drops to a second row, and the view stops above the bottom bar.
 
 **Fitting the window.** The page is `100dvh` less the top bar and `--page-pad` tall (`main`'s top padding of 36px, or 48px from 1500px, plus 24px at the bottom). `main` also pads its bottom by 130px to clear the footer player, which this page hides, so the page takes back all but 24px of that with a negative margin. If that padding ever changes, the two must change together.
 
@@ -157,7 +179,7 @@ Two sets. The page's own keys work anywhere on Now Playing; the stage's keys bin
 | Shift+← → | previous, next track                                 |
 | ↑ ↓       | volume up or down                                    |
 | M         | mute                                                 |
-| L         | Lyrics tab; on it, large type. See [Lyrics](#lyrics) |
+| L         | Lyrics tab; on it, large view. See [Lyrics](#lyrics) |
 | Q         | Up next tab                                          |
 | S         | small or large stage. See [Stage size](#stage-size)  |
 | ?         | the cheat sheet                                      |
@@ -186,7 +208,7 @@ L, Q and S are bound to the page, not the stage, so they work without the stage 
 ## Code
 
 - `frontend/src/artwork-menu.tsx`: the right-click menu on the stage.
-- `frontend/src/lyrics.tsx`: `LyricsPanel`, the synced list that follows the player, the timing offset and its storage. `frontend/src/lyrics.test.ts` covers the current-line lookup and the offset map.
+- `frontend/src/lyrics.tsx`: `LyricsPanel`, the synced list that follows the player, the lyrics view (`LyricsView` and the strip's `StripTransport` and `StripSeek`), the timing offset and its storage. `frontend/src/lyrics.test.ts` covers the current-line lookup and the offset map.
 - `frontend/src/now-playing-controls.tsx`: the title, byline and control row under the stage.
 - `frontend/src/ui/tabs.tsx`: `TabList`, the tab row and its arrow keys.
 - `frontend/src/now-playing-popout.tsx`: the provider at the app root (the popout window, the request that carries full screen back to the tab) and the stage itself. The docked stage's size is a container query: its slot is a size container, and the stage is `min(100cqw, 100cqh)` wide and square in Small, or `100cqw` by `100cqh` in Large (`dockedStageClassName`). The choice (`size`, `setSize`, `toggleSize`, kept as `musimo.now-playing-size`) and `phone`, whether the window is under the breakpoint, live in the provider beside the view and the preset. `useStageVisible` also carries the 10 second pause rest.

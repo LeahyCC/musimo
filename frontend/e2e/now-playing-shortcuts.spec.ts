@@ -103,6 +103,9 @@ test('the page keys work with nothing focused, and leave sliders and the tab lis
   await page.keyboard.press('m')
   await expect(page.getByRole('button', { name: 'Mute', exact: true })).toBeVisible()
 
+  // L opens the lyrics view over the page, and L again leaves it on the Lyrics tab.
+  await page.keyboard.press('l')
+  await expect(page.getByRole('tab', { name: 'Lyrics' })).toHaveCount(0)
   await page.keyboard.press('l')
   await expect(page.getByRole('tab', { name: 'Lyrics' })).toHaveAttribute('aria-selected', 'true')
   await page.keyboard.press('q')

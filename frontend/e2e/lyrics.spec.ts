@@ -70,17 +70,88 @@ test('clicking a line seeks the player to its start', async ({ page }) => {
   await expect(page.getByRole('slider', { name: 'Playback position' })).toHaveValue(/^16(\.0)?$/)
 })
 
-test('L toggles large type, and not while typing in the search box', async ({ page, isMobile }) => {
+/** The lyrics view that Large type and L open, and the box of lines inside it. */
+const view = (page: Page) => page.locator('[data-lyrics-view]')
+const viewLines = (page: Page) => view(page).getByRole('region', { name: 'Lyrics', exact: true })
+
+test('L opens the lyrics view across the content, and Escape closes it and returns focus', async ({
+  page,
+  isMobile,
+}) => {
   test.skip(isMobile, 'A phone has no L key.')
+  await page.setViewportSize({ width: 1440, height: 900 })
   await openLyrics(page, SYNCED)
   const large = page.getByRole('button', { name: 'Large type' })
-  await expect(large).toHaveAttribute('aria-pressed', 'false')
-  await page.keyboard.press('l')
-  await expect(large).toHaveAttribute('aria-pressed', 'true')
+  await expect(view(page)).toHaveCount(0)
 
+  await page.keyboard.press('l')
+  await expect(view(page)).toBeVisible()
+  // The lines are a wide column, not the half window the tab has.
+  const content = await page.locator('main').boundingBox()
+  const column = await viewLines(page).boundingBox()
+  expect(column?.width ?? 0).toBeGreaterThanOrEqual((content?.width ?? Infinity) * 0.6)
+  // The tab's own lines are gone, so only one list follows the clock.
+  await expect(page.getByRole('region', { name: 'Lyrics', exact: true })).toHaveCount(1)
+
+  await page.keyboard.press('Escape')
+  await expect(view(page)).toHaveCount(0)
+  await expect(large).toBeFocused()
+
+  // L closes it too, and focus comes back the same way.
+  await page.keyboard.press('l')
+  await expect(view(page)).toBeVisible()
+  await page.keyboard.press('l')
+  await expect(view(page)).toHaveCount(0)
+  await expect(large).toBeFocused()
+
+  // The close button leaves as well.
+  await large.click()
+  await view(page).getByRole('button', { name: 'Close lyrics view' }).click()
+  await expect(view(page)).toHaveCount(0)
+  await expect(large).toBeFocused()
+
+  // Typing in the search box keeps its own letters. Last, since the letter searches.
   await page.getByRole('textbox', { name: 'Search music or paste a link' }).focus()
   await page.keyboard.press('l')
-  await expect(large).toHaveAttribute('aria-pressed', 'true')
+  await expect(view(page)).toHaveCount(0)
+})
+
+test('clicking a line in the lyrics view seeks, and the nudge is in reach', async ({ page }) => {
+  await openLyrics(page, SYNCED)
+  await page.getByRole('button', { name: 'Large type' }).click()
+  await expect(view(page)).toBeVisible()
+
+  const target = viewLines(page).getByRole('button', { name: 'Nobody at the door', exact: true })
+  await target.click()
+  await expect(target).toHaveAttribute('aria-current', 'true')
+  const slider = view(page).getByRole('slider', { name: 'Playback position' })
+  await expect(slider).toHaveValue(/^16(\.0)?$/)
+
+  const timing = view(page).getByRole('group', { name: 'Lyrics timing' })
+  await timing.getByRole('button', { name: /^Later/ }).click()
+  await expect(timing).toContainText('+0.5 s')
+})
+
+test('the strip in the lyrics view plays and pauses', async ({ page }) => {
+  await openLyrics(page, SYNCED)
+  await page.getByRole('button', { name: 'Large type' }).click()
+  const strip = view(page)
+  await expect(strip.getByText('First Light')).toBeVisible()
+
+  await strip.getByRole('button', { name: 'Play', exact: true }).click()
+  await expect(strip.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+  await strip.getByRole('button', { name: 'Pause', exact: true }).click()
+  await expect(strip.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
+})
+
+test('untimed lyrics get the same view without following', async ({ page }) => {
+  await openLyrics(page, { items: [{ synced: false, line: [{ value: 'Just the words' }] }] })
+  await page.getByRole('button', { name: 'Large type' }).click()
+  await expect(view(page)).toBeVisible()
+  await expect(view(page).getByText('Not timed')).toBeVisible()
+  await expect(viewLines(page).getByText('Just the words')).toBeVisible()
+  await expect(view(page).getByRole('group', { name: 'Lyrics timing' })).toHaveCount(0)
+  await expect(view(page).getByRole('button', { name: 'Play', exact: true })).toBeVisible()
 })
 
 test('untimed lyrics say so and have no timing control', async ({ page }) => {
