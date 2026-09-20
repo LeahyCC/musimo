@@ -19,6 +19,7 @@ interface Entry {
   duration: number
   art: string
   owned: boolean
+  lands?: string
 }
 interface Preview {
   token: string
@@ -419,6 +420,46 @@ test.describe('pasted links', () => {
     await expect(sheet(page).getByText(/kbps/)).toHaveCount(0)
   })
 
+  test('a mix or show says where it will be filed before anything is queued', async ({ page }) => {
+    const path = 'Mixes/DJ Rex/2024-03-02 - Mix one'
+    await linkFixtures(page, (url) =>
+      url.endsWith('/uploads/')
+        ? {
+            body: playlist({
+              site: 'Mixcloud',
+              source: 'mixcloud',
+              kind: 'mix',
+              profile: true,
+              entries: [
+                entry('a', { lands: path }),
+                entry('b', { lands: 'Mixes/Ann/2024-03-03 - Mix two' }),
+                entry('c'),
+              ],
+            }),
+          }
+        : {
+            body: preview({
+              site: 'Mixcloud',
+              source: 'mixcloud',
+              kind: 'mix',
+              entries: [entry('a', { lands: path })],
+            }),
+          },
+    )
+    await page.goto('/')
+    await paste(page, 'https://www.mixcloud.com/dj/mix-one/')
+    await expect(sheet(page).getByText(`Saved as ${path}`)).toBeVisible()
+    await dismiss(page)
+
+    // Several at once: the folder, and nothing for a song among them.
+    await paste(page, 'https://www.mixcloud.com/dj/uploads/')
+    await expect(sheet(page).getByText('Saved as', { exact: false })).toHaveCount(0)
+    await sheet(page).getByRole('button', { name: 'Select all' }).click()
+    await expect(
+      sheet(page).getByText('Saved under Mixes/, in a folder for each uploader'),
+    ).toBeVisible()
+  })
+
   test('a read-only destination keeps Download off and says why', async ({ page }) => {
     await linkFixtures(page)
     const settings = (await (await page.request.get('/api/settings')).json()) as {
@@ -523,7 +564,7 @@ test.describe('pasted links', () => {
     await page.goto('/')
     await paste(page, 'https://example.com/song')
     await expect(sheet(page).getByRole('alert')).toHaveText(
-      "Musimo can't download from example.com. It works with: YouTube, Internet Archive, Bandcamp, SoundCloud, Audiomack, Audius, Jamendo.",
+      "Musimo can't download from example.com. It works with: YouTube, Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, Mixcloud, NTS, HearThisAt, BBC Sounds.",
     )
     await dismiss(page)
     await paste(page, 'https://open.spotify.com/album/1')

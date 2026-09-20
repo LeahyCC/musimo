@@ -92,13 +92,21 @@ class HostTests(unittest.TestCase):
             "https://api.audius.co/v1/tracks/1",
             "https://jamendo.com.evil.test/track/1",
             "https://licensing.jamendo.com/en/track/1",
-            "https://www.mixcloud.com/a/b",
+            "https://www.beatport.com/a/b",
         ):
             with self.subTest(url=url):
                 self.assertIsNone(sources.match(url))
 
     def test_an_audius_entry_address_needs_a_plain_id_and_no_web_address(self) -> None:
-        self.assertEqual(self.matches("audius:4zxjE"), "audius")
+        entry = sources.match_entry("audius:4zxjE")
+        self.assertIsNotNone(entry)
+        assert entry is not None
+        self.assertEqual(entry.source, "audius")
+        # Web addresses take the same road as a pasted one.
+        self.assertIs(sources.match_entry("https://audius.co/a/b"), site_of("audius"))
+        self.assertIsNone(sources.match_entry("https://evil.test/a"))
+        # What a browser pastes never has this form.
+        self.assertIsNone(sources.match("audius:4zxjE"))
         for text in (
             "audius:",
             "audius:../x",
@@ -110,7 +118,7 @@ class HostTests(unittest.TestCase):
             "spotify:4zxjE",
         ):
             with self.subTest(text=text):
-                self.assertIsNone(sources.match(text))
+                self.assertIsNone(sources.match_entry(text))
 
     def test_every_new_row_is_music_and_lets_only_its_own_extractors_through(self) -> None:
         expected = {
@@ -758,7 +766,6 @@ class PreviewTests(Harness):
         urls = {
             "bandcamp": "https://band.bandcamp.com/track/x",
             "soundcloud": "https://soundcloud.com/a/song-1",
-            "audiomack": "https://audiomack.com/a/song/song-1",
             "audius": "https://audius.co/a/song-1",
             "jamendo": "https://www.jamendo.com/track/1/x",
             "archive": "https://archive.org/details/x",

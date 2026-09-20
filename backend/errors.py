@@ -12,6 +12,15 @@ BLOCKING_CODES = frozenset(
     {"SOURCE_BLOCKED", "POT_MISSING", "JS_RUNTIME_MISSING", "COOKIES_EXPIRED"}
 )
 SITE_LABELS = {"youtube": "YouTube", "podcast": "the podcast host"}
+# What yt-dlp says when a site will not play a recording in the server's country.
+GEO_MARKERS = ("geolocation", "geo restriction", "geo-restricted", "geo restricted")
+# Sites that say more than the general wording, keyed by their label.
+GEO_HINTS = {"BBC Sounds": "BBC Sounds only plays in the UK, and this server is not there."}
+
+
+def geo_restricted(text: str) -> bool:
+    lower = text.lower()
+    return any(marker in lower for marker in GEO_MARKERS)
 
 
 def site_label(source: str) -> str:
@@ -93,6 +102,10 @@ def error_guidance(code: str, site: str = "YouTube") -> tuple[str, str]:
         ),
         "LIVE_STREAM": (
             "Live streams never finish, so they can't be saved.",
+            "card:dismiss",
+        ),
+        "GEO_RESTRICTED": (
+            GEO_HINTS.get(site, f"{lead} does not play in the country this server is in."),
             "card:dismiss",
         ),
         "SITE_NOT_ALLOWED": (

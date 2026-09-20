@@ -19,8 +19,9 @@ from itertools import islice
 from typing import cast
 from urllib.parse import quote, urlsplit
 
+from backend.errors import geo_restricted
 from backend.library import normalize
-from backend.sources import Site, by_source, match
+from backend.sources import Site, by_source, match, match_entry, reaches
 from backend.worker import Downloader, base_options, emit, live, redact
 
 # One more than the preview cap, so the server can say the list was cut short.
@@ -31,7 +32,7 @@ SAME_TRACK_SECONDS = 2
 # below give up well before that and the preview still goes out.
 BUDGET_SECONDS = 14
 # Pages read at once, and the most a single preview will read beyond the list itself.
-LOOKUP_THREADS = 3
+LOOKUP_THREADS = 4
 LOOKUP_LIMIT = 40
 OPEN_LIMIT = 10
 # YouTube's own thumbnail names, best first. Its numbered files are small frame grabs.
@@ -55,8 +56,17 @@ def extractor_name(raw: dict[str, object], parent: dict[str, object] | None = No
         return ""
 
 
-def artwork(raw: dict[str, object]) -> str:
-    """The best JPEG the site lists. The worker only embeds JPEG covers."""
+def jpeg_name(name: str, bare: bool) -> bool:
+    """Whether a file name says JPEG. With `bare`, a name with no extension at all may be one."""
+    return name.endswith(".jpg") or (bare and bool(name) and "." not in name)
+
+
+def artwork(raw: dict[str, object], bare: bool = False) -> str:
+    """The best JPEG the site lists. The worker only embeds JPEG covers.
+
+    Some sites (Mixcloud) serve a cover from an address with no file name extension. `bare` takes
+    those too: the download checks the bytes are a JPEG before it embeds anything.
+    """
     thumbnails = raw.get("thumbnails")
     best: tuple[tuple[int, int, int], str] | None = None
     if isinstance(thumbnails, list):
@@ -65,7 +75,7 @@ def artwork(raw: dict[str, object]) -> str:
                 continue
             url = str(row.get("url", ""))
             name = urlsplit(url).path.rsplit("/", 1)[-1]
-            if not name.endswith(".jpg"):
+            if not jpeg_name(name, bare):
                 continue
             width, height = row.get("width"), row.get("height")
             area = width * height if isinstance(width, int) and isinstance(height, int) else 0
@@ -78,7 +88,7 @@ def artwork(raw: dict[str, object]) -> str:
     if best:
         return best[1]
     thumbnail = str(raw.get("thumbnail") or "")
-    return thumbnail if thumbnail.split("?")[0].endswith(".jpg") else ""
+    return thumbnail if jpeg_name(urlsplit(thumbnail).path.rsplit("/", 1)[-1], bare) else ""
 
 
 def day(raw: dict[str, object]) -> str:
@@ -134,10 +144,11 @@ def entry(
     # belongs to a plain playlist has no album of its own.
     title = "" if raw.get("album_type") == "playlist" else str(raw.get("album") or "")
     date = day(raw)
+    bare = site.kind != "music"
     art = (
         site.art_url.replace("{item}", entry_id.split("/")[0])
         if site.art_url and entry_id
-        else artwork(raw)
+        else artwork(raw, bare)
     )
     if album and parent:
         # An album's list is the album: its title, creator, date and cover belong to every track.
@@ -145,9 +156,12 @@ def entry(
         artist = artist or creators(parent)
         title = str(parent.get("title") or title)
         date = date or day(parent)
-        art = art or artwork(parent)
+        art = art or artwork(parent, bare)
     elif site.names_artist:
         artist = artist or str(raw.get("uploader") or raw.get("channel") or "")
+    if site.kind != "music":
+        # A mix's artist tags list the tracks played in it. Its uploader is the DJ.
+        artist = str(raw.get("uploader") or raw.get("channel") or artist)
     return {
         "id": entry_id,
         "extractor": extractor_name(raw, parent),
@@ -232,6 +246,8 @@ def looked_up(lookup: Lookup, addresses: list[str], seconds: float) -> dict[str,
     so one that is still waiting on a slow site never holds the process open.
     """
     found: dict[str, dict[str, object]] = {}
+    if seconds <= 0:
+        return found
     waiting: queue.SimpleQueue[str] = queue.SimpleQueue()
     for address in dict.fromkeys(addresses):
         waiting.put(address)
@@ -294,7 +310,7 @@ def to_open(site: Site, parent: dict[str, object], row: dict[str, object]) -> bo
     return (
         extractor_name(parent) in site.expands
         and extractor_name(row, parent) not in site.items
-        and match(row_url(row)) is site
+        and match_entry(row_url(row)) is site
     )
 
 
@@ -332,7 +348,8 @@ def listing(
     """The preview rows of a list, and whether some of it could not be read in time."""
 
     def seconds() -> float:
-        return max(1.0, deadline - time.monotonic())
+        # Nothing is started once the time is spent, so the whole preview stays inside its budget.
+        return max(0.0, deadline - time.monotonic())
 
     rows = rows_of(parent)
     wanted = [row_url(row) for row in rows if to_open(site, parent, row)]
@@ -347,12 +364,12 @@ def listing(
         str(item["url"])
         for group in groups
         for item in group.entries
-        if not item["title"] and match(str(item["url"])) is site
+        if not item["title"] and match_entry(str(item["url"])) is site
     ][:LOOKUP_LIMIT]
     for group in groups:
         first = group.entries[0] if group.entries else None
         if group.album and site.names_artist and first and not first["artist"]:
-            if match(str(first["url"])) is site:
+            if match_entry(str(first["url"])) is site:
                 wanted.append(str(first["url"]))
     found = looked_up(lookup, wanted, seconds()) if wanted else {}
     entries: list[dict[str, object]] = []
@@ -390,13 +407,14 @@ def resolve(downloader: Downloader, site: Site, url: str, lookup: Lookup | None 
             return info if isinstance(info, dict) else None
 
     raw: object = None
-    # Follow at most a few hops, and only while they stay on the same site.
+    origin = url
+    # Follow at most a few hops, and only while they stay on the same site or one it hands over to.
     for _ in range(3):
         raw = downloader.extract_info(url, download=False, process=False)
         if not isinstance(raw, dict) or raw.get("_type") not in {"url", "url_transparent"}:
             break
         url = str(raw.get("url", ""))
-        if match(url) is not site:
+        if not reaches(site, url):
             emit("error", code="SITE_NOT_ALLOWED", message="The link led to another site")
             return
     if not isinstance(raw, dict):
@@ -415,7 +433,12 @@ def resolve(downloader: Downloader, site: Site, url: str, lookup: Lookup | None 
     if live(raw):
         emit("error", code="LIVE_STREAM", message="The link is a live stream")
         return
-    emit("preview", single=True, title=str(raw.get("title") or ""), entries=[entry(raw, site)])
+    item = entry(raw, site)
+    if match_entry(str(item["url"])) is not site:
+        # A show that lives on another site's copy (NTS on Mixcloud). The job downloads the address
+        # that was pasted, and yt-dlp passes through to the copy the same way.
+        item["url"] = origin
+    emit("preview", single=True, title=str(raw.get("title") or ""), entries=[item])
 
 
 def main() -> None:
@@ -455,7 +478,9 @@ def main() -> None:
         message = redact(str(exc))
         lower = message.lower()
         code = (
-            "SITE_NOT_ALLOWED"
+            "GEO_RESTRICTED"
+            if geo_restricted(lower)
+            else "SITE_NOT_ALLOWED"
             if "no suitable extractor" in lower or "unsupported url" in lower
             # YouTube refuses to read a stream that has not started yet.
             else "LIVE_STREAM"

@@ -385,6 +385,11 @@ class FormatTests(unittest.TestCase):
         self.assertEqual(self.pick(base + "a.ogg"), "ogg")
 
 
+# DJ mixes and radio shows are other people's copyrighted work, and none of them carries a licence
+# a person can point to, so the probe has nothing it may fairly download for these sites.
+UNPROBED = {"mixcloud", "nts", "hearthis", "bbc", "tunein"}
+
+
 class ProbeListTests(unittest.TestCase):
     def sites(self) -> list[dict[str, str]]:
         text = source_probe.SITES.read_text(encoding="utf-8")
@@ -392,7 +397,10 @@ class ProbeListTests(unittest.TestCase):
 
     def test_every_listed_url_belongs_to_its_own_site_and_uses_its_format(self) -> None:
         rows = self.sites()
-        self.assertEqual({row["source"] for row in rows}, {found.source for found in sources.SITES})
+        self.assertEqual(
+            {row["source"] for row in rows},
+            {found.source for found in sources.SITES} - UNPROBED,
+        )
         for row in rows:
             with self.subTest(source=row["source"]):
                 found = sources.match(row["url"])
@@ -437,14 +445,13 @@ class ProbeListTests(unittest.TestCase):
                 source_probe.main()
             report = json.loads(output.read_text(encoding="utf-8"))
         # One failing site does not stop the next, and each row says which site it was.
-        count = len(sources.SITES)
+        probed = [found.source for found in sources.SITES if found.source not in UNPROBED]
+        count = len(probed)
         self.assertEqual(
             (report["requested"], report["attempted"], report["successful"]),
             (count, count, count - 1),
         )
-        self.assertEqual(
-            [row["site"] for row in report["rows"]], [found.source for found in sources.SITES]
-        )
+        self.assertEqual([row["site"] for row in report["rows"]], probed)
         self.assertEqual([row["ok"] for row in report["rows"]], [False] + [True] * (count - 1))
         self.assertEqual(
             set(report) - {"rows"},

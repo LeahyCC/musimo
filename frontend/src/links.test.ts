@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { controlsSchema, jobSchema } from './api'
 import { destinationBroken, pausedSources, siteLabel } from './download-target'
-import { initialSelection } from './links'
+import { initialSelection, landingNote } from './links'
 
 type Preview = Parameters<typeof initialSelection>[0]
 
@@ -15,6 +15,7 @@ const entry = (id: string, owned = false) => ({
   duration: 100,
   art: '',
   owned,
+  lands: '',
 })
 
 const preview = (site: string, over: Partial<Preview>): Preview => ({
@@ -141,5 +142,29 @@ describe('a destination that cannot be written to', () => {
     expect(destinationBroken(disks, '/music')).toBe(false)
     expect(destinationBroken(undefined, '/ro')).toBe(false)
     expect(destinationBroken(disks, '')).toBe(false)
+  })
+})
+
+describe('where a mix or show will be filed', () => {
+  const mix = (id: string, lands: string) => ({ ...entry(id), lands })
+
+  it('says nothing for songs', () => {
+    expect(landingNote([])).toBe('')
+    expect(landingNote([entry('a'), entry('b')])).toBe('')
+  })
+
+  it('names the whole path for one mix', () => {
+    expect(landingNote([mix('a', 'Mixes/DJ Rex/2024-03-02 - Mix 1')])).toBe(
+      'Saved as Mixes/DJ Rex/2024-03-02 - Mix 1',
+    )
+  })
+
+  it('names the folder for several, and skips the songs among them', () => {
+    const chosen = [
+      mix('a', 'Mixes/DJ Rex/2024-03-02 - Mix 1'),
+      entry('b'),
+      mix('c', 'Mixes/Ann/x'),
+    ]
+    expect(landingNote(chosen)).toBe('Saved under Mixes/, in a folder for each uploader')
   })
 })

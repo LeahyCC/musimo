@@ -59,11 +59,39 @@ class Site:
     catalog_tidy: bool = True
     # What a person should know about the audio before queueing it. Shown on the review sheet.
     quality_note: str = ""
+    # False for a site whose extractor cannot read the live site today. It stays in the table, so
+    # its tests and probe keep running, but it is left out of the site list and refused at resolve.
+    working: bool = True
+    # When set, only a page whose path fits one of these patterns is taken. Needed where one host
+    # also serves video or news pages that the site's audio must never reach.
+    paths: tuple[str, ...] = ()
+    # What the site's pages are, for the refusal when a path does not fit `paths`.
+    only: str = ""
+    # Pages that are always live, so never taken and refused with the live stream message.
+    live_paths: tuple[str, ...] = ()
+    # Address forms that mean the same page, as (path pattern, path template) pairs. The pattern's
+    # named groups fill the template. Used where the site's own page is not one yt-dlp can read.
+    rewrites: tuple[tuple[str, str], ...] = ()
+    # Sources whose recordings this site's pages may hand over to. NTS episodes are hosted on
+    # Mixcloud or SoundCloud, so a link there passes through to their extractors.
+    hops: tuple[str, ...] = ()
+    # From seconds: a recording of this row longer than this is a mix, not a song. 0 means never.
+    mix_after: int = 0
+    # Where a mix or radio show's uploader and show name live when the site does not say. Named
+    # groups `uploader` and `show` are read from the page's path, and `show` from the title.
+    url_names: str = ""
+    title_show: str = ""
 
     def owns(self, host: str) -> bool:
         if host in self.hosts:
             return True
         return any(under(host, suffix) for suffix in self.host_suffixes)
+
+    def takes(self, path: str) -> bool:
+        """Whether a page of this site at `path` may be downloaded from."""
+        if any(re.fullmatch(pattern, path) for pattern in self.live_paths):
+            return False
+        return not self.paths or any(re.fullmatch(pattern, path) for pattern in self.paths)
 
     def is_profile(self, url: str) -> bool:
         parts = parse(url)
@@ -175,6 +203,8 @@ SITES: tuple[Site, ...] = (
         ),
         album_lists=("soundcloud:set", "soundcloud:playlist"),
         expands=("soundcloud:user",),
+        # A track this long is a DJ set or a show, not a song.
+        mix_after=20 * 60,
         quality_note=(
             "SoundCloud free streams are 160 kbps AAC or 128 kbps MP3. "
             "A download button on the track gives you the artist's own file."
@@ -190,6 +220,8 @@ SITES: tuple[Site, ...] = (
         art_hosts=("assets.audiomack.com",),
         audio_format=KEPT_AUDIO,
         album_lists=("audiomack:album",),
+        # yt-dlp 2026.8.19 stops with "Failed to parse JSON" on the live site (19 September 2026).
+        working=False,
         quality_note=(
             "Audiomack does not say what quality its streams are. Expect a standard "
             "stream, not lossless."
@@ -221,6 +253,90 @@ SITES: tuple[Site, ...] = (
             "Jamendo serves MP3, Ogg and FLAC, and Musimo takes the best one it is given."
         ),
     ),
+    Site(
+        source="mixcloud",
+        label="Mixcloud",
+        kind="mix",
+        extractors=("mixcloud", "mixcloud:playlist", "mixcloud:user"),
+        items=("mixcloud",),
+        hosts=("mixcloud.com", "www.mixcloud.com", "m.mixcloud.com"),
+        art_suffixes=("mixcloud.com",),
+        # Mixcloud's live pages are streams that never end. `/live/<name>` also fits the
+        # extractor for one show.
+        live_paths=(r"/live/.*",),
+        profile_pattern=r"/[^/]+/?|/[^/]+/(?:uploads|favorites|listens|stream)/?",
+        quality_note="Mixcloud streams are AAC at up to about 192 kbps, not lossless.",
+    ),
+    Site(
+        source="nts",
+        label="NTS",
+        kind="radio",
+        # An episode page hands over to the Mixcloud or SoundCloud copy of the show.
+        extractors=("nts.live", "mixcloud", "soundcloud"),
+        items=("nts.live", "mixcloud", "soundcloud"),
+        hosts=("nts.live", "www.nts.live"),
+        hops=("mixcloud", "soundcloud"),
+        art_suffixes=("mixcloud.com", "sndcdn.com"),
+        paths=(r"/shows/[^/]+/episodes/[^/]+/?",),
+        only="show episode pages",
+        # The two live channels.
+        live_paths=(r"/[12]/?",),
+        url_names=r"/shows/(?P<show>[^/]+)/",
+        quality_note=(
+            "NTS episodes are read from their Mixcloud or SoundCloud copy, so the audio is "
+            "AAC or MP3, not lossless."
+        ),
+    ),
+    Site(
+        source="hearthis",
+        label="HearThisAt",
+        kind="mix",
+        extractors=("HearThisAt",),
+        items=("hearthisat",),
+        hosts=("hearthis.at", "www.hearthis.at"),
+        art_suffixes=("hearthis.at",),
+        # The page names no uploader, so the name in the address stands in for it.
+        url_names=r"/(?P<uploader>[^/]+)/",
+        quality_note="HearThisAt plays the file the DJ uploaded, usually MP3.",
+    ),
+    Site(
+        source="bbc",
+        label="BBC Sounds",
+        kind="radio",
+        # Not `bbc`, `bbc.co.uk:article` or the iPlayer lists: those are news and video pages.
+        extractors=("bbc.co.uk",),
+        items=("bbc.co.uk",),
+        hosts=("bbc.co.uk", "www.bbc.co.uk"),
+        art_hosts=("ichef.bbci.co.uk",),
+        paths=(
+            r"/programmes/(?:[pbml][\da-z]{7}|w[\da-z]{7,14})/?",
+            r"/sounds/play/[pbml][\da-z]{7}/?",
+        ),
+        only="programme and Sounds pages",
+        # yt-dlp reads a Sounds episode from its programme page, which has the same ID.
+        rewrites=((r"/sounds/play/(?P<id>[pbml][\da-z]{7})/?", "/programmes/{id}"),),
+        # Audio only, so a programme that is video fails instead of saving a video file.
+        audio_format="bestaudio",
+        # BBC titles read "Show, Episode".
+        title_show=r"(?P<show>[^,]+),\s.+",
+        quality_note="BBC Sounds streams are AAC. They only play in the UK.",
+    ),
+    Site(
+        source="tunein",
+        label="TuneIn",
+        kind="radio",
+        extractors=("tunein:podcast", "tunein:podcast:program"),
+        items=("tunein:podcast",),
+        hosts=("tunein.com",),
+        # A station is live, and `/radio/` is where they all are.
+        paths=(r"/podcasts/.+",),
+        only="podcast pages",
+        live_paths=(r"/radio/.+",),
+        # yt-dlp 2026.8.19 gets "HTTP Error 400" and then "Items" from TuneIn's own API for every
+        # programme tried (19 September 2026).
+        working=False,
+        quality_note="TuneIn podcasts play the publisher's own file.",
+    ),
 )
 
 # Links to stores whose audio is DRM. They can only become catalog imports later.
@@ -250,24 +366,55 @@ def parse(url: str) -> SplitResult | None:
 
 
 ADDRESS_ID = re.compile(r"[A-Za-z0-9]{1,40}")
+LIVE_MESSAGE = "Live streams never finish, so they can't be saved."
 
 
 def match(url: str) -> Site | None:
+    """The site of a web address a person pasted, or None. https addresses only."""
     parts = parse(url)
     if parts is None:
-        # A list entry may be addressed as `<prefix><id>`, which is not a web address.
-        return next(
-            (
-                site
-                for site in SITES
-                if site.id_prefix
-                and url.startswith(site.id_prefix)
-                and ADDRESS_ID.fullmatch(url[len(site.id_prefix) :])
-            ),
-            None,
-        )
+        return None
     host = parts.hostname or ""
-    return next((site for site in SITES if site.owns(host)), None)
+    site = next((site for site in SITES if site.owns(host)), None)
+    return site if site and site.takes(parts.path) else None
+
+
+def match_entry(url: str) -> Site | None:
+    """The site of a list entry or a job's address: a web address, or a site's `<prefix><id>`.
+
+    Only the server's own lists and jobs reach this. Browser input goes through `match`, which
+    never accepts the bare form.
+    """
+    if parse(url) is not None:
+        return match(url)
+    return next(
+        (
+            site
+            for site in SITES
+            if site.id_prefix
+            and url.startswith(site.id_prefix)
+            and ADDRESS_ID.fullmatch(url[len(site.id_prefix) :])
+        ),
+        None,
+    )
+
+
+def reaches(site: Site, url: str) -> bool:
+    """Whether a link that started on `site` may end at `url`: the same site or one it hops to."""
+    found = match_entry(url)
+    return found is not None and (found is site or found.source in site.hops)
+
+
+def canonical(url: str) -> str:
+    """The address yt-dlp can read for a pasted one, where a site's row says they are the same."""
+    parts = parse(url)
+    site = match(url)
+    if parts is None or site is None:
+        return url
+    for pattern, template in site.rewrites:
+        if found := re.fullmatch(pattern, parts.path):
+            return parts._replace(path=template.format(**found.groupdict()), query="").geturl()
+    return url
 
 
 def by_source(source: str) -> Site | None:
@@ -287,7 +434,12 @@ def source_label(source: str) -> str:
 
 
 def labels() -> str:
-    return ", ".join(site.label for site in SITES)
+    return ", ".join(site.label for site in SITES if site.working)
+
+
+def unavailable(site: Site) -> str:
+    """Why a site that is in the table is not taken today."""
+    return f"{site.label} links don't work right now. The tool Musimo uses can't read that site."
 
 
 def refusal(url: str) -> str:
@@ -296,6 +448,12 @@ def refusal(url: str) -> str:
     host = parts.hostname if parts else None
     if host in CATALOG_HOSTS:
         return "Catalog imports are not built yet."
+    owner = next((site for site in SITES if host and site.owns(host)), None)
+    if parts and owner:
+        if any(re.fullmatch(pattern, parts.path) for pattern in owner.live_paths):
+            return LIVE_MESSAGE
+        if owner.only:
+            return f"Musimo only takes {owner.only} from {owner.label}."
     where = host or "this link"
     return f"Musimo can't download from {where}. It works with: {labels()}."
 
