@@ -110,6 +110,59 @@ test('loading states name what is on the way and hold the counts back', async ({
   await expect(page.locator('.library-detail .library-count')).toHaveCount(0)
 })
 
+test('an album page opens with its cover, year, artist link and meta line', async ({ page }) => {
+  await libraryFixtures(page)
+  await page.route('**/api/library/albums/album-1', (route) =>
+    route.fulfill({
+      json: {
+        id: 'album-1',
+        name: 'Clear Water',
+        artist: 'Harbor Static',
+        artistId: 'artist-1',
+        coverArt: 'cover-1',
+        year: 2018,
+        genre: 'Ambient',
+        songCount: 2,
+        duration: 428,
+        playCount: 0,
+        song: [
+          librarySong('s1', { title: 'First Light', track: 1 }),
+          librarySong('s2', { title: 'Second Track', track: 2 }),
+        ],
+      },
+    }),
+  )
+  await page.goto('/library/albums/album-1')
+
+  const header = page.locator('.collection-header')
+  await expect(header.getByRole('heading', { level: 1, name: 'Clear Water' })).toBeVisible()
+  await expect(header).toContainText('ALBUM · 2018')
+  await expect(header.locator('.collection-cover img')).toHaveAttribute(
+    'src',
+    '/api/player/art/cover-1',
+  )
+
+  await expect(header.getByRole('link', { name: 'Harbor Static' })).toHaveAttribute(
+    'href',
+    '/library/artists/artist-1',
+  )
+  await expect(header.locator('.library-count')).toHaveText('2 songs · 7 min · Ambient')
+  for (const name of ['Play all', 'Shuffle', 'More actions for Clear Water'])
+    await expect(header.getByRole('button', { name })).toBeVisible()
+
+  // The page heading and its eyebrow give way to the header; the tabs stay as a slim row with the
+  // way back, so the album starts right under them.
+  await expect(page.getByRole('heading', { name: 'Library', exact: true })).toHaveCount(0)
+  await expect(page.getByText('YOUR MUSIC, READY TO PLAY')).toHaveCount(0)
+  const tabs = page.getByRole('navigation', { name: 'Library views' })
+  await expect(tabs).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Back to albums' })).toBeVisible()
+  const tabsBox = await tabs.boundingBox()
+  const headerBox = await header.boundingBox()
+  if (!tabsBox || !headerBox) throw new Error('Missing header measurements')
+  expect(headerBox.y - (tabsBox.y + tabsBox.height)).toBeLessThan(60)
+})
+
 test('a failed load reports under the heading it belongs to', async ({ page }) => {
   await libraryFixtures(page)
   await page.route('**/api/library/albums?**', (route) =>
@@ -189,13 +242,27 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
     },
   ]
   await page.route('**/api/library/artists/artist-1', (route) =>
-    route.fulfill({ json: { id: 'artist-1', name: 'Harbor Static', album: albums } }),
+    route.fulfill({
+      json: { id: 'artist-1', name: 'Harbor Static', coverArt: 'artist-cover-1', album: albums },
+    }),
   )
 
   await page.route('**/api/library/artists/artist-1/tracks', (route) =>
     route.fulfill({ json: { items: library } }),
   )
   await page.goto('/library/artists/artist-1')
+
+  // The header carries a round photo, the name and both counts, and no page heading above it.
+  const header = page.locator('.collection-header')
+  await expect(header.getByRole('heading', { level: 1, name: 'Harbor Static' })).toBeVisible()
+  await expect(header).toContainText('ARTIST')
+  await expect(header.locator('.collection-cover img')).toHaveAttribute(
+    'src',
+    '/api/player/art/artist-cover-1',
+  )
+  await expect(header.locator('.library-count')).toHaveText('2 albums · 3 songs')
+  await expect(page.getByRole('heading', { name: 'Library', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Back to artists' })).toBeVisible()
 
   await expect(page.getByRole('button', { name: 'Open Clear Water' })).toBeVisible()
   await expect(page.locator('.library-card-copy').first()).toContainText('2011')
@@ -207,6 +274,9 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await expect(page.getByRole('img', { name: /Clear Water leads with 30 plays/ })).toBeVisible()
   await page.getByRole('button', { name: 'All songs' }).click()
   await expect(page.getByLabel('Sort songs')).toBeVisible()
+  // All songs keeps the same header rather than shrinking to a bare count.
+  await expect(header.getByRole('heading', { level: 1, name: 'Harbor Static' })).toBeVisible()
+  await expect(header.getByRole('button', { name: 'Albums' })).toBeVisible()
   await page.getByLabel('Sort songs').selectOption('plays')
   await expect(page.locator('.library-track-play strong').first()).toHaveText('Cinder')
 })

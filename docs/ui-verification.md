@@ -81,6 +81,24 @@ Looked at and left as they are: inline text links (track titles, artist links, t
 
 Not verified on a device: the safe-area insets and the 16px zoom rule were reasoned from platform behaviour and checked only for their CSS effect in Chromium emulation, which reports no insets. A real notched iPhone in standalone mode and an Android phone with the keyboard open still need a look.
 
+## Library detail headers, 19 September 2026
+
+A walk of the live app found that a library album page showed the big "Library" heading and the view tabs, then only a small album title and "1 song": no cover, artist or year. The artist page had a small avatar and a count, and the playlist page a title only.
+
+Changed: the album, artist (and its All songs view) and playlist pages now share one header component, laid out like the catalog album page. The album header shows the cover, "ALBUM · year", the title, the artist as a link, and song count, length and genre; the artist header a large round photo with album and song counts; the playlist header a mosaic or first cover, owner, length and public or private. The page heading and eyebrow are dropped on these pages and the tabs shrink to a slim row with the back link. Long titles clamp to two lines and a phone stacks the cover over the text. The description of each header is in [the player note](player.md).
+
+Also changed with it: the title is now the page's `h1` (it was an `h2` under the Library `h1`), and the "Add songs" and "Popularity" headings moved from `h3` to `h2` so the heading order stays unbroken for axe.
+
+Checks added, all on mocked library routes:
+
+- `e2e/library-controls.spec.ts`: the album header's cover, "ALBUM · 2018", artist link, meta line and actions, no "Library" heading, and the header starting within 60px of the tab row; the artist header's photo, eyebrow and counts, kept in All songs.
+- `e2e/playlists.spec.ts`: the playlist header's eyebrow, owner, cover, meta line and buttons; the four-cover mosaic and the single-cover fallback.
+- `e2e/themed-walk.spec.ts`: each detail route under the light theme shows its eyebrow, a cover and the artist link, with no axe violations.
+- `e2e/phone.spec.ts`: at 360px the text stacks under the cover on the same left edge, a long title clamps to two lines, and nothing scrolls sideways.
+- `e2e/a11y.spec.ts`: axe on the album, artist and playlist pages.
+
+Not yet verified in a browser: this change was written in an environment with no shell, so the builds, the specs above and a screenshot pass at desktop and 360px have still to be run.
+
 ## Known limits
 
 Library albums, artists and tracks filter and sort on the server; playlist sorts still apply to the loaded list. Catalog search on the Search page is unchanged and says so in its own hint. Navidrome's saved play queue holds 500 songs, so Play all and Shuffle over a larger library play a 500-song selection. Whole-library track browsing reads up to 50,000 songs from Navidrome, so a library beyond that size describes the first 50,000 it returns.
@@ -93,7 +111,7 @@ Settings draft preservation is implemented with conflict detection (row notices 
 
 Checked 10 September 2026. Automated and manual accessibility checks cover keyboard navigation, touch targets, screen reader support, contrast and zoom.
 
-**Automated checks (e2e/a11y.spec.ts):** Run axe-core accessibility audits on every route (search, library, library album page, downloads, settings, diagnostics). All routes pass axe checks with no violations.
+**Automated checks (e2e/a11y.spec.ts):** Run axe-core accessibility audits on every route (search, library, library album, artist and playlist pages, downloads, settings, diagnostics). All routes pass axe checks with no violations.
 
 **Keyboard navigation:** Virtual lists (tracks, download queue) maintain focus without remounting on filter changes, with deliberate scroll reset when filters actually change. Escape key closes FilterMenu popovers. All icon-only buttons have aria-label attributes. TrackList uses stable keys to avoid losing focus on filter keystrokes.
 

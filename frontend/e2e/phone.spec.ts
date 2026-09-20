@@ -236,6 +236,48 @@ test('the library and download tabs each fit one row at 360px', async ({ page })
   expect(await pageOverflow(page)).toBe(0)
 })
 
+test('a library detail header stacks the cover over the text and clamps a long title', async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 360, height: 780 })
+  await libraryFixtures(page)
+  const name =
+    'An Unreasonably Long Album Title That Keeps Going Well Past Any Sensible Width (Deluxe Remastered Anniversary Edition)'
+  await page.route('**/api/library/albums/album-1', (route) =>
+    route.fulfill({
+      json: {
+        id: 'album-1',
+        name,
+        artist: 'Harbor Static',
+        artistId: 'artist-1',
+        coverArt: 'cover-1',
+        year: 2018,
+        songCount: 2,
+        duration: 428,
+        song: [librarySong('s1', { title: 'Beacon' }), librarySong('s2', { title: 'Anchor' })],
+      },
+    }),
+  )
+  await page.goto('/library/albums/album-1')
+
+  const header = page.locator('.collection-header')
+  const title = header.getByRole('heading', { level: 1 })
+  await expect(title).toContainText('An Unreasonably')
+  await expect(header).toContainText('ALBUM · 2018')
+  await expect(header.getByRole('link', { name: 'Harbor Static' })).toBeVisible()
+  const cover = await box(header.locator('.collection-cover'))
+  const text = await box(title)
+  // Stacked: the text starts below the cover, on the same left edge.
+  expect(text.y).toBeGreaterThanOrEqual(cover.y + cover.height)
+  expect(Math.abs(text.x - cover.x)).toBeLessThan(2)
+  // Two lines at most, so a long title never pushes the actions off the first screen.
+  const lines = await title
+    .locator('span')
+    .evaluate((element) => getComputedStyle(element).webkitLineClamp)
+  expect(lines).toBe('2')
+  expect(await pageOverflow(page)).toBe(0)
+})
+
 test('the mini player is one row and hands the rest to Now Playing', async ({ page }) => {
   await libraryFixtures(page)
   await page.goto('/library/albums/album-1')
