@@ -124,7 +124,9 @@ test('card links and download controls work independently in a natural-height gr
     const viewport = page.viewportSize()
     const card = await cards.first().boundingBox()
     if (!viewport || !card) throw new Error('Missing viewport or card box')
-    expect(card.y).toBeLessThan(viewport.height * 0.45)
+    // Above the grid there is one line saying where downloads go; past that, the cards begin in
+    // the top half or so of a phone screen.
+    expect(card.y).toBeLessThan(viewport.height * 0.55)
   }
   const download = cards
     .first()
