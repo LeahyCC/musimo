@@ -81,6 +81,16 @@ Looked at and left as they are: inline text links (track titles, artist links, t
 
 Not verified on a device: the safe-area insets and the 16px zoom rule were reasoned from platform behaviour and checked only for their CSS effect in Chromium emulation, which reports no insets. A real notched iPhone in standalone mode and an Android phone with the keyboard open still need a look.
 
+## Track rows and album cards, 19 September 2026
+
+Every desktop track row carried a badge, Preview, a format select, a grey tick and a kebab, and every album card repeated "to /library · Original source quality". Changed in `frontend/src/downloads.tsx`, `search.tsx` and `download-target.tsx`, with checks in `e2e/cards.spec.ts`, `album.spec.ts`, `download-options.spec.ts` and `app.spec.ts`:
+
+- The format select left the row on every screen; the options popover, already used on phones, holds Format beside Download to. The row is the badge, Preview, one download button and the kebab. The chosen format is on the button's tooltip and accessible name.
+- An owned track shows its badge and no disabled tick. Edition matches, queued and downloaded-earlier badges, the retry state and the per-download override are unchanged.
+- Album cards lost their destination line. It shows once above each grid ("Downloads go to /library · Original source quality", with the warning icon when the folder is not writable) and stays on the album page header.
+
+Not run: this change was written without a shell, so the specs and a browser check of the desktop row, the popover and the grid line still need a pass.
+
 ## Library detail headers, 19 September 2026
 
 A walk of the live app found that a library album page showed the big "Library" heading and the view tabs, then only a small album title and "1 song": no cover, artist or year. The artist page had a small avatar and a count, and the playlist page a title only.

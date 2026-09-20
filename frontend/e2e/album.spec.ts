@@ -148,14 +148,21 @@ for (const ownedCount of [0, 1, 2]) {
     }
 
     for (const item of tracks) {
-      const button = page.getByRole('button', {
-        name:
-          item.ownership === 'owned'
-            ? `${item.title} is in your library`
-            : `Download ${item.title} to /music`,
-      })
-      if (item.ownership === 'owned') await expect(button).toBeDisabled()
-      else await expect(button).toBeEnabled()
+      const row = page.locator('.track-row', { hasText: item.title })
+      if (item.ownership === 'owned') {
+        // The badge says it; there is no download button or disabled tick beside it.
+        await expect(row.locator("[data-ui='ownership']")).toHaveText('In library')
+        await expect(row.getByRole('button', { name: /^Download Recording/ })).toHaveCount(0)
+        await expect(row.getByRole('button', { name: /in your library/ })).toHaveCount(0)
+      } else {
+        // The chosen format shows on the button's name and tooltip, not in a select on the row.
+        const button = row.getByRole('button', {
+          name: `Download ${item.title} to /music · Original source quality`,
+        })
+        await expect(button).toBeEnabled()
+        await expect(button).toHaveAttribute('title', 'to /music · Original source quality')
+      }
+      await expect(row.getByRole('combobox')).toHaveCount(0)
     }
   })
 }
