@@ -8,11 +8,13 @@ import {
   Pause,
   PictureInPicture2,
   Play,
+  RectangleHorizontal,
   Repeat,
   Shuffle,
   SkipBack,
   SkipForward,
   Sparkles,
+  Square,
   ThumbsUp,
   Volume2,
   VolumeX,
@@ -29,6 +31,8 @@ import type { IconButtonProps } from './ui'
 
 export type StagePlacement = 'docked' | 'popout'
 export type StageView = 'artwork' | 'visualizer'
+/** How the docked stage sits on the page: a square beside the tabs, or a theater above them. */
+export type StageSize = 'small' | 'large'
 
 type OverlayProps = {
   placement: StagePlacement
@@ -40,6 +44,10 @@ type OverlayProps = {
   controls: boolean
   onFullscreen: () => void
   onPopout?: () => void
+  /** The docked stage's size, and the switch for it. Undefined where the stage has one size only:
+      full screen, the popout and a phone, so no button is drawn there. */
+  size?: StageSize
+  onSize?: () => void
   /** Undefined where the visualizer is not available, so no toggle is shown. */
   view?: StageView
   onToggleView?: () => void
@@ -342,6 +350,8 @@ export function NowPlayingOverlay({
   controls,
   onFullscreen,
   onPopout,
+  size,
+  onSize,
   view,
   onToggleView,
   preset,
@@ -408,6 +418,15 @@ export function NowPlayingOverlay({
           {onPopout && (
             <StageButton aria-label="Pop out player" onClick={onPopout}>
               <PictureInPicture2 size={17} />
+            </StageButton>
+          )}
+          {/* The label says where the press goes, as the full screen button's does. */}
+          {size && onSize && (
+            <StageButton
+              aria-label={size === 'large' ? 'Small stage' : 'Large stage'}
+              onClick={onSize}
+            >
+              {size === 'large' ? <Square size={17} /> : <RectangleHorizontal size={17} />}
             </StageButton>
           )}
           <StageButton aria-label={fullscreenLabel} onClick={onFullscreen}>
