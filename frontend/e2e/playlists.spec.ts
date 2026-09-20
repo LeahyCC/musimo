@@ -154,8 +154,16 @@ test('a playlist page counts, plays, shuffles and renames its songs', async ({ p
   await playlistFixtures(page)
   await page.goto('/library/playlists/road')
 
-  await expect(page.getByRole('heading', { name: 'Road trip' })).toBeVisible()
-  await expect(page.locator('.library-detail .library-count').first()).toHaveText('1 song · 3:00')
+  await expect(page.getByRole('heading', { level: 1, name: 'Road trip' })).toBeVisible()
+  const header = page.locator('.collection-header')
+  await expect(header).toContainText('PLAYLIST')
+  await expect(header).toContainText('By listener')
+  await expect(header.locator('.collection-cover img')).toBeVisible()
+  await expect(header.locator('.library-count')).toHaveText('1 song · 3 min · Public')
+  for (const name of ['Play all', 'Shuffle', 'Rename', 'Delete'])
+    await expect(header.getByRole('button', { name })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Library', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Back to playlists' })).toBeVisible()
   await page.getByRole('button', { name: 'Play all' }).click()
   await expect(page.locator('.live-player')).toContainText('Anchor')
 
@@ -170,8 +178,45 @@ test('a playlist page counts, plays, shuffles and renames its songs', async ({ p
   const results = page.locator('.playlist-add-list')
   await expect(results.getByRole('button', { name: 'Remove Anchor from Long drive' })).toBeVisible()
   await results.getByRole('button', { name: 'Add Beacon to Long drive' }).click()
-  await expect(page.locator('.library-detail .library-count').first()).toHaveText('2 songs · 6:00')
+  await expect(page.locator('.library-detail .library-count').first()).toHaveText(
+    '2 songs · 6 min · Public',
+  )
   await expect(results.getByRole('button', { name: 'Remove Beacon from Long drive' })).toBeVisible()
+})
+
+test('a playlist cover is a mosaic of four covers, or the first cover', async ({ page }) => {
+  await playlistFixtures(page)
+  const songs = ['a', 'b', 'c', 'd'].map((id) =>
+    librarySong(id, { title: `Song ${id}`, coverArt: `cover-${id}`, duration: 200 }),
+  )
+  const playlist = (entry: LibraryTrack[]) => ({
+    id: 'road',
+    name: 'Road trip',
+    songCount: entry.length,
+    duration: entry.length * 200,
+    public: false,
+    owner: '',
+    changed: '2026-09-01T00:00:00Z',
+    entry,
+  })
+  let entry = songs
+  await page.route(/\/api\/library\/playlists\/road$/, (route) =>
+    route.fulfill({ json: playlist(entry) }),
+  )
+
+  const covers = page.locator('.collection-header .collection-cover img')
+  await page.goto('/library/playlists/road')
+  await expect(covers).toHaveCount(4)
+  // No owner is known, so the byline is left out rather than reading "By ".
+  await expect(page.locator('.collection-header')).not.toContainText('By ')
+  await expect(page.locator('.collection-header .library-count')).toHaveText(
+    '4 songs · 13 min · Private',
+  )
+
+  entry = songs.slice(0, 3)
+  await page.reload()
+  await expect(covers).toHaveCount(1)
+  await expect(covers).toHaveAttribute('src', '/api/player/art/cover-a')
 })
 
 /** The footer's add button on wide screens; on a phone the Now Playing page offers it. */
@@ -223,7 +268,9 @@ test('the playlist picker centres, toggles membership and removes other songs', 
 
   // The playlist page reads the same cache, so the change is already there.
   await page.goto('/library/playlists/road')
-  await expect(page.locator('.library-detail .library-count').first()).toHaveText('1 song · 3:00')
+  await expect(page.locator('.library-detail .library-count').first()).toHaveText(
+    '1 song · 3 min · Public',
+  )
   await expect(page.locator('.library-tracks')).toContainText('Beacon')
 })
 

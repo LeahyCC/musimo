@@ -58,6 +58,7 @@ import {
   playerCapabilitiesSchema,
 } from './api'
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from './api'
+import { CollectionCover, CollectionHeader } from './collection-header'
 import { cx } from './cx'
 import { InfiniteScroll } from './infinite-scroll'
 import { LyricsPanel } from './lyrics'
@@ -166,6 +167,16 @@ const ARTIST_SONG_SORTS = [
 
 const cover = (coverArt?: string) =>
   coverArt ? `/api/player/art/${encodeURIComponent(coverArt)}` : ''
+
+/** A whole collection's length for a page header: "42 min", or "1 hr 4 min" from an hour up. */
+const totalLength = (seconds: number) => {
+  if (seconds <= 0) return ''
+  const minutes = Math.max(1, Math.round(seconds / 60))
+  if (minutes < 60) return `${minutes} min`
+  return `${Math.floor(minutes / 60)} hr${minutes % 60 ? ` ${minutes % 60} min` : ''}`
+}
+
+const sumDuration = (songs: LibraryTrack[]) => songs.reduce((sum, song) => sum + song.duration, 0)
 
 const textCompare = (left = '', right = '') =>
   left.localeCompare(right, undefined, { numeric: true })
@@ -1181,8 +1192,17 @@ export function LibraryPage({
     ? { id: parentArtistId, name: albumDetail.data?.artist || 'artist' }
     : null
   const playlist = playlistDetail.data
+  const album = albumId ? albumDetail.data : undefined
   const playlistLiked = Boolean(playlist) && playlist?.id === likedId
   const detailTracks = playlist?.entry ?? albumDetail.data?.song ?? []
+  // Four different covers make a mosaic; fewer show the first, and a playlist with no covered
+  // song falls back to the one Navidrome made for it.
+  const playlistCovers = [
+    ...new Set((playlist?.entry ?? []).flatMap((song) => (song.coverArt ? [song.coverArt] : []))),
+  ]
+    .slice(0, 4)
+    .map(cover)
+  if (!playlistCovers.length && playlist?.coverArt) playlistCovers.push(cover(playlist.coverArt))
   const detailTitle = playlist?.name ?? albumDetail.data?.name ?? ''
   const detailSource = playlist ? `playlist:${playlist.id}` : `album:${albumId}`
   const detailError = playlistId ? playlistDetail.error : albumId ? albumDetail.error : null
@@ -1254,38 +1274,73 @@ export function LibraryPage({
       </EmptyPanel>
     )
 
+  // A detail page starts with its own header, so the page heading goes and the view tabs shrink to
+  // a slim row that carries the way back.
+  const backLabel = albumParent?.name ?? (playlistId ? 'playlists' : albumId ? 'albums' : 'artists')
+
   return (
     <>
-      <PageTitle eyebrow="YOUR MUSIC, READY TO PLAY" title="Library">
-        <Tag role="status">
-          {/* Both labels share one cell so the tag keeps its width while the busy one shows. */}
-          <span className="grid">
-            <span className="[grid-area:1/1]" style={{ visibility: busy ? 'hidden' : undefined }}>
-              NAVIDROME READY
+      {showBrowser && (
+        <PageTitle eyebrow="YOUR MUSIC, READY TO PLAY" title="Library">
+          <Tag role="status">
+            {/* Both labels share one cell so the tag keeps its width while the busy one shows. */}
+            <span className="grid">
+              <span className="[grid-area:1/1]" style={{ visibility: busy ? 'hidden' : undefined }}>
+                NAVIDROME READY
+              </span>
+              {busy && <span className="[grid-area:1/1]">Opening music…</span>}
             </span>
-            {busy && <span className="[grid-area:1/1]">Opening music…</span>}
-          </span>
-        </Tag>
-      </PageTitle>
-      <nav
-        className="flex gap-[6px] overflow-x-auto border-b border-line mb-[28px] max-phone:mb-[20px] max-phone:gap-0 max-phone:overflow-visible"
-        aria-label="Library views"
+          </Tag>
+        </PageTitle>
+      )}
+      <div
+        className={
+          showBrowser
+            ? 'contents'
+            : 'mb-[18px] flex flex-wrap items-center justify-between gap-x-[16px] border-b border-line max-phone:mb-[14px]'
+        }
       >
-        {(['home', 'albums', 'artists', 'tracks', 'playlists'] as Tab[]).map((item) => (
+        {!showBrowser && (
           <button
-            data-ui="tab"
-            className={cx(
-              'border-0 border-b-2 bg-none px-[14px] py-[11px] capitalize coarse:min-h-11 max-phone:min-w-0 max-phone:flex-1 max-phone:px-[2px] max-phone:py-[12px] max-phone:text-body max-phone:text-center',
-              tab === item ? 'border-accent text-text' : 'border-transparent text-muted',
-            )}
-            key={item}
-            aria-pressed={tab === item}
-            onClick={() => changeTab(item)}
+            type="button"
+            data-ui="text-link"
+            className={textLinkClassName()}
+            onClick={() => {
+              if (albumParent)
+                void navigate({
+                  to: '/library/artists/$artistId',
+                  params: { artistId: albumParent.id },
+                })
+              else changeTab(playlistId ? 'playlists' : albumId ? 'albums' : 'artists')
+            }}
           >
-            {item.charAt(0).toUpperCase() + item.slice(1)}
+            ← Back to {backLabel}
           </button>
-        ))}
-      </nav>
+        )}
+        <nav
+          className={cx(
+            'flex min-w-0 gap-[6px] overflow-x-auto max-phone:gap-0 max-phone:overflow-visible',
+            showBrowser ? 'border-b border-line mb-[28px] max-phone:mb-[20px]' : 'max-phone:w-full',
+          )}
+          aria-label="Library views"
+        >
+          {(['home', 'albums', 'artists', 'tracks', 'playlists'] as Tab[]).map((item) => (
+            <button
+              data-ui="tab"
+              className={cx(
+                'border-0 border-b-2 bg-none px-[14px] capitalize coarse:min-h-11 max-phone:min-w-0 max-phone:flex-1 max-phone:px-[2px] max-phone:py-[12px] max-phone:text-body max-phone:text-center',
+                showBrowser ? 'py-[11px]' : 'py-[7px]',
+                tab === item ? 'border-accent text-text' : 'border-transparent text-muted',
+              )}
+              key={item}
+              aria-pressed={tab === item}
+              onClick={() => changeTab(item)}
+            >
+              {item.charAt(0).toUpperCase() + item.slice(1)}
+            </button>
+          ))}
+        </nav>
+      </div>
       {showBrowser && (
         <div className="flex flex-wrap items-center gap-[10px] mb-[22px]">
           <label className="flex w-[min(420px,100%)] items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted">
@@ -1452,35 +1507,49 @@ export function LibraryPage({
       )}
       {(albumId || playlistId) && (
         <section className="library-detail grid gap-[16px]">
-          <div className={sectionHeadingClassName}>
-            <div>
-              <button
-                type="button"
-                data-ui="text-link"
-                className={textLinkClassName()}
-                onClick={() => {
-                  if (albumParent)
-                    void navigate({
-                      to: '/library/artists/$artistId',
-                      params: { artistId: albumParent.id },
-                    })
-                  else changeTab(playlistId ? 'playlists' : 'albums')
-                }}
-              >
-                ← Back to {albumParent?.name ?? (playlistId ? 'playlists' : 'albums')}
-              </button>
-              <h2 className="flex items-center gap-[8px] text-base">
-                {playlistLiked && <Heart size={17} fill="currentColor" />}
-                {detailTitle}
-              </h2>
-              {!(albumDetail.isLoading || playlistDetail.isLoading) && (
-                <small className="library-count text-small whitespace-nowrap text-muted">
-                  {songCount(detailTracks.length)}
-                  {playlist?.duration ? ` · ${durationText(playlist.duration)}` : ''}
-                </small>
-              )}
-            </div>
-            <div className="flex flex-wrap items-center gap-[16px]">
+          {(album || playlist) && (
+            <CollectionHeader
+              cover={
+                <CollectionCover
+                  urls={playlist ? playlistCovers : album?.coverArt ? [cover(album.coverArt)] : []}
+                  fallback={playlist ? <ListMusic /> : <Disc3 />}
+                />
+              }
+              eyebrow={playlist ? 'PLAYLIST' : ['ALBUM', album?.year].filter(Boolean).join(' · ')}
+              title={detailTitle}
+              titleIcon={playlistLiked ? <Heart size={22} fill="currentColor" /> : undefined}
+              byline={
+                playlist ? (
+                  playlist.owner ? (
+                    <span className="text-body">By {playlist.owner}</span>
+                  ) : undefined
+                ) : album?.artistId ? (
+                  <Link
+                    className="inline-flex w-fit items-center text-body text-accent hover:underline coarse:min-h-11"
+                    to="/library/artists/$artistId"
+                    params={{ artistId: album.artistId }}
+                  >
+                    {album.artist}
+                  </Link>
+                ) : (
+                  <span className="text-body">{album?.artist}</span>
+                )
+              }
+              meta={(playlist
+                ? [
+                    songCount(detailTracks.length),
+                    totalLength(playlist.duration || sumDuration(detailTracks)),
+                    playlist.public ? 'Public' : 'Private',
+                  ]
+                : [
+                    songCount(detailTracks.length),
+                    totalLength(album?.duration || sumDuration(detailTracks)),
+                    album?.genre,
+                  ]
+              )
+                .filter(Boolean)
+                .join(' · ')}
+            >
               <CollectionPlayButton
                 source={detailSource}
                 text="Play all"
@@ -1523,8 +1592,8 @@ export function LibraryPage({
                   <Trash2 size={15} /> Delete
                 </Button>
               )}
-            </div>
-          </div>
+            </CollectionHeader>
+          )}
           {playlist && renaming && (
             <form
               className="flex flex-wrap items-end gap-[10px] rounded-[9px] border border-line bg-raised p-[14px] mb-[20px]"
@@ -1585,7 +1654,7 @@ export function LibraryPage({
           {playlist && (
             <section className="border-t border-line pt-[12px]">
               <div className={sectionHeadingClassName}>
-                <h3>Add songs</h3>
+                <h2 className="text-strong">Add songs</h2>
                 <span className={sectionCaptionClassName}>Search your library</span>
               </div>
               <label className="flex w-[min(420px,100%)] items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted">
@@ -1656,86 +1725,74 @@ export function LibraryPage({
       )}
       {artistId && artistDetail.data && (
         <section className="library-detail grid gap-[16px]">
-          <button
-            type="button"
-            data-ui="text-link"
-            className={textLinkClassName()}
-            onClick={() => changeTab('artists')}
-          >
-            ← Back to artists
-          </button>
-          <div className="library-artist-heading flex items-center gap-[16px] max-phone:flex-wrap max-phone:items-start">
-            <span className="grid h-[84px] w-[84px] flex-none basis-[84px] place-items-center overflow-hidden rounded-pill bg-raised text-faint">
-              {artistDetail.data.coverArt ? (
-                <img
-                  src={cover(artistDetail.data.coverArt)}
-                  alt=""
-                  className="h-full w-full object-cover"
-                />
-              ) : (
-                <Disc3 />
-              )}
-            </span>
-            <div className="flex-1">
-              <h2 className="mb-[4px]">{artistDetail.data.name}</h2>
-              <span>
-                {(artistSongsMode
-                  ? songCount(artistSongs.length)
-                  : `${artistAlbums.length} ${artistAlbums.length === 1 ? 'album' : 'albums'}`
-                ).toUpperCase()}
-              </span>
-            </div>
-            <div className="flex flex-wrap items-center gap-[16px] max-phone:w-full">
-              <CollectionPlayButton
-                source={`artist:${artistId}`}
-                text="Play all"
-                variant="primary"
-                size={15}
-                disabled={busy || (artistSongsMode ? !artistSongs.length : !artistAlbums.length)}
-                onPlay={() =>
-                  artistSongsMode
-                    ? player.playLibrary(artistSongs, 0, `artist:${artistId}`)
-                    : playCollection.mutate({ kind: 'artist', id: artistId, shuffled: false })
-                }
+          <CollectionHeader
+            className="library-artist-heading"
+            cover={
+              <CollectionCover
+                round
+                urls={artistDetail.data.coverArt ? [cover(artistDetail.data.coverArt)] : []}
+                fallback={<Disc3 />}
               />
-              <Button
-                onClick={() =>
-                  artistSongsMode
-                    ? player.shuffleLibrary(artistSongs, `artist:${artistId}`)
-                    : playCollection.mutate({ kind: 'artist', id: artistId, shuffled: true })
-                }
-                disabled={busy || (artistSongsMode ? !artistSongs.length : !artistAlbums.length)}
-              >
-                <Shuffle size={15} /> Shuffle
-              </Button>
-              <Button
-                aria-pressed={Boolean(artistDetail.data.starred)}
-                disabled={favouriteArtist.isPending}
-                onClick={() =>
-                  favouriteArtist.mutate({
-                    id: artistId,
-                    favourite: !artistDetail.data?.starred,
-                  })
-                }
-              >
-                <Star size={15} fill={artistDetail.data.starred ? 'currentColor' : 'none'} />{' '}
-                {artistDetail.data.starred ? 'Favourite' : 'Add to favourites'}
-              </Button>
-              <Button
-                onClick={() =>
-                  void navigate({
-                    to: artistSongsMode
-                      ? '/library/artists/$artistId'
-                      : '/library/artists/$artistId/songs',
-                    params: { artistId },
-                  })
-                }
-                disabled={!artistSongsMode && (artistTracks.isLoading || !artistSongs.length)}
-              >
-                <ListMusic size={15} /> {artistSongsMode ? 'Albums' : 'All songs'}
-              </Button>
-            </div>
-          </div>
+            }
+            eyebrow="ARTIST"
+            title={artistDetail.data.name}
+            // The songs are read apart from the albums, so their count waits until they arrive.
+            meta={[
+              `${artistAlbums.length} ${artistAlbums.length === 1 ? 'album' : 'albums'}`,
+              artistTracks.data ? songCount(artistSongs.length) : '',
+            ]
+              .filter(Boolean)
+              .join(' · ')}
+          >
+            <CollectionPlayButton
+              source={`artist:${artistId}`}
+              text="Play all"
+              variant="primary"
+              size={15}
+              disabled={busy || (artistSongsMode ? !artistSongs.length : !artistAlbums.length)}
+              onPlay={() =>
+                artistSongsMode
+                  ? player.playLibrary(artistSongs, 0, `artist:${artistId}`)
+                  : playCollection.mutate({ kind: 'artist', id: artistId, shuffled: false })
+              }
+            />
+            <Button
+              onClick={() =>
+                artistSongsMode
+                  ? player.shuffleLibrary(artistSongs, `artist:${artistId}`)
+                  : playCollection.mutate({ kind: 'artist', id: artistId, shuffled: true })
+              }
+              disabled={busy || (artistSongsMode ? !artistSongs.length : !artistAlbums.length)}
+            >
+              <Shuffle size={15} /> Shuffle
+            </Button>
+            <Button
+              aria-pressed={Boolean(artistDetail.data.starred)}
+              disabled={favouriteArtist.isPending}
+              onClick={() =>
+                favouriteArtist.mutate({
+                  id: artistId,
+                  favourite: !artistDetail.data?.starred,
+                })
+              }
+            >
+              <Star size={15} fill={artistDetail.data.starred ? 'currentColor' : 'none'} />{' '}
+              {artistDetail.data.starred ? 'Favourite' : 'Add to favourites'}
+            </Button>
+            <Button
+              onClick={() =>
+                void navigate({
+                  to: artistSongsMode
+                    ? '/library/artists/$artistId'
+                    : '/library/artists/$artistId/songs',
+                  params: { artistId },
+                })
+              }
+              disabled={!artistSongsMode && (artistTracks.isLoading || !artistSongs.length)}
+            >
+              <ListMusic size={15} /> {artistSongsMode ? 'Albums' : 'All songs'}
+            </Button>
+          </CollectionHeader>
           <div className="flex flex-wrap items-center gap-[10px] mt-[4px] mb-[12px]">
             <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
               <SlidersHorizontal size={16} />
@@ -1799,7 +1856,7 @@ export function LibraryPage({
               </div>
               <section className="grid gap-[10px] mt-[26px]">
                 <div className={sectionHeadingClassName}>
-                  <h3>Popularity</h3>
+                  <h2 className="text-strong">Popularity</h2>
                   <span className={sectionCaptionClassName}>
                     Navidrome play counts by release year
                   </span>

@@ -134,6 +134,8 @@ type Walk = {
   path: string
   /** Something that only renders once the route has its data. */
   ready: (page: Page) => Locator
+  /** What a library detail page's header must show: its eyebrow, a cover, and any link in it. */
+  header?: { eyebrow: string; link?: { name: string; href: string } }
   /** A route with no card, panel or empty state of its own, so the card check has nothing to read. */
   cardless?: true
   /** A route that hides the footer player, because the page has its own transport. */
@@ -194,6 +196,10 @@ const ROUTES: Walk[] = [
     name: 'library-album',
     path: '/library/albums/album-1',
     ready: (page) => page.getByRole('heading', { name: 'Clear Water' }),
+    header: {
+      eyebrow: 'ALBUM · 2026',
+      link: { name: 'Harbor Static', href: '/library/artists/artist-1' },
+    },
     cardless: true,
   },
   {
@@ -205,17 +211,23 @@ const ROUTES: Walk[] = [
     name: 'library-artist',
     path: '/library/artists/artist-1',
     ready: (page) => page.getByRole('heading', { name: 'Harbor Static' }),
+    header: { eyebrow: 'ARTIST' },
   },
   {
     name: 'library-artist-album',
     path: '/library/artists/artist-1/albums/album-1',
     ready: (page) => page.getByRole('heading', { name: 'Clear Water' }),
+    header: {
+      eyebrow: 'ALBUM · 2026',
+      link: { name: 'Harbor Static', href: '/library/artists/artist-1' },
+    },
     cardless: true,
   },
   {
     name: 'library-artist-songs',
     path: '/library/artists/artist-1/songs',
     ready: (page) => page.getByRole('main').getByText('Second Tide'),
+    header: { eyebrow: 'ARTIST' },
     cardless: true,
   },
   {
@@ -234,6 +246,7 @@ const ROUTES: Walk[] = [
     name: 'library-playlist',
     path: '/library/playlists/road',
     ready: (page) => page.getByRole('heading', { name: 'Road trip' }),
+    header: { eyebrow: 'PLAYLIST' },
     cardless: true,
   },
   {
@@ -309,6 +322,16 @@ for (const route of ROUTES) {
 
     await page.goto(route.path)
     await expect(route.ready(page)).toBeVisible()
+    if (route.header) {
+      const header = page.locator('.collection-header')
+      await expect(header).toContainText(route.header.eyebrow)
+      await expect(header.locator('.collection-cover img').first()).toBeVisible()
+      if (route.header.link)
+        await expect(header.getByRole('link', { name: route.header.link.name })).toHaveAttribute(
+          'href',
+          route.header.link.href,
+        )
+    }
     const player = page.locator('footer.live-player')
     if (route.playerHidden) await expect(player).toBeHidden()
     else await expect(player).toContainText('First Light')
