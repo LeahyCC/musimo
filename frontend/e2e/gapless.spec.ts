@@ -133,7 +133,9 @@ test('both library elements feed the analyser, so the visualizer survives a hand
     const wired = new Set<HTMLMediaElement>()
     const create = AudioContext.prototype.createMediaElementSource
     AudioContext.prototype.createMediaElementSource = function (element) {
-      wired.add(element)
+      // Only the library pair counts. The graph is built around an element of Musimo's own that
+      // never plays, which is not one of them.
+      if (element.classList.contains('library-audio')) wired.add(element)
       document.documentElement.dataset.wired = String(wired.size)
       return create.call(this, element)
     }
@@ -142,6 +144,51 @@ test('both library elements feed the analyser, so the visualizer survives a hand
   await playToTheEnd(page)
   await expect(page.getByRole('contentinfo')).toContainText('Bravo', { timeout: 15_000 })
   await expect(page.locator('html')).toHaveAttribute('data-wired', '2')
+})
+
+test('a quiet track is boosted the same on both library elements', async ({ page }) => {
+  // +6 dB is about twice as loud, and a peak of 0.3 leaves room for it. At full volume the
+  // element cannot go past 1, so the rest has to come from that element's gain stage, and both
+  // elements must have one or every other track would miss it.
+  const quiet = (id: string, title: string) =>
+    librarySong(id, {
+      title,
+      duration: 30,
+      replayGain: { trackGain: 6, trackPeak: 0.3 },
+    })
+  await page.addInitScript(() => {
+    localStorage.setItem('musimo.player-volume', '1')
+    const boosts = new Map<HTMLMediaElement, GainNode>()
+    const source = AudioContext.prototype.createMediaElementSource
+    AudioContext.prototype.createMediaElementSource = function (element) {
+      const node = source.call(this, element)
+      const connect = node.connect.bind(node)
+      node.connect = ((target: AudioNode) => {
+        if (target instanceof GainNode) boosts.set(element, target)
+        return connect(target)
+      }) as typeof node.connect
+
+      return node
+    }
+
+    // Read back by the test: the gain on whichever library element is playing.
+    Object.assign(window, {
+      playingBoost: () => {
+        const active = document.querySelector<HTMLAudioElement>(
+          'audio.library-audio[data-role="active"]',
+        )
+        return active ? (boosts.get(active)?.gain.value ?? 0) : 0
+      },
+    })
+  })
+  await restoreQueue(page, [quiet('song-a', 'Alpha'), quiet('song-b', 'Bravo')])
+  await playToTheEnd(page)
+  const boost = () =>
+    page.evaluate(() => (window as unknown as { playingBoost: () => number }).playingBoost())
+
+  await expect.poll(boost).toBeCloseTo(10 ** (6 / 20), 1)
+  await expect(page.getByRole('contentinfo')).toContainText('Bravo', { timeout: 15_000 })
+  await expect.poll(boost).toBeCloseTo(10 ** (6 / 20), 1)
 })
 
 test('a metered connection preloads the metadata only', async ({ page }) => {

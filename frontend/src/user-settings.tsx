@@ -680,8 +680,8 @@ function PlaybackSettings() {
             ))}
           </FieldSelect>
           <p id="replay-gain-preamp-note" className="text-tiny">
-            Added to the tagged gain. A track is never pushed past its tagged peak, and the player
-            cannot go above full volume, so a boost only shows while the volume slider has room.
+            Added to the tagged gain. A track is never pushed past its tagged peak, and a track with
+            no peak tag is not boosted past full volume.
           </p>
         </div>
         <div className="grid gap-[6px]">
