@@ -302,6 +302,64 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await expect(page.locator('.library-track-play strong').first()).toHaveText('Cinder')
 })
 
+test('an artist page folds the editions of one album into a single card', async ({ page }) => {
+  await libraryFixtures(page)
+  const album = (id: string, name: string, year: number, songs: number, playCount: number) => ({
+    id,
+    name,
+    artist: 'Harbor Static',
+    coverArt: 'cover-1',
+    songCount: songs,
+    year,
+    playCount,
+  })
+  // Two editions of Circles, and two titles that only look alike and must stay apart.
+  const albums = [
+    album('circles-1', 'Circles', 2019, 12, 5),
+    album('circles-2', 'Circles (Deluxe Edition)', 2020, 20, 9),
+    album('blue-1', 'Blue', 2015, 8, 1),
+    album('blue-2', 'Blue Moon', 2016, 9, 2),
+  ]
+  await page.route('**/api/library/artists/artist-1', (route) =>
+    route.fulfill({ json: { id: 'artist-1', name: 'Harbor Static', album: albums } }),
+  )
+
+  await page.route('**/api/library/artists/artist-1/tracks', (route) =>
+    route.fulfill({ json: { items: library } }),
+  )
+  await page.goto('/library/artists/artist-1')
+
+  // Four releases, three albums: the header says both.
+  const header = page.locator('.collection-header')
+  await expect(header.locator('.library-count')).toHaveText('3 albums, 4 editions · 3 songs')
+  const names = () => page.locator('.library-card-copy strong').allInnerTexts()
+  // A group sorts as one album, by its newest edition.
+  expect(await names()).toEqual(['Circles', 'Blue Moon', 'Blue'])
+  await page.getByLabel('Sort albums').selectOption('oldest')
+  await expect.poll(names).toEqual(['Blue', 'Blue Moon', 'Circles'])
+  await page.getByLabel('Sort albums').selectOption('plays')
+  await expect.poll(names).toEqual(['Circles', 'Blue Moon', 'Blue'])
+
+  // Only the grouped card carries the chip; "Blue" and "Blue Moon" are ordinary cards.
+  await expect(page.locator('.edition-chip')).toHaveText(['2 editions'])
+  await expect(page.getByRole('button', { name: 'Open Blue', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open Blue Moon', exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Open Circles, 2 editions' }).click()
+  const editions = page.getByRole('dialog', { name: 'Circles' })
+  await expect(editions).toBeVisible()
+  const rows = editions.getByRole('listitem')
+  await expect(rows).toHaveCount(2)
+  // Oldest first, each with what tells it apart: the edition words, the year and the song count.
+  await expect(rows.nth(0)).toContainText('Standard edition')
+  await expect(rows.nth(0)).toContainText('2019 · 12 songs')
+  await expect(rows.nth(1)).toContainText('Deluxe Edition')
+  await expect(rows.nth(1)).toContainText('2020 · 20 songs')
+
+  await editions.getByRole('button', { name: /Deluxe Edition/ }).click()
+  await expect(page).toHaveURL(/\/library\/artists\/artist-1\/albums\/circles-2$/)
+})
+
 test('the artists view sends its filters to the server and keeps favourites', async ({
   page,
   isMobile,
