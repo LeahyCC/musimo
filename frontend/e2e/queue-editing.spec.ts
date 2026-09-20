@@ -8,30 +8,38 @@ const alpha = librarySong('song-a', { title: 'Alpha' })
 const bravo = librarySong('song-b', { title: 'Bravo' })
 const charlie = librarySong('song-c', { title: 'Charlie' })
 const delta = librarySong('song-d', { title: 'Delta' })
+const echo = librarySong('song-e', { title: 'Echo', albumId: 'album-2', album: 'Open Air' })
 
 type Save = { ids: string[]; current: string }
 
 /**
  * Restores this queue with its first song loaded, without starting playback, and records every
- * save the player sends back to Navidrome.
+ * save the player sends back to Navidrome. Like Navidrome, it hands back the queue as it was last
+ * saved, so a reload restores the edits made before it.
  */
 async function restoreQueue(page: Page, queue: LibraryTrack[]) {
   const saves: Save[] = []
+  const known = new Map(
+    [...queue, alpha, bravo, charlie, delta, echo].map((song) => [song.id, song] as const),
+  )
+  let restored = { current: queue[0]?.id ?? '', entry: queue }
   // Pinned so the stage does not depend on the machine's WebGPU.
   await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
   await playerFixtures(page)
   await page.route('**/api/player/queue', async (route) => {
     if (route.request().method() === 'GET') {
-      await route.fulfill({ json: { current: queue[0]?.id ?? '', position: 0, entry: queue } })
+      await route.fulfill({ json: { ...restored, position: 0 } })
       return
     }
 
     const body = requestBody(route)
-    const ids = Array.isArray(body.ids) ? body.ids : []
-    saves.push({
-      ids: ids.filter((id): id is string => typeof id === 'string'),
-      current: bodyText(body, 'current') ?? '',
-    })
+    const ids = (Array.isArray(body.ids) ? body.ids : []).filter(
+      (id): id is string => typeof id === 'string',
+    )
+    const current = bodyText(body, 'current') ?? ''
+    saves.push({ ids, current })
+    const entry = ids.flatMap((id) => known.get(id) ?? [])
+    if (entry.length === ids.length) restored = { current, entry }
     await route.fulfill({ status: 204 })
   })
   await page.route('**/api/player/lyrics/**', (route) => route.fulfill({ json: { items: [] } }))
@@ -161,6 +169,77 @@ test('a song row and its album queue songs after the playing one, or at the end'
   await expect
     .poll(() => lastSave(saves)?.ids)
     .toEqual(['song-a', 'song-c', 'song-d', 'song-b', 'song-c', 'song-d'])
+})
+
+test('removing a row keeps where the queue came from, and the album still shows Pause', async ({
+  page,
+}) => {
+  await restoreQueue(page, [])
+  await page.route('**/api/library/albums/album-1', (route) =>
+    route.fulfill({ json: { ...album, songCount: 3, song: [charlie, delta, echo] } }),
+  )
+  await page.goto('/library/albums/album-1')
+  const detail = page.locator('.library-detail')
+  const pause = detail.getByRole('button', { name: 'Pause', exact: true })
+  await detail.getByRole('button', { name: 'Play all' }).click()
+  await expect(pause).toBeVisible()
+  await page.getByRole('link', { name: 'Open Now Playing' }).click()
+  const upNext = page.getByRole('tabpanel', { name: 'Up next' })
+  await expect(upNext.getByText(/^Playing from album Clear Water$/)).toBeVisible()
+
+  await upNext.getByRole('button', { name: 'Remove Delta from the queue' }).click()
+  await expect(upNext.locator('[data-queue-index] strong')).toHaveText(['Echo'])
+  await expect(upNext.getByText(/^Playing from album Clear Water, edited$/)).toBeVisible()
+
+  // The song playing is still the album's own, so the album's button carries on offering Pause.
+  await page.goBack()
+  await expect(page).toHaveURL(/\/library\/albums\/album-1$/)
+  await expect(pause).toBeVisible()
+  await expect(pause).toHaveAttribute('data-active', 'true')
+
+  // Clearing leaves one song and no collection, so it counts as the listener's own queue.
+  await page.goForward()
+  await upNext.getByRole('button', { name: 'Clear queue' }).click()
+  await expect(upNext.getByText(/^Playing from your queue$/)).toBeVisible()
+  await page.goBack()
+  await expect(detail.getByRole('button', { name: 'Play all' })).toBeVisible()
+})
+
+test('after a reload with shuffle on, a song queued to play next still plays next', async ({
+  page,
+}) => {
+  // Chance would take the last song in the queue, so only the saved choice can put Echo first.
+  await page.addInitScript(() => {
+    Math.random = () => 0.99
+    localStorage.setItem('musimo.player-shuffle', 'true')
+  })
+  const saves = await restoreQueue(page, [alpha, bravo, charlie, delta])
+  await page.route('**/api/library/albums/album-2', (route) =>
+    route.fulfill({
+      json: {
+        id: 'album-2',
+        name: 'Open Air',
+        artist: 'Harbor Static',
+        coverArt: 'cover-2',
+        songCount: 1,
+        song: [echo],
+      },
+    }),
+  )
+  await page.goto('/library/albums/album-2')
+  await expect(page.locator('.live-player')).toContainText('Alpha')
+
+  await page.getByRole('button', { name: 'More actions for Echo' }).click()
+  await page.getByRole('menuitem', { name: 'Play next' }).click()
+  await expect
+    .poll(() => lastSave(saves)?.ids)
+    .toEqual(['song-a', 'song-e', 'song-b', 'song-c', 'song-d'])
+
+  // Navidrome gives the ids back and nothing else, so what was chosen has to come from the browser.
+  await page.reload()
+  await expect(page.locator('.live-player')).toContainText('Alpha')
+  await page.getByRole('button', { name: 'Next track' }).click()
+  await expect(page.locator('.live-player')).toContainText('Echo')
 })
 
 test('adding past the 500 songs Navidrome keeps is refused with a message', async ({ page }) => {

@@ -2,7 +2,15 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
-import { bodyNumber, bodyText, librarySong, playerFixtures, requestBody } from './library-fixtures'
+import {
+  bodyNumber,
+  bodyText,
+  closeLibraryFilters,
+  librarySong,
+  openLibraryFilters,
+  playerFixtures,
+  requestBody,
+} from './library-fixtures'
 
 const first = librarySong('s1', { title: 'Beacon', duration: 180 })
 const second = librarySong('s2', { title: 'Anchor', duration: 180 })
@@ -85,7 +93,10 @@ async function playlistFixtures(page: Page) {
   return state
 }
 
-test('the liked playlist leads the list and cannot be deleted from it', async ({ page }) => {
+test('the liked playlist leads the list and cannot be deleted from it', async ({
+  page,
+  isMobile,
+}) => {
   await playlistFixtures(page)
   await page.goto('/library/playlists')
 
@@ -105,7 +116,10 @@ test('the liked playlist leads the list and cannot be deleted from it', async ({
   await rows.nth(1).hover()
   await expect.poll(() => trash.evaluate((element) => getComputedStyle(element).opacity)).toBe('1')
 
-  await page.getByLabel('Filter playlists').selectOption('private')
+  await openLibraryFilters(page, isMobile)
+  // A phone has this select twice in the document: the toolbar's, hidden there, and the sheet's.
+  await page.locator('select[aria-label="Filter playlists"]:visible').selectOption('private')
+  await closeLibraryFilters(page, isMobile)
   await expect(rows).toHaveCount(1)
   await expect(rows.first()).toContainText('Liked')
 })
@@ -154,8 +168,16 @@ test('a playlist page counts, plays, shuffles and renames its songs', async ({ p
   await playlistFixtures(page)
   await page.goto('/library/playlists/road')
 
-  await expect(page.getByRole('heading', { name: 'Road trip' })).toBeVisible()
-  await expect(page.locator('.library-detail .library-count').first()).toHaveText('1 song · 3:00')
+  await expect(page.getByRole('heading', { level: 1, name: 'Road trip' })).toBeVisible()
+  const header = page.locator('.collection-header')
+  await expect(header).toContainText('PLAYLIST')
+  await expect(header).toContainText('By listener')
+  await expect(header.locator('.collection-cover img')).toBeVisible()
+  await expect(header.locator('.library-count')).toHaveText('1 song · 3 min · Public')
+  for (const name of ['Play all', 'Shuffle', 'Rename', 'Delete'])
+    await expect(header.getByRole('button', { name })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Library', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Back to playlists' })).toBeVisible()
   await page.getByRole('button', { name: 'Play all' }).click()
   await expect(page.locator('.live-player')).toContainText('Anchor')
 
@@ -170,8 +192,45 @@ test('a playlist page counts, plays, shuffles and renames its songs', async ({ p
   const results = page.locator('.playlist-add-list')
   await expect(results.getByRole('button', { name: 'Remove Anchor from Long drive' })).toBeVisible()
   await results.getByRole('button', { name: 'Add Beacon to Long drive' }).click()
-  await expect(page.locator('.library-detail .library-count').first()).toHaveText('2 songs · 6:00')
+  await expect(page.locator('.library-detail .library-count').first()).toHaveText(
+    '2 songs · 6 min · Public',
+  )
   await expect(results.getByRole('button', { name: 'Remove Beacon from Long drive' })).toBeVisible()
+})
+
+test('a playlist cover is a mosaic of four covers, or the first cover', async ({ page }) => {
+  await playlistFixtures(page)
+  const songs = ['a', 'b', 'c', 'd'].map((id) =>
+    librarySong(id, { title: `Song ${id}`, coverArt: `cover-${id}`, duration: 200 }),
+  )
+  const playlist = (entry: LibraryTrack[]) => ({
+    id: 'road',
+    name: 'Road trip',
+    songCount: entry.length,
+    duration: entry.length * 200,
+    public: false,
+    owner: '',
+    changed: '2026-09-01T00:00:00Z',
+    entry,
+  })
+  let entry = songs
+  await page.route(/\/api\/library\/playlists\/road$/, (route) =>
+    route.fulfill({ json: playlist(entry) }),
+  )
+
+  const covers = page.locator('.collection-header .collection-cover img')
+  await page.goto('/library/playlists/road')
+  await expect(covers).toHaveCount(4)
+  // No owner is known, so the byline is left out rather than reading "By ".
+  await expect(page.locator('.collection-header')).not.toContainText('By ')
+  await expect(page.locator('.collection-header .library-count')).toHaveText(
+    '4 songs · 13 min · Private',
+  )
+
+  entry = songs.slice(0, 3)
+  await page.reload()
+  await expect(covers).toHaveCount(1)
+  await expect(covers).toHaveAttribute('src', '/api/player/art/cover-a')
 })
 
 /** The footer's add button on wide screens; on a phone the Now Playing page offers it. */
@@ -223,7 +282,9 @@ test('the playlist picker centres, toggles membership and removes other songs', 
 
   // The playlist page reads the same cache, so the change is already there.
   await page.goto('/library/playlists/road')
-  await expect(page.locator('.library-detail .library-count').first()).toHaveText('1 song · 3:00')
+  await expect(page.locator('.library-detail .library-count').first()).toHaveText(
+    '1 song · 3 min · Public',
+  )
   await expect(page.locator('.library-tracks')).toContainText('Beacon')
 })
 
@@ -298,4 +359,44 @@ test('a playlist remove stays locked until the change lands', async ({ page }) =
   release()
   await expect(rows).toHaveCount(1)
   await expect(rows.first().getByRole('button', { name: /^Remove/ })).toBeEnabled()
+})
+
+test('a playlist numbers its rows by place, not by each song’s number on its own album', async ({
+  page,
+}) => {
+  const state = await playlistFixtures(page)
+  // Each song's number on its album is 5, 4, 5, 3, 3: nothing like a place in the playlist.
+  const albumNumbers = [5, 4, 5, 3, 3]
+  const road = state.get('road')
+  if (!road) throw new Error('Missing road playlist fixture')
+  road.entry = albumNumbers.map((track, index) =>
+    librarySong(`n${index}`, { title: `Song ${index}`, track }),
+  )
+
+  await page.goto('/library/playlists/road')
+  const rows = page.locator('.library-track-row')
+  await expect(rows).toHaveCount(albumNumbers.length)
+  await expect(rows.locator('.library-track-play > span:first-child')).toHaveText([
+    '1',
+    '2',
+    '3',
+    '4',
+    '5',
+  ])
+
+  // An album keeps the numbers the album gave its songs.
+  await page.route('**/api/library/albums/album-1', (route) =>
+    route.fulfill({
+      json: {
+        id: 'album-1',
+        name: 'Clear Water',
+        artist: 'Harbor Static',
+        song: [librarySong('a1', { track: 7 }), librarySong('a2', { track: 2 })],
+      },
+    }),
+  )
+  await page.goto('/library/albums/album-1')
+  await expect(
+    page.locator('.library-track-row .library-track-play > span:first-child'),
+  ).toHaveText(['7', '2'])
 })

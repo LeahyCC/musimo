@@ -42,6 +42,9 @@ import { crossfadeSpan } from './crossfade'
 import { useCrossfadeSeconds } from './crossfade-settings'
 import { cx } from './cx'
 import { fadeInGain, fadeOutGain, rampDown } from './fades'
+import { HANDOVER_WINDOW_SECONDS, handoverDelay, lengthsAgree } from './handover'
+import { createHandoverClock } from './handover-clock'
+import type { HandoverClock } from './handover-clock'
 import {
   addToHistory,
   HISTORY_LISTEN_SECONDS,
@@ -49,7 +52,12 @@ import {
   readHistory,
   writeHistory,
 } from './play-history'
-import { levelledVolume, playsAlbumInOrder, replayGainMultiplier } from './replay-gain'
+import {
+  playsAlbumInOrder,
+  replayGainHasPeak,
+  replayGainMultiplier,
+  splitLevel,
+} from './replay-gain'
 import { useReplayGainSettings } from './replay-gain-settings'
 import { SLEEP_FADE_SECONDS, sleepChoiceLabel } from './sleep-timer'
 import type { SleepChoice, SleepStatus } from './sleep-timer'
@@ -67,8 +75,13 @@ type Playback = {
   track: MusicResult | null
   libraryTrack: LibraryTrack | null
   queue: LibraryTrack[]
-  /** Which collection filled the queue, so its own play button can show pause. */
+  /**
+   * Which collection filled the queue, so its own play button can show pause. It survives edits
+   * while the playing track is one of the collection's own, and is `queue` once it is not.
+   */
   source: string
+  /** True once the queue has been changed by hand since it was filled from `source`. */
+  edited: boolean
   currentIndex: number
   playing: boolean
   position: number
@@ -124,6 +137,7 @@ const PlayerContext = createContext<Playback>({
   libraryTrack: null,
   queue: [],
   source: '',
+  edited: false,
   currentIndex: -1,
   playing: false,
   position: 0,
@@ -172,8 +186,68 @@ const SLEEP_QUEUE_LOST_NOTICE =
 
 /** What Navidrome keeps in one saved play queue. The backend refuses more. */
 export const QUEUE_LIMIT = 500
-/** The queue's source once a listener has edited it: it is no longer any one collection. */
+/** The queue's source when it is no longer any one collection: the listener's own. */
 export const EDITED_SOURCE = 'queue'
+/** The source of a queue brought back after a reload, which does not remember where it began. */
+export const RESTORED_SOURCE = 'restored'
+/** Where the entries queued by hand are kept, by position, across a reload. */
+const CHOSEN_KEY = 'musimo.queue-chosen'
+
+/**
+ * What the queue counts as coming from. An edit does not take the collection away: it is still the
+ * album while the playing track is one of the album's own. It is the listener's queue once the
+ * playing track is one they added, and for a queue whose collection was never known.
+ */
+export function queueSource(origin: string, edited: boolean, playingAdded: boolean) {
+  if (playingAdded) return EDITED_SOURCE
+  if (edited && (origin === '' || origin === RESTORED_SOURCE)) return EDITED_SOURCE
+  return origin
+}
+
+/** A fingerprint of the songs in the queue and their order, so saved positions know what they fit. */
+export function queueHash(ids: readonly string[]) {
+  // FNV-1a over the joined ids. Not secure, only a cheap way to notice that the queue changed.
+  let hash = 0x811c9dc5
+  const text = ids.join('\n')
+  for (let at = 0; at < text.length; at += 1) {
+    hash = Math.imul(hash ^ text.charCodeAt(at), 0x01000193)
+  }
+  return `${ids.length}:${(hash >>> 0).toString(16)}`
+}
+
+/**
+ * The entries queued by hand, as text to keep. Navidrome's saved queue holds ids only, so the
+ * places of these entries are kept beside a fingerprint of the queue they belong to. Empty text
+ * when nothing was chosen, which is nothing to keep.
+ */
+export function encodeChosen(queue: readonly LibraryTrack[], chosen: ReadonlySet<LibraryTrack>) {
+  const at = queue.flatMap((item, place) => (chosen.has(item) ? [place] : []))
+  if (!at.length) return ''
+  return JSON.stringify({ hash: queueHash(queue.map((item) => item.id)), at })
+}
+
+/**
+ * The entries of `queue` that `saved` (from `encodeChosen`) marks as chosen. Nothing is chosen when
+ * the text is unreadable or was written for a different queue: places that no longer point at the
+ * same songs would put the wrong ones first.
+ */
+export function decodeChosen(queue: readonly LibraryTrack[], saved: string) {
+  const chosen = new Set<LibraryTrack>()
+  let value: unknown
+  try {
+    value = JSON.parse(saved)
+  } catch {
+    return chosen
+  }
+  if (value === null || typeof value !== 'object') return chosen
+  const { hash, at } = value as Record<string, unknown>
+  if (hash !== queueHash(queue.map((item) => item.id)) || !Array.isArray(at)) return chosen
+  for (const place of at) {
+    const item = typeof place === 'number' ? queue[place] : undefined
+    if (item) chosen.add(item)
+  }
+  return chosen
+}
 
 /** Empty when `adding` more songs fit beside `size` already queued, else the reason they do not. */
 export function queueOverflow(size: number, adding: number) {
@@ -324,46 +398,50 @@ const audioGraph = () => import('visimo/audio')
 // Elements whose sound already reaches the analyser. A media element can be given to
 // `createMediaElementSource` once only, so each is remembered for good.
 const routed = new WeakSet<HTMLMediaElement>()
+// The gain stage of each library element, between its source and the analyser. It carries a
+// ReplayGain boost past what an element's `volume` can hold.
+const boosters = new WeakMap<HTMLMediaElement, GainNode>()
+// visimo's `attachAudio` builds the graph and keeps the first element it is given for itself, with
+// a source Musimo cannot reach. It is given this one, which never has a source and never plays, so
+// that both library elements are wired up here, the same way, each with its own gain stage. Handing
+// it a real library element would leave that one without a gain stage, and every other track would
+// miss its boost.
+let anchor: HTMLAudioElement | undefined
 
 /**
  * Sends a library element's sound through the visualizer's analyser. Call it from the element's
- * `play` event. visimo's `attachAudio` builds the graph and wires up the first element it is given,
- * and refuses any other, because it was written for one element. Gapless playback has two that
- * swap roles, so the second is connected here, to the same analyser, the first time it plays.
- * Without this the stage goes flat on every other track while the music carries on. Only ever
- * called for the library pair: a preview's cross-origin audio would be silenced for good.
+ * `play` event, which is also what lets a suspended context resume. visimo owns the graph and the
+ * analyser; Musimo makes each library element's source itself and connects it through a gain node
+ * of its own, at 1 until `applyVolume` sets it, so the sound is unchanged until a boost is asked
+ * for. Gapless playback has two elements that swap roles, and without both wired up the stage goes
+ * flat on every other track while the music carries on. Only ever called for the library pair: a
+ * preview's cross-origin audio would be silenced for good.
  */
 async function routeToAnalyser(element: HTMLMediaElement) {
   const module = await audioGraph()
-  const wasAttached = module.audioGraph()?.attached ?? false
-  const graph = await module.attachAudio(element)
+  anchor ??= new Audio()
+  const graph = await module.attachAudio(anchor)
   if (!graph || routed.has(element)) return
-  if (!wasAttached && graph.attached) {
-    // visimo took this one itself.
-    routed.add(element)
-    return
-  }
-  // Nothing is wired up until the context runs, and visimo goes first so its own state stays
-  // true. The next play tries again.
+  // Nothing is wired up until the context runs and visimo has the graph built. The next play
+  // tries again.
   if (!graph.attached || graph.context.state !== 'running') return
   routed.add(element)
-  graph.context.createMediaElementSource(element).connect(graph.analyser)
+  const booster = graph.context.createGain()
+  graph.context.createMediaElementSource(element).connect(booster)
+  booster.connect(graph.analyser)
+  boosters.set(element, booster)
+}
+
+/** The gain stage to boost through, or undefined where there is no running graph to boost in. */
+const runningBooster = (element: HTMLMediaElement) => {
+  const booster = boosters.get(element)
+  return booster?.context.state === 'running' ? booster : undefined
 }
 
 /** How long before a track ends the next one starts loading. A shorter track loads it at once. */
 export const PRELOAD_LEAD_SECONDS = 15
 /** Tracks that may fail one after another before playback stops, rather than racing the queue. */
 export const MAX_FAILURES = 3
-// The next track starts this long before the current one ends: about what a buffered element
-// takes to put sound out. Later leaves a gap, earlier an overlap.
-const HANDOVER_LEAD_MS = 40
-// Inside this window the handover is timed. Outside it, or where a timer runs late, the `ended`
-// event does it, which is the safe route and a few milliseconds slower.
-const HANDOVER_WINDOW_SECONDS = 1
-// A stream's own length can differ from the library's. Past this the timed handover would cut a
-// track short, so `ended` decides instead.
-const LENGTH_TOLERANCE_SECONDS = 2
-
 /** True once the next track should be loading: the last seconds of a track, all of a short one. */
 export const preloadDue = (length: number, time: number) =>
   length > 0 && length - time <= PRELOAD_LEAD_SECONDS
@@ -415,6 +493,14 @@ export function stored(key: string, fallback: string) {
 export function remember(key: string, value: string) {
   try {
     localStorage.setItem(key, value)
+  } catch {
+    /* Browser storage is optional. */
+  }
+}
+
+function forget(key: string) {
+  try {
+    localStorage.removeItem(key)
   } catch {
     /* Browser storage is optional. */
   }
@@ -540,7 +626,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const activeSlot = useRef<Slot>(0)
   // What the standby element is loading, and whether that failed.
   const preload = useRef<Preload | null>(null)
-  const handoverTimer = useRef<number | undefined>(undefined)
+  // Times the handover off the page's own timers, which a hidden tab holds to one a second. Made on
+  // first use so its worker stays out of the first paint.
+  const handoverClock = useRef<HandoverClock | null>(null)
   // Set while the old track is still fading out under the new one. See `Crossfade`.
   const fadingOut = useRef<Crossfade | null>(null)
   // The sleep timer, and the level its last five seconds have brought everything down to.
@@ -562,10 +650,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const libraryCurrent = useRef<LibraryTrack | null>(null)
   const queueRef = useRef<LibraryTrack[]>([])
   const indexRef = useRef(-1)
+  // The collection that filled the queue. Edits leave it alone; `queueSource` says what it counts as.
   const sourceRef = useRef('')
+  const editedRef = useRef(false)
   // Entries the listener queued by hand, which shuffle plays before the rest. Each entry is its
   // own copy of the song, so the set can tell a song queued twice apart.
   const chosen = useRef(new Set<LibraryTrack>())
+  // The same entries for good: `chosen` forgets one when it plays, this remembers it was not the
+  // collection's own song, so the source can follow the playing track.
+  const added = useRef(new WeakSet<LibraryTrack>())
   const mode = useRef<'preview' | 'library'>('preview')
   const slots = () => [libraryA.current, libraryB.current] as const
   const library = () => slots()[activeSlot.current]
@@ -585,11 +678,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // holds, so the slider keeps reading what they set. The standby element is levelled for the
   // track it has preloaded. Null is "leave it": a standby element with nothing loaded may be the
   // one finishing its last moments, and changing its volume then would be heard.
-  function outputVolume(element: HTMLAudioElement | null): number | null {
+  //
+  // `gain` is the part of a ReplayGain boost an element's volume cannot hold, for a library element
+  // that has been wired up (see `boosters`). It is 1 everywhere else: a preview, and any element
+  // while there is no running graph.
+  function outputLevel(element: HTMLAudioElement | null): { volume: number; gain: number } | null {
     const { volume: set, shuffle: shuffled, replay } = levelling.current
     const base = Number.isFinite(set) ? Math.max(0, Math.min(1, set)) : 0.7
-    if (!element) return base
-    if (element === previewAudio.current) return base * sleepGain.current
+    if (!element) return { volume: base, gain: 1 }
+    if (element === previewAudio.current) return { volume: base * sleepGain.current, gain: 1 }
     const slot: Slot = element === libraryA.current ? 0 : 1
     let target: { item: LibraryTrack | null; index: number } | null = null
     const fading = fadingOut.current
@@ -603,7 +700,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
     if (!target) return null
     const faded = base * envelope(element)
-    if (!target.item) return faded
+    if (!target.item) return { volume: faded, gain: 1 }
     const inOrder = playsAlbumInOrder(queueRef.current, target.index, shuffled)
     const multiplier = replayGainMultiplier(
       target.item.replayGain,
@@ -611,7 +708,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       inOrder,
       replay.preampDb,
     )
-    return levelledVolume(faded, multiplier)
+    // The multiplier is already held to 1 / peak, so a boost through the gain stage cannot clip. A
+    // track with no peak tag has no such bound and is not boosted.
+    const boostable =
+      runningBooster(element) !== undefined &&
+      replayGainHasPeak(target.item.replayGain, replay.mode, inOrder)
+    return splitLevel(faded, multiplier, boostable)
   }
 
   // What the sleep timer's fade and a crossfade take off an element's level, on top of the person's
@@ -629,8 +731,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function applyVolume() {
     for (const element of elements()) {
       if (!element) continue
-      const level = outputVolume(element)
-      if (level !== null) element.volume = level
+      const level = outputLevel(element)
+      if (level !== null) {
+        element.volume = level.volume
+        const booster = boosters.get(element)
+        if (booster) booster.gain.value = level.gain
+      }
       element.muted = levelling.current.muted
     }
   }
@@ -647,6 +753,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [queue, setQueue] = useState<LibraryTrack[]>([])
   const [history, setHistory] = useState(historyRef.current)
   const [source, setSource] = useState('')
+  const [edited, setEdited] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(-1)
   const [playing, setPlaying] = useState(false)
   const [position, setPosition] = useState(0)
@@ -810,6 +917,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       })
   }
 
+  // What was queued by hand is not in the saved queue, which holds ids only. Keep it beside the
+  // fingerprint of the queue it belongs to, and let the restore check that the two still match.
+  function saveChosen() {
+    const saved = encodeChosen(queueRef.current, chosen.current)
+    if (saved) remember(CHOSEN_KEY, saved)
+    else forget(CHOSEN_KEY)
+  }
+
+  // Tells the rest of the app which collection the queue counts as coming from right now. It
+  // depends on the playing track, so it runs whenever that changes and whenever an edit lands.
+  function publishSource() {
+    const playing = libraryCurrent.current
+    setSource(
+      queueSource(
+        sourceRef.current,
+        editedRef.current,
+        playing !== null && added.current.has(playing),
+      ),
+    )
+  }
+
   function scrobble(submission: boolean) {
     const item = libraryCurrent.current
     if (!item) return
@@ -874,7 +1002,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Forgets what the standby element was loading and stops it downloading. Anything that changes
   // what plays next (an edit, shuffle, repeat) calls this; the next timeupdate loads the new pick.
   function discardPreload() {
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     if (!preload.current) return
     preload.current = null
     const element = standby()
@@ -907,25 +1035,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     element.preload = dataSaverOn() ? 'metadata' : 'auto'
     element.src = streamUrl(upcoming)
     applyVolume()
+    // Ready well before the last second, when the handover is armed.
+    handoverClock.current ??= createHandoverClock()
+    handoverClock.current.warm()
   }
 
-  // Starts the standby element just before the playing one ends. Called on every timeupdate, so a
-  // seek or a pause cancels it by the next one.
+  function cancelHandover() {
+    handoverClock.current?.cancel()
+  }
+
+  // Starts the standby element just before the playing one ends. The wait is kept by a worker, so a
+  // hidden tab, which holds page timers to one a second, does not push it late. It is worked out
+  // afresh from the element's own position on every timeupdate, and also on seek, play and rate
+  // change, so each of those replaces the wait before it; a pause, a load or a discard cancels it.
   function scheduleHandover(active: HTMLAudioElement) {
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     const item = libraryCurrent.current
     const held = preload.current
     if (!item || !held || held.failed || active.paused) return
-    const left = secondsLeft(active)
-    if (left > HANDOVER_WINDOW_SECONDS) return
-    if (item.duration > 0 && Math.abs(active.duration - item.duration) > LENGTH_TOLERANCE_SECONDS)
-      return
-    handoverTimer.current = window.setTimeout(
-      () => {
-        if (libraryCurrent.current === item && library() === active) finishTrack(active)
-      },
-      Math.max(0, left * 1000 - HANDOVER_LEAD_MS),
-    )
+    if (!lengthsAgree(active.duration, item.duration)) return
+    const delay = handoverDelay(secondsLeft(active), active.playbackRate)
+    if (delay === null) return
+    handoverClock.current ??= createHandoverClock()
+    handoverClock.current.arm(delay, () => {
+      // Checked again now: the wait belongs to the track and element it was made for, and to a
+      // position still inside the last second.
+      if (libraryCurrent.current !== item || library() !== active || active.paused) return
+      if (secondsLeft(active) > HANDOVER_WINDOW_SECONDS) return
+      finishTrack(active)
+    })
   }
 
   // Starts the overlap when the playing track is within the listener's crossfade of its end and the
@@ -970,7 +1108,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // A track has played to its end, or is about to. Its listen is reported and the next one starts,
   // unless a sleep timer ends here.
   function finishTrack(finished: HTMLAudioElement) {
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     // A track shorter than the listening threshold never reaches it, so its end counts. A
     // longer one that was scrubbed to its end without playing does not.
     if (finished.duration <= HISTORY_LISTEN_SECONDS) recordPlay()
@@ -995,7 +1133,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // carries on from there rather than replaying what the listener fell asleep to.
   function sleepAtTrackEnd(finished: HTMLAudioElement) {
     finished.pause()
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     if (repeat === 'one') loadLibrary(indexRef.current, false)
     else next(false)
     clearSleep()
@@ -1005,7 +1143,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // A minutes timer ran out, possibly in the middle of a track or a crossfade.
   function sleepPause() {
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     fadingOut.current?.element.pause()
     fadingOut.current = null
     for (const element of elements()) element?.pause()
@@ -1105,7 +1243,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const item = queueRef.current[index]
     if (!item) return
     request.current?.abort()
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     // The standby element already holds this song: hand over to it instead of loading it again.
     const held = preload.current
     const handOverTo: Slot | null =
@@ -1136,6 +1274,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     libraryCurrent.current = item
     wantPlay.current = autoplay
     chosen.current.delete(item)
+    saveChosen()
+    publishSource()
     indexRef.current = index
     pendingSeek.current = seek
     lastSavedSecond.current = -1
@@ -1184,26 +1324,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function playLibrary(items: LibraryTrack[], index = 0, origin = '') {
     if (!items.length) return
     failures.current = 0
-    // Playing a row of the queue itself keeps the queue, and what was chosen by hand in it.
-    if (items !== queueRef.current) chosen.current.clear()
+    // Playing a row of the queue itself keeps the queue, what was chosen by hand in it, and where
+    // it came from. Any other list starts a queue of its own.
+    if (items !== queueRef.current) {
+      chosen.current.clear()
+      sourceRef.current = origin
+      editedRef.current = false
+      setEdited(false)
+    }
     queueRef.current = items
-    sourceRef.current = origin
     setQueue(items)
-    setSource(origin)
     loadLibrary(Math.max(0, Math.min(index, items.length - 1)))
   }
 
-  // Every edit lands here: the new order, where the playing track now sits, and the save. An
-  // edited queue is no longer the album or playlist it began as, so it stops claiming to be one.
+  // Every edit lands here: the new order, where the playing track now sits, and the save. The queue
+  // keeps the collection it began as, marked edited, for as long as the playing track is one of
+  // that collection's own.
   function editQueue(items: LibraryTrack[], index: number) {
     queueRef.current = items
     indexRef.current = index
-    sourceRef.current = EDITED_SOURCE
+    editedRef.current = true
     // What plays next may have changed, so what the standby element loaded may be wrong.
     discardPreload()
     setQueue(items)
     setCurrentIndex(index)
-    setSource(EDITED_SOURCE)
+    setEdited(true)
+    publishSource()
+    saveChosen()
     saveQueue(true)
   }
 
@@ -1221,7 +1368,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       playLibrary(entries, 0, EDITED_SOURCE)
       return
     }
-    for (const entry of entries) chosen.current.add(entry)
+
+    for (const entry of entries) {
+      chosen.current.add(entry)
+      added.current.add(entry)
+    }
     const queue = queueRef.current
     const at = upNext ? playNextPosition(queue, indexRef.current, chosen.current) : queue.length
     editQueue([...queue.slice(0, at), ...entries, ...queue.slice(at)], indexRef.current)
@@ -1257,6 +1408,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const playing = libraryCurrent.current
     if (!playing) return
     chosen.current.clear()
+    // What is left is one song and nothing to say it came with a collection.
+    sourceRef.current = EDITED_SOURCE
     editQueue([playing], 0)
   }
 
@@ -1380,13 +1533,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function stop() {
     request.current?.abort()
     saveQueue()
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     preload.current = null
     failures.current = 0
     previewCurrent.current = null
     libraryCurrent.current = null
     sourceRef.current = ''
+    editedRef.current = false
     setSource('')
+    setEdited(false)
     fadingOut.current = null
     for (const element of elements()) {
       element?.pause()
@@ -1413,8 +1568,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         )
         queueRef.current = saved.entry
         setQueue(saved.entry)
-        sourceRef.current = 'restored'
-        setSource('restored')
+        sourceRef.current = RESTORED_SOURCE
+        // Only the ids came back, so the songs queued by hand are found again by their places.
+        // They are dropped, not guessed at, when the queue is no longer the one they were saved for.
+        chosen.current = decodeChosen(saved.entry, stored(CHOSEN_KEY, ''))
         loadLibrary(index, false, saved.position / 1000)
         setNotice(RESTORED_NOTICE)
       })
@@ -1455,7 +1612,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [shuffle, repeat])
 
   // Nothing is left ticking once the player is gone.
-  useEffect(() => () => window.clearInterval(envelopeTimer.current), [])
+  useEffect(
+    () => () => {
+      window.clearInterval(envelopeTimer.current)
+      handoverClock.current?.dispose()
+    },
+    [],
+  )
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -1600,7 +1763,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         scrobble(false)
         const element = event.currentTarget
         publishPosition(element)
-        void routeToAnalyser(element)
+        // The gain stage exists only once this has run, so the level is applied again after it.
+        void routeToAnalyser(element).then(applyVolume)
+        // A resume in the last second arms the handover now rather than at the next timeupdate.
+        scheduleHandover(element)
       },
       // A track that has started playing ends a run of failures.
       onPlaying: () => {
@@ -1608,13 +1774,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       },
       onPause: (event: MediaEvent) => {
         if (!inPlay()) return
-        window.clearTimeout(handoverTimer.current)
+        cancelHandover()
         setPlaying(false)
         saveQueue()
         if (forLibrary) publishPosition(event.currentTarget)
       },
       onSeeked: (event: MediaEvent) => {
-        if (inPlay() && forLibrary) publishPosition(event.currentTarget)
+        if (!inPlay() || !forLibrary) return
+        publishPosition(event.currentTarget)
+        // The end has moved, so the wait made for the old position is replaced.
+        scheduleHandover(event.currentTarget)
+      },
+      // At another rate the same seconds of track pass in more or less time.
+      onRateChange: (event: MediaEvent) => {
+        if (inPlay() && forLibrary) scheduleHandover(event.currentTarget)
       },
       onEnded: (event: MediaEvent) => {
         if (!inPlay()) return
@@ -1687,6 +1860,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         libraryTrack,
         queue,
         source,
+        edited,
         currentIndex,
         playing,
         position,
@@ -1837,10 +2011,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             >
               <Plus size={16} />
             </IconButton>
+            {/* The cover beside the title is the link. This icon shows only where the cover does
+                too, so it is a second way to click, not a second stop for a keyboard or a reader. */}
             <Link
               data-ui="icon-button"
               className={iconButtonClassName(false, 'shrink-0', 'compact')}
-              aria-label="Open Now Playing"
+              aria-hidden="true"
+              tabIndex={-1}
               to="/now-playing"
             >
               <Maximize2 size={17} />

@@ -117,6 +117,33 @@ test('About lists the file, the release, the listening and what else is owned', 
   await expect(panel.getByText('Alpha', { exact: true })).toHaveCount(0)
 })
 
+test('About reads values at body size and labels smaller, two to a row, at any width', async ({
+  page,
+}) => {
+  await openNowPlaying(page, flac)
+  const panel = page.getByRole('tabpanel', { name: 'About' })
+  const label = panel.locator('dt', { hasText: 'Sample rate' })
+  const value = panel.locator('dd', { hasText: '44.1 kHz' })
+  await expect(label).toBeVisible()
+
+  const size = (locator: typeof label) =>
+    locator.evaluate((element) => parseFloat(getComputedStyle(element).fontSize))
+  // The values are larger than the labels, and the two sit side by side on the same line.
+  expect(await size(value)).toBeGreaterThan(await size(label))
+  const [labelBox, valueBox] = await Promise.all([label.boundingBox(), value.boundingBox()])
+  expect(valueBox!.x).toBeGreaterThan(labelBox!.x + labelBox!.width - 1)
+  expect(Math.abs(valueBox!.y - labelBox!.y)).toBeLessThan(8)
+
+  // A phone keeps the same two columns and nothing spills sideways.
+  await page.setViewportSize({ width: 360, height: 800 })
+  await expect(label).toBeVisible()
+  const narrow = await Promise.all([label.boundingBox(), value.boundingBox()])
+  expect(narrow[1]!.x).toBeGreaterThan(narrow[0]!.x + narrow[0]!.width - 1)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
+    true,
+  )
+})
+
 test('a good file has no suggestion to look for another', async ({ page }) => {
   await openNowPlaying(page, flac)
   await expect(page.getByRole('tabpanel', { name: 'About' })).toContainText('1,012 kbps')

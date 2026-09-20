@@ -32,6 +32,8 @@ import { cx } from './cx'
 import { formatLabel, FormatOptions, pausedSources, siteLabel } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
 import { PageTitle } from './page-title'
+import { RowMenu } from './row-menu'
+import type { RowMenuAction } from './row-menu'
 import {
   Button,
   buttonClassName,
@@ -250,50 +252,37 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
     // The native option list takes the select's transparent background otherwise, which some
     // engines paint white under light text.
     <div className={cx('relative flex items-center gap-[6px] [&_option]:bg-raised', className)}>
-      <select
-        aria-label={`Format for ${item.title}`}
-        className="max-w-[82px] rounded-md border border-line-strong bg-transparent px-[3px] py-[6px] text-tiny text-inherit coarse:max-w-[96px] coarse:px-[6px] coarse:py-3"
-        value={selected}
-        onChange={(e) => setFormat(e.target.value)}
-      >
-        <FormatOptions />
-      </select>
-      <IconButton
-        aria-label={
-          owned
-            ? item.ownership === 'edition'
-              ? `Another edition is in your library. Download ${item.title} to ${target || settings.data?.destination.value || '(not set)'} · ${formatLabel(selected)}`
-              : `${item.title} is in your library`
-            : existing
+      {/* An owned track already shows its "In library" badge, so it gets no download button
+          rather than a disabled tick that says the same thing. The format lives in the options
+          popover and shows on this button's name and tooltip. */}
+      {!owned && (
+        <IconButton
+          aria-label={
+            existing
               ? `${item.title} is ${existing.stage}`
               : failed
                 ? `Retry ${item.title}. ${failureMessage(failed)}`
                 : `Download ${item.title} to ${target || settings.data?.destination.value || '(not set)'} · ${formatLabel(selected)}`
-        }
-        title={
-          owned
-            ? item.ownership === 'edition'
-              ? 'Another edition is in your library'
-              : 'Already in your library'
-            : existing?.stage
+          }
+          title={
+            existing?.stage
               ? existing.stage
               : failed
                 ? failureMessage(failed)
                 : `to ${target || settings.data?.destination.value || '(not set)'} · ${formatLabel(selected)}`
-        }
-        disabled={
-          (owned && item.ownership !== 'edition') || Boolean(existing) || mutation.isPending
-        }
-        onClick={() => mutation.mutate()}
-      >
-        {(owned && item.ownership !== 'edition') || existing ? (
-          <Check size={17} />
-        ) : failed ? (
-          <RotateCcw size={17} />
-        ) : (
-          <ArrowDownToLine size={17} />
-        )}
-      </IconButton>
+          }
+          disabled={Boolean(existing) || mutation.isPending}
+          onClick={() => mutation.mutate()}
+        >
+          {existing ? (
+            <Check size={17} />
+          ) : failed ? (
+            <RotateCcw size={17} />
+          ) : (
+            <ArrowDownToLine size={17} />
+          )}
+        </IconButton>
+      )}
       <IconButton
         ref={optionsButton}
         aria-label={`Download options for ${item.title}`}
@@ -337,10 +326,9 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
               ))}
           </select>
         </label>
-        {/* The same choice as the row's select; a phone hides that one to give the title room
-            and shows this instead. It follows the destination so the focus rule above lands on
-            the same control everywhere. */}
-        <label className="mt-[10px] hidden min-w-0 gap-[6px] text-small max-phone:grid">
+        {/* It follows the destination so the focus rule above lands on the same control on every
+            screen. */}
+        <label className="mt-[10px] grid min-w-0 gap-[6px] text-small">
           Format
           <select
             className="w-full min-w-0 max-w-full"
@@ -833,6 +821,28 @@ function QueueControls() {
     },
   })
   const failed = queue.data?.summary.failed ?? 0
+  const hasFinished = queue.data?.jobs.some((job) => !job.hidden && !activeJob(job)) ?? false
+  const moreActions: RowMenuAction[] = [
+    ...(failed > 0
+      ? [
+          { label: `Retry failed (${failed})`, onSelect: () => command.mutate('retry-failed') },
+          { label: `Clear failed (${failed})`, onSelect: () => command.mutate('clear-failed') },
+        ]
+      : []),
+    ...(hasFinished
+      ? [
+          {
+            label: 'Clear all finished',
+            onSelect: () => {
+              // It hides every done, failed and cancelled card at once, so ask first. History keeps
+              // them.
+              const ask = 'Clear all finished jobs from the queue? They stay in History.'
+              if (window.confirm(ask)) command.mutate('clear-finished')
+            },
+          },
+        ]
+      : []),
+  ]
   // One line per paused site.
   const paused = pausedSources(queue.data?.controls)
   return (
@@ -868,28 +878,11 @@ function QueueControls() {
         >
           Cancel queued
         </Button>
-        <Button
-          className="max-phone:w-full max-phone:px-2"
-          disabled={command.isPending || failed === 0}
-          onClick={() => command.mutate('retry-failed')}
-        >
-          Retry failed ({failed})
-        </Button>
-        <Button
-          className="max-phone:w-full max-phone:px-2"
-          disabled={command.isPending || failed === 0}
-          onClick={() => command.mutate('clear-failed')}
-        >
-          Clear failed ({failed})
-        </Button>
-        <Button
-          className="max-phone:w-full max-phone:px-2"
-          disabled={command.isPending}
-          onClick={() => command.mutate('clear-finished')}
-          title="Remove done, failed, and cancelled jobs from the queue"
-        >
-          Clear all finished
-        </Button>
+        {/* The three that clean up after a run live in a menu, and only the ones with something to
+            act on are listed. With none, there is no menu at all. */}
+        {moreActions.length > 0 && (
+          <RowMenu label="More queue actions" actions={moreActions} disabled={command.isPending} />
+        )}
       </div>
       {paused.map(({ source, label }) => (
         <ErrorBanner role="alert" key={source}>

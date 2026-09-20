@@ -1,15 +1,19 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { KeyboardEvent, PointerEvent } from 'react'
 
+import { createPortal } from 'react-dom'
+
 import { useQuery } from '@tanstack/react-query'
-import { Maximize2, Minimize2 } from 'lucide-react'
+import { Maximize2, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react'
 import type { z } from 'zod'
 
 import { api, lyricsSchema } from './api'
 import type { LibraryTrack } from './api'
 import { cx } from './cx'
-import { durationText, remember, stored, usePlayer } from './player'
+import { pageKeyIsFree } from './now-playing-shortcuts'
+import { artUrl, durationText, remember, stored, usePlayer } from './player'
 import { Button, IconButton } from './ui'
+import { SeekBar } from './waveform-seek'
 
 type LyricLine = z.infer<typeof lyricsSchema>['items'][number]['line'][number]
 
@@ -94,28 +98,35 @@ function useOffset(id: string) {
 const scrollBehavior = (): ScrollBehavior =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
 
-const regionClassName = (large: boolean) =>
-  cx(
-    'relative min-h-0 flex-1 overflow-auto overscroll-contain max-phone:flex-none',
-    large ? 'max-phone:max-h-[75dvh]' : 'max-phone:max-h-[60dvh]',
-  )
-const lineSizeClassName = (large: boolean) =>
-  large ? 'text-[clamp(1.75rem,3.2vw,3rem)] leading-tight' : 'text-section'
+// The same lines are drawn in two places: the tab beside the stage, and the view that takes over
+// the page's content area (`LyricsView`), where they are large, centred and in a wide column.
+type Variant = 'panel' | 'view'
+
+const regionClassName = (variant: Variant) =>
+  variant === 'view'
+    ? 'relative mx-auto min-h-0 w-full max-w-[1200px] flex-1 overflow-auto overscroll-contain'
+    : 'relative min-h-0 flex-1 overflow-auto overscroll-contain max-phone:max-h-[60dvh] max-phone:flex-none'
+const lineSizeClassName = (variant: Variant) =>
+  variant === 'view'
+    ? 'text-center text-[clamp(1.75rem,3.2vw,3rem)] leading-tight'
+    : 'text-left text-section'
 
 type LineProps = {
   text: string
   /** Where the line starts in the track, in seconds, nudge included. */
   time: number | undefined
   active: boolean
-  large: boolean
+  variant: Variant
   onSeek: (seconds: number) => void
 }
 
 // Memoised so a tick that keeps the current line redraws nothing but the list around it.
-const SyncedLine = memo(function SyncedLine({ text, time, active, large, onSeek }: LineProps) {
+const SyncedLine = memo(function SyncedLine({ text, time, active, variant, onSeek }: LineProps) {
   if (time === undefined)
     return (
-      <p className={cx('px-[8px] py-[6px] text-muted', lineSizeClassName(large))}>{text || '♪'}</p>
+      <p className={cx('px-[8px] py-[6px] text-muted', lineSizeClassName(variant))}>
+        {text || '♪'}
+      </p>
     )
   const at = Math.max(0, time)
   return (
@@ -124,8 +135,8 @@ const SyncedLine = memo(function SyncedLine({ text, time, active, large, onSeek 
       aria-current={active ? 'true' : undefined}
       aria-label={text ? undefined : `Instrumental break at ${durationText(at)}`}
       className={cx(
-        'block w-full rounded-md border-0 bg-transparent px-[8px] py-[6px] text-left transition-colors motion-reduce:transition-none',
-        lineSizeClassName(large),
+        'block w-full rounded-md border-0 bg-transparent px-[8px] py-[6px] transition-colors motion-reduce:transition-none',
+        lineSizeClassName(variant),
         active ? 'font-semibold text-text' : 'text-muted hover:text-text',
       )}
       onClick={() => onSeek(at)}
@@ -134,6 +145,13 @@ const SyncedLine = memo(function SyncedLine({ text, time, active, large, onSeek 
     </button>
   )
 })
+
+// Puts keyboard focus in the lines box when it mounts, for the view, so the arrow keys scroll it.
+function useFocusOnMount(box: { current: HTMLElement | null }, focus: boolean) {
+  useEffect(() => {
+    if (focus) box.current?.focus({ preventScroll: true })
+  }, [box, focus])
+}
 
 /**
  * The timed lines. This is the one part of the tab that follows the player's clock, so it is
@@ -144,15 +162,19 @@ function SyncedLines({
   lines,
   offset,
   visible,
-  large,
+  variant,
+  focus = false,
 }: {
   lines: readonly LyricLine[]
   offset: number
   visible: boolean
-  large: boolean
+  variant: Variant
+  /** Take keyboard focus on mount. */
+  focus?: boolean
 }) {
   const player = usePlayer()
   const region = useRef<HTMLDivElement>(null)
+  useFocusOnMount(region, focus)
   const holding = useRef<number | undefined>(undefined)
   const placed = useRef(false)
   const seekRef = useRef(player.seek)
@@ -200,7 +222,7 @@ function SyncedLines({
     // The first placement is a jump, so opening the tab does not scroll the list past the eye.
     scrollToActive(placed.current ? scrollBehavior() : 'auto')
     placed.current = true
-  }, [active, visible, large, scrollToActive])
+  }, [active, visible, scrollToActive])
 
   const seek = useCallback(
     (seconds: number) => {
@@ -217,7 +239,7 @@ function SyncedLines({
       role="region"
       aria-label="Lyrics"
       tabIndex={0}
-      className={regionClassName(large)}
+      className={regionClassName(variant)}
       onWheel={hold}
       onTouchMove={hold}
       onPointerDown={(event: PointerEvent<HTMLDivElement>) => {
@@ -239,7 +261,7 @@ function SyncedLines({
           text={line.value}
           time={starts[index]}
           active={index === active}
-          large={large}
+          variant={variant}
           onSeek={seek}
         />
       ))}
@@ -249,11 +271,27 @@ function SyncedLines({
   )
 }
 
-function PlainLines({ lines, large }: { lines: readonly LyricLine[]; large: boolean }) {
+function PlainLines({
+  lines,
+  variant,
+  focus = false,
+}: {
+  lines: readonly LyricLine[]
+  variant: Variant
+  focus?: boolean
+}) {
+  const region = useRef<HTMLDivElement>(null)
+  useFocusOnMount(region, focus)
   return (
-    <div role="region" aria-label="Lyrics" tabIndex={0} className={regionClassName(large)}>
+    <div
+      ref={region}
+      role="region"
+      aria-label="Lyrics"
+      tabIndex={0}
+      className={regionClassName(variant)}
+    >
       {lines.map((line, index) => (
-        <p key={index} className={cx('px-[8px] py-[6px] text-text', lineSizeClassName(large))}>
+        <p key={index} className={cx('px-[8px] py-[6px] text-text', lineSizeClassName(variant))}>
           {line.value || '♪'}
         </p>
       ))}
@@ -261,15 +299,156 @@ function PlainLines({ lines, large }: { lines: readonly LyricLine[]; large: bool
   )
 }
 
+function Timing({ offset, onChange }: { offset: number; onChange: (seconds: number) => void }) {
+  return (
+    <div role="group" aria-label="Lyrics timing" className="flex items-center gap-[6px]">
+      <Button
+        className="min-h-[32px] px-[10px] py-[4px]"
+        onClick={() => onChange(offset - OFFSET_STEP)}
+      >
+        Earlier {OFFSET_STEP} s
+      </Button>
+      <span className="min-w-[5ch] text-center text-small text-muted">
+        <span className="sr-only">Timing </span>
+        <output>{formatOffset(offset)}</output>
+      </span>
+      <Button
+        className="min-h-[32px] px-[10px] py-[4px]"
+        onClick={() => onChange(offset + OFFSET_STEP)}
+      >
+        Later {OFFSET_STEP} s
+      </Button>
+    </div>
+  )
+}
+
+// Previous, play or pause and next. It reads the player for `playing` and so redraws on a tick,
+// but it is three buttons.
+function StripTransport() {
+  const player = usePlayer()
+  return (
+    <div className="flex items-center gap-[4px]">
+      <IconButton size="compact" aria-label="Previous track" onClick={player.previous}>
+        <SkipBack size={17} />
+      </IconButton>
+      <IconButton
+        variant="play"
+        aria-label={player.playing ? 'Pause' : 'Play'}
+        onClick={player.toggle}
+      >
+        {player.playing ? <Pause size={19} /> : <Play size={19} />}
+      </IconButton>
+      <IconButton size="compact" aria-label="Next track" onClick={player.next}>
+        <SkipForward size={17} />
+      </IconButton>
+    </div>
+  )
+}
+
+// The seek bar and the two times: the strip's other reader of the player's position.
+function StripSeek({ trackId }: { trackId: string }) {
+  const player = usePlayer()
+  return (
+    <div className="flex min-w-0 items-center gap-[10px] text-tiny text-muted tabular-nums max-phone:order-last max-phone:col-span-4">
+      <span>{durationText(player.position)}</span>
+      <SeekBar
+        trackId={trackId}
+        position={player.position}
+        length={player.length || 30}
+        ready={player.ready}
+        onSeek={player.seek}
+      />
+      <span>{durationText(player.length)}</span>
+    </div>
+  )
+}
+
+type LyricsViewProps = {
+  track: LibraryTrack
+  lines: readonly LyricLine[]
+  synced: boolean
+  offset: number
+  onOffset: (seconds: number) => void
+  onClose: () => void
+}
+
+/**
+ * The lyrics view: the page's content area handed over to the lines, large and centred in a wide
+ * column, with a strip along the bottom for the track and its transport. It is drawn in the body,
+ * fixed over the content area (under the top bar, beside the sidebar, above the phone's bottom
+ * bar), so the wash the page keeps behind it shows through. The page hides what is underneath,
+ * which takes it out of the tab order too. Nothing here reads the player except the lines and the two strip pieces above, so a
+ * tick redraws those and not the view.
+ */
+function LyricsView({ track, lines, synced, offset, onOffset, onClose }: LyricsViewProps) {
+  // Escape leaves, unless it is closing a dialog (the shortcuts sheet) or leaving a field. L is the
+  // tabs' own key and toggles the same state.
+  useEffect(() => {
+    const onKey = (event: WindowEventMap['keydown']) => {
+      if (event.key !== 'Escape' || event.repeat || !pageKeyIsFree(event)) return
+      onClose()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [onClose])
+
+  const art = artUrl(track)
+  return createPortal(
+    <div
+      data-lyrics-view=""
+      role="dialog"
+      aria-label="Lyrics view"
+      className="fixed top-[calc(var(--topbar-height)+var(--safe-top))] right-0 bottom-0 left-[calc(var(--sidebar-width)+var(--safe-left))] z-overlay flex flex-col gap-[12px] pt-[16px] pr-[calc(24px+var(--safe-right))] pb-[16px] pl-[24px] max-phone:bottom-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:left-0 max-phone:gap-[8px] max-phone:pt-[8px] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pb-[8px] max-phone:pl-[calc(16px+var(--safe-left))]"
+    >
+      <div className="mx-auto flex w-full max-w-[1200px] shrink-0 items-center justify-center">
+        {synced ? (
+          <Timing offset={offset} onChange={onOffset} />
+        ) : (
+          <small className="text-small text-muted">Not timed</small>
+        )}
+      </div>
+      {synced ? (
+        <SyncedLines lines={lines} offset={offset} visible variant="view" focus />
+      ) : (
+        <PlainLines lines={lines} variant="view" focus />
+      )}
+      <div className="mx-auto grid w-full max-w-[1200px] shrink-0 grid-cols-[auto_minmax(0,16rem)_auto_minmax(0,1fr)_auto] items-center gap-x-[14px] gap-y-[8px] rounded-lg border border-line bg-raised px-[14px] py-[10px] max-phone:grid-cols-[auto_minmax(0,1fr)_auto_auto]">
+        {art ? (
+          <img src={art} alt="" className="size-[44px] rounded-md object-cover" />
+        ) : (
+          <div aria-hidden="true" className="size-[44px] rounded-md bg-canvas" />
+        )}
+        <div className="min-w-0">
+          <strong className="block truncate" title={track.title}>
+            {track.title}
+          </strong>
+          <small className="block truncate text-small text-muted">{track.artist}</small>
+        </div>
+        <StripTransport />
+        <StripSeek trackId={track.id} />
+        <IconButton size="compact" aria-label="Close lyrics view" onClick={onClose}>
+          <X size={18} />
+        </IconButton>
+      </div>
+    </div>,
+    document.body,
+  )
+}
+
 type LyricsPanelProps = {
   track: LibraryTrack
   /** False while the other tab is showing, when the list has no height to scroll. */
   visible: boolean
+  /** Whether the lyrics view is open. The page owns it, since it hides the page under the view. */
   large: boolean
   onToggleLarge: () => void
 }
 
-/** The Lyrics tab: the lines, the timing nudge and the large type toggle. Give it `key={track.id}`. */
+/**
+ * The Lyrics tab: the lines, the timing nudge and the button that opens the lyrics view, which this
+ * draws too while `large` is on (it owns the lines and the nudge, and the view needs both). Give it
+ * `key={track.id}`.
+ */
 export const LyricsPanel = memo(function LyricsPanel({
   track,
   visible,
@@ -288,6 +467,15 @@ export const LyricsPanel = memo(function LyricsPanel({
   // A list flagged as synced with no times in it has nothing to follow.
   const synced = item?.synced === true && lines.some((line) => line.start !== undefined)
 
+  // Leaving the view puts focus back on the button that opens it, wherever the leaving came from
+  // (the close button, Escape or L).
+  const largeButton = useRef<HTMLButtonElement>(null)
+  const wasLarge = useRef(large)
+  useEffect(() => {
+    if (wasLarge.current && !large) largeButton.current?.focus()
+    wasLarge.current = large
+  }, [large])
+
   if (lyrics.isLoading) return <p className="py-[8px] text-section text-text">Loading lyrics…</p>
   if (!lines.length)
     return (
@@ -305,44 +493,41 @@ export const LyricsPanel = memo(function LyricsPanel({
       </div>
     )
 
+  // The view has the lines while it is open, so the tab draws none of its own: two lists would
+  // both follow the clock.
+  if (large && visible)
+    return (
+      <LyricsView
+        track={track}
+        lines={lines}
+        synced={synced}
+        offset={offset}
+        onOffset={setOffset}
+        onClose={onToggleLarge}
+      />
+    )
+
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="mb-[10px] flex shrink-0 flex-wrap items-center justify-between gap-x-[12px] gap-y-[6px]">
         {synced ? (
-          <div role="group" aria-label="Lyrics timing" className="flex items-center gap-[6px]">
-            <Button
-              className="min-h-[32px] px-[10px] py-[4px]"
-              onClick={() => setOffset(offset - OFFSET_STEP)}
-            >
-              Earlier {OFFSET_STEP} s
-            </Button>
-            <span className="min-w-[5ch] text-center text-small text-muted">
-              <span className="sr-only">Timing </span>
-              <output>{formatOffset(offset)}</output>
-            </span>
-            <Button
-              className="min-h-[32px] px-[10px] py-[4px]"
-              onClick={() => setOffset(offset + OFFSET_STEP)}
-            >
-              Later {OFFSET_STEP} s
-            </Button>
-          </div>
+          <Timing offset={offset} onChange={setOffset} />
         ) : (
           <small className="text-small text-muted">Not timed</small>
         )}
         <IconButton
-          active={large}
+          ref={largeButton}
           aria-label="Large type"
           title="Large type (L)"
           onClick={onToggleLarge}
         >
-          {large ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
+          <Maximize2 size={17} />
         </IconButton>
       </div>
       {synced ? (
-        <SyncedLines lines={lines} offset={offset} visible={visible} large={large} />
+        <SyncedLines lines={lines} offset={offset} visible={visible} variant="panel" />
       ) : (
-        <PlainLines lines={lines} large={large} />
+        <PlainLines lines={lines} variant="panel" />
       )}
     </div>
   )

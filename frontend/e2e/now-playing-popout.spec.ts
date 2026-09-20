@@ -50,7 +50,7 @@ test('now playing shows the stage bar and the idle fade, and the transport besid
   await page.goto('/library/albums/album-1')
   await page.getByRole('button', { name: 'Play all' }).click()
   await expect(page.locator('.live-player')).toContainText('First Light')
-  await page.getByRole('link', { name: 'Open Now Playing' }).first().click()
+  await page.getByRole('link', { name: 'Open Now Playing' }).click()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
 
   const stage = page.locator('.stage')
@@ -269,6 +269,125 @@ test('a short window shrinks the stage to keep its controls in view', async ({
     .toEqual({ sideBySide: true, stage: true, panel: true, controls: true })
   const box = await page.locator('.stage').boundingBox()
   if (!box) throw new Error('Missing stage box')
+  expect(box.width).toBeCloseTo(box.height, 0)
+})
+
+const SIZE_KEY = 'musimo.now-playing-size'
+const smallStage = (page: Page) => page.getByRole('button', { name: 'Small stage', exact: true })
+const largeStage = (page: Page) => page.getByRole('button', { name: 'Large stage', exact: true })
+
+/** Whether the stage spans the content width and the tab panel starts under the last control. */
+async function theaterLayout(page: Page) {
+  const [stage, seek, panel, close, content] = await Promise.all([
+    page.locator('.stage').boundingBox(),
+    page.getByRole('slider', { name: 'Playback position' }).boundingBox(),
+    page.getByRole('tablist', { name: 'Now Playing panel' }).boundingBox(),
+    page.getByRole('button', { name: 'Close player' }).boundingBox(),
+    contentWidth(page),
+  ])
+  return {
+    wide: Boolean(stage && stage.width >= content * 0.9),
+    // Letterboxed, not squared: it is wider than it is tall.
+    landscape: Boolean(stage && stage.width > stage.height),
+    controlsUnderStage: Boolean(stage && seek && seek.y >= stage.y + stage.height),
+    tabsUnderControls: Boolean(close && panel && panel.y >= close.y + close.height),
+  }
+}
+
+test('Large makes the stage the full width with the tabs under the controls, and Small puts it back', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'A phone has one size, checked below.')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openNowPlaying(page, [song, next])
+  // Small is what a browser that stored nothing gets: the panel beside a square stage.
+  await expect.poll(() => fits(page, 900)).toMatchObject({ sideBySide: true })
+
+  await page.locator('.stage').hover()
+  await largeStage(page).click()
+  await expect(smallStage(page)).toBeVisible()
+  await expect
+    .poll(() => theaterLayout(page))
+    .toEqual({ wide: true, landscape: true, controlsUnderStage: true, tabsUnderControls: true })
+  // The page scrolls to reach the tabs, which start below the first screen.
+  const lyrics = page.getByRole('tab', { name: 'Lyrics' })
+  await expect(lyrics).not.toBeInViewport()
+  await lyrics.scrollIntoViewIfNeeded()
+  await expect(lyrics).toBeInViewport()
+
+  await page.locator('.stage').hover()
+  await smallStage(page).click()
+  await expect(largeStage(page)).toBeVisible()
+  await expect.poll(() => fits(page, 900)).toMatchObject({ sideBySide: true })
+})
+
+test('S switches the stage size while the page has focus and no field does', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'A phone has one size, checked below.')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openNowPlaying(page, [song, next])
+  await expect(largeStage(page)).toBeVisible()
+
+  await page.keyboard.press('s')
+  await expect(smallStage(page)).toBeVisible()
+  await expect.poll(() => theaterLayout(page)).toMatchObject({ wide: true })
+  await page.keyboard.press('Shift+S')
+  await expect(largeStage(page)).toBeVisible()
+
+  // A focused field keeps its own letters: the page's key does not fire.
+  await page.getByRole('slider', { name: 'Volume' }).focus()
+  await page.keyboard.press('s')
+  await expect(largeStage(page)).toBeVisible()
+
+  // With the stage itself focused the page's key still answers, since the stage has no S of its own.
+  await page.locator('.stage').click()
+  await page.keyboard.press('s')
+  await expect(smallStage(page)).toBeVisible()
+  await page.keyboard.press('s')
+  await expect(largeStage(page)).toBeVisible()
+
+  // The cheat sheet lists it.
+  await page.keyboard.press('?')
+  await expect(
+    page.getByRole('dialog', { name: 'Keyboard shortcuts' }).getByText('Small or large stage'),
+  ).toBeVisible()
+})
+
+test('the stage size survives a reload', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'A phone has one size, checked below.')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await openNowPlaying(page, [song, next])
+
+  await page.locator('.stage').hover()
+  await largeStage(page).click()
+  await expect(smallStage(page)).toBeVisible()
+  expect(await page.evaluate((key) => localStorage.getItem(key), SIZE_KEY)).toBe('large')
+
+  await page.reload()
+  await expect(smallStage(page)).toBeVisible()
+  await expect
+    .poll(() => theaterLayout(page))
+    .toMatchObject({ wide: true, tabsUnderControls: true })
+})
+
+test('a phone draws no size control and keeps the small layout, whatever was chosen', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, 'The desktop control is checked above.')
+  await page.addInitScript((key) => localStorage.setItem(key, 'large'), SIZE_KEY)
+  await openNowPlaying(page, [song, next])
+
+  await expect(page.getByRole('button', { name: /^(Large|Small) stage$/ })).toHaveCount(0)
+  // S has nothing to switch, so the choice stays as it was.
+  await page.keyboard.press('s')
+  expect(await page.evaluate((key) => localStorage.getItem(key), SIZE_KEY)).toBe('large')
+  const box = await page.locator('.stage').boundingBox()
+  if (!box) throw new Error('Missing stage box')
+  expect(box.width).toBeCloseTo(await contentWidth(page), 0)
   expect(box.width).toBeCloseTo(box.height, 0)
 })
 

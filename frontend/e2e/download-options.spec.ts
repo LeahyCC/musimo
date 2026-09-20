@@ -76,6 +76,9 @@ for (const count of [2, 30]) {
     await expect(panel).toBeVisible()
     await expect(first).toHaveAttribute('aria-expanded', 'true')
     await expect(panel.getByRole('combobox', { name: 'Download to' })).toBeFocused()
+    // The format is chosen here on every screen; the rows carry no select of their own.
+    await expect(panel.getByRole('combobox', { name: 'Format', exact: true })).toBeVisible()
+    await expect(page.getByRole('combobox', { name: /^Format for / })).toHaveCount(0)
     // Hit testing catches the original bug: a later transformed row painted over the popup.
     await expect
       .poll(() =>

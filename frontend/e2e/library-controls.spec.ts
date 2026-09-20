@@ -1,7 +1,12 @@
 import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
-import { librarySong, playerFixtures } from './library-fixtures'
+import {
+  closeLibraryFilters,
+  librarySong,
+  openLibraryFilters,
+  playerFixtures,
+} from './library-fixtures'
 
 const library = [
   librarySong('s1', { title: 'Beacon', genre: 'Jazz', year: 1999, playCount: 12 }),
@@ -52,6 +57,7 @@ async function libraryFixtures(page: Page): Promise<Recorded> {
 
 test('the tracks view sends its search, filter, sort and shuffle to the server', async ({
   page,
+  isMobile,
 }) => {
   const recorded = await libraryFixtures(page)
   await page.goto('/library/tracks')
@@ -61,7 +67,9 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
   await expect(page.getByText('Covers every matching song, not just the loaded ones.')).toHaveCount(
     1,
   )
+  await openLibraryFilters(page, isMobile)
   await page.getByLabel('Sort tracks').selectOption('duration')
+  await closeLibraryFilters(page, isMobile)
   await page.getByLabel('Search tracks').fill('cinder')
   await expect
     .poll(() => {
@@ -71,6 +79,7 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
     .toEqual(['cinder', 'duration'])
 
   await page.getByLabel('Search tracks').fill('')
+  await openLibraryFilters(page, isMobile)
   await page.getByText('All genres', { exact: true }).click()
   // Filter choices come from the whole library, not only the rows on screen.
   await expect(page.getByLabel('Rock')).toBeVisible()
@@ -82,9 +91,16 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
   ).toBe(0)
   await page.getByLabel('Jazz').check()
   await expect.poll(() => recorded.tracks.at(-1)?.searchParams.getAll('genre')).toEqual(['Jazz'])
+  // On a phone the button says how many filters are on once the sheet is closed.
+  if (isMobile) {
+    await closeLibraryFilters(page, isMobile)
+    await expect(page.getByRole('button', { name: 'Filter (1)', exact: true })).toBeVisible()
+    await openLibraryFilters(page, isMobile)
+  }
   // Close the panel first: at narrow widths it sits over the rest of the toolbar.
   await page.getByText('Genres (1)', { exact: true }).click()
   await page.getByRole('button', { name: 'Clear filters' }).click()
+  await closeLibraryFilters(page, isMobile)
 
   await page.getByRole('button', { name: 'Play all' }).click()
   await expect(page.locator('.live-player')).toContainText('Beacon')
@@ -110,6 +126,59 @@ test('loading states name what is on the way and hold the counts back', async ({
   await expect(page.locator('.library-detail .library-count')).toHaveCount(0)
 })
 
+test('an album page opens with its cover, year, artist link and meta line', async ({ page }) => {
+  await libraryFixtures(page)
+  await page.route('**/api/library/albums/album-1', (route) =>
+    route.fulfill({
+      json: {
+        id: 'album-1',
+        name: 'Clear Water',
+        artist: 'Harbor Static',
+        artistId: 'artist-1',
+        coverArt: 'cover-1',
+        year: 2018,
+        genre: 'Ambient',
+        songCount: 2,
+        duration: 428,
+        playCount: 0,
+        song: [
+          librarySong('s1', { title: 'First Light', track: 1 }),
+          librarySong('s2', { title: 'Second Track', track: 2 }),
+        ],
+      },
+    }),
+  )
+  await page.goto('/library/albums/album-1')
+
+  const header = page.locator('.collection-header')
+  await expect(header.getByRole('heading', { level: 1, name: 'Clear Water' })).toBeVisible()
+  await expect(header).toContainText('ALBUM · 2018')
+  await expect(header.locator('.collection-cover img')).toHaveAttribute(
+    'src',
+    '/api/player/art/cover-1',
+  )
+
+  await expect(header.getByRole('link', { name: 'Harbor Static' })).toHaveAttribute(
+    'href',
+    '/library/artists/artist-1',
+  )
+  await expect(header.locator('.library-count')).toHaveText('2 songs · 7 min · Ambient')
+  for (const name of ['Play all', 'Shuffle', 'More actions for Clear Water'])
+    await expect(header.getByRole('button', { name })).toBeVisible()
+
+  // The page heading and its eyebrow give way to the header; the tabs stay as a slim row with the
+  // way back, so the album starts right under them.
+  await expect(page.getByRole('heading', { name: 'Library', exact: true })).toHaveCount(0)
+  await expect(page.getByText('YOUR MUSIC, READY TO PLAY')).toHaveCount(0)
+  const tabs = page.getByRole('navigation', { name: 'Library views' })
+  await expect(tabs).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Back to albums' })).toBeVisible()
+  const tabsBox = await tabs.boundingBox()
+  const headerBox = await header.boundingBox()
+  if (!tabsBox || !headerBox) throw new Error('Missing header measurements')
+  expect(headerBox.y - (tabsBox.y + tabsBox.height)).toBeLessThan(60)
+})
+
 test('a failed load reports under the heading it belongs to', async ({ page }) => {
   await libraryFixtures(page)
   await page.route('**/api/library/albums?**', (route) =>
@@ -133,7 +202,10 @@ test('a failed load reports under the heading it belongs to', async ({ page }) =
   expect(headingComesFirst).toBe(true)
 })
 
-test('a filtered selection is its own queue, not the one already playing', async ({ page }) => {
+test('a filtered selection is its own queue, not the one already playing', async ({
+  page,
+  isMobile,
+}) => {
   await libraryFixtures(page)
   await page.goto('/library/tracks')
 
@@ -142,10 +214,64 @@ test('a filtered selection is its own queue, not the one already playing', async
   await expect(actions.getByRole('button', { name: 'Pause' })).toBeVisible()
 
   // A different filter is a different selection, so the control cannot claim to be playing it.
+  await openLibraryFilters(page, isMobile)
   await page.getByText('All genres', { exact: true }).click()
   await page.getByLabel('Rock').check()
   await page.getByText('Genres (1)', { exact: true }).click()
+  await closeLibraryFilters(page, isMobile)
   await expect(actions.getByRole('button', { name: 'Play all' })).toBeVisible()
+})
+
+test('tracks A to Z has no number column, and a long album name stops at two lines', async ({
+  page,
+  isMobile,
+}) => {
+  await libraryFixtures(page)
+  const album = 'A Very Long Album Title '.repeat(8).trim()
+  await page.route(
+    (url) => url.pathname === '/api/library/tracks',
+    (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            librarySong('s1', { title: 'Anchor', track: 9, album }),
+            librarySong('s2', { title: 'Beacon', track: 4 }),
+          ],
+          next_offset: null,
+          total: 2,
+          genres: [],
+          years: [],
+        },
+      }),
+  )
+  await page.goto('/library/tracks')
+
+  const rows = page.locator('.library-track-row')
+  await expect(rows).toHaveCount(2)
+  // The first cell is the title, not a song's number on some other album.
+  await expect(rows.first().locator('.library-track-play > span:first-child')).toContainText(
+    'Anchor',
+  )
+
+  // The album column is hidden on a phone, so there is nothing to clamp there.
+  if (!isMobile) {
+    // The artist's small text is the first in the row and the album's is the second.
+    const name = rows.first().locator('.library-track-play small').nth(1)
+    await expect(name).toHaveText(album)
+    expect(await name.evaluate((node) => getComputedStyle(node).webkitLineClamp)).toBe('2')
+    // Clamped to two lines, so the row is no taller than two lines of it plus the row's padding.
+    const heights = await name.evaluate((node) => ({
+      text: node.getBoundingClientRect().height,
+      full: node.scrollHeight,
+    }))
+    expect(heights.full).toBeGreaterThan(heights.text)
+  }
+
+  // Album order is the one sort where a song's number on its album still reads right.
+  await openLibraryFilters(page, isMobile)
+  await page.getByLabel('Sort tracks').selectOption('album')
+  await closeLibraryFilters(page, isMobile)
+  await expect(rows.first().locator('.library-track-play > span:first-child')).toHaveText('9')
 })
 
 test('pausing a collection resumes it instead of starting over', async ({ page }) => {
@@ -189,13 +315,27 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
     },
   ]
   await page.route('**/api/library/artists/artist-1', (route) =>
-    route.fulfill({ json: { id: 'artist-1', name: 'Harbor Static', album: albums } }),
+    route.fulfill({
+      json: { id: 'artist-1', name: 'Harbor Static', coverArt: 'artist-cover-1', album: albums },
+    }),
   )
 
   await page.route('**/api/library/artists/artist-1/tracks', (route) =>
     route.fulfill({ json: { items: library } }),
   )
   await page.goto('/library/artists/artist-1')
+
+  // The header carries a round photo, the name and both counts, and no page heading above it.
+  const header = page.locator('.collection-header')
+  await expect(header.getByRole('heading', { level: 1, name: 'Harbor Static' })).toBeVisible()
+  await expect(header).toContainText('ARTIST')
+  await expect(header.locator('.collection-cover img')).toHaveAttribute(
+    'src',
+    '/api/player/art/artist-cover-1',
+  )
+  await expect(header.locator('.library-count')).toHaveText('2 albums · 3 songs')
+  await expect(page.getByRole('heading', { name: 'Library', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Back to artists' })).toBeVisible()
 
   await expect(page.getByRole('button', { name: 'Open Clear Water' })).toBeVisible()
   await expect(page.locator('.library-card-copy').first()).toContainText('2011')
@@ -207,11 +347,75 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await expect(page.getByRole('img', { name: /Clear Water leads with 30 plays/ })).toBeVisible()
   await page.getByRole('button', { name: 'All songs' }).click()
   await expect(page.getByLabel('Sort songs')).toBeVisible()
+  // All songs keeps the same header rather than shrinking to a bare count.
+  await expect(header.getByRole('heading', { level: 1, name: 'Harbor Static' })).toBeVisible()
+  await expect(header.getByRole('button', { name: 'Albums' })).toBeVisible()
   await page.getByLabel('Sort songs').selectOption('plays')
   await expect(page.locator('.library-track-play strong').first()).toHaveText('Cinder')
 })
 
-test('the artists view sends its filters to the server and keeps favourites', async ({ page }) => {
+test('an artist page folds the editions of one album into a single card', async ({ page }) => {
+  await libraryFixtures(page)
+  const album = (id: string, name: string, year: number, songs: number, playCount: number) => ({
+    id,
+    name,
+    artist: 'Harbor Static',
+    coverArt: 'cover-1',
+    songCount: songs,
+    year,
+    playCount,
+  })
+  // Two editions of Circles, and two titles that only look alike and must stay apart.
+  const albums = [
+    album('circles-1', 'Circles', 2019, 12, 5),
+    album('circles-2', 'Circles (Deluxe Edition)', 2020, 20, 9),
+    album('blue-1', 'Blue', 2015, 8, 1),
+    album('blue-2', 'Blue Moon', 2016, 9, 2),
+  ]
+  await page.route('**/api/library/artists/artist-1', (route) =>
+    route.fulfill({ json: { id: 'artist-1', name: 'Harbor Static', album: albums } }),
+  )
+
+  await page.route('**/api/library/artists/artist-1/tracks', (route) =>
+    route.fulfill({ json: { items: library } }),
+  )
+  await page.goto('/library/artists/artist-1')
+
+  // Four releases, three albums: the header says both.
+  const header = page.locator('.collection-header')
+  await expect(header.locator('.library-count')).toHaveText('3 albums, 4 editions · 3 songs')
+  const names = () => page.locator('.library-card-copy strong').allInnerTexts()
+  // A group sorts as one album, by its newest edition.
+  expect(await names()).toEqual(['Circles', 'Blue Moon', 'Blue'])
+  await page.getByLabel('Sort albums').selectOption('oldest')
+  await expect.poll(names).toEqual(['Blue', 'Blue Moon', 'Circles'])
+  await page.getByLabel('Sort albums').selectOption('plays')
+  await expect.poll(names).toEqual(['Circles', 'Blue Moon', 'Blue'])
+
+  // Only the grouped card carries the chip; "Blue" and "Blue Moon" are ordinary cards.
+  await expect(page.locator('.edition-chip')).toHaveText(['2 editions'])
+  await expect(page.getByRole('button', { name: 'Open Blue', exact: true })).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Open Blue Moon', exact: true })).toBeVisible()
+
+  await page.getByRole('button', { name: 'Open Circles, 2 editions' }).click()
+  const editions = page.getByRole('dialog', { name: 'Circles' })
+  await expect(editions).toBeVisible()
+  const rows = editions.getByRole('listitem')
+  await expect(rows).toHaveCount(2)
+  // Oldest first, each with what tells it apart: the edition words, the year and the song count.
+  await expect(rows.nth(0)).toContainText('Standard edition')
+  await expect(rows.nth(0)).toContainText('2019 · 12 songs')
+  await expect(rows.nth(1)).toContainText('Deluxe Edition')
+  await expect(rows.nth(1)).toContainText('2020 · 20 songs')
+
+  await editions.getByRole('button', { name: /Deluxe Edition/ }).click()
+  await expect(page).toHaveURL(/\/library\/artists\/artist-1\/albums\/circles-2$/)
+})
+
+test('the artists view sends its filters to the server and keeps favourites', async ({
+  page,
+  isMobile,
+}) => {
   await libraryFixtures(page)
   const artists = [
     { id: 'artist-1', name: 'Harbor Static', albumCount: 2 },
@@ -260,6 +464,7 @@ test('the artists view sends its filters to the server and keeps favourites', as
   await page.goto('/library/artists')
 
   await expect(page.getByText('2 of 2 loaded')).toBeVisible()
+  await openLibraryFilters(page, isMobile)
   await page.getByLabel('Sort artists').selectOption('recent')
   await page.getByLabel('Show artists').selectOption('unplayed')
   await expect(page.getByText('1 of 1 loaded')).toBeVisible()
@@ -275,6 +480,7 @@ test('the artists view sends its filters to the server and keeps favourites', as
   await page.getByText('Genres (1)', { exact: true }).click()
   await page.getByRole('button', { name: 'Clear filters' }).click()
   await expect(page.getByLabel('Show artists')).toHaveValue('')
+  await closeLibraryFilters(page, isMobile)
   // The unfiltered list was fetched before, so clearing may reuse it rather than ask again.
   await expect(page.getByText('2 of 2 loaded')).toBeVisible()
 

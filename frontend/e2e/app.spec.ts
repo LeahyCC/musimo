@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
 import { ORIGIN } from './env'
+import { librarySong, playerFixtures } from './library-fixtures'
 import { writableDestination } from './queue-fixtures'
 
 // Invented catalog records. Settings, queue, diagnostics and events use the real API.
@@ -103,6 +104,38 @@ test('a top-tab section with no results hides its View all link', async ({ page 
   // The section is there with its empty state, and only then is the missing link proof.
   await expect(artists.getByText('No artists match this search.')).toBeVisible()
   await expect(artists.getByRole('button', { name: 'View all' })).toHaveCount(0)
+  // The destination is said once above the album cards, and the track rows hold no format select.
+  await expect(albums.getByText(/^Downloads go to /)).toHaveCount(1)
+  await expect(albums.locator('article .download-target')).toHaveCount(0)
+  await expect(tracks.getByRole('combobox')).toHaveCount(0)
+})
+
+test('a search with no results says so once, with the query', async ({ page }) => {
+  await page.route('**/api/search?*', (route) =>
+    route.fulfill({ json: { items: [], total: 0, next_index: null, cached: false } }),
+  )
+  await page.goto('/search?q=Zzzyx')
+  await expect(page.getByText('No results for “Zzzyx”.')).toHaveCount(1)
+  // Not one "No tracks match this search." per section.
+  await expect(page.getByText(/match this search/)).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Tracks' })).toHaveCount(0)
+
+  // One tab is one section, so it gets the same single message.
+  await page.goto('/search?q=Zzzyx&tab=album')
+  await expect(page.getByText('No results for “Zzzyx”.')).toHaveCount(1)
+  await expect(page.getByText(/match this search/)).toHaveCount(0)
+})
+
+test('the filters and sort hint is help inside the Filters panel, not a line on the page', async ({
+  page,
+}) => {
+  await page.goto('/search?q=Fixture&tab=track')
+  await expect(page.getByText('Test recording', { exact: true })).toBeVisible()
+  const hint = page.getByText(/Filters and sort apply to loaded results/)
+  await expect(hint).toHaveCount(0)
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  await expect(hint).toBeVisible()
+  await expect(hint).toContainText('Years fill in as album details arrive.')
 })
 
 test('popularity keeps an exact artist name ahead of larger fuzzy matches', async ({ page }) => {
@@ -280,7 +313,7 @@ test('navigation guard blocks unsaved changes from being lost', async ({ page })
   await expect(page).toHaveURL(/\/downloads$/)
 })
 
-test('settings headings and the up-to-date bar wait for a delayed settings query', async ({
+test('settings headings wait for a delayed settings query, and the save bar stays away until an edit', async ({
   page,
 }) => {
   // Both the page's own settings query and the shell's snapshot fetch can populate the settings
@@ -302,9 +335,14 @@ test('settings headings and the up-to-date bar wait for a delayed settings query
   await page.goto('/settings')
   await expect(page.getByRole('status').filter({ hasText: 'Loading settings' })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Your library' })).toBeHidden()
-  await expect(page.getByText('Settings are up to date.')).toBeHidden()
+  await expect(page.locator('.save-bar')).toBeHidden()
   await expect(page.getByRole('heading', { name: 'Your library' })).toBeVisible()
-  await expect(page.getByText('Settings are up to date.')).toBeVisible()
+  // Nothing has changed, so there is no bar and no idle Save button.
+  await expect(page.locator('.save-bar')).toHaveCount(0)
+  await expect(page.getByRole('button', { name: 'Save changes' })).toHaveCount(0)
+  await page.getByRole('textbox', { name: 'Library label' }).fill('Edited')
+  await expect(page.locator('.save-bar')).toBeVisible()
+  await expect(page.getByRole('button', { name: 'Save changes' })).toBeEnabled()
 })
 
 test('the settings index does not move when the slower diagnostics query lands', async ({
@@ -331,7 +369,7 @@ test('the settings index does not move when the slower diagnostics query lands',
   expect(after?.y).toBe(before?.y)
 })
 
-test('settings headings and the up-to-date bar stay hidden when the settings query fails', async ({
+test('settings headings and the save bar stay hidden when the settings query fails', async ({
   page,
 }) => {
   await page.route('**/api/snapshot', (route) =>
@@ -348,7 +386,7 @@ test('settings headings and the up-to-date bar stay hidden when the settings que
   await page.goto('/settings')
   await expect(page.getByRole('alert')).toContainText('Settings failed')
   await expect(page.getByRole('heading', { name: 'Your library' })).toBeHidden()
-  await expect(page.getByText('Settings are up to date.')).toBeHidden()
+  await expect(page.locator('.save-bar')).toBeHidden()
 })
 
 test('queue pause and resume persist through refresh', async ({ page, request }) => {
@@ -391,6 +429,93 @@ test('activity clear persists and diagnostics export is valid JSON', async ({ pa
   })
 })
 
+test('a run of the same event is one row with a count, and opens to its events', async ({
+  page,
+}) => {
+  const event = (id: number, kind: string) => ({
+    id,
+    kind,
+    created_at: new Date(Date.UTC(2026, 8, 19, 10, 0, id)).toISOString(),
+  })
+  // Newest first, like the server: twelve index updates, one save, then two more index updates.
+  const events = [
+    ...Array.from({ length: 12 }, (_, index) => event(20 - index, 'library.updated')),
+    event(8, 'settings.updated'),
+    event(7, 'library.updated'),
+    event(6, 'library.updated'),
+  ]
+  await page.route('**/api/activity', (route) =>
+    route.request().method() === 'GET'
+      ? route.fulfill({ json: { events, count: events.length, cursor: 20 } })
+      : route.fallback(),
+  )
+  await page.goto('/diagnostics')
+
+  const feed = page.getByRole('region', { name: 'Recent activity entries' })
+  await expect(feed).toBeVisible()
+  const runs = feed.getByRole('button', { name: /Library index updated/ })
+  // Two runs of the same event, kept apart by the save between them.
+  await expect(runs).toHaveCount(2)
+  await expect(runs.first()).toContainText('×12')
+  await expect(runs.first()).toHaveAttribute('aria-expanded', 'false')
+  await expect(runs.nth(1)).toContainText('×2')
+  // Collapsed, a run shows one row, so a hundred repeats cannot bury the rest.
+  await expect(feed.getByRole('listitem')).toHaveCount(3)
+  await expect(feed.getByText('#20')).toBeHidden()
+
+  await runs.first().click()
+  await expect(runs.first()).toHaveAttribute('aria-expanded', 'true')
+  await expect(feed.getByText('#20', { exact: true })).toBeVisible()
+  await expect(feed.getByText('#9', { exact: true })).toBeAttached()
+  await runs.first().click()
+  await expect(feed.getByText('#20')).toBeHidden()
+})
+
+for (const [scan, ready] of [
+  ['done', true],
+  ['failed', false],
+] as const) {
+  test(`settings and diagnostics agree after a ${scan} library scan`, async ({ page }) => {
+    const healthy = {
+      health: { status: 'ok', version: '1.0.0', uptime_seconds: 10, phase: 1 },
+      versions: {},
+      disks: [{ path: '/music', free_bytes: 100, total_bytes: 200, exists: true, writable: true }],
+      sources: [
+        {
+          source: 'youtube',
+          status: 'healthy',
+          latency_ms: 10,
+          detail: 'ok',
+          checked_at: '2026-09-19T10:00:00Z',
+        },
+      ],
+      events: [],
+      database: { mode: 'wal', schema: 1, retained_events: 0 },
+      library: {
+        status: scan,
+        walked: 0,
+        indexed: 0,
+        errors: 0,
+        elapsed: 0,
+        detail: 'Scan finished',
+        total_files: 5,
+        roots: ['/music'],
+      },
+      queue: { paused: false, source_paused: false },
+      capabilities: { settings: true, events: true, search: true, downloads: true },
+      navidrome: null,
+      last_download: null,
+    }
+    await page.route('**/api/diagnostics', (route) => route.fulfill({ json: healthy }))
+
+    const attention = 'Some components need attention.'
+    await page.goto('/settings')
+    await expect(page.getByText(ready ? 'System ready.' : attention)).toBeVisible()
+    await page.goto('/diagnostics')
+    await expect(page.getByText(ready ? 'All systems ready.' : attention)).toBeVisible()
+  })
+}
+
 test('album download skips owned tracks and recovers from failure', async ({ page }) => {
   let attempts = 0
   await page.route('**/api/batches', async (route) => {
@@ -414,25 +539,45 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
   expect(attempts).toBe(2)
 })
 
-test('now playing says a preview is playing instead of nothing', async ({ page }) => {
-  await page.route('**/api/preview/101?*', (route) =>
-    route.fulfill({
-      json: { url: '/assets/e2e-silence.wav', source: 'Generated' },
-    }),
-  )
-  await page.goto('/search?q=Fixture&tab=track')
-  await page.getByRole('button', { name: 'Find preview Test recording' }).click()
-  const player = page.getByRole('contentinfo')
-  await expect(player.getByRole('slider', { name: 'Preview position' })).toBeEnabled()
+// The visuals are only mentioned where the browser could draw them, so the test picks which.
+for (const webGpu of [true, false]) {
+  test(`now playing says a preview is playing instead of nothing, ${
+    webGpu ? 'with' : 'without'
+  } WebGPU`, async ({ page }) => {
+    await page.addInitScript(
+      (available) =>
+        Object.defineProperty(navigator, 'gpu', {
+          value: available ? {} : undefined,
+          configurable: true,
+        }),
+      webGpu,
+    )
 
-  // Through the palette, so the tab does not reload and the preview keeps playing.
-  await page.keyboard.press('Control+k')
-  await page.getByRole('dialog').getByRole('button', { name: 'Now Playing', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'A preview is playing.' })).toBeVisible()
-  await expect(page.getByText('play with tracks from your library')).toBeVisible()
-  // The preview's only controls are the footer's, so it stays on this page.
-  await expect(player.getByRole('slider', { name: 'Preview position' })).toBeVisible()
-})
+    await page.route('**/api/preview/101?*', (route) =>
+      route.fulfill({
+        json: { url: '/assets/e2e-silence.wav', source: 'Generated' },
+      }),
+    )
+    await page.goto('/search?q=Fixture&tab=track')
+    await page.getByRole('button', { name: 'Find preview Test recording' }).click()
+    const player = page.getByRole('contentinfo')
+    await expect(player.getByRole('slider', { name: 'Preview position' })).toBeEnabled()
+
+    // Through the palette, so the tab does not reload and the preview keeps playing.
+    await page.keyboard.press('Control+k')
+    await page.getByRole('dialog').getByRole('button', { name: 'Now Playing', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'A preview is playing.' })).toBeVisible()
+    await expect(page.getByText('with tracks from your library')).toHaveText(
+      webGpu
+        ? 'Now Playing and its visuals play with tracks from your library.'
+        : 'Now Playing plays with tracks from your library.',
+    )
+    // The preview's only controls are the footer's, so it stays on this page. Its cover is a
+    // picture, not a way in, so it has no ring and no link.
+    await expect(player.getByRole('slider', { name: 'Preview position' })).toBeVisible()
+    await expect(player.locator('.cover-link')).toHaveCount(0)
+  })
+}
 
 test('preview playback, volume and navigation remain usable', async ({ page, isMobile }) => {
   await page.route('**/api/preview/101?*', (route) =>
@@ -806,12 +951,31 @@ test('the visualizer settings change what Now Playing remembers', async ({ page 
     Object.defineProperty(navigator, 'gpu', { value: {}, configurable: true }),
   )
   await page.goto('/settings/user')
-  const view = page.getByRole('combobox', { name: 'Default view' })
+  const view = page.getByRole('combobox', { name: 'Show on Now Playing' })
+  await expect(view).toBeEnabled()
+  await expect(view).toHaveAccessibleDescription(/Visualizer button on the stage/)
   await expect(view).toHaveValue('artwork')
   await view.selectOption('visualizer')
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem('musimo.now-playing-view')))
     .toBe('visualizer')
+})
+
+test('the stage size setting writes what Now Playing remembers, with or without WebGPU', async ({
+  page,
+}) => {
+  // The size belongs to the artwork as much as to the visualizer, so it is not disabled here.
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
+  )
+  await page.goto('/settings/user')
+  const size = page.getByRole('combobox', { name: 'Stage size' })
+  await expect(size).toBeEnabled()
+  await expect(size).toHaveValue('small')
+  await size.selectOption('large')
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('musimo.now-playing-size')))
+    .toBe('large')
 })
 
 test('the visualizer settings are disabled with a reason where there is no WebGPU', async ({
@@ -822,8 +986,20 @@ test('the visualizer settings are disabled with a reason where there is no WebGP
   )
   await page.goto('/settings/user')
   await expect(page.getByText('The visualizer needs WebGPU')).toBeVisible()
-  await expect(page.getByRole('combobox', { name: 'Default view' })).toBeDisabled()
+  await expect(page.getByRole('combobox', { name: 'Show on Now Playing' })).toBeDisabled()
 })
+
+/** Loads a library track from the saved queue, since the visualizer commands need one. */
+async function loadLibraryTrack(page: Page) {
+  await playerFixtures(page)
+  await page.route('**/api/player/queue', (route) =>
+    route.fulfill(
+      route.request().method() === 'GET'
+        ? { json: { current: 'song-1', position: 0, entry: [librarySong('song-1')] } }
+        : { status: 204 },
+    ),
+  )
+}
 
 test('command palette offers the visualizer commands only where WebGPU exists', async ({
   page,
@@ -831,7 +1007,9 @@ test('command palette offers the visualizer commands only where WebGPU exists', 
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
   )
-  await page.goto('/')
+  await loadLibraryTrack(page)
+  await page.goto('/settings/user')
+  await expect(page.locator('.live-player')).toContainText('Song song-1')
   await page.keyboard.press('Control+k')
   const palette = page.getByRole('dialog')
   await expect(palette.getByRole('button', { name: 'Now Playing' })).toBeVisible()
@@ -843,7 +1021,9 @@ test('toggle visualizer from another route lands on Now Playing with it on', asy
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'gpu', { value: {}, configurable: true }),
   )
-  await page.goto('/')
+  await loadLibraryTrack(page)
+  await page.goto('/settings/user')
+  await expect(page.locator('.live-player')).toContainText('Song song-1')
   await page.keyboard.press('Control+k')
   await page.getByRole('dialog').getByRole('button', { name: 'Toggle visualizer' }).click()
   await expect(page).toHaveURL(/\/now-playing$/)

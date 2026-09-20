@@ -4,6 +4,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { Search } from 'lucide-react'
 
 import { useNowPlayingPopout } from './now-playing-popout'
+import { usePlayer } from './player'
 
 const pages = [
   { label: 'Search music', to: '/search' },
@@ -27,6 +28,7 @@ export function CommandPalette() {
   const navigate = useNavigate()
   const onStage = useRouterState({ select: (state) => state.location.pathname === '/now-playing' })
   const popout = useNowPlayingPopout()
+  const { libraryTrack } = usePlayer()
 
   const showStage = () => {
     if (!onStage) void navigate({ to: '/now-playing' })
@@ -61,21 +63,23 @@ export function CommandPalette() {
     // Playing with a notice, which is the fallback to plain navigation.
     popout.popoutToFullscreen()
   }
-  // No WebGPU means the stage only ever shows artwork, so these would do nothing.
-  const visualizerCommands: Command[] = popout.canVisualize
-    ? [
-        {
-          label: 'Toggle visualizer',
-          // From another route the stage is out of sight, so a toggle there could land on Now
-          // Playing with the visualizer just switched off. Arriving always shows it; toggling
-          // is for when the stage is already in front.
-          run: () => (onStage ? popout.toggleView() : showVisualizer()),
-        },
-        { label: 'Next visualizer preset', run: () => cycle(1) },
-        { label: 'Previous visualizer preset', run: () => cycle(-1) },
-        { label: 'Fullscreen visualizer', run: fullscreenVisualizer },
-      ]
-    : []
+  // No WebGPU means the stage only ever shows artwork, and with no library track loaded Now
+  // Playing has no stage, so in both cases these would do nothing.
+  const visualizerCommands: Command[] =
+    popout.canVisualize && libraryTrack
+      ? [
+          {
+            label: 'Toggle visualizer',
+            // From another route the stage is out of sight, so a toggle there could land on Now
+            // Playing with the visualizer just switched off. Arriving always shows it; toggling
+            // is for when the stage is already in front.
+            run: () => (onStage ? popout.toggleView() : showVisualizer()),
+          },
+          { label: 'Next visualizer preset', run: () => cycle(1) },
+          { label: 'Previous visualizer preset', run: () => cycle(-1) },
+          { label: 'Fullscreen visualizer', run: fullscreenVisualizer },
+        ]
+      : []
   const commands: Command[] = [
     ...pages.map((page) => ({ label: page.label, run: () => void navigate({ to: page.to }) })),
     ...visualizerCommands,

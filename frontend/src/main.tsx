@@ -66,6 +66,7 @@ import { PageTitle } from './page-title'
 import { CommandPalette } from './palette'
 import { artUrl, PlayerProvider, usePlayer } from './player'
 import { PodcastPage } from './podcasts'
+import { scanIsReady, systemIsReady } from './readiness'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
 import { startTheme } from './theme/store'
@@ -675,6 +676,14 @@ function SettingsPage() {
       setSaved(true)
     },
   })
+  // The confirmation is for the moment after a save. Left up, the bar would be back to saying
+  // nothing while still taking room at the foot of the page.
+  useEffect(() => {
+    if (!saved) return
+    const timer = setTimeout(() => setSaved(false), 6000)
+    return () => clearTimeout(timer)
+  }, [saved])
+
   useEffect(() => {
     if (settings.isSuccess && window.location.hash) {
       const fieldId = window.location.hash.slice(1)
@@ -711,22 +720,7 @@ function SettingsPage() {
       )}
       {diagnostics.data &&
         (() => {
-          const rootsReady = diagnostics.data.library.roots.every((root: string) => {
-            const disk = diagnostics.data.disks.find((d) => d.path === root)
-            return disk?.exists && disk?.writable && disk?.free_bytes !== null
-          })
-          const scanReady =
-            diagnostics.data.library.status === 'idle' ||
-            diagnostics.data.library.status === 'scanning'
-          const navidromeReady = diagnostics.data.navidrome
-            ? diagnostics.data.navidrome.available
-            : null
-          const youtubeReady =
-            diagnostics.data.sources.find((s) => s.source === 'youtube')?.status === 'healthy'
-          const lastDownloadOk =
-            !diagnostics.data.last_download || diagnostics.data.last_download.stage === 'done'
-          const overallReady =
-            rootsReady && scanReady && navidromeReady !== false && youtubeReady && lastDownloadOk
+          const overallReady = systemIsReady(diagnostics.data)
 
           return (
             <div
@@ -973,26 +967,28 @@ function SettingsPage() {
             </section>
             {/* `save-bar` is the hook `e2e/phone.spec.ts` measures against the bottom bar. The
                 offset keeps it clear of the player, and on a phone the bar and home indicator. */}
-            <div className="save-bar sticky bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+8px)] z-sticky flex items-center justify-between gap-[15px] rounded-[7px] border border-good-line bg-good-bg px-[17px] py-[13px] max-phone:p-[12px]">
-              <span className="text-small" role="status">
-                {save.isError
-                  ? save.error.message
-                  : saved
-                    ? 'Saved. You can safely refresh.'
-                    : Object.keys(draft).length
-                      ? 'You have unsaved changes.'
-                      : 'Settings are up to date.'}
-              </span>
-              <Button
-                variant="primary"
-                type="submit"
-                className="max-phone:whitespace-nowrap"
-                disabled={!Object.keys(draft).length || save.isPending}
-              >
-                {save.isPending ? 'Saving…' : 'Save changes'}
-                {saved ? <Check size={16} /> : <ArrowRight size={16} />}
-              </Button>
-            </div>
+            {/* With nothing to save there is nothing to say, so the bar comes only with an edit, a
+                failed save, or the confirmation that follows a save. */}
+            {(isDirty || saved || save.isError) && (
+              <div className="save-bar sticky bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+8px)] z-sticky flex items-center justify-between gap-[15px] rounded-[7px] border border-good-line bg-good-bg px-[17px] py-[13px] max-phone:p-[12px]">
+                <span className="text-small" role="status">
+                  {save.isError
+                    ? save.error.message
+                    : saved
+                      ? 'Saved. You can safely refresh.'
+                      : 'You have unsaved changes.'}
+                </span>
+                <Button
+                  variant="primary"
+                  type="submit"
+                  className="max-phone:whitespace-nowrap"
+                  disabled={!isDirty || save.isPending}
+                >
+                  {save.isPending ? 'Saving…' : 'Save changes'}
+                  {saved ? <Check size={16} /> : <ArrowRight size={16} />}
+                </Button>
+              </div>
+            )}
           </form>
         </div>
       )}
@@ -1000,10 +996,6 @@ function SettingsPage() {
     </>
   )
 }
-
-// A finished scan is a healthy state; only an interrupted, failed or cancelled one needs a
-// person to look at it.
-const scanIsReady = (status: string) => ['idle', 'scanning', 'done'].includes(status)
 
 function DiagnosticsPage() {
   const client = useQueryClient()
@@ -1057,17 +1049,7 @@ function DiagnosticsPage() {
       {data && (
         <>
           {(() => {
-            const rootsReady = data.library.roots.every((root: string) => {
-              const disk = data.disks.find((d) => d.path === root)
-              return disk?.exists && disk?.writable && disk?.free_bytes !== null
-            })
-            const scanReady = scanIsReady(data.library.status)
-            const navidromeReady = data.navidrome ? data.navidrome.available : null
-            const youtubeReady =
-              data.sources.find((s) => s.source === 'youtube')?.status === 'healthy'
-            const lastDownloadOk = !data.last_download || data.last_download.stage === 'done'
-            const overallReady =
-              rootsReady && scanReady && navidromeReady !== false && youtubeReady && lastDownloadOk
+            const overallReady = systemIsReady(data)
 
             // `health-strip` is a bare hook: `e2e/app.spec.ts` reads the strip by class.
             return (

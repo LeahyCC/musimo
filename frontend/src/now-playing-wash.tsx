@@ -6,11 +6,11 @@ import { cx } from './cx'
 import type { Rgb } from './theme/color'
 import { useTheme } from './theme/store'
 import { leavingStyle, useLeaving } from './use-leaving'
-import { washFor } from './wash'
+import { glowFor, washFor } from './wash'
 
 // The cover's color once it has been read. The last one stays while the next is being read, so the
-// wash does not blink off between tracks; it fades from one to the other when the new one lands.
-// Any failure reads as no color, and no color is no wash.
+// wash and the glow do not blink off between tracks; they fade from one to the other when the new
+// one lands. Any failure reads as no color, and no color is no wash and no glow.
 function useCoverColor(art: string): Rgb | null {
   const [color, setColor] = useState<Rgb | null>(null)
 
@@ -71,6 +71,49 @@ export function NowPlayingWash({ art }: { art: string }) {
     >
       {wash && <WashLayer color={wash} />}
       {leaving?.value && <WashLayer color={leaving.value} leaving />}
+    </div>
+  )
+}
+
+// One halo the size of the stage: a solid fill the stage covers, and a soft shadow of the same color
+// that spreads past its edge. The shadow reaches 24px (14px on a phone), which is less than the
+// 26px the page leaves between the stage and the title under it, so it is gone before it gets to
+// any text. Change one and the other has to follow.
+function GlowLayer({ color, leaving }: { color: string; leaving?: boolean }) {
+  return (
+    <div
+      className={cx(
+        // The shadow is an arbitrary property, not a `shadow-[…]` utility: Tailwind takes a shadow
+        // utility apart to swap its color, and a color that is a variable comes out as no shadow.
+        'absolute inset-0 rounded-[14px] bg-(color:--now-glow) [box-shadow:0_0_12px_4px_var(--now-glow)] max-phone:[box-shadow:0_0_12px_2px_var(--now-glow)]',
+        leaving && 'leaving',
+      )}
+      style={{ '--now-glow': color, ...(leaving ? leavingStyle : {}) } as CSSProperties}
+    />
+  )
+}
+
+/**
+ * A glow of the cover's color behind and around the docked stage, drawn where the page sets no text
+ * on the canvas, so it is a good deal stronger than the wash (`glowFor`, a fixed mix). It is
+ * placed by its parent, which sizes it to the stage through `className` and draws it before the
+ * stage so the stage sits on top. It cross-fades on a track change like the wash, is a cut under
+ * `prefers-reduced-motion`, and is not drawn at all while the cover's color is unknown.
+ */
+export function NowPlayingGlow({ art, className }: { art: string; className?: string }) {
+  const theme = useTheme()
+  const cover = useCoverColor(art)
+  const glow = useMemo(() => (cover ? glowFor(cover, theme.colors) : null), [cover, theme])
+  const leaving = useLeaving(glow)
+
+  return (
+    <div
+      aria-hidden="true"
+      data-now-playing-glow={glow ?? ''}
+      className={cx('pointer-events-none absolute top-0 left-0 aspect-square', className)}
+    >
+      {glow && <GlowLayer color={glow} />}
+      {leaving?.value && <GlowLayer color={leaving.value} leaving />}
     </div>
   )
 }

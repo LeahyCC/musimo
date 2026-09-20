@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { ORIGIN } from './library-fixtures'
+import { closeLibraryFilters, openLibraryFilters, ORIGIN } from './library-fixtures'
 
 const song = {
   id: 'song-1',
@@ -146,6 +146,7 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
   await expect(page.getByText('NAVIDROME READY')).toBeVisible()
   await page.getByLabel('Search albums').fill('clear water')
   await expect(page.getByRole('button', { name: 'Open Clear Water' })).toBeVisible()
+  await openLibraryFilters(page, isMobile)
   await page.getByLabel('Sort home').selectOption('title')
   await page.getByText('All genres', { exact: true }).click()
   await page.getByLabel('Ambient').check()
@@ -155,13 +156,16 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
   await page.getByLabel('2026').check()
   await page.getByRole('button', { name: 'Clear filters' }).click()
   await page.getByRole('button', { name: 'List view' }).click()
+  await closeLibraryFilters(page, isMobile)
   await expect(page.getByRole('button', { name: 'Play Clear Water' })).toBeVisible()
   await page.reload()
+  await openLibraryFilters(page, isMobile)
   await expect(page.getByRole('button', { name: 'List view' })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
   await page.getByRole('button', { name: 'Grid view' }).click()
+  await closeLibraryFilters(page, isMobile)
   const grid = page.locator('.library-grid')
   const gridTop = await grid.evaluate((element) => element.getBoundingClientRect().top + scrollY)
   const idleOpacity = await page.evaluate(() => (matchMedia('(hover: none)').matches ? 1 : 0))
@@ -258,8 +262,11 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
   await page.locator('.live-player').getByRole('link', { name: 'Clear Water' }).click()
   await expect(page).toHaveURL(/\/library\/albums\/album-1$/)
 
-  // The cover opens Now Playing on every width; the maximise icon beside it is desktop only.
-  await page.locator('.live-player').getByRole('link', { name: 'Open Now Playing' }).first().click()
+  // The cover opens Now Playing on every width and is the only stop: the maximise icon beside it
+  // on desktop is out of the tab order and the accessibility tree.
+  const opener = page.locator('.live-player').getByRole('link', { name: 'Open Now Playing' })
+  await expect(opener).toHaveCount(1)
+  await opener.click()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
   // Lyrics share a panel with Up next, one tap away.
   await page.getByRole('tab', { name: 'Lyrics' }).click()

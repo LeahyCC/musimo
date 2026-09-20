@@ -1,8 +1,12 @@
+import { useState } from 'react'
+
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Trash2 } from 'lucide-react'
+import { ChevronRight, Trash2 } from 'lucide-react'
 import { z } from 'zod'
 
+import { groupRuns } from './activity-runs'
 import { api } from './api'
+import { cx } from './cx'
 import { Button, ErrorBanner } from './ui'
 
 const activitySchema = z.object({
@@ -19,8 +23,36 @@ const labels: Record<string, string> = {
   'queue.updated': 'Queue updated',
 }
 
+type ActivityEvent = z.infer<typeof activitySchema>['events'][number]
+
+const eventName = (kind: string) => labels[kind] ?? kind.replaceAll('.', ' ')
+
+function EventRow({ event }: { event: ActivityEvent }) {
+  return (
+    <li className="flex items-center gap-3 border-t border-line py-[13px] text-small max-phone:gap-2">
+      <span className="h-[5px] w-[5px] rounded-full bg-muted" />
+      <span>{eventName(event.kind)}</span>
+      <time className="ml-auto text-caption text-faint" dateTime={event.created_at}>
+        {new Date(event.created_at).toLocaleString()}
+      </time>
+      <code className="text-caption text-faint">#{event.id}</code>
+    </li>
+  )
+}
+
+/** "9/19/2026, 10:01 AM to 10:09 AM", naming the date again only when the run crosses midnight. */
+function timeRange(from: string, to: string) {
+  const start = new Date(from)
+  const end = new Date(to)
+  const sameDay = start.toDateString() === end.toDateString()
+  const finish = sameDay ? end.toLocaleTimeString() : end.toLocaleString()
+  return `${start.toLocaleString()} to ${finish}`
+}
+
 export function RecentActivity() {
   const client = useQueryClient()
+  // Runs are opened by the id of their oldest event, which stays put as newer events join the run.
+  const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
   const activity = useQuery({
     queryKey: ['activity'],
     queryFn: ({ signal }) => api('activity', activitySchema, { signal }),
@@ -74,19 +106,48 @@ export function RecentActivity() {
               tabIndex={0}
             >
               <ul className="m-0 list-none p-0">
-                {activity.data.events.map((event) => (
-                  <li
-                    key={event.id}
-                    className="flex items-center gap-3 border-t border-line py-[13px] text-small max-phone:gap-2"
-                  >
-                    <span className="h-[5px] w-[5px] rounded-full bg-muted" />
-                    <span>{labels[event.kind] ?? event.kind.replaceAll('.', ' ')}</span>
-                    <time className="ml-auto text-caption text-faint" dateTime={event.created_at}>
-                      {new Date(event.created_at).toLocaleString()}
-                    </time>
-                    <code className="text-caption text-faint">#{event.id}</code>
-                  </li>
-                ))}
+                {groupRuns(activity.data.events).map((run) => {
+                  const newest = run.events[0]
+                  const oldest = run.events[run.events.length - 1]
+                  if (!newest || !oldest) return null
+                  if (run.events.length === 1) return <EventRow key={newest.id} event={newest} />
+                  const open = expanded.has(oldest.id)
+                  return (
+                    <li key={oldest.id} className="border-t border-line text-small">
+                      <button
+                        type="button"
+                        aria-expanded={open}
+                        className="flex w-full items-center gap-3 border-0 bg-transparent py-[13px] text-left text-small text-text max-phone:gap-2 coarse:min-h-11"
+                        onClick={() =>
+                          setExpanded((set) => {
+                            const next = new Set(set)
+                            if (!next.delete(oldest.id)) next.add(oldest.id)
+                            return next
+                          })
+                        }
+                      >
+                        <ChevronRight
+                          size={14}
+                          className={cx('flex-none text-muted', open && 'rotate-90')}
+                        />
+                        <span>{eventName(run.kind)}</span>
+                        <span className="rounded-pill bg-raised px-[8px] py-[1px] text-caption text-muted">
+                          ×{run.events.length}
+                        </span>
+                        <span className="ml-auto text-caption text-faint">
+                          {timeRange(oldest.created_at, newest.created_at)}
+                        </span>
+                      </button>
+                      {open && (
+                        <ul className="m-0 list-none p-0 pl-[26px]">
+                          {run.events.map((event) => (
+                            <EventRow key={event.id} event={event} />
+                          ))}
+                        </ul>
+                      )}
+                    </li>
+                  )
+                })}
               </ul>
             </div>
           </>

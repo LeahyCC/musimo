@@ -38,7 +38,7 @@
 - Filter and sort Albums on the server, so genre and year cover the whole library instead of the albums already scrolled past
 - Browse libraries up to 50,000 songs on the Tracks tab (it stopped at 10,000), keeping only the fields the page reads so the larger cap costs less memory than the old one
 - Lay Now Playing out as two columns that fit the window: the stage with the title and every player control under it, and one tabbed panel of Up next and Lyrics beside it (under the controls on a phone), so neither starts below the fold. Up next now lists only what follows the playing track and says where the queue came from
-- Follow synced lyrics on Now Playing: the current line is highlighted and kept in view, a line can be clicked to seek there, timing can be nudged half a second at a time and is remembered per track, and `L` switches to large type. Lyrics with no times say so, and a track with none can be searched again
+- Follow synced lyrics on Now Playing: the current line is highlighted and kept in view, a line can be clicked to seek there, timing can be nudged half a second at a time and is remembered per track, and `L` opens a large lyrics view that takes over the content area, with the track and its controls in a strip along the bottom. Lyrics with no times say so, and a track with none can be searched again
 - Edit the play queue: Play next and Add to queue from a song's row menu (and for a whole album or playlist), remove, drag or use the move buttons and Alt with an arrow to reorder Up next, Clear queue, and Save as playlist. Every change is saved to Navidrome, and adding past its 500 song limit is refused with a message instead of dropping songs
 - Say "1 album" and "1 song" on an artist page instead of "1 ALBUMS"
 - Show the release year on an artist's popular songs instead of a "…" that never filled in
@@ -61,6 +61,13 @@
 ### UI and accessibility
 
 - Finish the Tailwind migration: the last handwritten screen rules are gone, so a theme now reaches every page, and a new browser check walks every route at desktop and phone width under a light theme
+- Settings and Diagnostics now share one "is the system ready" rule, so a finished library scan no longer reads "Some components need attention" on Settings while Diagnostics says "All systems ready"
+- Show the Settings save bar only while there are unsaved changes, after a failed save, or just after a save, instead of an idle "Settings are up to date" bar with a Save button
+- Keep Parallel, Pause all and Cancel queued in view on Downloads and move Retry failed, Clear failed and Clear all finished into a menu that lists only what has something to act on; Clear all finished asks first
+- Collapse a run of the same event in the activity feed into one row with a count and time range that opens to its events
+- Show recent searches (kept in this browser, up to eight, clearable) and the newest library albums under the home page hero, keeping the four starter artists for a new install
+- Drop the meaningless track number column from Library Tracks sorted A to Z, and stop a long album name there taking more than two lines
+- Number a library playlist's rows by their place in the playlist instead of each song's number on its own album
 
 - Make every screen work on a phone: mini player, bottom-bar download count, safe-area insets, 44px touch targets, no focus zoom, tabs and sheets that fit (#48)
 - Add a personal settings page at `/settings/user` where you pick a theme, build your own from the color tokens with the whole app as a live preview, and export or import one as a file. Settings is now a Server and Yours switch, and the command palette has Change theme

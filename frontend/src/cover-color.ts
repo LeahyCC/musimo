@@ -43,9 +43,14 @@ export function dominantColor(data: ArrayLike<number>): Rgb | null {
   return { r: best.r / best.count, g: best.g / best.count, b: best.b / best.count, a: 1 }
 }
 
-/* Kept for the session so a track that comes round again is not read twice. Only a finished read
-   is kept: a cover that failed to load may load next time. */
+/* Kept for the session, per cover: the URL is `/api/player/art/` plus the cover id, so it is the id
+   in effect. A track that comes round again, or another track of the same album, is not read twice.
+   Only a finished read is kept: a cover that failed to load may load next time. */
 const cache = new Map<string, Rgb | null>()
+
+/* Reads that are still under way, so the wash and the glow asking for the same cover in the same
+   render share one decode. A read leaves this map when it settles, whichever way it went. */
+const pending = new Map<string, Promise<Rgb | null>>()
 
 /**
  * Reads the cover at `url` and resolves to its dominant color, or null on any failure: it does not
@@ -55,7 +60,16 @@ const cache = new Map<string, Rgb | null>()
 export function sampleCover(url: string): Promise<Rgb | null> {
   const known = cache.get(url)
   if (known !== undefined) return Promise.resolve(known)
+  const reading = pending.get(url)
+  if (reading) return reading
 
+  const started = readCover(url).finally(() => pending.delete(url))
+  pending.set(url, started)
+
+  return started
+}
+
+function readCover(url: string): Promise<Rgb | null> {
   return new Promise((resolve) => {
     const image = new Image()
     image.onerror = () => resolve(null)
