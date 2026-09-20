@@ -7,7 +7,7 @@ import { LoaderCircle, Music2 } from 'lucide-react'
 import { z } from 'zod'
 
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from './api'
-import { formatLabel } from './download-target'
+import { DESTINATION_PROBLEM, destinationBroken, formatLabel } from './download-target'
 import { updateJob } from './downloads'
 import {
   FormatSelect,
@@ -38,6 +38,10 @@ const previewSchema = z.object({
   profile: z.boolean().default(false),
   title: z.string(),
   truncated: z.boolean(),
+  // Part of the page could not be read in time. Older servers do not send it.
+  partial: z.boolean().default(false),
+  // What to know about the audio quality before queueing. Older servers do not send it.
+  quality_note: z.string().default(''),
   entries: z.array(entrySchema),
 })
 type Preview = z.infer<typeof previewSchema>
@@ -87,7 +91,7 @@ const detail = (entry: Entry) =>
     .join(' · ')
 
 /** What is ticked before the person touches anything. */
-function initialSelection(preview: Preview): Set<string> {
+export function initialSelection(preview: Preview): Set<string> {
   // A lone recording is what they pasted, so it is ticked even when a copy is already owned.
   if (preview.single) return new Set(preview.entries.map((entry) => entry.id))
   // A whole profile is too much to want by default. Anything else starts with what is missing.
@@ -216,6 +220,8 @@ function LinkSheet({
   })
   const chosenFormat = format || settings.data?.output_format.value || 'original'
   const chosenTarget = target || settings.data?.destination.value || ''
+  // A read-only or missing folder would fail every song, so say so before anything is queued.
+  const brokenTarget = destinationBroken(mounts.data?.disks, chosenTarget)
   const queue = useMutation({
     mutationFn: (body: { token: string; entry_ids: string[] }) =>
       api('links', queuedSchema, {
@@ -274,7 +280,7 @@ function LinkSheet({
       <>
         <Button
           variant="primary"
-          disabled={!chosen.length || busy || !chosenTarget}
+          disabled={!chosen.length || busy || !chosenTarget || brokenTarget}
           onClick={() =>
             queue.mutate({ token: preview.token, entry_ids: chosen.map((entry) => entry.id) })
           }
@@ -285,6 +291,7 @@ function LinkSheet({
               ? 'Download'
               : `Download ${plural(chosen.length, 'song')}`}
         </Button>
+        {brokenTarget && <ErrorBanner role="alert">{DESTINATION_PROBLEM}</ErrorBanner>}
         {queue.isError && <ErrorBanner role="alert">{queue.error.message}</ErrorBanner>}
       </>
     )
@@ -366,6 +373,9 @@ function LinkSheet({
             <small className="text-small text-muted">
               to {chosenTarget || '(not set)'} · {formatLabel(chosenFormat)}
             </small>
+            {preview.quality_note && (
+              <p className="text-small text-muted">{preview.quality_note}</p>
+            )}
           </div>
           <ReviewOptions>
             <FormatSelect value={chosenFormat} disabled={busy} onChange={setFormat} />
@@ -383,6 +393,9 @@ function LinkSheet({
                   ? 'This is a whole profile, so nothing is ticked. Tick what you want.'
                   : 'Songs already in your library are unticked.'}
                 {preview.truncated ? ' Only the first 500 are listed.' : ''}
+                {preview.partial
+                  ? ' Some of this page could not be read in time. Paste an album or track link for the rest.'
+                  : ''}
               </p>
               <SelectAllNone
                 disabled={busy}

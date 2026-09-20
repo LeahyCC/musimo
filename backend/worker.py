@@ -71,6 +71,17 @@ def live(info: dict[str, object]) -> bool:
     return info.get("is_live") is True or info.get("live_status") in {"is_live", "is_upcoming"}
 
 
+def who(info: dict[str, object]) -> str:
+    """The artist a downloaded recording names for itself, or its uploader."""
+    artists = info.get("artists") or info.get("creators")
+    listed = (
+        [name.strip() for name in artists if isinstance(name, str) and name.strip()]
+        if isinstance(artists, list)
+        else []
+    )
+    return str(info.get("artist") or ", ".join(listed) or info.get("uploader") or "").strip()
+
+
 def main() -> None:
     import yt_dlp  # type: ignore[import-untyped]
 
@@ -140,6 +151,9 @@ def main() -> None:
         downloader = cast(Downloader, yt_dlp.YoutubeDL(options))
         manifest = folder / "download.json"
         source: Path | None = None
+        # Who the site says made the recording. A pasted list often gives the title and not this,
+        # and the job then takes it from here so the file is not tagged with no artist.
+        artist = ""
         if manifest.exists():
             saved: object = json.loads(manifest.read_text(encoding="utf-8"))
             if isinstance(saved, dict) and saved.get("selected") == job.selected:
@@ -147,6 +161,7 @@ def main() -> None:
                 if possible.parent == folder and possible.is_file():
                     probe(possible)
                     source = possible
+                    artist = str(saved.get("artist", ""))
         if source is None:
             selected = job.selected
             if not selected and not direct:
@@ -221,6 +236,7 @@ def main() -> None:
                 )
             if not isinstance(raw, dict):
                 raise ValueError("Download returned no media")
+            artist = who(raw)
             sources = [
                 p
                 for p in folder.glob("source.*")
@@ -243,7 +259,8 @@ def main() -> None:
                 return
             temporary = manifest.with_suffix(".tmp")
             temporary.write_text(
-                json.dumps({"selected": selected, "file": source.name}), encoding="utf-8"
+                json.dumps({"selected": selected, "file": source.name, "artist": artist}),
+                encoding="utf-8",
             )
             temporary.replace(manifest)
         downloader.close()
@@ -254,8 +271,15 @@ def main() -> None:
         emit("stage", stage="tagging")
         stage = "tagging"
         cover = folder / "cover.jpg"
-        tagger.write(ready, job.meta, cover.read_bytes() if cover.exists() else None)
-        emit("ready", file=ready.name, version=version, **probe(ready, accurate=True))
+        meta = job.meta
+        if not meta.artist and artist:
+            meta = meta.model_copy(
+                update={"artist": artist, "album_artist": meta.album_artist or artist}
+            )
+        tagger.write(ready, meta, cover.read_bytes() if cover.exists() else None)
+        emit(
+            "ready", file=ready.name, version=version, artist=artist, **probe(ready, accurate=True)
+        )
     except Exception as exc:
         message = redact(str(exc))
         lower = message.lower()

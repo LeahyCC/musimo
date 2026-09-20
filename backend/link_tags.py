@@ -16,6 +16,7 @@ from backend.enrichment import BUDGET_SECONDS, Enrichment
 from backend.job_models import Job, Metadata
 from backend.library import normalize
 from backend.matching import Matcher, Score
+from backend.sources import by_source
 
 # Stricter than the matcher's own bar for a YouTube candidate: a wrong hit here rewrites tags.
 TITLE_BAR = 0.9
@@ -47,6 +48,19 @@ CHANNEL_SUFFIX = re.compile(r"\s*(?:-\s*Topic|VEVO)\s*$", re.IGNORECASE)
 def tidied(job: Job) -> bool:
     # Jobs stored before `notes` existed kept this note in `warnings`.
     return any(note.startswith(NOTE_PREFIX) for note in [*job.notes, *job.warnings])
+
+
+def wants_tidy(job: Job) -> bool:
+    """Whether a pasted link's tags may be swapped for the catalog's, and not yet have been."""
+    site = by_source(job.source)
+    return (
+        job.catalog == "link"
+        and job.kind == "music"
+        and job.tidy
+        and site is not None
+        and site.catalog_tidy
+        and not tidied(job)
+    )
 
 
 def undecorated(title: str) -> str:

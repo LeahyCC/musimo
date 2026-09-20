@@ -696,6 +696,67 @@ test('artist review counts selections, excludes failed albums and retries submis
   expect(attempts).toBe(2)
 })
 
+test('artist review keeps Download off when the destination is read-only', async ({ page }) => {
+  await page.route(/\/api\/artists\/7(?:\?.*)?$/, (route) =>
+    route.fulfill({
+      json: {
+        artist: { id: 7, name: 'Fixture artist', art: '' },
+        items: [album],
+        next_index: null,
+      },
+    }),
+  )
+  await page.route('**/api/artists/7/top', (route) => route.fulfill({ json: { tracks: [] } }))
+  await page.route('**/api/artists/7/download-plan*', (route) =>
+    route.fulfill({
+      json: {
+        albums: [
+          {
+            id: 42,
+            title: 'Fixture album',
+            art: '',
+            year: '2020',
+            error: '',
+            tracks: [{ id: 102, duration: 180, owned: false, identity: 'isrc:two' }],
+          },
+        ],
+      },
+    }),
+  )
+  const settings = (await (await page.request.get('/api/settings')).json()) as {
+    destination: { value: string }
+  }
+  const destination = settings.destination.value
+  let writable = false
+  await page.route('**/api/diagnostics', async (route) => {
+    const live = await route.fetch()
+    const body = (await live.json()) as { disks: object[] }
+    await route.fulfill({
+      json: {
+        ...body,
+        disks: [
+          { path: '', free_bytes: null, total_bytes: null, exists: false, writable: false },
+          { path: destination, free_bytes: 1000, total_bytes: 2000, exists: true, writable },
+        ],
+      },
+    })
+  })
+  await page.goto('/artists/7')
+  await page.getByRole('button', { name: 'Download all albums' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Choose albums to download' })
+  await expect(dialog.getByText('1 album · 1 song', { exact: true })).toBeVisible()
+  await expect(dialog.getByRole('alert')).toContainText('missing or read-only')
+  await expect(dialog.getByRole('button', { name: 'Download 1 album (1 song)' })).toBeDisabled()
+
+  // Once the folder can be written to, the same sheet lets the download through.
+  writable = true
+  await dialog.getByRole('button', { name: 'Close download selection' }).click()
+  await page.reload()
+  await page.getByRole('button', { name: 'Download all albums' }).click()
+  await expect(dialog.getByRole('button', { name: 'Download 1 album (1 song)' })).toBeEnabled()
+  await expect(dialog.getByText(/missing or read-only/)).toHaveCount(0)
+})
+
 test('mobile nav shows all five items within the bottom bar', async ({ page, isMobile }) => {
   if (!isMobile) {
     test.skip()

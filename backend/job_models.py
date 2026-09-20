@@ -3,7 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from backend.sources import Kind
+from backend.sources import Kind, source_label
 
 Format = Literal["original", "m4a", "opus", "mp3"]
 # `deezer` jobs match a catalog track on YouTube. `podcast` and `link` jobs download the address
@@ -101,6 +101,8 @@ class Job(BaseModel):
     source_url: str = ""
     # Mixes and radio shows run long, so they get the episode timeout.
     kind: Kind = "music"
+    # False for a pasted recording that must keep the tags its site gave it. Set when it is queued.
+    tidy: bool = True
     format: Format = "original"
     bitrate: int = 0
     target: str
@@ -145,7 +147,9 @@ class Job(BaseModel):
         return data
 
     def public(self) -> dict[str, object]:
-        return self.model_dump(exclude={"meta": {"lyrics", "synced_lyrics"}})
+        return self.model_dump(exclude={"meta": {"lyrics", "synced_lyrics"}}) | {
+            "source_label": source_label(self.source)
+        }
 
 
 class Enqueue(BaseModel):

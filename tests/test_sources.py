@@ -106,7 +106,12 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
             try:
                 self.assertEqual(
                     store.controls(),
-                    {"paused": False, "source_paused": True, "paused_sources": ["youtube"]},
+                    {
+                        "paused": False,
+                        "source_paused": True,
+                        "paused_sources": ["youtube"],
+                        "source_labels": {"youtube": "YouTube"},
+                    },
                 )
                 self.assertEqual(
                     [tuple(row) for row in store.db.execute("SELECT * FROM source_control")],
@@ -119,7 +124,12 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
     def test_fresh_database_has_nothing_paused(self) -> None:
         self.assertEqual(
             self.store.controls(),
-            {"paused": False, "source_paused": False, "paused_sources": []},
+            {
+                "paused": False,
+                "source_paused": False,
+                "paused_sources": [],
+                "source_labels": {},
+            },
         )
 
     async def test_blocking_errors_pause_only_their_own_source(self) -> None:

@@ -3,6 +3,7 @@ import { Link } from '@tanstack/react-router'
 import { AlertTriangle } from 'lucide-react'
 
 import { api, diagnosticsSchema, settingsSchema } from './api'
+import type { Controls } from './api'
 
 export function formatLabel(format: string): string {
   return format === 'original'
@@ -14,15 +15,43 @@ export function formatLabel(format: string): string {
         : 'MP3 · converted'
 }
 
-const SITE_LABELS: Record<string, string> = {
-  youtube: 'YouTube',
-  podcast: 'Podcasts',
-  archive: 'Internet Archive',
+/**
+ * The name of the site a job downloads from. The server owns the names, so this only builds one
+ * from the source when a payload from an older server did not send it.
+ */
+export function siteLabel(source: string, label?: string): string {
+  return label || source.charAt(0).toUpperCase() + source.slice(1)
 }
 
-/** The name of the site a job downloads from. A site added on the server shows capitalised. */
-export function siteLabel(source: string): string {
-  return SITE_LABELS[source] ?? source.charAt(0).toUpperCase() + source.slice(1)
+/**
+ * Every source paused by blocking errors, with its name. A server from before per-source pausing
+ * sends only the flag, and that flag has always meant YouTube.
+ */
+export function pausedSources(controls: Controls | undefined): { source: string; label: string }[] {
+  if (!controls) return []
+  if (!controls.paused_sources.length) {
+    return controls.source_paused ? [{ source: 'youtube', label: 'YouTube' }] : []
+  }
+  return controls.paused_sources.map((source) => ({
+    source,
+    label: siteLabel(source, controls.source_labels[source]),
+  }))
+}
+
+export const DESTINATION_PROBLEM =
+  'That folder is missing or read-only. Choose another destination, or fix it in Settings.'
+
+/**
+ * Whether a download to `target` cannot work. It is false while the disks are still unknown, so the
+ * button is not held back by a slow request.
+ */
+export function destinationBroken(
+  disks: { path: string; exists: boolean; writable: boolean }[] | undefined,
+  target: string,
+): boolean {
+  if (!disks || !target) return false
+  const disk = disks.find((item) => item.path === target)
+  return !disk || !disk.exists || !disk.writable
 }
 
 /** The short format choices a track's download controls offer, in one place. */
@@ -49,8 +78,7 @@ export function DownloadTarget({ format, target }: { format?: string; target?: s
 
   const chosenFormat = format ?? settings.data?.output_format.value ?? 'original'
   const chosenTarget = target ?? settings.data?.destination.value ?? ''
-  const disk = diagnostics.data?.disks.find((d) => d.path === chosenTarget)
-  const problem = diagnostics.data && chosenTarget && (!disk || !disk.exists || !disk.writable)
+  const problem = destinationBroken(diagnostics.data?.disks, chosenTarget)
 
   return (
     <small className="download-target">

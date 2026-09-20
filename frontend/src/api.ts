@@ -9,6 +9,8 @@ export const jobSchema = z.object({
   album_id: z.number().default(0),
   catalog: z.enum(['deezer', 'podcast', 'link']).default('deezer'),
   source: z.string().default('youtube'),
+  // The server's name for the source. Older servers send none, and the name is built from `source`.
+  source_label: z.string().optional(),
   track_id: z.number(),
   format: z.enum(['original', 'm4a', 'opus', 'mp3']),
   target: z.string(),
@@ -71,7 +73,10 @@ export const controlsSchema = z.object({
   // The YouTube pause. `paused_sources` lists every source paused by blocking errors.
   source_paused: z.boolean(),
   paused_sources: z.array(z.string()).default([]),
+  // The server's name for each paused source. Older servers send none.
+  source_labels: z.record(z.string(), z.string()).default({}),
 })
+export type Controls = z.infer<typeof controlsSchema>
 export const jobSummarySchema = z.object({
   active: z.number(),
   failed: z.number(),

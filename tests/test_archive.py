@@ -437,11 +437,15 @@ class ProbeListTests(unittest.TestCase):
                 source_probe.main()
             report = json.loads(output.read_text(encoding="utf-8"))
         # One failing site does not stop the next, and each row says which site it was.
+        count = len(sources.SITES)
         self.assertEqual(
-            (report["requested"], report["attempted"], report["successful"]), (2, 2, 1)
+            (report["requested"], report["attempted"], report["successful"]),
+            (count, count, count - 1),
         )
-        self.assertEqual([row["site"] for row in report["rows"]], ["youtube", "archive"])
-        self.assertEqual([row["ok"] for row in report["rows"]], [False, True])
+        self.assertEqual(
+            [row["site"] for row in report["rows"]], [found.source for found in sources.SITES]
+        )
+        self.assertEqual([row["ok"] for row in report["rows"]], [False] + [True] * (count - 1))
         self.assertEqual(
             set(report) - {"rows"},
             {
@@ -455,6 +459,6 @@ class ProbeListTests(unittest.TestCase):
                 "scope",
             },
         )
-        self.assertEqual(len(calls), 2)
+        self.assertEqual(len(calls), count)
         self.assertIn("--extractor-args", calls[0])
         self.assertNotIn("--extractor-args", calls[1])

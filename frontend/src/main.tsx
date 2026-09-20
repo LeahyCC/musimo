@@ -56,6 +56,7 @@ import { librarySchema } from './api'
 import { namingSchema } from './api'
 import { controlsSchema, jobSchema } from './api'
 import { cx } from './cx'
+import { pausedSources } from './download-target'
 import { activeCount, DownloadsPage, QueueDock, updateJob, useJobs } from './downloads'
 import type { QueueData } from './downloads'
 import { LibraryPanel } from './library-panel'
@@ -1212,8 +1213,29 @@ function DiagnosticsPage() {
                       </strong>
                       <p className="text-tiny text-muted">
                         {source.detail}
-                        {data.queue.source_paused && ' · Paused'}
+                        {pausedSources(data.queue).some((p) => p.source === 'youtube') &&
+                          ' · Paused'}
                       </p>
+                    </div>
+                  </div>
+                ))}
+              {pausedSources(data.queue)
+                .filter((p) => p.source !== 'youtube')
+                .map((p) => (
+                  <div key={p.source} className={readinessItemClassName}>
+                    <StatusChip
+                      emphasis
+                      className="readiness-badge"
+                      variant={readinessChip['not-ready']}
+                    >
+                      <X size={14} />
+                      Paused
+                    </StatusChip>
+                    <div className="flex-1">
+                      <strong className="mb-[4px] block text-small text-text">
+                        {p.label} downloads
+                      </strong>
+                      <p className="text-tiny text-muted">Paused after repeated blocking errors.</p>
                     </div>
                   </div>
                 ))}

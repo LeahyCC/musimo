@@ -5,6 +5,7 @@ import threading
 from pathlib import Path
 
 from backend.models import Settings
+from backend.sources import source_label
 
 RETAIN_EVENTS = 5000
 
@@ -133,6 +134,8 @@ class Store:
             "paused": bool(paused),
             "source_paused": "youtube" in sources,
             "paused_sources": sources,
+            # The names to show for them, so the browser does not keep a table of its own.
+            "source_labels": {source: source_label(source) for source in sources},
         }
 
     def save_library_status(self, payload: dict[str, object]) -> None:
