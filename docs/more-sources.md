@@ -20,7 +20,7 @@ The table is the site table in `backend/sources.py`, in its order.
 
 | Site             | Kind    | Extractors                                                               | Result                                                                                             |
 | ---------------- | ------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| YouTube          | `music` | `youtube`, `youtube:tab`, `youtube:playlist`, `YoutubeYtBe`              | One pasted link downloaded for real (see Phase 1). Playlists and channels were not tried.                      |
+| YouTube          | `music` | `youtube`, `youtube:tab`, `youtube:playlist`, `YoutubeYtBe`              | One pasted link downloaded for real (see Phase 1). Playlists and channels were not tried.          |
 | Internet Archive | `music` | `archive.org`                                                            | Downloaded. Multi-file items, one row per track. FLAC is kept when the item has it.                |
 | Bandcamp         | `music` | `Bandcamp`, `Bandcamp:album`, `Bandcamp:user`                            | Downloaded: 128 kbps stream, or FLAC when the artist offers a free download.                       |
 | SoundCloud       | `music` | `soundcloud`, `soundcloud:set`, `soundcloud:playlist`, `soundcloud:user` | Downloaded: 160 kbps AAC. `soundcloud:search` is not allowed. A track over 20 minutes is a mix.    |
