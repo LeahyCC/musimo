@@ -42,6 +42,7 @@ import {
 } from 'lucide-react'
 
 import { AboutPanel } from './about-track'
+import { albumCountLabel, type AlbumGroup, groupAlbumEditions, yearSpan } from './album-editions'
 import {
   api,
   emptySchema,
@@ -184,19 +185,25 @@ const sumDuration = (songs: LibraryTrack[]) => songs.reduce((sum, song) => sum +
 const textCompare = (left = '', right = '') =>
   left.localeCompare(right, undefined, { numeric: true })
 
-const albumMeta = (album: LibraryAlbum) =>
-  [album.artist, album.year ? String(album.year) : '', songCount(album.songCount)]
-    .filter(Boolean)
-    .join(' · ')
+const albumMeta = (album: LibraryAlbum, years = album.year ? String(album.year) : '') =>
+  [album.artist, years, songCount(album.songCount)].filter(Boolean).join(' · ')
 
-function sortArtistAlbums(albums: LibraryAlbum[], sort: string) {
+type AlbumEditions = AlbumGroup<LibraryAlbum>
+
+/** A group of editions sorts as one album: its newest or oldest year, and all its plays. */
+function sortArtistAlbums(groups: AlbumEditions[], sort: string) {
+  const years = (group: AlbumEditions) => group.editions.map((item) => item.album.year)
+  const newest = (group: AlbumEditions) => Math.max(-1, ...years(group).map((year) => year ?? -1))
+  const oldest = (group: AlbumEditions) =>
+    Math.min(Number.MAX_SAFE_INTEGER, ...years(group).map((y) => y ?? Number.MAX_SAFE_INTEGER))
+  const plays = (group: AlbumEditions) =>
+    group.editions.reduce((sum, item) => sum + item.album.playCount, 0)
   // Both date orders push an undated album to the end rather than pretending it is oldest.
-  return [...albums].sort((a, b) => {
+  return [...groups].sort((a, b) => {
     if (sort === 'title') return textCompare(a.name, b.name)
-    if (sort === 'plays') return b.playCount - a.playCount || textCompare(a.name, b.name)
-    if (sort === 'oldest')
-      return (a.year ?? Number.MAX_SAFE_INTEGER) - (b.year ?? Number.MAX_SAFE_INTEGER)
-    return (b.year ?? -1) - (a.year ?? -1) || textCompare(a.name, b.name)
+    if (sort === 'plays') return plays(b) - plays(a) || textCompare(a.name, b.name)
+    if (sort === 'oldest') return oldest(a) - oldest(b)
+    return newest(b) - newest(a) || textCompare(a.name, b.name)
   })
 }
 
@@ -397,8 +404,13 @@ function CollectionPlayButton({
   )
 }
 
+const editionChipClassName =
+  'rounded-pill bg-canvas/93 px-[8px] py-[3px] text-micro whitespace-nowrap text-strong'
+
 function AlbumItem({
   album,
+  editions = 1,
+  years,
   layout,
   loading,
   onOpen,
@@ -407,6 +419,10 @@ function AlbumItem({
   onQueue,
 }: {
   album: LibraryAlbum
+  /** How many editions this card stands for; from two up it wears an "n editions" chip. */
+  editions?: number
+  /** The years to print, where a group of editions spans more than the album's own. */
+  years?: string
   layout: Layout
   loading: boolean
   onOpen: () => void
@@ -415,6 +431,7 @@ function AlbumItem({
   /** Queues the whole album: right after the playing track, or at the end. */
   onQueue: (upNext: boolean) => void
 }) {
+  const openLabel = editions > 1 ? `Open ${album.name}, ${editions} editions` : `Open ${album.name}`
   const menu = (
     <RowMenu
       label={`More actions for ${album.name}`}
@@ -440,9 +457,16 @@ function AlbumItem({
             <Disc3 />
           )}
         </span>
-        <button className={collectionOpenClass} onClick={onOpen}>
+        <button
+          className={collectionOpenClass}
+          aria-label={editions > 1 ? openLabel : undefined}
+          onClick={onOpen}
+        >
           <strong className="truncate">{album.name}</strong>
-          <small className="truncate text-muted">{albumMeta(album)}</small>
+          <small className="truncate text-muted">
+            {albumMeta(album, years)}
+            {editions > 1 ? ` · ${editions} editions` : ''}
+          </small>
         </button>
         <div className={collectionActionsClass}>
           <CollectionPlayButton
@@ -476,7 +500,7 @@ function AlbumItem({
         </div>
         <button
           className="relative grid aspect-square w-full place-items-center overflow-hidden rounded-[10px] border border-line bg-raised p-0 text-faint"
-          aria-label={`Open ${album.name}`}
+          aria-label={openLabel}
           onClick={onOpen}
         >
           {album.coverArt ? (
@@ -488,6 +512,13 @@ function AlbumItem({
             />
           ) : (
             <Disc3 />
+          )}
+          {editions > 1 && (
+            <span
+              className={cx(editionChipClassName, 'edition-chip absolute bottom-[6px] left-[6px]')}
+            >
+              {editions} editions
+            </span>
           )}
         </button>
         <CollectionPlayButton
@@ -506,7 +537,7 @@ function AlbumItem({
         <strong className="mt-[8px] block truncate">{album.name}</strong>
         <small className="mt-[4px] block truncate text-muted">
           {album.artist}
-          {album.year ? ` · ${album.year}` : ''}
+          {(years ?? (album.year ? String(album.year) : '')) && ` · ${years ?? String(album.year)}`}
         </small>
       </button>
     </article>
@@ -907,6 +938,9 @@ export function LibraryPage({
   const phone = usePhone()
   const filterSheet = useRef<HTMLDialogElement>(null)
   const filterSheetTitle = useId()
+  const editionsSheet = useRef<HTMLDialogElement>(null)
+  const editionsSheetTitle = useId()
+  const [openGroupKey, setOpenGroupKey] = useState('')
   const [layout, setLayout] = useState<Layout>(() =>
     stored('musimo.library-layout', 'grid') === 'list' ? 'list' : 'grid',
   )
@@ -1156,10 +1190,18 @@ export function LibraryPage({
     // Liked is the one playlist Musimo maintains, so it stays at the top of every view.
     return ordered.sort((a, b) => Number(b.id === likedId) - Number(a.id === likedId))
   }, [deferredQuery, likedId, playlists.data, sort, visibility])
+  // Editions of one album show as a single card, so these are groups, not raw albums.
   const artistAlbums = useMemo(
-    () => sortArtistAlbums(artistDetail.data?.album ?? [], artistAlbumSort),
+    () => sortArtistAlbums(groupAlbumEditions(artistDetail.data?.album ?? []), artistAlbumSort),
     [artistDetail.data, artistAlbumSort],
   )
+  const openEditions = artistAlbums.find(
+    (group) => group.key === openGroupKey && group.editions.length > 1,
+  )
+  useEffect(() => {
+    const sheet = editionsSheet.current
+    if (openEditions && sheet && !sheet.open) sheet.showModal()
+  }, [openEditions])
   const artistSongs = useMemo(
     () => sortArtistSongs(artistTracks.data?.items ?? [], artistSongSort),
     [artistTracks.data, artistSongSort],
@@ -1901,7 +1943,7 @@ export function LibraryPage({
             title={artistDetail.data.name}
             // The songs are read apart from the albums, so their count waits until they arrive.
             meta={[
-              `${artistAlbums.length} ${artistAlbums.length === 1 ? 'album' : 'albums'}`,
+              albumCountLabel(artistAlbums.length, artistDetail.data.album.length),
               artistTracks.data ? songCount(artistSongs.length) : '',
             ]
               .filter(Boolean)
@@ -1993,30 +2035,100 @@ export function LibraryPage({
                     : 'grid grid-cols-1 gap-[6px]'
                 }
               >
-                {artistAlbums.map((album) => (
-                  <AlbumItem
-                    album={album}
-                    key={album.id}
-                    layout={layout}
-                    loading={busy}
-                    onOpen={() =>
-                      void navigate({
-                        to: '/library/artists/$artistId/albums/$albumId',
-                        params: { artistId, albumId: album.id },
-                      })
-                    }
-                    onPlay={() =>
-                      playCollection.mutate({ kind: 'album', id: album.id, shuffled: false })
-                    }
-                    onShuffle={() =>
-                      playCollection.mutate({ kind: 'album', id: album.id, shuffled: true })
-                    }
-                    onQueue={(upNext) =>
-                      queueCollection.mutate({ kind: 'album', id: album.id, upNext })
-                    }
-                  />
-                ))}
+                {artistAlbums.map((group) => {
+                  // A group plays and queues its lead edition; the others are one click away.
+                  const album = { ...group.lead, name: group.name }
+                  const editions = group.editions.length
+                  return (
+                    <AlbumItem
+                      album={album}
+                      editions={editions}
+                      years={yearSpan(group.editions.map((item) => item.album.year))}
+                      key={group.key}
+                      layout={layout}
+                      loading={busy}
+                      onOpen={() =>
+                        editions > 1
+                          ? setOpenGroupKey(group.key)
+                          : void navigate({
+                              to: '/library/artists/$artistId/albums/$albumId',
+                              params: { artistId, albumId: album.id },
+                            })
+                      }
+                      onPlay={() =>
+                        playCollection.mutate({ kind: 'album', id: album.id, shuffled: false })
+                      }
+                      onShuffle={() =>
+                        playCollection.mutate({ kind: 'album', id: album.id, shuffled: true })
+                      }
+                      onQueue={(upNext) =>
+                        queueCollection.mutate({ kind: 'album', id: album.id, upNext })
+                      }
+                    />
+                  )
+                })}
               </div>
+              <ReviewDialog
+                dialogRef={editionsSheet}
+                titleId={editionsSheetTitle}
+                eyebrow={`${openEditions?.editions.length ?? 0} EDITIONS`}
+                title={openEditions?.name ?? ''}
+                closeLabel="Close editions"
+                onClose={() => setOpenGroupKey('')}
+                footer={
+                  <Button className="w-full" onClick={() => editionsSheet.current?.close()}>
+                    Close
+                  </Button>
+                }
+              >
+                <ul className="m-0 grid list-none gap-[6px] p-0">
+                  {[...(openEditions?.editions ?? [])]
+                    .sort(
+                      (a, b) =>
+                        (a.album.year ?? Number.MAX_SAFE_INTEGER) -
+                          (b.album.year ?? Number.MAX_SAFE_INTEGER) ||
+                        textCompare(a.edition, b.edition),
+                    )
+                    .map(({ album, edition }) => (
+                      <li key={album.id}>
+                        <button
+                          className={cx(collectionRowClass, 'w-full text-left')}
+                          onClick={() => {
+                            setOpenGroupKey('')
+                            editionsSheet.current?.close()
+                            void navigate({
+                              to: '/library/artists/$artistId/albums/$albumId',
+                              params: { artistId, albumId: album.id },
+                            })
+                          }}
+                        >
+                          <span className={collectionArtClass}>
+                            {album.coverArt ? (
+                              <img
+                                src={cover(album.coverArt)}
+                                alt=""
+                                loading="lazy"
+                                className="h-full w-full object-cover"
+                              />
+                            ) : (
+                              <Disc3 />
+                            )}
+                          </span>
+                          <span className="grid min-w-0 gap-[4px]">
+                            <strong className="[overflow-wrap:anywhere]">
+                              {edition || 'Standard edition'}
+                            </strong>
+                            <small className="text-muted">
+                              {[album.year ? String(album.year) : '', songCount(album.songCount)]
+                                .filter(Boolean)
+                                .join(' · ')}
+                            </small>
+                          </span>
+                        </button>
+                      </li>
+                    ))}
+                </ul>
+              </ReviewDialog>
               <section className="grid gap-[10px] mt-[26px]">
                 <div className={sectionHeadingClassName}>
                   <h2 className="text-strong">Popularity</h2>
