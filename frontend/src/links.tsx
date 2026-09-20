@@ -29,6 +29,9 @@ const entrySchema = z.object({
   duration: z.number(),
   art: z.string(),
   owned: z.boolean(),
+  // Where a mix or radio show will be filed, without the file extension. Empty for a song, and
+  // for an older server.
+  lands: z.string().default(''),
 })
 const previewSchema = z.object({
   token: z.string(),
@@ -89,6 +92,14 @@ const detail = (entry: Entry) =>
   [entry.artist, entry.duration ? clock(entry.duration) : '', entry.date]
     .filter(Boolean)
     .join(' · ')
+
+/** Where the ticked mixes and shows will be filed, or an empty string when none of them is one. */
+export function landingNote(chosen: readonly Entry[]): string {
+  const [first, ...more] = chosen.map((entry) => entry.lands).filter(Boolean)
+  if (first === undefined) return ''
+  if (more.length === 0) return `Saved as ${first}`
+  return `Saved under ${first.split('/')[0]}/, in a folder for each uploader`
+}
 
 /** What is ticked before the person touches anything. */
 export function initialSelection(preview: Preview): Set<string> {
@@ -241,6 +252,7 @@ function LinkSheet({
       : initialSelection(preview)
     : new Set<string>()
   const chosen = entries.filter((entry) => ids.has(entry.id))
+  const landing = landingNote(chosen)
   const seconds = chosen.reduce((total, entry) => total + entry.duration, 0)
   const owned = entries.filter((entry) => entry.owned).length
   const result = preview && queue.variables?.token === preview.token ? queue.data : undefined
@@ -373,6 +385,9 @@ function LinkSheet({
             <small className="text-small text-muted">
               to {chosenTarget || '(not set)'} · {formatLabel(chosenFormat)}
             </small>
+            {landing && (
+              <small className="text-small text-muted [overflow-wrap:anywhere]">{landing}</small>
+            )}
             {preview.quality_note && (
               <p className="text-small text-muted">{preview.quality_note}</p>
             )}

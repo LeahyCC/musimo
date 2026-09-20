@@ -94,9 +94,9 @@ Podcasts (podcast_api.py, podcasts.py):
 - `GET /api/podcasts/{id}`: show and latest episodes.
 - `POST /api/podcast-episodes`: queue one episode as a `podcast` job.
 
-Pasted links (link_api.py, links.py, link_tags.py, sources.py, resolver.py):
+Pasted links (link_api.py, links.py, link_tags.py, mixes.py, sources.py, resolver.py):
 
-- `POST /api/links/resolve`: checks the link against the site allowlist, reads it in a child process within 20 seconds without downloading, and returns a preview with a token that lasts ten minutes.
+- `POST /api/links/resolve`: checks the link against the site allowlist, reads it in a child process within 20 seconds without downloading, and returns a preview with a token that lasts ten minutes. Each entry has its `kind` and, for a mix or radio show, the `lands` path it will be filed under.
 - `POST /api/links`: queues ticked entries from a saved preview as `link` jobs; more than one becomes a download group.
 
 Player (player_api.py):
@@ -132,7 +132,6 @@ Errors (errors.py):
 
 Not yet implemented:
 
-- Sites other than YouTube for pasted links.
 - Catalog imports from Spotify or Apple Music links.
 - Cookie uploads and source test UI.
 - Notification test endpoints.

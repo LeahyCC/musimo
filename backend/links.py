@@ -20,10 +20,23 @@ from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
+from backend import mixes
 from backend.catalog import Result
 from backend.downloads import Downloads, stop_tree
+from backend.errors import error_guidance
 from backend.job_models import LinkRequest, Metadata
-from backend.sources import Site, labels, match, refusal, safe_art
+from backend.sources import (
+    LIVE_MESSAGE,
+    Kind,
+    Site,
+    canonical,
+    labels,
+    match,
+    match_entry,
+    refusal,
+    safe_art,
+    unavailable,
+)
 
 PREVIEW_SECONDS = 600
 MAX_PREVIEWS = 32
@@ -34,7 +47,6 @@ MAX_RESOLVES = 2
 # Slashes and percent signs are there for a file inside an item, as the Internet Archive names it.
 ENTRY_ID = re.compile(r"[A-Za-z0-9_.:/%~-]{1,256}")
 DAY = re.compile(r"\d{4}(-\d{2}-\d{2})?")
-LIVE_MESSAGE = "Live streams never finish, so they can't be saved."
 
 
 class LinkError(Exception):
@@ -51,6 +63,10 @@ class LinkEntry(BaseModel):
     duration: float = 0
     art: str = ""
     owned: bool = False
+    # `mix` and `radio` recordings land under `Mixes/`. `lands` is where, without the extension
+    # (which depends on the file the site gives), and is empty for a song.
+    kind: Kind = "music"
+    lands: str = ""
     # A track's place on an album. Zero when the site gives none. Kept on the server only.
     track: int = Field(default=0, exclude=True)
     tracks: int = Field(default=0, exclude=True)
@@ -130,10 +146,11 @@ class Links:
         extractor = str(raw.get("extractor", "")).lower()
         if not ENTRY_ID.fullmatch(entry_id) or extractor not in site.items:
             return None
-        if match(url) is not site:
+        if match_entry(url) is not site:
             return None
         duration = raw.get("duration")
         seconds = float(duration) if isinstance(duration, int | float) else 0.0
+        length = seconds if math.isfinite(seconds) and 0 <= seconds < 86400 * 7 else 0
         date = text(raw.get("date"), 10)
         return LinkEntry(
             id=entry_id,
@@ -141,7 +158,8 @@ class Links:
             artist=text(raw.get("artist")),
             album=text(raw.get("album")),
             date=date if DAY.fullmatch(date) else "",
-            duration=seconds if math.isfinite(seconds) and 0 <= seconds < 86400 * 7 else 0,
+            duration=length,
+            kind=mixes.kind_of(site, length),
             art=safe_art(site, str(raw.get("art", ""))),
             track=place(raw.get("track")),
             tracks=place(raw.get("tracks")),
@@ -180,12 +198,16 @@ class Links:
         site = match(url)
         if site is None:
             raise LinkError(422, refusal(url))
+        if not site.working:
+            raise LinkError(422, unavailable(site))
         async with self.resolving:
-            raw = await self.extract(url, site)
+            raw = await self.extract(canonical(url), site)
         if raw.get("kind") == "error":
             code = raw.get("code")
             if code == "LIVE_STREAM":
                 raise LinkError(422, LIVE_MESSAGE)
+            if code == "GEO_RESTRICTED":
+                raise LinkError(422, error_guidance("GEO_RESTRICTED", site.label)[0])
             if code == "SITE_NOT_ALLOWED":
                 raise LinkError(
                     422, f"The link led away from {site.label}. Musimo works with: {labels()}."
@@ -210,6 +232,12 @@ class Links:
             raise LinkError(
                 422, LIVE_MESSAGE if live_only else "There is nothing to download at this link."
             )
+        for row in entries:
+            if mixes.long_form(row.kind):
+                # What the file will be tagged with, so the sheet and the ownership check show it.
+                meta = self.metadata(site, row)
+                row.artist, row.album = meta.artist, meta.album
+                row.lands = mixes.landing(meta, self.downloads.today())
         self.owned(entries)
         self.prune()
         token = secrets.token_urlsafe(24)
@@ -240,6 +268,24 @@ class Links:
             "entries": [row.model_dump() for row in entries],
         }
 
+    def metadata(self, site: Site, row: LinkEntry) -> Metadata:
+        meta = Metadata(
+            id=stable_id(f"{row.extractor}:{row.id}"),
+            title=row.title,
+            artist=row.artist,
+            album_artist=row.artist,
+            # A lone recording with no album is filed as its own single.
+            album=row.album or row.title,
+            date=row.date,
+            duration=row.duration,
+            art=row.art,
+            track=row.track or 1,
+            tracks=max(row.tracks, row.track, 1),
+        )
+        if mixes.long_form(row.kind):
+            return mixes.retag(meta, site, row.kind, row.url, row.album_list)
+        return meta
+
     def enqueue(self, request: LinkRequest) -> dict[str, object]:
         preview = self.previews.get(request.token)
         if preview is None or preview.expires <= self.clock():
@@ -259,27 +305,16 @@ class Links:
         site = preview.site
         prepared: dict[int, tuple[Metadata, str]] = {}
         untidied: set[int] = set()
+        kinds: dict[int, Kind] = {}
         for entry_id in wanted:
             row = available[entry_id]
             track_id = stable_id(f"{row.extractor}:{row.id}")
+            kinds[track_id] = row.kind
             # An album track already has its album, and a site such as the Internet Archive holds
             # recordings that a catalog hit would file under the wrong release.
             if row.album_list or not site.catalog_tidy:
                 untidied.add(track_id)
-            meta = Metadata(
-                id=track_id,
-                title=row.title,
-                artist=row.artist,
-                album_artist=row.artist,
-                # A lone recording with no album is filed as its own single.
-                album=row.album or row.title,
-                date=row.date,
-                duration=row.duration,
-                art=row.art,
-                track=row.track or 1,
-                tracks=max(row.tracks, row.track, 1),
-            )
-            prepared[track_id] = (meta, row.url)
+            prepared[track_id] = (self.metadata(site, row), row.url)
         grouped = len(prepared) > 1
         batch_id = uuid.uuid4().hex if grouped else ""
         jobs = service.jobs.enqueue_many(
@@ -292,6 +327,7 @@ class Links:
             prepared=prepared,
             source=site.source,
             kind=site.kind,
+            kinds=kinds,
             untidied=frozenset(untidied),
         )
         done = sum(job.stage == "done" for job in jobs)

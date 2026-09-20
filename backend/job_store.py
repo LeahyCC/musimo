@@ -90,12 +90,14 @@ class Jobs:
         prepared: dict[int, tuple[Metadata, str]] | None = None,
         source: str = "",
         kind: Kind = "music",
+        kinds: dict[int, Kind] | None = None,
         untidied: frozenset[int] = frozenset(),
     ) -> builtins.list[Job]:
         """Queue tracks, reusing active or completed jobs. `prepared` supplies the metadata and
         file address for podcast and link jobs, which have no catalog lookup later. An empty
-        `source` lets the job take it from its catalog. Tracks in `untidied` keep the tags their
-        site gave them."""
+        `source` lets the job take it from its catalog. `kinds` overrides `kind` for a track that is
+        of another kind than its site's, such as a long SoundCloud track. Tracks in `untidied` keep
+        the tags their site gave them."""
         jobs: builtins.list[Job] = []
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
@@ -138,7 +140,7 @@ class Jobs:
                         catalog=catalog,
                         track_id=track_id,
                         source_url=source_url,
-                        kind=kind,
+                        kind=(kinds or {}).get(track_id, kind),
                         tidy=track_id not in untidied,
                         format=format,
                         target=target,

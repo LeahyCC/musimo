@@ -10,10 +10,10 @@ import time
 from pathlib import Path
 from typing import Protocol, cast
 
-from backend.errors import error_guidance, site_label, source_code
+from backend.errors import error_guidance, geo_restricted, site_label, source_code
 from backend.job_models import Candidate, Job, valid_candidate_id
 from backend.matching import Matcher
-from backend.sources import by_source, match
+from backend.sources import by_source, match_entry
 from backend.tagging import Tagger, probe
 
 
@@ -126,7 +126,7 @@ def main() -> None:
         return
     # The allowlist below covers redirects. This covers the address itself: it has to belong to
     # the site the job says it is from, not only to some listed site.
-    if link_site and match(job.source_url) is not link_site:
+    if link_site and match_entry(job.source_url) is not link_site:
         refuse("SITE_NOT_ALLOWED", f"The link is not a {site} address")
         return
     options = base_options() | {
@@ -284,7 +284,10 @@ def main() -> None:
         message = redact(str(exc))
         lower = message.lower()
         code = (
-            "SITE_NOT_ALLOWED"
+            # Checked first: a site's words about location can also mention a 403.
+            "GEO_RESTRICTED"
+            if geo_restricted(lower)
+            else "SITE_NOT_ALLOWED"
             if "no suitable extractor" in lower or "unsupported url" in lower
             else "SOURCE_BLOCKED"
             if "confirm you" in lower or "403" in lower
@@ -308,6 +311,9 @@ def main() -> None:
         if code == "DOWNLOAD_FAILED" and stage in {"converting", "tagging"}:
             code = "TRANSCODE_FAILED" if stage == "converting" else "TAG_FAILED"
         hint, fix = error_guidance(code, site)
+        if code == "GEO_RESTRICTED":
+            # The tool's own wording is detail nobody can act on. The plain sentence is the answer.
+            message = hint
         emit(
             "error",
             code=code,

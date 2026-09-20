@@ -9,12 +9,15 @@ import shutil
 import signal
 import sys
 import time
+from collections.abc import Callable
+from datetime import date
 from functools import partial
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
 
+from backend import mixes
 from backend.catalog import Catalog, CatalogError
 from backend.enrichment import Enrichment
 from backend.errors import BLOCKING_CODES, error_guidance, site_label
@@ -127,6 +130,8 @@ class Downloads:
         self.enrichment = Enrichment(catalog)
         self.link_tags = LinkTags(catalog, self.enrichment)
         self.podcasts = Podcasts(catalog)
+        # The day a mix with no date of its own is filed under. A test can set it.
+        self.today: Callable[[], date] = date.today
         self.running: dict[str, asyncio.Task[None]] = {}
         self.processes: dict[str, asyncio.subprocess.Process] = {}
         self.stopping = False
@@ -505,8 +510,8 @@ class Downloads:
         """Where a finished file lands, relative to the chosen library root."""
         if job.catalog == "podcast":
             return Naming().podcast_path(job.meta, extension)
-        # Pasted links of kind `mix` or `radio` will get a fixed `Mixes/` layout here, the way
-        # episodes do. Until then every link lands like music.
+        if mixes.long_form(job.kind):
+            return mixes.landing(job.meta, self.today(), extension)
         return Naming().path(self.settings().naming_template, job.meta, extension)
 
     async def finish(

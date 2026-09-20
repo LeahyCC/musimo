@@ -191,7 +191,7 @@ class LinkApiTests(unittest.IsolatedAsyncioTestCase):
             "file:///etc/passwd": "this link",
             "https://192.168.1.10/watch?v=abcdefghijk": "this link",
             "https://user:pw@www.youtube.com/watch?v=abcdefghijk": "this link",
-            "https://www.mixcloud.com/artist/track": "www.mixcloud.com",
+            "https://www.beatport.com/track/x": "www.beatport.com",
         }
         for url, where in cases.items():
             with self.subTest(url=url):
@@ -207,6 +207,18 @@ class LinkApiTests(unittest.IsolatedAsyncioTestCase):
             "/api/links/resolve", json={"url": "https://youtu.be/abcdefghijk", "cookies": "x"}
         )
         self.assertEqual(extra.status_code, 422)
+        self.assertEqual(self.links.asked, [])
+
+    async def test_a_bare_site_id_from_the_browser_is_refused(self) -> None:
+        # `audius:<id>` is how the server addresses a list entry, so a person never sends it.
+        for text in ("audius:abc123", "audius:4zxjE"):
+            with self.subTest(text=text):
+                response = await self.resolve(text)
+                self.assertEqual(response.status_code, 422)
+                self.assertEqual(
+                    response.json()["detail"],
+                    f"Musimo can't download from this link. It works with: {sources.labels()}.",
+                )
         self.assertEqual(self.links.asked, [])
 
     async def test_single_link_previews_and_queues_from_the_saved_preview(self) -> None:
