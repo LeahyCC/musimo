@@ -14,13 +14,13 @@ Spotify, Apple Music and Tidal audio are DRM and stay out. A pasted Spotify or A
 
 ## What was checked
 
-Against the pinned yt-dlp 2026.8.19 on 19 September 2026, every extractor below exists and reports itself as working. That flag only means upstream has not marked it broken. Eight sites were then downloaded from for real: the Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, HearThisAt, NTS (through the Mixcloud copy of the show) and BBC Sounds. Audiomack and TuneIn failed and are switched off in the site table (`working`). Mixcloud was read but not downloaded on its own; NTS's download went through Mixcloud's extractor, so it is covered that way. YouTube was not run for this work because it needs the PO token provider, and SoundCloud as a match source was not run against the live site at all.
+Against the pinned yt-dlp 2026.8.19 on 19 September 2026, every extractor below exists and reports itself as working. That flag only means upstream has not marked it broken. Nine sites were then downloaded from for real: YouTube (one pasted link, on a Windows install without the PO token provider), the Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, HearThisAt, NTS (through the Mixcloud copy of the show) and BBC Sounds. Audiomack and TuneIn failed and are switched off in the site table (`working`). Mixcloud was read but not downloaded on its own; NTS's download went through Mixcloud's extractor, so it is covered that way. The YouTube entry of the probe site list was not run, because the probe expects the PO token provider, and SoundCloud as a match source was not run against the live site at all.
 
 The table is the site table in `backend/sources.py`, in its order.
 
 | Site             | Kind    | Extractors                                                               | Result                                                                                             |
 | ---------------- | ------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
-| YouTube          | `music` | `youtube`, `youtube:tab`, `youtube:playlist`, `YoutubeYtBe`              | Not run for this work. The pasted link uses the same row as the catalog road.                      |
+| YouTube          | `music` | `youtube`, `youtube:tab`, `youtube:playlist`, `YoutubeYtBe`              | One pasted link downloaded for real (see Phase 1). Playlists and channels were not tried.                      |
 | Internet Archive | `music` | `archive.org`                                                            | Downloaded. Multi-file items, one row per track. FLAC is kept when the item has it.                |
 | Bandcamp         | `music` | `Bandcamp`, `Bandcamp:album`, `Bandcamp:user`                            | Downloaded: 128 kbps stream, or FLAC when the artist offers a free download.                       |
 | SoundCloud       | `music` | `soundcloud`, `soundcloud:set`, `soundcloud:playlist`, `soundcloud:user` | Downloaded: 160 kbps AAC. `soundcloud:search` is not allowed. A track over 20 minutes is a mix.    |
@@ -112,7 +112,7 @@ Shipped:
 
 Checked: tests, and `frontend/e2e/links.spec.ts` in a browser at desktop and phone width (keyboard, axe, touch sizes, cancelling a lookup). That spec stubs the server for most cases and uses the real one for the refusal of an unlisted site and a Spotify link. Real downloads from the Internet Archive, Bandcamp and SoundCloud went through the sheet or the smoke test (see What was checked). The lookup on a real SoundCloud track found no catalog match, and no record here shows a confident hit on a real link.
 
-Not checked: a pasted YouTube link against the live site. The sheet's results are not written up in [UI verification](ui-verification.md).
+Checked for real on 19 September 2026 with yt-dlp 2026.8.19, on Windows without Docker: `https://www.youtube.com/watch?v=aqz-KE-bpKQ` (Blender Foundation, CC BY) resolved in about 5 seconds, queued, downloaded, and landed as Opus at 126 kbps with the note "Tagged from YouTube, no catalog match". One attempt. Not checked: a YouTube playlist or channel link, and a confident Deezer hit on a real link. The sheet's results are not written up in [UI verification](ui-verification.md).
 
 Open: AcoustID as a fallback for junk metadata, and catalog imports from Spotify and Apple Music links. Neither is built.
 
