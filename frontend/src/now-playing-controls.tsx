@@ -1,6 +1,5 @@
 import { Link } from '@tanstack/react-router'
 import {
-  Moon,
   Pause,
   Play,
   Plus,
@@ -17,51 +16,9 @@ import {
 import { TrackFormatLine } from './about-track'
 import type { LibraryTrack } from './api'
 import { durationText, isPassiveNotice, usePlayer } from './player'
-import { parseSleepChoice, SLEEP_MINUTES, sleepChoiceValue } from './sleep-timer'
-import { Button, FieldSelect, IconButton } from './ui'
+import { SleepTimerControl } from './sleep-timer-control'
+import { Button, IconButton } from './ui'
 import { SeekBar } from './waveform-seek'
-
-// A native select keeps this reachable by keyboard, screen reader and phone picker with no menu
-// code. Picking Off cancels; the cancel button beside a running timer does the same in one press.
-function SleepTimerControl() {
-  const { sleep, setSleep, shuffle, repeat } = usePlayer()
-  // Shuffle and repeat never come to the last track, so the timer that waits for it is not offered.
-  const noQueueEnd = shuffle || repeat !== 'off'
-  return (
-    <div className="flex items-center gap-[4px]">
-      <Moon size={16} aria-hidden="true" className="shrink-0" />
-      <FieldSelect
-        tone="sunken"
-        fullWidth={false}
-        className="max-w-[210px] coarse:min-h-11"
-        aria-label="Sleep timer"
-        value={sleep ? sleepChoiceValue(sleep.choice) : 'off'}
-        onChange={(event) => setSleep(parseSleepChoice(event.target.value))}
-      >
-        <option value="off">Sleep timer off</option>
-        <option value="track">End of track</option>
-        <option value="queue" disabled={noQueueEnd}>
-          {noQueueEnd
-            ? 'End of album or queue (not with shuffle or repeat)'
-            : 'End of album or queue'}
-        </option>
-        {SLEEP_MINUTES.map((minutes) => (
-          <option key={minutes} value={minutes}>
-            {minutes} minutes
-          </option>
-        ))}
-      </FieldSelect>
-      {sleep && (
-        <>
-          <span className="text-tiny tabular-nums">{durationText(sleep.remaining)} left</span>
-          <IconButton size="compact" aria-label="Cancel sleep timer" onClick={() => setSleep(null)}>
-            <X size={14} />
-          </IconButton>
-        </>
-      )}
-    </div>
-  )
-}
 
 // Under the stage on Now Playing: what is playing, and every control the footer player has. The
 // footer stands down on this page, so this is the only place they are, and it stays on screen

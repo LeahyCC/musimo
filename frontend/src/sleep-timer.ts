@@ -12,11 +12,11 @@ export type SleepChoice =
 /** A timer that is running, and how long it has left, for the control to show. */
 export type SleepStatus = { choice: SleepChoice; remaining: number }
 
-/** The value of the control's select: `track`, `queue` or the number of minutes. */
+/** The value of a menu choice: `track`, `queue` or the number of minutes. */
 export const sleepChoiceValue = (choice: SleepChoice): string =>
   choice.kind === 'minutes' ? String(choice.minutes) : choice.kind
 
-/** The choice a select value stands for, or null for Off and for anything that is not offered. */
+/** The choice a menu value stands for, or null for Off and for anything that is not offered. */
 export function parseSleepChoice(value: string): SleepChoice | null {
   if (value === 'track' || value === 'queue') return { kind: value }
   const minutes = SLEEP_MINUTES.find((option) => String(option) === value)

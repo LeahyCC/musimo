@@ -74,15 +74,15 @@ Like gapless playback, the suite checks the mechanism but cannot hear the join. 
 
 ## Sleep timer
 
-The Now Playing control row has a Sleep timer select: Off, End of track, End of album or queue, and 15, 30, 45 or 60 minutes. While one runs, the time left shows beside it with a button to cancel it (choosing Off does the same). A timer is not saved: a reload clears it, and so does closing the player.
+The Now Playing control row has a Sleep timer button, a moon icon that opens a menu (`frontend/src/sleep-timer-control.tsx`): Off, End of track, End of album or queue, and 15, 30, 45 or 60 minutes. The running choice is checked. While one runs, the moon is accented and the time left shows beside it, in tabular figures, with a button to cancel it (choosing Off does the same). It is an icon, not a select, so the control row stays on one line at laptop widths. The menu opens upward and works like the row menus: Enter or Space on the button opens it on the running choice, the arrow keys, Home and End move, Escape closes it and returns to the button, and a click elsewhere closes it. A timer is not saved: a reload clears it, and so does closing the player.
 
 - **End of track** stops after the track that is playing. Skipping to another track moves it to that track.
-- **End of album or queue** stops after the last track in the queue, which for an album is the end of the album. What is queued is followed as it is edited. Shuffle and repeat never reach a last track, so the option is disabled while either is on, and turning one on cancels a timer that was set ("Sleep timer cancelled. Shuffle and repeat never reach the end of the queue."). Its time left is the rest of the track plus the songs still to come.
+- **End of album or queue** stops after the last track in the queue, which for an album is the end of the album. What is queued is followed as it is edited. Shuffle and repeat never reach a last track, so the menu item is disabled while either is on (it says "Not with shuffle or repeat"), and turning one on cancels a timer that was set ("Sleep timer cancelled. Shuffle and repeat never reach the end of the queue."). Its time left is the rest of the track plus the songs still to come.
 - **Minutes** counts real time, so pausing does not stop it. A preview leaves it running; a preview does clear the two end timers, which have no end to wait for.
 
 The last five seconds are a fade to silence (`SLEEP_FADE_SECONDS`, `rampDown`) applied on top of the volume and ReplayGain, then playback pauses and the level goes back to normal. For the end timers the fade is the last five seconds of the final track. `finishTrack` reports the listen as for any finished track (scrobble submission and history), pauses, and loads the track that would have come next without playing it, so pressing play carries on from there and the saved queue points at it. With nothing next, the last track stays loaded and paused. For a minutes timer the pause can come in the middle of a track or a crossfade, and both elements are paused. The pause goes through the ordinary pause event, so the saved queue position and the Media Session state are updated as for any pause. The status line says "Sleep timer ended. Playback paused." No crossfade starts out of a track that a sleep timer ends after.
 
-The player context exposes `sleep` (the choice and the seconds left, or null) and `setSleep(choice | null)`. The types and the select's values are in `frontend/src/sleep-timer.ts`.
+The player context exposes `sleep` (the choice and the seconds left, or null) and `setSleep(choice | null)`. The types and the menu's values are in `frontend/src/sleep-timer.ts`.
 
 ## Tracks that cannot be played
 
