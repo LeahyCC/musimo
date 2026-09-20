@@ -40,3 +40,29 @@ export async function emptyQueue(page: Page): Promise<void> {
     await route.fulfill({ json: EMPTY })
   })
 }
+
+/**
+ * Report the saved destination as a writable folder.
+ *
+ * The fixture's music mount is not writable by the app user, and the review sheets keep
+ * Download off for a destination that cannot be written to. A spec that queues from a sheet
+ * with mocked endpoints calls this, so the button behaves as it does on a working install.
+ * A spec about the read-only case adds its own diagnostics route afterwards, which wins.
+ */
+export async function writableDestination(page: Page): Promise<void> {
+  await page.route('**/api/diagnostics', async (route) => {
+    const [live, saved] = await Promise.all([route.fetch(), page.request.get('/api/settings')])
+    const body = (await live.json()) as { disks: { path: string }[] }
+    const settings = (await saved.json()) as { destination: { value: string } }
+    const path = settings.destination.value
+    await route.fulfill({
+      json: {
+        ...body,
+        disks: [
+          ...body.disks.filter((disk) => disk.path !== path),
+          { path, free_bytes: 1000, total_bytes: 2000, exists: true, writable: true },
+        ],
+      },
+    })
+  })
+}

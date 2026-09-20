@@ -4,7 +4,7 @@ import type { Locator, Page } from '@playwright/test'
 
 import type { DownloadJob } from '../src/api'
 import { playerFixtures } from './library-fixtures'
-import { emptyQueue } from './queue-fixtures'
+import { emptyQueue, writableDestination } from './queue-fixtures'
 
 const LINK = 'https://www.youtube.com/watch?v=aaaaaaaaaaa'
 const PLAYLIST = 'https://www.youtube.com/playlist?list=PL1'
@@ -134,6 +134,7 @@ async function linkFixtures(
   const seen: Requests = { resolved: [], queued: [], searched: [] }
   await playerFixtures(page)
   await emptyQueue(page)
+  await writableDestination(page)
   await page.route('https://i.ytimg.com/**', (route) =>
     route.fulfill({
       contentType: 'image/svg+xml',

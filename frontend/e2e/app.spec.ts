@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
 import { ORIGIN } from './env'
+import { writableDestination } from './queue-fixtures'
 
 // Invented catalog records. Settings, queue, diagnostics and events use the real API.
 const track: MusicResult = {
@@ -502,6 +503,7 @@ test('preview playback, volume and navigation remain usable', async ({ page, isM
 test('artist review counts selections, excludes failed albums and retries submission', async ({
   page,
 }) => {
+  await writableDestination(page)
   const ep: MusicResult = {
     ...album,
     id: 43,
