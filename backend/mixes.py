@@ -34,22 +34,41 @@ def unslug(text: str) -> str:
     return " ".join(word.capitalize() for word in text.replace("_", "-").split("-") if word)
 
 
-def named(site: Site, url: str, title: str) -> tuple[str, str]:
-    """The uploader and show name the site's row can read from an address and a title."""
+# A mix title that leads with the DJ's name: "Name - Title" or "Name @ Event".
+LEADING_NAME = re.compile(r"(?P<name>[^-@]{2,60}?)\s+[-@]\s+\S.*")
+
+
+def leading_name(title: str) -> str:
+    """The name a mix title leads with, or "" when it does not lead with one."""
+    found = re.fullmatch(LEADING_NAME, title.strip())
+    return found["name"].strip() if found else ""
+
+
+def named(site: Site, url: str, title: str, series: str = "") -> tuple[str, str]:
+    """The uploader and show name the site's row can read from an address, a title and the data.
+
+    `series` is the show the site names itself, which beats splitting the title.
+    """
     uploader = show = ""
     if site.url_names and (found := re.match(site.url_names, urlsplit(url).path)):
         names = found.groupdict()
         uploader = names.get("uploader") or ""
         show = unslug(names.get("show") or "")
+    show = show or series.strip()
     if not show and site.title_show and (found := re.fullmatch(site.title_show, title)):
         show = found["show"].strip()
     return uploader, show
 
 
-def retag(meta: Metadata, site: Site, kind: Kind, url: str, album_list: bool) -> Metadata:
+def retag(
+    meta: Metadata, site: Site, kind: Kind, url: str, album_list: bool, series: str = ""
+) -> Metadata:
     """The tags of a mix or radio show. Applying it twice gives the same tags."""
-    uploader, show = named(site, url, meta.title)
-    artist = meta.artist or uploader or site.label
+    uploader, show = named(site, url, meta.title, series)
+    # An uploader taken from the address alone is often a random-looking account code
+    # (HearThisAt names nobody), so a title that leads with the DJ's name is the better artist.
+    from_title = leading_name(meta.title) if uploader and not meta.artist else ""
+    artist = meta.artist or from_title or uploader or site.label
     # A set that is an album on its site keeps that album. Otherwise the show, else the uploader.
     album = show or (meta.album if album_list else "") or artist
     return meta.model_copy(

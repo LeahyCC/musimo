@@ -56,6 +56,19 @@ def extractor_name(raw: dict[str, object], parent: dict[str, object] | None = No
         return ""
 
 
+def page_extractor(url: str) -> str:
+    """The extractor yt-dlp would pick for an address, without reading the page.
+
+    The server uses it to tell a list page from one recording when a resolve runs out of time.
+    """
+    from yt_dlp.extractor import gen_extractor_classes
+
+    for extractor in gen_extractor_classes():
+        if extractor.ie_key() != "Generic" and extractor.suitable(url):
+            return str(extractor.IE_NAME).lower()
+    return ""
+
+
 def jpeg_name(name: str, bare: bool) -> bool:
     """Whether a file name says JPEG. With `bare`, a name with no extension at all may be one."""
     return name.endswith(".jpg") or (bare and bool(name) and "." not in name)
@@ -169,6 +182,9 @@ def entry(
         "title": str(raw.get("track") or raw.get("title") or ""),
         "artist": artist,
         "album": title,
+        # The show this recording belongs to, where the site names one itself (BBC Sounds does).
+        # A mix or radio show is filed under it instead of one read from the title.
+        "show": str(raw.get("series") or raw.get("playlist_title") or ""),
         "date": date,
         "duration": raw.get("duration") or 0,
         "art": art,
@@ -454,6 +470,9 @@ def main() -> None:
     if site is None or match(url) is not site:
         emit("error", code="SITE_NOT_ALLOWED", message="The site is not on the list")
         return
+    # Said first, before the slow read, so a resolve that runs out of time still told the server
+    # what kind of page it was on.
+    emit("page", extractor=page_extractor(url))
     options = base_options() | {
         "skip_download": True,
         "extract_flat": "in_playlist",

@@ -35,6 +35,8 @@ from backend.store import Store
 # YouTube lists its largest thumbnail without checking that it exists, and an older video has
 # none. Each size to fall back to is on the same host, smaller than the one before it.
 YOUTUBE_ART = ("maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg")
+# The second match source, tried only when YouTube found nothing or cannot be used.
+BACKUP_SOURCE = "soundcloud"
 ART_HOPS = 3
 ART_BYTES = 5 * 1024**2
 
@@ -189,6 +191,24 @@ class Downloads:
                 raise
         self.notify()
 
+    def paused_sources(self) -> set[str]:
+        listed = self.controls()["paused_sources"]
+        return {str(source) for source in listed} if isinstance(listed, list) else set()
+
+    def backup(self, job: Job, settings: Settings, paused: set[str]) -> str:
+        """The source this job may fall back to, or "" when it has none.
+
+        Only a catalog track with no recording chosen by hand has one, and only while the setting
+        is on and the backup source itself is not paused.
+        """
+        allowed = (
+            settings.soundcloud_fallback
+            and job.catalog == "deezer"
+            and job.source == "youtube"
+            and not job.selected
+        )
+        return BACKUP_SOURCE if allowed and BACKUP_SOURCE not in paused else ""
+
     def target(self, raw: str) -> Path:
         # Select a trusted mount without probing a client-supplied filesystem path.
         requested = os.path.normcase(os.path.normpath(raw))
@@ -246,16 +266,17 @@ class Downloads:
         while not self.stopping:
             self.wake.clear()
             control = self.controls()
-            listed = control["paused_sources"]
-            paused_sources = (
-                {str(source) for source in listed} if isinstance(listed, list) else set()
-            )
+            paused_sources = self.paused_sources()
             delay = 60.0
             if not control["paused"]:
-                slots = self.settings().concurrency - len(self.running)
+                settings = self.settings()
+                slots = settings.concurrency - len(self.running)
                 for job in reversed(self.jobs.list(active=True)):
-                    # A block on one site must not hold back jobs that download from another.
-                    if job.source in paused_sources:
+                    # A block on one site must not hold back jobs that download from another. A
+                    # catalog track can be matched on the backup source instead of waiting.
+                    blocked = job.source in paused_sources
+                    switch = blocked and bool(self.backup(job, settings, paused_sources))
+                    if blocked and not switch:
                         continue
                     if job.stage == "retry_wait" and job.retry_at > time.time():
                         delay = min(delay, max(0.01, job.retry_at - time.time()))
@@ -267,6 +288,8 @@ class Downloads:
                         and job.stage in {"queued", "retry_wait"}
                         and job.retry_at <= time.time()
                     ):
+                        if switch:
+                            self.jobs.update(job.id, source=BACKUP_SOURCE)
                         task = asyncio.create_task(self.run(job.id))
                         self.running[job.id] = task
                         task.add_done_callback(partial(self.completed, job.id))
@@ -437,6 +460,11 @@ class Downloads:
                         speed=float(raw.get("speed") or 0),
                         eta=raw.get("eta"),
                     )
+                elif kind == "source":
+                    # The backup source matched, so this job's pauses and error codes are its now.
+                    source = str(raw.get("source", ""))
+                    if by_source(source) is not None:
+                        self.jobs.update(job.id, source=source)
                 elif kind == "candidates":
                     self.jobs.update(
                         job.id,
@@ -599,6 +627,8 @@ class Downloads:
                 job_id,
                 # Podcast episodes and pasted links skip the search, so they never show it.
                 stage="matching" if job.catalog == "deezer" else "downloading",
+                # Decided now, so a job queued before the setting changed follows today's answer.
+                backup_source=self.backup(job, self.settings(), self.paused_sources()),
                 attempts=job.attempts + 1,
                 error_code="",
                 error="",
@@ -623,13 +653,16 @@ class Downloads:
             await self.artwork(job, folder)
             ready, info = await self.worker(self.jobs.get(job_id), folder)
             await self.finish(self.jobs.get(job_id), ready, info)
-            if job.source == "youtube":
+            # The worker may have matched on the backup source, so the site that just worked is
+            # the job's source now, not the one it started with.
+            downloaded = self.jobs.get(job_id).source
+            if downloaded == "youtube":
                 self.store.record_probe(
                     "healthy", 0, "Last YouTube download completed", source="youtube"
                 )
             with self.store.lock:
                 self.store.db.execute(
-                    "UPDATE source_control SET blocking_failures=0 WHERE source=?", (job.source,)
+                    "UPDATE source_control SET blocking_failures=0 WHERE source=?", (downloaded,)
                 )
         except asyncio.CancelledError:
             await self.stop_process(job_id)

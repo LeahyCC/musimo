@@ -13,7 +13,7 @@ A status summary at the top of the Settings page shows overall system readiness 
 - `retry_base_seconds`: 1–30, default 2.
 - `retry_cap_seconds`: 30–300, default 60.
 
-Set `MUSIMO_` plus the uppercase key in the container environment to seed and lock a value on first creation, for example `MUSIMO_CONCURRENCY=3`. Later env changes do not replace an existing row. Its original env name remains visible in the UI and API, and PATCH returns 409 for a locked setting. Removing the variable does not unlock the database record. There is no unlock UI yet.
+Set `MUSIMO_` plus the uppercase key in the container environment to seed and lock a value on first creation, for example `MUSIMO_CONCURRENCY=3`. An on or off setting takes `1`, `true`, `yes` or `on` for on and anything else for off (`MUSIMO_SOUNDCLOUD_FALLBACK=1`). Later env changes do not replace an existing row. Its original env name remains visible in the UI and API, and PATCH returns 409 for a locked setting. Removing the variable does not unlock the database record. There is no unlock UI yet.
 
 Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGID` control Compose. `MUSIMO_LIBRARY_ROOTS` lists the mounted Linux paths the scanner reads. `MUSIMO_WATCH_MODE` is `native` by default; use `poll` for external-change checks on Docker Desktop Windows or network shares. `MUSIMO_POLL_INTERVAL_SECONDS` defaults to 60; lowering it makes external changes appear sooner but uses more CPU. A label does not move or rename a folder. The image fixes application data at `/data`; `MUSIMO_DATA_DIR` is a local-development override, not a supported Compose mount relocation.
 
@@ -21,6 +21,7 @@ Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGI
 
 - `destination`: a writable root already listed in `MUSIMO_LIBRARY_ROOTS`, default `/music`. Read-only mounts are disabled in the destination selector and rejected by the API.
 - `naming_template`: relative path tokens, default `{album_artist}/{album}/{track:02d} - {title}`. A live naming template preview is available at `/api/naming-preview`.
+- `soundcloud_fallback`: on or off, default off. When it is on, a catalog track that YouTube has no match for, or that YouTube is paused or blocked for, is searched on SoundCloud as well, at a higher matching bar. SoundCloud free streams are about 128 kbps, lower than YouTube. How it behaves is in [downloads](downloads.md#soundcloud-as-a-backup-match). It is a switch on the Settings page, under Audio quality.
 - `navidrome_mode`: `off`, `watcher` or `api`, default `off`.
 - `navidrome_url`: server URL for API scanning and library playback. It must be HTTP or HTTPS and cannot contain credentials, a query or fragment. The help text names `MUSIMO_NAVIDROME_CREDENTIALS_FILE`.
 - `navidrome_library_id`: positive library number, default 1. The UI caps it at 100000; the backend requires 1 or more.

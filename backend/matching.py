@@ -8,6 +8,17 @@ from backend.library import normalize
 # Version words are musical differences, not harmless upload decoration.
 VERSION_WORDS = ("live", "cover", "karaoke", "remix", "slowed", "sped", "instrumental")
 
+# The score a match must reach to be accepted, and the score below which the job says
+# "check match", per source. SoundCloud is full of remixes, reuploads and sped-up edits, and has
+# no equivalent of YouTube's Topic channels to trust, so it needs a higher bar. Both SoundCloud
+# numbers are provisional until `scripts/match_benchmark.py` measures them against the corpus.
+YOUTUBE_MIN_SCORE = 0.55
+YOUTUBE_CHECK_BELOW = 0.86
+SOUNDCLOUD_MIN_SCORE = 0.70
+SOUNDCLOUD_CHECK_BELOW = 0.90
+MIN_SCORE = {"youtube": YOUTUBE_MIN_SCORE, "soundcloud": SOUNDCLOUD_MIN_SCORE}
+CHECK_BELOW = {"youtube": YOUTUBE_CHECK_BELOW, "soundcloud": SOUNDCLOUD_CHECK_BELOW}
+
 
 @dataclass(frozen=True)
 class Score:
@@ -77,7 +88,7 @@ class Matcher:
         meta: Metadata,
         candidates: list[Candidate],
         *,
-        min_score: float = 0.55,
+        min_score: float = YOUTUBE_MIN_SCORE,
         min_title: float = 0.5,
     ) -> list[Candidate]:
         ranked: list[Candidate] = []

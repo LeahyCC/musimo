@@ -159,11 +159,16 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             raise HTTPException(404, "Job not found") from exc
         if job.stage in RUNNING or job.id in service.running:
             raise HTTPException(409, "Pause the job before choosing another recording")
-        if not any(
-            candidate.id == request.candidate_id
-            and valid_candidate_id(candidate.source, candidate.id)
-            for candidate in job.candidates
-        ):
+        chosen = next(
+            (
+                candidate
+                for candidate in job.candidates
+                if candidate.id == request.candidate_id
+                and valid_candidate_id(candidate.source, candidate.id)
+            ),
+            None,
+        )
+        if chosen is None:
             raise HTTPException(422, "Choose a candidate from this job's match list")
         if any(
             row.id != job.id
@@ -181,6 +186,9 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
                 replacement.id,
                 meta=job.meta.model_dump(),
                 selected=request.candidate_id,
+                # A recording chosen by hand decides where the job downloads from, so its pauses
+                # and error codes follow that site.
+                source=chosen.source,
                 candidates=[candidate.model_dump() for candidate in job.candidates],
                 check_match=False,
             )
@@ -188,6 +196,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         return service.jobs.update(
             job.id,
             selected=request.candidate_id,
+            source=chosen.source,
             stage="queued",
             desired="run",
             attempts=0,

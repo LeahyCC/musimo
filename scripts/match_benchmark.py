@@ -6,7 +6,7 @@ from collections import Counter
 from pathlib import Path
 
 from backend.job_models import Candidate, Metadata
-from backend.matching import Matcher
+from backend.matching import MIN_SCORE, Matcher
 
 
 def main() -> None:
@@ -15,6 +15,9 @@ def main() -> None:
         "--corpus", type=Path, default=Path("docs/evidence/match-review-corpus.json")
     )
     parser.add_argument("--output", type=Path)
+    # The corpus holds a candidate list and reference IDs per source. SoundCloud's are not
+    # recorded yet, so this option is here for the run that will measure it.
+    parser.add_argument("--source", choices=sorted(MIN_SCORE), default="youtube")
     parser.add_argument("--release", action="store_true")
     args = parser.parse_args()
 
@@ -32,18 +35,22 @@ def main() -> None:
             parser.error(f"Case {index} is not an object")
         target = case.get("target")
         truth = case.get("ground_truth")
-        candidates = case.get("candidates")
+        # A source other than YouTube keeps its own rows, so one corpus can hold both.
+        candidates = case.get(
+            "candidates" if args.source == "youtube" else f"{args.source}_candidates"
+        )
         if not isinstance(target, dict) or not isinstance(truth, dict):
             parser.error(f"Case {index} is missing target or ground truth")
         if not isinstance(candidates, list):
-            parser.error(f"Case {index} has no candidate list")
-        expected = truth.get("youtube_ids")
+            parser.error(f"Case {index} has no {args.source} candidate list")
+        expected = truth.get(f"{args.source}_ids")
         if not isinstance(expected, list) or not all(isinstance(value, str) for value in expected):
-            parser.error(f"Case {index} has invalid reference video IDs")
+            parser.error(f"Case {index} has no {args.source} reference IDs")
         rows = [Candidate.model_validate(row) for row in candidates]
         ranked = Matcher().rank(
             Metadata.model_validate({"id": index, **target}),
             rows,
+            min_score=MIN_SCORE[args.source],
         )
         reference = set(expected)
         reference_search += any(row.id in reference for row in rows)
@@ -73,6 +80,8 @@ def main() -> None:
 
     count = len(cases)
     report: dict[str, object] = {
+        "source": args.source,
+        "minimum_score": MIN_SCORE[args.source],
         "cases": count,
         "distinct_recordings": len(
             {

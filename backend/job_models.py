@@ -1,7 +1,7 @@
 import re
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, computed_field, model_validator
 
 from backend.sources import Kind, source_label
 
@@ -68,7 +68,11 @@ class Metadata(BaseModel):
 
 # The ID each source uses for one recording. A candidate from a source missing here is never
 # accepted, so a new site has to add its own pattern before its matches can be picked.
-CANDIDATE_IDS = {"youtube": re.compile(r"[A-Za-z0-9_-]{11}")}
+CANDIDATE_IDS = {
+    "youtube": re.compile(r"[A-Za-z0-9_-]{11}"),
+    # SoundCloud numbers its tracks.
+    "soundcloud": re.compile(r"[0-9]{1,20}"),
+}
 
 
 def valid_candidate_id(source: str, candidate_id: str) -> bool:
@@ -87,6 +91,12 @@ class Candidate(BaseModel):
     source: str = "youtube"
     url: str = ""
 
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def source_label(self) -> str:
+        """The site's name, so a review list holding two sites can label each row."""
+        return source_label(self.source)
+
 
 class Job(BaseModel):
     id: str
@@ -99,6 +109,9 @@ class Job(BaseModel):
     source: str = "youtube"
     # Podcast episodes and pasted links download this address directly instead of matching.
     source_url: str = ""
+    # The source to search when `source` finds nothing at all. Set when the job is dispatched,
+    # from the SoundCloud setting, so a job queued before it was switched on follows today's rule.
+    backup_source: str = ""
     # Mixes and radio shows run long, so they get the episode timeout.
     kind: Kind = "music"
     # False for a pasted recording that must keep the tags its site gave it. Set when it is queued.

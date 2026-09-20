@@ -610,12 +610,13 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
           {job.candidates.map((candidate) => (
             <div
               className="flex items-center gap-3 border-b border-line py-3 max-phone:flex-wrap"
-              key={candidate.id}
+              key={`${candidate.source}:${candidate.id}`}
             >
               <div className="flex-1">
                 <strong>{candidate.title}</strong>
                 <small className="mt-[5px] block">
-                  {candidate.artist} · {Math.round(candidate.score * 100)}% · {candidate.reason}
+                  {siteLabel(candidate.source, candidate.source_label)} · {candidate.artist} ·{' '}
+                  {Math.round(candidate.score * 100)}% · {candidate.reason}
                 </small>
               </div>
               <a

@@ -543,6 +543,12 @@ const controls: {
     section: 'audio',
   },
   {
+    key: 'soundcloud_fallback',
+    label: 'Use SoundCloud when YouTube has no match',
+    help: 'SoundCloud free streams are about 128 kbps, lower than YouTube.',
+    section: 'audio',
+  },
+  {
     key: 'concurrency',
     label: 'Parallel downloads',
     help: 'Two is a conservative starting point for YouTube.',
@@ -576,6 +582,14 @@ const controls: {
   },
 ]
 
+/** A settings value as the form holds it: text, a number, or a switch. */
+type SettingValue = string | number | boolean
+
+/** One value as a person reads it, so a switch reads on or off rather than true or false. */
+function settingText(value: SettingValue | undefined): string {
+  return typeof value === 'boolean' ? (value ? 'on' : 'off') : String(value)
+}
+
 function NamingPreview({ template }: { template: string }) {
   const value = useDeferredValue(template)
   const result = useQuery({
@@ -605,11 +619,11 @@ function SettingsPage() {
     queryKey: ['diagnostics'],
     queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
   })
-  const [draft, setDraft] = useState<Partial<Record<SettingKey, string | number>>>({})
-  const [originalValues, setOriginalValues] = useState<
-    Partial<Record<SettingKey, string | number>>
-  >({})
-  const [conflicts, setConflicts] = useState<Partial<Record<SettingKey, string | number>>>({})
+  const [draft, setDraft] = useState<Partial<Record<SettingKey, SettingValue>>>({})
+  const [originalValues, setOriginalValues] = useState<Partial<Record<SettingKey, SettingValue>>>(
+    {},
+  )
+  const [conflicts, setConflicts] = useState<Partial<Record<SettingKey, SettingValue>>>({})
   const [saved, setSaved] = useState(false)
 
   const isDirty = Object.keys(draft).length > 0
@@ -632,7 +646,7 @@ function SettingsPage() {
 
   useEffect(() => {
     if (!settings.data) return
-    const newConflicts: Partial<Record<SettingKey, string | number>> = {}
+    const newConflicts: Partial<Record<SettingKey, SettingValue>> = {}
     for (const key of Object.keys(draft) as SettingKey[]) {
       const original = originalValues[key]
       const current = settings.data[key]?.value
@@ -793,6 +807,9 @@ function SettingsPage() {
                     const setting = settings.data?.[key]
                     if (!setting) return null
                     const value = draft[key] ?? setting.value
+                    // The switch below is the only boolean; the text and select fields never
+                    // hold one.
+                    const entered = typeof value === 'boolean' ? '' : value
                     return (
                       <div
                         className="grid grid-cols-[1fr_220px] items-center gap-[28px] border-b border-line py-[19px] max-tablet:grid-cols-[1fr_200px] max-phone:grid-cols-1 max-phone:gap-[13px]"
@@ -811,10 +828,25 @@ function SettingsPage() {
                           )}
                         </div>
                         <div>
-                          {key === 'destination' || key === 'navidrome_mode' ? (
+                          {typeof setting.value === 'boolean' ? (
+                            <input
+                              id={key}
+                              type="checkbox"
+                              className="h-[18px] w-[18px] accent-accent coarse:h-[22px] coarse:w-[22px]"
+                              checked={value === true}
+                              disabled={setting.locked || save.isPending}
+                              onChange={(e) => {
+                                if (!(key in draft)) {
+                                  setOriginalValues({ ...originalValues, [key]: setting.value })
+                                }
+                                setDraft({ ...draft, [key]: e.target.checked })
+                                setSaved(false)
+                              }}
+                            />
+                          ) : key === 'destination' || key === 'navidrome_mode' ? (
                             <FieldSelect
                               id={key}
-                              value={value}
+                              value={entered}
                               disabled={setting.locked || save.isPending}
                               onChange={(e) => {
                                 if (!(key in draft)) {
@@ -844,7 +876,7 @@ function SettingsPage() {
                           ) : key === 'output_format' ? (
                             <FieldSelect
                               id={key}
-                              value={value}
+                              value={entered}
                               disabled={setting.locked || save.isPending}
                               onChange={(e) => {
                                 if (!(key in draft)) {
@@ -868,7 +900,7 @@ function SettingsPage() {
                               maxLength={min === undefined ? 400 : undefined}
                               required={key !== 'navidrome_url'}
                               disabled={setting.locked || save.isPending}
-                              value={value}
+                              value={entered}
                               onChange={(e) => {
                                 if (!(key in draft)) {
                                   setOriginalValues({ ...originalValues, [key]: setting.value })
@@ -884,7 +916,7 @@ function SettingsPage() {
                           )}
                           {conflicts[key] !== undefined && (
                             <small className="mt-[6px] block text-tiny text-warn">
-                              Changed elsewhere to {String(conflicts[key])}
+                              Changed elsewhere to {settingText(conflicts[key])}
                             </small>
                           )}
                         </div>

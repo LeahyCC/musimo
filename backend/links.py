@@ -42,6 +42,8 @@ PREVIEW_SECONDS = 600
 MAX_PREVIEWS = 32
 MAX_ENTRIES = 500
 RESOLVE_SECONDS = 20
+# A preview of 500 entries is one long line, well past asyncio's default line limit.
+PREVIEW_BYTES = 4 * 1024**2
 # Each resolve starts a yt-dlp child process, so only this many run at once; the rest wait.
 MAX_RESOLVES = 2
 # Slashes and percent signs are there for a file inside an item, as the Internet Archive names it.
@@ -67,6 +69,8 @@ class LinkEntry(BaseModel):
     # (which depends on the file the site gives), and is empty for a song.
     kind: Kind = "music"
     lands: str = ""
+    # The show the site names for this recording. Kept on the server only.
+    show: str = Field(default="", exclude=True)
     # A track's place on an album. Zero when the site gives none. Kept on the server only.
     track: int = Field(default=0, exclude=True)
     tracks: int = Field(default=0, exclude=True)
@@ -104,6 +108,29 @@ def place(value: object) -> int:
     return value if isinstance(value, int) and 0 <= value < 10000 else 0
 
 
+def page_extractor(line: bytes) -> str:
+    """The extractor named on the resolver's first line, before it read the page."""
+    try:
+        raw: object = json.loads(line or b"{}")
+    except ValueError:
+        return ""
+    if not isinstance(raw, dict) or raw.get("kind") != "page":
+        return ""
+    return str(raw.get("extractor", "")).lower()
+
+
+def timed_out(site: Site, url: str, extractor: str) -> str:
+    """What to say when a resolve ran out of time.
+
+    yt-dlp reads a whole profile or list page before it answers anything, so a large account
+    never finishes inside the budget and trying again will not help. One recording might.
+    """
+    listing = site.is_profile(url) or bool(extractor and extractor not in site.items)
+    if listing:
+        return f"{site.label} took too long to list this page. Paste one show or track instead."
+    return f"{site.label} took too long to answer. Try again."
+
+
 class Links:
     def __init__(self, downloads: Downloads, clock: Callable[[], float] = time.monotonic) -> None:
         self.downloads, self.clock = downloads, clock
@@ -120,13 +147,26 @@ class Links:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.DEVNULL,
             start_new_session=sys.platform != "win32",
+            limit=PREVIEW_BYTES,
         )
         request = json.dumps({"url": url, "source": site.source}).encode()
+        assert process.stdin is not None and process.stdout is not None
+        extractor = ""
         try:
             async with asyncio.timeout(RESOLVE_SECONDS):
-                output, _ = await process.communicate(request)
+                process.stdin.write(request)
+                try:
+                    await process.stdin.drain()
+                    process.stdin.close()
+                except (BrokenPipeError, ConnectionResetError):
+                    pass
+                # The resolver names the extractor it will use before it reads anything, so a
+                # timeout afterwards can say whether the page was a list.
+                first = await process.stdout.readline()
+                extractor = page_extractor(first)
+                output = first + await process.stdout.read()
         except TimeoutError as exc:
-            raise LinkError(504, f"{site.label} took too long to answer. Try again.") from exc
+            raise LinkError(504, timed_out(site, url, extractor)) from exc
         finally:
             await stop_tree(process)
         for line in reversed(output.decode(errors="replace").splitlines()):
@@ -157,6 +197,7 @@ class Links:
             title=text(raw.get("title")) or entry_id,
             artist=text(raw.get("artist")),
             album=text(raw.get("album")),
+            show=text(raw.get("show")),
             date=date if DAY.fullmatch(date) else "",
             duration=length,
             kind=mixes.kind_of(site, length),
@@ -283,7 +324,7 @@ class Links:
             tracks=max(row.tracks, row.track, 1),
         )
         if mixes.long_form(row.kind):
-            return mixes.retag(meta, site, row.kind, row.url, row.album_list)
+            return mixes.retag(meta, site, row.kind, row.url, row.album_list, row.show)
         return meta
 
     def enqueue(self, request: LinkRequest) -> dict[str, object]:

@@ -10,6 +10,15 @@ from backend.sources import source_label
 RETAIN_EVENTS = 5000
 
 
+def seeded(default: object, raw: str) -> object:
+    """An environment value in the type its setting keeps. `bool` is checked before `int`."""
+    if isinstance(default, bool):
+        return raw.strip().lower() in {"1", "true", "yes", "on"}
+    if isinstance(default, int):
+        return int(raw)
+    return raw
+
+
 class LockedSetting(ValueError):
     pass
 
@@ -162,8 +171,7 @@ class Store:
                     continue
                 env = f"MUSIMO_{key.upper()}"
                 raw = os.environ.get(env)
-                value: object = int(raw) if raw is not None and isinstance(default, int) else raw
-                values[key] = default if raw is None else value
+                values[key] = default if raw is None else seeded(default, raw)
                 seeds.append(
                     (
                         key,

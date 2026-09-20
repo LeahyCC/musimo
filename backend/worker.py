@@ -12,9 +12,12 @@ from typing import Protocol, cast
 
 from backend.errors import error_guidance, geo_restricted, site_label, source_code
 from backend.job_models import Candidate, Job, valid_candidate_id
-from backend.matching import Matcher
+from backend.matching import CHECK_BELOW, MIN_SCORE, Matcher
 from backend.sources import by_source, match_entry
 from backend.tagging import Tagger, probe
+
+# How each source is searched for a catalog track. A source missing here is never searched.
+SEARCHES = {"youtube": "ytsearch8:", "soundcloud": "scsearch8:"}
 
 
 class Downloader(Protocol):
@@ -71,6 +74,48 @@ def live(info: dict[str, object]) -> bool:
     return info.get("is_live") is True or info.get("live_status") in {"is_live", "is_upcoming"}
 
 
+def address(source: str, candidate_id: str, url: str) -> str:
+    """Where one candidate is downloaded from, or "" when it is not a page of its own source."""
+    if not valid_candidate_id(source, candidate_id):
+        return ""
+    if source == "youtube":
+        return "https://www.youtube.com/watch?v=" + candidate_id
+    site = by_source(source)
+    return url if site is not None and match_entry(url) is site else ""
+
+
+def found(source: str, entries: object) -> list[Candidate]:
+    """One search's results, keeping only rows that are a single recording on that source."""
+    rows: list[Candidate] = []
+    if not isinstance(entries, list):
+        return rows
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        candidate_id = str(entry.get("id", ""))
+        url = address(source, candidate_id, str(entry.get("url") or entry.get("webpage_url") or ""))
+        if not url:
+            continue
+        artist = str(
+            entry.get("channel") or entry.get("uploader") or ""
+            if source == "youtube"
+            else entry.get("artist") or entry.get("uploader") or entry.get("channel") or ""
+        )
+        rows.append(
+            Candidate(
+                id=candidate_id,
+                title=str(entry.get("title", "")),
+                artist=artist,
+                duration=float(entry.get("duration") or 0),
+                # Only YouTube has Topic channels, so only a YouTube row can earn their lift.
+                topic=source == "youtube" and artist.endswith(" - Topic"),
+                source=source,
+                url=url,
+            )
+        )
+    return rows
+
+
 def who(info: dict[str, object]) -> str:
     """The artist a downloaded recording names for itself, or its uploader."""
     artists = info.get("artists") or info.get("creators")
@@ -93,7 +138,10 @@ def main() -> None:
     # Podcast episodes and pasted links download the address in the job: no search, no catalog.
     direct = job.catalog in {"podcast", "link"}
     link_site = by_source(job.source) if job.catalog == "link" else None
-    site = site_label(job.source)
+    # A match from the backup source changes where the job downloads from, so the site name, the
+    # error codes and the pause follow it from that point on.
+    origin = job.source
+    site = site_label(origin)
 
     def refuse(code: str, message: str) -> None:
         hint, fix = error_guidance(code, site)
@@ -147,6 +195,21 @@ def main() -> None:
     if link_site:
         # Switches off the generic extractor, so a redirect to an unlisted site fails.
         options["allowed_extractors"] = link_site.allowed_extractors()
+
+    search_options: dict[str, object] = {"extract_flat": True, "skip_download": True}
+
+    def search(source_name: str) -> list[Candidate]:
+        """Ask one source for the wanted recording. Nothing is downloaded here."""
+        searcher = cast(Downloader, yt_dlp.YoutubeDL(options | search_options))
+        try:
+            raw = searcher.extract_info(
+                f"{SEARCHES[source_name]}{job.meta.artist} {job.meta.title} official audio",
+                download=False,
+            )
+        finally:
+            searcher.close()
+        return found(source_name, raw.get("entries", []) if isinstance(raw, dict) else [])
+
     try:
         downloader = cast(Downloader, yt_dlp.YoutubeDL(options))
         manifest = folder / "download.json"
@@ -164,41 +227,24 @@ def main() -> None:
                     artist = str(saved.get("artist", ""))
         if source is None:
             selected = job.selected
+            picked = next((row for row in job.candidates if row.id == selected), None)
             if not selected and not direct:
                 emit("stage", stage="matching")
-                search_options = options | {"extract_flat": True, "skip_download": True}
-                searcher = cast(Downloader, yt_dlp.YoutubeDL(search_options))
-                try:
-                    raw = searcher.extract_info(
-                        f"ytsearch8:{job.meta.artist} {job.meta.title} official audio",
-                        download=False,
-                    )
-                finally:
-                    searcher.close()
-                entries = raw.get("entries", []) if isinstance(raw, dict) else []
-                candidates: list[Candidate] = []
-                if isinstance(entries, list):
-                    for entry in entries:
-                        if not isinstance(entry, dict) or not valid_candidate_id(
-                            "youtube", str(entry.get("id", ""))
-                        ):
-                            continue
-                        artist = str(entry.get("channel") or entry.get("uploader") or "")
-                        candidates.append(
-                            Candidate(
-                                id=str(entry["id"]),
-                                title=str(entry.get("title", "")),
-                                artist=artist,
-                                duration=float(entry.get("duration") or 0),
-                                topic=artist.endswith(" - Topic"),
-                                source="youtube",
-                                url="https://www.youtube.com/watch?v=" + str(entry["id"]),
-                            )
-                        )
                 matcher = Matcher()
-                ranked = matcher.rank(job.meta, candidates)
+                ranked: list[Candidate] = []
+                review: list[Candidate] = []
+                # The backup source is asked only after the first found nothing at all, never
+                # beside it: it holds many more remixes and reuploads of the same song.
+                # A source with no search of its own is never asked, so it cannot be matched.
+                tried = [name for name in (origin, job.backup_source) if name in SEARCHES]
+                for attempt in tried:
+                    candidates = search(attempt)
+                    ranked = matcher.rank(job.meta, candidates, min_score=MIN_SCORE[attempt])
+                    if ranked:
+                        break
+                    # Rejected rows are kept for review, from each source that was asked.
+                    review += matcher.rank(job.meta, candidates, min_score=0, min_title=0)
                 if not ranked:
-                    review = matcher.rank(job.meta, candidates, min_score=0, min_title=0)
                     if review:
                         emit(
                             "candidates",
@@ -208,12 +254,32 @@ def main() -> None:
                         )
                     refuse("NO_MATCH", "No sufficiently close recording found")
                     return
-                selected = ranked[0].id
+                picked = ranked[0]
+                selected = picked.id
                 emit(
                     "candidates",
                     items=[row.model_dump() for row in ranked],
                     selected=selected,
-                    check_match=ranked[0].score < 0.86,
+                    check_match=picked.score < CHECK_BELOW[picked.source],
+                )
+            if picked and picked.source != origin:
+                # The job downloads from the backup source now, so pauses and error codes are its.
+                matched = by_source(picked.source)
+                if matched is None:
+                    refuse("SITE_NOT_ALLOWED", "The chosen recording is from an unlisted site")
+                    return
+                origin, site = picked.source, matched.label
+                emit("source", source=origin)
+                downloader.close()
+                downloader = cast(
+                    Downloader,
+                    yt_dlp.YoutubeDL(
+                        options
+                        | {
+                            "format": matched.audio_format,
+                            "allowed_extractors": matched.allowed_extractors(),
+                        }
+                    ),
                 )
             emit("stage", stage="downloading")
             stage = "downloading"
@@ -230,10 +296,20 @@ def main() -> None:
                     refuse("LIVE_STREAM", "Live streams never finish, so they can't be saved.")
                     return
                 raw = downloader.process_ie_result(info, download=True)
+            elif direct:
+                raw = downloader.extract_info(job.source_url)
             else:
-                raw = downloader.extract_info(
-                    job.source_url if direct else "https://www.youtube.com/watch?v=" + selected
+                # Never the ID a stored job carries on its own: the address is rebuilt from the
+                # chosen candidate and has to be a page of that candidate's own source.
+                chosen = (
+                    address(picked.source, picked.id, picked.url)
+                    if picked
+                    else address(origin, selected, "")
                 )
+                if not chosen:
+                    refuse("SITE_NOT_ALLOWED", f"The chosen recording is not a {site} address")
+                    return
+                raw = downloader.extract_info(chosen)
             if not isinstance(raw, dict):
                 raise ValueError("Download returned no media")
             artist = who(raw)
@@ -307,7 +383,7 @@ def main() -> None:
         )
         # A code only stands where it means something for this job's site, so another site's
         # refusal pauses that site alone and never YouTube.
-        code = source_code(code, job.source)
+        code = source_code(code, origin)
         if code == "DOWNLOAD_FAILED" and stage in {"converting", "tagging"}:
             code = "TRANSCODE_FAILED" if stage == "converting" else "TAG_FAILED"
         hint, fix = error_guidance(code, site)
