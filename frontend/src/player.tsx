@@ -42,6 +42,9 @@ import { crossfadeSpan } from './crossfade'
 import { useCrossfadeSeconds } from './crossfade-settings'
 import { cx } from './cx'
 import { fadeInGain, fadeOutGain, rampDown } from './fades'
+import { HANDOVER_WINDOW_SECONDS, handoverDelay, lengthsAgree } from './handover'
+import { createHandoverClock } from './handover-clock'
+import type { HandoverClock } from './handover-clock'
 import {
   addToHistory,
   HISTORY_LISTEN_SECONDS,
@@ -420,16 +423,6 @@ async function routeToAnalyser(element: HTMLMediaElement) {
 export const PRELOAD_LEAD_SECONDS = 15
 /** Tracks that may fail one after another before playback stops, rather than racing the queue. */
 export const MAX_FAILURES = 3
-// The next track starts this long before the current one ends: about what a buffered element
-// takes to put sound out. Later leaves a gap, earlier an overlap.
-const HANDOVER_LEAD_MS = 40
-// Inside this window the handover is timed. Outside it, or where a timer runs late, the `ended`
-// event does it, which is the safe route and a few milliseconds slower.
-const HANDOVER_WINDOW_SECONDS = 1
-// A stream's own length can differ from the library's. Past this the timed handover would cut a
-// track short, so `ended` decides instead.
-const LENGTH_TOLERANCE_SECONDS = 2
-
 /** True once the next track should be loading: the last seconds of a track, all of a short one. */
 export const preloadDue = (length: number, time: number) =>
   length > 0 && length - time <= PRELOAD_LEAD_SECONDS
@@ -614,7 +607,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const activeSlot = useRef<Slot>(0)
   // What the standby element is loading, and whether that failed.
   const preload = useRef<Preload | null>(null)
-  const handoverTimer = useRef<number | undefined>(undefined)
+  // Times the handover off the page's own timers, which a hidden tab holds to one a second. Made on
+  // first use so its worker stays out of the first paint.
+  const handoverClock = useRef<HandoverClock | null>(null)
   // Set while the old track is still fading out under the new one. See `Crossfade`.
   const fadingOut = useRef<Crossfade | null>(null)
   // The sleep timer, and the level its last five seconds have brought everything down to.
@@ -975,7 +970,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Forgets what the standby element was loading and stops it downloading. Anything that changes
   // what plays next (an edit, shuffle, repeat) calls this; the next timeupdate loads the new pick.
   function discardPreload() {
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     if (!preload.current) return
     preload.current = null
     const element = standby()
@@ -1008,25 +1003,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     element.preload = dataSaverOn() ? 'metadata' : 'auto'
     element.src = streamUrl(upcoming)
     applyVolume()
+    // Ready well before the last second, when the handover is armed.
+    handoverClock.current ??= createHandoverClock()
+    handoverClock.current.warm()
   }
 
-  // Starts the standby element just before the playing one ends. Called on every timeupdate, so a
-  // seek or a pause cancels it by the next one.
+  function cancelHandover() {
+    handoverClock.current?.cancel()
+  }
+
+  // Starts the standby element just before the playing one ends. The wait is kept by a worker, so a
+  // hidden tab, which holds page timers to one a second, does not push it late. It is worked out
+  // afresh from the element's own position on every timeupdate, and also on seek, play and rate
+  // change, so each of those replaces the wait before it; a pause, a load or a discard cancels it.
   function scheduleHandover(active: HTMLAudioElement) {
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     const item = libraryCurrent.current
     const held = preload.current
     if (!item || !held || held.failed || active.paused) return
-    const left = secondsLeft(active)
-    if (left > HANDOVER_WINDOW_SECONDS) return
-    if (item.duration > 0 && Math.abs(active.duration - item.duration) > LENGTH_TOLERANCE_SECONDS)
-      return
-    handoverTimer.current = window.setTimeout(
-      () => {
-        if (libraryCurrent.current === item && library() === active) finishTrack(active)
-      },
-      Math.max(0, left * 1000 - HANDOVER_LEAD_MS),
-    )
+    if (!lengthsAgree(active.duration, item.duration)) return
+    const delay = handoverDelay(secondsLeft(active), active.playbackRate)
+    if (delay === null) return
+    handoverClock.current ??= createHandoverClock()
+    handoverClock.current.arm(delay, () => {
+      // Checked again now: the wait belongs to the track and element it was made for, and to a
+      // position still inside the last second.
+      if (libraryCurrent.current !== item || library() !== active || active.paused) return
+      if (secondsLeft(active) > HANDOVER_WINDOW_SECONDS) return
+      finishTrack(active)
+    })
   }
 
   // Starts the overlap when the playing track is within the listener's crossfade of its end and the
@@ -1071,7 +1076,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // A track has played to its end, or is about to. Its listen is reported and the next one starts,
   // unless a sleep timer ends here.
   function finishTrack(finished: HTMLAudioElement) {
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     // A track shorter than the listening threshold never reaches it, so its end counts. A
     // longer one that was scrubbed to its end without playing does not.
     if (finished.duration <= HISTORY_LISTEN_SECONDS) recordPlay()
@@ -1096,7 +1101,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // carries on from there rather than replaying what the listener fell asleep to.
   function sleepAtTrackEnd(finished: HTMLAudioElement) {
     finished.pause()
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     if (repeat === 'one') loadLibrary(indexRef.current, false)
     else next(false)
     clearSleep()
@@ -1106,7 +1111,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // A minutes timer ran out, possibly in the middle of a track or a crossfade.
   function sleepPause() {
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     fadingOut.current?.element.pause()
     fadingOut.current = null
     for (const element of elements()) element?.pause()
@@ -1206,7 +1211,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const item = queueRef.current[index]
     if (!item) return
     request.current?.abort()
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     // The standby element already holds this song: hand over to it instead of loading it again.
     const held = preload.current
     const handOverTo: Slot | null =
@@ -1496,7 +1501,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function stop() {
     request.current?.abort()
     saveQueue()
-    window.clearTimeout(handoverTimer.current)
+    cancelHandover()
     preload.current = null
     failures.current = 0
     previewCurrent.current = null
@@ -1575,7 +1580,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [shuffle, repeat])
 
   // Nothing is left ticking once the player is gone.
-  useEffect(() => () => window.clearInterval(envelopeTimer.current), [])
+  useEffect(
+    () => () => {
+      window.clearInterval(envelopeTimer.current)
+      handoverClock.current?.dispose()
+    },
+    [],
+  )
 
   useEffect(() => {
     const key = (event: KeyboardEvent) => {
@@ -1721,6 +1732,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const element = event.currentTarget
         publishPosition(element)
         void routeToAnalyser(element)
+        // A resume in the last second arms the handover now rather than at the next timeupdate.
+        scheduleHandover(element)
       },
       // A track that has started playing ends a run of failures.
       onPlaying: () => {
@@ -1728,13 +1741,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       },
       onPause: (event: MediaEvent) => {
         if (!inPlay()) return
-        window.clearTimeout(handoverTimer.current)
+        cancelHandover()
         setPlaying(false)
         saveQueue()
         if (forLibrary) publishPosition(event.currentTarget)
       },
       onSeeked: (event: MediaEvent) => {
-        if (inPlay() && forLibrary) publishPosition(event.currentTarget)
+        if (!inPlay() || !forLibrary) return
+        publishPosition(event.currentTarget)
+        // The end has moved, so the wait made for the old position is replaced.
+        scheduleHandover(event.currentTarget)
+      },
+      // At another rate the same seconds of track pass in more or less time.
+      onRateChange: (event: MediaEvent) => {
+        if (inPlay() && forLibrary) scheduleHandover(event.currentTarget)
       },
       onEnded: (event: MediaEvent) => {
         if (!inPlay()) return
