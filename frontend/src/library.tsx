@@ -80,6 +80,7 @@ import {
   usePlaylistSongs,
 } from './player'
 import { relativeTime } from './relative-time'
+import { ReviewDialog } from './review-sheet'
 import { RowMenu } from './row-menu'
 import {
   Button,
@@ -87,6 +88,7 @@ import {
   EmptyPanel,
   ErrorBanner,
   Field,
+  FieldSelect,
   IconButton,
   InlineError,
   Panel,
@@ -99,6 +101,7 @@ import {
   Tag,
   textLinkClassName,
 } from './ui'
+import { usePhone } from './use-phone'
 
 export type LibraryTab = 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
 type Tab = LibraryTab
@@ -255,11 +258,14 @@ function FilterMenu({
   options,
   selected,
   onToggle,
+  inline = false,
 }: {
   label: string
   options: string[]
   selected: string[]
   onToggle: (value: string) => void
+  /** Opens in the flow of the page instead of floating over it, for use inside the phone sheet. */
+  inline?: boolean
 }) {
   const root = useRef<HTMLDetailsElement>(null)
   const [open, setOpen] = useState(false)
@@ -289,14 +295,24 @@ function FilterMenu({
   return (
     <details
       ref={root}
-      className="relative min-w-[125px] rounded-[8px] border border-line bg-sunken text-muted max-phone:flex-1"
+      className={cx(
+        'relative min-w-[125px] rounded-[8px] border border-line bg-sunken text-muted max-phone:flex-1',
+        inline && 'w-full',
+      )}
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
       <summary className="cursor-pointer py-[11px] pr-[30px] pl-[12px] text-text coarse:flex coarse:min-h-11 coarse:items-center">
         {selected.length ? `${label} (${selected.length})` : `All ${label.toLowerCase()}`}
       </summary>
-      <div className="absolute top-[calc(100%+5px)] left-0 z-overlay grid max-h-[260px] min-w-[190px] overflow-auto overscroll-contain rounded-[8px] border border-line bg-sunken p-[8px] shadow-[0_14px_36px_color-mix(in_oklab,var(--color-shadow)_53%,transparent)] max-phone:w-full max-phone:min-w-0">
+      <div
+        className={cx(
+          'grid max-h-[260px] overflow-auto overscroll-contain border-line bg-sunken p-[8px]',
+          inline
+            ? 'border-t'
+            : 'absolute top-[calc(100%+5px)] left-0 z-overlay min-w-[190px] rounded-[8px] border shadow-[0_14px_36px_color-mix(in_oklab,var(--color-shadow)_53%,transparent)] max-phone:w-full max-phone:min-w-0',
+        )}
+      >
         {options.map((option) => (
           <label
             key={option}
@@ -888,6 +904,9 @@ export function LibraryPage({
   const client = useQueryClient()
   const navigate = useNavigate()
   const tab = view
+  const phone = usePhone()
+  const filterSheet = useRef<HTMLDialogElement>(null)
+  const filterSheetTitle = useId()
   const [layout, setLayout] = useState<Layout>(() =>
     stored('musimo.library-layout', 'grid') === 'list' ? 'list' : 'grid',
   )
@@ -1188,6 +1207,22 @@ export function LibraryPage({
           ? false
           : albums.isFetchingNextPage
   const showBrowser = !albumId && !artistId && !playlistId
+  const facetsShown = tab === 'home' || tab === 'albums' || tab === 'artists' || tab === 'tracks'
+  // The phone's Filter button wears this number, so a filter chosen in the sheet is not invisible
+  // once the sheet closes.
+  const activeFilters =
+    selectedGenres.length +
+    selectedYears.length +
+    (artistShow ? 1 : 0) +
+    (visibility !== 'all' ? 1 : 0)
+  const loadedText =
+    tab === 'tracks'
+      ? `${trackItems.length} of ${trackTotal} loaded`
+      : tab === 'artists'
+        ? `${artistItems.length} of ${artistTotal} loaded`
+        : tab === 'playlists'
+          ? `${currentItems.length} loaded`
+          : `${albumItems.length} of ${albumTotal} loaded`
   const albumParent = parentArtistId
     ? { id: parentArtistId, name: albumDetail.data?.artist || 'artist' }
     : null
@@ -1237,6 +1272,16 @@ export function LibraryPage({
     void navigate({ to: paths[next] })
   }
 
+  function clearFilters() {
+    setSelectedGenres([])
+    setSelectedYears([])
+    setArtistShow('')
+    setVisibility('all')
+  }
+
+  const toggleIn = (value: string) => (current: string[]) =>
+    current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
+
   function loadMore() {
     if (tab === 'artists') void artists.fetchNextPage()
     else if (tab === 'tracks') void tracks.fetchNextPage()
@@ -1277,12 +1322,127 @@ export function LibraryPage({
   // A detail page starts with its own header, so the page heading goes and the view tabs shrink to
   // a slim row that carries the way back.
   const backLabel = albumParent?.name ?? (playlistId ? 'playlists' : albumId ? 'albums' : 'artists')
+  const browsing = tab === 'home' ? 'albums' : tab
+
+  const searchField = (className: string) => (
+    <label
+      className={cx(
+        'flex items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted coarse:min-h-11',
+        className,
+      )}
+    >
+      <Search size={17} className="flex-none" />
+      <input
+        className="w-full min-w-0 border-0 bg-transparent p-[11px] text-inherit outline-0 coarse:text-base"
+        aria-label={`Search ${browsing}`}
+        value={query}
+        onChange={(event) => setQuery(event.target.value)}
+        placeholder={`Search ${browsing}`}
+      />
+      {query && (
+        <button
+          className="grid place-items-center border-0 bg-none p-[7px] text-muted coarse:min-h-11 coarse:min-w-11"
+          aria-label="Clear search"
+          onClick={() => setQuery('')}
+        >
+          <X size={15} />
+        </button>
+      )}
+    </label>
+  )
+
+  // What the sort, filter and view controls are, in one column. A phone keeps them here rather than
+  // in a toolbar, so the first album is on the first screen.
+  const filterSheetBody = (
+    <div className="grid gap-[14px]">
+      <label className="grid gap-[6px] text-small text-muted">
+        Sort by
+        <FieldSelect
+          tone="sunken"
+          aria-label={`Sort ${tab}`}
+          value={sort}
+          onChange={(event) => setSorts({ ...sorts, [tab]: event.target.value })}
+        >
+          {SORTS[tab].map((option) => (
+            <option value={option.value} key={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </FieldSelect>
+      </label>
+      {tab === 'playlists' && (
+        <label className="grid gap-[6px] text-small text-muted">
+          Show
+          <FieldSelect
+            tone="sunken"
+            aria-label="Filter playlists"
+            value={visibility}
+            onChange={(event) => setVisibility(event.target.value)}
+          >
+            <option value="all">All playlists</option>
+            <option value="public">Public</option>
+            <option value="private">Private</option>
+          </FieldSelect>
+        </label>
+      )}
+      {tab === 'artists' && (
+        <label className="grid gap-[6px] text-small text-muted">
+          Show
+          <FieldSelect
+            tone="sunken"
+            aria-label="Show artists"
+            value={artistShow}
+            onChange={(event) => setArtistShow(event.target.value)}
+          >
+            <option value="">All artists</option>
+            <option value="favourites">Favourites</option>
+            <option value="played">Played</option>
+            <option value="unplayed">Never played</option>
+          </FieldSelect>
+        </label>
+      )}
+      {facetsShown && (
+        <>
+          <FilterMenu
+            inline
+            label="Genres"
+            options={genres}
+            selected={selectedGenres}
+            onToggle={(value) => setSelectedGenres(toggleIn(value))}
+          />
+          <FilterMenu
+            inline
+            label="Years"
+            options={years}
+            selected={selectedYears}
+            onToggle={(value) => setSelectedYears(toggleIn(value))}
+          />
+        </>
+      )}
+      {tab !== 'tracks' && (
+        <div className="flex items-center justify-between gap-[12px] text-small text-muted">
+          View
+          <LayoutToggle layout={layout} onChange={setLayout} />
+        </div>
+      )}
+      {activeFilters > 0 && (
+        <button
+          type="button"
+          data-ui="text-link"
+          className={textLinkClassName('self-start')}
+          onClick={clearFilters}
+        >
+          Clear filters
+        </button>
+      )}
+    </div>
+  )
 
   return (
     <>
       {showBrowser && (
-        <PageTitle eyebrow="YOUR MUSIC, READY TO PLAY" title="Library">
-          <Tag role="status">
+        <PageTitle compact eyebrow="YOUR MUSIC, READY TO PLAY" title="Library">
+          <Tag role="status" className="max-phone:shrink-0">
             {/* Both labels share one cell so the tag keeps its width while the busy one shows. */}
             <span className="grid">
               <span className="[grid-area:1/1]" style={{ visibility: busy ? 'hidden' : undefined }}>
@@ -1320,7 +1480,7 @@ export function LibraryPage({
         <nav
           className={cx(
             'flex min-w-0 gap-[6px] overflow-x-auto max-phone:gap-0 max-phone:overflow-visible',
-            showBrowser ? 'border-b border-line mb-[28px] max-phone:mb-[20px]' : 'max-phone:w-full',
+            showBrowser ? 'border-b border-line mb-[28px] max-phone:mb-[14px]' : 'max-phone:w-full',
           )}
           aria-label="Library views"
         >
@@ -1341,27 +1501,52 @@ export function LibraryPage({
           ))}
         </nav>
       </div>
-      {showBrowser && (
-        <div className="flex flex-wrap items-center gap-[10px] mb-[22px]">
-          <label className="flex w-[min(420px,100%)] items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted">
-            <Search size={17} />
-            <input
-              className="w-full border-0 bg-transparent p-[11px] text-inherit outline-0"
-              aria-label={`Search ${tab === 'home' ? 'albums' : tab}`}
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder={`Search ${tab === 'home' ? 'albums' : tab}`}
-            />
-            {query && (
-              <button
-                className="grid place-items-center border-0 bg-none p-[7px] text-muted coarse:min-h-11 coarse:min-w-11"
-                aria-label="Clear search"
-                onClick={() => setQuery('')}
+      {showBrowser && phone && (
+        <>
+          <div className="mb-[14px] flex items-center gap-[10px]">
+            {searchField('min-w-0 flex-1')}
+            <Button
+              className="flex-none"
+              aria-haspopup="dialog"
+              onClick={() => filterSheet.current?.showModal()}
+            >
+              <SlidersHorizontal size={16} />
+              {activeFilters > 0 ? `Filter (${activeFilters})` : 'Filter'}
+            </Button>
+          </div>
+          {tab === 'playlists' && (
+            <Button
+              variant="primary"
+              className="mb-[14px] w-full"
+              onClick={() => setShowPlaylistForm(true)}
+            >
+              <Plus size={16} /> New playlist
+            </Button>
+          )}
+          <ReviewDialog
+            dialogRef={filterSheet}
+            titleId={filterSheetTitle}
+            eyebrow="LIBRARY"
+            title={`Filter ${browsing}`}
+            closeLabel="Close filters"
+            onClose={() => undefined}
+            footer={
+              <Button
+                variant="primary"
+                className="w-full"
+                onClick={() => filterSheet.current?.close()}
               >
-                <X size={15} />
-              </button>
-            )}
-          </label>
+                Done
+              </Button>
+            }
+          >
+            {filterSheetBody}
+          </ReviewDialog>
+        </>
+      )}
+      {showBrowser && !phone && (
+        <div className="flex flex-wrap items-center gap-[10px] mb-[22px]">
+          {searchField('w-[min(420px,100%)]')}
           <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
             <SlidersHorizontal size={16} />
             <select
@@ -1406,57 +1591,35 @@ export function LibraryPage({
               </select>
             </label>
           )}
-          {(tab === 'home' || tab === 'albums' || tab === 'artists' || tab === 'tracks') && (
+          {facetsShown && (
             <>
               <FilterMenu
                 label="Genres"
                 options={genres}
                 selected={selectedGenres}
-                onToggle={(value) =>
-                  setSelectedGenres((current) =>
-                    current.includes(value)
-                      ? current.filter((item) => item !== value)
-                      : [...current, value],
-                  )
-                }
+                onToggle={(value) => setSelectedGenres(toggleIn(value))}
               />
               <FilterMenu
                 label="Years"
                 options={years}
                 selected={selectedYears}
-                onToggle={(value) =>
-                  setSelectedYears((current) =>
-                    current.includes(value)
-                      ? current.filter((item) => item !== value)
-                      : [...current, value],
-                  )
-                }
+                onToggle={(value) => setSelectedYears(toggleIn(value))}
               />
               {(selectedGenres.length > 0 || selectedYears.length > 0 || artistShow) && (
                 <button
                   type="button"
                   data-ui="text-link"
                   className={textLinkClassName('px-[5px] py-[9px]')}
-                  onClick={() => {
-                    setSelectedGenres([])
-                    setSelectedYears([])
-                    setArtistShow('')
-                  }}
+                  onClick={clearFilters}
                 >
                   Clear filters
                 </button>
               )}
             </>
           )}
-          <div className="flex items-center gap-[10px] ml-auto max-phone:ml-0">
+          <div className="ml-auto flex items-center gap-[10px]">
             <span className="library-count text-small whitespace-nowrap text-muted">
-              {tab === 'tracks'
-                ? `${trackItems.length} of ${trackTotal} loaded`
-                : tab === 'artists'
-                  ? `${artistItems.length} of ${artistTotal} loaded`
-                  : tab === 'playlists'
-                    ? `${currentItems.length} loaded`
-                    : `${albumItems.length} of ${albumTotal} loaded`}
+              {loadedText}
             </span>
             {tab !== 'tracks' && <LayoutToggle layout={layout} onChange={setLayout} />}
           </div>
@@ -2044,6 +2207,10 @@ export function LibraryPage({
         )}
       {showBrowser && hasMore && (
         <InfiniteScroll hasMore={hasMore} loading={loadingMore} onLoadMore={loadMore} />
+      )}
+      {/* On a phone the count is not in the toolbar, so it reads under the list. */}
+      {showBrowser && phone && (
+        <p className="library-count mt-[14px] text-center text-small text-muted">{loadedText}</p>
       )}
     </>
   )

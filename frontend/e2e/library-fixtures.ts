@@ -19,6 +19,19 @@ export const librarySong = (id: string, over: Partial<LibraryTrack> = {}): Libra
   ...over,
 })
 
+/**
+ * On a phone the library's sort, filter and view controls live in the Filter sheet, so a spec that
+ * reaches for one opens it first. A desktop shows them in the toolbar and this does nothing.
+ */
+export async function openLibraryFilters(page: Page, isMobile: boolean): Promise<void> {
+  if (isMobile) await page.getByRole('button', { name: /^Filter( \(\d+\))?$/ }).click()
+}
+
+/** The other half: the sheet is modal, so the page behind it waits until Done. */
+export async function closeLibraryFilters(page: Page, isMobile: boolean): Promise<void> {
+  if (isMobile) await page.getByRole('button', { name: 'Done', exact: true }).click()
+}
+
 /** Read a request body as data rather than casting it to a shape it may not have. */
 export function requestBody(route: Route): Record<string, unknown> {
   const body: unknown = route.request().postDataJSON()

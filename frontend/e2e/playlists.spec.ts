@@ -2,7 +2,15 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
-import { bodyNumber, bodyText, librarySong, playerFixtures, requestBody } from './library-fixtures'
+import {
+  bodyNumber,
+  bodyText,
+  closeLibraryFilters,
+  librarySong,
+  openLibraryFilters,
+  playerFixtures,
+  requestBody,
+} from './library-fixtures'
 
 const first = librarySong('s1', { title: 'Beacon', duration: 180 })
 const second = librarySong('s2', { title: 'Anchor', duration: 180 })
@@ -85,7 +93,10 @@ async function playlistFixtures(page: Page) {
   return state
 }
 
-test('the liked playlist leads the list and cannot be deleted from it', async ({ page }) => {
+test('the liked playlist leads the list and cannot be deleted from it', async ({
+  page,
+  isMobile,
+}) => {
   await playlistFixtures(page)
   await page.goto('/library/playlists')
 
@@ -105,7 +116,9 @@ test('the liked playlist leads the list and cannot be deleted from it', async ({
   await rows.nth(1).hover()
   await expect.poll(() => trash.evaluate((element) => getComputedStyle(element).opacity)).toBe('1')
 
+  await openLibraryFilters(page, isMobile)
   await page.getByLabel('Filter playlists').selectOption('private')
+  await closeLibraryFilters(page, isMobile)
   await expect(rows).toHaveCount(1)
   await expect(rows.first()).toContainText('Liked')
 })

@@ -118,6 +118,14 @@ test('card links and download controls work independently in a natural-height gr
   const cards = page.getByRole('article')
   await expect(cards).toHaveCount(13)
   await expect(page.locator('.virtual-list')).toHaveCount(0)
+  if (isMobile) {
+    // The heading, tabs and Filters row are compact, so the first card starts in the top part of
+    // the screen instead of below a screenful of controls.
+    const viewport = page.viewportSize()
+    const card = await cards.first().boundingBox()
+    if (!viewport || !card) throw new Error('Missing viewport or card box')
+    expect(card.y).toBeLessThan(viewport.height * 0.45)
+  }
   const download = cards
     .first()
     .getByRole('button', { name: 'Download missing tracks from Album 1' })

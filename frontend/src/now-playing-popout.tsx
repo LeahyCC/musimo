@@ -8,7 +8,6 @@ import {
   useMemo,
   useRef,
   useState,
-  useSyncExternalStore,
 } from 'react'
 import type { ReactNode, RefObject } from 'react'
 
@@ -31,6 +30,7 @@ import { artUrl, remember, stored, usePlayer } from './player'
 import { activeTheme, applyTheme, subscribeTheme } from './theme/store'
 import { Button } from './ui'
 import { leavingStyle, useLeaving } from './use-leaving'
+import { usePhone } from './use-phone'
 
 // The whole WebGPU tree stays out of the main bundle until a stage wants it.
 const VisualizerStage = lazy(() => import('visimo').then((m) => ({ default: m.VisualizerStage })))
@@ -135,8 +135,6 @@ const VIEW_KEY = 'musimo.now-playing-view'
 const SIZE_KEY = 'musimo.now-playing-size'
 // A paused stage draws nothing new, so after this long the visualizer gives its canvas back.
 const PAUSE_REST_MS = 10_000
-// The same edge as `max-phone:` (`--breakpoint-phone`, 48rem), so the layout and this agree.
-const PHONE_QUERY = '(width < 48rem)'
 const PRESET_KEY = 'musimo.visualizer-preset'
 const SCENE_KEY = 'musimo.visualizer-scene'
 const FLUID_KEY = 'musimo.visualizer-fluid-grid'
@@ -146,20 +144,6 @@ const UNSUPPORTED = 'This browser has no WebGPU, so the stage shows the artwork.
 // A deliberate copy of visimo's own check. Importing it would pull the
 // WebGPU chunk into the main bundle to answer a question about navigator.
 const hasWebGpu = () => typeof navigator !== 'undefined' && Boolean(navigator.gpu)
-
-const subscribePhone = (notify: () => void) => {
-  const query = window.matchMedia(PHONE_QUERY)
-  query.addEventListener('change', notify)
-  return () => query.removeEventListener('change', notify)
-}
-
-// Whether the window is under the phone breakpoint, following it as the window is resized.
-const usePhone = () =>
-  useSyncExternalStore(
-    subscribePhone,
-    () => window.matchMedia(PHONE_QUERY).matches,
-    () => false,
-  )
 
 // What the browser remembers. A preset names a scene, so it decides; the
 // scene key is only consulted where no preset was ever stored.

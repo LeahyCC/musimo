@@ -106,6 +106,34 @@ test('a top-tab section with no results hides its View all link', async ({ page 
   await expect(artists.getByRole('button', { name: 'View all' })).toHaveCount(0)
 })
 
+test('a search with no results says so once, with the query', async ({ page }) => {
+  await page.route('**/api/search?*', (route) =>
+    route.fulfill({ json: { items: [], total: 0, next_index: null, cached: false } }),
+  )
+  await page.goto('/search?q=Zzzyx')
+  await expect(page.getByText('No results for “Zzzyx”.')).toHaveCount(1)
+  // Not one "No tracks match this search." per section.
+  await expect(page.getByText(/match this search/)).toHaveCount(0)
+  await expect(page.getByRole('region', { name: 'Tracks' })).toHaveCount(0)
+
+  // One tab is one section, so it gets the same single message.
+  await page.goto('/search?q=Zzzyx&tab=album')
+  await expect(page.getByText('No results for “Zzzyx”.')).toHaveCount(1)
+  await expect(page.getByText(/match this search/)).toHaveCount(0)
+})
+
+test('the filters and sort hint is help inside the Filters panel, not a line on the page', async ({
+  page,
+}) => {
+  await page.goto('/search?q=Fixture&tab=track')
+  await expect(page.getByText('Test recording', { exact: true })).toBeVisible()
+  const hint = page.getByText(/Filters and sort apply to loaded results/)
+  await expect(hint).toHaveCount(0)
+  await page.getByRole('button', { name: 'Filters', exact: true }).click()
+  await expect(hint).toBeVisible()
+  await expect(hint).toContainText('Years fill in as album details arrive.')
+})
+
 test('popularity keeps an exact artist name ahead of larger fuzzy matches', async ({ page }) => {
   const exact: MusicResult = {
     ...album,

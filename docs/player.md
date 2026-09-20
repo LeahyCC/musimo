@@ -18,13 +18,25 @@ Any play button becomes a pause button while the thing it starts is the thing pl
 
 Albums (and Home), Artists and Tracks run search, genre and year filters, sort order and the match count on the server, so they describe the whole library rather than the pages this browser has scrolled through. On Tracks, Play all and Shuffle do too: Shuffle takes a server-side random sample, and Musimo caps one saved queue at 500 songs, so Play all plays the first 500 songs in the current sort order and Shuffle plays a random 500. Playlist sorts and the playlist visibility filter still work on the loaded list.
 
-The album, artist and playlist pages open with one shared header (`CollectionHeader`, in `frontend/src/collection-header.tsx`) laid out like the catalog album page: a large cover, a small eyebrow, the title, a byline, a meta line, then the actions. A title stops after two lines, and a phone stacks the cover over the text.
+On a desktop the list views carry one toolbar: the search field, the sort menu, the genre and year menus (and Show on Artists, the public or private filter on Playlists), the loaded count and the grid or list toggle. On a phone (`usePhone` in `frontend/src/use-phone.ts`, the same 768px edge as `max-phone:`) that toolbar is one row, the search field and a single Filter button, so the first album is on the first screen. Filter opens a bottom sheet (the shared `ReviewDialog`, a native modal `<dialog>`) holding Sort, Show where the tab has it, Genres and Years (open in the sheet's flow rather than floating), the grid or list toggle for every tab but Tracks, and Clear filters. The button reads "Filter (2)" while two filters are on, counting genres, years, Show and the playlist visibility; the sort and the layout are choices, not filters, so they are not counted. The sheet closes with Done, Escape or its close button. The loaded count is not in the sheet: on a phone it reads under the list. The page heading shrinks to the small heading size (`PageTitle compact`) and keeps its readiness tag on the same row. On Playlists the New playlist button gets its own row under the search row.
+
+The album, artist and playlist pages open with one shared header (`CollectionHeader`, in `frontend/src/collection-header.tsx`) laid out like the catalog album page: a large cover, a small eyebrow, the title, a byline, a meta line, then the actions. A title stops after two lines. A phone puts a cover of about 104px beside the eyebrow, title, byline and meta line, and gives the actions their own row under both, so the first song is on the first screen even with the mini player loaded.
+
+```text
+desktop                                   phone
++-------+  ALBUM · 2018                   +------+  ALBUM · 2018
+| cover |  Title                          |cover |  Title
+|       |  Artist                         +------+  Artist · 2 songs · 7 min
++-------+  2 songs · 7 min · Ambient      [Play all] [Shuffle] [...]
+           [Play all] [Shuffle] [...]     1  First song
+                                          2  Second song
+```
 
 - **Album:** the cover from Navidrome, the eyebrow "ALBUM · year" (just "ALBUM" when the year is unknown), the title, the artist as a link to that artist's Library page (plain text when Navidrome sends no artist id), and a meta line of song count, total length and genre when there is one ("12 songs · 42 min · Ambient"). Actions are Play all, Shuffle and the Play next / Add to queue menu.
 - **Artist and All songs:** a large round photo, the eyebrow "ARTIST", the name and a meta line of album and song counts ("2 albums · 3 songs"; the song count waits until the songs have loaded). Actions are Play all, Shuffle, Add to favourites and All songs / Albums. The All songs view keeps the same header.
 - **Playlist:** a 2 by 2 mosaic when four different covers are on hand, otherwise the first song's cover (or Navidrome's own playlist cover, or an icon), the eyebrow "PLAYLIST", the name, "By owner" when the owner is known, and a meta line of song count, length and "Public" or "Private" ("4 songs · 13 min · Private"). Actions are Play all, Shuffle, the queue menu, Rename and Delete (no Delete for the liked playlist).
 
-Lengths in these headers read as "42 min" or "1 hr 4 min"; song rows keep the exact `m:ss`. On these three pages the big "Library" heading and its "YOUR MUSIC, READY TO PLAY" eyebrow are dropped, and the view tabs become a slim row that also carries the back link, so the content starts higher. The title is the page's `h1`. The list views keep their heading. A page that fails to load shows its error and Retry without a header, since there is no title or cover to show.
+Lengths in these headers read as "42 min" or "1 hr 4 min"; song rows keep the exact `m:ss`. On these three pages the big "Library" heading and its "YOUR MUSIC, READY TO PLAY" eyebrow are dropped, and the view tabs become a slim row that also carries the back link, so the content starts higher. The title is the page's `h1`. The list views keep their heading (smaller on a phone, as above). A page that fails to load shows its error and Retry without a header, since there is no title or cover to show.
 
 An artist page sorts its albums by release date, title or play count, and its All songs view sorts by album order, title, play count, length or release date. The All songs URL (`/library/artists/{id}/songs`) survives refresh and returns the app shell. A popularity chart plots Navidrome's play counts for the artist's dated releases, oldest to newest; it says so plainly when there are not yet enough recorded plays to draw a line.
 
@@ -58,7 +70,7 @@ Three cases use a source of their own instead. Clear queue leaves one song and n
 
 Navidrome saves at most 500 songs. An addition that would take the queue past that is refused whole, with a message in the player's status line ("The queue is full. Navidrome saves 500 songs and this would make 502. Nothing was added."), and nothing is saved. `PUT /api/player/queue` refuses more than 500 ids as well, so the limit holds even for a client that skips the check. Save as playlist uses the queue's own size, which is within the 500 songs a playlist create accepts.
 
-Starting playback keeps the collection in place. Loading feedback appears in the Library header on the list views (detail pages have no such header, so their own buttons disable while a collection loads), and other cards keep their play buttons hidden until hovered or focused. Touch layouts keep the buttons visible.
+Starting playback keeps the collection in place. Loading feedback appears in the Library header's readiness tag on the list views (detail pages have no such header, so their own buttons disable while a collection loads), and other cards keep their play buttons hidden until hovered or focused. Touch layouts keep the buttons visible.
 
 ## Gapless playback
 
