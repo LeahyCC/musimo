@@ -67,13 +67,40 @@ test('playing a history row keeps the queue and puts the song straight after wha
   await expect(page.getByRole('tabpanel', { name: 'Up next' })).toContainText('Bravo')
 })
 
-test('clear history asks first, empties the list and stays empty after a reload', async ({
+test('clear history asks in the tab, empties the list and stays empty after a reload', async ({
   page,
 }) => {
   await openHistory(page)
-  page.once('dialog', (dialog) => void dialog.accept())
-  await page.getByRole('button', { name: 'Clear history' }).click()
+  // The confirmation is in the tab, so a browser dialog would be a regression.
+  let browserDialogs = 0
+  page.on('dialog', (dialog) => {
+    browserDialogs += 1
+    void dialog.dismiss()
+  })
+  const panel = page.getByRole('tabpanel', { name: 'History' })
+  await panel.getByRole('button', { name: 'Clear history' }).click()
+
+  const group = panel.getByRole('group', { name: 'Clear 2 tracks?' })
+  await expect(group).toBeVisible()
+  // Keep has focus, so a stray Enter cannot clear anything, and the question is announced.
+  await expect(group.getByRole('button', { name: 'Keep' })).toBeFocused()
+  await expect(panel.getByRole('status')).toContainText('Clear 2 tracks from your play history?')
+
+  // Escape is Keep: the list is untouched and focus is back on the button that asked.
+  await page.keyboard.press('Escape')
+  await expect(group).toHaveCount(0)
+  await expect(panel.getByRole('button', { name: 'Clear history' })).toBeFocused()
+  await expect(panel.getByRole('button', { name: /^Play / })).toHaveCount(2)
+
+  await panel.getByRole('button', { name: 'Clear history' }).click()
+  await group.getByRole('button', { name: 'Keep' }).click()
+  await expect(panel.getByRole('button', { name: /^Play / })).toHaveCount(2)
+
+  await panel.getByRole('button', { name: 'Clear history' }).click()
+  await group.getByRole('button', { name: 'Clear', exact: true }).click()
   await expect(page.getByText('Nothing played yet.')).toBeVisible()
+  await expect(panel.getByRole('status')).toHaveText('History cleared.')
+  expect(browserDialogs).toBe(0)
   await page.reload()
   await expect(page.getByText('Nothing played yet.')).toBeVisible()
 })

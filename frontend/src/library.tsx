@@ -2352,24 +2352,95 @@ const HISTORY_TICK = 60_000
 function History({ visible }: { visible: boolean }) {
   const player = usePlayer()
   const [now, setNow] = useState(() => Date.now())
+  // Clearing asks in place, where the button was, rather than in the browser's own dialog.
+  const [confirming, setConfirming] = useState(false)
+  const [announcement, setAnnouncement] = useState('')
+  const questionId = useId()
+  const bar = useRef<HTMLDivElement>(null)
+  const clearButton = useRef<HTMLButtonElement>(null)
+  const keepButton = useRef<HTMLButtonElement>(null)
+  // Set when the question is dismissed, so focus goes back to the button that asked it.
+  const returnFocus = useRef(false)
+  const count = player.history.length
+  // An empty history has nothing left to ask about, so the question goes with the last entry.
+  const asking = confirming && count > 0
+  const tracksText = `${count} ${count === 1 ? 'track' : 'tracks'}`
 
   useEffect(() => {
-    if (!visible) return
+    if (!visible) {
+      setConfirming(false)
+      return
+    }
     setNow(Date.now())
     const timer = window.setInterval(() => setNow(Date.now()), HISTORY_TICK)
     return () => window.clearInterval(timer)
   }, [visible])
 
+  // Keep is where focus starts, so an Enter pressed by habit does not clear anything.
+  useEffect(() => {
+    if (asking) keepButton.current?.focus()
+    else if (returnFocus.current) {
+      returnFocus.current = false
+      clearButton.current?.focus()
+    }
+  }, [asking])
+
+  function ask() {
+    setAnnouncement(`Clear ${tracksText} from your play history? This cannot be undone.`)
+    setConfirming(true)
+  }
+
+  function keep() {
+    returnFocus.current = true
+    setAnnouncement('History kept.')
+    setConfirming(false)
+  }
+
   function clear() {
-    if (window.confirm('Clear your play history? This cannot be undone.')) player.clearHistory()
+    player.clearHistory()
+    setAnnouncement('History cleared.')
+    setConfirming(false)
+    // The button that was here is disabled now, so the bar holds focus instead of losing it.
+    bar.current?.focus()
   }
 
   return (
     <>
-      <div className="mb-[8px] flex flex-wrap items-center justify-between gap-[8px]">
-        <Button onClick={clear} disabled={!player.history.length}>
-          <Trash2 size={15} /> Clear history
-        </Button>
+      <div
+        ref={bar}
+        tabIndex={-1}
+        className="mb-[8px] flex flex-wrap items-center justify-between gap-[8px] outline-none"
+        onKeyDown={(event) => {
+          if (asking && event.key === 'Escape') {
+            event.stopPropagation()
+            keep()
+          }
+        }}
+      >
+        {asking ? (
+          <div
+            role="group"
+            aria-labelledby={questionId}
+            className="flex flex-wrap items-center gap-[8px]"
+          >
+            <span id={questionId} className="text-small">
+              Clear {tracksText}?
+            </span>
+            <Button variant="danger" onClick={clear}>
+              Clear
+            </Button>
+            <Button ref={keepButton} onClick={keep}>
+              Keep
+            </Button>
+          </div>
+        ) : (
+          <Button ref={clearButton} onClick={ask} disabled={!count}>
+            <Trash2 size={15} /> Clear history
+          </Button>
+        )}
+        <p className="sr-only" role="status" aria-live="polite" aria-atomic="true">
+          {announcement}
+        </p>
         <span className={cx(sectionCaptionClassName, 'shrink-0')}>
           {player.history.length} {player.history.length === 1 ? 'TRACK' : 'TRACKS'}
         </span>
@@ -2574,7 +2645,9 @@ export function NowPlayingPage() {
           <>
             <h1>A preview is playing.</h1>
             <p className="text-muted">
-              Now Playing and its visuals play with tracks from your library.
+              {popout.canVisualize
+                ? 'Now Playing and its visuals play with tracks from your library.'
+                : 'Now Playing plays with tracks from your library.'}
             </p>
           </>
         ) : (

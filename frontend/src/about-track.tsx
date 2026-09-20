@@ -50,13 +50,15 @@ type Fact = { label: string; value: ReactNode }
 function Facts({ title, rows }: { title: string; rows: Fact[] }) {
   if (!rows.length) return null
   return (
-    <section className="mb-[22px] text-small">
+    <section className="mb-[22px]">
       <h3 className={cx(sectionCaptionClassName, 'mb-[8px] uppercase')}>{title}</h3>
-      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-[16px] gap-y-[6px]">
+      {/* Labels are short, so the label column is as wide as the longest one and the values take
+          the rest, at 500px and on a phone alike. */}
+      <dl className="grid grid-cols-[max-content_minmax(0,1fr)] gap-x-[16px] gap-y-[8px]">
         {rows.map(({ label, value }) => (
           <Fragment key={label}>
-            <dt className="text-muted">{label}</dt>
-            <dd className="min-w-0 [overflow-wrap:anywhere]">{value}</dd>
+            <dt className="text-small text-muted">{label}</dt>
+            <dd className="min-w-0 text-body [overflow-wrap:anywhere]">{value}</dd>
           </Fragment>
         ))}
       </dl>
@@ -129,7 +131,7 @@ export function AboutPanel({ track, visible }: { track: LibraryTrack; visible: b
         title="File"
         rows={file.map(({ label, value }) => ({
           label,
-          value: label === 'Path' ? <code className="text-tiny">{value}</code> : value,
+          value: label === 'Path' ? <code className="text-small">{value}</code> : value,
         }))}
       />
       {detail && isLowQualityLossy(detail) && (

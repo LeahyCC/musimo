@@ -544,13 +544,14 @@ function VisualizerSettings() {
       >
         <div className="grid gap-[6px]">
           <label htmlFor="visualizer-view" className="text-small">
-            Default view
+            Show on Now Playing
           </label>
           <FieldSelect
             id="visualizer-view"
             value={view}
             fullWidth={false}
             className="w-[200px]"
+            aria-describedby="visualizer-view-note"
             onChange={(event) =>
               setView(event.target.value === 'artwork' ? 'artwork' : 'visualizer')
             }
@@ -558,6 +559,9 @@ function VisualizerSettings() {
             <option value="artwork">Artwork</option>
             <option value="visualizer">Visualizer</option>
           </FieldSelect>
+          <p id="visualizer-view-note" className="text-tiny">
+            The Visualizer button on the stage changes this same setting.
+          </p>
         </div>
         <div className="grid gap-[6px]">
           <label htmlFor="visualizer-preset" className="text-small">

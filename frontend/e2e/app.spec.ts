@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
 import { ORIGIN } from './env'
+import { librarySong, playerFixtures } from './library-fixtures'
 import { writableDestination } from './queue-fixtures'
 
 // Invented catalog records. Settings, queue, diagnostics and events use the real API.
@@ -414,25 +415,45 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
   expect(attempts).toBe(2)
 })
 
-test('now playing says a preview is playing instead of nothing', async ({ page }) => {
-  await page.route('**/api/preview/101?*', (route) =>
-    route.fulfill({
-      json: { url: '/assets/e2e-silence.wav', source: 'Generated' },
-    }),
-  )
-  await page.goto('/search?q=Fixture&tab=track')
-  await page.getByRole('button', { name: 'Find preview Test recording' }).click()
-  const player = page.getByRole('contentinfo')
-  await expect(player.getByRole('slider', { name: 'Preview position' })).toBeEnabled()
+// The visuals are only mentioned where the browser could draw them, so the test picks which.
+for (const webGpu of [true, false]) {
+  test(`now playing says a preview is playing instead of nothing, ${
+    webGpu ? 'with' : 'without'
+  } WebGPU`, async ({ page }) => {
+    await page.addInitScript(
+      (available) =>
+        Object.defineProperty(navigator, 'gpu', {
+          value: available ? {} : undefined,
+          configurable: true,
+        }),
+      webGpu,
+    )
 
-  // Through the palette, so the tab does not reload and the preview keeps playing.
-  await page.keyboard.press('Control+k')
-  await page.getByRole('dialog').getByRole('button', { name: 'Now Playing', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'A preview is playing.' })).toBeVisible()
-  await expect(page.getByText('play with tracks from your library')).toBeVisible()
-  // The preview's only controls are the footer's, so it stays on this page.
-  await expect(player.getByRole('slider', { name: 'Preview position' })).toBeVisible()
-})
+    await page.route('**/api/preview/101?*', (route) =>
+      route.fulfill({
+        json: { url: '/assets/e2e-silence.wav', source: 'Generated' },
+      }),
+    )
+    await page.goto('/search?q=Fixture&tab=track')
+    await page.getByRole('button', { name: 'Find preview Test recording' }).click()
+    const player = page.getByRole('contentinfo')
+    await expect(player.getByRole('slider', { name: 'Preview position' })).toBeEnabled()
+
+    // Through the palette, so the tab does not reload and the preview keeps playing.
+    await page.keyboard.press('Control+k')
+    await page.getByRole('dialog').getByRole('button', { name: 'Now Playing', exact: true }).click()
+    await expect(page.getByRole('heading', { name: 'A preview is playing.' })).toBeVisible()
+    await expect(page.getByText('with tracks from your library')).toHaveText(
+      webGpu
+        ? 'Now Playing and its visuals play with tracks from your library.'
+        : 'Now Playing plays with tracks from your library.',
+    )
+    // The preview's only controls are the footer's, so it stays on this page. Its cover is a
+    // picture, not a way in, so it has no ring and no link.
+    await expect(player.getByRole('slider', { name: 'Preview position' })).toBeVisible()
+    await expect(player.locator('.cover-link')).toHaveCount(0)
+  })
+}
 
 test('preview playback, volume and navigation remain usable', async ({ page, isMobile }) => {
   await page.route('**/api/preview/101?*', (route) =>
@@ -806,7 +827,9 @@ test('the visualizer settings change what Now Playing remembers', async ({ page 
     Object.defineProperty(navigator, 'gpu', { value: {}, configurable: true }),
   )
   await page.goto('/settings/user')
-  const view = page.getByRole('combobox', { name: 'Default view' })
+  const view = page.getByRole('combobox', { name: 'Show on Now Playing' })
+  await expect(view).toBeEnabled()
+  await expect(view).toHaveAccessibleDescription(/Visualizer button on the stage/)
   await expect(view).toHaveValue('artwork')
   await view.selectOption('visualizer')
   await expect
@@ -839,8 +862,20 @@ test('the visualizer settings are disabled with a reason where there is no WebGP
   )
   await page.goto('/settings/user')
   await expect(page.getByText('The visualizer needs WebGPU')).toBeVisible()
-  await expect(page.getByRole('combobox', { name: 'Default view' })).toBeDisabled()
+  await expect(page.getByRole('combobox', { name: 'Show on Now Playing' })).toBeDisabled()
 })
+
+/** Loads a library track from the saved queue, since the visualizer commands need one. */
+async function loadLibraryTrack(page: Page) {
+  await playerFixtures(page)
+  await page.route('**/api/player/queue', (route) =>
+    route.fulfill(
+      route.request().method() === 'GET'
+        ? { json: { current: 'song-1', position: 0, entry: [librarySong('song-1')] } }
+        : { status: 204 },
+    ),
+  )
+}
 
 test('command palette offers the visualizer commands only where WebGPU exists', async ({
   page,
@@ -848,7 +883,9 @@ test('command palette offers the visualizer commands only where WebGPU exists', 
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
   )
-  await page.goto('/')
+  await loadLibraryTrack(page)
+  await page.goto('/settings/user')
+  await expect(page.locator('.live-player')).toContainText('Song song-1')
   await page.keyboard.press('Control+k')
   const palette = page.getByRole('dialog')
   await expect(palette.getByRole('button', { name: 'Now Playing' })).toBeVisible()
@@ -860,7 +897,9 @@ test('toggle visualizer from another route lands on Now Playing with it on', asy
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'gpu', { value: {}, configurable: true }),
   )
-  await page.goto('/')
+  await loadLibraryTrack(page)
+  await page.goto('/settings/user')
+  await expect(page.locator('.live-player')).toContainText('Song song-1')
   await page.keyboard.press('Control+k')
   await page.getByRole('dialog').getByRole('button', { name: 'Toggle visualizer' }).click()
   await expect(page).toHaveURL(/\/now-playing$/)
