@@ -368,7 +368,9 @@ test('the stage size survives a reload', async ({ page, isMobile }) => {
 
   await page.reload()
   await expect(smallStage(page)).toBeVisible()
-  await expect.poll(() => theaterLayout(page)).toMatchObject({ wide: true, tabsUnderControls: true })
+  await expect
+    .poll(() => theaterLayout(page))
+    .toMatchObject({ wide: true, tabsUnderControls: true })
 })
 
 test('a phone draws no size control and keeps the small layout, whatever was chosen', async ({

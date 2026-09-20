@@ -74,8 +74,13 @@ export function usePageShortcuts({
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
-      const { enabled: on, stage: stageRef, onHelp: help, onSize: size, player: playback } =
-        latest.current
+      const {
+        enabled: on,
+        stage: stageRef,
+        onHelp: help,
+        onSize: size,
+        player: playback,
+      } = latest.current
       if (!on) return
 
       if (event.key === '?') {
