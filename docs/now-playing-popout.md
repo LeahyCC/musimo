@@ -110,7 +110,7 @@ The wash is a vertical gradient from that colour at the top to nothing at the bo
 
 ```
 +------------------------------+     the glow is the stage's own square with a shadow of the same
-|  ..  ..  ..  ..  ..  ..  ..  |     colour spreading 24px past it (14px on a phone)
+|  ..  ..  ..  ..  ..  ..  ..  |     colour spreading 16px past it (14px on a phone)
 |  ..  +------------------+ .. |
 |  ..  |      stage       | .. |     the stage covers the fill, so only the ring shows
 |  ..  |    (opaque)      | .. |
@@ -120,7 +120,7 @@ The wash is a vertical gradient from that colour at the top to nothing at the bo
 +------------------------------+
 ```
 
-It is drawn in the stage's slot, before the stage, so it sits above the wash and under the stage. The slot's `container-type: size` gives it its own stacking context, and on a phone the glow simply precedes the stage in the tree. The layer is the stage's size (`dockedStageClassName`), and its shadow reaches 24px: the page leaves at least 26px (a 10px gap and the column's 16px) between the stage and the title, so nothing is ever drawn under text. The controls and the tab panel keep their own surfaces. If the shadow is made larger, or that gap smaller, the two have to change together; the browser check reads the shadow's reach from the computed style and compares it with the title and the panel. The stage's own dark drop shadow is painted over the glow and dims it a little below and at the sides.
+It is drawn in the stage's slot, before the stage, so it sits above the wash and under the stage. The slot's `container-type: size` gives it its own stacking context, and on a phone the glow simply precedes the stage in the tree. The layer is the stage's size (`dockedStageClassName`), and its shadow reaches 16px (a 12px blur and a 4px spread): the page leaves 16px between the stage and the title, so nothing is ever drawn under text. The shadow is written as an arbitrary `box-shadow` property, because Tailwind takes a `shadow-[…]` utility apart to swap its color and a variable color comes out as no shadow at all. The controls and the tab panel keep their own surfaces. If the shadow is made larger, or that gap smaller, the two have to change together; the browser check reads the shadow's reach from the computed style and compares it with the title and the panel. The stage's own dark drop shadow is painted over the glow and dims it a little below and at the sides.
 
 The colour is again a runtime value, handed over as the custom property `--now-glow`, so `no-raw-colors.test.ts` still passes. The element is `aria-hidden`, has no pointer events, and carries the value as `data-now-playing-glow`. There is no glow when the cover's colour cannot be read: no layer is drawn and the attribute is empty. While the popout is open the glow stays behind the dimmed stand-in, which is the same size.
 
@@ -195,7 +195,6 @@ L, Q and S are bound to the page, not the stage, so they work without the stage 
 - `frontend/src/player.tsx` exposes the transport (`seek`, `cycleRepeat`, `toggleShuffle`, `toggleMute`, `setVolume`, `audio()`, `liked`, `stop`) the page's control row and the overlay need to duplicate the footer's controls, the overlay in a separate document.
 
 ## Checks
-
 
 ## Later
 

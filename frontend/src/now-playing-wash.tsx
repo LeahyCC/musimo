@@ -83,7 +83,9 @@ function GlowLayer({ color, leaving }: { color: string; leaving?: boolean }) {
   return (
     <div
       className={cx(
-        'absolute inset-0 rounded-[14px] bg-(color:--now-glow) shadow-[0_0_20px_4px_var(--now-glow)] max-phone:shadow-[0_0_12px_2px_var(--now-glow)]',
+        // The shadow is an arbitrary property, not a `shadow-[…]` utility: Tailwind takes a shadow
+        // utility apart to swap its color, and a color that is a variable comes out as no shadow.
+        'absolute inset-0 rounded-[14px] bg-(color:--now-glow) [box-shadow:0_0_12px_4px_var(--now-glow)] max-phone:[box-shadow:0_0_12px_2px_var(--now-glow)]',
         leaving && 'leaving',
       )}
       style={{ '--now-glow': color, ...(leaving ? leavingStyle : {}) } as CSSProperties}

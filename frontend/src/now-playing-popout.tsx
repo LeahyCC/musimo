@@ -649,7 +649,7 @@ export function NowPlayingStage() {
           height to hand out, so there it is only a block. */}
       <div className="relative grid min-h-0 flex-1 place-items-start [container-type:size] max-phone:[container-type:normal]">
         {/* Before the stage, so the stage is painted over it. It is the stage's own size and reaches
-            only 24px past it, short of the title below. */}
+            only 16px past it, short of the title below. */}
         <NowPlayingGlow art={art} className={docked} />
         {popout.popout ? (
           <div className={cx(stageClassName, docked, 'grid place-items-center')}>

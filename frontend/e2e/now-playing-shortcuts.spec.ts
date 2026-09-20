@@ -264,10 +264,7 @@ for (const theme of [undefined, LIGHT_THEME]) {
 test('no color to read means no glow and no wash', async ({ page }) => {
   await openNowPlaying(page, { unreadable: true })
   await expect(page.locator('[data-now-playing-wash]')).toHaveAttribute('data-now-playing-wash', '')
-  await expect(page.locator('[data-now-playing-glow]')).toHaveAttribute(
-    'data-now-playing-glow',
-    '',
-  )
+  await expect(page.locator('[data-now-playing-glow]')).toHaveAttribute('data-now-playing-glow', '')
   await expect(page.locator(glowLayer)).toHaveCount(0)
 })
 
