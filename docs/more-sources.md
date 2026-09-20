@@ -1,32 +1,37 @@
-# More sources plan
+# More sources: what shipped
 
-A plan, and phase 5 (the Internet Archive), phase 3 (indie sites), phase 4 (mixes and radio) and phase 2 (the SoundCloud backup) are shipped behaviour so far. It covers five things yt-dlp makes possible beyond the current Deezer to YouTube road: pasted links, a second match source, indie sites, mixes and radio, and the Internet Archive. [Downloads](downloads.md) describes what exists today and the [brief](brief.md) (sections 3, 4.2 and 7) holds the original scope.
+This began as a plan for five things yt-dlp makes possible beyond the Deezer to YouTube road: pasted links, a second match source, indie sites, mixes and radio, and the Internet Archive. All five are built. This file is now the record: what each phase shipped, what was tried against real sites and what was not, and what is still open. [Downloads](downloads.md) says how each part behaves today, and the [brief](brief.md) (sections 3, 4.2 and 7) holds the original scope.
 
 ```text
-today      Deezer result ----> YouTube search ----> file
-                podcast feed ----------------------> file
+before   Deezer result ----> YouTube search ----> file
+              podcast feed ----------------------> file
 
-planned    pasted link ---> allowed site? ---> review sheet ---> file     (phases 1, 3, 4, 5)
-           Deezer result -> YouTube search -> SoundCloud search -> file   (phase 2)
+now      pasted link ---> allowed site? ---> review sheet ---> file
+         Deezer result -> YouTube search -> SoundCloud search (setting on) -> file
 ```
+
+Spotify, Apple Music and Tidal audio are DRM and stay out. A pasted Spotify or Apple link is refused with "Catalog imports are not built yet." A catalog import (resolve to Deezer, then match as usual) is separate work that has not started.
 
 ## What was checked
 
-Against the pinned yt-dlp 2026.8.19 on 19 September 2026, every extractor below exists and reports itself as working. That flag only means upstream has not marked it broken. Nine sites have been downloaded from for real since then: the Internet Archive, the five indie sites, HearThisAt, NTS (through the Mixcloud copy of the show) and BBC Sounds (see below). Two of them, Audiomack and TuneIn, failed and are switched off in the site table (`working`). Mixcloud was read but not downloaded on its own; NTS's download went through Mixcloud's extractor, so it is covered that way.
+Against the pinned yt-dlp 2026.8.19 on 19 September 2026, every extractor below exists and reports itself as working. That flag only means upstream has not marked it broken. Eight sites were then downloaded from for real: the Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, HearThisAt, NTS (through the Mixcloud copy of the show) and BBC Sounds. Audiomack and TuneIn failed and are switched off in the site table (`working`). Mixcloud was read but not downloaded on its own; NTS's download went through Mixcloud's extractor, so it is covered that way. YouTube was not run for this work because it needs the PO token provider, and SoundCloud as a match source was not run against the live site at all.
 
-| Site             | Extractors                         | Notes                                                                                            |
-| ---------------- | ---------------------------------- | ------------------------------------------------------------------------------------------------ |
-| SoundCloud       | track, set, playlist, user, search | Downloaded: 160 kbps AAC. `scsearch` is not allowed.                                             |
-| Bandcamp         | track, album, user, weekly         | Downloaded: 128 kbps stream, or FLAC when the artist offers a free download.                     |
-| Audiomack        | track, album                       | **Failed**: yt-dlp cannot read the live site. Switched off.                                      |
-| Audius           | track, playlist, artist            | Downloaded: 320 kbps MP3.                                                                        |
-| Jamendo          | track, album                       | Downloaded: FLAC. Creative Commons music, named in the brief.                                    |
-| Mixcloud         | show, playlist, user               | Read for real. A user list is read in full, so a big account times out.                          |
-| NTS              | `nts.live`                         | Downloaded, through the Mixcloud copy of the episode.                                            |
-| HearThisAt       | track                              | Downloaded: 320 kbps MP3. The data names no uploader.                                            |
-| BBC Sounds       | `bbc.co.uk`                        | Downloaded: 318 kbps AAC (HLS, so FFmpeg does the transport). UK only.                           |
-| TuneIn           | podcast, program, station          | **Failed**: yt-dlp gets HTTP 400 from TuneIn's API. Switched off. Stations are live and refused. |
-| Internet Archive | `archive.org`                      | Multi-file items. FLAC is often available. Checked for real.                                     |
+The table is the site table in `backend/sources.py`, in its order.
+
+| Site             | Kind    | Extractors                                                               | Result                                                                                             |
+| ---------------- | ------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
+| YouTube          | `music` | `youtube`, `youtube:tab`, `youtube:playlist`, `YoutubeYtBe`              | Not run for this work. The pasted link uses the same row as the catalog road.                      |
+| Internet Archive | `music` | `archive.org`                                                            | Downloaded. Multi-file items, one row per track. FLAC is kept when the item has it.                |
+| Bandcamp         | `music` | `Bandcamp`, `Bandcamp:album`, `Bandcamp:user`                            | Downloaded: 128 kbps stream, or FLAC when the artist offers a free download.                       |
+| SoundCloud       | `music` | `soundcloud`, `soundcloud:set`, `soundcloud:playlist`, `soundcloud:user` | Downloaded: 160 kbps AAC. `soundcloud:search` is not allowed. A track over 20 minutes is a mix.    |
+| Audiomack        | `music` | `audiomack`, `audiomack:album`                                           | **Failed**: yt-dlp cannot read the live site. Switched off.                                        |
+| Audius           | `music` | `Audius`, `audius:track`, `audius:playlist`, `audius:artist`             | Downloaded: 320 kbps MP3. No cover art.                                                            |
+| Jamendo          | `music` | `Jamendo`, `JamendoAlbum`                                                | Downloaded: FLAC. Creative Commons music, named in the brief. No cover art in an album list.       |
+| Mixcloud         | `mix`   | `mixcloud`, `mixcloud:playlist`, `mixcloud:user`                         | Read for real, not downloaded on its own. A user list is read in full, so a big account times out. |
+| NTS              | `radio` | `nts.live`, then `mixcloud` or `soundcloud`                              | Downloaded, through the Mixcloud copy of the episode.                                              |
+| HearThisAt       | `mix`   | `HearThisAt`                                                             | Downloaded: 320 kbps MP3. The data names no uploader.                                              |
+| BBC Sounds       | `radio` | `bbc.co.uk`                                                              | Downloaded: 318 kbps AAC (HLS, so FFmpeg does the transport). UK only.                             |
+| TuneIn           | `radio` | `tunein:podcast`, `tunein:podcast:program`                               | **Failed**: yt-dlp gets HTTP 400 from TuneIn's API. Switched off. Stations are live and refused.   |
 
 ### Internet Archive, checked for real
 
@@ -36,6 +41,8 @@ On 19 September 2026 with yt-dlp 2026.8.19, no cookies, from a Windows machine:
 - The real resolver read the item `The_Open_Goldberg_Variations-11823` as a playlist of 32 entries, one per track, each an MP3 original with an Ogg copy inside it. The entries have no address and no extractor name, and their IDs are file paths with a slash in them, so the resolver builds the address and the server accepts that ID shape.
 - The link case of `scripts/download_smoke.py` took one track through resolve, queue, the real worker, tagging and indexing in 5.047 s. The file was an MP3 tagged with the item's creator as artist, its title as album, its date and track 5 of 32, and the library index held it.
 - The Archive's licence field is set by the uploader. Items credited to Aphex Twin, Tool and Disney carry a CC0 tag in it, so the test item was chosen because its performer released it to the public domain herself, not because of that field. The reasons are in `scripts/source_probe_sites.json`.
+
+Not checked: an item whose originals are FLAC (the FLAC choice is covered by tests on canned formats and yt-dlp's own format selector, not by a download), an item with two originals of one track, a restricted or private file, and the Deezer tidy-up on an Archive track (the smoke test stubs it, and the Archive row has the tidy-up off anyway).
 
 ### Indie sites, checked for real
 
@@ -75,112 +82,104 @@ On 19 September 2026 with yt-dlp 2026.8.19, no cookies, from a Windows machine, 
 - **Geo restriction, for real.** A current Desert Island Discs episode (`/programmes/m0031c9v`) answered "geolocation" to this machine, and the real resolver turned that into 422 "BBC Sounds only plays in the UK, and this server is not there." at the preview. The 2004 programme above plays anywhere, so a BBC link can go either way.
 - **Not checked.** A Mixcloud account with thousands of uploads (yt-dlp reads every page before it returns, so it cannot finish in 20 seconds). A SoundCloud track over 20 minutes was covered by tests on canned data only.
 
-Not checked: an item whose originals are FLAC (the FLAC choice is covered by tests on canned formats and yt-dlp's own format selector, not by a download), an item with two originals of one track, a restricted or private file, the Deezer tidy-up on an Archive track (the smoke test stubs it), and the YouTube entry of the site list, which needs the PO token provider.
+## Phase by phase
 
-Spotify, Apple Music and Tidal audio are DRM and stay out. A pasted Spotify or Apple link is a catalog import (resolve to Deezer, then match as usual), which the brief plans separately. This plan only makes the search box say so plainly.
+Each phase lists what shipped, what was checked, and what stays open. "Tests" means the Python tests on canned yt-dlp answers (`tests/test_sources.py`, `test_links.py`, `test_archive.py`, `test_mixes.py`, `test_worker.py`), which never touch a site.
 
-## Phase 0: shared groundwork
+### Phase 0: shared groundwork
 
-Everything else depends on this. None of it is visible on its own.
+Shipped:
 
-**Site allowlist.** New `backend/sources.py` holds one table: extractor name, site label, kind (`music`, `mix`, `radio`), and whether Deezer tidy-up applies (`catalog_tidy`, off for the Internet Archive; an entry that came from an album list is never tidied whatever the site says). [Architecture](architecture.md) already requires an allowlist before any URL reaches a download API. The worker passes the same list as yt-dlp's `allowed_extractors`, which switches off the generic extractor, so a pasted link can never make the server fetch an arbitrary address and a redirect to an unlisted site fails. No cookies, no logins, no extra yt-dlp arguments from the browser.
+- **Site table.** `backend/sources.py` holds `SITES`, one row per site: label, kind (`music`, `mix`, `radio`), hosts, extractors, and the per-site rules the later phases needed. The worker passes the row's extractors as yt-dlp's `allowed_extractors`, which switches off the generic extractor, so a redirect to an unlisted site fails. Only `https` links to a listed host are read: no IP address host, no user or password, no odd port. Artwork hosts are allowlisted too, since the server fetches the cover. No cookies, logins or yt-dlp arguments come from the browser.
+- **Link jobs.** `Job.catalog` gains `link`. `source_url` (already used by podcasts) holds the address, `track_id` is a stable 63 bit hash of `extractor:id` so the duplicate check and "reuse a finished job" keep working, and `Job.source` names the site for display, pausing and error mapping.
+- **Worker.** Podcasts and links download the address in the job: no search, no catalog length check. A live stream is refused before download. Mixes and radio get the hour-long budget episodes have.
+- **Per-source pause.** The `source_control` table (schema version 4) keeps a pause flag and a blocking-failure count per source, and the old single YouTube flag moves across on upgrade. The dispatcher skips a queued job only when its own source is paused. `POT_MISSING`, `JS_RUNTIME_MISSING` and `COOKIES_EXPIRED` only apply to YouTube jobs. `GEO_RESTRICTED` never counts toward a pause, and podcast refusals never do either.
+- **No hardcoded YouTube.** A candidate carries its `source` and `url`, an ID is checked against its own source's rule, and the `NO_MATCH`, `SOURCE_BLOCKED` and `RATE_LIMITED` hints name the site.
 
-**Link jobs.** `Job.catalog` gains `"link"`. `source_url` already exists for podcasts. `track_id` becomes a stable hash of `extractor:id`, so the duplicate index and "reuse a finished job" keep working. `Job` gains `source` (`youtube`, `soundcloud`, `bandcamp` and so on) for display, pausing and error mapping.
+Checked: tests cover a generic address, a `file://` address, a private address, a redirect off the list, the per-source pause with canned blocking errors, and an old database carrying its YouTube pause across. No real site has been blocked while this was watched, so the pause has only met canned errors.
 
-**Worker.** The `podcast` flag in `worker.py` turns into "direct": no search, no catalog duration check, URL taken from the job. Live streams are refused before download (`is_live`). Mixes and radio get the one-hour timeout that episodes have.
+Open: nothing planned.
 
-**Per-source pause.** Architecture says three blocking errors pause one source and leave healthy ones alone. The code has a single `source_paused` flag and treats everything that is not a podcast as YouTube (`downloads.py:197`). That has to become a pause per `source` before a second source ships, or a YouTube block would hold back Bandcamp and a Bandcamp error would pause YouTube. The YouTube-only error codes (`POT_MISSING`, `JS_RUNTIME_MISSING`, `COOKIES_EXPIRED`) only apply when `source` is `youtube`.
+### Phase 1: paste a link
 
-**Hardcoded YouTube.** Candidate links (`downloads.tsx:611`), the `Pick` pattern and the worker's 11-character ID check, and the `NO_MATCH` and `SOURCE_BLOCKED` hints all assume YouTube. `Candidate` gains `source` and `url`, and the hints name the site.
+Shipped:
 
-## Phase 1: paste a link
+- **Preview.** `POST /api/links/resolve` checks the address against the table, then runs `python -m backend.resolver` in its own process group, without downloading, for at most 20 seconds. It lists at most 500 entries and returns a preview with a token that lasts ten minutes. The server keeps 32 previews and runs two lookups at once. A browser that cancels stops the lookup and its child process.
+- **Queue.** `POST /api/links` takes the token and the ticked entry IDs and queues from the saved preview, so titles, file addresses and paths never come from the browser. More than one entry becomes a download group.
+- **Review sheet.** The search box opens it for a whole pasted link (`frontend/src/links.tsx`): one recording, or a tick list for a playlist or profile with owned songs unticked and a profile starting with nothing ticked. It shows where the file lands, the format and the site's quality note, and keeps Download off when the destination is missing or read-only.
+- **Tags.** A loose track of kind `music` gets one Deezer lookup by artist, title and length just before its first attempt. A confident hit swaps in the catalog's tags, and otherwise the site's tags stay. The job carries a note saying which. Mixes and radio shows never call the catalog. A pasted YouTube link goes through the same path with `source` `youtube`.
+- **Refusals.** An unlisted site, a Spotify or Apple link, a live stream and a site that is switched off each get their own plain sentence.
 
-The search box already says "Search music or paste a link" and does nothing with a link. This is the big one: every later phase is mostly a row in the allowlist.
+Checked: tests, and `frontend/e2e/links.spec.ts` in a browser at desktop and phone width (keyboard, axe, touch sizes, cancelling a lookup). That spec stubs the server for most cases and uses the real one for the refusal of an unlisted site and a Spotify link. Real downloads from the Internet Archive, Bandcamp and SoundCloud went through the sheet or the smoke test (see What was checked). The lookup on a real SoundCloud track found no catalog match, and no record here shows a confident hit on a real link.
 
-Flow:
+Not checked: a pasted YouTube link against the live site. The sheet's results are not written up in [UI verification](ui-verification.md).
 
-```text
-paste link
-   |
-   +-- site not on the list ---> "Musimo can't download from <host>. It works with: ..."
-   +-- Spotify / Apple --------> "Catalog imports are not built yet."
-   +-- live stream ------------> "Live streams never finish, so they can't be saved."
-   |
-   v
-review sheet: site, title, uploader, length, artwork, where the file will land, format
-   |            (album, playlist or profile: tick list, skip owned, capped at 500)
-   v
-queue ---> same job cards, pause, retry, history
-```
+Open: AcoustID as a fallback for junk metadata, and catalog imports from Spotify and Apple Music links. Neither is built.
 
-- `POST /api/links/resolve` takes the URL, checks it against the allowlist, and runs a flat, no-download extraction in a worker process with a 20 second budget. It returns a preview and a short-lived token. Nothing downloads at this step.
-- `POST /api/links` takes the token and the ticked entry IDs. The server queues from its own saved preview, so the browser never supplies titles, paths or file addresses. This keeps the podcast rule ("the file address never comes from the browser") as close as a pasted link allows.
-- A multi-entry link becomes one download group, reusing the artist review sheet and the group pause, resume and cancel controls.
-- Metadata comes from the site: title, artist or uploader, album, year, artwork. For kind `music`, the server then tries one Deezer lookup by artist, title and length. A confident hit swaps in the full Deezer metadata, so the file lands in the normal library layout and ownership badges work. No hit keeps the site's own tags and adds a note on the job. AcoustID stays later work.
-- A pasted YouTube link goes through the same path with `source` set to `youtube`, so it respects the YouTube pause and keeps the YouTube error codes.
+### Phase 2: SoundCloud as a backup match
 
-## Phase 2: SoundCloud as a backup match source
+Shipped: a Settings switch, "Use SoundCloud when YouTube has no match" (`soundcloud_fallback`, off by default, under Audio quality). SoundCloud is searched with `scsearch8:` only after YouTube answered `NO_MATCH`, or when YouTube was paused or blocked at dispatch. It is never searched beside YouTube, and a `DURATION_MISMATCH` never falls back. It uses a higher bar (accept from 0.70, "check match" below 0.90, against YouTube's 0.55 and 0.86), set in `backend/matching.py`. A job that matches there takes `source` `soundcloud`, so its blocks pause SoundCloud alone. Pressing Retry starts the job over on YouTube. Review candidates name their site.
 
-For normal Deezer downloads. Built. SoundCloud is tried only when YouTube is paused or blocked, or when YouTube returns `NO_MATCH`. It is not searched in parallel: SoundCloud is full of remixes, reuploads and sped-up edits, and there is no equivalent of YouTube's "Topic" channels to trust. [Downloads](downloads.md#soundcloud-as-a-backup-match) describes how it behaves.
+Checked: tests on canned search results in `tests/test_worker.py`.
 
-- The worker runs `scsearch8:` and feeds the same `Matcher`. The version-word penalty already covers remix, live, cover and slowed.
-- A higher bar than YouTube: minimum score 0.70, and "check match" below 0.90. Both numbers are guesses until measured, and they sit beside the YouTube pair in `backend/matching.py` saying so.
-- Settings gets one switch, "Use SoundCloud when YouTube has no match", default off, with the quality line under it. It turns on by default only after `scripts/match_benchmark.py --source soundcloud` has run the 100-case corpus against SoundCloud and the precision is written into [measurements](measurements.md). The option exists; the corpus holds no SoundCloud rows yet, so nothing is measured and the setting stays off.
-- Quality is lower than YouTube (about 128 kbps MP3 or 160 kbps AAC for free streams). Job cards already show the measured bitrate, so no new UI, but the switch says it up front.
-- A job that matches on SoundCloud takes `source` `soundcloud`, so a SoundCloud block pauses SoundCloud alone and never YouTube, and the reverse.
+Not checked: a real `scsearch8` search through the worker, and whether real SoundCloud search results have the numeric IDs the candidate rule expects. Match precision is **not measured**: `scripts/match_benchmark.py --source soundcloud` exists, but the 100-case corpus has no SoundCloud rows, so the two thresholds are chosen, not measured (see [measurements](measurements.md)).
 
-## Phase 3: indie and unsigned music
+Open: measure the corpus against SoundCloud, then decide whether the switch should default to on.
 
-Bandcamp, SoundCloud, Audiomack, Audius, Jamendo. Built, and checked for real on 19 September 2026 (see What was checked), except that Audiomack does not work today: its row has `working` off. After phase 1 this was allowlist rows, a metadata mapping per site, and probes, and [Downloads](downloads.md#indie-sites) describes how each behaves.
+### Phase 3: indie and unsigned music
 
-- A Bandcamp album maps cleanly: album title, track numbers, artist, cover. It lands like a catalog album (checked with a real download, see above). The list itself carries only titles, so the artist, date and cover come from the first track's page, and track numbers are the list order.
-- The review sheet states the quality ceiling per site before queueing. The Bandcamp line the plan wanted was too simple, because an artist's free download is lossless: it now says the stream is 128 kbps MP3 and that a free download, when offered, is taken instead.
-- Profile links (a whole SoundCloud or Bandcamp artist) use the tick list with nothing ticked by default, and open up to ten releases.
-- A SoundCloud set is an album only when SoundCloud says so. A playlist of mixed uploaders keeps each track's own artist and has no shared album.
+Shipped: rows for Bandcamp, SoundCloud, Audius and Jamendo, plus Audiomack with `working` off. Each row has a `quality_note` shown on the sheet. A Bandcamp, SoundCloud or Jamendo album lands like a catalog album, and a SoundCloud set is an album only when SoundCloud says so. Profile links open up to ten releases. The resolver reads the page of every row that lists no title (at most 40) and fills an album's artist, date and cover from the first track, all inside a 14 second budget, and a page it could not finish is marked `partial`. The format selector `KEPT_AUDIO` skips ALAC, WAV and AIFF, which the worker cannot keep. A track whose list names no artist takes it from its own page when the worker runs.
 
-## Phase 4: DJ mixes and radio shows
+Checked for real: see "Indie sites, checked for real" above. It found the ALAC failure, fixed by `KEPT_AUDIO`, and the Audius 429 that made the resolver read three pages at a time.
 
-Mixcloud, NTS, HearThisAt, SoundCloud tracks over 20 minutes, BBC Sounds, TuneIn podcasts. Built, and checked for real on 19 September 2026 (see What was checked), except that TuneIn does not work today: its row has `working` off. [Downloads](downloads.md#mixes-and-radio-shows) describes how it behaves.
+Not checked: Audiomack beyond the failure. A SoundCloud set that is an album was checked at the listing stage only.
 
-- Kind `mix` and `radio` skip Deezer tidy-up, lyrics and MusicBrainz. The kind is per recording: a SoundCloud track over 20 minutes is a `mix` although its site row is `music`.
-- Files land at `Mixes/<uploader>/<YYYY-MM-DD> - <title>.<ext>`, ignoring the music naming template, the same way episodes do. The date is the upload or broadcast day, else the day it was downloaded. Tags: uploader as artist, show or uploader as album, genre DJ Mix or Radio. Navidrome then shows each DJ or show as an album. The review sheet shows the landing path before anything is queued.
-- BBC Sounds fails outside the UK. That gets its own plain message, "BBC Sounds only plays in the UK, and this server is not there.", under `GEO_RESTRICTED` instead of `DOWNLOAD_FAILED`, and it never counts toward pausing a source. Only its programme and Sounds pages are taken, not its video or news pages.
-- TuneIn stations and any other live stream are refused at the review step. NTS episodes are hosted on Mixcloud or SoundCloud, so a link there passes through to their extractors.
+Open: Audiomack, until yt-dlp reads the site again (then it is one line, `working`). A SoundCloud profile of about 300 tracks lists in about 14.5 seconds, close to the 20 second limit. `on.soundcloud.com` short links and a custom domain that serves a Bandcamp page are not accepted.
 
-## Phase 5: Internet Archive
+### Phase 4: DJ mixes and radio shows
 
-Live concert recordings, 78rpm transfers, netlabels. Legal and stable. Built, and checked for real on 19 September 2026 (see What was checked). [Downloads](downloads.md#internet-archive) describes how it behaves.
+Shipped: rows for Mixcloud and HearThisAt (`mix`), NTS and BBC Sounds (`radio`), TuneIn (`radio`, off), and SoundCloud tracks over 20 minutes, which are a `mix` although their row is `music`. Files land at `Mixes/<uploader>/<YYYY-MM-DD> - <title>.<ext>`, ignoring the naming template, and skip the Deezer tidy-up, lyrics and MusicBrainz. The sheet shows the landing path before anything is queued. NTS hands over to its Mixcloud or SoundCloud copy (`hops`). BBC Sounds takes only programme and Sounds pages, and outside the UK it fails with `GEO_RESTRICTED`, which never counts toward a pause. TuneIn stations, Mixcloud `/live/` pages and the NTS live channels are refused as live.
 
-- An item is a multi-file playlist, so it uses the phase 1 tick list. Original format keeps FLAC when the item has it; the worker already accepts `.flac`.
-- Tags from the item: creator, title, date, track order.
-- One public-domain item becomes the fixture for the link path in `scripts/download_smoke.py`, next to the existing Wikimedia fixture.
+Checked for real: see "Mixes and radio, checked for real" above.
 
-## Order and size
+Not checked: a Mixcloud account with thousands of uploads, which cannot finish in 20 seconds. A SoundCloud track over 20 minutes was covered by tests only. There are no probe rows for these sites, since they are other people's work.
 
-| Order | Phase                              | Size   | Why here                                             |
-| ----- | ---------------------------------- | ------ | ---------------------------------------------------- |
-| 1     | 0 + 1, groundwork and paste a link | Large  | Everything else hangs off it.                        |
-| 2     | 5, Internet Archive (built)        | Small  | Gives the link path a legal end-to-end test fixture. |
-| 3     | 3, indie sites (built)             | Small  | Mostly allowlist rows and probes.                    |
-| 4     | 4, mixes and radio (built)         | Medium | New file layout and the geo and live refusals.       |
-| 5     | 2, SoundCloud backup (built)       | Medium | Riskiest for wrong matches, so it needs measuring.   |
+Open: TuneIn, until yt-dlp reads its API again.
+
+### Phase 5: Internet Archive
+
+Shipped: an item is a multi-file list that uses the tick list. When an uploader left an MP3 and a FLAC of one track, the resolver keeps one row, the FLAC. Each track downloads from `https://archive.org/details/<item>/<file>`, and the format selector prefers FLAC, then MP3, Ogg and M4A. Tags come from the item (creator, title, date, track order), and the item's own cover is used. The row has `catalog_tidy` off, so a live show or old transfer is never retagged as a studio album. One public-domain item is the fixture for the `link` case of `scripts/download_smoke.py`.
+
+Checked for real: see "Internet Archive, checked for real" above.
+
+Open: a track whose files are all WAV or SHN fails with `DOWNLOAD_FAILED`.
+
+## Order and status
+
+| Order | Phase                              | Size   | Status                                            |
+| ----- | ---------------------------------- | ------ | ------------------------------------------------- |
+| 1     | 0 + 1, groundwork and paste a link | Large  | Built.                                            |
+| 2     | 5, Internet Archive                | Small  | Built. Gave the link path its end-to-end fixture. |
+| 3     | 3, indie sites                     | Small  | Built. Audiomack is switched off.                 |
+| 4     | 4, mixes and radio                 | Medium | Built. TuneIn is switched off.                    |
+| 5     | 2, SoundCloud backup               | Medium | Built, off by default, not measured.              |
 
 ## Testing
 
-- Unit tests use the existing `Downloader` protocol with canned info dicts per site, so CI never touches a real site.
-- Allowlist tests: a generic URL, a `file://` URL, a private address, and a redirect off the list are all refused at resolve and again in the worker.
-- `scripts/source_probe.py` loses its YouTube-only assumptions (the PO token argument becomes optional) and gains a small list of one public URL per site. Results go into [measurements](measurements.md) with the date and yt-dlp version. Done: the argument now goes only to YouTube URLs, `--site-list` reads `scripts/source_probe_sites.json`, and the Internet Archive and indie site results are recorded.
-- UI checks for the review sheet follow [UI verification](ui-verification.md): phone and desktop, keyboard, axe.
+- The Python tests use the `Downloader` protocol with canned info dicts per site, so CI never touches a real site.
+- `scripts/source_probe.py` gives its PO token argument to YouTube addresses only, and `--site-list` reads one public, openly licensed address per site from `scripts/source_probe_sites.json`. Results are in [measurements](measurements.md) with the date and yt-dlp version.
+- `scripts/download_smoke.py` has three cases: `wikimedia`, `link` (an Internet Archive track) and `bandcamp`. See [testing](testing.md#reliability-and-indexing-checks).
+- The review sheet has `frontend/e2e/links.spec.ts`.
 
-## Docs to update as each phase lands
+## Docs that carry the detail
 
-[Downloads](downloads.md) (flow, error table, layouts), [architecture](architecture.md) (API list, the "not yet implemented" list, the pause wording), [settings](settings.md) (source cards), [search](search.md) (link handling in the search box), [roadmap](roadmap.md), `CHANGELOG.md`.
+[Downloads](downloads.md) (flow, error table, layouts), [architecture](architecture.md) (API list, the "not yet implemented" list, the pause wording), [settings](settings.md) (the SoundCloud switch), [search](search.md) (link handling in the search box), [roadmap](roadmap.md) and `CHANGELOG.md`.
 
 ## Starting choices
 
-These are defaults picked to get going. Each is cheap to change later.
+These were defaults picked to get going. Each is cheap to change.
 
-1. Deezer tidy-up on a pasted music link is automatic. The job card says which tags it used.
-2. The SoundCloud backup runs after a YouTube `NO_MATCH` or while YouTube is paused. It does not run after `DURATION_MISMATCH`. Built as written.
-3. A profile or playlist link is capped at 500 entries.
-4. `Mixes/` sits beside `Podcasts/` in the chosen music root. There is no separate destination setting.
+1. Deezer tidy-up on a pasted music link is automatic. The job card says which tags it used. As built.
+2. The SoundCloud backup runs after a YouTube `NO_MATCH` or while YouTube is paused, not after `DURATION_MISMATCH`. As built.
+3. A profile or playlist link is capped at 500 entries (`MAX_ENTRIES` in `backend/links.py`). As built.
+4. `Mixes/` sits beside `Podcasts/` in the chosen music root, with no separate destination setting. As built.

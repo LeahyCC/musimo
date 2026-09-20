@@ -46,6 +46,20 @@ Version 0.4.0 (10 September 2026) completed the core search, download and playba
 - ✓ Infinite scrolling for download results and history
 - ✓ Bounded activity feed with persistent clearing
 
+## Shipped since 0.4.0
+
+Not yet in a release; the [changelog](../CHANGELOG.md#unreleased) has the full list.
+
+- ✓ Podcast search and episode downloads into `Podcasts/<show>`
+- ✓ Pasted links: a review sheet in the search box, then a tick list for a playlist or profile, from an allowlist of sites
+- ✓ Downloads from the Internet Archive, Bandcamp, SoundCloud, Audius and Jamendo, and from YouTube by link
+- ✓ DJ mixes and radio shows from Mixcloud, HearThisAt, NTS and BBC Sounds, and SoundCloud tracks over 20 minutes, into `Mixes/<uploader>`
+- ✓ Deezer tidy-up of a pasted music link when the catalog match is certain
+- ✓ Each download source pauses on its own after repeated blocking errors
+- ✓ SoundCloud as an off-by-default second match source when YouTube has no match
+
+Two sites are in the list but switched off because yt-dlp cannot read them today: Audiomack and TuneIn. The SoundCloud match source has not been run against the live site or measured. [More sources](more-sources.md) records what was checked against real sites and what was not.
+
 ## Finish the existing journey first
 
 Search → inspect recording → choose destination/format → queue → see progress → handle failure → find the finished file in Navidrome. The core flow is working in 0.4.0; validation of the complete path still depends on your chosen provider, Navidrome setup and storage configuration.
@@ -63,7 +77,7 @@ Public documentation and contribution templates are in place. Container releases
 
 Known measurement gaps after 0.4.0:
 
-- Independent labels for the 100-case music-match corpus (corpus exists, labels pending)
+- Independent labels for the 100-case music-match corpus (corpus exists, labels pending), and SoundCloud rows in it so the backup source's thresholds can be measured
 - Fifty distinct permitted music downloads (one public-domain fixture verified)
 - Provider album throughput
 - Representative 50k mixed-format library (synthetic 50k scan passes in 45s)
@@ -73,4 +87,4 @@ Known measurement gaps after 0.4.0:
 
 ## Deferred implementation
 
-Artist/playlist imports, Discover recommendations, notifications, cookies, account connections, authentication, multi-user support and automatic release-edition filtering remain separate work. Do not add additional preview transport controls or autoplay until the user flow is defined.
+Catalog imports from Spotify and Apple Music links (a pasted one is refused for now), cookie management, AcoustID matching, Discover recommendations, notifications, account connections, authentication, multi-user support and automatic release-edition filtering remain separate work. Artist downloads shipped in 0.4.0, and playlists and profiles on the sites above are pasted links, so neither is deferred any more. Do not add additional preview transport controls or autoplay until the user flow is defined.
