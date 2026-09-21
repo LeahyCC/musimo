@@ -5,7 +5,7 @@ description = "A self-hosted music library companion"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi==0.141.1",
-  "uvicorn==0.52.4",
+  "uvicorn==0.53.0",
   "httpx==0.28.1",
   "yt-dlp[default,curl-cffi]==2026.8.19",
   "bgutil-ytdlp-pot-provider==2.0.0",
