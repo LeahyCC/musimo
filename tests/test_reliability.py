@@ -192,6 +192,14 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
             [str(kept)],
         )
 
+    async def test_unreadable_folder_is_not_dropped(self) -> None:
+        album = self.root / "Artist" / "Album"
+        write_wav(album / "stay.wav")
+        self.library.scan()
+        with patch.object(Path, "stat", side_effect=PermissionError):
+            self.library.refresh({str(album)})
+        self.assertEqual(self.library.status()["total_files"], 1)
+
     async def test_watcher_ignores_staging_and_sidecars_but_keeps_published_moves(self) -> None:
         with (
             patch.object(self.library.observer, "schedule") as schedule,

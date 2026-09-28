@@ -22,6 +22,10 @@ class NavidromeError(RuntimeError):
     pass
 
 
+class SongMissing(NavidromeError):
+    """Navidrome has no such song. A transport failure stays a plain NavidromeError."""
+
+
 class PlaylistProtected(RuntimeError):
     pass
 
@@ -395,8 +399,13 @@ class Navidrome:
             raise NavidromeError("Navidrome returned an invalid response")
         if body.get("status") != "ok":
             error = body.get("error")
+            code = error.get("code") if isinstance(error, dict) else None
             detail = error.get("message") if isinstance(error, dict) else None
-            raise NavidromeError(str(detail or "Navidrome refused the request"))
+            message = str(detail or "Navidrome refused the request")
+            # Subsonic 70 is "data not found". Anything else may be a blip worth retrying.
+            if code == 70:
+                raise SongMissing(message)
+            raise NavidromeError(message)
         return cast(dict[str, object], body)
 
     async def capabilities(self) -> dict[str, object]:
@@ -708,23 +717,32 @@ class Navidrome:
                     found[str(song_id)] = row
         return found
 
-    async def tracks_by_ids(self, ids: list[str]) -> list[dict[str, object]]:
-        """Songs for a shuffle window, in the order asked for. Missing ids are left out."""
+    async def tracks_by_ids(self, ids: list[str]) -> dict[str, object]:
+        """Songs for a shuffle window, in the order asked for.
+
+        `missing` is ids Navidrome does not have. A transport failure raises, so the
+        caller can retry those ids instead of skipping them.
+        """
         found = self.cached_tracks()
-        missing = [song_id for song_id in ids if song_id not in found]
-        if missing:
+        gone: set[str] = set()
+        needed = [song_id for song_id in ids if song_id not in found]
+        if needed:
             limit = asyncio.Semaphore(6)
 
             async def load(song_id: str) -> None:
                 async with limit:
                     try:
                         song = await self.song(song_id)
-                    except NavidromeError:
+                    except SongMissing:
+                        gone.add(song_id)
                         return
                 found[song_id] = {key: song[key] for key in TRACK_FIELDS if key in song}
 
-            await asyncio.gather(*(load(song_id) for song_id in missing))
-        return [found[song_id] for song_id in ids if song_id in found]
+            await asyncio.gather(*(load(song_id) for song_id in needed))
+        return {
+            "items": [found[song_id] for song_id in ids if song_id in found],
+            "missing": [song_id for song_id in ids if song_id in gone],
+        }
 
     async def playlists(self) -> list[dict[str, object]]:
         body = await self.response("getPlaylists")
@@ -842,7 +860,7 @@ class Navidrome:
         body = await self.response("getSong", {"id": song_id})
         song = body.get("song")
         if not isinstance(song, dict):
-            raise NavidromeError("Navidrome did not return the song")
+            raise SongMissing("Navidrome did not return the song")
         return cast(dict[str, object], song)
 
     async def play_queue(self) -> dict[str, object]:

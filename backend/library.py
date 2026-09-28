@@ -48,6 +48,16 @@ def tag_text(value: object) -> str:
     return str(value) if value is not None else ""
 
 
+def _folder_gone(path: Path) -> bool:
+    try:
+        path.stat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
 def tags_still_match(
     suffix: str,
     stored_mtime: int,
@@ -256,8 +266,9 @@ class Library:
 
     def _drop_removed_folder(self, path: Path) -> None:
         # A removed folder often arrives as one event, with no event per file inside it.
+        # exists() is also false when stat fails, and that must not wipe the index.
         root = self.visible_root(path)
-        if root is None or path == root or path.exists():
+        if root is None or path == root or not _folder_gone(path):
             return
         prefix = str(path)
         child = prefix + os.sep

@@ -36,6 +36,22 @@ export function dropForRoom(
   return Math.max(0, Math.min(index, overflow))
 }
 
+/**
+ * Ids still to fetch. Resolved ones leave the list. Anything the server did not
+ * account for stays at the front so a blip can be retried.
+ */
+export function consumeUpcoming(
+  upcoming: readonly string[],
+  requested: readonly string[],
+  found: readonly string[],
+  missing: readonly string[],
+): string[] {
+  const got = new Set(found)
+  const gone = new Set(missing)
+  const unresolved = requested.filter((id) => !got.has(id) && !gone.has(id))
+  return [...unresolved, ...upcoming.slice(requested.length)]
+}
+
 /** A new order of `order`, leaving out songs already in the queue so the boundary does not repeat. */
 export function reshuffle(order: readonly string[], skip: ReadonlySet<string>): string[] {
   const ids = order.filter((id) => !skip.has(id))

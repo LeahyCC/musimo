@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { dropForRoom, needsMore, reshuffle, SHUFFLE_AHEAD } from './shuffle-deck'
+import { consumeUpcoming, dropForRoom, needsMore, reshuffle, SHUFFLE_AHEAD } from './shuffle-deck'
 
 describe('library shuffle window', () => {
   it('fetches more only when the playing song is near the end of the loaded window', () => {
@@ -13,6 +13,11 @@ describe('library shuffle window', () => {
     expect(dropForRoom(400, 200, 200)).toBe(100)
     expect(dropForRoom(100, 0, 50)).toBe(0)
     expect(dropForRoom(500, 10, 200)).toBe(10)
+  })
+
+  it('keeps ids the server did not account for and drops ones it knows are gone', () => {
+    expect(consumeUpcoming(['a', 'b', 'c', 'd'], ['a', 'b'], ['a'], ['b'])).toEqual(['c', 'd'])
+    expect(consumeUpcoming(['a', 'b', 'c'], ['a', 'b'], [], [])).toEqual(['a', 'b', 'c'])
   })
 
   it('starts a new pass without the songs still in the queue', () => {

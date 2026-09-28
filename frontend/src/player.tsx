@@ -34,7 +34,7 @@ import {
   api,
   libraryPlaylistDetailSchema,
   libraryPlaylistsSchema,
-  libraryTrackSearchSchema,
+  libraryTrackLookupSchema,
   playerQueueSchema,
   previewSchema,
 } from './api'
@@ -60,13 +60,21 @@ import {
   splitLevel,
 } from './replay-gain'
 import { useReplayGainSettings } from './replay-gain-settings'
-import { dropForRoom, needsMore, QUEUE_LIMIT, reshuffle, SHUFFLE_FETCH } from './shuffle-deck'
+import {
+  consumeUpcoming,
+  dropForRoom,
+  needsMore,
+  QUEUE_LIMIT,
+  reshuffle,
+  SHUFFLE_FETCH,
+} from './shuffle-deck'
 import type { Deck } from './shuffle-deck'
 import { SLEEP_FADE_SECONDS, sleepChoiceLabel } from './sleep-timer'
 import type { SleepChoice, SleepStatus } from './sleep-timer'
 import { Button, ErrorBanner, Field, IconButton, iconButtonClassName } from './ui'
 
 export type RepeatMode = 'off' | 'all' | 'one'
+type ExtendResult = 'added' | 'skipped' | 'idle' | 'failed'
 export type PreviewState = 'finding' | 'none' | 'ready'
 export type LikedControl = {
   isLiked: boolean
@@ -685,7 +693,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const indexRef = useRef(-1)
   // A library shuffle bigger than the saved queue. Null for an album, a playlist, or a short list.
   const deck = useRef<Deck | null>(null)
-  const extending = useRef(false)
+  const extendJob = useRef<Promise<ExtendResult> | null>(null)
+  // Bumped on every queue save so an older response cannot count as the latest one.
+  const queueSave = useRef(0)
   // The collection that filled the queue. Edits leave it alone; `queueSource` says what it counts as.
   const sourceRef = useRef('')
   const editedRef = useRef(false)
@@ -934,22 +944,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // `announce` is for an edit the listener just made: it is the one save whose failure they need
   // to hear about, since the queue on screen would then differ from the one that restores.
-  function saveQueue(announce = false) {
-    if (mode.current !== 'library' || !libraryCurrent.current) return
-    fetch('/api/player/queue', {
+  function saveQueue(announce = false): Promise<boolean> {
+    if (mode.current !== 'library' || !libraryCurrent.current) return Promise.resolve(false)
+    const generation = ++queueSave.current
+    const ids = queueRef.current.map((item) => item.id)
+    const deckAtSave = deck.current
+    return fetch('/api/player/queue', {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        ids: queueRef.current.map((item) => item.id),
+        ids,
         current: libraryCurrent.current.id,
         position: Math.round((library()?.currentTime ?? 0) * 1000),
       }),
     })
       .then((response) => {
-        if (announce && !response.ok) setNotice(QUEUE_SAVE_FAILED)
+        if (generation !== queueSave.current) return false
+        if (!response.ok) {
+          if (announce) setNotice(QUEUE_SAVE_FAILED)
+          return false
+        }
+        // The deck fingerprint has to match the queue Navidrome actually stored.
+        if (deckAtSave && deck.current === deckAtSave) writeDeck(deckAtSave, ids)
+        return true
       })
       .catch(() => {
-        if (announce) setNotice(QUEUE_SAVE_FAILED)
+        if (generation === queueSave.current && announce) setNotice(QUEUE_SAVE_FAILED)
+        return false
       })
   }
 
@@ -1368,7 +1389,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       forget(DECK_KEY)
       return
     }
-    remember(DECK_KEY, JSON.stringify({ ...value, queue: queueIds }))
+
+    try {
+      localStorage.setItem(DECK_KEY, JSON.stringify({ ...value, queue: queueIds }))
+    } catch {
+      /* No fingerprint for a queue this browser could not store. */
+    }
   }
 
   function clearDeck() {
@@ -1379,52 +1405,78 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // Pulls the next songs of a library shuffle into the queue, dropping played ones when the
   // saved queue is full. A finished pass starts again, leaving out songs still queued.
-  async function extendDeck() {
+  // Callers share one request, so a track that ends mid-lookup waits for the same result.
+  function extendDeck(): Promise<ExtendResult> {
+    if (extendJob.current) return extendJob.current
+    const job = runExtend()
+    extendJob.current = job
+    void job.finally(() => {
+      if (extendJob.current === job) extendJob.current = null
+    })
+
+    return job
+  }
+
+  async function runExtend(): Promise<ExtendResult> {
     const current = deck.current
-    if (!current || extending.current) return
+    if (!current) return 'idle'
     const queue = queueRef.current
     const index = indexRef.current
-    if (!needsMore(queue.length, index, current.upcoming.length)) return
+    if (!needsMore(queue.length, index, current.upcoming.length)) return 'idle'
     if (current.upcoming.length === 0) {
       const skip = new Set(queue.map((item) => item.id))
       const another = reshuffle(current.order, skip)
-      if (!another.length) return
+      if (!another.length) return 'idle'
       current.upcoming = another
     }
     // Dropping every played song still has to leave the one that is playing, so this is the
     // most that can be added without the saved queue refusing the lot.
     const room = QUEUE_LIMIT - (queue.length - index)
-    if (room <= 0) return
+    if (room <= 0) return 'idle'
     const ids = current.upcoming.slice(0, Math.min(SHUFFLE_FETCH, room))
-    extending.current = true
     try {
-      const page = await api('library/tracks/lookup', libraryTrackSearchSchema, {
+      const page = await api('library/tracks/lookup', libraryTrackLookupSchema, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ids }),
       })
-      if (deck.current !== current) return
+      if (deck.current !== current) return 'idle'
       const tracks = page.items
+      current.upcoming = consumeUpcoming(
+        current.upcoming,
+        ids,
+        tracks.map((item) => item.id),
+        page.missing,
+      )
+      if (!tracks.length) return page.missing.length ? 'skipped' : 'failed'
       const drop = dropForRoom(queueRef.current.length, indexRef.current, tracks.length)
       const nextQueue = [...queueRef.current.slice(drop), ...tracks]
-      const nextIndex = indexRef.current - drop
-      current.upcoming = current.upcoming.slice(ids.length)
+      const nextAt = indexRef.current - drop
       queueRef.current = nextQueue
-      indexRef.current = nextIndex
+      indexRef.current = nextAt
       // Dropping played songs shifts every index, so a preloaded next song would be the wrong one.
       if (drop > 0) discardPreload()
       setQueue(nextQueue)
-      setCurrentIndex(nextIndex)
-      writeDeck(
-        current,
-        nextQueue.map((item) => item.id),
-      )
-      saveQueue()
+      setCurrentIndex(nextAt)
+      void saveQueue()
+      return 'added'
     } catch {
-      /* The next time update tries again. The ids stay in `upcoming`. */
-    } finally {
-      extending.current = false
+      /* The ids stay in upcoming. The next attempt, or the track ending, tries again. */
+      return 'failed'
     }
+  }
+
+  // The loaded window ran out while more songs are still on the way. Wait for them, then play.
+  async function fillThenPlay(autoplay: boolean) {
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const before = queueRef.current.length
+      const result = await extendDeck()
+      if (queueRef.current.length > before) break
+      if (result !== 'skipped') break
+    }
+    const index = nextIndex()
+    if (index >= 0) loadLibrary(index, autoplay)
+    else setPlaying(false)
   }
 
   function playLibrary(items: LibraryTrack[], index = 0, origin = '') {
@@ -1532,16 +1584,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (!items.length) return
     setShuffle(true)
     playLibrary(items, 0, origin)
-    const next: Deck = {
+    deck.current = {
       order: [...items.map((item) => item.id), ...rest],
       upcoming: [...rest],
     }
-    deck.current = next
-    writeDeck(
-      next,
-      items.map((item) => item.id),
-    )
-    setNotice(`Shuffling ${next.order.length.toLocaleString()} songs.`)
+    void saveQueue()
+    setNotice(`Shuffling ${deck.current.order.length.toLocaleString()} songs.`)
   }
 
   function toggle() {
@@ -1552,7 +1600,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // Pausing in the middle of a crossfade cuts the old track rather than freezing two.
       endCrossfade()
       element.pause()
-    } else if (element.getAttribute('src'))
+    } else if (element.ended && deck.current) void fillThenPlay(true)
+    else if (element.getAttribute('src'))
       void element.play().catch(() => setNotice('Cannot play this track.'))
     else if (previewCurrent.current) {
       previewStage.current = 1
@@ -1598,6 +1647,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const held = repeat === 'one' ? null : preload.current
     const index = held && held.item === queueRef.current[held.index] ? held.index : nextIndex()
     if (index >= 0) loadLibrary(index, autoplay)
+    else if (deck.current) void fillThenPlay(autoplay)
     else setPlaying(false)
   }
 

@@ -763,6 +763,8 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                     searches["count"] += 1
                     offset = int(request.url.params.get("songOffset", 0))
                     return subsonic(searchResult3={"song": library[offset:]})
+                if path.endswith("/getSong") and request.url.params.get("id") == "down":
+                    return httpx.Response(500, json={"detail": "down"})
                 return subsonic()
 
             with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
@@ -830,6 +832,15 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             )
                         ).json()
                         self.assertEqual([row["id"] for row in looked["items"]], ["s3", "s1"])
+                        self.assertEqual(looked["missing"], ["missing"])
+                        self.assertEqual(
+                            (
+                                await client.post(
+                                    "/api/library/tracks/lookup", json={"ids": ["down"]}
+                                )
+                            ).status_code,
+                            503,
+                        )
                         cached = searches["count"]
                         await client.get("/api/library/tracks")
                         self.assertEqual(searches["count"], cached)

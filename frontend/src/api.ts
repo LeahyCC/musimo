@@ -308,6 +308,9 @@ export const librarySelectionSchema = z.object({
 export const libraryTrackSearchSchema = z.object({
   items: z.array(libraryTrackSchema).default([]),
 })
+export const libraryTrackLookupSchema = libraryTrackSearchSchema.extend({
+  missing: z.array(z.string()).default([]),
+})
 export const libraryPlaylistsSchema = page(libraryPlaylistSchema).extend({
   liked_id: z.string().default(''),
 })

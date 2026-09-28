@@ -211,7 +211,7 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
 
     @app.post("/api/library/tracks/lookup")
     async def track_lookup(request: TrackLookup) -> dict[str, object]:
-        return {"items": await get().tracks_by_ids(request.ids)}
+        return await get().tracks_by_ids(request.ids)
 
     @app.get("/api/library/playlists")
     async def playlists() -> dict[str, object]:
