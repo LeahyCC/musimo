@@ -191,7 +191,7 @@ An artist's **Download all albums** button opens a selection sheet with album/so
 
 ### Library and playback
 
-Library has Home, Albums, Artists, Tracks and Playlists views. Grid and list layouts are available for collection views and the choice is remembered in the browser under `musimo.library-layout`. The Tracks view offers server side search, genre, year and sort filters that describe the whole library rather than only loaded pages. Its Play all button plays the first 500 songs in the current sort order; Shuffle plays a random 500.
+Library has Home, Albums, Artists, Tracks and Playlists views. Grid and list layouts are available for collection views and the choice is remembered in the browser under `musimo.library-layout`. The Tracks view offers server side search, genre, year and sort filters that describe the whole library rather than only loaded pages. Its Play all button plays the first 500 songs in the current sort order. Shuffle plays every matching song once, in a random order, refilling the 500-song queue as it goes.
 
 Artist pages include an All songs subpage at `/library/artists/{id}/songs` and a popularity chart plotted from Navidrome play counts when enough data exists. Playlists show song count and can be filtered by public or private status. Inline rename is available for all playlists.
 

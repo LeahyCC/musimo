@@ -688,12 +688,43 @@ class Navidrome:
         """Play all and Shuffle draw from the whole filtered library, not the loaded page."""
         snapshot = await self.snapshot(query)
         matched = filter_tracks(snapshot.rows, genres, years)
-        items = (
-            random.sample(matched, min(limit, len(matched)))
-            if shuffle
-            else sort_tracks(matched, sort)[:limit]
-        )
-        return {"items": items, "total": len(matched)}
+        # The saved play queue holds `limit` songs. A shuffle of a larger library keeps
+        # every remaining id so the player can fill the next window without a new sample.
+        if shuffle:
+            order = list(matched)
+            random.shuffle(order)
+        else:
+            order = sort_tracks(matched, sort)
+        window = order[:limit]
+        rest = [str(row["id"]) for row in order[limit:] if row.get("id")] if shuffle else []
+        return {"items": window, "rest": rest, "total": len(matched)}
+
+    def cached_tracks(self) -> dict[str, dict[str, object]]:
+        found: dict[str, dict[str, object]] = {}
+        for snapshot in self.track_cache.values():
+            for row in snapshot.rows:
+                song_id = row.get("id")
+                if song_id:
+                    found[str(song_id)] = row
+        return found
+
+    async def tracks_by_ids(self, ids: list[str]) -> list[dict[str, object]]:
+        """Songs for a shuffle window, in the order asked for. Missing ids are left out."""
+        found = self.cached_tracks()
+        missing = [song_id for song_id in ids if song_id not in found]
+        if missing:
+            limit = asyncio.Semaphore(6)
+
+            async def load(song_id: str) -> None:
+                async with limit:
+                    try:
+                        song = await self.song(song_id)
+                    except NavidromeError:
+                        return
+                found[song_id] = {key: song[key] for key in TRACK_FIELDS if key in song}
+
+            await asyncio.gather(*(load(song_id) for song_id in missing))
+        return [found[song_id] for song_id in ids if song_id in found]
 
     async def playlists(self) -> list[dict[str, object]]:
         body = await self.response("getPlaylists")

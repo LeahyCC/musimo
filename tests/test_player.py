@@ -815,6 +815,21 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             sorted(row["id"] for row in shuffled["items"]), ["s1", "s2", "s3"]
                         )
+                        self.assertEqual(shuffled["rest"], [])
+                        # Over the queue cap, every song is returned once: a window, then ids.
+                        window = (
+                            await client.get("/api/library/tracks/selection?shuffle=true&limit=2")
+                        ).json()
+                        covered = [row["id"] for row in window["items"]] + window["rest"]
+                        self.assertEqual(sorted(covered), ["s1", "s2", "s3"])
+                        self.assertEqual(len(window["items"]), 2)
+                        self.assertEqual(len(window["rest"]), 1)
+                        looked = (
+                            await client.post(
+                                "/api/library/tracks/lookup", json={"ids": ["s3", "missing", "s1"]}
+                            )
+                        ).json()
+                        self.assertEqual([row["id"] for row in looked["items"]], ["s3", "s1"])
                         cached = searches["count"]
                         await client.get("/api/library/tracks")
                         self.assertEqual(searches["count"], cached)

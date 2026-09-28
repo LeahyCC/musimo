@@ -1170,7 +1170,9 @@ export function LibraryPage({
     mutationFn: ({ shuffled }: { shuffled: boolean }) =>
       api(`library/tracks/selection?${trackSearch}&shuffle=${shuffled}`, librarySelectionSchema),
     onSuccess: (selection, { shuffled }) => {
-      if (shuffled) player.shuffleLibrary(selection.items, trackSource)
+      if (shuffled && selection.rest.length > 0)
+        player.playDeck(selection.items, selection.rest, trackSource)
+      else if (shuffled) player.shuffleLibrary(selection.items, trackSource)
       else player.playLibrary(selection.items, 0, trackSource)
     },
   })
@@ -2270,13 +2272,14 @@ export function LibraryPage({
               </Button>
               {trackTotal > 500 && (
                 <small className="text-small text-muted">
-                  Plays a random 500 of {trackTotal.toLocaleString()} matching songs.
+                  Shuffles all {trackTotal.toLocaleString()} matching songs. Each plays once before
+                  any repeat.
                 </small>
               )}
             </div>
           </div>
-          {/* Both buttons share one note when the whole selection fits; the per-button notes
-              only differ once the 500-song queue limit splits their behaviour. */}
+          {/* Both buttons share one note when the whole selection fits. Past 500 songs, Play all
+              is capped by the saved queue and Shuffle keeps going. */}
           {trackTotal <= 500 && (
             <small className="block text-small text-muted mt-[8px] mb-[16px]">
               Covers every matching song, not just the loaded ones.
