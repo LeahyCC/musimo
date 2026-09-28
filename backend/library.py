@@ -19,6 +19,8 @@ from backend.catalog import Result
 from backend.store import Store
 
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".opus", ".ogg", ".wav", ".aiff", ".wma", ".webm"}
+# One transaction per file made a 22k unchanged walk take minutes, and downloads waited on it.
+STAMP_BATCH = 500
 EasyMP4Tags.RegisterFreeformKey("isrc", "ISRC")
 
 
@@ -44,6 +46,32 @@ def tag_text(value: object) -> str:
     if isinstance(value, (list, tuple)):
         return str(value[0]) if value else ""
     return str(value) if value is not None else ""
+
+
+def _folder_gone(path: Path) -> bool:
+    try:
+        path.stat()
+    except FileNotFoundError:
+        return True
+    except OSError:
+        return False
+    return False
+
+
+def tags_still_match(
+    suffix: str,
+    stored_mtime: int,
+    stored_size: int,
+    title: str,
+    artist: str,
+    album: str,
+    mtime_ns: int,
+    size: int,
+) -> bool:
+    # Earlier versions stored blank WAV/AIFF tags. Those rows have to be read again.
+    if suffix in {".wav", ".aiff"} and not any((title, artist, album)):
+        return False
+    return stored_mtime == mtime_ns and stored_size == size
 
 
 class Changes(FileSystemEventHandler):
@@ -182,14 +210,18 @@ class Library:
                 pass
             if self.task and not self.task.done():
                 continue
-            if self.pending:
-                paths, self.pending = self.pending, set()
-                await asyncio.to_thread(self.refresh, paths)
-                if any(Path(path).suffix.lower() not in AUDIO_EXTENSIONS for path in paths):
-                    self.start_scan()
+            # A new album folder is not a library walk. drain indexes the audio and
+            # forgets files under a folder that was removed.
+            await self.drain()
             if time.monotonic() > next_scan:
                 self.start_scan()
                 next_scan = time.monotonic() + 1800
+
+    async def drain(self) -> None:
+        if not self.pending:
+            return
+        paths, self.pending = self.pending, set()
+        await asyncio.to_thread(self.refresh, paths)
 
     def refresh(self, paths: set[str]) -> None:
         with self.work_lock:
@@ -204,22 +236,25 @@ class Library:
         return None
 
     def index_published(self, path: Path, root: Path) -> None:
-        # Wait for generation pruning before adding a download that the scan may not have seen.
+        # The walk does not hold this lock. The row takes the walk's generation so
+        # pruning, which does hold it, keeps a file the walk has already passed.
         with self.work_lock:
             self.index(path, root, self.generation)
         self.publish()
 
     def _refresh(self, paths: set[str]) -> None:
+        generation = self.generation
         for raw in paths:
             path = Path(raw)
             if path.suffix.lower() not in AUDIO_EXTENSIONS:
+                self._drop_removed_folder(path)
                 continue
             root = self.visible_root(path)
             if root is None or path.is_symlink():
                 continue
             try:
                 if path.exists():
-                    self.index(path, root, "watch")
+                    self.index(path, root, generation)
                 elif root.is_dir():
                     self.remove(str(path))
             except (OSError, ValueError, mutagen.MutagenError):
@@ -229,20 +264,94 @@ class Library:
                 )
         self.publish()
 
-    def scan(self) -> None:
-        # Generation pruning must not race with a watcher upsert from another worker thread.
+    def _drop_removed_folder(self, path: Path) -> None:
+        # A removed folder often arrives as one event, with no event per file inside it.
+        # exists() is also false when stat fails, and that must not wipe the index.
+        root = self.visible_root(path)
+        if root is None or path == root or not _folder_gone(path):
+            return
+        prefix = str(path)
+        child = prefix + os.sep
+        with self.store.lock:
+            stale = [
+                row[0]
+                for row in self.store.db.execute(
+                    "SELECT path FROM library_files WHERE root=? "
+                    "AND (path=? OR substr(path,1,?)=?)",
+                    (str(root), prefix, len(child), child),
+                )
+            ]
+        for item in stale:
+            self.remove(str(item))
+
+    def _known(self, root: Path) -> dict[str, tuple[int, int, str, str, str]]:
+        with self.store.lock:
+            rows = self.store.db.execute(
+                "SELECT path, mtime_ns, size, title, artist, album FROM library_files WHERE root=?",
+                (str(root),),
+            ).fetchall()
+        return {
+            str(row[0]): (int(row[1]), int(row[2]), str(row[3]), str(row[4]), str(row[5]))
+            for row in rows
+        }
+
+    def _stamp(self, generation: str, paths: list[str]) -> None:
+        if not paths:
+            return
+        with self.store.lock:
+            self.store.db.execute("BEGIN IMMEDIATE")
+            try:
+                self.store.db.executemany(
+                    "UPDATE library_files SET generation=? WHERE path=?",
+                    [(generation, path) for path in paths],
+                )
+                self.store.db.commit()
+            except Exception:
+                self.store.db.rollback()
+                raise
+        paths.clear()
+
+    def _prune(self, root: Path, generation: str) -> None:
+        # Hold the lock across the snapshot and the delete, so a download indexed
+        # on this generation cannot land in the snapshot and then be removed.
         with self.work_lock:
-            self._scan()
+            if self.generation != generation or self.cancelled.is_set():
+                return
+            with self.store.lock:
+                self.store.db.execute("BEGIN IMMEDIATE")
+                try:
+                    stale = [
+                        row[0]
+                        for row in self.store.db.execute(
+                            "SELECT path FROM library_files WHERE root=? AND generation!=?",
+                            (str(root), generation),
+                        )
+                    ]
+                    self.store.db.executemany(
+                        "DELETE FROM library_files WHERE path=?", [(path,) for path in stale]
+                    )
+                    self.store.db.executemany(
+                        "DELETE FROM library_fts WHERE path=?", [(path,) for path in stale]
+                    )
+                    self.store.db.commit()
+                except Exception:
+                    self.store.db.rollback()
+                    raise
+
+    def scan(self) -> None:
+        self._scan()
 
     def _scan(self) -> None:
         generation = uuid.uuid4().hex
-        self.generation = generation
+        with self.work_lock:
+            self.generation = generation
         started = time.monotonic()
         last_publish = 0.0
         walked = indexed = errors = 0
         try:
             for root in self.roots:
                 root_errors = 0
+                batch: list[str] = []
                 if not root.is_dir():
                     errors += 1
                     continue
@@ -251,6 +360,7 @@ class Library:
                     nonlocal root_errors
                     root_errors += 1
 
+                known = self._known(root)
                 for directory, dirs, files in os.walk(root, followlinks=False, onerror=walk_error):
                     dirs[:] = [
                         d
@@ -269,7 +379,25 @@ class Library:
                             continue
                         walked += 1
                         try:
-                            indexed += int(self.index(path, root, generation))
+                            row = known.get(str(path))
+                            stat = path.stat() if row is not None else None
+                            # The walk never follows links, so an unchanged file needs no resolve.
+                            if (
+                                stat is not None
+                                and row is not None
+                                and tags_still_match(
+                                    path.suffix.lower(),
+                                    *row,
+                                    stat.st_mtime_ns,
+                                    stat.st_size,
+                                )
+                            ):
+                                batch.append(str(path))
+                                indexed += 1
+                                if len(batch) >= STAMP_BATCH:
+                                    self._stamp(generation, batch)
+                            else:
+                                indexed += int(self.index(path, root, generation))
                         except (OSError, ValueError, mutagen.MutagenError):
                             root_errors += 1
                         if time.monotonic() - last_publish >= 0.5:
@@ -283,18 +411,10 @@ class Library:
                             last_publish = time.monotonic()
                     if self.cancelled.is_set():
                         break
+                self._stamp(generation, batch)
                 # Cancelled or unreadable scans must not erase files they never visited.
                 if not self.cancelled.is_set() and root_errors == 0:
-                    with self.store.lock:
-                        stale = [
-                            r[0]
-                            for r in self.store.db.execute(
-                                "SELECT path FROM library_files WHERE root=? AND generation!=?",
-                                (str(root), generation),
-                            )
-                        ]
-                    for path_string in stale:
-                        self.remove(path_string)
+                    self._prune(root, generation)
                 errors += root_errors
                 if self.cancelled.is_set():
                     break
@@ -323,9 +443,16 @@ class Library:
                 "SELECT mtime_ns,size,title,artist,album FROM library_files WHERE path=?",
                 (str(path),),
             ).fetchone()
-            # Earlier versions cached blank ID3 metadata for WAV/AIFF. Repair it on rescan.
-            missing_id3 = old and path.suffix.lower() in {".wav", ".aiff"} and not any(old[2:])
-            if old and old[0] == stat.st_mtime_ns and old[1] == stat.st_size and not missing_id3:
+            if old and tags_still_match(
+                path.suffix.lower(),
+                int(old[0]),
+                int(old[1]),
+                str(old[2]),
+                str(old[3]),
+                str(old[4]),
+                stat.st_mtime_ns,
+                stat.st_size,
+            ):
                 self.store.db.execute(
                     "UPDATE library_files SET generation=? WHERE path=?", (generation, str(path))
                 )

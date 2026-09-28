@@ -763,6 +763,8 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                     searches["count"] += 1
                     offset = int(request.url.params.get("songOffset", 0))
                     return subsonic(searchResult3={"song": library[offset:]})
+                if path.endswith("/getSong") and request.url.params.get("id") == "down":
+                    return httpx.Response(500, json={"detail": "down"})
                 return subsonic()
 
             with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
@@ -814,6 +816,30 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         ).json()
                         self.assertEqual(
                             sorted(row["id"] for row in shuffled["items"]), ["s1", "s2", "s3"]
+                        )
+                        self.assertEqual(shuffled["rest"], [])
+                        # Over the queue cap, every song is returned once: a window, then ids.
+                        window = (
+                            await client.get("/api/library/tracks/selection?shuffle=true&limit=2")
+                        ).json()
+                        covered = [row["id"] for row in window["items"]] + window["rest"]
+                        self.assertEqual(sorted(covered), ["s1", "s2", "s3"])
+                        self.assertEqual(len(window["items"]), 2)
+                        self.assertEqual(len(window["rest"]), 1)
+                        looked = (
+                            await client.post(
+                                "/api/library/tracks/lookup", json={"ids": ["s3", "missing", "s1"]}
+                            )
+                        ).json()
+                        self.assertEqual([row["id"] for row in looked["items"]], ["s3", "s1"])
+                        self.assertEqual(looked["missing"], ["missing"])
+                        self.assertEqual(
+                            (
+                                await client.post(
+                                    "/api/library/tracks/lookup", json={"ids": ["down"]}
+                                )
+                            ).status_code,
+                            503,
                         )
                         cached = searches["count"]
                         await client.get("/api/library/tracks")

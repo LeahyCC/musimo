@@ -301,10 +301,15 @@ export const libraryTracksSchema = page(libraryTrackSchema).extend({
 })
 export const librarySelectionSchema = z.object({
   items: z.array(libraryTrackSchema).default([]),
+  // The rest of a library shuffle, in play order. Empty when the whole selection fit in `items`.
+  rest: z.array(z.string()).default([]),
   total: z.number().default(0),
 })
 export const libraryTrackSearchSchema = z.object({
   items: z.array(libraryTrackSchema).default([]),
+})
+export const libraryTrackLookupSchema = libraryTrackSearchSchema.extend({
+  missing: z.array(z.string()).default([]),
 })
 export const libraryPlaylistsSchema = page(libraryPlaylistSchema).extend({
   liked_id: z.string().default(''),

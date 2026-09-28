@@ -40,6 +40,15 @@ MEDIA_HEADERS = {
 }
 
 
+class TrackLookup(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=200)
+
+    @field_validator("ids")
+    @classmethod
+    def valid_ids(cls, values: list[str]) -> list[str]:
+        return [checked_id(value) for value in values]
+
+
 class QueueUpdate(BaseModel):
     ids: list[str] = Field(max_length=QUEUE_LIMIT)
     current: str = ""
@@ -199,6 +208,10 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
         limit: int = Query(default=QUEUE_LIMIT, ge=1, le=QUEUE_LIMIT),
     ) -> dict[str, object]:
         return await get().select_tracks(q.strip(), sort, genre or [], year or [], shuffle, limit)
+
+    @app.post("/api/library/tracks/lookup")
+    async def track_lookup(request: TrackLookup) -> dict[str, object]:
+        return await get().tracks_by_ids(request.ids)
 
     @app.get("/api/library/playlists")
     async def playlists() -> dict[str, object]:

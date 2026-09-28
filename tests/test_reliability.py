@@ -1,6 +1,9 @@
 import asyncio
+import os
+import shutil
 import tempfile
 import threading
+import time
 import unittest
 import wave
 from pathlib import Path
@@ -18,6 +21,13 @@ from backend.downloads import Downloads
 from backend.job_models import Job, Metadata
 from backend.library import Library
 from backend.store import Store
+
+
+def write_wav(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as audio:
+        audio.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
+        audio.writeframes(b"\0\0" * 8000)
 
 
 class SlowStopDownloads(Downloads):
@@ -121,6 +131,74 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.store.db.execute("SELECT generation FROM library_files").fetchone()[0], "scanning"
         )
+
+    async def test_download_indexes_during_a_library_walk(self) -> None:
+        old = self.root / "old.wav"
+        new = self.root / "new.wav"
+        write_wav(old)
+        write_wav(new)
+        entered, release = threading.Event(), threading.Event()
+        real_stat = Path.stat
+
+        def slow_stat(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+            if path.name == "old.wav":
+                entered.set()
+                if not release.wait(3):
+                    raise TimeoutError("scan was not released")
+            return real_stat(path, follow_symlinks=follow_symlinks)
+
+        with patch.object(Path, "stat", slow_stat):
+            scanning = asyncio.create_task(asyncio.to_thread(self.library.scan))
+            await asyncio.wait_for(asyncio.to_thread(entered.wait), 2)
+            started = time.monotonic()
+            await asyncio.to_thread(self.library.index_published, new, self.root)
+            waited = time.monotonic() - started
+            release.set()
+            await asyncio.wait_for(scanning, 3)
+        self.assertLess(waited, 1)
+        self.assertEqual(self.library.state["status"], "done")
+        rows = {
+            row[0]: row[1]
+            for row in self.store.db.execute("SELECT path, generation FROM library_files")
+        }
+        self.assertEqual(set(rows), {str(old), str(new)})
+        self.assertEqual(rows[str(new)], self.library.generation)
+        self.assertEqual(rows[str(old)], self.library.generation)
+
+    async def test_a_new_folder_does_not_scan_the_library(self) -> None:
+        write_wav(self.root / "have.wav")
+        self.library.scan()
+        folder = self.root / "Fresh"
+        folder.mkdir()
+        self.library.pending.add(str(folder))
+        with patch.object(self.library, "start_scan") as start:
+            await self.library.drain()
+            start.assert_not_called()
+        self.assertEqual(self.library.status()["total_files"], 1)
+        self.assertEqual(self.library.pending, set())
+
+    async def test_removing_a_folder_drops_only_its_tracks(self) -> None:
+        kept = self.root / "Artist" / "Album Extra" / "stay.wav"
+        gone_dir = self.root / "Artist" / "Album"
+        write_wav(kept)
+        write_wav(gone_dir / "gone.wav")
+        self.library.scan()
+        shutil.rmtree(gone_dir)
+        with patch.object(self.library, "start_scan") as start:
+            self.library.refresh({str(gone_dir)})
+            start.assert_not_called()
+        self.assertEqual(
+            [row[0] for row in self.store.db.execute("SELECT path FROM library_files")],
+            [str(kept)],
+        )
+
+    async def test_unreadable_folder_is_not_dropped(self) -> None:
+        album = self.root / "Artist" / "Album"
+        write_wav(album / "stay.wav")
+        self.library.scan()
+        with patch.object(Path, "stat", side_effect=PermissionError):
+            self.library.refresh({str(album)})
+        self.assertEqual(self.library.status()["total_files"], 1)
 
     async def test_watcher_ignores_staging_and_sidecars_but_keeps_published_moves(self) -> None:
         with (
