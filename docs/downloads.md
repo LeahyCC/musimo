@@ -185,7 +185,7 @@ The server acknowledges pause immediately and finishes stopping its process grou
 
 Repeated pause/cancel commands preserve the cleanup already in progress. Resume also accepts a job that is still stopping for pause; it queues the job after the old worker stops. Global and batch resume use the same behavior. Cancelling a stopping job changes its final intent without interrupting process termination.
 
-An album with an incomplete catalog track list returns an error before creating any jobs. Retry after the catalog recovers. Download publication waits for any current library scan to finish pruning old entries before adding the finished file to the index.
+An album with an incomplete catalog track list returns an error before creating any jobs. Retry after the catalog recovers. A finished download is added to the index immediately. When a library scan is already walking, the file is stored on that scan's generation so the scan keeps it.
 
 ## Error codes and recovery
 
