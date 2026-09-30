@@ -154,8 +154,11 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         response = await call_next(request)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
+        # 'wasm-unsafe-eval' lets the visualizer compile its MilkDrop presets to WebAssembly. It
+        # allows no JavaScript eval, and scripts still come from this origin only.
         response.headers["Content-Security-Policy"] = (
-            "default-src 'self'; img-src 'self' https: data:; media-src 'self' https:; "
+            "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; "
+            "img-src 'self' https: data:; media-src 'self' https:; "
             "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
         )
         if request.url.path.startswith("/api/"):

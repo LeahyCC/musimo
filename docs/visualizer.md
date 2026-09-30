@@ -1,114 +1,112 @@
 # Now Playing visualizer
 
-The visualizer is [visimo](https://github.com/LeahyCC/visimo), a package of its own. What it does, how the fluid and the post stack work, what a preset is and every measurement taken on it are in that repository's README. This note is only what Musimo does around it.
-
-It moved out so scenes and presets could be worked on against a dropped file rather than a music library. Nothing about the stage changed in the move.
+The visualizer is [butterchurn](https://github.com/jberg/butterchurn), the WebGL 2 port of Winamp's MilkDrop, drawing the presets in `butterchurn-presets`' base pack. It replaced visimo, Musimo's own WebGPU package, which is no longer a dependency.
 
 ## How it is wired in
 
 ```
-frontend/package.json          "visimo": "github:LeahyCC/visimo#<commit>"
-now-playing-popout.tsx         visimo/presets, visimo/catalog, and the stage
-                               itself from visimo, loaded lazily
-now-playing-overlay.tsx        visimo/presets, visimo/catalog for the top bar
-player.tsx                     visimo/audio on each library element's plays
+frontend/package.json        butterchurn 3.0.0-beta.5, butterchurn-presets 3.0.0-beta.4 (exact pins)
+visualizer-presets.ts        the base pack's preset names, and stepping through them
+audio-graph.ts               the one AudioContext, and the bus the library elements feed
+milkdrop-stage.tsx           butterchurn and the presets themselves, loaded lazily
+now-playing-popout.tsx       mounts the stage, keeps the chosen preset
+player.tsx                   routeToAnalyser: each library element into the bus
 ```
 
-The pin is a full commit hash on visimo's `main`, not a tag, because `main` has moved past `v0.1.0` without a release. It currently points at the merge that added the Kaleidoscope scene and its Prism preset, so the stage's Scene select is drawn and Fluid stays the default.
+butterchurn 3 compiles each preset's equations to WebAssembly, so the backend's Content-Security-Policy carries `script-src 'self' 'wasm-unsafe-eval'` (`backend/main.py`, checked in `tests/test_foundation.py`). Without it every preset fails to load and butterchurn draws its blank default whatever is chosen. The Vite dev server sends no such policy, so only a built app shows that failure; `e2e/visualizer.spec.ts` catches it because `data-preset` is written only once a preset has loaded.
 
-Four entry points, and which one an import uses decides the bundle it lands in. `visimo/presets` and `visimo/catalog` are plain values, so the picker and the selects sit in the main chunk; `visimo` and `visimo/audio` are loaded on demand and the WebGPU tree stays out until a stage wants it. An import of the wrong one adds about 38 KB to the main bundle and nothing will fail, so watch the build output rather than trusting the change.
+Both packages are 3.0 betas, pinned exactly. 2.6.7 is the latest stable release; the beta was chosen as the newest MilkDrop code. `src/butterchurn.d.ts` types the parts Musimo calls, since neither package ships types.
 
-`now-playing-popout.tsx` keeps its own copy of `hasWebGpu` for the same reason. Importing the real one to answer a question about `navigator` would load the chunk the question is meant to avoid.
-
-Two things the package needs from the repository:
-
-- `frontend/vite.config.ts` carries `optimizeDeps: { exclude: ['visimo'] }`. The package ships TypeScript, its shaders are `?raw` imports the dependency pre-bundler cannot load out of `node_modules`, and without the exclusion the dev server does not start at all. The same exclusion keeps the feature worker's asset URL intact in a build.
-- The `Dockerfile` installs git in the frontend stage. `node:26-bookworm-slim` has none and a git dependency cannot install without it.
-
-Check after a build that `dist/assets/` still holds a `features.worker-*.js`. If it does not, the worker will 404 at runtime and the stage will draw with no features at all.
+Which import lands where matters. `visualizer-presets.ts` imports only `getBasePresetKeys` from `butterchurn-presets/presetPackMeta.js`, so the main chunk carries the base pack's 107 names and nothing else (the other packs' names are shaken out). `milkdrop-stage.tsx` imports butterchurn and the presets themselves, about 1.1 MB (230 KB gzipped), and is only loaded when a stage mounts the visualizer. An import of the presets anywhere else pulls that into the main bundle, and nothing will fail, so watch the build output.
 
 ## What stays on Musimo's side
 
-The stage, its keys and what the browser remembers:
+| Key                                    | What it holds                                        |
+| -------------------------------------- | ---------------------------------------------------- |
+| `musimo.now-playing-view`              | artwork or visualizer, toggled with V                |
+| `musimo.now-playing-size`              | small or large docked stage, toggled with S          |
+| `musimo.visualizer-auto`               | on or off: whether the preset changes with the music |
+| `musimo.visualizer-preset`             | the chosen preset's name, walked with `[` and `]`    |
+| `musimo.now-playing-visualizer-notice` | the one-time notice shown where WebGL 2 is missing   |
 
-| Key                                    | What it holds                                     |
-| -------------------------------------- | ------------------------------------------------- |
-| `musimo.now-playing-view`              | artwork or visualizer, toggled with V             |
-| `musimo.now-playing-size`              | small or large docked stage, toggled with S       |
-| `musimo.visualizer-preset`             | the chosen preset, walked with `[` and `]`        |
-| `musimo.visualizer-scene`              | only consulted where no preset was ever stored    |
-| `musimo.visualizer-fluid-grid`         | 512 or 1024                                       |
-| `musimo.now-playing-visualizer-notice` | the one-time notice shown where WebGPU is missing |
+A stored preset name the pack does not have, including one of visimo's old ids, starts on the default, `Flexi, martin + geiss - dedicated to the sherwin maxawow`. visimo's `musimo.visualizer-scene` and `musimo.visualizer-fluid-grid` keys are no longer read, and are left where a browser has them.
 
-The same choices can be made from `/settings/user`, under Visualizer: stage size (Small or Large), Show on Now Playing (Artwork or Visualizer; the same setting as the stage's own Visualizer button, and the hint under the select says so), preset (grouped by scene, the same list the stage's select shows) and fluid detail (512 or 1024). That section does not read or write the keys itself. It calls `useNowPlayingPopout()`, so it shares the provider's state with the stage: an open stage changes at once and the two cannot disagree. The view, preset and fluid detail are disabled with a one-line reason while `canVisualize` is false; the stage size is not, since it lays out the artwork too. The section links to Now Playing. `e2e/app.spec.ts` checks that the Show on Now Playing control writes `musimo.now-playing-view`, and that the section is disabled with its reason where there is no WebGPU. See [settings](settings.md#your-settings).
+The same choices can be made from `/settings/user`, under Visualizer: stage size (Small or Large), Show on Now Playing (Artwork or Visualizer; the same setting as the stage's own Visualizer button, and the hint under the select says so) and preset (the same list the stage's select shows). That section does not read or write the keys itself. It calls `useNowPlayingPopout()`, so it shares the provider's state with the stage: an open stage changes at once and the two cannot disagree. The view and preset are disabled with a one-line reason while `canVisualize` is false; the stage size is not, since it lays out the artwork too. The section links to Now Playing. `e2e/app.spec.ts` checks that the Show on Now Playing control writes `musimo.now-playing-view`, and that the section is disabled with its reason where there is no WebGL 2. See [settings](settings.md#your-settings).
 
-A preset names a scene, so choosing a preset moves the scene select under it and choosing a scene moves to that scene's first preset. The scene select is not drawn while `SCENE_IDS` has one entry in it. H toggles the package's debug overlay.
+A preset's full name is its authors, its title and years of mix notes (`Geiss - Cauldron - painterly 2 (saturation remix)`). The pickers show only the title (`Cauldron`), sorted A to Z, and `[` and `]` walk that same order. `presetLabel` in `visualizer-presets.ts` makes the label, with `LABEL_FIXES` for the few names the rule reads badly; `visualizer-presets.test.ts` checks every label is short and distinct. The full name is still the id that is stored, so a saved choice survives a change to a label.
 
-The way into all of this is a labeled Visualizer control on the stage (On or Off, with a `V` hint), and while it is on, the preset's name between `[` and `]` hints, where the name is the preset select. It stays on screen while the rest of the overlay fades when idle, at reduced opacity (`e2e/now-playing-chrome.spec.ts` checks the docked stage), and hides with them only in full screen and in the popout window, which is too small to keep it. It is what makes the keys discoverable; the keys themselves are unchanged. See [the popout note](now-playing-popout.md#now-playing).
+Hovering either picker shows the chosen preset's full name as a tooltip, which credits its authors.
+
+The way into all of this is a labeled Visualizer control on the stage (On or Off, with a `V` hint), and while it is on, the preset's name between `[` and `]` hints, where the name is the preset select. It fades with the rest of the overlay when the stage goes idle, and hovering the stage brings it back (`e2e/now-playing-chrome.spec.ts` checks the docked stage). See [the popout note](now-playing-popout.md#now-playing).
+
+## Changing with the music
+
+With Change with the music on (the default, in `/settings/user`), the preset moves by itself. `music-moments.ts` watches the bass level from an analyser on the bus (`bassLevel` in `audio-graph.ts`), sampled once a frame while the stage draws:
+
+```
+bass level ──► fast average (≈0.5 s)
+           └─► slow average (≈6 s)
+
+fast rises 0.12 above slow (a drop after a quieter part)  ──► random preset, 1.5 s blend
+no drop for 90 s of steady music                          ──► random preset, 5 s blend
+never sooner than 20 s after the last change; picking one yourself restarts that wait
+```
+
+The analyser reports the bass on a decibel scale squeezed into 0 to 1, where real music sits between about 0.5 and 0.95, so a drop is a rise by a fixed amount rather than a multiple. The numbers were tuned on 88 seconds of a real track with two drops and a song change: 0.12 caught both drops and nothing else. Silence (below 0.08) never triggers anything. It only listens while the stage draws, so a hidden or resting stage changes nothing. `music-moments.test.ts` covers the rules.
+
+A new preset blends in over 2.7 seconds, the way MilkDrop moves between presets; the first one after a page load appears at once. A preset whose shaders will not compile in a browser leaves the previous one drawing.
 
 ## The command palette
 
-Ctrl+K also offers four visualizer commands: Toggle visualizer, Next visualizer preset, Previous visualizer preset and Fullscreen visualizer. Each goes to `/now-playing` first if the tab is elsewhere, then calls the same `PopoutProvider` functions the stage's own controls call (`toggleView`, `cyclePreset`), so the palette never writes the keys above itself. The two preset commands and Fullscreen switch the stage to the visualizer first, since a preset change on artwork would show nothing. Toggle visualizer only toggles while Now Playing is in front; from another route it arrives with the visualizer on, since a toggle on a stage nobody can see could land on the page with the visuals just switched off. `e2e/app.spec.ts` checks that, and that the commands are absent without WebGPU.
+Ctrl+K also offers four visualizer commands: Toggle visualizer, Next visualizer preset, Previous visualizer preset and Fullscreen visualizer. Each goes to `/now-playing` first if the tab is elsewhere, then calls the same `PopoutProvider` functions the stage's own controls call (`toggleView`, `cyclePreset`), so the palette never writes the keys above itself. The two preset commands and Fullscreen switch the stage to the visualizer first, since a preset change on artwork would show nothing. Toggle visualizer only toggles while Now Playing is in front; from another route it arrives with the visualizer on, since a toggle on a stage nobody can see could land on the page with the visuals just switched off. `e2e/app.spec.ts` checks that, and that the commands are absent without WebGL 2.
 
-All four are left out of the list while `canVisualize` is false, so a browser without WebGPU never sees them, and while no library track is loaded (`usePlayer().libraryTrack`), since Now Playing has no stage then and a command would land on an empty page. A preview does not count. `e2e/now-playing-chrome.spec.ts` checks both states.
+All four are left out of the list while `canVisualize` is false, so a browser without WebGL 2 never sees them, and while no library track is loaded (`usePlayer().libraryTrack`), since Now Playing has no stage then and a command would land on an empty page. A preview does not count. `e2e/now-playing-chrome.spec.ts` checks both states.
 
 Fullscreen needs a user gesture, and the palette selection is one. `PopoutProvider` exposes the docked stage's element as `dockedStage`. If it is mounted the click handler calls `requestFullscreen()` on it directly. If it is not (another route, or the stage is playing in the popout) the handler calls `popoutToFullscreen`, which closes the popout, navigates, and lets the stage request fullscreen when it mounts. Either way a rejected request leaves the user on Now Playing with the "Press F" notice.
 
-`palette.tsx` imports only `now-playing-popout`, which is already in the main chunk, and nothing from `visimo`, so the palette adds nothing to the main bundle.
+`palette.tsx` imports only `now-playing-popout`, which is already in the main chunk, so the palette adds nothing to the main bundle.
 
-The separate preview element is Musimo's rule, not the package's: previews stream from provider CDNs without CORS headers, and a media element source on such audio is silenced permanently. `player.tsx` keeps one element for previews and a pair for library tracks (next section), and only the library pair is ever handed to `attachAudio`. Someone playing a preview who opens Now Playing is told so: the page says a preview is playing and that Now Playing, and its visuals where `canVisualize` is true, play with library tracks, rather than "Nothing playing yet". Without WebGPU the message leaves the visuals out, since there are none to promise.
+## Where it can draw
 
-Where WebGPU is missing, or the adapter or device cannot be had, the stage shows artwork exactly as before and says so once. There is no WebGL fallback and none is planned.
+`canVisualize` starts as `typeof WebGL2RenderingContext !== 'undefined'`, which loads nothing and makes no context. The real check happens when the stage mounts: butterchurn's own `isSupported()` (WebGL 2 and Web Audio), then the visualizer itself. If either fails the stage calls `markUnsupported`, shows the artwork, and says so once under the stage. There is no fallback beyond the artwork.
 
-## The two library elements
+WebGL 2 is in every current desktop and phone browser, so the fallback is rare where visimo's WebGPU one was common. Headless Chromium has it through its software renderer, so `e2e/visualizer.spec.ts` now runs its drawing tests in CI rather than skipping them.
 
-Gapless playback (see [the player note](player.md#gapless-playback)) needs a second element to load the next track while the first plays, so the library has two, and the roles swap at each track change. The visualizer has to survive that, and a media element can be given to `createMediaElementSource` once only, so the split is:
+## The audio graph
 
-- **visimo** builds the graph (the context and the analyser) and wires up the first element it is given. `attachAudio` was written for one element and refuses any other, and the source it makes is inside the package where a host cannot reach it.
-- **Musimo** (`routeToAnalyser` in `player.tsx`) therefore gives `attachAudio` an element of its own that never has a source and never plays, the anchor, on every `play` event of a library element. That call is what builds the graph and what resumes a suspended context. Musimo then makes each library element's source itself and connects it to the analyser, read from `audioGraph()`, once, the first time that element plays. Both library elements go the same way, so neither is special. The visualizer reads the analyser, so it is unaware of which element feeds it.
+`audio-graph.ts` owns the one `AudioContext`. Each library element's source goes through a gain node of its own into a bus, and the bus goes to the speakers. butterchurn is connected to the bus with `connectAudio`, so it hears whichever element is playing, at the level that is heard.
 
-If a real library element were handed to `attachAudio`, visimo would keep it, the other would be wired here, and the two would differ (see the boost below). If neither were wired here, the visualizer would go flat while the music kept playing, because the elements would play directly, unanalysed. That is the failure to look for whenever the visimo pin moves or this function changes: play two tracks in a row with the visualizer on and check that the stage still moves after the swap. WebGPU is missing from headless browsers, so `e2e/visualizer.spec.ts` cannot see the picture, but `e2e/gapless.spec.ts` checks that both library elements get a source on the graph. If visimo ever accepts several elements itself, or lets a host connect its own sources, the anchor can go.
+```
+each library element:  source -> GainNode -> bus -> speakers
+                                               \-> butterchurn's analysers
+```
 
-Previews still never reach it. The preview element is separate, is not part of the pair, and is not swapped.
+Gapless playback (see [the player note](player.md#gapless-playback)) swaps two library elements at each track change, and a media element can be given to `createMediaElementSource` once only. `routeToAnalyser` in `player.tsx` wires each one the first time it plays, both the same way, so the stage keeps moving after a handover. `e2e/gapless.spec.ts` checks that both library elements get a source on the graph. The source is only made once the context is running, since a source on a suspended context is silent; the next play, or the tab becoming visible, tries again. A context made outside a click can wait for one to resume, so `resumeAudio` waits at most a second.
+
+The preview element is never wired: previews stream from provider CDNs without CORS headers, and a media element source on such audio is silenced permanently. Someone playing a preview who opens Now Playing is told so: the page says a preview is playing and that Now Playing, and its visuals where `canVisualize` is true, play with library tracks.
 
 ### The ReplayGain boost
 
-An element's `volume` cannot pass 1, so a [ReplayGain](player.md#volume-levelling) gain above 1 has to be applied in the graph. Because Musimo makes both library elements' sources, both get the same chain:
-
-```
-each library element:  source -> GainNode -> analyser -> speakers
-                                  ^ carries only the part above 1
-the anchor:            source (in visimo, silent) -> analyser
-```
-
-`routeToAnalyser` puts a gain node between each element's source and the analyser, at 1 until `applyVolume` sets it. The element keeps its own volume for everything up to 1 (`splitLevel`), and the node carries only the part above it. The analyser sits after the node, so the stage sees the boosted level that is heard.
-
-The boost is used only when the track has a peak tag, only while the context is running, and never for a preview. With no graph yet (nothing has played) or a suspended context, no node is used and the volume is set as before. `e2e/gapless.spec.ts` checks that a quiet fixture track gets the same gain on both elements across a handover. When the visimo pin moves, check that each element's chain is still source, gain node, analyser.
+An element's `volume` cannot pass 1, so a [ReplayGain](player.md#volume-levelling) gain above 1 is applied in the graph. The element keeps its own volume for everything up to 1 (`splitLevel`), and its gain node carries only the part above it. The bus sits after the node, so the stage sees the boosted level. The boost is used only when the track has a peak tag, only while the context is running, and never for a preview. `e2e/gapless.spec.ts` checks that a quiet fixture track gets the same gain on both elements across a handover.
 
 ## When it draws
 
-Artwork is the default view, because the visualizer is heavy on the GPU. A browser that has never stored a choice starts on artwork, even where WebGPU exists, and the Visualizer toggle (or V, or the setting) is one click away. A browser that already stored `visualizer` or `artwork` keeps it. The stored key cannot tell an old default from a deliberate choice, so a browser that only ever ran the old default keeps `visualizer` until it is switched.
+Artwork is the default view. A browser that has never stored a choice starts on artwork, and the Visualizer toggle (or V, or the setting) is one click away. A browser that already stored `visualizer` or `artwork` keeps it.
 
-The docked stage draws only while someone can see it. `useStageVisible` in `now-playing-popout.tsx` turns it off when the document is hidden (`visibilitychange`) and when the stage is scrolled out of view or under the phone layout's scroll (`IntersectionObserver` on the stage element), and turns it back on when both are true again. The stage component has no pause that Musimo uses, so "off" means the visualizer is unmounted and the artwork shows in its place, then it mounts again. The view setting is untouched (the toggle still reads On), the audio element is never touched, and the renderer outlives the stage, so coming back costs a canvas rather than a device. The popout window counts as visible for as long as it is open: it is a document of its own that stays on top, so neither of those checks runs there.
+The docked stage draws only while someone can see it. `useStageVisible` in `now-playing-popout.tsx` turns it off when the document is hidden and when the stage is scrolled out of view, and back on when both are true again. "Off" means the stage unmounts and the artwork shows in its place. Once playback has been paused for more than 10 seconds (`PAUSE_REST_MS`) it rests the same way, in the popout too, and play brings it back. The popout window counts as visible for as long as it is open.
 
-A third reason to rest is a long pause. Once playback has been paused for more than 10 seconds (`PAUSE_REST_MS`), `useStageVisible` returns false the same way, so the visualizer is unmounted and the artwork shows, in the popout as well as the docked stage. Play brings it back. The timer restarts from each pause, so a short one, or a pause that is undone in time, never swaps the picture. Nothing is drawn worth keeping while paused, and the canvas is the expensive part of the stage.
-
-Fluid's grid default and the canvas size are unchanged; a render size cap was considered and declined.
+butterchurn's visualizer outlives the stage. `milkdrop-stage.tsx` keeps one for the life of the tab and hands it each new canvas with `setCanvas`, so a remount (a hidden tab coming back, a trip to the popout and back) costs a canvas rather than a new WebGL context and a cold start, and the preset carries on. Frames come from the canvas's own window, so the popout draws at full rate while the tab behind it is throttled.
 
 ## How big it draws
 
-On Now Playing the docked stage is as wide as its column or as tall as the height the column leaves above its controls, whichever is smaller, and the full content width on a phone (see [the popout note](now-playing-popout.md#layout)). It used to be at most 320 px, and later 60% of the content width. The canvas and the post stack's offscreen textures follow the stage, so a docked stage in a tall window has several times the pixels a 320 px one had, and the fluid's grid setting does not shrink that. The frame times in visimo's README were taken at the smaller size and have not been measured again at this one; check `data-frame-ms` on the canvas (H shows it) on a low-end machine before trusting them.
-
-The Large stage (see [the popout note](now-playing-popout.md#stage-size)) is bigger again. It is the page's full content width by the height a window leaves above the controls, so on a wide window it has several times the pixels of the Small square, and it is not a square: the canvas and the post stack's textures follow that box, as they do in full screen. There is no render size cap on it and the fluid's grid default is unchanged, both declined, so the same check applies, at Large.
+The canvas's drawing buffer is its CSS size times `devicePixelRatio`, and follows it with a `ResizeObserver`. There is no render size cap, the same as visimo had. The docked Small stage, the Large stage and full screen can be a lot of pixels on a high-DPI screen; check `data-frame-ms` on the canvas on a low-end machine before trusting it. Headless Chromium on its software renderer measured about 6 ms a frame on a Small stage.
 
 ## The canvas attributes
 
-The package writes `data-adapter`, `data-frame-ms`, `data-scene`, `data-detail`, `data-post` and `data-preset` on the scene canvas, and `e2e/visualizer.spec.ts` asserts on all of them. They are visimo's public API, so a version bump that changes one breaks this suite; the class names `stage-visualizer` and `stage-hud` are Musimo's own and are passed to the stage as props.
+`canvas.stage-visualizer` carries `data-preset` (the name of the preset butterchurn has actually loaded, so a preset that never loads leaves it unset) and `data-frame-ms` (the average `render()` time over the last 30 frames). `e2e/visualizer.spec.ts` asserts on both. They and the class name `stage-visualizer` are Musimo's own. Nothing on screen shows the frame time; read it from the attribute in dev tools.
 
 ## Checks
 
-`e2e/visualizer.spec.ts` needs an adapter for all but its first test, so it runs in headed Chromium. Headless Chromium, Firefox and WebKit have no adapter, so they run the artwork fallback test and skip the rest. That is the documented behaviour rather than a gap. The pause test (canvas kept for three seconds of pause, gone before fifteen, back on play) is one of the skipped ones and has not been run headless; the rule it checks is in [When it draws](#when-it-draws).
+`e2e/visualizer.spec.ts` covers the artwork fallback without WebGL 2, artwork as the default, the view toggle and its keys, the hidden-tab and long-pause rests, the preset picker with `[` and `]`, and an old visimo preset id falling back to the default. The drawing tests skip in an engine that cannot make a WebGL 2 context.
 
-A test that touches the Now Playing stage has to pin the view rather than rely on the default: a test that needs the canvas stores `visualizer` first, and one that needs the artwork stores `artwork`. `visualizer.spec.ts` also checks that artwork is the default with an adapter present, and that the canvas goes away while the document is hidden and comes back. See [the testing note](testing.md).
-
-The frame times, the preset screenshots, the popout round trips and the tuning history are all in visimo's README. They were taken while this code lived here and nothing in the move touched a shader, a parameter or a uniform.
+A test that touches the Now Playing stage pins the view rather than rely on the default: a test that needs the canvas stores `visualizer` first, and one that needs the artwork stores `artwork`. Tests that need `canVisualize` false remove `window.WebGL2RenderingContext` in an init script. See [the testing note](testing.md).

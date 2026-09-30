@@ -17,11 +17,14 @@ async function loadTrack(page: Page) {
   await page.route('**/api/player/lyrics/song-1', (route) => route.fulfill({ json: { items: [] } }))
 }
 
-// The visualizer control and the palette's commands only ask whether the browser has the API, so a
-// bare object stands in for it.
-const withWebGpu = (page: Page) =>
+// The visualizer control and the palette's commands only ask whether the browser has WebGL 2, so it
+// is made to say yes everywhere.
+const withWebGl2 = (page: Page) =>
   page.addInitScript(() =>
-    Object.defineProperty(navigator, 'gpu', { value: {}, configurable: true }),
+    Object.defineProperty(window, 'WebGL2RenderingContext', {
+      value: window.WebGL2RenderingContext ?? function () {},
+      configurable: true,
+    }),
   )
 
 test('the footer cover rings only while a library track plays', async ({ page }) => {
@@ -43,12 +46,12 @@ test('the footer cover rings only while a library track plays', async ({ page })
   await expect(cover).toHaveAttribute('data-playing', 'false')
 })
 
-test('the stage keeps its Visualizer button while the docked stage is idle', async ({
+test('the Visualizer control fades with the bars when the docked stage goes idle', async ({
   page,
   isMobile,
 }) => {
   test.skip(isMobile, 'The stage controls are checked on desktop.')
-  await withWebGpu(page)
+  await withWebGl2(page)
   await playerFixtures(page)
   await loadTrack(page)
   await page.goto('/now-playing')
@@ -62,9 +65,10 @@ test('the stage keeps its Visualizer button while the docked stage is idle', asy
   // Leaving the stage while music plays is what turns the overlay idle at once.
   await page.mouse.move(0, 0)
   await expect(stage).toHaveClass(/idle/)
-  // The bars fade out with the stage; the Visualizer control has only dimmed.
-  await expect(control.getByRole('button', { name: /^Visualizer/ })).toBeVisible()
-  await expect(control).toHaveCSS('opacity', '0.7')
+  await expect(control).toHaveCSS('opacity', '0')
+  // Coming back over the stage shows it again.
+  await stage.hover()
+  await expect(control).toHaveCSS('opacity', '1')
 })
 
 test('the sidebar has no Now Playing row until a library track is loaded', async ({
@@ -89,7 +93,7 @@ test('the sidebar has no Now Playing row until a library track is loaded', async
 test('the palette offers the visualizer commands only while a library track is loaded', async ({
   page,
 }) => {
-  await withWebGpu(page)
+  await withWebGl2(page)
   await playerFixtures(page)
   const commands = ['Toggle visualizer', 'Next visualizer preset', 'Previous visualizer preset']
   const palette = page.getByRole('dialog', { name: 'Command palette' })

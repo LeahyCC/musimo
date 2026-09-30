@@ -63,7 +63,7 @@ export function CommandPalette() {
     // Playing with a notice, which is the fallback to plain navigation.
     popout.popoutToFullscreen()
   }
-  // No WebGPU means the stage only ever shows artwork, and with no library track loaded Now
+  // No WebGL 2 means the stage only ever shows artwork, and with no library track loaded Now
   // Playing has no stage, so in both cases these would do nothing.
   const visualizerCommands: Command[] =
     popout.canVisualize && libraryTrack

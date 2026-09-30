@@ -39,6 +39,7 @@ import {
   previewSchema,
 } from './api'
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from './api'
+import { audioGraph, resumeAudio } from './audio-graph'
 import { crossfadeSpan } from './crossfade'
 import { useCrossfadeSeconds } from './crossfade-settings'
 import { cx } from './cx'
@@ -410,43 +411,31 @@ export const songCount = (count: number) => `${count} ${count === 1 ? 'song' : '
 export const artUrl = (track: LibraryTrack) =>
   track.coverArt ? `/api/player/art/${encodeURIComponent(track.coverArt)}` : ''
 
-// The visualizer tree loads on demand so the main bundle stays as it is.
-const audioGraph = () => import('visimo/audio')
-
-// Elements whose sound already reaches the analyser. A media element can be given to
+// Elements whose sound already reaches the graph's bus. A media element can be given to
 // `createMediaElementSource` once only, so each is remembered for good.
 const routed = new WeakSet<HTMLMediaElement>()
-// The gain stage of each library element, between its source and the analyser. It carries a
+// The gain stage of each library element, between its source and the bus. It carries a
 // ReplayGain boost past what an element's `volume` can hold.
 const boosters = new WeakMap<HTMLMediaElement, GainNode>()
-// visimo's `attachAudio` builds the graph and keeps the first element it is given for itself, with
-// a source Musimo cannot reach. It is given this one, which never has a source and never plays, so
-// that both library elements are wired up here, the same way, each with its own gain stage. Handing
-// it a real library element would leave that one without a gain stage, and every other track would
-// miss its boost.
-let anchor: HTMLAudioElement | undefined
 
 /**
- * Sends a library element's sound through the visualizer's analyser. Call it from the element's
- * `play` event, which is also what lets a suspended context resume. visimo owns the graph and the
- * analyser; Musimo makes each library element's source itself and connects it through a gain node
- * of its own, at 1 until `applyVolume` sets it, so the sound is unchanged until a boost is asked
- * for. Gapless playback has two elements that swap roles, and without both wired up the stage goes
- * flat on every other track while the music carries on. Only ever called for the library pair: a
- * preview's cross-origin audio would be silenced for good.
+ * Sends a library element's sound through the audio graph, where the visualizer hears it. Call it
+ * from the element's `play` event, which is also what lets a suspended context resume. Each element
+ * gets its own gain node, at 1 until `applyVolume` sets it, so the sound is unchanged until a boost
+ * is asked for. Gapless playback has two elements that swap roles, and without both wired up the
+ * stage goes flat on every other track while the music carries on. Only ever called for the library
+ * pair: a preview's cross-origin audio would be silenced for good.
  */
 async function routeToAnalyser(element: HTMLMediaElement) {
-  const module = await audioGraph()
-  anchor ??= new Audio()
-  const graph = await module.attachAudio(anchor)
-  if (!graph || routed.has(element)) return
-  // Nothing is wired up until the context runs and visimo has the graph built. The next play
-  // tries again.
-  if (!graph.attached || graph.context.state !== 'running') return
+  if (routed.has(element)) return
+  const graph = audioGraph()
+  // Nothing is wired up until the context runs, since a source on a suspended context is silent.
+  // The next play tries again.
+  if (!(await resumeAudio()) || routed.has(element)) return
   routed.add(element)
   const booster = graph.context.createGain()
   graph.context.createMediaElementSource(element).connect(booster)
-  booster.connect(graph.analyser)
+  booster.connect(graph.bus)
   boosters.set(element, booster)
 }
 
@@ -1773,7 +1762,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     const onVisible = () => {
       if (document.visibilityState !== 'visible' || mode.current !== 'library') return
-      if (library() && !library()?.paused) void audioGraph().then((module) => module.resumeAudio())
+      if (library() && !library()?.paused) void resumeAudio()
     }
     document.addEventListener('visibilitychange', onVisible)
     return () => document.removeEventListener('visibilitychange', onVisible)

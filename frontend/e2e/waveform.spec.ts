@@ -17,7 +17,7 @@ const answerWithPeaks = (route: Route) => route.fulfill({ json: { peaks } })
 
 /** Opens Now Playing on a restored queue, with `waveform` answering the peaks request. */
 async function openNowPlaying(page: Page, waveform: (route: Route) => Promise<void>) {
-  // The view is pinned so the stage does not depend on the machine's WebGPU.
+  // The view is pinned so the stage does not depend on the machine's graphics.
   await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
   await playerFixtures(page)
   await page.route('**/api/player/queue', (route) =>

@@ -29,7 +29,7 @@ const sources = (directory: string): string[] =>
     if (entry.isDirectory()) return sources(path)
     // The theme registry is the one place that spells a theme's colors out, and the only file
     // excused. The migration finished with nothing else needing an exception: the stage hands
-    // visimo a preset id, and artwork is an <img>.
+    // butterchurn a preset name, and artwork is an <img>.
     if (relative(src, path).replaceAll('\\', '/') === 'theme/themes.ts') return []
 
     return /\.(?:tsx?|css)$/.test(entry.name) && !/\.test\.tsx?$/.test(entry.name) ? [path] : []

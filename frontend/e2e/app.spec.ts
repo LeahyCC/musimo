@@ -540,17 +540,17 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
 })
 
 // The visuals are only mentioned where the browser could draw them, so the test picks which.
-for (const webGpu of [true, false]) {
+for (const webGl2 of [true, false]) {
   test(`now playing says a preview is playing instead of nothing, ${
-    webGpu ? 'with' : 'without'
-  } WebGPU`, async ({ page }) => {
+    webGl2 ? 'with' : 'without'
+  } WebGL 2`, async ({ page }) => {
     await page.addInitScript(
       (available) =>
-        Object.defineProperty(navigator, 'gpu', {
-          value: available ? {} : undefined,
+        Object.defineProperty(window, 'WebGL2RenderingContext', {
+          value: available ? (window.WebGL2RenderingContext ?? function () {}) : undefined,
           configurable: true,
         }),
-      webGpu,
+      webGl2,
     )
 
     await page.route('**/api/preview/101?*', (route) =>
@@ -568,7 +568,7 @@ for (const webGpu of [true, false]) {
     await page.getByRole('dialog').getByRole('button', { name: 'Now Playing', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'A preview is playing.' })).toBeVisible()
     await expect(page.getByText('with tracks from your library')).toHaveText(
-      webGpu
+      webGl2
         ? 'Now Playing and its visuals play with tracks from your library.'
         : 'Now Playing plays with tracks from your library.',
     )
@@ -946,9 +946,12 @@ test('command palette includes library and now playing', async ({ page }) => {
 })
 
 test('the visualizer settings change what Now Playing remembers', async ({ page }) => {
-  // The section only asks whether the browser has the API, so a bare object stands in for it.
+  // The section only asks whether the browser has WebGL 2, so it is made to say yes everywhere.
   await page.addInitScript(() =>
-    Object.defineProperty(navigator, 'gpu', { value: {}, configurable: true }),
+    Object.defineProperty(window, 'WebGL2RenderingContext', {
+      value: window.WebGL2RenderingContext ?? function () {},
+      configurable: true,
+    }),
   )
   await page.goto('/settings/user')
   const view = page.getByRole('combobox', { name: 'Show on Now Playing' })
@@ -959,14 +962,25 @@ test('the visualizer settings change what Now Playing remembers', async ({ page 
   await expect
     .poll(() => page.evaluate(() => localStorage.getItem('musimo.now-playing-view')))
     .toBe('visualizer')
+
+  // Changing with the music is on until it is switched off.
+  const auto = page.getByRole('combobox', { name: 'Change with the music' })
+  await expect(auto).toHaveValue('on')
+  await auto.selectOption('off')
+  await expect
+    .poll(() => page.evaluate(() => localStorage.getItem('musimo.visualizer-auto')))
+    .toBe('off')
 })
 
-test('the stage size setting writes what Now Playing remembers, with or without WebGPU', async ({
+test('the stage size setting writes what Now Playing remembers, with or without WebGL 2', async ({
   page,
 }) => {
   // The size belongs to the artwork as much as to the visualizer, so it is not disabled here.
   await page.addInitScript(() =>
-    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
+    Object.defineProperty(window, 'WebGL2RenderingContext', {
+      value: undefined,
+      configurable: true,
+    }),
   )
   await page.goto('/settings/user')
   const size = page.getByRole('combobox', { name: 'Stage size' })
@@ -978,14 +992,17 @@ test('the stage size setting writes what Now Playing remembers, with or without 
     .toBe('large')
 })
 
-test('the visualizer settings are disabled with a reason where there is no WebGPU', async ({
+test('the visualizer settings are disabled with a reason where there is no WebGL 2', async ({
   page,
 }) => {
   await page.addInitScript(() =>
-    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
+    Object.defineProperty(window, 'WebGL2RenderingContext', {
+      value: undefined,
+      configurable: true,
+    }),
   )
   await page.goto('/settings/user')
-  await expect(page.getByText('The visualizer needs WebGPU')).toBeVisible()
+  await expect(page.getByText('The visualizer needs WebGL 2')).toBeVisible()
   await expect(page.getByRole('combobox', { name: 'Show on Now Playing' })).toBeDisabled()
 })
 
@@ -1001,11 +1018,14 @@ async function loadLibraryTrack(page: Page) {
   )
 }
 
-test('command palette offers the visualizer commands only where WebGPU exists', async ({
+test('command palette offers the visualizer commands only where WebGL 2 exists', async ({
   page,
 }) => {
   await page.addInitScript(() =>
-    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true }),
+    Object.defineProperty(window, 'WebGL2RenderingContext', {
+      value: undefined,
+      configurable: true,
+    }),
   )
   await loadLibraryTrack(page)
   await page.goto('/settings/user')
@@ -1017,9 +1037,12 @@ test('command palette offers the visualizer commands only where WebGPU exists', 
 })
 
 test('toggle visualizer from another route lands on Now Playing with it on', async ({ page }) => {
-  // The palette only asks whether the browser has the API, so a bare object stands in for it.
+  // The palette only asks whether the browser has WebGL 2, so it is made to say yes everywhere.
   await page.addInitScript(() =>
-    Object.defineProperty(navigator, 'gpu', { value: {}, configurable: true }),
+    Object.defineProperty(window, 'WebGL2RenderingContext', {
+      value: window.WebGL2RenderingContext ?? function () {},
+      configurable: true,
+    }),
   )
   await loadLibraryTrack(page)
   await page.goto('/settings/user')

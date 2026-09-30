@@ -19,15 +19,12 @@ import {
   Volume2,
   VolumeX,
 } from 'lucide-react'
-import { FLUID_SIZES, isSceneId, SCENE_IDS, SCENE_LABELS } from 'visimo/catalog'
-import type { SceneId } from 'visimo/catalog'
-import { PRESETS } from 'visimo/presets'
-import type { Preset } from 'visimo/presets'
 
 import { cx } from './cx'
 import { artUrl, durationText, usePlayer } from './player'
 import { IconButton, Kbd } from './ui'
 import type { IconButtonProps } from './ui'
+import { PRESET_NAMES, presetLabel } from './visualizer-presets'
 
 export type StagePlacement = 'docked' | 'popout'
 export type StageView = 'artwork' | 'visualizer'
@@ -51,12 +48,8 @@ type OverlayProps = {
   /** Undefined where the visualizer is not available, so no toggle is shown. */
   view?: StageView
   onToggleView?: () => void
-  preset?: Preset
-  onPreset?: (id: string) => void
-  scene?: SceneId
-  onScene?: (scene: SceneId) => void
-  fluidSize?: number
-  onFluidSize?: (size: number) => void
+  preset?: string
+  onPreset?: (name: string) => void
 }
 
 const IDLE_MS = 2500
@@ -71,8 +64,6 @@ function StageButton(props: IconButtonProps) {
    visualizer control sits outside them, so it can stay on screen when they have gone. */
 const stageBarClassName =
   'pointer-events-auto flex items-center transition-opacity duration-250 group-[.idle]:pointer-events-none group-[.idle]:opacity-0'
-const stageSelectClassName =
-  'h-[32px] rounded-[8px] border border-on-media/20 bg-scrim/60 px-[8px] text-small text-on-media'
 /* The visualizer control is always over the picture, so it draws on the media color and not on
    the page's. */
 const viewControlClassName =
@@ -133,7 +124,6 @@ type KeyActions = {
   onFullscreen: () => void
   onClose?: () => void
   onToggleView?: () => void
-  onToggleHud?: () => void
   /** Walks the preset list: -1 for `[` and 1 for `]`. */
   onCyclePreset?: (delta: number) => void
 }
@@ -204,11 +194,6 @@ export function useStageKeys(container: RefObject<HTMLDivElement | null>, action
         case 'V':
           if (!current.onToggleView) return
           current.onToggleView()
-          break
-        case 'h':
-        case 'H':
-          if (!current.onToggleHud) return
-          current.onToggleHud()
           break
         // N and P are already the transport, so the presets walk on the
         // brackets beside them.
@@ -356,10 +341,6 @@ export function NowPlayingOverlay({
   onToggleView,
   preset,
   onPreset,
-  scene,
-  onScene,
-  fluidSize,
-  onFluidSize,
 }: OverlayProps) {
   const player = usePlayer()
   const fullscreenLabel =
@@ -383,38 +364,6 @@ export function NowPlayingOverlay({
           {player.playing ? 'Playing' : 'Paused'}
         </span>
         <div className="flex gap-[4px]">
-          {/* Nothing to choose while there is one scene, so it is not shown. */}
-          {view === 'visualizer' && onScene && SCENE_IDS.length > 1 && (
-            <select
-              className={stageSelectClassName}
-              aria-label="Scene"
-              value={scene}
-              onChange={(event) => {
-                if (isSceneId(event.target.value)) onScene(event.target.value)
-              }}
-            >
-              {SCENE_IDS.map((id) => (
-                <option key={id} value={id}>
-                  {SCENE_LABELS[id]}
-                </option>
-              ))}
-            </select>
-          )}
-          {/* The size control belongs to whichever scene is drawing. */}
-          {view === 'visualizer' && scene === 'fluid' && onFluidSize && (
-            <select
-              className={stageSelectClassName}
-              aria-label="Fluid grid"
-              value={fluidSize}
-              onChange={(event) => onFluidSize(Number(event.target.value))}
-            >
-              {FLUID_SIZES.map((size) => (
-                <option key={size} value={size}>
-                  {size} grid
-                </option>
-              ))}
-            </select>
-          )}
           {onPopout && (
             <StageButton aria-label="Pop out player" onClick={onPopout}>
               <PictureInPicture2 size={17} />
@@ -434,16 +383,12 @@ export function NowPlayingOverlay({
           </StageButton>
         </div>
       </div>
-      {/* Outside both bars on purpose: it dims when they fade, but stays. In full screen and in
-          the popout it goes with them, so the visuals are clean and a small window is not covered. */}
+      {/* Outside both bars, but it fades with them when the stage goes idle, so the visuals are
+          clean once the pointer leaves. Hovering the stage brings it back. */}
       {view && onToggleView && (
         <div
           className={cx(
-            'stage-view-control pointer-events-auto absolute top-[56px] left-[16px] flex max-w-[calc(100%-32px)] flex-wrap items-center gap-[6px] transition-opacity duration-250',
-            // A popout is small, and the control would sit on most of the picture for good.
-            fullscreen || placement === 'popout'
-              ? 'group-[.idle]:pointer-events-none group-[.idle]:opacity-0'
-              : 'group-[.idle]:opacity-70',
+            'stage-view-control pointer-events-auto absolute top-[56px] left-[16px] flex max-w-[calc(100%-32px)] flex-wrap items-center gap-[6px] transition-opacity duration-250 group-[.idle]:pointer-events-none group-[.idle]:opacity-0',
           )}
         >
           <button
@@ -475,17 +420,15 @@ export function NowPlayingOverlay({
               <select
                 className={cx(viewControlClassName, 'max-w-[180px] truncate px-[8px]')}
                 aria-label="Preset"
-                value={preset.id}
+                // The label leaves the authors out; hovering shows the full name, which credits them.
+                title={preset}
+                value={preset}
                 onChange={(event) => onPreset(event.target.value)}
               >
-                {SCENE_IDS.map((id) => (
-                  <optgroup key={id} label={SCENE_LABELS[id]}>
-                    {PRESETS.filter((entry) => entry.scene === id).map((entry) => (
-                      <option key={entry.id} value={entry.id}>
-                        {entry.name}
-                      </option>
-                    ))}
-                  </optgroup>
+                {PRESET_NAMES.map((name) => (
+                  <option key={name} value={name}>
+                    {presetLabel(name)}
+                  </option>
                 ))}
               </select>
               <Kbd className="border-on-media/40! text-on-media/80">]</Kbd>

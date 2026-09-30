@@ -91,7 +91,7 @@ const LONG_TITLE =
 
 /** Opens Now Playing on a restored queue, without starting playback. */
 async function openNowPlaying(page: Page, queue: LibraryTrack[], lyrics: string[] = []) {
-  // Pinned for the same reason as above: the stage must not depend on the machine's WebGPU.
+  // Pinned for the same reason as above: the stage must not depend on the machine's graphics.
   await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
   await playerFixtures(page)
   await page.route('**/api/player/queue', (route) =>

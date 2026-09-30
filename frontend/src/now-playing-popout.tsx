@@ -15,10 +15,6 @@ import { createPortal } from 'react-dom'
 
 import { useNavigate } from '@tanstack/react-router'
 import { Disc3 } from 'lucide-react'
-import { DEFAULT_FLUID_SIZE, FLUID_SIZES, isSceneId } from 'visimo/catalog'
-import type { SceneId } from 'visimo/catalog'
-import { findPreset, firstPresetOf, presetOrDefault, stepPreset } from 'visimo/presets'
-import type { Preset } from 'visimo/presets'
 
 import { ArtworkMenu } from './artwork-menu'
 import type { MenuPoint } from './artwork-menu'
@@ -31,9 +27,12 @@ import { activeTheme, applyTheme, subscribeTheme } from './theme/store'
 import { Button } from './ui'
 import { leavingStyle, useLeaving } from './use-leaving'
 import { usePhone } from './use-phone'
+import { presetOrDefault, randomPreset, stepPreset } from './visualizer-presets'
 
-// The whole WebGPU tree stays out of the main bundle until a stage wants it.
-const VisualizerStage = lazy(() => import('visimo').then((m) => ({ default: m.VisualizerStage })))
+// butterchurn and its presets stay out of the main bundle until a stage wants them.
+const MilkdropStage = lazy(() =>
+  import('./milkdrop-stage').then((m) => ({ default: m.MilkdropStage })),
+)
 
 type PictureInPictureApi = {
   requestWindow: (options?: {
@@ -68,24 +67,19 @@ type PopoutValue = {
   view: StageView
   setView: (view: StageView) => void
   toggleView: () => void
-  /** False without WebGPU, or once the device could not be had. */
+  /** False without WebGL 2, or once a context could not be had. */
   canVisualize: boolean
   markUnsupported: () => void
-  hud: boolean
-  toggleHud: () => void
-  /**
-   * The preset drawing. It carries the scene, the scene's numbers and the
-   * post stack, so choosing one sets all three at once.
-   */
-  preset: Preset
-  setPreset: (id: string) => void
+  /** The MilkDrop preset drawing, by name. */
+  preset: string
+  setPreset: (name: string) => void
   /** Where `[` and `]` go: -1 and 1. */
   cyclePreset: (delta: number) => void
-  /** Which scene draws, and how much work the chosen one does. */
-  scene: SceneId
-  setScene: (scene: SceneId) => void
-  fluidSize: number
-  setFluidSize: (size: number) => void
+  /** Whether the preset changes by itself when the music has a moment (a drop, or a long stretch). */
+  autoPresets: boolean
+  setAutoPresets: (on: boolean) => void
+  /** Moves to a random other preset: what the music's moments call. */
+  shufflePreset: () => void
   /**
    * The docked stage's size as chosen. A phone has one size, so read `phone` too: the choice is
    * kept there but does nothing.
@@ -114,15 +108,12 @@ const PopoutContext = createContext<PopoutValue>({
   toggleView: noop,
   canVisualize: false,
   markUnsupported: noop,
-  hud: false,
-  toggleHud: noop,
   preset: presetOrDefault(''),
   setPreset: noop,
   cyclePreset: noop,
-  scene: presetOrDefault('').scene,
-  setScene: noop,
-  fluidSize: DEFAULT_FLUID_SIZE,
-  setFluidSize: noop,
+  autoPresets: true,
+  setAutoPresets: noop,
+  shufflePreset: noop,
   size: 'small',
   setSize: noop,
   toggleSize: noop,
@@ -136,23 +127,13 @@ const SIZE_KEY = 'musimo.now-playing-size'
 // A paused stage draws nothing new, so after this long the visualizer gives its canvas back.
 const PAUSE_REST_MS = 10_000
 const PRESET_KEY = 'musimo.visualizer-preset'
-const SCENE_KEY = 'musimo.visualizer-scene'
-const FLUID_KEY = 'musimo.visualizer-fluid-grid'
+const AUTO_KEY = 'musimo.visualizer-auto'
 const NOTICE_KEY = 'musimo.now-playing-visualizer-notice'
-const UNSUPPORTED = 'This browser has no WebGPU, so the stage shows the artwork.'
+const UNSUPPORTED = 'This browser has no WebGL 2, so the stage shows the artwork.'
 
-// A deliberate copy of visimo's own check. Importing it would pull the
-// WebGPU chunk into the main bundle to answer a question about navigator.
-const hasWebGpu = () => typeof navigator !== 'undefined' && Boolean(navigator.gpu)
-
-// What the browser remembers. A preset names a scene, so it decides; the
-// scene key is only consulted where no preset was ever stored.
-function remembered(): Preset {
-  const saved = findPreset(stored(PRESET_KEY, ''))
-  if (saved) return saved
-  const scene = stored(SCENE_KEY, '')
-  return isSceneId(scene) ? firstPresetOf(scene) : presetOrDefault('')
-}
+// A cheap first answer that loads nothing and makes no context. The stage makes the real check
+// when it mounts and calls `markUnsupported` if a context cannot be had.
+const hasWebGl2 = () => typeof WebGL2RenderingContext !== 'undefined'
 
 // The popout document starts empty and cannot navigate, so the tab's
 // stylesheets are copied across once when it opens.
@@ -186,32 +167,14 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   const [view, setView] = useState<StageView>(() =>
     stored(VIEW_KEY, 'artwork') === 'visualizer' ? 'visualizer' : 'artwork',
   )
-  const [canVisualize, setCanVisualize] = useState(hasWebGpu)
-  const [hud, setHud] = useState(false)
-  // The preset carries a scene, so the two are kept in step rather than left
-  // to argue: choosing a preset moves the scene select under it, and choosing
-  // a scene moves to that scene's first preset. The stored preset wins over
-  // the stored scene, which matters on the first visit after this shipped,
-  // where the second is set and the first is not.
-  const [preset, setPresetState] = useState<Preset>(remembered)
-  const [scene, setSceneState] = useState<SceneId>(() => remembered().scene)
-  const choosePreset = useCallback((chosen: Preset) => {
-    setPresetState(chosen)
-    setSceneState(chosen.scene)
-  }, [])
-  const setPreset = useCallback((id: string) => choosePreset(presetOrDefault(id)), [choosePreset])
+  const [canVisualize, setCanVisualize] = useState(hasWebGl2)
+  // A name the pack no longer has, or one left over from the old visualizer, starts on the default.
+  const [preset, setPresetState] = useState(() => presetOrDefault(stored(PRESET_KEY, '')))
+  const setPreset = useCallback((name: string) => setPresetState(presetOrDefault(name)), [])
   const cyclePreset = useCallback(
-    (delta: number) => choosePreset(stepPreset(preset.id, delta)),
-    [choosePreset, preset],
+    (delta: number) => setPresetState((current) => stepPreset(current, delta)),
+    [],
   )
-  const setScene = useCallback((chosen: SceneId) => {
-    setSceneState(chosen)
-    setPresetState((current) => (current.scene === chosen ? current : firstPresetOf(chosen)))
-  }, [])
-  const [fluidSize, setFluidSize] = useState(() => {
-    const saved = Number(stored(FLUID_KEY, ''))
-    return FLUID_SIZES.includes(saved) ? saved : DEFAULT_FLUID_SIZE
-  })
   const [size, setSize] = useState<StageSize>(() =>
     stored(SIZE_KEY, 'small') === 'large' ? 'large' : 'small',
   )
@@ -222,14 +185,15 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   const phone = usePhone()
   useEffect(() => remember(VIEW_KEY, view), [view])
   useEffect(() => remember(SIZE_KEY, size), [size])
-  useEffect(() => remember(PRESET_KEY, preset.id), [preset])
-  useEffect(() => remember(SCENE_KEY, scene), [scene])
-  useEffect(() => remember(FLUID_KEY, String(fluidSize)), [fluidSize])
+  useEffect(() => remember(PRESET_KEY, preset), [preset])
+  // On unless it was switched off.
+  const [autoPresets, setAutoPresets] = useState(() => stored(AUTO_KEY, 'on') !== 'off')
+  useEffect(() => remember(AUTO_KEY, autoPresets ? 'on' : 'off'), [autoPresets])
+  const shufflePreset = useCallback(() => setPresetState((current) => randomPreset(current)), [])
   const toggleView = useCallback(
     () => setView((current) => (current === 'artwork' ? 'visualizer' : 'artwork')),
     [],
   )
-  const toggleHud = useCallback(() => setHud((current) => !current), [])
   // Said once per browser, then artwork without comment.
   const markUnsupported = useCallback(() => {
     setCanVisualize(false)
@@ -294,15 +258,12 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       toggleView,
       canVisualize,
       markUnsupported,
-      hud,
-      toggleHud,
       preset,
       setPreset,
       cyclePreset,
-      scene,
-      setScene,
-      fluidSize,
-      setFluidSize,
+      autoPresets,
+      setAutoPresets,
+      shufflePreset,
       size,
       setSize,
       toggleSize,
@@ -321,14 +282,11 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       toggleView,
       canVisualize,
       markUnsupported,
-      hud,
-      toggleHud,
       preset,
       setPreset,
       cyclePreset,
-      scene,
-      setScene,
-      fluidSize,
+      autoPresets,
+      shufflePreset,
       size,
       toggleSize,
       phone,
@@ -493,7 +451,6 @@ function Stage({
     onFullscreen,
     onClose,
     onToggleView: view ? popout.toggleView : undefined,
-    onToggleHud: view === 'visualizer' ? popout.toggleHud : undefined,
     onCyclePreset: view === 'visualizer' ? popout.cyclePreset : undefined,
   })
   const artwork = <StageArtwork art={art} />
@@ -540,14 +497,11 @@ function Stage({
     >
       {view === 'visualizer' && seen ? (
         <Suspense fallback={artwork}>
-          <VisualizerStage
-            hud={popout.hud}
+          <MilkdropStage
             preset={popout.preset}
-            scene={popout.scene}
-            fluidSize={popout.fluidSize}
             onUnsupported={popout.markUnsupported}
+            onMoment={popout.autoPresets ? popout.shufflePreset : undefined}
             className="stage-visualizer"
-            hudClassName="stage-hud"
           />
         </Suspense>
       ) : (
@@ -565,10 +519,6 @@ function Stage({
         onToggleView={popout.toggleView}
         preset={popout.preset}
         onPreset={popout.setPreset}
-        scene={popout.scene}
-        onScene={popout.setScene}
-        fluidSize={popout.fluidSize}
-        onFluidSize={popout.setFluidSize}
       />
       {menu && track && (
         <ArtworkMenu
@@ -600,7 +550,7 @@ export function NowPlayingStage() {
     return () => document.removeEventListener('fullscreenchange', onChange)
   }, [])
 
-  // No WebGPU at all is known before anything loads; say so once.
+  // No WebGL 2 at all is known before anything loads; say so once.
   useEffect(() => {
     if (!popout.canVisualize) popout.markUnsupported()
   }, [popout.canVisualize, popout.markUnsupported])

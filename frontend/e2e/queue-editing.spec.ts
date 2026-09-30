@@ -23,7 +23,7 @@ async function restoreQueue(page: Page, queue: LibraryTrack[]) {
     [...queue, alpha, bravo, charlie, delta, echo].map((song) => [song.id, song] as const),
   )
   let restored = { current: queue[0]?.id ?? '', entry: queue }
-  // Pinned so the stage does not depend on the machine's WebGPU.
+  // Pinned so the stage does not depend on the machine's graphics.
   await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
   await playerFixtures(page)
   await page.route('**/api/player/queue', async (route) => {
