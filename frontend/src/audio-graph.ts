@@ -23,19 +23,16 @@ export function audioGraph(): AudioGraph {
   return graph
 }
 
-// A context made outside a user gesture starts suspended, and `resume()` can then wait until the
-// page is next clicked, so it is not waited on for longer than this.
-const RESUME_WAIT_MS = 1000
-
-/** Wakes a suspended context and says whether it is running. Does not build a graph. */
+/**
+ * Wakes a suspended context and says whether it is running. Does not build a graph. There is no
+ * time limit: Firefox takes about a second to start, and giving up sooner left the first track of
+ * a session unwired. A context that waits for a click just waits, while the element plays on
+ * without the graph until it is running.
+ */
 export async function resumeAudio(): Promise<boolean> {
   if (!graph) return false
   const { context } = graph
-  if (context.state !== 'running')
-    await Promise.race([
-      context.resume().catch(() => undefined),
-      new Promise((resolve) => setTimeout(resolve, RESUME_WAIT_MS)),
-    ])
+  if (context.state !== 'running') await context.resume().catch(() => undefined)
   return context.state === 'running'
 }
 

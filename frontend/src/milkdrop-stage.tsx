@@ -39,6 +39,23 @@ let showing = ''
 let pending: Promise<void> = Promise.resolve()
 // Set when the music asked for the next change, so that load uses the moment's blend.
 let nextBlend: number | undefined
+let frameWarned = false
+// The size the shared visualizer draws at, so a remount at the same size leaves it alone.
+let drawnSize = ''
+
+// butterchurn redraws its last frame straight away when it is resized. Where there is no finished
+// frame yet (seen in WebKit when the stage remounts), that redraw throws, and inside a React effect
+// it would take the whole page down. The next frame draws at the new size either way.
+function resize(drawing: Visualizer, width: number, height: number) {
+  const next = `${width}x${height}`
+  if (next === drawnSize) return
+  drawnSize = next
+  try {
+    drawing.setRendererSize(width, height)
+  } catch (error: unknown) {
+    console.warn('MilkDrop could not redraw at the new size', error)
+  }
+}
 
 function takeVisualizer(canvas: HTMLCanvasElement) {
   if (shared === undefined) {
@@ -97,7 +114,7 @@ export function MilkdropStage({ preset, onUnsupported, onMoment, className }: Pr
       onUnsupported()
       return
     }
-    drawing.setRendererSize(canvas.width, canvas.height)
+    resize(drawing, canvas.width, canvas.height)
     setVisualizer(drawing)
 
     const observer = new view.ResizeObserver(() => {
@@ -105,7 +122,7 @@ export function MilkdropStage({ preset, onUnsupported, onMoment, className }: Pr
       if (width === canvas.width && height === canvas.height) return
       canvas.width = width
       canvas.height = height
-      drawing.setRendererSize(width, height)
+      resize(drawing, width, height)
     })
     observer.observe(canvas)
 
@@ -116,7 +133,14 @@ export function MilkdropStage({ preset, onUnsupported, onMoment, className }: Pr
     let spent = 0
     const draw = () => {
       const start = performance.now()
-      drawing.render()
+      try {
+        drawing.render()
+      } catch (error: unknown) {
+        // One bad frame (a preset part way through loading) skips that frame, not the picture. Said
+        // once, since a preset that keeps failing would say it every frame.
+        if (!frameWarned) console.warn('MilkDrop could not draw a frame', error)
+        frameWarned = true
+      }
       spent += performance.now() - start
       const moment = momentRef.current
         ? moments.current.sample(bassLevel(analyser, scratch), start)
