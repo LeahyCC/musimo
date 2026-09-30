@@ -84,6 +84,14 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(len(store.events(0)), 1)
             store.close()
 
+    def test_csp_allows_webassembly_but_no_eval_or_other_scripts(self) -> None:
+        # The visualizer compiles its presets to WebAssembly; without this every preset fails.
+        with tempfile.TemporaryDirectory() as folder:
+            with TestClient(create_app(Path(folder))) as client:
+                policy = client.get("/api/health").headers["content-security-policy"]
+                self.assertIn("script-src 'self' 'wasm-unsafe-eval'", policy)
+                self.assertNotIn("'unsafe-eval'", policy)
+
     def test_api_rejects_invalid_and_cross_origin_changes(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             with TestClient(create_app(Path(folder))) as client:

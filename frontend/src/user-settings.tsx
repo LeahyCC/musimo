@@ -2,8 +2,6 @@ import { useEffect, useId, useRef, useState } from 'react'
 
 import { Link, useBlocker } from '@tanstack/react-router'
 import { AlertTriangle, Check, Copy, Download, Pencil, Trash2 } from 'lucide-react'
-import { FLUID_SIZES, SCENE_IDS, SCENE_LABELS } from 'visimo/catalog'
-import { PRESETS } from 'visimo/presets'
 
 import { CROSSFADE_OPTIONS, parseCrossfade } from './crossfade'
 import { setCrossfadeSeconds, useCrossfadeSeconds } from './crossfade-settings'
@@ -50,6 +48,7 @@ import {
   Tag,
   textLinkClassName,
 } from './ui'
+import { PRESET_NAMES, presetLabel } from './visualizer-presets'
 
 /** The four colors that tell two themes apart at a glance, in the order the strip shows them. */
 const SWATCH_TOKENS: readonly ColorToken[] = [
@@ -494,8 +493,8 @@ function VisualizerSettings() {
     setView,
     preset,
     setPreset,
-    fluidSize,
-    setFluidSize,
+    autoPresets,
+    setAutoPresets,
     size: stageSize,
     setSize: setStageSize,
     canVisualize,
@@ -512,12 +511,12 @@ function VisualizerSettings() {
       </p>
       {!canVisualize && (
         <p className="text-small text-warn" role="status">
-          The visualizer needs WebGPU, and this browser cannot provide it, so Now Playing shows the
+          The visualizer needs WebGL 2, and this browser cannot provide it, so Now Playing shows the
           artwork.
         </p>
       )}
       {/* Outside the fieldset below: the stage's size applies to the artwork as much as to the
-          visualizer, so it stays available where there is no WebGPU. */}
+          visualizer, so it stays available where there is no WebGL 2. */}
       <div className="grid max-w-[520px] gap-[6px]">
         <label htmlFor="visualizer-size" className="text-small">
           Stage size
@@ -569,43 +568,42 @@ function VisualizerSettings() {
           </label>
           <FieldSelect
             id="visualizer-preset"
-            value={preset.id}
+            title={preset}
+            value={preset}
             fullWidth={false}
             className="w-[260px] max-w-full"
+            aria-describedby="visualizer-preset-note"
             onChange={(event) => setPreset(event.target.value)}
           >
-            {SCENE_IDS.map((id) => (
-              <optgroup key={id} label={SCENE_LABELS[id]}>
-                {PRESETS.filter((entry) => entry.scene === id).map((entry) => (
-                  <option key={entry.id} value={entry.id}>
-                    {entry.name}
-                  </option>
-                ))}
-              </optgroup>
-            ))}
-          </FieldSelect>
-        </div>
-        <div className="grid gap-[6px]">
-          <label htmlFor="visualizer-fluid" className="text-small">
-            Fluid detail
-          </label>
-          <FieldSelect
-            id="visualizer-fluid"
-            value={fluidSize}
-            fullWidth={false}
-            className="w-[200px]"
-            aria-describedby="visualizer-fluid-note"
-            onChange={(event) => setFluidSize(Number(event.target.value))}
-          >
-            {FLUID_SIZES.map((size) => (
-              <option key={size} value={size}>
-                {size} grid
+            {PRESET_NAMES.map((name) => (
+              <option key={name} value={name}>
+                {presetLabel(name)}
               </option>
             ))}
           </FieldSelect>
-          <p id="visualizer-fluid-note" className="text-tiny">
-            Only the fluid scene uses this. A larger grid is finer and asks more of the graphics
-            card.
+          <p id="visualizer-preset-note" className="text-tiny">
+            The MilkDrop presets in the butterchurn base pack. On Now Playing, [ and ] walk through
+            them.
+          </p>
+        </div>
+        <div className="grid gap-[6px]">
+          <label htmlFor="visualizer-auto" className="text-small">
+            Change with the music
+          </label>
+          <FieldSelect
+            id="visualizer-auto"
+            value={autoPresets ? 'on' : 'off'}
+            fullWidth={false}
+            className="w-[200px]"
+            aria-describedby="visualizer-auto-note"
+            onChange={(event) => setAutoPresets(event.target.value === 'on')}
+          >
+            <option value="on">On</option>
+            <option value="off">Off</option>
+          </FieldSelect>
+          <p id="visualizer-auto-note" className="text-tiny">
+            Moves to a new preset when a song drops after a quieter stretch, or after a minute and a
+            half of steady music. Never more than once every 20 seconds.
           </p>
         </div>
       </fieldset>

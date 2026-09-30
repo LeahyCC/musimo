@@ -19,7 +19,7 @@ type Scrobble = { id: string; submission: boolean }
  */
 async function restoreQueue(page: Page, queue: LibraryTrack[], unplayable: string[] = []) {
   const scrobbles: Scrobble[] = []
-  // Pinned so the stage does not depend on the machine's WebGPU.
+  // Pinned so the stage does not depend on the machine's graphics.
   await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
   await playerFixtures(page)
   await page.route('**/api/player/queue', (route) =>
@@ -131,14 +131,13 @@ test('a hidden tab with slow timers starts the next song before the last one end
 test('both library elements feed the analyser, so the visualizer survives a handover', async ({
   page,
 }) => {
-  // Headless has no WebGPU to draw with, but the audio graph is the same: count the distinct
-  // elements that get a source on it. One would mean every other song plays past the analyser.
+  // The picture is not checked here, only the audio graph: count the distinct elements that get a
+  // source on it. One would mean every other song plays past the analyser.
   await page.addInitScript(() => {
     const wired = new Set<HTMLMediaElement>()
     const create = AudioContext.prototype.createMediaElementSource
     AudioContext.prototype.createMediaElementSource = function (element) {
-      // Only the library pair counts. The graph is built around an element of Musimo's own that
-      // never plays, which is not one of them.
+      // Only the library pair counts.
       if (element.classList.contains('library-audio')) wired.add(element)
       document.documentElement.dataset.wired = String(wired.size)
       return create.call(this, element)

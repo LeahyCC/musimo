@@ -4,7 +4,11 @@ import type { Page } from '@playwright/test'
 import { librarySong, playerFixtures } from './library-fixtures'
 
 const song = librarySong('song-1', { title: 'First Light', duration: 30 })
-const NOTICE = 'This browser has no WebGPU'
+const NOTICE = 'This browser has no WebGL 2'
+const DEFAULT_PRESET = 'Flexi, martin + geiss - dedicated to the sherwin maxawow'
+// `data-preset` is written once a preset has loaded, and headless Chromium compiles a preset's
+// shaders on its software renderer, which can take several seconds.
+const LOADED = { timeout: 20_000 }
 
 // Artwork is the default, so a test that needs the canvas asks for it. Only on a browser that has
 // stored nothing, so a choice made in the test survives its own reload.
@@ -13,6 +17,11 @@ const showVisualizerFirst = (page: Page) =>
     if (localStorage.getItem('musimo.now-playing-view') === null)
       localStorage.setItem('musimo.now-playing-view', 'visualizer')
   })
+
+// Whether this browser can make a WebGL 2 context. Headless Chromium can, through its software
+// renderer; an engine that cannot runs the artwork test only.
+const hasWebGl2 = (page: Page) =>
+  page.evaluate(() => Boolean(document.createElement('canvas').getContext('webgl2')))
 
 // Play a library track and open Now Playing. The saved queue carries the
 // track, so a reload lands back on the same stage.
@@ -45,10 +54,13 @@ async function openNowPlaying(page: Page) {
   return page.locator('.stage')
 }
 
-test('without WebGPU the stage shows artwork and says so once', async ({ page, isMobile }) => {
+test('without WebGL 2 the stage shows artwork and says so once', async ({ page, isMobile }) => {
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await page.addInitScript(() => {
-    Object.defineProperty(navigator, 'gpu', { value: undefined, configurable: true })
+    Object.defineProperty(window, 'WebGL2RenderingContext', {
+      value: undefined,
+      configurable: true,
+    })
   })
   const stage = await openNowPlaying(page)
   await expect(stage.locator('img.stage-art')).toBeVisible()
@@ -68,16 +80,13 @@ test('without WebGPU the stage shows artwork and says so once', async ({ page, i
   ).toBe('shown')
 })
 
-test('artwork is the default even with WebGPU, and the Visualizer button turns it on', async ({
+test('artwork is the default even with WebGL 2, and the Visualizer button turns it on', async ({
   page,
   isMobile,
 }) => {
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   const stage = await openNowPlaying(page)
-  const adapter = await page.evaluate(async () =>
-    Boolean(navigator.gpu && (await navigator.gpu.requestAdapter())),
-  )
-  test.skip(!adapter, 'No WebGPU adapter in this browser.')
+  test.skip(!(await hasWebGl2(page)), 'No WebGL 2 in this browser.')
 
   await expect(stage.locator('img.stage-art')).toBeVisible()
   await expect(stage.locator('canvas.stage-visualizer')).toHaveCount(0)
@@ -95,10 +104,7 @@ test('the visualizer stops drawing while the tab is hidden and resumes, audio un
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await showVisualizerFirst(page)
   const stage = await openNowPlaying(page)
-  const adapter = await page.evaluate(async () =>
-    Boolean(navigator.gpu && (await navigator.gpu.requestAdapter())),
-  )
-  test.skip(!adapter, 'No WebGPU adapter in this browser.')
+  test.skip(!(await hasWebGl2(page)), 'No WebGL 2 in this browser.')
 
   const canvas = stage.locator('canvas.stage-visualizer')
   await expect(canvas).toBeVisible()
@@ -122,10 +128,7 @@ test('the visualizer rests after a long pause, keeps its picture through a short
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await showVisualizerFirst(page)
   const stage = await openNowPlaying(page)
-  const adapter = await page.evaluate(async () =>
-    Boolean(navigator.gpu && (await navigator.gpu.requestAdapter())),
-  )
-  test.skip(!adapter, 'No WebGPU adapter in this browser.')
+  test.skip(!(await hasWebGl2(page)), 'No WebGL 2 in this browser.')
 
   const canvas = stage.locator('canvas.stage-visualizer')
   await expect(canvas).toBeVisible()
@@ -140,47 +143,28 @@ test('the visualizer rests after a long pause, keeps its picture through a short
   await expect(canvas).toBeVisible()
 })
 
-test('with WebGPU V and the button switch the view, and the choice sticks', async ({
+test('with WebGL 2 V and the button switch the view, and the choice sticks', async ({
   page,
   isMobile,
 }) => {
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await showVisualizerFirst(page)
   const stage = await openNowPlaying(page)
-  // Headless engines often expose navigator.gpu without an adapter; the stage
-  // then falls back to artwork, which the previous test covers.
-  const adapter = await page.evaluate(async () =>
-    Boolean(navigator.gpu && (await navigator.gpu.requestAdapter())),
-  )
-  test.skip(!adapter, 'No WebGPU adapter in this browser.')
+  test.skip(!(await hasWebGl2(page)), 'No WebGL 2 in this browser.')
 
   const canvas = stage.locator('canvas.stage-visualizer')
   await expect(canvas).toBeVisible()
-  await expect(canvas).toHaveAttribute('data-adapter', /.+/)
-  // Structure only: which post stages are running, not what they look like.
-  await expect(canvas).toHaveAttribute('data-post', /feedback bloom chroma tonemap grain/)
+  // Structure only: that frames are being drawn, not what they look like.
+  await expect(canvas).toHaveAttribute('data-frame-ms', /^\d/)
   await stage.hover()
   await expect(stage.getByRole('button', { name: /^Visualizer/ })).toHaveAttribute(
     'aria-pressed',
     'true',
   )
   await expect(stage.getByRole('combobox', { name: 'Preset' })).toBeVisible()
-  await expect(stage.getByRole('combobox', { name: 'Fluid grid' })).toBeVisible()
-  // Two scenes, so the select is drawn. Fluid stays the default, and the grid
-  // control belongs to it alone.
-  const scenes = stage.getByRole('combobox', { name: 'Scene' })
-  await expect(scenes).toHaveValue('fluid')
-  await scenes.selectOption('kaleidoscope')
-  await expect(canvas).toHaveAttribute('data-scene', 'kaleidoscope')
-  await expect(canvas).toHaveAttribute('data-preset', 'prism')
-  await expect(stage.getByRole('combobox', { name: 'Fluid grid' })).toHaveCount(0)
-  await scenes.selectOption('fluid')
-  await expect(canvas).toHaveAttribute('data-scene', 'fluid')
 
   // Shortcuts apply while the stage holds focus.
   await stage.focus()
-  await page.keyboard.press('h')
-  await expect(stage.locator('canvas.stage-hud')).toBeVisible()
   await page.keyboard.press('v')
   await expect(stage.locator('img.stage-art')).toBeVisible()
   await expect(canvas).toHaveCount(0)
@@ -202,31 +186,6 @@ test('with WebGPU V and the button switch the view, and the choice sticks', asyn
   )
 })
 
-test('the fluid grid size can be changed and survives a reload', async ({ page, isMobile }) => {
-  test.skip(isMobile, 'The stage controls are checked on desktop.')
-  await showVisualizerFirst(page)
-  const stage = await openNowPlaying(page)
-  const adapter = await page.evaluate(async () =>
-    Boolean(navigator.gpu && (await navigator.gpu.requestAdapter())),
-  )
-  test.skip(!adapter, 'No WebGPU adapter in this browser.')
-
-  await stage.hover()
-  // Structure only: which scene and workload the canvas names, not what it draws.
-  await expect(stage.locator('canvas.stage-visualizer')).toHaveAttribute('data-scene', 'fluid')
-  await expect(stage.locator('canvas.stage-visualizer')).toHaveAttribute('data-detail', /512/)
-  await stage.getByRole('combobox', { name: 'Fluid grid' }).selectOption('1024')
-  await expect(stage.locator('canvas.stage-visualizer')).toHaveAttribute('data-detail', /1024/)
-  expect(await page.evaluate(() => localStorage.getItem('musimo.visualizer-fluid-grid'))).toBe(
-    '1024',
-  )
-
-  await page.reload()
-  await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
-  await page.locator('.stage').hover()
-  await expect(page.getByRole('combobox', { name: 'Fluid grid' })).toHaveValue('1024')
-})
-
 test('the preset picker, [ and ], and the choice surviving a reload', async ({
   page,
   isMobile,
@@ -234,37 +193,51 @@ test('the preset picker, [ and ], and the choice surviving a reload', async ({
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await showVisualizerFirst(page)
   const stage = await openNowPlaying(page)
-  const adapter = await page.evaluate(async () =>
-    Boolean(navigator.gpu && (await navigator.gpu.requestAdapter())),
-  )
-  test.skip(!adapter, 'No WebGPU adapter in this browser.')
+  test.skip(!(await hasWebGl2(page)), 'No WebGL 2 in this browser.')
 
   const picker = stage.getByRole('combobox', { name: 'Preset' })
   const canvas = stage.locator('canvas.stage-visualizer')
   await stage.hover()
+  // The pack's own order, read off the picker, so the test does not repeat the list.
+  const names = await picker
+    .locator('option')
+    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))
+  const next = names[names.indexOf(DEFAULT_PRESET) + 1] ?? ''
+  const first = names[0] ?? ''
+  const last = names[names.length - 1] ?? ''
   // Structure only: which preset the canvas names, not what it draws.
-  await expect(picker).toHaveValue('plume')
-  await expect(canvas).toHaveAttribute('data-preset', 'plume')
+  await expect(picker).toHaveValue(DEFAULT_PRESET)
+  await expect(canvas).toHaveAttribute('data-preset', DEFAULT_PRESET, LOADED)
 
-  // ] walks forward and [ walks back, both wrapping at the ends.
+  // ] walks forward and [ walks back.
   await stage.focus()
   await page.keyboard.press(']')
-  await expect(picker).toHaveValue('wash')
-  await expect(canvas).toHaveAttribute('data-preset', 'wash')
-  await page.keyboard.press(']')
-  await expect(picker).toHaveValue('plume')
+  await expect(picker).toHaveValue(next)
+  await expect(canvas).toHaveAttribute('data-preset', next, LOADED)
   await page.keyboard.press('[')
-  await expect(picker).toHaveValue('wash')
+  await expect(picker).toHaveValue(DEFAULT_PRESET)
 
-  // The picker itself sets it the same way.
-  await picker.selectOption('plume')
-  await expect(canvas).toHaveAttribute('data-preset', 'plume')
-  await picker.selectOption('wash')
-  await expect(canvas).toHaveAttribute('data-preset', 'wash')
-  expect(await page.evaluate(() => localStorage.getItem('musimo.visualizer-preset'))).toBe('wash')
+  // The picker itself sets it the same way, and [ wraps from the first to the last.
+  await picker.selectOption(first)
+  await expect(canvas).toHaveAttribute('data-preset', first, LOADED)
+  await stage.focus()
+  await page.keyboard.press('[')
+  await expect(picker).toHaveValue(last)
+  expect(await page.evaluate(() => localStorage.getItem('musimo.visualizer-preset'))).toBe(last)
 
   await page.reload()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
   await page.locator('.stage').hover()
-  await expect(page.getByRole('combobox', { name: 'Preset' })).toHaveValue('wash')
+  await expect(page.getByRole('combobox', { name: 'Preset' })).toHaveValue(last)
+})
+
+test('a preset left by the old visualizer starts on the default', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'The stage controls are checked on desktop.')
+  await page.addInitScript(() => localStorage.setItem('musimo.visualizer-preset', 'plume'))
+  await showVisualizerFirst(page)
+  const stage = await openNowPlaying(page)
+  test.skip(!(await hasWebGl2(page)), 'No WebGL 2 in this browser.')
+
+  await stage.hover()
+  await expect(stage.getByRole('combobox', { name: 'Preset' })).toHaveValue(DEFAULT_PRESET)
 })

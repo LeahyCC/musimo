@@ -26,7 +26,7 @@ type Options = {
 
 /** Opens Now Playing on a restored queue, without starting playback. */
 async function openNowPlaying(page: Page, { theme, covers, unreadable }: Options = {}) {
-  // The view is pinned so the stage does not depend on the machine's WebGPU.
+  // The view is pinned so the stage does not depend on the machine's graphics.
   await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
   if (theme) {
     await page.addInitScript(
@@ -132,7 +132,7 @@ test('a question mark opens the cheat sheet and Escape closes it, but not from a
   await page.keyboard.press('?')
   await expect(sheet).toBeVisible()
   await expect(sheet.getByText('Back or forward 5 seconds')).toBeVisible()
-  await expect(sheet.getByText('Visualizer debug overlay')).toBeVisible()
+  await expect(sheet.getByText('Next visualizer preset')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(sheet).toBeHidden()
 

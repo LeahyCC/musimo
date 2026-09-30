@@ -158,7 +158,6 @@ const STAGE_SHORTCUTS: Shortcut[] = [
   { keys: ['V'], action: 'Artwork or visualizer' },
   { keys: ['['], action: 'Previous visualizer preset' },
   { keys: [']'], action: 'Next visualizer preset' },
-  { keys: ['H'], action: 'Visualizer debug overlay' },
   { keys: ['N', 'P'], action: 'Next or previous track' },
   { keys: ['Esc'], action: 'Leave full screen' },
 ]

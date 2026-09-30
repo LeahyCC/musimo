@@ -44,6 +44,7 @@
 - Say "1 album" and "1 song" on an artist page instead of "1 ALBUMS"
 - Show the release year on an artist's popular songs instead of a "…" that never filled in
 - Draw the track's waveform as the Now Playing seek bar, worked out once with ffmpeg and cached in SQLite (a new `waveforms` table, schema version unchanged), with the plain bar while it loads or when there is none
+- Replace the visimo visualizer with MilkDrop, through butterchurn 3.0 beta and its base pack of 107 presets; it needs WebGL 2 rather than WebGPU, so most browsers get it, and the scene and fluid grid settings are gone. The pickers list presets by title, A to Z, and hovering one shows the full name with its authors. The preset changes by itself on a drop in the music, or after a long steady stretch, unless Change with the music is off
 
 ### Testing and CI
 
