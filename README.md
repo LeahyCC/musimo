@@ -221,7 +221,7 @@ Keyboard controls: `/` focuses search; Ctrl/Cmd+K opens the command palette; Esc
 
 Jobs progress through queued, matching, downloading, optional conversion, tagging, moving, scanning and done. Job cards display the destination and format. Low-confidence matches are flagged. Failures retain their stage and error rather than looking like success.
 
-Each failure shows a reason summary with plain language messages. The NO_MATCH message reads "No matching recording was found on YouTube." Per card attempt counts are shown and reset when retrying. The Failed tab groups failures by download group with reason chips, and offers a bulk Clear failed action. Each finished card also has its own Clear to dismiss it individually. The download arrow on a track becomes Retry with the failure reason in its tooltip.
+Each failure shows a reason summary with plain language messages. The NO_MATCH message reads "No matching recording was found on YouTube." Those tracks sit on the No match tab. Real failures sit on the Errors tab, which groups them by download group with reason chips and offers Retry errors and Clear errors. Clear no match hides the tracks that never found a recording. Per card attempt counts are shown and reset when retrying. Each finished card also has its own Clear to dismiss it individually. The download arrow on a track becomes Retry with the failure reason in its tooltip.
 
 The floating queue button appears only while a download is active. History and queue load more results on scroll.
 

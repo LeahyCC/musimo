@@ -228,6 +228,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             "retry-failed",
             "clear-finished",
             "clear-failed",
+            "clear-unmatched",
             "resume-source",
         ],
         source: str = Query("youtube", pattern=r"^[a-z0-9_-]{1,32}$"),
@@ -248,11 +249,30 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
                     service.command(job.id, "resume")
                 elif action == "cancel-queued" and job.stage in {"queued", "retry_wait", "paused"}:
                     service.command(job.id, "cancel")
-                elif action == "retry-failed" and job.stage == "failed" and not job.hidden:
+                # A missing recording is not a broken download. Bulk retry and clear
+                # leave it on the No match tab.
+                elif (
+                    action == "retry-failed"
+                    and job.stage == "failed"
+                    and not job.hidden
+                    and job.error_code != "NO_MATCH"
+                ):
                     service.command(job.id, "retry")
                 elif action == "clear-finished" and job.stage in TERMINAL:
                     service.jobs.update(job.id, hidden=True)
-                elif action == "clear-failed" and job.stage == "failed" and not job.hidden:
+                elif (
+                    action == "clear-failed"
+                    and job.stage == "failed"
+                    and not job.hidden
+                    and job.error_code != "NO_MATCH"
+                ):
+                    service.jobs.update(job.id, hidden=True)
+                elif (
+                    action == "clear-unmatched"
+                    and job.stage == "failed"
+                    and not job.hidden
+                    and job.error_code == "NO_MATCH"
+                ):
                     service.jobs.update(job.id, hidden=True)
             except (ValueError, DownloadError) as exc:
                 failures.append(str(exc) if not isinstance(exc, DownloadError) else exc.detail)

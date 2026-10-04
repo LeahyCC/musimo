@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { useDeferredValue, useId, useLayoutEffect, useRef, useState } from 'react'
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
@@ -56,6 +56,30 @@ export type QueueData = {
   }
 }
 export const activeJob = (job: DownloadJob) => !['done', 'failed', 'cancelled'].includes(job.stage)
+export const unmatchedJob = (job: Pick<DownloadJob, 'stage' | 'error_code'>) =>
+  job.stage === 'failed' && job.error_code === 'NO_MATCH'
+export const errorJob = (job: Pick<DownloadJob, 'stage' | 'error_code'>) =>
+  job.stage === 'failed' && job.error_code !== 'NO_MATCH'
+
+/** Counts from the server's reason list, which covers jobs past the 50 the page shows. */
+export function failureTallies(summary: QueueData['summary'] | undefined, jobs: DownloadJob[]) {
+  const reasons = summary?.failure_reasons ?? []
+  if (reasons.length === 0) {
+    return {
+      unmatched: jobs.filter(unmatchedJob).length,
+      errors: jobs.filter(errorJob).length,
+    }
+  }
+  return {
+    unmatched: reasons
+      .filter((reason) => reason.code === 'NO_MATCH')
+      .reduce((total, reason) => total + reason.count, 0),
+    errors: reasons
+      .filter((reason) => reason.code !== 'NO_MATCH')
+      .reduce((total, reason) => total + reason.count, 0),
+  }
+}
+
 export function updateJob(client: QueryClient, job: DownloadJob) {
   client.setQueryData<QueueData>(['jobs'], (old) => {
     const previous = old?.jobs.find((item) => item.id === job.id)
@@ -758,9 +782,8 @@ function BatchSummary({ jobs }: { jobs: DownloadJob[] }) {
             <strong>{batchName(rows)}</strong>
             <span>
               {rows.filter((job) => job.stage === 'done').length}/{rows.length} complete
-              {rows.some((job) => job.stage === 'failed')
-                ? ` · ${rows.filter((job) => job.stage === 'failed').length} failed`
-                : ''}
+              {rows.some(unmatchedJob) ? ` · ${rows.filter(unmatchedJob).length} no match` : ''}
+              {rows.some(errorJob) ? ` · ${rows.filter(errorJob).length} failed` : ''}
               {rows.some((job) => job.stage === 'cancelled')
                 ? ` · ${rows.filter((job) => job.stage === 'cancelled').length} cancelled`
                 : ''}
@@ -820,13 +843,22 @@ function QueueControls() {
       void client.invalidateQueries({ queryKey: ['jobs'] })
     },
   })
-  const failed = queue.data?.summary.failed ?? 0
+  const visible = (queue.data?.jobs ?? []).filter((job) => !job.hidden)
+  const { unmatched, errors } = failureTallies(queue.data?.summary, visible)
   const hasFinished = queue.data?.jobs.some((job) => !job.hidden && !activeJob(job)) ?? false
   const moreActions: RowMenuAction[] = [
-    ...(failed > 0
+    ...(errors > 0
       ? [
-          { label: `Retry failed (${failed})`, onSelect: () => command.mutate('retry-failed') },
-          { label: `Clear failed (${failed})`, onSelect: () => command.mutate('clear-failed') },
+          { label: `Retry errors (${errors})`, onSelect: () => command.mutate('retry-failed') },
+          { label: `Clear errors (${errors})`, onSelect: () => command.mutate('clear-failed') },
+        ]
+      : []),
+    ...(unmatched > 0
+      ? [
+          {
+            label: `Clear no match (${unmatched})`,
+            onSelect: () => command.mutate('clear-unmatched'),
+          },
         ]
       : []),
     ...(hasFinished
@@ -908,12 +940,14 @@ function History() {
   const [q, setQ] = useState(''),
     [from, setFrom] = useState(''),
     [until, setUntil] = useState('')
+  // The box stays immediate. The request waits, because a typed search still reads job text.
+  const deferredQ = useDeferredValue(q)
   const query = useInfiniteQuery({
-    queryKey: ['history', q, from, until],
+    queryKey: ['history', deferredQ, from, until],
     initialPageParam: 0,
     queryFn: ({ signal, pageParam }) =>
       api(
-        `history?${new URLSearchParams({ q, since: from ? String(new Date(from).getTime() / 1000) : '0', until: until ? String(new Date(until + 'T23:59:59').getTime() / 1000) : '1000000000000', offset: String(pageParam) })}`,
+        `history?${new URLSearchParams({ q: deferredQ, since: from ? String(new Date(from).getTime() / 1000) : '0', until: until ? String(new Date(until + 'T23:59:59').getTime() / 1000) : '1000000000000', offset: String(pageParam) })}`,
         historySchema,
         { signal },
       ),
@@ -982,10 +1016,12 @@ export function DownloadsPage() {
   // their own chip rather than sharing the unfiltered state.
   const [group, setGroup] = useState<string | null>(null)
   const all = (queue.data?.jobs ?? []).filter((job) => !job.hidden)
-  const failures = all.filter((job) => job.stage === 'failed')
+  const { unmatched, errors } = failureTallies(queue.data?.summary, all)
+  const pile =
+    tab === 'unmatched' ? all.filter(unmatchedJob) : tab === 'errors' ? all.filter(errorJob) : []
   // Album and artist downloads fail in clusters, so the batch is the useful unit to inspect.
   const failureGroups = [
-    ...failures.reduce(
+    ...pile.reduce(
       (map, job) => map.set(job.batch_id, [...(map.get(job.batch_id) ?? []), job]),
       new Map<string, DownloadJob[]>(),
     ),
@@ -995,20 +1031,30 @@ export function DownloadsPage() {
   const grouped = failureGroups.length > 1
   const selectedGroup =
     grouped && group !== null && failureGroups.some(([id]) => id === group) ? group : null
-  const jobs = all
-    .filter((job) =>
-      tab === 'queue'
-        ? activeJob(job)
-        : tab === 'done'
-          ? job.stage === 'done'
-          : job.stage === 'failed' && (selectedGroup === null || job.batch_id === selectedGroup),
-    )
-    .sort((a, b) => (tab === 'queue' ? a.created_at - b.created_at : b.updated_at - a.updated_at))
+  const jobs = (
+    tab === 'queue'
+      ? all.filter(activeJob)
+      : tab === 'done'
+        ? all.filter((job) => job.stage === 'done')
+        : pile.filter((job) => selectedGroup === null || job.batch_id === selectedGroup)
+  ).sort((a, b) => (tab === 'queue' ? a.created_at - b.created_at : b.updated_at - a.updated_at))
   const counts = {
     queue: queue.data?.summary.active ?? all.filter(activeJob).length,
     done: all.filter((job) => job.stage === 'done').length,
-    failed: queue.data?.summary.failed ?? all.filter((job) => job.stage === 'failed').length,
+    unmatched,
+    errors,
   }
+  const tabs = [
+    ['queue', 'Queue', counts.queue],
+    ['done', 'Done', counts.done],
+    ['unmatched', 'No match', counts.unmatched],
+    ['errors', 'Errors', counts.errors],
+    ['history', 'History', null],
+  ] as const
+  const pileCount = tab === 'unmatched' ? counts.unmatched : counts.errors
+  const reasons = (queue.data?.summary.failure_reasons ?? []).filter((reason) =>
+    tab === 'unmatched' ? reason.code === 'NO_MATCH' : reason.code !== 'NO_MATCH',
+  )
   return (
     <>
       <PageTitle eyebrow="YOUR COLLECTION, IN MOTION" title="Downloads">
@@ -1018,22 +1064,21 @@ export function DownloadsPage() {
       </PageTitle>
       <QueueControls />
       <BatchSummary jobs={queue.data?.jobs ?? []} />
-      <div className="download-tabs mt-6 mb-4 flex flex-wrap gap-1.5 max-phone:grid max-phone:grid-cols-4 max-phone:gap-1">
-        {['queue', 'done', 'failed', 'history'].map((value) => (
+      <div className="download-tabs mt-6 mb-4 flex flex-wrap gap-1.5 max-phone:flex-nowrap max-phone:gap-1">
+        {tabs.map(([value, label, count]) => (
           <button
             key={value}
             data-ui="tab"
             className={cx(
               'rounded-pill border-0 px-[17px] py-[10px] whitespace-nowrap coarse:min-h-11',
-              'max-phone:min-w-0 max-phone:px-[2px] max-phone:text-body max-phone:overflow-hidden max-phone:text-ellipsis',
+              'max-phone:min-w-0 max-phone:flex-1 max-phone:px-[2px] max-phone:text-body max-phone:overflow-hidden max-phone:text-ellipsis',
               tab === value ? 'bg-accent text-accent-ink' : 'bg-transparent text-muted',
             )}
             aria-pressed={tab === value}
             onClick={() => setTab(value)}
           >
-            {value[0]?.toUpperCase()}
-            {value.slice(1)}
-            {value in counts ? ` (${counts[value as keyof typeof counts]})` : ''}
+            {label}
+            {count !== null && <span className="max-phone:hidden"> ({count})</span>}
           </button>
         ))}
       </div>
@@ -1043,12 +1088,17 @@ export function DownloadsPage() {
           <button onClick={() => void queue.refetch()}>Retry</button>
         </ErrorBanner>
       )}
-      {tab === 'failed' && counts.failed > 0 && (
-        <section className={errorBannerClassName('list')} aria-label="Failure summary">
+      {(tab === 'unmatched' || tab === 'errors') && pileCount > 0 && (
+        <section
+          className={errorBannerClassName('list')}
+          aria-label={tab === 'unmatched' ? 'No match summary' : 'Failure summary'}
+        >
           <strong>
-            {counts.failed} {counts.failed === 1 ? 'download' : 'downloads'} failed
+            {tab === 'unmatched'
+              ? `${pileCount} ${pileCount === 1 ? 'track has' : 'tracks have'} no close match`
+              : `${pileCount} ${pileCount === 1 ? 'download' : 'downloads'} failed`}
           </strong>
-          {queue.data?.summary.failure_reasons.map((reason) => {
+          {reasons.map((reason) => {
             const link = errorLink(reason.fix || '')
             return (
               <span key={reason.code + reason.message}>
@@ -1069,16 +1119,18 @@ export function DownloadsPage() {
               </span>
             )
           })}
-          {selectedGroup === null && jobs.length < counts.failed && (
+          {selectedGroup === null && jobs.length < pileCount && (
             <small>Showing the latest {jobs.length} below.</small>
           )}
         </section>
       )}
-      {tab === 'failed' && grouped && (
+      {(tab === 'unmatched' || tab === 'errors') && grouped && (
         <div
           className="my-[14px] flex flex-wrap gap-2"
           role="group"
-          aria-label="Failures by download group"
+          aria-label={
+            tab === 'unmatched' ? 'No matches by download group' : 'Failures by download group'
+          }
         >
           {failureGroups.map(([id, rows]) => (
             <button
@@ -1107,7 +1159,11 @@ export function DownloadsPage() {
           <h2>
             {queue.isPending
               ? 'Loading queue…'
-              : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
+              : tab === 'unmatched'
+                ? 'No tracks are waiting for a match'
+                : tab === 'errors'
+                  ? 'No failed downloads'
+                  : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
           </h2>
           <Link to="/search" data-ui="button" className={buttonClassName('primary')}>
             Find a track

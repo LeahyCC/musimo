@@ -73,7 +73,7 @@ Ownership matching uses a priority system: completed downloads (priority 0), ISR
 
 WAV and AIFF files use native ID3 frames for their title, artist, album and recording identifiers. A rescan repairs blank metadata cached by earlier versions for those formats; genuinely untagged WAV/AIFF files are reread while those fields remain empty. Newly indexed paths skip the text-index deletion needed only when replacing existing tags, avoiding a full text-index search for every first insertion.
 
-A page-wide SQL query first recognizes completed catalog jobs whose saved path is still indexed, then matches ISRC, MBID, and normalized artist/title with duration within three seconds. Conflicting ISRCs cannot match through text. Higher-priority matches suppress lower-priority matches for the same result. The `Server-Timing` response header reports cache, queue, provider, catalog parsing and library lookup time separately.
+A page-wide SQL query first recognizes completed catalog jobs whose saved path is still indexed, then matches ISRC, MBID, and normalized artist/title with duration within three seconds. The download-history arm is pinned to the catalog-and-track index, one probe per track. A plain join walks every finished job and parses its JSON, which took about three quarters of a second for a handful of tracks once the history reached about 50,000 jobs, and the artist download check paid that once per album. Conflicting ISRCs cannot match through text. Higher-priority matches suppress lower-priority matches for the same result. The `Server-Timing` response header reports cache, queue, provider, catalog parsing and library lookup time separately.
 
 The 7 September cold-search sample against an isolated empty test library remained provider-bound. Provider p95 was 479.55 ms while queue, catalog parsing and library lookup were each below 1.2 ms. Total HTTP p95 was 496.56 ms, so the 400 ms target remains unmet. Chromium added 228.1 ms p95 from input debounce to request and 61.1 ms from response to painted results. The measurements did not justify changing cache or provider budgets. See [release search timing](evidence/release-search-timing.json) and [browser timing](evidence/release-search-browser.json).
 
@@ -119,7 +119,7 @@ Volume, mute, seeking, restart and close remain available on narrow screens. Vol
 
 ## Artist downloads
 
-Download all albums opens a review sheet containing albums and alternative album editions. Singles and EPs are excluded. Download all music opens the same sheet with every release type, including singles, EPs and compilations. Both choices load complete track lists, compare them with the library index and select every valid release by default.
+Download all albums opens a review sheet containing albums and alternative album editions. Singles and EPs are excluded. Download all music opens the same sheet with every release type, including singles, EPs and compilations. Both choices load complete track lists, compare them with the library index in one pass and select every valid release by default.
 
 The sheet shows the releases and unique catalog songs that will be added, songs skipped as owned or already queued, and an estimated size. Songs sharing an ISRC across releases are counted and queued once. Skip-owned is enabled by default. Release checkboxes, select all/none, format and destination can change the plan. Incomplete releases are excluded with an error and retry action. Closing without submitting writes no jobs.
 

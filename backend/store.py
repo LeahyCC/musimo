@@ -9,6 +9,46 @@ from backend.sources import source_label
 
 RETAIN_EVENTS = 5000
 
+# Same rows the queue shows, each arm on its own index: active work, finished
+# siblings of an active batch, the latest 50 no-match failures, the latest 50 other
+# failures, and the latest 50 other finished jobs. One OR across the payload parsed
+# the whole history (about half a second at 50k jobs). A no-match album must not
+# push a real failure out of that window.
+VISIBLE_ID_SQL = """
+SELECT id FROM jobs WHERE active=1
+UNION
+SELECT j.id FROM (
+    SELECT DISTINCT json_extract(payload,'$.batch_id') AS batch_id
+    FROM jobs WHERE active=1 AND json_extract(payload,'$.batch_id') != ''
+) batches
+CROSS JOIN jobs j INDEXED BY jobs_batch_id
+    ON json_extract(j.payload,'$.batch_id') = batches.batch_id
+WHERE j.active=0
+UNION
+SELECT id FROM (
+    SELECT id FROM jobs
+    WHERE active=0 AND json_extract(payload,'$.hidden')=0
+      AND json_extract(payload,'$.stage')='failed'
+      AND json_extract(payload,'$.error_code')='NO_MATCH'
+    ORDER BY created_at DESC LIMIT 50
+)
+UNION
+SELECT id FROM (
+    SELECT id FROM jobs
+    WHERE active=0 AND json_extract(payload,'$.hidden')=0
+      AND json_extract(payload,'$.stage')='failed'
+      AND coalesce(json_extract(payload,'$.error_code'),'')!='NO_MATCH'
+    ORDER BY created_at DESC LIMIT 50
+)
+UNION
+SELECT id FROM (
+    SELECT id FROM jobs
+    WHERE active=0 AND json_extract(payload,'$.hidden')=0
+      AND json_extract(payload,'$.stage')!='failed'
+    ORDER BY created_at DESC LIMIT 50
+)
+"""
+
 
 def seeded(default: object, raw: str) -> object:
     """An environment value in the type its setting keeps. `bool` is checked before `int`."""
@@ -87,6 +127,29 @@ class Store:
             CREATE UNIQUE INDEX IF NOT EXISTS jobs_active_identity
                 ON jobs(catalog,track_id,format,bitrate,target) WHERE active=1;
             CREATE INDEX IF NOT EXISTS jobs_catalog_track ON jobs(catalog,track_id);
+            -- Stage, hidden and batch live in the payload. These keep a long history
+            -- off the queue, the summary and an empty history page.
+            CREATE INDEX IF NOT EXISTS jobs_batch_id
+                ON jobs(json_extract(payload,'$.batch_id'));
+            CREATE INDEX IF NOT EXISTS jobs_shown
+                ON jobs(created_at)
+                WHERE coalesce(json_extract(payload,'$.hidden'),0)=0;
+            CREATE INDEX IF NOT EXISTS jobs_shown_nomatch
+                ON jobs(created_at DESC)
+                WHERE active=0 AND json_extract(payload,'$.hidden')=0
+                  AND json_extract(payload,'$.stage')='failed'
+                  AND json_extract(payload,'$.error_code')='NO_MATCH';
+            CREATE INDEX IF NOT EXISTS jobs_shown_other_fail
+                ON jobs(created_at DESC)
+                WHERE active=0 AND json_extract(payload,'$.hidden')=0
+                  AND json_extract(payload,'$.stage')='failed'
+                  AND coalesce(json_extract(payload,'$.error_code'),'')!='NO_MATCH';
+            CREATE INDEX IF NOT EXISTS jobs_shown_other
+                ON jobs(created_at DESC)
+                WHERE active=0 AND json_extract(payload,'$.hidden')=0
+                  AND json_extract(payload,'$.stage')!='failed';
+            CREATE INDEX IF NOT EXISTS jobs_inactive_recent
+                ON jobs(created_at DESC) WHERE active=0;
             CREATE TABLE IF NOT EXISTS queue_control (
                 id INTEGER PRIMARY KEY CHECK(id=1), paused INTEGER NOT NULL DEFAULT 0,
                 source_paused INTEGER NOT NULL DEFAULT 0,
@@ -297,18 +360,7 @@ class Store:
                 json.loads(row[0])
                 for row in self.db.execute(
                     "SELECT json_remove(payload,'$.meta.lyrics','$.meta.synced_lyrics') FROM jobs "
-                    "WHERE active=1 OR json_extract(payload,'$.batch_id') IN "
-                    "(SELECT json_extract(payload,'$.batch_id') FROM jobs WHERE active=1 "
-                    "AND json_extract(payload,'$.batch_id')!='') "
-                    "OR id IN (SELECT id FROM jobs WHERE active=0 "
-                    "AND json_extract(payload,'$.hidden')=0 "
-                    "AND json_extract(payload,'$.stage')='failed' "
-                    "ORDER BY created_at DESC LIMIT 50) "
-                    "OR id IN (SELECT id FROM jobs WHERE active=0 "
-                    "AND json_extract(payload,'$.hidden')=0 "
-                    "AND json_extract(payload,'$.stage')!='failed' "
-                    "ORDER BY created_at DESC LIMIT 50) "
-                    "ORDER BY created_at DESC"
+                    f"WHERE id IN ({VISIBLE_ID_SQL}) ORDER BY created_at DESC"
                 )
             ]
             return {

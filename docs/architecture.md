@@ -81,7 +81,7 @@ Downloads (download_api.py):
 - `POST /api/batches/{id}/{pause,resume,cancel,retry}`: batch actions.
 - `POST /api/jobs/{id}/pick`: select match candidate.
 - `POST /api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`: job actions.
-- `POST /api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,resume-source}`: queue commands. `resume-source` takes `?source=` and defaults to `youtube`.
+- `POST /api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,clear-unmatched,resume-source}`: queue commands. `retry-failed` and `clear-failed` skip `NO_MATCH`. `clear-unmatched` hides those. `resume-source` takes `?source=` and defaults to `youtube`.
 
 Artist downloads (artist_downloads.py):
 

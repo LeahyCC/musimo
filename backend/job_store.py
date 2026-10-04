@@ -8,7 +8,7 @@ from pathlib import Path
 
 from backend.job_models import RUNNING, TERMINAL, CatalogName, Format, Job, Metadata
 from backend.sources import Kind
-from backend.store import Store
+from backend.store import VISIBLE_ID_SQL, Store
 
 
 class JobConflict(ValueError):
@@ -38,28 +38,26 @@ class Jobs:
     def visible(self) -> builtins.list[Job]:
         with self.store.lock:
             rows = self.store.db.execute(
-                "SELECT payload FROM jobs WHERE active=1 OR "
-                "json_extract(payload,'$.batch_id') IN (SELECT json_extract(payload,'$.batch_id') "
-                "FROM jobs WHERE active=1 AND json_extract(payload,'$.batch_id')!='') OR id IN "
-                "(SELECT id FROM jobs WHERE active=0 AND json_extract(payload,'$.hidden')=0 "
-                "AND json_extract(payload,'$.stage')='failed' ORDER BY created_at DESC LIMIT 50) "
-                "OR id IN (SELECT id FROM jobs WHERE active=0 "
-                "AND json_extract(payload,'$.hidden')=0 "
-                "AND json_extract(payload,'$.stage')!='failed' ORDER BY created_at DESC LIMIT 50) "
-                "ORDER BY created_at DESC"
+                f"SELECT payload FROM jobs WHERE id IN ({VISIBLE_ID_SQL}) ORDER BY created_at DESC"
             ).fetchall()
         return [Job.model_validate_json(row[0]) for row in rows]
 
     def history(self, q: str, since: float, until: float, offset: int) -> dict[str, object]:
-        where = (
-            "active=0 AND created_at BETWEEN ? AND ? AND instr(lower("
-            "json_extract(payload,'$.meta.title') || ' ' || "
-            "json_extract(payload,'$.meta.artist') || ' ' || "
-            "json_extract(payload,'$.meta.album') || ' ' || "
-            "json_extract(payload,'$.final_path')), lower(?))>0"
-        )
+        # An empty search is the history tab opening. Matching an empty needle still
+        # parsed every payload, so a long history made that tab reread the whole table.
+        if q:
+            where = (
+                "active=0 AND created_at BETWEEN ? AND ? AND instr(lower("
+                "json_extract(payload,'$.meta.title') || ' ' || "
+                "json_extract(payload,'$.meta.artist') || ' ' || "
+                "json_extract(payload,'$.meta.album') || ' ' || "
+                "json_extract(payload,'$.final_path')), lower(?))>0"
+            )
+            args: tuple[float | str, ...] = (since, until, q)
+        else:
+            where = "active=0 AND created_at BETWEEN ? AND ?"
+            args = (since, until)
         with self.store.lock:
-            args = (since, until, q)
             total = self.store.db.execute(
                 "SELECT count(*) FROM jobs WHERE " + where, args
             ).fetchone()[0]

@@ -56,7 +56,9 @@ TRACK_FIELDS = (
     "replayGain",
 )
 TRACK_WINDOWS = 4
-TRACK_CACHE_SECONDS = 60
+# A full walk of a large library is a second or two. Keeping it for a few minutes
+# stops every scroll and filter from starting that walk again.
+TRACK_CACHE_SECONDS = 180
 TRACK_CACHE_ENTRIES = 4
 # The accepted sort names live here so the request validator and the comparator cannot
 # disagree about which ones exist.

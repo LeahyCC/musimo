@@ -101,6 +101,42 @@ class DurableJobsTests(unittest.TestCase):
             visible_failures = [job for job in jobs.visible() if job.stage == "failed"]
             self.assertEqual(len(visible_failures), 50)
             self.assertEqual(store.job_summary()["failed"], 55)
+            for track_id in range(3):
+                job = jobs.enqueue(track_id + 100, "original", directory)
+                jobs.update(job.id, stage="failed", error_code="TIMEOUT", error="timed out")
+            visible_failures = [job for job in jobs.visible() if job.stage == "failed"]
+            self.assertEqual(
+                sum(job.error_code == "NO_MATCH" for job in visible_failures),
+                50,
+            )
+            self.assertEqual(
+                sum(job.error_code == "TIMEOUT" for job in visible_failures),
+                3,
+            )
+            snapped = store.snapshot()["jobs"]
+            assert isinstance(snapped, list)
+            snap_ids = {row["id"] for row in snapped if isinstance(row, dict)}
+            self.assertEqual({job.id for job in jobs.visible()}, snap_ids)
+            store.close()
+
+    def test_visible_keeps_an_older_batch_sibling_outside_the_recent_window(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "jobs.sqlite3")
+            jobs = Jobs(store, lambda: None)
+            unrelated = jobs.enqueue(9, "original", directory)
+            jobs.update(unrelated.id, stage="done", final_path=str(Path(directory) / "old.opus"))
+            batch = jobs.enqueue_many([1, 2], "original", directory, "batch-one", "Artist")
+            jobs.update(batch[0].id, stage="done", final_path=str(Path(directory) / "sibling.opus"))
+            for track_id in range(50):
+                finished = jobs.enqueue(100 + track_id, "original", directory)
+                jobs.update(
+                    finished.id, stage="done", final_path=str(Path(directory) / f"{track_id}.opus")
+                )
+            visible = {job.id for job in jobs.visible()}
+            self.assertIn(batch[0].id, visible)
+            self.assertIn(batch[1].id, visible)
+            self.assertNotIn(unrelated.id, visible)
+            self.assertEqual(visible, {row["id"] for row in store.snapshot()["jobs"]})
             store.close()
 
     def test_recording_rank_rejects_wrong_duration_and_prefers_topic(self) -> None:
@@ -353,6 +389,30 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                     running = service.jobs.enqueue(4, "original", str(root))
                     refused = await api.post(f"/api/jobs/{running.id}/dismiss")
                     self.assertEqual(refused.status_code, 409)
+                    missed = service.jobs.enqueue(5, "original", str(root))
+                    broken = service.jobs.enqueue(6, "original", str(root))
+                    service.jobs.update(
+                        missed.id,
+                        stage="failed",
+                        error_code="NO_MATCH",
+                        error="No sufficiently close recording found",
+                    )
+                    service.jobs.update(
+                        broken.id, stage="failed", error_code="TIMEOUT", error="timed out"
+                    )
+                    self.assertEqual((await api.post("/api/queue/retry-failed")).status_code, 200)
+                    self.assertEqual(service.jobs.get(missed.id).stage, "failed")
+                    self.assertEqual(service.jobs.get(broken.id).stage, "queued")
+                    service.jobs.update(
+                        broken.id, stage="failed", error_code="TIMEOUT", error="timed out"
+                    )
+                    self.assertEqual((await api.post("/api/queue/clear-failed")).status_code, 200)
+                    self.assertFalse(service.jobs.get(missed.id).hidden)
+                    self.assertTrue(service.jobs.get(broken.id).hidden)
+                    self.assertEqual(
+                        (await api.post("/api/queue/clear-unmatched")).status_code, 200
+                    )
+                    self.assertTrue(service.jobs.get(missed.id).hidden)
             store.close()
 
     async def test_pause_stops_worker_preserves_partial_cancel_removes_only_staging(self) -> None:

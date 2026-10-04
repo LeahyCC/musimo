@@ -1,4 +1,5 @@
 import asyncio
+import json
 import tempfile
 import time
 import unittest
@@ -367,3 +368,48 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(edition_only.ownership, "edition")
         self.assertEqual(edition_only.matched_by, "tags")
         self.assertEqual(edition_only.matched_album, "Discovery Deluxe Edition")
+
+    async def test_download_history_match_uses_the_track_index(self) -> None:
+        path = self.add_file("owned.opus", isrc="USFIX2600077")
+        self.store.db.execute(
+            "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?)",
+            (
+                "done-job",
+                "deezer",
+                77,
+                "original",
+                0,
+                str(self.root),
+                0,
+                1,
+                json.dumps({"stage": "done", "final_path": path}),
+            ),
+        )
+        # Enough other history that a catalog-wide scan would be the planner's pick
+        # without the pinned join. The lookup still has to find this one track.
+        filler = json.dumps(
+            {"stage": "done", "final_path": "/nowhere/missing.opus", "pad": "x" * 400}
+        )
+        self.store.db.executemany(
+            "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?)",
+            [
+                (f"filler-{i}", "deezer", 10_000 + i, "original", 0, str(self.root), 0, i, filler)
+                for i in range(3000)
+            ],
+        )
+        seen: list[str] = []
+        self.store.db.set_trace_callback(seen.append)
+        started = time.perf_counter()
+        item = Result(id=77, kind="track", title="Catalog title", artist="Artist", duration=180)
+        self.library.annotate([item])
+        elapsed = time.perf_counter() - started
+        self.store.db.set_trace_callback(None)
+        self.assertEqual(item.ownership, "owned")
+        self.assertEqual(item.matched_by, "download")
+        ownership = next(sql for sql in seen if "jobs_catalog_track" in sql)
+        self.assertIn("CROSS JOIN jobs", ownership)
+        plan = " ".join(
+            str(row[-1]) for row in self.store.db.execute("EXPLAIN QUERY PLAN " + ownership)
+        )
+        self.assertIn("track_id=", plan)
+        self.assertLess(elapsed, 0.2)
