@@ -107,10 +107,9 @@ Read-only checks against the live database (31,039 indexed files, 52,594 jobs, 1
 
 The 100 songs of the [match review corpus](evidence/match-review-corpus.json) were searched again on YouTube with `"provided to youtube by"` in place of `official audio`, and both result sets were scored by the current matcher. YouTube writes that phrase on every label upload. With no listening labels yet, "own upload" below means the chosen video came from the artist's channel (artist similarity at least 0.8) and its length was within 3 seconds.
 
-| Search phrase | Songs matched | Own upload, exact length | Decoy picked | Same video as Wikidata |
-| --- | --- | --- | --- | --- |
-| `official audio` (saved corpus rows) | 78 | 35 | 0 | 28 |
-| `"provided to youtube by"` (live search) | 89 | 64 | 0 | 37 |
+| Search phrase                            | Songs matched | Own upload, exact length | Decoy picked | Same video as Wikidata |
+| ---------------------------------------- | ------------- | ------------------------ | ------------ | ---------------------- |
+| `official audio` (saved corpus rows)     | 78            | 35                       | 0            | 28                     |
+| `"provided to youtube by"` (live search) | 89            | 64                       | 0            | 37                     |
 
 Before the new version words (bass boosted, 8D and others) the old rows picked two decoys, a bass-boosted reupload and an 8D edit. The new rows are a fresh search, so part of the gap may be YouTube changing since the corpus was captured. Label channels named `<artist> - Topic` were not given a larger lift: in these results most of them that lost were karaoke, cover or soundalike uploads from a channel called `Release - Topic`, and a larger lift would have picked them. A YouTube Music song search was also tried and dropped, because yt-dlp returns it without artist or length.
-

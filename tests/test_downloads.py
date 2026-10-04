@@ -136,7 +136,9 @@ class DurableJobsTests(unittest.TestCase):
             self.assertIn(batch[0].id, visible)
             self.assertIn(batch[1].id, visible)
             self.assertNotIn(unrelated.id, visible)
-            self.assertEqual(visible, {row["id"] for row in store.snapshot()["jobs"]})
+            snapped = store.snapshot()["jobs"]
+            assert isinstance(snapped, list)
+            self.assertEqual(visible, {row["id"] for row in snapped if isinstance(row, dict)})
             store.close()
 
     def test_recording_rank_rejects_wrong_duration_and_prefers_topic(self) -> None:
