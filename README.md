@@ -156,7 +156,7 @@ For Windows Docker Desktop binds or network shares that do not deliver filesyste
 
 ```dotenv
 MUSIMO_WATCH_MODE=poll
-MUSIMO_POLL_INTERVAL_SECONDS=60
+MUSIMO_POLL_INTERVAL_SECONDS=300
 ```
 
 Shorter polling intervals use more CPU. Both modes also reconcile periodically. Keep SQLite on the local named volume, not SMB/NFS. Music mounts can be network folders, subject to their permissions and filesystem behavior.
@@ -270,7 +270,7 @@ Copy `.env.example` to `.env` for Compose deployment values. Both `.env` and `co
 - `PUID`, `PGID`: runtime IDs, default `1000`, both nonzero.
 - `MUSIMO_LIBRARY_ROOTS`: container paths, default `/music` in base Compose.
 - `MUSIMO_WATCH_MODE`: `native` or `poll`.
-- `MUSIMO_POLL_INTERVAL_SECONDS`: polling interval, default `60`.
+- `MUSIMO_POLL_INTERVAL_SECONDS`: polling interval, default `300`.
 - `MUSIMO_NAVIDROME_CREDENTIALS_FILE`: optional mounted file for API mode.
 
 Editable settings cover the label, destination, output format, naming template, concurrency, retry limits and Navidrome integration. See [Settings](docs/settings.md) and `backend/models.py` for the current contract.

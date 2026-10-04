@@ -101,8 +101,9 @@ class Library:
         self.task: asyncio.Task[None] | None = None
         self.background: asyncio.Task[None] | None = None
         self.watch_mode = os.getenv("MUSIMO_WATCH_MODE", "native")
-        # Docker Desktop does not forward host filesystem events. Poll slowly enough for idle use.
-        self.poll_interval = max(1, float(os.getenv("MUSIMO_POLL_INTERVAL_SECONDS", "60")))
+        # Docker Desktop does not forward host filesystem events. Five minutes is enough
+        # for a large mount. The half-hour reconcile still catches moves and deletions.
+        self.poll_interval = max(1, float(os.getenv("MUSIMO_POLL_INTERVAL_SECONDS", "300")))
         self.observer = (
             PollingObserver(timeout=self.poll_interval) if self.watch_mode == "poll" else Observer()
         )
