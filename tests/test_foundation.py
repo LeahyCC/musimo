@@ -224,6 +224,7 @@ class FoundationTests(unittest.TestCase):
                 self.assertIsNone(diagnostics["last_download"])
                 self.assertIsNotNone(diagnostics["navidrome"])
                 self.assertFalse(diagnostics["navidrome"]["configured"])
+                self.assertFalse(diagnostics["deezer_audio"])
 
 
 if __name__ == "__main__":

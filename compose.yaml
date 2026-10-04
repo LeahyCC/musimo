@@ -11,6 +11,8 @@ services:
       MUSIMO_LIBRARY_ROOTS: /music
       MUSIMO_WATCH_MODE: '${MUSIMO_WATCH_MODE:-native}'
       MUSIMO_POLL_INTERVAL_SECONDS: '${MUSIMO_POLL_INTERVAL_SECONDS:-60}'
+      # Account cookie from .env. Empty keeps catalog tracks on the YouTube match.
+      MUSIMO_DEEZER_ARL: '${MUSIMO_DEEZER_ARL:-}'
     volumes:
       - musimo-data:/data
       - ./runtime/music:/music

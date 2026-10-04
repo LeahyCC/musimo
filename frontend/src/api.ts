@@ -361,6 +361,20 @@ export const settingsSchema = z.object({
   destination: field(z.string()),
   naming_template: field(z.string()),
   soundcloud_fallback: field(z.boolean()),
+  deezer_arl: field(z.string()).default({ value: '', origin: 'default', locked: false }),
+  deezer_catalog: field(z.boolean()).default({ value: true, origin: 'default', locked: false }),
+  deezer_audio: field(z.boolean()).default({ value: true, origin: 'default', locked: false }),
+  disabled_sources: field(z.array(z.string())).default({
+    value: [],
+    origin: 'default',
+    locked: false,
+  }),
+  source_order: field(z.array(z.string())).default({
+    value: ['deezer', 'youtube'],
+    origin: 'default',
+    locked: false,
+  }),
+  tries_per_source: field(z.number()).default({ value: 1, origin: 'default', locked: false }),
   navidrome_url: field(z.string()),
   navidrome_mode: field(z.enum(['off', 'watcher', 'api'])),
   navidrome_library_id: field(z.number()),
@@ -415,6 +429,18 @@ export const diagnosticsSchema = z.object({
     search: z.boolean(),
     downloads: z.boolean(),
   }),
+  deezer_audio: z.boolean().default(false),
+  download_sources: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        kind: z.string(),
+        working: z.boolean(),
+        note: z.string(),
+      }),
+    )
+    .default([]),
   navidrome: playerCapabilitiesSchema.nullable(),
   last_download: z
     .object({

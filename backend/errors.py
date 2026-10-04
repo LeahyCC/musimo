@@ -11,7 +11,7 @@ SITE_REFUSAL_CODES = frozenset({"SOURCE_BLOCKED", "RATE_LIMITED"})
 BLOCKING_CODES = frozenset(
     {"SOURCE_BLOCKED", "POT_MISSING", "JS_RUNTIME_MISSING", "COOKIES_EXPIRED"}
 )
-SITE_LABELS = {"youtube": "YouTube", "podcast": "the podcast host"}
+SITE_LABELS = {"youtube": "YouTube", "podcast": "the podcast host", "deezer": "Deezer"}
 # What yt-dlp says when a site will not play a recording in the server's country.
 GEO_MARKERS = ("geolocation", "geo restriction", "geo-restricted", "geo restricted")
 # Sites that say more than the general wording, keyed by their label.

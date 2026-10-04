@@ -10,6 +10,7 @@ import time
 from pathlib import Path
 from typing import Protocol, cast
 
+from backend.deezer_audio import DeezerAudioError, configured, fetch
 from backend.errors import error_guidance, geo_restricted, site_label, source_code
 from backend.job_models import Candidate, Job, valid_candidate_id
 from backend.matching import CHECK_BELOW, MIN_SCORE, Matcher
@@ -43,6 +44,62 @@ class Logger:
 
     def error(self, message: str) -> None:
         emit("log", message=redact(message))
+
+
+def turned_off() -> set[str]:
+    return {part for part in os.environ.get("MUSIMO_DISABLED_SOURCES", "").split(",") if part}
+
+
+class WrongLength(Exception):
+    """The file length is not the catalog track. Another try would fetch the same file."""
+
+
+AUDIO_SUFFIXES = {".webm", ".m4a", ".opus", ".mp3", ".ogg", ".flac", ".aac", ".mp4"}
+
+
+def bound_count(name: str) -> int:
+    """A settings count from the environment. Missing or junk is one, so a test does not loop."""
+    try:
+        value = int(os.environ.get(name, "1"))
+    except ValueError:
+        return 1
+    return min(4, max(1, value))
+
+
+def source_plan() -> tuple[list[str], int, int]:
+    """Catalog order, tries on the current source, and laps around the list."""
+    allowed = ("deezer", "youtube", "soundcloud")
+    seen: list[str] = []
+    for part in os.environ.get("MUSIMO_SOURCE_ORDER", "deezer,youtube").split(","):
+        name = part.strip()
+        if name in allowed and name not in seen:
+            seen.append(name)
+    paused = {part for part in os.environ.get("MUSIMO_PAUSED_SOURCES", "").split(",") if part}
+    order = [name for name in seen if name not in turned_off() and name not in paused]
+    return order, bound_count("MUSIMO_TRIES_PER_SOURCE"), bound_count("MUSIMO_MAX_ATTEMPTS")
+
+
+def classify(message: str) -> str:
+    lower = message.lower()
+    if geo_restricted(lower):
+        return "GEO_RESTRICTED"
+    if "no suitable extractor" in lower or "unsupported url" in lower:
+        return "SITE_NOT_ALLOWED"
+    if "confirm you" in lower or "403" in lower:
+        return "SOURCE_BLOCKED"
+    if "429" in lower:
+        return "RATE_LIMITED"
+    if "po token" in lower:
+        return "POT_MISSING"
+    if "javascript" in lower or "deno" in lower:
+        return "JS_RUNTIME_MISSING"
+    if "sign in" in lower or "cookies" in lower:
+        return "COOKIES_EXPIRED"
+    if "no space left" in lower:
+        return "DISK_FULL"
+    if "timed out" in lower:
+        return "TIMEOUT"
+    return "DOWNLOAD_FAILED"
 
 
 def emit(kind: str, **values: object) -> None:
@@ -174,6 +231,12 @@ def main() -> None:
             eta=raw.get("eta"),
         )
 
+    if job.catalog == "podcast" and "podcast" in turned_off():
+        refuse("SITE_NOT_ALLOWED", "Podcasts are turned off in Settings.")
+        return
+    if job.catalog == "link" and job.source in turned_off():
+        refuse("SITE_NOT_ALLOWED", f"{site} is turned off in Settings.")
+        return
     if job.catalog == "link" and link_site is None:
         refuse("SITE_NOT_ALLOWED", "This site is no longer on the download list")
         return
@@ -202,6 +265,8 @@ def main() -> None:
         options["allowed_extractors"] = link_site.allowed_extractors()
 
     search_options: dict[str, object] = {"extract_flat": True, "skip_download": True}
+    # Assigned in the try below. Declared here so the source walk can replace the client.
+    downloader: Downloader | None = None
 
     def search(source_name: str) -> list[Candidate]:
         """Ask one source for the wanted recording. Nothing is downloaded here."""
@@ -215,6 +280,215 @@ def main() -> None:
         finally:
             searcher.close()
         return found(source_name, raw.get("entries", []) if isinstance(raw, dict) else [])
+
+    def drop_audio() -> None:
+        for path in folder.glob("source.*"):
+            if path.is_file() and path.suffix in AUDIO_SUFFIXES:
+                path.unlink()
+
+    def account_once() -> Path | None:
+        """One account file. None means the length was wrong, so a retry is the same file."""
+        nonlocal stage
+        emit("stage", stage="downloading")
+        stage = "downloading"
+
+        def on_progress(downloaded: int, total: int) -> None:
+            progress(
+                {
+                    "downloaded_bytes": downloaded,
+                    "total_bytes": total,
+                    "status": "downloading",
+                }
+            )
+
+        saved_file = fetch(job.track_id, folder, on_progress)
+        audio_info = probe(saved_file)
+        duration = float(str(audio_info["duration"]))
+        limit = max(15, job.meta.duration * 0.12)
+        if job.meta.duration and abs(duration - job.meta.duration) > limit:
+            saved_file.unlink(missing_ok=True)
+            return None
+        temporary = manifest.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps({"selected": "", "file": saved_file.name, "artist": job.meta.artist}),
+            encoding="utf-8",
+        )
+        temporary.replace(manifest)
+        return saved_file
+
+    def download_chosen(picked: Candidate) -> tuple[Path, str]:
+        nonlocal origin, site, downloader, stage
+        if downloader is None:
+            raise RuntimeError("Downloader was not started")
+        if picked.source != origin:
+            matched = by_source(picked.source)
+            if matched is None:
+                raise ValueError("The chosen recording is from an unlisted site")
+            origin, site = picked.source, matched.label
+            emit("source", source=origin)
+            downloader.close()
+            downloader = cast(
+                Downloader,
+                yt_dlp.YoutubeDL(
+                    options
+                    | {
+                        "format": matched.audio_format,
+                        "allowed_extractors": matched.allowed_extractors(),
+                    }
+                ),
+            )
+        emit("stage", stage="downloading")
+        stage = "downloading"
+        chosen = address(picked.source, picked.id, picked.url)
+        if not chosen:
+            raise ValueError(f"The chosen recording is not a {site} address")
+        raw = downloader.extract_info(chosen)
+        if not isinstance(raw, dict):
+            raise ValueError("Download returned no media")
+        named = who(raw)
+        files = [
+            path
+            for path in folder.glob("source.*")
+            if path.suffix in AUDIO_SUFFIXES and path.is_file()
+        ]
+        if len(files) != 1:
+            raise ValueError("Download did not produce one complete audio file")
+        audio = files[0]
+        audio_info = probe(audio)
+        duration = float(str(audio_info["duration"]))
+        limit = max(15, job.meta.duration * 0.12)
+        if job.meta.duration and abs(duration - job.meta.duration) > limit:
+            audio.unlink(missing_ok=True)
+            raise WrongLength()
+        temporary = manifest.with_suffix(".tmp")
+        temporary.write_text(
+            json.dumps({"selected": picked.id, "file": audio.name, "artist": named}),
+            encoding="utf-8",
+        )
+        temporary.replace(manifest)
+        return audio, named
+
+    def walk_sources() -> tuple[Path, str, str, str] | None:
+        """Ask the catalog list in order, then start again.
+
+        A search with no song moves on and is not asked again. A failed download uses one try.
+        A full disk stops the walk.
+        """
+        nonlocal origin, site
+        order, tries, laps = source_plan()
+        usable = [name for name in order if name != "deezer" or configured()]
+        if not usable:
+            refuse("NO_MATCH", "The sources for this track are turned off in Settings.")
+            return None
+        matcher = Matcher()
+        review: list[Candidate] = []
+        missed: set[str] = set()
+        deezer_error = ""
+        search_error = ""
+        search_origin = origin
+        wrong_length = False
+        for _lap in range(laps):
+            for name in usable:
+                if name in missed:
+                    continue
+                if name == "deezer":
+                    for _attempt in range(tries):
+                        try:
+                            saved = account_once()
+                        except (DeezerAudioError, OSError, ValueError) as exc:
+                            deezer_error = redact(str(exc)) or "Deezer audio failed"
+                            emit("log", message=deezer_error)
+                            continue
+                        if saved is None:
+                            missed.add("deezer")
+                            wrong_length = True
+                            emit("log", message="Deezer file length did not match the catalog")
+                            break
+                        origin, site = "deezer", site_label("deezer")
+                        emit("source", source="deezer")
+                        return saved, job.meta.artist, origin, site
+                    continue
+                ranked: list[Candidate] = []
+                answered = False
+                for _attempt in range(tries):
+                    try:
+                        candidates = search(name)
+                    except Exception as exc:
+                        message = redact(str(exc)) or "Search failed"
+                        if source_code(classify(message), name) == "DISK_FULL":
+                            raise
+                        search_error, search_origin = message, name
+                        continue
+                    answered = True
+                    ranked = matcher.rank(job.meta, candidates, min_score=MIN_SCORE[name])
+                    if not ranked:
+                        review += matcher.rank(job.meta, candidates, min_score=0, min_title=0)
+                        missed.add(name)
+                    break
+                if not answered or name in missed or not ranked:
+                    continue
+                picked = ranked[0]
+                emit(
+                    "candidates",
+                    items=[row.model_dump() for row in ranked],
+                    selected=picked.id,
+                    check_match=picked.score < CHECK_BELOW[picked.source],
+                )
+                for _attempt in range(tries):
+                    try:
+                        audio, named = download_chosen(picked)
+                    except WrongLength:
+                        missed.add(name)
+                        wrong_length = True
+                        drop_audio()
+                        break
+                    except Exception as exc:
+                        message = redact(str(exc)) or "Download failed"
+                        if source_code(classify(message), picked.source) == "DISK_FULL":
+                            raise
+                        search_error, search_origin = message, picked.source
+                        drop_audio()
+                        continue
+                    return audio, named, origin, site
+        if search_error:
+            failed = by_source(search_origin)
+            site_name = failed.label if failed else site_label(search_origin)
+            code = source_code(classify(search_error), search_origin)
+            hint, fix = error_guidance(code, site_name)
+            emit(
+                "error",
+                code=code,
+                message=search_error,
+                retryable=False,
+                hint=hint,
+                fix=fix,
+                version=version,
+            )
+            return None
+        # Deezer failed and no later source was even searched. That is not a YouTube miss.
+        if deezer_error and not missed:
+            emit(
+                "error",
+                code="DOWNLOAD_FAILED",
+                message=deezer_error,
+                retryable=False,
+                hint=deezer_error,
+                fix="retry",
+                version=version,
+            )
+            return None
+        if review:
+            emit(
+                "candidates",
+                items=[row.model_dump() for row in review],
+                selected="",
+                check_match=True,
+            )
+        if wrong_length and not review:
+            refuse("DURATION_MISMATCH", "Downloaded audio duration differs from the catalog")
+            return None
+        refuse("NO_MATCH", "No sufficiently close recording found")
+        return None
 
     try:
         downloader = cast(Downloader, yt_dlp.YoutubeDL(options))
@@ -231,6 +505,14 @@ def main() -> None:
                     probe(possible)
                     source = possible
                     artist = str(saved.get("artist", ""))
+        # A catalog song with no hand-picked match walks the source list. A pasted link does not.
+        if source is None and not job.selected and not direct and job.catalog == "deezer":
+            walked = walk_sources()
+            if walked is None:
+                if downloader is not None:
+                    downloader.close()
+                return
+            source, artist, origin, site = walked
         if source is None:
             selected = job.selected
             picked = next((row for row in job.candidates if row.id == selected), None)
@@ -242,7 +524,15 @@ def main() -> None:
                 # The backup source is asked only after the first found nothing at all, never
                 # beside it: it holds many more remixes and reuploads of the same song.
                 # A source with no search of its own is never asked, so it cannot be matched.
-                tried = [name for name in (origin, job.backup_source) if name in SEARCHES]
+                off = turned_off()
+                tried = [
+                    name
+                    for name in (origin, job.backup_source)
+                    if name in SEARCHES and name not in off
+                ]
+                if not tried:
+                    refuse("NO_MATCH", "The sources for this track are turned off in Settings.")
+                    return
                 for attempt in tried:
                     candidates = search(attempt)
                     ranked = matcher.rank(job.meta, candidates, min_score=MIN_SCORE[attempt])
@@ -345,7 +635,8 @@ def main() -> None:
                 encoding="utf-8",
             )
             temporary.replace(manifest)
-        downloader.close()
+        if downloader is not None:
+            downloader.close()
         emit("stage", stage="converting")
         stage = "converting"
         tagger = Tagger()
@@ -364,29 +655,7 @@ def main() -> None:
         )
     except Exception as exc:
         message = redact(str(exc))
-        lower = message.lower()
-        code = (
-            # Checked first: a site's words about location can also mention a 403.
-            "GEO_RESTRICTED"
-            if geo_restricted(lower)
-            else "SITE_NOT_ALLOWED"
-            if "no suitable extractor" in lower or "unsupported url" in lower
-            else "SOURCE_BLOCKED"
-            if "confirm you" in lower or "403" in lower
-            else "RATE_LIMITED"
-            if "429" in lower
-            else "POT_MISSING"
-            if "po token" in lower
-            else "JS_RUNTIME_MISSING"
-            if "javascript" in lower or "deno" in lower
-            else "COOKIES_EXPIRED"
-            if "sign in" in lower or "cookies" in lower
-            else "DISK_FULL"
-            if "no space left" in lower
-            else "TIMEOUT"
-            if "timed out" in lower
-            else "DOWNLOAD_FAILED"
-        )
+        code = classify(message)
         # A code only stands where it means something for this job's site, so another site's
         # refusal pauses that site alone and never YouTube.
         code = source_code(code, origin)

@@ -235,14 +235,38 @@ class Store:
                 env = f"MUSIMO_{key.upper()}"
                 raw = os.environ.get(env)
                 values[key] = default if raw is None else seeded(default, raw)
+                # The account cookie starts from the environment and stays editable, so a new
+                # cookie can be pasted in Settings without a rebuild.
+                editable = key == "deezer_arl"
                 seeds.append(
                     (
                         key,
                         json.dumps(values[key]),
-                        env if raw is not None else "default",
-                        int(raw is not None),
+                        "default" if raw is None or editable else env,
+                        int(raw is not None and not editable),
                     )
                 )
+            # The old SoundCloud switch becomes a row in the order, once, when the order first
+            # appears. Taking it off the list later stays off.
+            if "source_order" not in existing and not os.environ.get("MUSIMO_SOURCE_ORDER"):
+                fallback = values["soundcloud_fallback"] is True
+                if "soundcloud_fallback" in existing:
+                    row = self.db.execute(
+                        "SELECT value FROM settings WHERE key='soundcloud_fallback'"
+                    ).fetchone()
+                    fallback = json.loads(row["value"]) is True
+                if fallback:
+                    order = ["deezer", "youtube", "soundcloud"]
+                    values["source_order"] = order
+                    seeds = [
+                        (
+                            key,
+                            json.dumps(order) if key == "source_order" else payload,
+                            origin,
+                            locked,
+                        )
+                        for key, payload, origin, locked in seeds
+                    ]
             Settings.model_validate(values)
             self.db.execute("BEGIN IMMEDIATE")
             try:
@@ -251,6 +275,11 @@ class Store:
             except Exception:
                 self.db.rollback()
                 raise
+
+    def current(self) -> Settings:
+        with self.lock:
+            rows = self.db.execute("SELECT key,value FROM settings").fetchall()
+        return Settings.model_validate({row["key"]: json.loads(row["value"]) for row in rows})
 
     def settings(self) -> dict[str, object]:
         with self.lock:
@@ -346,7 +375,12 @@ class Store:
                     )
                 result = self.settings()
                 if changes:
-                    self._event("settings.updated", result)
+                    # The activity log and diagnostics export keep the cookie out.
+                    logged = result
+                    field = result.get("deezer_arl")
+                    if isinstance(field, dict) and field.get("value"):
+                        logged = {**result, "deezer_arl": {**field, "value": ""}}
+                    self._event("settings.updated", logged)
                 self.db.commit()
                 return result
             except Exception:

@@ -690,35 +690,41 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                 self.started.append(job_id)
                 self.jobs.update(job_id, stage="done")
 
-        for fallback, expected in ((True, "soundcloud"), (False, "youtube")):
-            with self.subTest(fallback=fallback):
+        # YouTube is paused. The job starts only when another row in the order can run.
+        # The worker, not the queue, picks that row, so the job stays marked YouTube until then.
+        cases = (
+            (["youtube", "soundcloud"], True),
+            (["youtube"], False),
+        )
+        for order, starts in cases:
+            with self.subTest(order=order):
                 with tempfile.TemporaryDirectory() as directory:
                     root = Path(directory).resolve()
                     store = Store(root / "db.sqlite3")
-                    async with httpx.AsyncClient(
-                        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
-                    ) as client:
-                        library = Library(store, [root], asyncio.Event())
-                        service = Recording(store, Catalog(store, client), library, asyncio.Event())
-                        service.started = []
-                        store.update({"destination": str(root), "soundcloud_fallback": fallback})
-                        job = service.jobs.enqueue(1, "original", str(root))
-                        service.set_controls(source_paused=True, source="youtube")
-                        service.start()
-                        try:
-                            async with asyncio.timeout(2):
-                                while service.jobs.get(job.id).source != expected:
-                                    await asyncio.sleep(0.01)
-                                if fallback:
+                    try:
+                        async with httpx.AsyncClient(
+                            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+                        ) as client:
+                            library = Library(store, [root], asyncio.Event())
+                            service = Recording(
+                                store, Catalog(store, client), library, asyncio.Event()
+                            )
+                            service.started = []
+                            store.update({"destination": str(root), "source_order": order})
+                            job = service.jobs.enqueue(1, "original", str(root))
+                            service.set_controls(source_paused=True, source="youtube")
+                            service.start()
+                            if starts:
+                                async with asyncio.timeout(2):
                                     while job.id not in service.started:
                                         await asyncio.sleep(0.01)
-                        except TimeoutError:
-                            pass
-                        self.assertEqual(service.jobs.get(job.id).source, expected)
-                        # Nothing on YouTube may start while YouTube is paused.
-                        self.assertEqual(service.started, [job.id] if fallback else [])
-                        await service.close()
-                    store.close()
+                            else:
+                                await asyncio.sleep(0.2)
+                            self.assertEqual(service.jobs.get(job.id).source, "youtube")
+                            self.assertEqual(service.started, [job.id] if starts else [])
+                            await service.close()
+                    finally:
+                        store.close()
 
     async def test_a_retry_sends_a_catalog_track_back_to_youtube(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

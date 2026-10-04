@@ -437,6 +437,56 @@ def labels() -> str:
     return ", ".join(site.label for site in SITES if site.working)
 
 
+def toggle_ids() -> tuple[str, ...]:
+    """Sources a person can turn off. Deezer catalog and account audio are their own settings."""
+    return tuple(site.source for site in SITES) + ("podcast",)
+
+
+def listed_sources() -> list[dict[str, object]]:
+    """What Settings shows. The browser does not keep its own copy of the names."""
+    rows: list[dict[str, object]] = [
+        {
+            "id": "deezer",
+            "label": "Deezer",
+            "kind": "catalog",
+            "working": True,
+            "note": "Search, album pages and track details.",
+        },
+        {
+            "id": "deezer_audio",
+            "label": "Deezer account",
+            "kind": "account",
+            "working": True,
+            "note": "Saves the account's own file. Paste the arl cookie below.",
+        },
+    ]
+    for site in SITES:
+        rows.append(
+            {
+                "id": site.source,
+                "label": site.label,
+                "kind": site.kind,
+                "working": site.working,
+                "note": site.quality_note
+                or (
+                    "Matches songs from search, and accepts a pasted link."
+                    if site.source == "youtube"
+                    else "Pasted links."
+                ),
+            }
+        )
+    rows.append(
+        {
+            "id": "podcast",
+            "label": "Podcasts",
+            "kind": "podcast",
+            "working": True,
+            "note": "Episodes come from the publisher's own file.",
+        }
+    )
+    return rows
+
+
 def unavailable(site: Site) -> str:
     """Why a site that is in the table is not taken today."""
     return f"{site.label} links don't work right now. The tool Musimo uses can't read that site."

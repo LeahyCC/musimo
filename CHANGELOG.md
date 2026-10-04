@@ -4,6 +4,9 @@
 
 ### Search and downloads
 
+- Save a catalog track from a Deezer account when the cookie is set, then name and tag it like any other download. A miss falls back to the YouTube match
+- List the download sources in Settings, with a switch for each and a box to replace the Deezer cookie
+- Order catalog sources in Settings, try each a set number of times, then go around the list again up to Times around the list
 - Search podcasts from a new Podcasts tab, open a show's latest episodes and download them straight from the publisher's file into `Podcasts/<show>`
 - Pause each download source on its own after repeated blocking errors, and give match candidates their own source and link
 - Search SoundCloud for a catalog track when YouTube has no match, or while YouTube is paused, behind a new off-by-default setting; matches there need a higher score, a job that takes one moves to SoundCloud for pausing and errors, and review candidates name their site

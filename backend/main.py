@@ -35,6 +35,7 @@ from backend.navidrome import Navidrome
 from backend.player_api import install_player_routes
 from backend.podcast_api import install_podcast_routes
 from backend.search_api import install_search_routes
+from backend.sources import listed_sources
 from backend.store import LockedSetting, Store
 from backend.version import VERSION
 from backend.waveform import WaveformService, install_waveform_routes
@@ -283,6 +284,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 navidrome_result = navidrome_cache
 
         first, latest = store.bounds()
+        saved = store.current()
         return {
             "health": await health(),
             "versions": versions,
@@ -299,6 +301,8 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             "capabilities": {"settings": True, "events": True, "search": True, "downloads": True},
             "navidrome": navidrome_result,
             "last_download": downloads.last_terminal_job(),
+            "deezer_audio": bool(saved.deezer_audio and saved.deezer_arl),
+            "download_sources": listed_sources(),
         }
 
     @app.post("/api/diagnostics/test/destination")

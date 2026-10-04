@@ -5,6 +5,7 @@ from pathlib import Path
 from typing import cast
 from unittest.mock import patch
 
+from backend.deezer_audio import DeezerAudioError
 from backend.job_models import Candidate, Job, Metadata
 from backend.worker import main, redact
 
@@ -176,6 +177,204 @@ class WorkerTests(unittest.TestCase):
                 self.assertEqual(emit.call_args.kwargs["code"], "DURATION_MISMATCH")
                 self.assertFalse((folder / "download.json").exists())
 
+    def test_account_audio_skips_the_youtube_search(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            source = folder / "source.flac"
+            source.write_bytes(b"synthetic audio placeholder")
+            job = Job(
+                id="test",
+                track_id=3135556,
+                target=directory,
+                meta=Metadata(id=3135556, title="Test song", artist="Test artist", duration=180),
+                created_at=0,
+                updated_at=0,
+            )
+            (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
+            events: list[dict[str, object]] = []
+
+            def record(kind: str, **values: object) -> None:
+                events.append({"kind": kind, **values})
+
+            with (
+                patch("sys.argv", ["worker", directory]),
+                patch("backend.worker.configured", return_value=True),
+                patch("backend.worker.fetch", return_value=source) as account,
+                patch("yt_dlp.YoutubeDL") as downloader,
+                patch("backend.worker.probe", return_value={"duration": 180, "codec": "flac"}),
+                patch("backend.worker.Tagger") as tagger,
+                patch("backend.worker.emit", side_effect=record),
+            ):
+                tagger.return_value.prepare.return_value = source
+                main()
+            account.assert_called_once()
+            downloader.return_value.extract_info.assert_not_called()
+            self.assertEqual(events[-1]["kind"], "ready")
+            self.assertTrue(any(event.get("source") == "deezer" for event in events))
+
+    def test_account_audio_failure_falls_back_to_youtube(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            job = Job(
+                id="test",
+                track_id=1,
+                target=directory,
+                meta=Metadata(id=1, title="Test song", artist="Test artist", duration=180),
+                created_at=0,
+                updated_at=0,
+            )
+            (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
+            with (
+                patch("sys.argv", ["worker", directory]),
+                patch("backend.worker.configured", return_value=True),
+                patch(
+                    "backend.worker.fetch", side_effect=DeezerAudioError("cookie rejected")
+                ) as account,
+                patch("yt_dlp.YoutubeDL") as downloader,
+                patch("backend.worker.emit"),
+            ):
+                downloader.return_value.extract_info.return_value = {"entries": []}
+                main()
+            account.assert_called_once()
+            downloader.return_value.extract_info.assert_called()
+
+    def test_a_youtube_miss_tries_the_next_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            source = folder / "source.flac"
+            source.write_bytes(b"synthetic audio placeholder")
+            job = Job(
+                id="test",
+                track_id=1,
+                target=directory,
+                meta=Metadata(id=1, title="Test song", artist="Test artist", duration=180),
+                created_at=0,
+                updated_at=0,
+            )
+            (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
+            events: list[dict[str, object]] = []
+
+            def record(kind: str, **values: object) -> None:
+                events.append({"kind": kind, **values})
+
+            with (
+                patch("sys.argv", ["worker", directory]),
+                patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "youtube,deezer"}),
+                patch("backend.worker.configured", return_value=True),
+                patch("backend.worker.fetch", return_value=source) as account,
+                patch("yt_dlp.YoutubeDL") as downloader,
+                patch("backend.worker.probe", return_value={"duration": 180, "codec": "flac"}),
+                patch("backend.worker.Tagger") as tagger,
+                patch("backend.worker.emit", side_effect=record),
+            ):
+                downloader.return_value.extract_info.return_value = {
+                    "entries": [{"id": "abcdefghijk", "title": "Unrelated", "duration": 900}]
+                }
+                tagger.return_value.prepare.return_value = source
+                main()
+            account.assert_called_once()
+            self.assertEqual(events[-1]["kind"], "ready")
+            self.assertFalse(any(event.get("code") == "NO_MATCH" for event in events))
+
+    def test_turned_off_youtube_is_not_searched(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            job = Job(
+                id="test",
+                track_id=1,
+                target=directory,
+                meta=Metadata(id=1, title="Test song", artist="Test artist", duration=180),
+                created_at=0,
+                updated_at=0,
+            )
+            (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
+            events: list[dict[str, object]] = []
+
+            def record(kind: str, **values: object) -> None:
+                events.append({"kind": kind, **values})
+
+            with (
+                patch("sys.argv", ["worker", directory]),
+                patch.dict(
+                    "os.environ",
+                    {"MUSIMO_DISABLED_SOURCES": "youtube", "MUSIMO_DEEZER_ARL": ""},
+                ),
+                patch("yt_dlp.YoutubeDL") as downloader,
+                patch("backend.worker.emit", side_effect=record),
+            ):
+                main()
+            downloader.return_value.extract_info.assert_not_called()
+            self.assertEqual(events[-1]["code"], "NO_MATCH")
+            self.assertIn("turned off", str(events[-1]["message"]))
+
+    def test_a_failed_download_is_tried_then_the_next_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            job = Job(
+                id="test",
+                track_id=1,
+                target=directory,
+                meta=Metadata(id=1, title="Test song", artist="Test artist", duration=180),
+                created_at=0,
+                updated_at=0,
+            )
+            (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
+            with (
+                patch("sys.argv", ["worker", directory]),
+                patch.dict(
+                    "os.environ",
+                    {
+                        "MUSIMO_SOURCE_ORDER": "deezer,youtube",
+                        "MUSIMO_TRIES_PER_SOURCE": "2",
+                        "MUSIMO_MAX_ATTEMPTS": "1",
+                    },
+                ),
+                patch("backend.worker.configured", return_value=True),
+                patch(
+                    "backend.worker.fetch", side_effect=DeezerAudioError("cookie rejected")
+                ) as account,
+                patch("yt_dlp.YoutubeDL") as downloader,
+                patch("backend.worker.emit"),
+            ):
+                downloader.return_value.extract_info.return_value = {"entries": []}
+                main()
+            self.assertEqual(account.call_count, 2)
+            downloader.return_value.extract_info.assert_called()
+
+    def test_a_later_lap_retries_a_source_that_failed(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            job = Job(
+                id="test",
+                track_id=1,
+                target=directory,
+                meta=Metadata(id=1, title="Test song", artist="Test artist", duration=180),
+                created_at=0,
+                updated_at=0,
+            )
+            (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
+            with (
+                patch("sys.argv", ["worker", directory]),
+                patch.dict(
+                    "os.environ",
+                    {
+                        "MUSIMO_SOURCE_ORDER": "deezer,youtube",
+                        "MUSIMO_TRIES_PER_SOURCE": "1",
+                        "MUSIMO_MAX_ATTEMPTS": "2",
+                    },
+                ),
+                patch("backend.worker.configured", return_value=True),
+                patch(
+                    "backend.worker.fetch", side_effect=DeezerAudioError("cookie rejected")
+                ) as account,
+                patch("yt_dlp.YoutubeDL") as downloader,
+                patch("backend.worker.emit"),
+            ):
+                downloader.return_value.extract_info.return_value = {"entries": []}
+                main()
+            self.assertEqual(account.call_count, 2)
+            self.assertEqual(downloader.return_value.extract_info.call_count, 1)
+
 
 TRACK = "https://soundcloud.com/artist/test-song"
 
@@ -190,18 +389,20 @@ class BackupSourceTests(unittest.TestCase):
     """The SoundCloud search that runs only after YouTube found nothing."""
 
     def run_worker(
-        self, directory: str, job: Job, answers: list[object]
+        self, directory: str, job: Job, answers: list[object], order: str | None = None
     ) -> tuple[list[dict[str, object]], list[str]]:
         folder = Path(directory)
         (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
         (folder / "source.m4a").write_bytes(b"synthetic audio placeholder")
         events: list[dict[str, object]] = []
+        env = {"MUSIMO_SOURCE_ORDER": order} if order else {}
 
         def record(kind: str, **values: object) -> None:
             events.append({"kind": kind, **values})
 
         with (
             patch("sys.argv", ["worker", directory]),
+            patch.dict("os.environ", env),
             patch("yt_dlp.YoutubeDL") as downloader,
             patch("backend.worker.probe", return_value={"duration": 180}),
             patch("backend.worker.Tagger") as tagger,
@@ -240,6 +441,7 @@ class BackupSourceTests(unittest.TestCase):
                     {"entries": [soundcloud("Test artist - Test song")]},
                     {"id": "123456789", "title": "Test song"},
                 ],
+                order="youtube,soundcloud",
             )
             self.assertTrue(asked[0].startswith("ytsearch8:"))
             self.assertTrue(asked[1].startswith("scsearch8:"))
@@ -322,6 +524,7 @@ class BackupSourceTests(unittest.TestCase):
                         ]
                     },
                 ],
+                order="youtube,soundcloud",
             )
             self.assertTrue(asked[1].startswith("scsearch8:"))
             self.assertEqual(events[-1]["code"], "NO_MATCH")
@@ -351,6 +554,7 @@ class BackupSourceTests(unittest.TestCase):
                     },
                     {"entries": [soundcloud("Test song (Remix)", "111111111", "Some DJ")]},
                 ],
+                order="youtube,soundcloud",
             )
             review = next(row for row in events if row["kind"] == "candidates")
             items = cast(list[dict[str, object]], review["items"])

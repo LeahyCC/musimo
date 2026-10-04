@@ -411,27 +411,48 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         // `job-card` is the hook the download specs locate cards by. The stage class is for them too.
         'job-card',
         job.stage,
-        'min-w-0 rounded-lg border border-line bg-hover p-[18px]',
+        'min-w-0 rounded-md border border-line bg-hover px-[8px] py-[4px]',
       )}
       id={`job-${job.id}`}
       tabIndex={focusable ? 0 : -1}
     >
-      <div className="flex items-center gap-3 max-phone:flex-wrap">
+      <div className="flex items-center gap-[8px]">
         {job.meta.art ? (
-          <img className="h-[42px] w-[42px] rounded-md object-cover" src={job.meta.art} alt="" />
+          <img className="h-[22px] w-[22px] rounded-sm object-cover" src={job.meta.art} alt="" />
         ) : (
-          <Disc3 size={38} />
+          <Disc3 size={16} />
         )}
-        <div className="min-w-0 flex-1 max-phone:min-w-[150px]">
-          <strong className="block truncate">{job.meta.title}</strong>
-          <span className="mt-[5px] block truncate text-small text-muted">
-            {job.meta.artist} · {job.meta.album}
+        <div className="min-w-0 flex-1">
+          <strong className="block truncate text-small">{job.meta.title}</strong>
+          <span className="block truncate text-tiny text-muted">
+            {job.meta.artist}
+            {job.meta.album ? ` · ${job.meta.album}` : ''}
+            {job.catalog === 'link' ? ` · from ${siteLabel(job.source, job.source_label)}` : ''}
+            {' · '}
+            {formatLabel(job.format)}
+            {' · '}
+            {job.attempts} {job.attempts === 1 ? 'attempt' : 'attempts'}
+            {job.target ? ` · ${job.target}` : ''}
+            {job.stage === 'downloading' && (
+              <>
+                {' · '}
+                {bytes(job.downloaded)}
+                {job.total ? ` / ${bytes(job.total)}` : ''} · {bytes(job.speed)}/s
+                {job.eta !== null ? ` · ${Math.ceil(job.eta)}s left` : ''}
+              </>
+            )}
+            {job.stage === 'done' && job.codec && (
+              <>
+                {' · '}
+                {job.codec} · {Math.round(job.actual_bitrate / 1000)} kbps
+              </>
+            )}
           </span>
         </div>
         <span className="text-tiny text-accent-hot uppercase">
           {job.stage.replaceAll('_', ' ')}
         </span>
-        <div className="flex gap-[6px]">
+        <div className="flex gap-[2px]">
           {running && !['paused', 'pausing', 'cancelling'].includes(job.stage) && (
             <IconButton
               variant="outlined"
@@ -440,7 +461,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               disabled={busy}
               onClick={() => action.mutate('pause')}
             >
-              <Pause size={16} />
+              <Pause size={14} />
             </IconButton>
           )}
           {job.stage === 'paused' && (
@@ -451,7 +472,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               disabled={busy}
               onClick={() => action.mutate('resume')}
             >
-              <Play size={16} />
+              <Play size={14} />
             </IconButton>
           )}
           {running && (
@@ -462,7 +483,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               disabled={busy || job.stage === 'cancelling'}
               onClick={() => action.mutate('cancel')}
             >
-              <X size={16} />
+              <X size={14} />
             </IconButton>
           )}
           {['failed', 'cancelled'].includes(job.stage) && (
@@ -473,7 +494,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               disabled={busy}
               onClick={() => action.mutate('retry')}
             >
-              <RotateCcw size={16} />
+              <RotateCcw size={14} />
             </IconButton>
           )}
           {!running && (
@@ -484,15 +505,12 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               disabled={busy}
               onClick={() => action.mutate('dismiss')}
             >
-              <Trash2 size={16} />
+              <Trash2 size={14} />
             </IconButton>
           )}
         </div>
       </div>
-      <div
-        className="mt-[15px] mb-[10px] flex flex-wrap gap-2 text-caption text-faint max-phone:gap-[6px]"
-        aria-label={`Current stage: ${job.stage}`}
-      >
+      <div className="sr-only" aria-label={`Current stage: ${job.stage}`}>
         {[
           'queued',
           // Podcast episodes and pasted links download their own address, so they never match.
@@ -514,34 +532,12 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
       </div>
       {job.stage === 'downloading' && (
         <progress
-          className="h-[5px] w-full accent-accent-hot"
+          className="mt-[2px] h-[3px] w-full accent-accent-hot"
           aria-label={`${job.meta.title} download progress`}
           max={1}
           value={job.total ? job.progress : undefined}
         />
       )}
-      <div className="my-[10px] flex flex-wrap gap-4 text-tiny text-muted">
-        {job.catalog === 'link' && <span>from {siteLabel(job.source, job.source_label)}</span>}
-        <span>to {job.target}</span>
-        <span>{formatLabel(job.format)}</span>
-        {job.stage === 'downloading' && (
-          <span>
-            {bytes(job.downloaded)}
-            {job.total ? ` / ${bytes(job.total)}` : ''} · {bytes(job.speed)}/s
-            {job.eta !== null ? ` · ${Math.ceil(job.eta)}s left` : ''}
-          </span>
-        )}
-        {job.stage === 'done' && (
-          <span>
-            {job.codec} · {Math.round(job.actual_bitrate / 1000)} kbps
-            {job.warnings.length > 0 &&
-              ` · ${job.warnings.length} warning${job.warnings.length === 1 ? '' : 's'}`}
-          </span>
-        )}
-        <span>
-          {job.attempts} {job.attempts === 1 ? 'attempt' : 'attempts'}
-        </span>
-      </div>
       {job.stage === 'retry_wait' && (
         <p className="text-small">
           Retry scheduled for {new Date(job.retry_at * 1000).toLocaleTimeString()}
@@ -575,64 +571,67 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         </ErrorBanner>
       )}
       {job.check_match && (
-        <p className="text-small text-warn">Check match: the selected recording needs a listen.</p>
+        <p className="text-tiny text-warn">Check match: the selected recording needs a listen.</p>
       )}
-      {job.final_path && (
-        <div className="my-3 flex items-center gap-3 text-tiny">
-          <code className="flex-1 [overflow-wrap:anywhere]">{job.final_path}</code>
-          <button
-            data-ui="text-link"
-            className={textLinkClassName('shrink-0')}
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(job.final_path)
-                .then(() => setCopied(true))
-                .catch(() => setCopied(false))
-            }}
-          >
-            {copied ? 'Copied' : 'Copy path'}
-          </button>
-        </div>
-      )}
-      {job.notes.map((note, index) => (
-        <p key={index} className="mt-3 text-small text-muted">
-          {note}
-        </p>
-      ))}
-      {job.warnings.length > 0 && (
-        <details className="mt-3 text-small text-muted">
+      {(job.final_path ||
+        job.notes.length > 0 ||
+        job.warnings.length > 0 ||
+        job.candidates.length > 0 ||
+        job.tool_tail) && (
+        <details className="text-tiny text-muted">
           <summary className="cursor-pointer">
-            {job.warnings.length} metadata or scanning notes
+            {job.candidates.length > 0
+              ? `Recording matches · ${
+                  job.candidates
+                    .find((candidate) => candidate.id === job.selected)
+                    ?.score.toFixed(2) ?? 'unselected'
+                }`
+              : 'More'}
           </summary>
-          <ul>
-            {job.warnings.map((warning, index) => (
-              <li key={index}>{warning}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-      {job.candidates.length > 0 && (
-        <details className="mt-3 text-small text-muted">
-          <summary className="cursor-pointer">
-            Recording matches ·{' '}
-            {job.candidates.find((candidate) => candidate.id === job.selected)?.score.toFixed(2) ??
-              'unselected'}
-          </summary>
-          {!canPick && <p className="text-small">Pause the job to change its recording.</p>}
+          {job.final_path && (
+            <div className="my-[6px] flex items-center gap-[8px]">
+              <code className="flex-1 [overflow-wrap:anywhere]">{job.final_path}</code>
+              <button
+                data-ui="text-link"
+                className={textLinkClassName('shrink-0')}
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(job.final_path)
+                    .then(() => setCopied(true))
+                    .catch(() => setCopied(false))
+                }}
+              >
+                {copied ? 'Copied' : 'Copy path'}
+              </button>
+            </div>
+          )}
+          {job.notes.map((note, index) => (
+            <p key={index}>{note}</p>
+          ))}
+          {job.warnings.length > 0 && (
+            <ul>
+              {job.warnings.map((warning, index) => (
+                <li key={index}>{warning}</li>
+              ))}
+            </ul>
+          )}
+          {job.candidates.length > 0 && !canPick && (
+            <p>Pause the job to change its recording.</p>
+          )}
           {job.candidates.map((candidate) => (
             <div
-              className="flex items-center gap-3 border-b border-line py-3 max-phone:flex-wrap"
+              className="flex items-center gap-[8px] border-b border-line py-[6px]"
               key={`${candidate.source}:${candidate.id}`}
             >
-              <div className="flex-1">
-                <strong>{candidate.title}</strong>
-                <small className="mt-[5px] block">
+              <div className="min-w-0 flex-1">
+                <strong className="block truncate">{candidate.title}</strong>
+                <small className="block truncate">
                   {siteLabel(candidate.source, candidate.source_label)} · {candidate.artist} ·{' '}
                   {Math.round(candidate.score * 100)}% · {candidate.reason}
                 </small>
               </div>
               <a
-                className="coarse:inline-flex coarse:min-h-11 coarse:items-center"
+                className="shrink-0"
                 href={candidate.url || `https://www.youtube.com/watch?v=${candidate.id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -647,12 +646,13 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               </Button>
             </div>
           ))}
-        </details>
-      )}
-      {job.tool_tail && (
-        <details className="mt-3 text-small text-muted">
-          <summary className="cursor-pointer">Tool details · yt-dlp {job.tool_version}</summary>
-          <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">{job.tool_tail}</pre>
+          {job.tool_tail && (
+            <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+              yt-dlp {job.tool_version}
+              {'\n'}
+              {job.tool_tail}
+            </pre>
+          )}
         </details>
       )}
       {(action.isError || pick.isError) && (
@@ -670,7 +670,7 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
     getScrollElement: () => parent.current,
     // A first guess for cards not yet measured. Roughly the shortest a card gets, so the
     // scrollbar grows into place rather than shrinking back.
-    estimateSize: () => 200,
+    estimateSize: () => 44,
     overscan: 3,
     // Cards differ in height and the queue reorders as jobs finish. Keying the measurement
     // cache by job keeps each height with its own card instead of with a list position.
@@ -708,7 +708,7 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
   if (jobs.length <= 6)
     return (
       // A bare 1fr track has a min-content floor, so one long title widened the page.
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-3" onKeyDown={handleKeyDown}>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-[4px]" onKeyDown={handleKeyDown}>
         {jobs.map((job, index) => (
           <JobCard key={job.id} job={job} focusable={index === focusedIndex} />
         ))}
@@ -738,7 +738,7 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
             return job ? (
               <div
                 key={job.id}
-                className="pb-3"
+                className="pb-[4px]"
                 ref={virtual.measureElement}
                 data-index={row.index}
               >

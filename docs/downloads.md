@@ -10,30 +10,44 @@ Album-card status lines separate owned and queued counts. They come from the sha
 
 The default is Original. AAC stays M4A and Opus is remuxed into an Opus container without re-encoding. Other requested formats convert only when needed: AAC/Opus at 160 kbps, MP3 at 320 kbps. Conversion cannot improve a lossy source. Finished jobs show the measured audio packet bitrate and codec. Custom quality presets are not implemented yet.
 
-Catalog tracks are matched on YouTube, and on SoundCloud as well when that setting is on (see SoundCloud as a backup match). A lower-confidence recording gets a "check match" flag. Its top three candidates link out for listening. Each candidate carries its `source` and `url`; the card links to that `url` and falls back to the YouTube watch page for jobs saved before candidates had one. Picking checks the ID against the candidate's own source (an 11 character ID for YouTube, digits for SoundCloud) and refuses a source with no ID rule. Each candidate also carries its site's name, so a list holding two sites labels every row. If automatic matching rejects every candidate, the job now keeps up to three duration-valid rejected candidates for review instead of discarding them. Nothing downloads until the user selects one. Pause before choosing another match. A correction after completion writes a new file and keeps the previous file. Copy path is available; opening a folder on a remote Docker host is not implemented.
+Catalog tracks follow the source order in Settings (see Catalog source order). A lower-confidence recording gets a "check match" flag. Its top three candidates link out for listening. Each candidate carries its `source` and `url`; the card links to that `url` and falls back to the YouTube watch page for jobs saved before candidates had one. Picking checks the ID against the candidate's own source (an 11 character ID for YouTube, digits for SoundCloud) and refuses a source with no ID rule. Each candidate also carries its site's name, so a list holding two sites labels every row. If automatic matching rejects every candidate, the job now keeps up to three duration-valid rejected candidates for review instead of discarding them. Nothing downloads until the user selects one. Pause before choosing another match. A correction after completion writes a new file and keeps the previous file. Copy path is available; opening a folder on a remote Docker host is not implemented.
 
-## SoundCloud as a backup match
+## Catalog source order
 
-A catalog track is matched on YouTube. When "Use SoundCloud when YouTube has no match" is on in Settings (`soundcloud_fallback`, off by default), one more source is tried for that track.
+A catalog song asks the sources in Settings, from the top of the list. SoundCloud is not in the list until it is added. An older library that had the SoundCloud backup switch on gets SoundCloud at the end of the list the first time this order is saved.
 
 ```text
-Deezer track ---> YouTube search ---> a match? ---> download
-                        |
-                        +-- nothing found, or YouTube paused or blocked
-                        |
-                        v
-                  SoundCloud search (scsearch8) ---> a match? ---> download
-                        |
-                        +-- nothing ---> NO_MATCH, with the rejected rows of both sites for review
+Settings order, top to bottom. Default is Deezer account, then YouTube.
+SoundCloud is in the list only after it is added (or was already the backup switch).
+
+Deezer account x tries
+        |
+        +-- file saved, or no cookie, or the length was wrong
+        v
+YouTube search
+        |
+        +-- no song ---> next source, and do not ask YouTube again
+        +-- download failed ---> same source, up to the tries count, then the next
+        v
+next source in the list, then back to the top
+        |
+        v
+stop after Times around the list (max_attempts)
 ```
 
-- It is never searched beside YouTube, only after it. SoundCloud holds many more remixes, reuploads and sped-up edits of the same song, and has no equivalent of YouTube's Topic channels to trust.
-- The two ways in: YouTube answered `NO_MATCH`, or YouTube was paused or blocked when the job was dispatched, in which case the job searches SoundCloud instead of waiting. A `DURATION_MISMATCH` never falls back: the recording was found, the file was wrong.
+- The order and the tries count are `source_order` and `tries_per_source` in Settings. `max_attempts` is how many times around that list for a catalog song. For a pasted link or a podcast it is still how many times to retry that one download.
+- A search that finds nothing moves on and is not searched again on a later lap. A download that fails uses one try. After the tries are used, the next source is asked. A later lap tries a source again only when its download failed, not when it had no song.
+- SoundCloud holds many more remixes, reuploads and sped-up edits of the same song, and has no equivalent of YouTube's Topic channels to trust, so it stays off the list until it is added.
+- A source that is turned off or paused is skipped. The job still starts while some other row in the list can run. A file whose length does not match the catalog is not fetched again from that source. If a later source is in the list, it is asked. If nothing else is left, the job fails with `DURATION_MISMATCH`.
 - A higher bar than YouTube, because of those reuploads: the minimum score is **0.70** against YouTube's 0.55, and a match under **0.90** gets the "check match" flag, against YouTube's 0.86. All four live beside each other in `backend/matching.py` (`YOUTUBE_MIN_SCORE`, `SOUNDCLOUD_MIN_SCORE` and the two `CHECK_BELOW` numbers). The SoundCloud pair is provisional until `scripts/match_benchmark.py --source soundcloud` has measured the corpus; see [measurements](measurements.md). There is no Topic bonus on SoundCloud, since it has no Topic channels.
 - A SoundCloud candidate carries `source` `soundcloud`, its numeric track ID and its own page address, checked against the site table before anything is downloaded. Picking one by hand works the same way, and the ID rules per source are in `CANDIDATE_IDS` (`backend/job_models.py`): 11 characters for YouTube, digits for SoundCloud, and a source with no rule cannot be picked at all.
 - When the SoundCloud recording is chosen, whether by the matcher or by hand, the job's `source` becomes `soundcloud`. From then on it downloads with SoundCloud's format selector and extractors, and its failures count toward the SoundCloud pause and never YouTube's. The reverse holds too: three YouTube blocks pause YouTube alone. An automatic retry stays on SoundCloud. Pressing Retry on a failed or cancelled job starts it over on YouTube, so a pause that has since lifted does not leave it on the weaker source. A recording picked by hand keeps the site it was picked from. The YouTube search adds the phrase "provided to youtube by", which YouTube writes on every label upload, so official copies rise to the top. The SoundCloud search leaves it out, because SoundCloud pages do not carry it.
 - When both sources come back with nothing, the rejected but duration-valid rows of each are kept for review as before, up to three per site, and each row on the card names its site.
 - Quality is lower: SoundCloud free streams are about 128 kbps MP3 or 160 kbps AAC. The job card shows the measured bitrate as usual.
+
+## Deezer account audio
+
+Set the Deezer cookie in Settings, or with `MUSIMO_DEEZER_ARL` for the first start (192 hex characters). Settings can replace it later, and the saved cookie is the one a download uses. A HiFi plan can return FLAC. Otherwise the file is 320 kbps MP3 when the account allows it, or 128 kbps. If that file is refused, the next lower quality is tried before the job moves to the next source. Naming, tags, lyrics and the chosen output format still run, so the file lands in the library folders. Deezer account is a row in the catalog order. While it is on and a cookie is set, a catalog song asks it when its turn comes. A failure, including a cookie Deezer rejects, is logged and the job continues with the next row. The cookie is not written into job records or diagnostics. Diagnostics reports `deezer_audio` as true or false. Leave the cookie empty, turn Deezer account audio off, or remove that row, to skip the account file. A track whose match was picked by hand stays on that match. Each other source has a switch in Settings. Off means new downloads and pasted links from that source stop.
 
 ## Podcast episodes
 

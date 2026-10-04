@@ -144,9 +144,25 @@ class Downloads:
         self.wake.set()
 
     def settings(self) -> Settings:
-        with self.store.lock:
-            rows = self.store.db.execute("SELECT key,value FROM settings").fetchall()
-        return Settings.model_validate({row[0]: json.loads(row[1]) for row in rows})
+        return self.store.current()
+
+    def child_env(self) -> dict[str, str]:
+        """The worker's environment.
+
+        The cookie is the saved one, and only while that source is on.
+        """
+        settings = self.settings()
+        env = dict(os.environ)
+        env["MUSIMO_DISABLED_SOURCES"] = ",".join(settings.disabled_sources)
+        env["MUSIMO_SOURCE_ORDER"] = ",".join(settings.source_order)
+        env["MUSIMO_TRIES_PER_SOURCE"] = str(settings.tries_per_source)
+        env["MUSIMO_MAX_ATTEMPTS"] = str(settings.max_attempts)
+        env["MUSIMO_PAUSED_SOURCES"] = ",".join(sorted(self.paused_sources()))
+        if settings.deezer_audio and settings.deezer_arl:
+            env["MUSIMO_DEEZER_ARL"] = settings.deezer_arl
+        else:
+            env.pop("MUSIMO_DEEZER_ARL", None)
+        return env
 
     def controls(self) -> dict[str, object]:
         return self.store.controls()
@@ -195,6 +211,16 @@ class Downloads:
         listed = self.controls()["paused_sources"]
         return {str(source) for source in listed} if isinstance(listed, list) else set()
 
+    def catalog_open(self, settings: Settings, paused: set[str]) -> bool:
+        """A catalog song can start while any source in its order is still usable."""
+        for name in settings.source_order:
+            if name in paused or name in settings.disabled_sources:
+                continue
+            if name == "deezer" and not (settings.deezer_audio and settings.deezer_arl):
+                continue
+            return True
+        return False
+
     def backup(self, job: Job, settings: Settings, paused: set[str]) -> str:
         """The source this job may fall back to, or "" when it has none.
 
@@ -203,6 +229,7 @@ class Downloads:
         """
         allowed = (
             settings.soundcloud_fallback
+            and "soundcloud" not in settings.disabled_sources
             and job.catalog == "deezer"
             and job.source == "youtube"
             and not job.selected
@@ -272,11 +299,16 @@ class Downloads:
                 settings = self.settings()
                 slots = settings.concurrency - len(self.running)
                 for job in reversed(self.jobs.list(active=True)):
-                    # A block on one site must not hold back jobs that download from another. A
-                    # catalog track can be matched on the backup source instead of waiting.
+                    # A block on one site must not hold the others. A catalog song walks its list,
+                    # so it starts while any row in that list can still run.
+                    catalog_job = job.catalog == "deezer" and not job.selected
                     blocked = job.source in paused_sources
                     switch = blocked and bool(self.backup(job, settings, paused_sources))
-                    if blocked and not switch:
+                    if catalog_job:
+                        if not self.catalog_open(settings, paused_sources):
+                            continue
+                        switch = False
+                    elif blocked and not switch:
                         continue
                     if job.stage == "retry_wait" and job.retry_at > time.time():
                         delay = min(delay, max(0.01, job.retry_at - time.time()))
@@ -435,6 +467,7 @@ class Downloads:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             start_new_session=sys.platform != "win32",
+            env=self.child_env(),
             limit=131072,
         )
         self.processes[job.id] = process
@@ -466,9 +499,10 @@ class Downloads:
                         eta=raw.get("eta"),
                     )
                 elif kind == "source":
-                    # The backup source matched, so this job's pauses and error codes are its now.
+                    # The backup source matched, or the account file was used, so pauses and
+                    # error codes follow that source now.
                     source = str(raw.get("source", ""))
-                    if by_source(source) is not None:
+                    if source == "deezer" or by_source(source) is not None:
                         self.jobs.update(job.id, source=source)
                 elif kind == "candidates":
                     self.jobs.update(
