@@ -102,3 +102,15 @@ The intended Windows index currently contains **3,681 files**, not a representat
 ## Large library, 3 October 2026
 
 Read-only checks against the live database (31,039 indexed files, 52,594 jobs, 147 MB of job JSON). Ownership for 12 tracks took about 750 ms because SQLite walked every Deezer job and parsed its payload. Pinning that join to `(catalog, track_id)` brought the same lookup to 0.2 ms. The queue snapshot took 855 ms for the same reason. Opening Albums walked Navidrome in 829 ms the first time and 15 ms from cache. Opening Tracks took 1,790 ms, then 45 ms. The last library walk reported 115.2 seconds for 30,994 files. The browse cache is three minutes so that walk is not repeated every minute. A typed history search still reads job text.
+
+## YouTube search phrase, 3 October 2026
+
+The 100 songs of the [match review corpus](evidence/match-review-corpus.json) were searched again on YouTube with `"provided to youtube by"` in place of `official audio`, and both result sets were scored by the current matcher. YouTube writes that phrase on every label upload. With no listening labels yet, "own upload" below means the chosen video came from the artist's channel (artist similarity at least 0.8) and its length was within 3 seconds.
+
+| Search phrase | Songs matched | Own upload, exact length | Decoy picked | Same video as Wikidata |
+| --- | --- | --- | --- | --- |
+| `official audio` (saved corpus rows) | 78 | 35 | 0 | 28 |
+| `"provided to youtube by"` (live search) | 89 | 64 | 0 | 37 |
+
+Before the new version words (bass boosted, 8D and others) the old rows picked two decoys, a bass-boosted reupload and an 8D edit. The new rows are a fresh search, so part of the gap may be YouTube changing since the corpus was captured. Label channels named `<artist> - Topic` were not given a larger lift: in these results most of them that lost were karaoke, cover or soundalike uploads from a channel called `Release - Topic`, and a larger lift would have picked them. A YouTube Music song search was also tried and dropped, because yt-dlp returns it without artist or length.
+

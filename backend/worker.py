@@ -18,9 +18,11 @@ from backend.tagging import Tagger, probe
 
 # How each source is searched for a catalog track. A source missing here is never searched.
 SEARCHES = {"youtube": "ytsearch8:", "soundcloud": "scsearch8:"}
-# Words added to the search. "official audio" steers YouTube toward label uploads. SoundCloud
-# titles do not carry it, so there it only filters real results out.
-SEARCH_HINT = {"youtube": " official audio"}
+# Words added to the search. YouTube writes "Provided to YouTube by <label>" on every label
+# upload, so the phrase pulls those to the top: on the 100-song corpus it matched 89 songs
+# against 79 for "official audio" (docs/measurements.md). SoundCloud titles carry neither, so
+# there a hint only filters real results out.
+SEARCH_HINT = {"youtube": ' "provided to youtube by"'}
 
 
 class Downloader(Protocol):

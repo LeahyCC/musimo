@@ -5,8 +5,34 @@ from difflib import SequenceMatcher
 from backend.job_models import Candidate, Metadata
 from backend.library import normalize
 
-# Version words are musical differences, not harmless upload decoration.
-VERSION_WORDS = ("live", "cover", "karaoke", "remix", "slowed", "sped", "instrumental")
+# Version words are musical differences, not harmless upload decoration. Each is matched as whole
+# words, so a phrase counts only when its words sit side by side. "originally performed" is how
+# karaoke and cover labels title their Topic uploads.
+VERSION_WORDS = (
+    "live",
+    "cover",
+    "karaoke",
+    "remix",
+    "slowed",
+    "sped",
+    "instrumental",
+    "acoustic",
+    "extended",
+    "nightcore",
+    "8d",
+    "reverb",
+    "lofi",
+    "lo fi",
+    "bass boosted",
+    "originally performed",
+    "1 hour",
+)
+
+
+def has_words(text: str, words: str) -> bool:
+    """Whether normalized `text` holds `words` as whole words."""
+    return f" {words} " in f" {text} "
+
 
 # The score a match must reach to be accepted, and the score below which the job says
 # "check match", per source. SoundCloud is full of remixes, reuploads and sped-up edits, and has
@@ -56,12 +82,13 @@ class Matcher:
         if meta.duration > 0 and (duration <= 0 or delta > max(15, meta.duration * 0.12)):
             return None
         duration_score = max(0, 1 - delta / max(8, meta.duration * 0.08)) if meta.duration else 0.5
-        wanted_words, result_words = wanted_title.split(), cleaned.split()
         version_mismatch = any(
-            token in result_words and token not in wanted_words for token in VERSION_WORDS
+            has_words(cleaned, words) and not has_words(wanted_title, words)
+            for words in VERSION_WORDS
         )
         version_missing = any(
-            token in wanted_words and token not in result_words for token in VERSION_WORDS
+            has_words(wanted_title, words) and not has_words(cleaned, words)
+            for words in VERSION_WORDS
         )
         total = (
             0.5 * title_score + 0.3 * artist_score + 0.17 * duration_score + (0.03 if topic else 0)

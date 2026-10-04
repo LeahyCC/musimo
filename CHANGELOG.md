@@ -8,6 +8,7 @@
 - Pause each download source on its own after repeated blocking errors, and give match candidates their own source and link
 - Search SoundCloud for a catalog track when YouTube has no match, or while YouTube is paused, behind a new off-by-default setting; matches there need a higher score, a job that takes one moves to SoundCloud for pausing and errors, and review candidates name their site
 - Put tracks with no close recording on their own Downloads tab, and keep Retry and Clear for real failures
+- Search YouTube for label uploads instead of "official audio", which matched 89 of the 100 corpus songs instead of 78, and treat bass boosted, 8D, nightcore, reverb, lofi, acoustic, extended and karaoke-label uploads as different versions
 
 ### Pasted links
 

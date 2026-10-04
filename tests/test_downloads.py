@@ -159,6 +159,27 @@ class DurableJobsTests(unittest.TestCase):
         self.assertGreater(ranked[0].score, 0.86)
         self.assertNotIn("long0000001", [row.id for row in ranked])
 
+    def test_recording_rank_puts_decoy_uploads_below_the_original(self) -> None:
+        meta = Metadata(id=1, title="Test Song", artist="Test Artist", duration=180)
+        decoys = [
+            "Test Artist - Test Song [Bass boosted]",
+            "Test Artist - Test Song (8D Audio)",
+            "Test Song (Originally Performed by Test Artist)",
+            "Test Song (Nightcore)",
+        ]
+        rows = [
+            Candidate(id=f"decoy{i:06d}", title=title, artist="Test Artist", duration=180)
+            for i, title in enumerate(decoys)
+        ]
+        rows.append(Candidate(id="correct0001", title="Test Song", artist="Uploads", duration=180))
+        ranked = Matcher().rank(meta, rows, min_score=0)
+        self.assertEqual(ranked[0].id, "correct0001")
+        # A wanted title that is itself the 8D version keeps its 8D match.
+        wanted = Metadata(id=2, title="Test Song (8D Audio)", artist="Test Artist", duration=180)
+        score = Matcher().score(wanted, decoys[1], "Test Artist", 180)
+        assert score is not None
+        self.assertFalse(score.version_mismatch or score.version_missing)
+
     def test_output_path_is_contained_and_publication_never_overwrites(self) -> None:
         naming = Naming()
         for bad in ["../{title}", "/{title}", "{title.__class__}", "{artist!r}", "x//{title}"]:
