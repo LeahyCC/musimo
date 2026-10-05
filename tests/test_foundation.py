@@ -84,6 +84,27 @@ class FoundationTests(unittest.TestCase):
             self.assertEqual(len(store.events(0)), 1)
             store.close()
 
+    def test_list_settings_seed_from_comma_separated_environment(self) -> None:
+        # A plain string failed the strict list setting and the app did not start.
+        with tempfile.TemporaryDirectory() as folder:
+            seeds = {
+                "MUSIMO_SOURCE_ORDER": "youtube, soundcloud",
+                "MUSIMO_DISABLED_SOURCES": "podcast",
+            }
+            with patch.dict("os.environ", seeds):
+                store = Store(Path(folder) / "db.sqlite3")
+            settings = store.settings()
+            self.assertEqual(
+                settings["source_order"],
+                {
+                    "value": ["youtube", "soundcloud"],
+                    "origin": "MUSIMO_SOURCE_ORDER",
+                    "locked": True,
+                },
+            )
+            self.assertEqual(store.current().disabled_sources, ["podcast"])
+            store.close()
+
     def test_csp_allows_webassembly_but_no_eval_or_other_scripts(self) -> None:
         # The visualizer compiles its presets to WebAssembly; without this every preset fails.
         with tempfile.TemporaryDirectory() as folder:

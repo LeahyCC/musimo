@@ -13,20 +13,23 @@ RETAIN_EVENTS = 5000
 # siblings of an active batch, the latest 50 no-match failures, the latest 50 other
 # failures, and the latest 50 other finished jobs. One OR across the payload parsed
 # the whole history (about half a second at 50k jobs). A no-match album must not
-# push a real failure out of that window.
+# push a real failure out of that window. Each arm names its index: the app never
+# runs ANALYZE, and without statistics SQLite served every arm from
+# jobs_inactive_recent and parsed the whole history again.
 VISIBLE_ID_SQL = """
-SELECT id FROM jobs WHERE active=1
+SELECT id FROM jobs INDEXED BY jobs_active_identity WHERE active=1
 UNION
 SELECT j.id FROM (
     SELECT DISTINCT json_extract(payload,'$.batch_id') AS batch_id
-    FROM jobs WHERE active=1 AND json_extract(payload,'$.batch_id') != ''
+    FROM jobs INDEXED BY jobs_active_identity
+    WHERE active=1 AND json_extract(payload,'$.batch_id') != ''
 ) batches
 CROSS JOIN jobs j INDEXED BY jobs_batch_id
     ON json_extract(j.payload,'$.batch_id') = batches.batch_id
 WHERE j.active=0
 UNION
 SELECT id FROM (
-    SELECT id FROM jobs
+    SELECT id FROM jobs INDEXED BY jobs_shown_nomatch
     WHERE active=0 AND json_extract(payload,'$.hidden')=0
       AND json_extract(payload,'$.stage')='failed'
       AND json_extract(payload,'$.error_code')='NO_MATCH'
@@ -34,7 +37,7 @@ SELECT id FROM (
 )
 UNION
 SELECT id FROM (
-    SELECT id FROM jobs
+    SELECT id FROM jobs INDEXED BY jobs_shown_other_fail
     WHERE active=0 AND json_extract(payload,'$.hidden')=0
       AND json_extract(payload,'$.stage')='failed'
       AND coalesce(json_extract(payload,'$.error_code'),'')!='NO_MATCH'
@@ -42,7 +45,7 @@ SELECT id FROM (
 )
 UNION
 SELECT id FROM (
-    SELECT id FROM jobs
+    SELECT id FROM jobs INDEXED BY jobs_shown_other
     WHERE active=0 AND json_extract(payload,'$.hidden')=0
       AND json_extract(payload,'$.stage')!='failed'
     ORDER BY created_at DESC LIMIT 50
@@ -56,6 +59,10 @@ def seeded(default: object, raw: str) -> object:
         return raw.strip().lower() in {"1", "true", "yes", "on"}
     if isinstance(default, int):
         return int(raw)
+    if isinstance(default, list):
+        # Comma-separated, the same form the worker reads. A plain string failed the strict
+        # list setting and stopped the app from starting.
+        return [part.strip() for part in raw.split(",") if part.strip()]
     return raw
 
 
