@@ -9,7 +9,7 @@ from fastapi.testclient import TestClient
 
 from backend.main import create_app
 from backend.worker import base_options
-from backend.youtube_cookies import clean, remove, saved, write
+from backend.youtube_cookies import clean, drop_copies, remove, saved, write
 
 YOUTUBE = ".youtube.com\tTRUE\t/\tTRUE\t0\tLOGIN_INFO\tabc"
 GOOGLE = ".google.com\tTRUE\t/\tFALSE\t0\tSID\tdef"
@@ -58,18 +58,20 @@ class YoutubeCookieTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "youtube-cookies.txt"
             path.write_text("# Netscape HTTP Cookie File\n" + YOUTUBE + "\n", encoding="utf-8")
-            job = Path(folder) / "job"
-            job.mkdir()
             with patch.dict(os.environ, {"MUSIMO_YOUTUBE_COOKIES": str(path)}):
-                copy = Path(str(base_options(job)["cookiefile"]))
-                self.assertEqual(copy.parent, job)
+                copy = Path(str(base_options()["cookiefile"]))
+                # Beside the saved file on the data volume, never in a job's staging folder,
+                # which sits in the music library.
+                self.assertNotEqual(copy, path)
+                self.assertEqual(copy.parent, path.parent)
                 self.assertEqual(copy.read_bytes(), path.read_bytes())
                 # yt-dlp saves its jar to the cookie file on close. A running job must not
                 # undo a file that was replaced or removed in Settings meanwhile.
                 copy.write_text("# Netscape HTTP Cookie File\n" + OTHER + "\n", encoding="utf-8")
                 self.assertNotIn("evil.test", path.read_text(encoding="utf-8"))
-                elsewhere = Path(str(base_options()["cookiefile"]))
-                self.assertNotEqual(elsewhere.parent, job)
-                elsewhere.unlink()
+                # A stopped worker's copy is removed on the next start, and the saved file stays.
+                drop_copies(path.parent)
+                self.assertFalse(copy.exists())
+                self.assertTrue(path.exists())
             with patch.dict(os.environ, {"MUSIMO_YOUTUBE_COOKIES": ""}):
                 self.assertNotIn("cookiefile", base_options())

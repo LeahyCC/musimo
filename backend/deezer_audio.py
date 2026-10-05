@@ -128,6 +128,10 @@ class Account:
             raise DeezerAudioError("Deezer did not answer") from exc
         if not isinstance(raw, dict):
             raise DeezerAudioError("Deezer did not answer")
+        # gw-light reports a failure here with an empty results object, and still answers 200.
+        # Read as no track, it would file a song as missing while Deezer was only refusing.
+        if raw.get("error"):
+            raise DeezerAudioError("Deezer did not answer")
         return raw
 
     def login(self) -> None:
@@ -246,6 +250,9 @@ class Account:
                     partial.unlink(missing_ok=True)
                     last = DeezerAudioError("Deezer did not return the audio")
                     continue
+                except BaseException:
+                    partial.unlink(missing_ok=True)
+                    raise
                 if written < BLOCK:
                     partial.unlink(missing_ok=True)
                     last = DeezerAudioError("Deezer did not return the audio")

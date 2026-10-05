@@ -82,12 +82,19 @@ class Matcher:
         if meta.duration > 0 and (duration <= 0 or delta > max(15, meta.duration * 0.12)):
             return None
         duration_score = max(0, 1 - delta / max(8, meta.duration * 0.08)) if meta.duration else 0.5
+        # An artist's name can hold a version word (Acoustic Alchemy, Lofi Fruits Music), and a
+        # title-first upload puts it last, where the prefix strip above misses it.
+        versioned = (
+            " ".join(f" {cleaned} ".replace(f" {wanted_artist} ", " ").split())
+            if wanted_artist
+            else cleaned
+        )
         version_mismatch = any(
-            has_words(cleaned, words) and not has_words(wanted_title, words)
+            has_words(versioned, words) and not has_words(wanted_title, words)
             for words in VERSION_WORDS
         )
         version_missing = any(
-            has_words(wanted_title, words) and not has_words(cleaned, words)
+            has_words(wanted_title, words) and not has_words(versioned, words)
             for words in VERSION_WORDS
         )
         total = (

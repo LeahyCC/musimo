@@ -62,7 +62,8 @@ def seeded(default: object, raw: str) -> object:
     if isinstance(default, list):
         # Comma-separated, the same form the worker reads. A plain string failed the strict
         # list setting and stopped the app from starting.
-        return [part.strip() for part in raw.split(",") if part.strip()]
+        # An empty value means the default, as it would if it were unset.
+        return [part.strip() for part in raw.split(",") if part.strip()] or default
     return raw
 
 

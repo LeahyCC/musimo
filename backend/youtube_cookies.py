@@ -6,7 +6,6 @@ Only YouTube and Google rows are kept, so a full browser export is not replayed 
 
 import atexit
 import os
-import tempfile
 from pathlib import Path
 
 FILE_NAME = "youtube-cookies.txt"
@@ -39,6 +38,13 @@ def publish(data: Path) -> None:
         os.environ["MUSIMO_YOUTUBE_COOKIES"] = str(cookie_path(data))
     else:
         os.environ.pop("MUSIMO_YOUTUBE_COOKIES", None)
+
+
+def drop_copies(data: Path) -> None:
+    """Remove the copies that stopped workers left behind. Only safe before any worker runs."""
+    for copy in data.glob(f"{Path(FILE_NAME).stem}.*{Path(FILE_NAME).suffix}"):
+        if copy.name != FILE_NAME and copy.is_file() and not copy.is_symlink():
+            copy.unlink(missing_ok=True)
 
 
 def _host(domain: str) -> str:
@@ -108,25 +114,21 @@ def remove(data: Path) -> None:
     publish(data)
 
 
-def private_copy(folder: Path | None = None) -> str:
+def private_copy() -> str:
     """A copy of the saved file for this process to hand to yt-dlp, or "" when none is saved.
 
     yt-dlp writes its cookie jar back to `cookiefile` when it closes. Given the saved file, a job
     that was already running would put back cookies someone had just replaced or removed in
-    Settings. A copy keeps that write inside this process. It sits in the job folder when there
-    is one, so cancelling the job removes it, and it is deleted when the process exits.
+    Settings. A copy keeps that write inside this process. It sits beside the saved file on the
+    data volume: a job's staging folder is in the music library, which may be shared. The copy
+    goes when the process exits, and the next start removes any a stopped worker left.
     """
     source = os.getenv("MUSIMO_YOUTUBE_COOKIES", "").strip()
     path = Path(source) if source else None
     if path is None or not path.is_file() or path.is_symlink():
         return ""
-    if folder is None:
-        handle, name = tempfile.mkstemp(prefix="musimo-cookies-", suffix=".txt")
-        os.close(handle)
-        copy = Path(name)
-    else:
-        copy = folder / "cookies.txt"
-        copy.unlink(missing_ok=True)
+    copy = path.with_name(f"{path.stem}.{os.getpid()}{path.suffix}")
+    copy.unlink(missing_ok=True)
     _write_private(copy, path.read_bytes())
     atexit.register(copy.unlink, missing_ok=True)
     return str(copy)

@@ -17,7 +17,14 @@ BLOCKING_CODES = frozenset(
 )
 SITE_LABELS = {"youtube": "YouTube", "podcast": "the podcast host", "deezer": "Deezer"}
 # What yt-dlp says when a site will not play a recording in the server's country.
-GEO_MARKERS = ("geolocation", "geo restriction", "geo-restricted", "geo restricted")
+# YouTube itself says "The uploader has not made this video available in your country".
+GEO_MARKERS = (
+    "geolocation",
+    "geo restriction",
+    "geo-restricted",
+    "geo restricted",
+    "in your country",
+)
 # Sites that say more than the general wording, keyed by their label.
 GEO_HINTS = {"BBC Sounds": "BBC Sounds only plays in the UK, and this server is not there."}
 

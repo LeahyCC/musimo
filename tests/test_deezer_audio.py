@@ -13,6 +13,7 @@ from backend.deezer_audio import (
     BLOCK,
     Account,
     DeezerAudioError,
+    DeezerNoTrack,
     account_cookie,
     blowfish_key,
     choose_format,
@@ -165,3 +166,22 @@ class DeezerAudioTests(unittest.TestCase):
                     self.assertIn("youtube_cookies", reply)
                 client.patch("/api/settings", json={"deezer_arl": ""})
                 self.assertFalse(client.get("/api/settings").json()["deezer_cookie"]["value"])
+
+    def test_a_gw_light_error_reply_is_not_read_as_a_missing_track(self) -> None:
+        # Deezer answers 200 with an error and empty results. That is a refusal, not "no song".
+        account = Account("ab" * 96)
+        account.http.close()
+        account.http = httpx.Client(
+            transport=httpx.MockTransport(
+                lambda _: httpx.Response(
+                    200,
+                    json={"error": {"VALID_TOKEN_REQUIRED": "Invalid CSRF token"}, "results": {}},
+                )
+            )
+        )
+        try:
+            with self.assertRaises(DeezerAudioError) as raised:
+                account.track("1")
+            self.assertNotIsInstance(raised.exception, DeezerNoTrack)
+        finally:
+            account.close()

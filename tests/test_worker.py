@@ -589,7 +589,7 @@ class BackupSourceTests(unittest.TestCase):
             self.assertEqual(events[-1]["code"], "NO_MATCH")
             self.assertEqual(events[-1]["hint"], "No matching recording was found on YouTube.")
 
-    def test_no_fallback_after_a_duration_mismatch(self) -> None:
+    def test_a_wrong_length_with_nothing_left_to_ask_files_a_duration_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
             job = self.job(directory)
@@ -602,6 +602,8 @@ class BackupSourceTests(unittest.TestCase):
 
             with (
                 patch("sys.argv", ["worker", directory]),
+                patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "youtube"}),
+                patch("backend.worker.configured", return_value=False),
                 patch("yt_dlp.YoutubeDL") as downloader,
                 patch("backend.worker.probe", return_value={"duration": 400}),
                 patch("backend.worker.Tagger") as tagger,
@@ -851,6 +853,7 @@ def run_walk(
     account: Callable[..., Path] | None = None,
     lengths: dict[str, object] | None = None,
     fields: dict[str, object] | None = None,
+    answer: Callable[..., object] | None = None,
 ) -> tuple[list[dict[str, object]], list[str], MagicMock]:
     """Run the worker on one catalog song with yt-dlp, the Deezer fetch and ffprobe faked.
 
@@ -896,7 +899,7 @@ def run_walk(
         patch("backend.worker.emit", side_effect=record),
     ):
         tagger.return_value.prepare.side_effect = lambda source, *_: source
-        downloader.return_value.extract_info.side_effect = writes_audio(folder, replies)
+        downloader.return_value.extract_info.side_effect = answer or writes_audio(folder, replies)
         main()
         asked = [str(call.args[0]) for call in downloader.return_value.extract_info.call_args_list]
     return events, asked, downloader
@@ -1071,3 +1074,148 @@ class WalkTests(unittest.TestCase):
             self.assertEqual(events[-1]["kind"], "ready")
             last = [row for row in events if row["kind"] == "candidates"][-1]
             self.assertEqual(last["selected"], "")
+
+
+class WalkFollowUpTests(unittest.TestCase):
+    """Cases found when the walk fixes were reviewed again."""
+
+    def test_a_private_or_country_blocked_match_moves_on_without_a_block(self) -> None:
+        # A private video reads like expired cookies, and YouTube's country wording matched no
+        # geo marker. Both stopped the source or repeated the same match.
+        refusals = (
+            "Private video. Sign in if you've been granted access to this video. "
+            "Use --cookies-from-browser or --cookies for the authentication.",
+            "The uploader has not made this video available in your country",
+        )
+        for refusal in refusals:
+            with self.subTest(refusal=refusal), tempfile.TemporaryDirectory() as directory:
+                events, asked, _ = run_walk(
+                    directory,
+                    [
+                        {"entries": [MATCH, TOPIC]},
+                        RuntimeError(f"ERROR: [youtube] {TOPIC['id']}: {refusal}"),
+                        {"id": MATCH["id"], "title": "Test song"},
+                    ],
+                )
+                self.assertEqual(asked[-1], f"https://www.youtube.com/watch?v={MATCH['id']}")
+                self.assertEqual(events[-1]["kind"], "ready")
+                self.assertEqual([row for row in events if row["kind"] == "blocked"], [])
+
+    def test_a_rate_limit_stays_retryable_when_another_source_failed_last(self) -> None:
+        def refuses(*_: object) -> Path:
+            raise DeezerAudioError("Deezer did not return the audio")
+
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [RuntimeError("HTTP Error 429: Too Many Requests")],
+                env={"MUSIMO_SOURCE_ORDER": "deezer,youtube", "MUSIMO_MAX_ATTEMPTS": "2"},
+                account=refuses,
+            )
+            self.assertEqual(events[-1]["code"], "RATE_LIMITED")
+            self.assertTrue(events[-1]["retryable"])
+
+    def test_an_earlier_failure_does_not_outrank_a_later_wrong_length(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [
+                    {"entries": [MATCH, TOPIC]},
+                    RuntimeError("Video unavailable"),
+                    RuntimeError("Connection reset by peer"),
+                    {"entries": [MATCH, TOPIC]},
+                    {"id": MATCH["id"], "title": "Test song"},
+                ],
+                env={"MUSIMO_MAX_ATTEMPTS": "2"},
+                lengths={".m4a": 400.0},
+            )
+            self.assertEqual(events[-1]["code"], "DURATION_MISMATCH")
+
+    def partial_at_download(self, marked: object) -> list[bool]:
+        """Whether an unfinished file left for `marked` is still there when MATCH downloads."""
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "source.m4a.part").write_bytes(b"half a song")
+            (folder / "partial.json").write_text(
+                json.dumps({"source": "youtube", "id": marked}), encoding="utf-8"
+            )
+            seen: list[bool] = []
+
+            def answer(address: object, *args: object, **kwargs: object) -> object:
+                if "search8:" in str(address):
+                    return {"entries": [MATCH]}
+                seen.append((folder / "source.m4a.part").exists())
+                (folder / "source.m4a").write_bytes(b"synthetic audio placeholder")
+                return {"id": MATCH["id"], "title": "Test song"}
+
+            events, _, _ = run_walk(directory, [], answer=answer)
+            self.assertEqual(events[-1]["kind"], "ready")
+        return seen
+
+    def test_a_paused_download_resumes_its_own_partial_file_only(self) -> None:
+        # The walk used to clear the folder first, so a paused download started over.
+        self.assertEqual(self.partial_at_download(MATCH["id"]), [True])
+        # Another recording's unfinished file must not be resumed into this one.
+        self.assertEqual(self.partial_at_download("zzzzzzzzzzz"), [False])
+
+    def test_a_resumed_file_restores_its_source_and_match_flag_after_retry(self) -> None:
+        stale = Candidate(id=str(MATCH["id"]), title="Test song", source="youtube").model_dump()
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "source.m4a").write_bytes(b"synthetic audio placeholder")
+            (folder / "download.json").write_text(
+                json.dumps(
+                    {
+                        "selected": MATCH["id"],
+                        "file": "source.m4a",
+                        "artist": "A",
+                        "source": "youtube",
+                        "check_match": True,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            events, asked, _ = run_walk(
+                directory,
+                [],
+                fields={
+                    "source": "deezer",
+                    "selected": "",
+                    "hand_picked": False,
+                    "candidates": [stale],
+                },
+            )
+            self.assertEqual(asked, [])
+            self.assertIn({"kind": "source", "source": "youtube"}, events)
+            picked = [row for row in events if row["kind"] == "candidates"]
+            self.assertEqual(picked[-1]["selected"], MATCH["id"])
+            self.assertTrue(picked[-1]["check_match"])
+            self.assertEqual(events[-1]["kind"], "ready")
+
+    def test_a_hand_pick_from_a_turned_off_source_is_refused(self) -> None:
+        stale = Candidate(id=str(MATCH["id"]), title="Test song", source="youtube").model_dump()
+        with tempfile.TemporaryDirectory() as directory:
+            events, asked, _ = run_walk(
+                directory,
+                [],
+                env={"MUSIMO_DISABLED_SOURCES": "youtube"},
+                fields={"selected": MATCH["id"], "hand_picked": True, "candidates": [stale]},
+            )
+            self.assertEqual(asked, [])
+            self.assertEqual(events[-1]["code"], "SITE_NOT_ALLOWED")
+
+    def test_a_country_block_is_filed_as_one_plain_sentence(self) -> None:
+        # The tool's text names the video, so the summary listed one row per blocked track.
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [
+                    {"entries": [MATCH]},
+                    RuntimeError(
+                        f"ERROR: [youtube] {MATCH['id']}: The uploader has not made this video "
+                        "available in your country"
+                    ),
+                ],
+            )
+            self.assertEqual(events[-1]["code"], "GEO_RESTRICTED")
+            self.assertNotIn(str(MATCH["id"]), str(events[-1]["message"]))

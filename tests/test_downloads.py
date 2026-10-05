@@ -182,6 +182,20 @@ class DurableJobsTests(unittest.TestCase):
         assert score is not None
         self.assertFalse(score.version_mismatch or score.version_missing)
 
+    def test_an_artist_named_with_a_version_word_is_not_another_version(self) -> None:
+        # A title-first upload puts the artist last, where the prefix strip missed it, so
+        # "Acoustic Alchemy" read as an acoustic version of the song.
+        matcher = Matcher()
+        meta = Metadata(id=1, title="Mr. Chow", artist="Acoustic Alchemy", duration=200)
+        own = matcher.score(meta, "Mr. Chow - Acoustic Alchemy", "Acoustic Alchemy", 200)
+        assert own is not None
+        self.assertFalse(own.version_mismatch)
+        self.assertGreater(own.total, 0.55)
+        other = Metadata(id=2, title="Mr. Chow", artist="Someone", duration=200)
+        decoy = matcher.score(other, "Mr. Chow (Acoustic)", "Someone", 200)
+        assert decoy is not None
+        self.assertTrue(decoy.version_mismatch)
+
     def test_output_path_is_contained_and_publication_never_overwrites(self) -> None:
         naming = Naming()
         for bad in ["../{title}", "/{title}", "{title.__class__}", "{artist!r}", "x//{title}"]:
@@ -1043,6 +1057,14 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                         f"/api/jobs/{job.id}/pick", json={"candidate_id": "999999999"}
                     )
                     self.assertEqual(unknown.status_code, 422)
+                    # Off means no new downloads from that source, a hand pick included.
+                    store.update({"disabled_sources": ["youtube"]})
+                    service.jobs.update(job.id, stage="failed")
+                    refused = await api.post(
+                        f"/api/jobs/{job.id}/pick", json={"candidate_id": "abcdefghijk"}
+                    )
+                    self.assertEqual(refused.status_code, 422)
+                    self.assertIn("turned off", refused.json()["detail"])
             store.close()
 
     async def test_a_pause_that_lands_before_the_worker_leaves_the_song_queued(self) -> None:

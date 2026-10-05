@@ -170,6 +170,8 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         )
         if chosen is None:
             raise HTTPException(422, "Choose a candidate from this job's match list")
+        if chosen.source in service.settings().disabled_sources:
+            raise HTTPException(422, f"{chosen.source_label} is turned off in Settings.")
         if any(
             row.id != job.id
             and row.track_id == job.track_id

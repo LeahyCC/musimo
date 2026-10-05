@@ -104,6 +104,12 @@ class FoundationTests(unittest.TestCase):
             )
             self.assertEqual(store.current().disabled_sources, ["podcast"])
             store.close()
+        # An empty value is the default, as it would be if it were unset.
+        with tempfile.TemporaryDirectory() as folder:
+            with patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": ""}):
+                store = Store(Path(folder) / "db.sqlite3")
+            self.assertEqual(store.current().source_order, ["deezer", "youtube"])
+            store.close()
 
     def test_csp_allows_webassembly_but_no_eval_or_other_scripts(self) -> None:
         # The visualizer compiles its presets to WebAssembly; without this every preset fails.

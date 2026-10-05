@@ -160,7 +160,7 @@ def redact(text: str) -> str:
     return re.sub(r"https?://\S+", "[URL]", text)[-3000:]
 
 
-def base_options(cookie_dir: Path | None = None) -> dict[str, object]:
+def base_options() -> dict[str, object]:
     """yt-dlp settings shared by downloads and link previews. No browser input reaches these."""
     options: dict[str, object] = {
         "quiet": True,
@@ -181,7 +181,7 @@ def base_options(cookie_dir: Path | None = None) -> dict[str, object]:
         }
     # A signed-in cookies file lets an age-restricted video through. The path is the server's,
     # never a path from the browser, and yt-dlp gets its own copy because it writes back to it.
-    if cookies := private_copy(cookie_dir):
+    if cookies := private_copy():
         options["cookiefile"] = cookies
     return options
 
@@ -315,7 +315,7 @@ def main() -> None:
     if link_site and match_entry(job.source_url) is not link_site:
         refuse("SITE_NOT_ALLOWED", f"The link is not a {site} address")
         return
-    options = base_options(folder) | {
+    options = base_options() | {
         "noplaylist": True,
         "progress_hooks": [progress],
         "outtmpl": str(folder / "source.%(ext)s"),
@@ -381,24 +381,60 @@ def main() -> None:
 
         saved_file = fetch(job.track_id, folder, on_progress)
         try:
-            audio_info = probe(saved_file)
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
-            # The tool's own message carries the command and the local path.
-            raise ValueError("The Deezer file could not be read") from exc
-        duration = float(str(audio_info["duration"]))
-        if duration <= 0:
-            # ffprobe reads some garbage as a zero-length file and exits cleanly.
-            raise ValueError("The Deezer file has no audio in it")
-        if account_preview(job.meta.duration, duration):
+            try:
+                audio_info = probe(saved_file)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
+                # The tool's own message carries the command and the local path.
+                raise ValueError("The Deezer file could not be read") from exc
+            duration = float(str(audio_info["duration"]))
+            if duration <= 0:
+                # ffprobe reads some garbage as a zero-length file and exits cleanly.
+                raise ValueError("The Deezer file has no audio in it")
+            if account_preview(job.meta.duration, duration):
+                saved_file.unlink(missing_ok=True)
+                return None
+            write_manifest("", saved_file, job.meta.artist, "deezer", False)
+        except BaseException:
+            # The next source still gets asked, and this file would fail its single-file check.
             saved_file.unlink(missing_ok=True)
-            return None
+            raise
+        return saved_file
+
+    def write_manifest(
+        selected: str, audio: Path, artist: str, source: str, check_match: bool
+    ) -> None:
+        """Record a verified file. A resume reads where it came from and how sure the match was."""
         temporary = manifest.with_suffix(".tmp")
         temporary.write_text(
-            json.dumps({"selected": "", "file": saved_file.name, "artist": job.meta.artist}),
+            json.dumps(
+                {
+                    "selected": selected,
+                    "file": audio.name,
+                    "artist": artist,
+                    "source": source,
+                    "check_match": check_match,
+                }
+            ),
             encoding="utf-8",
         )
         temporary.replace(manifest)
-        return saved_file
+
+    def make_room(picked: Candidate) -> None:
+        """Clear an earlier attempt's files before this recording downloads.
+
+        This recording's own unfinished file stays, so a paused or restarted download resumes
+        where it stopped. Anything else would be resumed into the wrong recording, or fail the
+        single-file check.
+        """
+        marker = folder / "partial.json"
+        mine = {"source": picked.source, "id": picked.id}
+        try:
+            earlier: object = json.loads(marker.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            earlier = None
+        if earlier != mine:
+            drop_audio(partial=True)
+            marker.write_text(json.dumps(mine), encoding="utf-8")
 
     def use_client(picked: Candidate) -> None:
         """Point the download client at the picked recording's own site.
@@ -458,12 +494,9 @@ def main() -> None:
         if job.meta.duration and abs(duration - job.meta.duration) > limit:
             audio.unlink(missing_ok=True)
             raise WrongLength()
-        temporary = manifest.with_suffix(".tmp")
-        temporary.write_text(
-            json.dumps({"selected": picked.id, "file": audio.name, "artist": named}),
-            encoding="utf-8",
+        write_manifest(
+            picked.id, audio, named, picked.source, picked.score < CHECK_BELOW[picked.source]
         )
-        temporary.replace(manifest)
         return audio, named
 
     def note_source(name: str, lap: int, total: int, next_stage: str) -> None:
@@ -490,9 +523,6 @@ def main() -> None:
         if not usable:
             sources_off()
             return None
-        # No manifest matched, so anything an earlier run left here is stale. A second audio
-        # file would fail the next download's single-file check.
-        drop_audio(partial=True)
         matcher = Matcher()
         review: list[Candidate] = []
         ranked_rows: list[Candidate] = []
@@ -503,13 +533,12 @@ def main() -> None:
         no_song: list[str] = []
         # Recordings that failed for themselves or had the wrong length.
         bad: set[tuple[str, str]] = set()
-        # Sources where a recording failed for itself. That failure is their answer.
-        faulted: set[str] = set()
-        # source, code, message. The pause follows the source on the error, not the job's start.
-        hits: list[tuple[str, str, str]] = []
+        # source, code, message, and whether one recording failed rather than the source. The
+        # pause follows the source on the error, not the job's start.
+        hits: list[tuple[str, str, str, bool]] = []
 
         def remember(name: str, code: str, message: str) -> None:
-            hits.append((name, code, message))
+            hits.append((name, code, message, False))
             # Count the block even when a later source saves the song.
             if code in BLOCKING_CODES:
                 emit("blocked", source=name, code=code, message=message)
@@ -517,10 +546,12 @@ def main() -> None:
                 stopped.add(name)
 
         def settle(name: str) -> None:
-            """The source has answered. An earlier failure there no longer explains the job."""
+            """The source has answered. An earlier failure there no longer explains the job.
+
+            A recording that failed for itself is part of that answer, so it stays.
+            """
             missed.add(name)
-            if name not in faulted:
-                hits[:] = [hit for hit in hits if hit[0] != name]
+            hits[:] = [hit for hit in hits if hit[0] != name or hit[3]]
 
         def keep_rows(rows: list[Candidate]) -> None:
             known = {(row.source, row.id) for row in ranked_rows}
@@ -538,15 +569,13 @@ def main() -> None:
                         try:
                             saved = account_once()
                         except DeezerNoTrack as exc:
-                            drop_audio(partial=True)
                             emit("log", message=str(exc))
                             no_song.append("deezer")
                             settle("deezer")
                             break
                         except Exception as exc:
-                            # Whatever failed, the next source still gets asked. The file this
-                            # attempt saved would trip the next download's single-file check.
-                            drop_audio(partial=True)
+                            # Whatever failed, the next source still gets asked. The attempt has
+                            # already removed the file it saved.
                             message = redact(str(exc)) or "Deezer audio failed"
                             if classify(message) == "DISK_FULL":
                                 raise
@@ -607,8 +636,7 @@ def main() -> None:
                         selected=picked.id,
                         check_match=picked.score < CHECK_BELOW[picked.source],
                     )
-                    # Another recording's unfinished file must not be resumed into this one.
-                    drop_audio(partial=True)
+                    make_room(picked)
                     got: tuple[Path, str] | None = None
                     for _attempt in range(tries):
                         try:
@@ -625,11 +653,18 @@ def main() -> None:
                             if code == "DISK_FULL":
                                 raise
                             drop_audio()
-                            remember(picked.source, code, message)
                             if own_fault(code, message):
+                                # One recording's problem. A private video reads like expired
+                                # cookies, and must neither stop the source nor count as a block.
+                                fault = (
+                                    code
+                                    if code in {"GEO_RESTRICTED", "AGE_RESTRICTED"}
+                                    else "DOWNLOAD_FAILED"
+                                )
+                                hits.append((picked.source, fault, message, True))
                                 bad.add((picked.source, picked.id))
-                                faulted.add(picked.source)
                                 break
+                            remember(picked.source, code, message)
                             if picked.source in stopped:
                                 break
                             continue
@@ -656,16 +691,15 @@ def main() -> None:
                 selected="",
                 check_match=True,
             )
-        if hits:
-            blocking = [hit for hit in hits if hit[1] in BLOCKING_CODES]
-            chosen = blocking[-1] if blocking else hits[-1]
+
+        def report(chosen: tuple[str, str, str, bool], retryable: bool) -> None:
             label = site_label(chosen[0])
             hint, fix = error_guidance(chosen[1], label)
             if chosen[0] == "deezer" and chosen[1] == "DOWNLOAD_FAILED":
                 hint = chosen[2]
             extra: list[str] = []
             seen_bits: set[str] = set()
-            for source_name, code, message in hits:
+            for source_name, code, message, _fault in hits:
                 if source_name == chosen[0] and code == chosen[1]:
                     continue
                 if source_name == "deezer" and message not in seen_bits:
@@ -678,14 +712,24 @@ def main() -> None:
             emit(
                 "error",
                 code=chosen[1],
-                message=hint if chosen[1] == "AGE_RESTRICTED" else chosen[2],
-                # The walk already asked again where that could help. A rate limit or a timeout
-                # still earns the queue's backoff retry, as it did before the walk existed.
-                retryable=chosen[1] in TRANSIENT_CODES,
+                message=hint if chosen[1] in {"AGE_RESTRICTED", "GEO_RESTRICTED"} else chosen[2],
+                retryable=retryable,
                 hint=hint,
                 fix=fix,
                 version=version,
                 source=chosen[0],
+            )
+
+        live = [hit for hit in hits if not hit[3]]
+        if live:
+            # A block needs a person, so it is named first. A rate limit or a timeout anywhere
+            # earns the queue's backoff retry, as it did before the walk, even when a later lap
+            # left another source's failure last.
+            blocking = [hit for hit in live if hit[1] in BLOCKING_CODES]
+            transient = [hit for hit in live if hit[1] in TRANSIENT_CODES]
+            report(
+                blocking[-1] if blocking else transient[-1] if transient else live[-1],
+                retryable=bool(transient),
             )
             return None
         if wrong_length:
@@ -713,6 +757,11 @@ def main() -> None:
                 version=version,
                 source=failed,
             )
+            return None
+        if hits:
+            # Every match that was left failed for itself: a country block, an age check, a
+            # removed video.
+            report(hits[-1], retryable=False)
             return None
         names = no_song or [name for name in usable if name not in missed] or list(usable)
         emit(
@@ -746,6 +795,20 @@ def main() -> None:
                     probe(possible)
                     source = possible
                     artist = str(saved.get("artist", ""))
+                    # Retry resets an automatic job's source and pick. The file is still the
+                    # earlier pick's, so the card, the match check and the block count follow it.
+                    kept = str(saved.get("source", ""))
+                    if kept and kept != origin and (kept == "deezer" or by_source(kept)):
+                        origin, site = kept, site_label(kept)
+                        asking = origin
+                        emit("source", source=origin)
+                    if saved.get("selected") != job.selected:
+                        emit(
+                            "candidates",
+                            items=[row.model_dump() for row in job.candidates],
+                            selected=str(saved.get("selected", "")),
+                            check_match=saved.get("check_match") is True,
+                        )
         # A catalog song with no hand-picked match walks the source list. A pasted link does not.
         # `selected` is not the test: the walk stores its own pick there before each download, so
         # a job paused or restarted mid-walk would skip the walk and refetch a passed-over match.
@@ -762,6 +825,13 @@ def main() -> None:
             if picked:
                 if by_source(picked.source) is None:
                     refuse("SITE_NOT_ALLOWED", "The chosen recording is from an unlisted site")
+                    return
+                if picked.source in turned_off():
+                    # Off means no new downloads from that source, a hand pick included.
+                    refuse(
+                        "SITE_NOT_ALLOWED",
+                        f"{site_label(picked.source)} is turned off in Settings.",
+                    )
                     return
                 # Pauses and error codes follow the site the recording was picked from.
                 use_client(picked)
@@ -814,12 +884,7 @@ def main() -> None:
             ):
                 refuse("DURATION_MISMATCH", "Downloaded audio duration differs from the catalog")
                 return
-            temporary = manifest.with_suffix(".tmp")
-            temporary.write_text(
-                json.dumps({"selected": selected, "file": source.name, "artist": artist}),
-                encoding="utf-8",
-            )
-            temporary.replace(manifest)
+            write_manifest(selected, source, artist, origin, job.check_match)
         if downloader is not None:
             downloader.close()
         emit("stage", stage="converting")
