@@ -70,6 +70,7 @@ import { PodcastPage } from './podcasts'
 import { scanIsReady, systemIsReady } from './readiness'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
+import { settingsPatch } from './settings-patch'
 import { startTheme } from './theme/store'
 import {
   Button,
@@ -623,6 +624,7 @@ function CatalogOrder({
   lapsOrigin,
   orderLocked,
   orderOrigin,
+  changedElsewhere,
   deezerOn,
   hasCookie,
   disabledSources,
@@ -641,6 +643,8 @@ function CatalogOrder({
   lapsOrigin: string
   orderLocked: boolean
   orderOrigin: string
+  /** Names of this section's settings that someone saved elsewhere while this page was open. */
+  changedElsewhere: string[]
   deezerOn: boolean
   hasCookie: boolean
   disabledSources: string[]
@@ -689,15 +693,15 @@ function CatalogOrder({
           Tries on one source before the next
           {triesLocked ? <span className="text-warn"> · Locked by {triesOrigin}</span> : null}
         </label>
-        {/* Every keystroke is kept, as in the other number settings, so the box can be cleared
-            and retyped on a phone. Save checks the range. */}
+        {/* Every keystroke is kept, as in the other number settings. A cleared box shows empty
+            rather than 0, and the browser's range check stops a save outside 1 to 4. */}
         <Field
           id="tries_per_source"
           type="number"
           min={1}
           max={4}
           disabled={disabled || triesLocked}
-          value={tries}
+          value={tries || ''}
           onChange={(event) => onTries(Number(event.target.value))}
         />
         <label htmlFor="max_attempts" className="text-small">
@@ -710,15 +714,21 @@ function CatalogOrder({
           min={1}
           max={4}
           disabled={disabled || lapsLocked}
-          value={laps}
+          value={laps || ''}
           onChange={(event) => onLaps(Number(event.target.value))}
         />
       </div>
       <p className="mt-[10px] max-w-[420px] text-tiny text-muted">
-        A failed download is tried {tries} {tries === 1 ? 'time' : 'times'} on that source, then the
-        next one. The list is walked {laps} {laps === 1 ? 'time' : 'times'}. A pasted link or a
-        podcast uses that same number as its retries.
+        {tries >= 1 && tries <= 4 && laps >= 1 && laps <= 4
+          ? `A failed download is tried ${tries} ${tries === 1 ? 'time' : 'times'} on that source, then the next one. The list is walked ${laps} ${laps === 1 ? 'time' : 'times'}. A pasted link or a podcast uses that same number as its retries.`
+          : 'Both numbers run from 1 to 4.'}
       </p>
+      {changedElsewhere.length > 0 && (
+        <p className="mt-[10px] max-w-[420px] text-tiny text-warn">
+          Changed elsewhere since you started: {changedElsewhere.join(', ')}. Saving keeps what is
+          on this page.
+        </p>
+      )}
       {allSkipped && (
         <p className="mt-[10px] max-w-[420px] text-tiny text-warn">
           {waitingOnPause
@@ -820,7 +830,6 @@ function SourceRow({
       <input
         id={id}
         type="checkbox"
-        aria-label={label}
         className="h-[18px] w-[18px] shrink-0 accent-accent coarse:h-[22px] coarse:w-[22px]"
         checked={on}
         disabled={disabled || lockedBy !== ''}
@@ -921,8 +930,7 @@ function SettingsPage() {
         })
       }
 
-      // An empty arl removes the saved cookie, so it is sent only after Remove cookie.
-      const changes = removeArl ? { ...draft, deezer_arl: '' } : draft
+      const changes = settingsPatch(draft, removeArl)
       if (Object.keys(changes).length === 0) {
         return api('settings', settingsSchema)
       }
@@ -1233,6 +1241,18 @@ function SettingsPage() {
                 lapsOrigin={settings.data.max_attempts.origin}
                 orderLocked={settings.data.source_order.locked}
                 orderOrigin={settings.data.source_order.origin}
+                changedElsewhere={(
+                  [
+                    ['source_order', 'the source list'],
+                    ['tries_per_source', 'tries'],
+                    ['max_attempts', 'times around the list'],
+                    ['deezer_catalog', 'Deezer'],
+                    ['deezer_audio', 'Deezer account'],
+                    ['disabled_sources', 'the source switches'],
+                  ] as const
+                )
+                  .filter(([key]) => conflicts[key] !== undefined)
+                  .map(([, name]) => name)}
                 deezerOn={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
                 hasCookie={arlAfterSave}
                 disabledSources={
@@ -1249,7 +1269,7 @@ function SettingsPage() {
                 id="deezer"
                 mark="d."
                 label="Deezer"
-                note="Search, album pages and track details."
+                note="Search. Album pages and catalog downloads still use the Deezer catalog."
                 on={(draft.deezer_catalog ?? settings.data.deezer_catalog.value) === true}
                 disabled={save.isPending}
                 lockedBy={
@@ -1279,25 +1299,25 @@ function SettingsPage() {
                     new one here when it changes. The cookie stays on this server and is not shown
                     again.
                   </p>
-                  <p className="mt-[7px] text-tiny text-muted">
+                  <p className="mt-[7px] text-tiny text-muted" aria-live="polite">
                     {removeArl
                       ? 'The cookie will be removed when you save.'
                       : arlSaved
                         ? 'A cookie is saved.'
                         : 'No Deezer cookie yet.'}
                   </p>
-                  {arlSaved && !removeArl && (
+                  {arlSaved && (
                     <button
                       type="button"
                       className="mt-[8px] text-small text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
                       disabled={save.isPending}
                       onClick={() => {
                         unedit('deezer_arl')
-                        setRemoveArl(true)
+                        setRemoveArl(!removeArl)
                         setSaved(false)
                       }}
                     >
-                      Remove cookie
+                      {removeArl ? 'Keep cookie' : 'Remove cookie'}
                     </button>
                   )}
                 </div>
@@ -1330,7 +1350,7 @@ function SettingsPage() {
                     age-restricted video needs it. The file stays on this server and is not shown
                     again.
                   </p>
-                  <p className="mt-[7px] text-tiny text-muted">
+                  <p className="mt-[7px] text-tiny text-muted" aria-live="polite">
                     {removeCookies
                       ? 'The cookie file will be removed when you save.'
                       : cookieSaved

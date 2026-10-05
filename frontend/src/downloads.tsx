@@ -520,7 +520,9 @@ function JobCard({
         )}
         <div className="min-w-0 flex-1">
           <strong className="block truncate text-small">{job.meta.title}</strong>
-          <span className="block truncate text-tiny text-muted">
+          {/* One line on a wide screen. A phone wraps it: cut to one line, the codec and the
+              warning count at the end would be out of sight. */}
+          <span className="block truncate text-tiny text-muted max-phone:whitespace-normal">
             {facts.map((fact, index) => (
               <Fragment key={index}>
                 {index > 0 && ' · '}
