@@ -73,7 +73,8 @@ class Settings(BaseModel):
     soundcloud_fallback: bool = False
     # Empty, or a Deezer arl cookie. Editable in Settings, so a new cookie does not need a rebuild.
     deezer_arl: str = ""
-    # Search, album pages and track details. Off means the catalog is not asked.
+    # Search. Off turns search off. Album pages, track details and catalog downloads still use
+    # the catalog, because a download needs the track's details.
     deezer_catalog: bool = True
     # Save the account's own file when a cookie is set. Off leaves catalog tracks to other sources.
     deezer_audio: bool = True

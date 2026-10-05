@@ -39,6 +39,8 @@ test('a podcast is found in search and one episode queues without the music filt
       selected: '',
       check_match: false,
       attempts: 0,
+      lap: 0,
+      laps: 0,
       retry_at: 0,
       progress: 0,
       downloaded: 0,

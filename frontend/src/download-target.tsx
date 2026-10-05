@@ -29,7 +29,8 @@ export type CatalogSourceChoice = {
   source_order: readonly string[]
   disabled_sources: readonly string[]
   deezer_audio: boolean
-  deezer_arl: string
+  /** Whether a Deezer cookie is saved. */
+  deezer_cookie: boolean
 }
 
 /**
@@ -43,7 +44,7 @@ export function firstLiveSource(settings: CatalogSourceChoice, paused: readonly 
   let waiting = ''
   for (const name of settings.source_order) {
     if (off.has(name)) continue
-    if (name === 'deezer' && !(settings.deezer_audio && settings.deezer_arl.trim())) continue
+    if (name === 'deezer' && !(settings.deezer_audio && settings.deezer_cookie)) continue
     if (held.has(name)) {
       if (!waiting) waiting = name
       continue

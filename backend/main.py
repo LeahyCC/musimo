@@ -41,6 +41,7 @@ from backend.store import LockedSetting, Store
 from backend.version import VERSION
 from backend.waveform import WaveformService, install_waveform_routes
 from backend.youtube_cookies import CookieFileError
+from backend.youtube_cookies import drop_copies as drop_youtube_cookie_copies
 from backend.youtube_cookies import publish as publish_youtube_cookies
 from backend.youtube_cookies import remove as remove_youtube_cookies
 from backend.youtube_cookies import saved as youtube_cookies_saved
@@ -98,6 +99,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         nonlocal store, versions, catalog, library, downloads, links, navidrome, waveforms
         store = Store(data / "musimo.sqlite3")
         publish_youtube_cookies(data)
+        drop_youtube_cookie_copies(data)
         versions = await asyncio.to_thread(runtime_versions)
         async with (
             httpx.AsyncClient(
@@ -184,13 +186,25 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         }
 
     def public_settings() -> dict[str, object]:
-        # The cookie text stays in the file. The page only learns whether one is saved.
-        return store.settings() | {
+        """Settings as any client may see them. GET, PATCH and the snapshot all send this.
+
+        Cookies stay on the server and the page only learns whether one is saved. There is no
+        login, so whoever reaches the app reads these replies, and an account cookie is a login.
+        """
+        current = store.settings()
+        arl = cast(dict[str, object], current["deezer_arl"])
+        return current | {
+            "deezer_arl": {**arl, "value": ""},
+            "deezer_cookie": {
+                "value": bool(arl["value"]),
+                "origin": arl["origin"],
+                "locked": arl["locked"],
+            },
             "youtube_cookies": {
                 "value": youtube_cookies_saved(data),
                 "origin": "file",
                 "locked": False,
-            }
+            },
         }
 
     @app.get("/api/settings")
@@ -239,7 +253,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
 
     @app.get("/api/snapshot")
     async def snapshot() -> dict[str, object]:
-        return store.snapshot()
+        return store.snapshot() | {"settings": public_settings()}
 
     @app.get("/api/events")
     async def events(request: Request, after: int = Query(default=0, ge=0)) -> StreamingResponse:
