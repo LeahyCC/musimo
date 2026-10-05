@@ -18,7 +18,7 @@ import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
@@ -27,6 +27,7 @@ from backend.artist_downloads import install_artist_download_routes
 from backend.catalog import Catalog, CatalogError
 from backend.download_api import install_download_routes
 from backend.downloads import Downloads
+from backend.errors import plain_detail
 from backend.library import Library
 from backend.link_api import install_link_routes
 from backend.links import Links
@@ -35,9 +36,16 @@ from backend.navidrome import Navidrome
 from backend.player_api import install_player_routes
 from backend.podcast_api import install_podcast_routes
 from backend.search_api import install_search_routes
+from backend.sources import listed_sources
 from backend.store import LockedSetting, Store
 from backend.version import VERSION
 from backend.waveform import WaveformService, install_waveform_routes
+from backend.youtube_cookies import CookieFileError
+from backend.youtube_cookies import drop_copies as drop_youtube_cookie_copies
+from backend.youtube_cookies import publish as publish_youtube_cookies
+from backend.youtube_cookies import remove as remove_youtube_cookies
+from backend.youtube_cookies import saved as youtube_cookies_saved
+from backend.youtube_cookies import write as write_youtube_cookies
 
 LIBRARY_ITEM = r"[A-Za-z0-9._:-]{1,200}"
 LIBRARY_SPA_PATH = re.compile(
@@ -89,7 +97,11 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         nonlocal store, versions, catalog, library, downloads, links, navidrome, waveforms
+        # Later tracks reuse the YouTube player script instead of fetching it again.
+        os.environ["MUSIMO_YTDLP_CACHE"] = str(data / "ytdlp-cache")
         store = Store(data / "musimo.sqlite3")
+        publish_youtube_cookies(data)
+        drop_youtube_cookie_copies(data)
         versions = await asyncio.to_thread(runtime_versions)
         async with (
             httpx.AsyncClient(
@@ -175,9 +187,31 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             "phase": 3,
         }
 
+    def public_settings() -> dict[str, object]:
+        """Settings as any client may see them. GET, PATCH and the snapshot all send this.
+
+        Cookies stay on the server and the page only learns whether one is saved. There is no
+        login, so whoever reaches the app reads these replies, and an account cookie is a login.
+        """
+        current = store.settings()
+        arl = cast(dict[str, object], current["deezer_arl"])
+        return current | {
+            "deezer_arl": {**arl, "value": ""},
+            "deezer_cookie": {
+                "value": bool(arl["value"]),
+                "origin": arl["origin"],
+                "locked": arl["locked"],
+            },
+            "youtube_cookies": {
+                "value": youtube_cookies_saved(data),
+                "origin": "file",
+                "locked": False,
+            },
+        }
+
     @app.get("/api/settings")
     async def settings() -> dict[str, object]:
-        return store.settings()
+        return public_settings()
 
     @app.patch("/api/settings")
     async def save_settings(patch: SettingsPatch) -> dict[str, object]:
@@ -192,7 +226,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                     raise HTTPException(
                         422, "Destination must be writable. Read-only mounts cannot be used."
                     )
-            result = store.update(changes)
+            store.update(changes)
         except LockedSetting as exc:
             raise HTTPException(409, str(exc)) from exc
         except ValidationError as exc:
@@ -200,11 +234,28 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         changed.set()
-        return result
+        return public_settings()
+
+    class YoutubeCookiesBody(BaseModel):
+        model_config = ConfigDict(extra="forbid", strict=True)
+        text: str = Field(min_length=1, max_length=262144)
+
+    @app.put("/api/youtube-cookies")
+    async def save_youtube_cookies(body: YoutubeCookiesBody) -> dict[str, bool]:
+        try:
+            write_youtube_cookies(data, body.text)
+        except CookieFileError as exc:
+            raise HTTPException(422, str(exc)) from exc
+        return {"saved": True}
+
+    @app.delete("/api/youtube-cookies")
+    async def clear_youtube_cookies() -> dict[str, bool]:
+        remove_youtube_cookies(data)
+        return {"saved": False}
 
     @app.get("/api/snapshot")
     async def snapshot() -> dict[str, object]:
-        return store.snapshot()
+        return store.snapshot() | {"settings": public_settings()}
 
     @app.get("/api/events")
     async def events(request: Request, after: int = Query(default=0, ge=0)) -> StreamingResponse:
@@ -283,11 +334,15 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 navidrome_result = navidrome_cache
 
         first, latest = store.bounds()
+        saved = store.current()
         return {
             "health": await health(),
             "versions": versions,
             "disks": disks,
-            "sources": store.source_health(),
+            "sources": [
+                {**row, "detail": plain_detail(str(row.get("detail", "")))}
+                for row in store.source_health()
+            ],
             "events": store.activity()["events"],
             "database": {
                 "mode": "wal",
@@ -299,6 +354,8 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             "capabilities": {"settings": True, "events": True, "search": True, "downloads": True},
             "navidrome": navidrome_result,
             "last_download": downloads.last_terminal_job(),
+            "deezer_audio": bool(saved.deezer_audio and saved.deezer_arl),
+            "download_sources": listed_sources(),
         }
 
     @app.post("/api/diagnostics/test/destination")

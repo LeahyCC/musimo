@@ -109,9 +109,6 @@ class Job(BaseModel):
     source: str = "youtube"
     # Podcast episodes and pasted links download this address directly instead of matching.
     source_url: str = ""
-    # The source to search when `source` finds nothing at all. Set when the job is dispatched,
-    # from the SoundCloud setting, so a job queued before it was switched on follows today's rule.
-    backup_source: str = ""
     # Mixes and radio shows run long, so they get the episode timeout.
     kind: Kind = "music"
     # False for a pasted recording that must keep the tags its site gave it. Set when it is queued.
@@ -124,8 +121,13 @@ class Job(BaseModel):
     meta: Metadata
     candidates: list[Candidate] = Field(default_factory=list)
     selected: str = ""
+    # Set only when someone presses Use this. An automatic match must not block the source list.
+    hand_picked: bool = False
     check_match: bool = False
     attempts: int = 0
+    # Which trip through the source list this job is on. Zero before the worker has asked anyone.
+    lap: int = 0
+    laps: int = 0
     retry_at: float = 0
     progress: float = 0
     downloaded: int = 0
@@ -156,7 +158,11 @@ class Job(BaseModel):
     def default_source(cls, data: object) -> object:
         # Jobs stored before `source` existed were YouTube matches or podcast feed files.
         if isinstance(data, dict) and "source" not in data:
-            return {**data, "source": "podcast" if data.get("catalog") == "podcast" else "youtube"}
+            data = {**data, "source": "podcast" if data.get("catalog") == "podcast" else "youtube"}
+        # Jobs stored before `hand_picked` existed kept any selection through Retry. Read it as a
+        # hand pick, so an upgrade does not throw away a recording someone chose.
+        if isinstance(data, dict) and "hand_picked" not in data and data.get("selected"):
+            data = {**data, "hand_picked": True}
         return data
 
     def public(self) -> dict[str, object]:

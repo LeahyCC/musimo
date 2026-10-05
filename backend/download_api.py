@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from backend.catalog import Result
-from backend.downloads import DownloadError, Downloads
+from backend.downloads import DownloadError, Downloads, listing_metadata
 from backend.job_models import (
     RUNNING,
     TERMINAL,
@@ -109,12 +109,19 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             if job.track_id in wanted and job.format == format and job.target == str(target)
         }
         batch_id = uuid.uuid4().hex
+        summary = Result.model_validate(album["album"])
+        # The listing is enough to start matching. Full tags arrive while the files download.
+        prepared = {
+            track.id: (listing_metadata(track, tracks=summary.track_count or len(tracks)), "")
+            for track in tracks
+        }
         jobs = service.jobs.enqueue_many(
             wanted,
             format,
             str(target),
             batch_id,
             album_id=request.album_id,
+            prepared=prepared,
         )
         skipped_owned += sum(job.stage == "done" for job in jobs)
         skipped_queued = sum(job.id in active_ids for job in jobs if job.stage != "done")
@@ -170,6 +177,8 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         )
         if chosen is None:
             raise HTTPException(422, "Choose a candidate from this job's match list")
+        if chosen.source in service.settings().disabled_sources:
+            raise HTTPException(422, f"{chosen.source_label} is turned off in Settings.")
         if any(
             row.id != job.id
             and row.track_id == job.track_id
@@ -180,12 +189,17 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             raise HTTPException(409, "This track already has another active job")
         if job.stage == "done":
             replacement = service.jobs.enqueue(
-                job.track_id, job.format, job.target, replace_match=True
+                job.track_id,
+                job.format,
+                job.target,
+                replace_match=True,
+                source=chosen.source,
             )
             return service.jobs.update(
                 replacement.id,
                 meta=job.meta.model_dump(),
                 selected=request.candidate_id,
+                hand_picked=True,
                 # A recording chosen by hand decides where the job downloads from, so its pauses
                 # and error codes follow that site.
                 source=chosen.source,
@@ -196,6 +210,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         return service.jobs.update(
             job.id,
             selected=request.candidate_id,
+            hand_picked=True,
             source=chosen.source,
             stage="queued",
             desired="run",
@@ -228,6 +243,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             "retry-failed",
             "clear-finished",
             "clear-failed",
+            "clear-unmatched",
             "resume-source",
         ],
         source: str = Query("youtube", pattern=r"^[a-z0-9_-]{1,32}$"),
@@ -248,11 +264,30 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
                     service.command(job.id, "resume")
                 elif action == "cancel-queued" and job.stage in {"queued", "retry_wait", "paused"}:
                     service.command(job.id, "cancel")
-                elif action == "retry-failed" and job.stage == "failed" and not job.hidden:
+                # A missing recording is not a broken download. Bulk retry and clear
+                # leave it on the No match tab.
+                elif (
+                    action == "retry-failed"
+                    and job.stage == "failed"
+                    and not job.hidden
+                    and job.error_code != "NO_MATCH"
+                ):
                     service.command(job.id, "retry")
                 elif action == "clear-finished" and job.stage in TERMINAL:
                     service.jobs.update(job.id, hidden=True)
-                elif action == "clear-failed" and job.stage == "failed" and not job.hidden:
+                elif (
+                    action == "clear-failed"
+                    and job.stage == "failed"
+                    and not job.hidden
+                    and job.error_code != "NO_MATCH"
+                ):
+                    service.jobs.update(job.id, hidden=True)
+                elif (
+                    action == "clear-unmatched"
+                    and job.stage == "failed"
+                    and not job.hidden
+                    and job.error_code == "NO_MATCH"
+                ):
                     service.jobs.update(job.id, hidden=True)
             except (ValueError, DownloadError) as exc:
                 failures.append(str(exc) if not isinstance(exc, DownloadError) else exc.detail)

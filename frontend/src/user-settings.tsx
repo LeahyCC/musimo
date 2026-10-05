@@ -602,8 +602,8 @@ function VisualizerSettings() {
             <option value="off">Off</option>
           </FieldSelect>
           <p id="visualizer-auto-note" className="text-tiny">
-            Moves to a new preset when a song drops after a quieter stretch, or after a minute and a
-            half of steady music. Never more than once every 20 seconds.
+            Follows the beat. Early in a song only a big hit changes it, slowly. Later it changes
+            every few beats, quicker near the end, and a quiet part gets a calmer picture.
           </p>
         </div>
       </fieldset>

@@ -1,4 +1,4 @@
-import { useId, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useDeferredValue, useId, useLayoutEffect, useRef, useState } from 'react'
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
@@ -29,7 +29,14 @@ import {
 } from './api'
 import type { Controls, DownloadJob, MusicResult } from './api'
 import { cx } from './cx'
-import { formatLabel, FormatOptions, pausedSources, siteLabel } from './download-target'
+import {
+  catalogCardSource,
+  formatLabel,
+  FormatOptions,
+  pausedSources,
+  siteLabel,
+} from './download-target'
+import type { CatalogSourceChoice } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
 import { PageTitle } from './page-title'
 import { RowMenu } from './row-menu'
@@ -52,10 +59,34 @@ export type QueueData = {
   summary: {
     active: number
     failed: number
-    failure_reasons: { code: string; message: string; count: number }[]
+    failure_reasons: { code: string; message: string; count: number; hint?: string; fix?: string }[]
   }
 }
 export const activeJob = (job: DownloadJob) => !['done', 'failed', 'cancelled'].includes(job.stage)
+export const unmatchedJob = (job: Pick<DownloadJob, 'stage' | 'error_code'>) =>
+  job.stage === 'failed' && job.error_code === 'NO_MATCH'
+export const errorJob = (job: Pick<DownloadJob, 'stage' | 'error_code'>) =>
+  job.stage === 'failed' && job.error_code !== 'NO_MATCH'
+
+/** Counts from the server's reason list, which covers jobs past the 50 the page shows. */
+export function failureTallies(summary: QueueData['summary'] | undefined, jobs: DownloadJob[]) {
+  const reasons = summary?.failure_reasons ?? []
+  if (reasons.length === 0) {
+    return {
+      unmatched: jobs.filter(unmatchedJob).length,
+      errors: jobs.filter(errorJob).length,
+    }
+  }
+  return {
+    unmatched: reasons
+      .filter((reason) => reason.code === 'NO_MATCH')
+      .reduce((total, reason) => total + reason.count, 0),
+    errors: reasons
+      .filter((reason) => reason.code !== 'NO_MATCH')
+      .reduce((total, reason) => total + reason.count, 0),
+  }
+}
+
 export function updateJob(client: QueryClient, job: DownloadJob) {
   client.setQueryData<QueueData>(['jobs'], (old) => {
     const previous = old?.jobs.find((item) => item.id === job.id)
@@ -76,15 +107,27 @@ export function updateJob(client: QueryClient, job: DownloadJob) {
       if (activeJob(item)) summary.active = Math.max(0, summary.active + delta)
       if (item.stage !== 'failed') continue
       summary.failed = Math.max(0, summary.failed + delta)
+      // The server groups reasons by hint and fix as well. A no-match hint names the sources
+      // that were asked, so two rows can share a code and message.
       const index = summary.failure_reasons.findIndex(
-        (reason) => reason.code === item.error_code && reason.message === item.error,
+        (reason) =>
+          reason.code === item.error_code &&
+          reason.message === item.error &&
+          (reason.hint ?? '') === item.error_hint &&
+          (reason.fix ?? '') === item.error_fix,
       )
       if (index >= 0) {
         const reason = summary.failure_reasons[index]
         if (reason) summary.failure_reasons[index] = { ...reason, count: reason.count + delta }
         if (summary.failure_reasons[index]?.count === 0) summary.failure_reasons.splice(index, 1)
       } else if (delta > 0) {
-        summary.failure_reasons.push({ code: item.error_code, message: item.error, count: 1 })
+        summary.failure_reasons.push({
+          code: item.error_code,
+          message: item.error,
+          hint: item.error_hint,
+          fix: item.error_fix,
+          count: 1,
+        })
       }
     }
     return {
@@ -122,10 +165,13 @@ export const activeCount = (data: QueueData) => data.jobs.filter(activeJob).leng
 const bytes = (value: number) =>
   value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.round(value / 1024)} KB`
 
-export const failureMessage = (job: Pick<DownloadJob, 'error_code' | 'error'>) =>
-  job.error_code === 'NO_MATCH'
-    ? 'No matching recording was found on YouTube. Nothing was downloaded.'
-    : job.error || 'The download stopped without an error message.'
+export const failureMessage = (
+  job: Pick<DownloadJob, 'error_code' | 'error'> & { error_hint?: string },
+) =>
+  job.error_hint ||
+  (job.error_code === 'NO_MATCH'
+    ? 'No matching recording was found. Nothing was downloaded.'
+    : job.error || 'The download stopped without an error message.')
 
 function errorLink(fix: string): { href: string; text: string } | null {
   if (!fix) return null
@@ -362,7 +408,55 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
   )
 }
 
-function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boolean }) {
+function useQueuedCatalogLabel(): {
+  settings?: CatalogSourceChoice
+  paused: string[]
+  labels: Record<string, string>
+} {
+  const client = useQueryClient()
+  // Read the cache the queue already filled. A card must not fetch settings, or a slow
+  // reply would paint YouTube and then replace it.
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
+    enabled: false,
+  })
+  const diagnostics = useQuery({
+    queryKey: ['diagnostics'],
+    queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
+    enabled: false,
+  })
+  const queue = client.getQueryData<QueueData>(['jobs'])
+  const data = settings.data
+  const labels: Record<string, string> = { ...(queue?.controls.source_labels ?? {}) }
+  for (const row of diagnostics.data?.download_sources ?? []) labels[row.id] = row.label
+  return {
+    settings: data
+      ? {
+          source_order: data.source_order.value,
+          disabled_sources: data.disabled_sources.value,
+          deezer_audio: data.deezer_audio.value,
+          deezer_cookie: data.deezer_cookie.value,
+        }
+      : undefined,
+    paused: pausedSources(queue?.controls).map((row) => row.source),
+    labels,
+  }
+}
+
+function JobCard({
+  job,
+  focusable = false,
+  queuedLabel,
+}: {
+  job: DownloadJob
+  focusable?: boolean
+  queuedLabel: {
+    settings?: CatalogSourceChoice
+    paused: readonly string[]
+    labels: Record<string, string>
+  }
+}) {
   const client = useQueryClient()
   const [copied, setCopied] = useState(false)
   const action = useMutation({
@@ -381,33 +475,66 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
   const busy = action.isPending || pick.isPending
   const running = activeJob(job)
   const canPick = ['queued', 'paused', 'failed', 'cancelled', 'done'].includes(job.stage)
+  const shown = catalogCardSource(job, queuedLabel.settings, queuedLabel.paused, queuedLabel.labels)
+  const warningCount =
+    job.warnings.length > 0
+      ? ` · ${job.warnings.length} warning${job.warnings.length === 1 ? '' : 's'}`
+      : ''
+  const facts = [
+    job.meta.artist,
+    job.meta.album,
+    (job.catalog === 'link' || job.catalog === 'deezer') && shown.source
+      ? `from ${siteLabel(shown.source, shown.label)}`
+      : '',
+    job.catalog === 'deezer' && job.laps > 1 && job.lap > 0
+      ? `pass ${job.lap} of ${job.laps}`
+      : `${job.attempts} ${job.attempts === 1 ? 'attempt' : 'attempts'}`,
+    formatLabel(job.format),
+    job.target,
+    job.stage === 'downloading'
+      ? `${bytes(job.downloaded)}${job.total ? ` / ${bytes(job.total)}` : ''} · ${bytes(job.speed)}/s${
+          job.eta !== null ? ` · ${Math.ceil(job.eta)}s left` : ''
+        }`
+      : '',
+    // The done line counts warnings only. A note is not a problem and is shown as text below.
+    job.stage === 'done' && job.codec
+      ? `${job.codec} · ${Math.round(job.actual_bitrate / 1000)} kbps${warningCount}`
+      : '',
+  ].filter(Boolean)
   return (
     <article
       className={cx(
         // `job-card` is the hook the download specs locate cards by. The stage class is for them too.
         'job-card',
         job.stage,
-        'min-w-0 rounded-lg border border-line bg-hover p-[18px]',
+        'min-w-0 rounded-md border border-line bg-hover px-[8px] py-[4px]',
       )}
       id={`job-${job.id}`}
       tabIndex={focusable ? 0 : -1}
     >
-      <div className="flex items-center gap-3 max-phone:flex-wrap">
+      <div className="flex items-center gap-[8px]">
         {job.meta.art ? (
-          <img className="h-[42px] w-[42px] rounded-md object-cover" src={job.meta.art} alt="" />
+          <img className="h-[22px] w-[22px] rounded-sm object-cover" src={job.meta.art} alt="" />
         ) : (
-          <Disc3 size={38} />
+          <Disc3 size={16} />
         )}
-        <div className="min-w-0 flex-1 max-phone:min-w-[150px]">
-          <strong className="block truncate">{job.meta.title}</strong>
-          <span className="mt-[5px] block truncate text-small text-muted">
-            {job.meta.artist} · {job.meta.album}
+        <div className="min-w-0 flex-1">
+          <strong className="block truncate text-small">{job.meta.title}</strong>
+          {/* One line on a wide screen. A phone wraps it: cut to one line, the codec and the
+              warning count at the end would be out of sight. */}
+          <span className="block truncate text-tiny text-muted max-phone:whitespace-normal">
+            {facts.map((fact, index) => (
+              <Fragment key={index}>
+                {index > 0 && ' · '}
+                <span>{fact}</span>
+              </Fragment>
+            ))}
           </span>
         </div>
         <span className="text-tiny text-accent-hot uppercase">
           {job.stage.replaceAll('_', ' ')}
         </span>
-        <div className="flex gap-[6px]">
+        <div className="flex gap-[2px]">
           {running && !['paused', 'pausing', 'cancelling'].includes(job.stage) && (
             <IconButton
               variant="outlined"
@@ -416,7 +543,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               disabled={busy}
               onClick={() => action.mutate('pause')}
             >
-              <Pause size={16} />
+              <Pause size={14} />
             </IconButton>
           )}
           {job.stage === 'paused' && (
@@ -427,7 +554,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               disabled={busy}
               onClick={() => action.mutate('resume')}
             >
-              <Play size={16} />
+              <Play size={14} />
             </IconButton>
           )}
           {running && (
@@ -438,7 +565,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               disabled={busy || job.stage === 'cancelling'}
               onClick={() => action.mutate('cancel')}
             >
-              <X size={16} />
+              <X size={14} />
             </IconButton>
           )}
           {['failed', 'cancelled'].includes(job.stage) && (
@@ -449,7 +576,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               disabled={busy}
               onClick={() => action.mutate('retry')}
             >
-              <RotateCcw size={16} />
+              <RotateCcw size={14} />
             </IconButton>
           )}
           {!running && (
@@ -460,15 +587,12 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               disabled={busy}
               onClick={() => action.mutate('dismiss')}
             >
-              <Trash2 size={16} />
+              <Trash2 size={14} />
             </IconButton>
           )}
         </div>
       </div>
-      <div
-        className="mt-[15px] mb-[10px] flex flex-wrap gap-2 text-caption text-faint max-phone:gap-[6px]"
-        aria-label={`Current stage: ${job.stage}`}
-      >
+      <div className="sr-only" aria-label={`Current stage: ${job.stage}`}>
         {[
           'queued',
           // Podcast episodes and pasted links download their own address, so they never match.
@@ -490,34 +614,12 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
       </div>
       {job.stage === 'downloading' && (
         <progress
-          className="h-[5px] w-full accent-accent-hot"
+          className="mt-[2px] h-[3px] w-full accent-accent-hot"
           aria-label={`${job.meta.title} download progress`}
           max={1}
           value={job.total ? job.progress : undefined}
         />
       )}
-      <div className="my-[10px] flex flex-wrap gap-4 text-tiny text-muted">
-        {job.catalog === 'link' && <span>from {siteLabel(job.source, job.source_label)}</span>}
-        <span>to {job.target}</span>
-        <span>{formatLabel(job.format)}</span>
-        {job.stage === 'downloading' && (
-          <span>
-            {bytes(job.downloaded)}
-            {job.total ? ` / ${bytes(job.total)}` : ''} · {bytes(job.speed)}/s
-            {job.eta !== null ? ` · ${Math.ceil(job.eta)}s left` : ''}
-          </span>
-        )}
-        {job.stage === 'done' && (
-          <span>
-            {job.codec} · {Math.round(job.actual_bitrate / 1000)} kbps
-            {job.warnings.length > 0 &&
-              ` · ${job.warnings.length} warning${job.warnings.length === 1 ? '' : 's'}`}
-          </span>
-        )}
-        <span>
-          {job.attempts} {job.attempts === 1 ? 'attempt' : 'attempts'}
-        </span>
-      </div>
       {job.stage === 'retry_wait' && (
         <p className="text-small">
           Retry scheduled for {new Date(job.retry_at * 1000).toLocaleTimeString()}
@@ -551,32 +653,15 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
         </ErrorBanner>
       )}
       {job.check_match && (
-        <p className="text-small text-warn">Check match: the selected recording needs a listen.</p>
-      )}
-      {job.final_path && (
-        <div className="my-3 flex items-center gap-3 text-tiny">
-          <code className="flex-1 [overflow-wrap:anywhere]">{job.final_path}</code>
-          <button
-            data-ui="text-link"
-            className={textLinkClassName('shrink-0')}
-            onClick={() => {
-              void navigator.clipboard
-                .writeText(job.final_path)
-                .then(() => setCopied(true))
-                .catch(() => setCopied(false))
-            }}
-          >
-            {copied ? 'Copied' : 'Copy path'}
-          </button>
-        </div>
+        <p className="text-tiny text-warn">Check match: the selected recording needs a listen.</p>
       )}
       {job.notes.map((note, index) => (
-        <p key={index} className="mt-3 text-small text-muted">
+        <p key={index} className="text-tiny text-muted">
           {note}
         </p>
       ))}
       {job.warnings.length > 0 && (
-        <details className="mt-3 text-small text-muted">
+        <details className="text-tiny text-muted">
           <summary className="cursor-pointer">
             {job.warnings.length} metadata or scanning notes
           </summary>
@@ -587,28 +672,49 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
           </ul>
         </details>
       )}
-      {job.candidates.length > 0 && (
-        <details className="mt-3 text-small text-muted">
+      {(job.final_path || job.candidates.length > 0 || job.tool_tail) && (
+        <details className="text-tiny text-muted">
           <summary className="cursor-pointer">
-            Recording matches ·{' '}
-            {job.candidates.find((candidate) => candidate.id === job.selected)?.score.toFixed(2) ??
-              'unselected'}
+            {job.candidates.length > 0
+              ? `Recording matches · ${
+                  job.candidates
+                    .find((candidate) => candidate.id === job.selected)
+                    ?.score.toFixed(2) ?? 'unselected'
+                }`
+              : 'More'}
           </summary>
-          {!canPick && <p className="text-small">Pause the job to change its recording.</p>}
+          {job.final_path && (
+            <div className="my-[6px] flex items-center gap-[8px]">
+              <code className="flex-1 [overflow-wrap:anywhere]">{job.final_path}</code>
+              <button
+                data-ui="text-link"
+                className={textLinkClassName('shrink-0')}
+                onClick={() => {
+                  void navigator.clipboard
+                    .writeText(job.final_path)
+                    .then(() => setCopied(true))
+                    .catch(() => setCopied(false))
+                }}
+              >
+                {copied ? 'Copied' : 'Copy path'}
+              </button>
+            </div>
+          )}
+          {job.candidates.length > 0 && !canPick && <p>Pause the job to change its recording.</p>}
           {job.candidates.map((candidate) => (
             <div
-              className="flex items-center gap-3 border-b border-line py-3 max-phone:flex-wrap"
+              className="flex items-center gap-[8px] border-b border-line py-[6px]"
               key={`${candidate.source}:${candidate.id}`}
             >
-              <div className="flex-1">
-                <strong>{candidate.title}</strong>
-                <small className="mt-[5px] block">
+              <div className="min-w-0 flex-1">
+                <strong className="block truncate">{candidate.title}</strong>
+                <small className="block truncate">
                   {siteLabel(candidate.source, candidate.source_label)} · {candidate.artist} ·{' '}
                   {Math.round(candidate.score * 100)}% · {candidate.reason}
                 </small>
               </div>
               <a
-                className="coarse:inline-flex coarse:min-h-11 coarse:items-center"
+                className="shrink-0 coarse:inline-flex coarse:min-h-11 coarse:items-center"
                 href={candidate.url || `https://www.youtube.com/watch?v=${candidate.id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -623,12 +729,13 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               </Button>
             </div>
           ))}
-        </details>
-      )}
-      {job.tool_tail && (
-        <details className="mt-3 text-small text-muted">
-          <summary className="cursor-pointer">Tool details · yt-dlp {job.tool_version}</summary>
-          <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">{job.tool_tail}</pre>
+          {job.tool_tail && (
+            <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">
+              yt-dlp {job.tool_version}
+              {'\n'}
+              {job.tool_tail}
+            </pre>
+          )}
         </details>
       )}
       {(action.isError || pick.isError) && (
@@ -639,6 +746,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
 }
 
 function JobList({ jobs }: { jobs: DownloadJob[] }) {
+  const queuedLabel = useQueuedCatalogLabel()
   const parent = useRef<HTMLDivElement>(null)
   const [focusedIndex, setFocusedIndex] = useState(0)
   const virtual = useVirtualizer({
@@ -646,7 +754,7 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
     getScrollElement: () => parent.current,
     // A first guess for cards not yet measured. Roughly the shortest a card gets, so the
     // scrollbar grows into place rather than shrinking back.
-    estimateSize: () => 200,
+    estimateSize: () => 44,
     overscan: 3,
     // Cards differ in height and the queue reorders as jobs finish. Keying the measurement
     // cache by job keeps each height with its own card instead of with a list position.
@@ -684,9 +792,14 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
   if (jobs.length <= 6)
     return (
       // A bare 1fr track has a min-content floor, so one long title widened the page.
-      <div className="grid grid-cols-[minmax(0,1fr)] gap-3" onKeyDown={handleKeyDown}>
+      <div className="grid grid-cols-[minmax(0,1fr)] gap-[4px]" onKeyDown={handleKeyDown}>
         {jobs.map((job, index) => (
-          <JobCard key={job.id} job={job} focusable={index === focusedIndex} />
+          <JobCard
+            key={job.id}
+            job={job}
+            focusable={index === focusedIndex}
+            queuedLabel={queuedLabel}
+          />
         ))}
       </div>
     )
@@ -714,11 +827,15 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
             return job ? (
               <div
                 key={job.id}
-                className="pb-3"
+                className="pb-[4px]"
                 ref={virtual.measureElement}
                 data-index={row.index}
               >
-                <JobCard job={job} focusable={row.index === focusedIndex} />
+                <JobCard
+                  job={job}
+                  focusable={row.index === focusedIndex}
+                  queuedLabel={queuedLabel}
+                />
               </div>
             ) : null
           })}
@@ -758,9 +875,8 @@ function BatchSummary({ jobs }: { jobs: DownloadJob[] }) {
             <strong>{batchName(rows)}</strong>
             <span>
               {rows.filter((job) => job.stage === 'done').length}/{rows.length} complete
-              {rows.some((job) => job.stage === 'failed')
-                ? ` · ${rows.filter((job) => job.stage === 'failed').length} failed`
-                : ''}
+              {rows.some(unmatchedJob) ? ` · ${rows.filter(unmatchedJob).length} no match` : ''}
+              {rows.some(errorJob) ? ` · ${rows.filter(errorJob).length} failed` : ''}
               {rows.some((job) => job.stage === 'cancelled')
                 ? ` · ${rows.filter((job) => job.stage === 'cancelled').length} cancelled`
                 : ''}
@@ -820,13 +936,22 @@ function QueueControls() {
       void client.invalidateQueries({ queryKey: ['jobs'] })
     },
   })
-  const failed = queue.data?.summary.failed ?? 0
+  const visible = (queue.data?.jobs ?? []).filter((job) => !job.hidden)
+  const { unmatched, errors } = failureTallies(queue.data?.summary, visible)
   const hasFinished = queue.data?.jobs.some((job) => !job.hidden && !activeJob(job)) ?? false
   const moreActions: RowMenuAction[] = [
-    ...(failed > 0
+    ...(errors > 0
       ? [
-          { label: `Retry failed (${failed})`, onSelect: () => command.mutate('retry-failed') },
-          { label: `Clear failed (${failed})`, onSelect: () => command.mutate('clear-failed') },
+          { label: `Retry errors (${errors})`, onSelect: () => command.mutate('retry-failed') },
+          { label: `Clear errors (${errors})`, onSelect: () => command.mutate('clear-failed') },
+        ]
+      : []),
+    ...(unmatched > 0
+      ? [
+          {
+            label: `Clear no match (${unmatched})`,
+            onSelect: () => command.mutate('clear-unmatched'),
+          },
         ]
       : []),
     ...(hasFinished
@@ -908,12 +1033,14 @@ function History() {
   const [q, setQ] = useState(''),
     [from, setFrom] = useState(''),
     [until, setUntil] = useState('')
+  // The box stays immediate. The request waits, because a typed search still reads job text.
+  const deferredQ = useDeferredValue(q)
   const query = useInfiniteQuery({
-    queryKey: ['history', q, from, until],
+    queryKey: ['history', deferredQ, from, until],
     initialPageParam: 0,
     queryFn: ({ signal, pageParam }) =>
       api(
-        `history?${new URLSearchParams({ q, since: from ? String(new Date(from).getTime() / 1000) : '0', until: until ? String(new Date(until + 'T23:59:59').getTime() / 1000) : '1000000000000', offset: String(pageParam) })}`,
+        `history?${new URLSearchParams({ q: deferredQ, since: from ? String(new Date(from).getTime() / 1000) : '0', until: until ? String(new Date(until + 'T23:59:59').getTime() / 1000) : '1000000000000', offset: String(pageParam) })}`,
         historySchema,
         { signal },
       ),
@@ -982,10 +1109,12 @@ export function DownloadsPage() {
   // their own chip rather than sharing the unfiltered state.
   const [group, setGroup] = useState<string | null>(null)
   const all = (queue.data?.jobs ?? []).filter((job) => !job.hidden)
-  const failures = all.filter((job) => job.stage === 'failed')
+  const { unmatched, errors } = failureTallies(queue.data?.summary, all)
+  const pile =
+    tab === 'unmatched' ? all.filter(unmatchedJob) : tab === 'errors' ? all.filter(errorJob) : []
   // Album and artist downloads fail in clusters, so the batch is the useful unit to inspect.
   const failureGroups = [
-    ...failures.reduce(
+    ...pile.reduce(
       (map, job) => map.set(job.batch_id, [...(map.get(job.batch_id) ?? []), job]),
       new Map<string, DownloadJob[]>(),
     ),
@@ -995,20 +1124,30 @@ export function DownloadsPage() {
   const grouped = failureGroups.length > 1
   const selectedGroup =
     grouped && group !== null && failureGroups.some(([id]) => id === group) ? group : null
-  const jobs = all
-    .filter((job) =>
-      tab === 'queue'
-        ? activeJob(job)
-        : tab === 'done'
-          ? job.stage === 'done'
-          : job.stage === 'failed' && (selectedGroup === null || job.batch_id === selectedGroup),
-    )
-    .sort((a, b) => (tab === 'queue' ? a.created_at - b.created_at : b.updated_at - a.updated_at))
+  const jobs = (
+    tab === 'queue'
+      ? all.filter(activeJob)
+      : tab === 'done'
+        ? all.filter((job) => job.stage === 'done')
+        : pile.filter((job) => selectedGroup === null || job.batch_id === selectedGroup)
+  ).sort((a, b) => (tab === 'queue' ? a.created_at - b.created_at : b.updated_at - a.updated_at))
   const counts = {
     queue: queue.data?.summary.active ?? all.filter(activeJob).length,
     done: all.filter((job) => job.stage === 'done').length,
-    failed: queue.data?.summary.failed ?? all.filter((job) => job.stage === 'failed').length,
+    unmatched,
+    errors,
   }
+  const tabs = [
+    ['queue', 'Queue', counts.queue],
+    ['done', 'Done', counts.done],
+    ['unmatched', 'No match', counts.unmatched],
+    ['errors', 'Errors', counts.errors],
+    ['history', 'History', null],
+  ] as const
+  const pileCount = tab === 'unmatched' ? counts.unmatched : counts.errors
+  const reasons = (queue.data?.summary.failure_reasons ?? []).filter((reason) =>
+    tab === 'unmatched' ? reason.code === 'NO_MATCH' : reason.code !== 'NO_MATCH',
+  )
   return (
     <>
       <PageTitle eyebrow="YOUR COLLECTION, IN MOTION" title="Downloads">
@@ -1018,22 +1157,21 @@ export function DownloadsPage() {
       </PageTitle>
       <QueueControls />
       <BatchSummary jobs={queue.data?.jobs ?? []} />
-      <div className="download-tabs mt-6 mb-4 flex flex-wrap gap-1.5 max-phone:grid max-phone:grid-cols-4 max-phone:gap-1">
-        {['queue', 'done', 'failed', 'history'].map((value) => (
+      <div className="download-tabs mt-6 mb-4 flex flex-wrap gap-1.5 max-phone:flex-nowrap max-phone:gap-1">
+        {tabs.map(([value, label, count]) => (
           <button
             key={value}
             data-ui="tab"
             className={cx(
               'rounded-pill border-0 px-[17px] py-[10px] whitespace-nowrap coarse:min-h-11',
-              'max-phone:min-w-0 max-phone:px-[2px] max-phone:text-body max-phone:overflow-hidden max-phone:text-ellipsis',
+              'max-phone:min-w-0 max-phone:flex-1 max-phone:px-[2px] max-phone:text-body max-phone:overflow-hidden max-phone:text-ellipsis',
               tab === value ? 'bg-accent text-accent-ink' : 'bg-transparent text-muted',
             )}
             aria-pressed={tab === value}
             onClick={() => setTab(value)}
           >
-            {value[0]?.toUpperCase()}
-            {value.slice(1)}
-            {value in counts ? ` (${counts[value as keyof typeof counts]})` : ''}
+            {label}
+            {count !== null && <span className="max-phone:sr-only"> ({count})</span>}
           </button>
         ))}
       </div>
@@ -1043,15 +1181,20 @@ export function DownloadsPage() {
           <button onClick={() => void queue.refetch()}>Retry</button>
         </ErrorBanner>
       )}
-      {tab === 'failed' && counts.failed > 0 && (
-        <section className={errorBannerClassName('list')} aria-label="Failure summary">
+      {(tab === 'unmatched' || tab === 'errors') && pileCount > 0 && (
+        <section
+          className={errorBannerClassName('list')}
+          aria-label={tab === 'unmatched' ? 'No match summary' : 'Failure summary'}
+        >
           <strong>
-            {counts.failed} {counts.failed === 1 ? 'download' : 'downloads'} failed
+            {tab === 'unmatched'
+              ? `${pileCount} ${pileCount === 1 ? 'track has' : 'tracks have'} no close match`
+              : `${pileCount} ${pileCount === 1 ? 'download' : 'downloads'} failed`}
           </strong>
-          {queue.data?.summary.failure_reasons.map((reason) => {
+          {reasons.map((reason) => {
             const link = errorLink(reason.fix || '')
             return (
-              <span key={reason.code + reason.message}>
+              <span key={[reason.code, reason.message, reason.hint, reason.fix].join('|')}>
                 {reason.count} · {reason.hint || reason.message}{' '}
                 {reason.code && <small>({reason.code})</small>}
                 {link &&
@@ -1069,16 +1212,18 @@ export function DownloadsPage() {
               </span>
             )
           })}
-          {selectedGroup === null && jobs.length < counts.failed && (
+          {selectedGroup === null && jobs.length < pileCount && (
             <small>Showing the latest {jobs.length} below.</small>
           )}
         </section>
       )}
-      {tab === 'failed' && grouped && (
+      {(tab === 'unmatched' || tab === 'errors') && grouped && (
         <div
           className="my-[14px] flex flex-wrap gap-2"
           role="group"
-          aria-label="Failures by download group"
+          aria-label={
+            tab === 'unmatched' ? 'No matches by download group' : 'Failures by download group'
+          }
         >
           {failureGroups.map(([id, rows]) => (
             <button
@@ -1107,7 +1252,11 @@ export function DownloadsPage() {
           <h2>
             {queue.isPending
               ? 'Loading queue…'
-              : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
+              : tab === 'unmatched'
+                ? 'No tracks are waiting for a match'
+                : tab === 'errors'
+                  ? 'No failed downloads'
+                  : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
           </h2>
           <Link to="/search" data-ui="button" className={buttonClassName('primary')}>
             Find a track

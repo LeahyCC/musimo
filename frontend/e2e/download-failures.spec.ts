@@ -55,6 +55,8 @@ const failed: DownloadJob = {
   selected: '',
   check_match: false,
   attempts: 1,
+  lap: 0,
+  laps: 0,
   retry_at: 0,
   progress: 0,
   downloaded: 0,
@@ -129,13 +131,14 @@ test('failed downloads show a count, cause and retry state', async ({ page }) =>
   )
 
   await page.goto('/downloads')
-  // Retry failed sits in the overflow menu, and only while something has failed.
+  // A missing recording is not a broken download, so the menu clears it and does not retry it.
   await page.getByRole('button', { name: 'More queue actions' }).click()
-  await expect(page.getByRole('menuitem', { name: 'Retry failed (1)' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: 'Clear no match (1)' })).toBeVisible()
+  await expect(page.getByRole('menuitem', { name: /Retry errors/ })).toHaveCount(0)
   await page.keyboard.press('Escape')
-  await expect(page.getByRole('button', { name: 'Failed (1)', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Failed (1)', exact: true }).click()
-  await expect(page.getByLabel('Failure summary')).toContainText(
+  await expect(page.getByRole('button', { name: 'No match (1)', exact: true })).toBeVisible()
+  await page.getByRole('button', { name: 'No match (1)', exact: true }).click()
+  await expect(page.getByLabel('No match summary')).toContainText(
     'No matching recording was found on YouTube.',
   )
 
@@ -249,7 +252,7 @@ test('a long failure queue lists cards without overlapping, and can be grouped o
   })
 
   await page.goto('/downloads')
-  await page.getByRole('button', { name: 'Failed (9)', exact: true }).click()
+  await page.getByRole('button', { name: 'No match (9)', exact: true }).click()
   // Cards flow inside one offset container. Giving each card its own absolute offset is
   // what let a card be drawn over its neighbour before its real height was measured.
   const wrappers = await page
@@ -264,7 +267,7 @@ test('a long failure queue lists cards without overlapping, and can be grouped o
   expect(await overlaps(page)).toEqual([])
 
   // Filtering by group reorders the list, which is when index-keyed measurements went stale.
-  const groups = page.getByRole('group', { name: 'Failures by download group' })
+  const groups = page.getByRole('group', { name: 'No matches by download group' })
   await expect(groups.getByRole('button', { name: 'Single tracks (5)' })).toBeVisible()
   await groups.getByRole('button', { name: 'Fixture album (4)' }).click()
   await expect(page.locator('#main .job-card')).toHaveCount(4)
@@ -273,8 +276,8 @@ test('a long failure queue lists cards without overlapping, and can be grouped o
   expect(await overlaps(page)).toEqual([])
 
   await page.getByRole('button', { name: 'More queue actions' }).click()
-  await page.getByRole('menuitem', { name: 'Clear failed (9)' }).click()
-  await expect.poll(() => cleared).toContain('clear-failed')
+  await page.getByRole('menuitem', { name: 'Clear no match (9)' }).click()
+  await expect.poll(() => cleared).toContain('clear-unmatched')
 
   // Clear all finished asks first: dismissing the prompt sends nothing, accepting it does.
   page.once('dialog', (dialog) => void dialog.dismiss())
@@ -310,7 +313,9 @@ test('the queue controls keep three buttons and hide overflow actions with nothi
   await expect(page.getByRole('button', { name: 'Cancel queued' })).toBeVisible()
   // Nothing has failed or finished, so there is nothing for a menu to hold.
   await expect(page.getByRole('button', { name: 'More queue actions' })).toHaveCount(0)
-  await expect(page.getByRole('button', { name: /Retry failed|Clear failed/ })).toHaveCount(0)
+  await expect(
+    page.getByRole('menuitem', { name: /Retry errors|Clear errors|Clear no match/ }),
+  ).toHaveCount(0)
 })
 
 test('recording matches link to their own page, or to YouTube for older jobs', async ({ page }) => {
@@ -328,7 +333,7 @@ test('recording matches link to their own page, or to YouTube for older jobs', a
     }),
   )
   await page.goto('/downloads')
-  await page.getByRole('button', { name: 'Failed (1)', exact: true }).click()
+  await page.getByRole('button', { name: 'No match (1)', exact: true }).click()
   await page.getByText(/Recording matches/).click()
   const links = page.locator('#main .job-card').getByRole('link', { name: 'Listen ↗' })
   await expect(links).toHaveCount(3)
@@ -463,7 +468,7 @@ test('error hints link to the relevant setting or diagnostic', async ({ page }) 
   )
 
   await page.goto('/downloads')
-  await page.getByRole('button', { name: 'Failed (1)', exact: true }).click()
+  await page.getByRole('button', { name: 'Errors (1)', exact: true }).click()
 
   // Failed card shows hint and link
   const card = page.locator('.job-card')
@@ -510,7 +515,7 @@ test('long titles and labels stay inside the page', async ({ page }) => {
   )
 
   await page.goto('/downloads')
-  const failedTab = page.getByRole('button', { name: 'Failed (3)', exact: true })
+  const failedTab = page.getByRole('button', { name: 'No match (3)', exact: true })
   await failedTab.click()
   await expect(page.locator('#main .job-card')).toHaveCount(3)
   // A tab label such as "Queue (5)" stays on one line at narrow widths; the row wraps instead.
@@ -533,7 +538,7 @@ test('long titles and labels stay inside the page', async ({ page }) => {
 
   // A group chip carrying a long album name is cut to one line with an ellipsis, not
   // wrapped and clipped or stretched across the page.
-  const groups = page.getByRole('group', { name: 'Failures by download group' })
+  const groups = page.getByRole('group', { name: 'No matches by download group' })
   const chip = groups.getByRole('button', { name: new RegExp(`^${LONG_TITLE.slice(0, 20)}`) })
   const chipBox = await chip.boundingBox()
   const groupsBox = await groups.boundingBox()

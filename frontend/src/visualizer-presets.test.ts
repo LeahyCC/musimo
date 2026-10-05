@@ -4,11 +4,13 @@ import {
   DEFAULT_PRESET,
   LABEL_FIXES,
   PRESET_NAMES,
+  presetForScene,
   presetLabel,
   presetOrDefault,
   randomPreset,
   stepPreset,
 } from './visualizer-presets'
+import { HARD_PRESETS, PULSE_PRESETS, SOFT_PRESETS } from './visualizer-scenes'
 
 describe('visualizer presets', () => {
   it('has the default in the pack', () => {
@@ -56,5 +58,23 @@ describe('random preset', () => {
   it('never picks the one already drawing', () => {
     for (const random of [0, 0.5, 0.999])
       expect(randomPreset(DEFAULT_PRESET, random)).not.toBe(DEFAULT_PRESET)
+  })
+})
+
+describe('preset scenes', () => {
+  it('puts every preset in one pile', () => {
+    const piles = [...SOFT_PRESETS, ...PULSE_PRESETS, ...HARD_PRESETS]
+    expect(new Set(piles).size).toBe(piles.length)
+    expect([...piles].sort()).toEqual([...PRESET_NAMES].sort())
+  })
+
+  it('picks another preset from the pile the moment asked for', () => {
+    const first = SOFT_PRESETS[0] ?? ''
+    const chosen = presetForScene(first, 'soft', 0)
+    expect(SOFT_PRESETS).toContain(chosen)
+    expect(chosen).not.toBe(first)
+    const loud = HARD_PRESETS[0] ?? ''
+    const others = HARD_PRESETS.filter((name) => name !== loud)
+    expect(presetForScene(loud, 'hard', 0.999)).toBe(others[others.length - 1])
   })
 })

@@ -658,6 +658,50 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         )
             store.close()
 
+    async def test_a_long_album_list_is_fetched_four_pages_at_a_time(self) -> None:
+        # A page of two, so the test does not need five hundred albums.
+        albums = [{"id": f"a{n}", "name": f"Album {n}", "artistId": "zia"} for n in range(5)]
+        # The same album twice, as a scan can when windows overlap.
+        albums.append({"id": "a4", "name": "Album 4 again", "artistId": "zia"})
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+            offsets: list[int] = []
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                if request.url.path.endswith("/getArtists"):
+                    return subsonic(
+                        artists={"index": [{"name": "A", "artist": [{"id": "zia", "name": "Zia"}]}]}
+                    )
+                if request.url.path.endswith("/getAlbumList2"):
+                    offset = int(request.url.params.get("offset", 0))
+                    size = int(request.url.params.get("size", 2))
+                    offsets.append(offset)
+                    return subsonic(albumList2={"album": albums[offset : offset + size]})
+                return subsonic()
+
+            with (
+                patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
+                patch("backend.navidrome.ALBUM_PAGE", 2),
+            ):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    snapshot = await navidrome.catalog()
+            # The first page is alone. The next four offsets go out together, and the
+            # short last page stops the walk. The repeated album is kept once.
+            self.assertEqual(offsets[0], 0)
+            self.assertEqual(set(offsets), {0, 2, 4, 6, 8})
+            self.assertEqual([row["id"] for row in snapshot.albums], ["a0", "a1", "a2", "a3", "a4"])
+            store.close()
+
     async def test_media_errors_are_not_passed_on_as_media(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

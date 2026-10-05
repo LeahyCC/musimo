@@ -4,9 +4,18 @@
 
 ### Search and downloads
 
+- Start the file download while lyrics, MusicBrainz, remaining catalog tags and the cover are still loading, and tag once they arrive. Album and artist batches keep the listing's title, artist and length so matching does not wait on another catalog call per track. A catalog miss keeps those listing tags instead of waiting out a Deezer cooldown, and a later catalog response keeps lyrics already found. Fragmented audio downloads four pieces at a time, and yt-dlp reuses a player cache in the data directory
+- Name a queued catalog song with the first source that can run, so the card is right before a worker starts
+- Save a catalog track from a Deezer account when the cookie is set, then name and tag it like any other download. A miss falls back to the YouTube match
+- Paste a YouTube cookies.txt file in Settings so an age-restricted video can download
+- List the download sources in Settings, with a switch for each and a box to replace the Deezer cookie
+- Order catalog sources in Settings, try each a set number of times, then go around the list again up to Times around the list. A block pauses the source that raised it, and a list where every row is off fails the song instead of leaving it queued
+- Keep a source block on the source that failed, walk the list again on Retry, and show when a row in the order will be skipped
 - Search podcasts from a new Podcasts tab, open a show's latest episodes and download them straight from the publisher's file into `Podcasts/<show>`
 - Pause each download source on its own after repeated blocking errors, and give match candidates their own source and link
 - Search SoundCloud for a catalog track when YouTube has no match, or while YouTube is paused, behind a new off-by-default setting; matches there need a higher score, a job that takes one moves to SoundCloud for pausing and errors, and review candidates name their site
+- Put tracks with no close recording on their own Downloads tab, and keep Retry and Clear for real failures
+- Search YouTube for label uploads instead of "official audio", which matched 89 of the 100 corpus songs instead of 78, and treat bass boosted, 8D, nightcore, reverb, lofi, acoustic, extended and karaoke-label uploads as different versions
 
 ### Pasted links
 
@@ -20,6 +29,9 @@
 
 ### Library and playback
 
+- Change the MilkDrop preset on the beat. A drop gets a harder picture and a quiet stretch a calmer one, and the changes come closer together as the song goes on
+- Check a polled music folder every five minutes instead of every minute
+- Read Navidrome's album list four pages at a time, the same way tracks are read
 - Give library playback its own audio element and a Web Audio analyser for the coming visualizer, keeping catalog previews off it (#51)
 - Extract bands, energy, onsets, a beat pulse and tempo from library playback in a worker, ready for the visualizer (#52)
 - Draw a WebGPU particle field on the Now Playing stage, with a view toggle, a debug overlay and a particle count setting; browsers without WebGPU keep the artwork (#53)
@@ -44,7 +56,7 @@
 - Say "1 album" and "1 song" on an artist page instead of "1 ALBUMS"
 - Show the release year on an artist's popular songs instead of a "…" that never filled in
 - Draw the track's waveform as the Now Playing seek bar, worked out once with ffmpeg and cached in SQLite (a new `waveforms` table, schema version unchanged), with the plain bar while it loads or when there is none
-- Replace the visimo visualizer with MilkDrop, through butterchurn 3.0 beta and its base pack of 107 presets; it needs WebGL 2 rather than WebGPU, so most browsers get it, and the scene and fluid grid settings are gone. The pickers list presets by title, A to Z, and hovering one shows the full name with its authors. The preset changes by itself on a drop in the music, or after a long steady stretch, unless Change with the music is off
+- Replace the visimo visualizer with MilkDrop, through butterchurn 3.0 beta and its base pack of 107 presets; it needs WebGL 2 rather than WebGPU, so most browsers get it, and the scene and fluid grid settings are gone. The pickers list presets by title, A to Z, and hovering one shows the full name with its authors. Change with the music follows the beat, unless it is switched off
 
 ### Testing and CI
 

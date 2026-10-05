@@ -363,7 +363,9 @@ pycryptodomex==3.23.0 \
     --hash=sha256:c885da45e70139464f082018ac527fdaad26f1657a99ee13eecdce0f0ca24ab4 \
     --hash=sha256:da4fa650cef02db88c2b98acc5434461e027dce0ae8c22dd5a69013eaf510006 \
     --hash=sha256:f489c4765093fb60e2edafdf223397bc716491b2b69fe74367b70d6999257a5c
-    # via yt-dlp
+    # via
+    #   musimo
+    #   yt-dlp
 pydantic==2.13.5 \
     --hash=sha256:346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73 \
     --hash=sha256:51a9c5f7b2f8e636f04c6cada605d9b6a3bf1348fdf945a3d8869b19bba0ee08
@@ -459,9 +461,9 @@ typing-inspection==0.4.4 \
     # via
     #   fastapi
     #   pydantic
-urllib3==2.7.0 \
-    --hash=sha256:231e0ec3b63ceb14667c67be60f2f2c40a518cb38b03af60abc813da26505f4c \
-    --hash=sha256:9fb4c81ebbb1ce9531cce37674bbc6f1360472bc18ca9a553ede278ef7276897
+urllib3==2.8.0 \
+    --hash=sha256:0cf3cae568d36aa9576b28dfb35f11328f1cb974ca7647d9475ebb86c75ac6e3 \
+    --hash=sha256:63bf2ead4c879426ebf22ef2a781eeb4aa3b4ae798a0435506f8687fd5bb9b63
     # via
     #   requests
     #   yt-dlp
