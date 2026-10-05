@@ -73,6 +73,11 @@ def account_preview(catalog: float, actual: float) -> bool:
 
 
 AUDIO_SUFFIXES = {".webm", ".m4a", ".opus", ".mp3", ".ogg", ".flac", ".aac", ".mp4"}
+# How long tagging waits for lyrics, catalog tags and cover art started alongside the download.
+# Longer than the enrichment budget plus the cover fetches, so a fast file still gets its tags.
+SIDE_WAIT_SECONDS = 60
+# DASH and HLS otherwise arrive one piece at a time. A single file ignores this.
+FRAGMENT_DOWNLOADS = 4
 
 
 def bound_count(name: str) -> int:
@@ -132,13 +137,26 @@ def redact(text: str) -> str:
     return re.sub(r"https?://\S+", "[URL]", text)[-3000:]
 
 
+def cache_dir() -> str | bool:
+    """yt-dlp's player cache, or False when this process has no data directory."""
+    raw = os.getenv("MUSIMO_YTDLP_CACHE", "").strip()
+    if not raw:
+        return False
+    try:
+        Path(raw).mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return False
+    return raw
+
+
 def base_options() -> dict[str, object]:
     """yt-dlp settings shared by downloads and link previews. No browser input reaches these."""
     options: dict[str, object] = {
         "quiet": True,
         "no_warnings": False,
         "logger": Logger(),
-        "cachedir": False,
+        # A shared cache keeps the YouTube player script between tracks. Unset in tests.
+        "cachedir": cache_dir(),
         "socket_timeout": 10,
         "retries": 0,
         "fragment_retries": 0,
@@ -204,6 +222,27 @@ def found(source: str, entries: object) -> list[Candidate]:
             )
         )
     return rows
+
+
+def metadata_ready(folder: Path, job: Job) -> Job:
+    """Re-read tags the parent finished while the file was downloading.
+
+    Without ``wait-side`` there is nothing to wait for: a test, or a job that already has
+    its lyrics and cover. ``side.json`` is written after ``job.json`` and ``cover.jpg``.
+    """
+    if not (folder / "wait-side").is_file():
+        return job
+    deadline = time.monotonic() + SIDE_WAIT_SECONDS
+    marker = folder / "side.json"
+    while not marker.is_file():
+        if time.monotonic() >= deadline:
+            emit("warning", message="Optional metadata was not ready before tagging")
+            return job
+        time.sleep(0.05)
+    try:
+        return Job.model_validate_json((folder / "job.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return job
 
 
 def who(info: dict[str, object]) -> str:
@@ -302,6 +341,9 @@ def main() -> None:
         "continuedl": True,
         "overwrites": False,
         "nopart": False,
+        "concurrent_fragment_downloads": FRAGMENT_DOWNLOADS,
+        # One lost piece should not throw away the rest of a parallel fragment download.
+        "fragment_retries": 2,
         "sleep_interval_requests": random.uniform(0.3, 0.8),
     }
     if link_site:
@@ -723,6 +765,7 @@ def main() -> None:
         ready = tagger.prepare(source, folder, job.format)
         emit("stage", stage="tagging")
         stage = "tagging"
+        job = metadata_ready(folder, job)
         cover = folder / "cover.jpg"
         meta = job.meta
         if not meta.artist and artist:

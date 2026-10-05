@@ -16,9 +16,18 @@ from fastapi import FastAPI
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
-from backend.catalog import Catalog
+from backend.catalog import Catalog, CatalogError
 from backend.download_api import install_download_routes
-from backend.downloads import DownloadError, Downloads, digest, publish_file
+from backend.downloads import (
+    CATALOG_DETAILS_WARNING,
+    SIDE_FAILED,
+    DownloadError,
+    Downloads,
+    catalog_details_pending,
+    digest,
+    enrichment_pending,
+    publish_file,
+)
 from backend.job_models import Candidate, Job, Metadata
 from backend.job_store import JobConflict, Jobs
 from backend.library import Library, normalize
@@ -350,6 +359,14 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(response.status_code, 200)
                     payload = response.json()
                     self.assertEqual({job["album_id"] for job in payload["jobs"]}, {9})
+                    # The listing is stored so matching can start without another catalog fetch.
+                    self.assertEqual(
+                        {job["meta"]["title"] for job in payload["jobs"]}, {"One", "Two"}
+                    )
+                    self.assertEqual({job["meta"]["artist"] for job in payload["jobs"]}, {"Artist"})
+                    self.assertTrue(
+                        all(job["meta"]["album_artist"] == "" for job in payload["jobs"])
+                    )
                     again = (await api.post("/api/batches", json={"album_id": 9})).json()
                     self.assertEqual(
                         [row["id"] for row in payload["jobs"]], [row["id"] for row in again["jobs"]]
@@ -1043,4 +1060,290 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                         f"/api/jobs/{job.id}/pick", json={"candidate_id": "999999999"}
                     )
                     self.assertEqual(unknown.status_code, 422)
+            store.close()
+
+
+class OverlappedMetadataTests(unittest.IsolatedAsyncioTestCase):
+    async def test_lyrics_load_while_the_file_downloads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            order: list[str] = []
+
+            async def extra(meta: Metadata) -> list[str]:
+                order.append("extra-start")
+                await asyncio.sleep(0.05)
+                meta.lyrics = "the words"
+                order.append("extra-end")
+                return []
+
+            async def worker(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                order.append("worker-start")
+                self.assertEqual(job.meta.lyrics, "")
+                await asyncio.sleep(0.1)
+                order.append("worker-end")
+                ready = folder / "ready.mp3"
+                ready.write_bytes(b"synthetic audio placeholder")
+                return ready, {"codec": "mp3", "bitrate": 128}
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(404))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                library.index_published = lambda path, root: None  # type: ignore[method-assign]
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                service.enrichment.extra = extra  # type: ignore[method-assign]
+                service.worker = worker  # type: ignore[method-assign]
+                store.update({"destination": str(root)})
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    meta=Metadata(
+                        id=1,
+                        title="Song",
+                        artist="Band",
+                        album_artist="Band",
+                        album="Album",
+                        duration=180,
+                    ).model_dump(),
+                )
+                await service.run(job.id)
+                done = service.jobs.get(job.id)
+                self.assertEqual(done.stage, "done")
+                self.assertEqual(done.meta.lyrics, "the words")
+                self.assertEqual(order, ["worker-start", "extra-start", "extra-end", "worker-end"])
+            store.close()
+
+    def test_catalog_and_side_warnings_still_allow_lyrics(self) -> None:
+        job = Job(
+            id="job",
+            track_id=1,
+            target="library",
+            created_at=0,
+            updated_at=0,
+            meta=Metadata(id=1, title="Song", artist="Band"),
+            warnings=[CATALOG_DETAILS_WARNING, SIDE_FAILED],
+        )
+        self.assertTrue(catalog_details_pending(job))
+        self.assertTrue(enrichment_pending(job))
+        blocked = job.model_copy(
+            update={"warnings": ["Optional metadata was not ready before tagging"]}
+        )
+        self.assertFalse(enrichment_pending(blocked))
+
+    async def test_a_catalog_cooldown_keeps_the_listing_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            seen: list[Job] = []
+
+            async def track(track_id: int) -> Metadata:
+                await asyncio.sleep(30)
+                return Metadata(
+                    id=track_id,
+                    title="Song",
+                    artist="Band",
+                    album_artist="Various Artists",
+                    album="Compilation",
+                )
+
+            async def extra(meta: Metadata) -> list[str]:
+                return []
+
+            async def worker(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                deadline = time.monotonic() + 2
+                while not (folder / "side.json").is_file():
+                    if time.monotonic() > deadline:
+                        raise AssertionError("side metadata never finished")
+                    await asyncio.sleep(0.01)
+                seen.append(Job.model_validate_json((folder / "job.json").read_text()))
+                ready = folder / "ready.mp3"
+                ready.write_bytes(b"synthetic audio placeholder")
+                return ready, {"codec": "mp3", "bitrate": 128}
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(404))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                library.index_published = lambda path, root: None  # type: ignore[method-assign]
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                service.enrichment.track = track  # type: ignore[method-assign]
+                service.enrichment.extra = extra  # type: ignore[method-assign]
+                service.worker = worker  # type: ignore[method-assign]
+                store.update({"destination": str(root)})
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    meta=Metadata(
+                        id=1, title="Song", artist="Band", album="Compilation", duration=180
+                    ).model_dump(),
+                )
+                started = time.monotonic()
+                with patch("backend.downloads.CATALOG_DETAILS_SECONDS", 0.05):
+                    await service.run(job.id)
+                self.assertLess(time.monotonic() - started, 2)
+                done = service.jobs.get(job.id)
+                self.assertEqual(done.stage, "done")
+                self.assertEqual(done.meta.album_artist, "")
+                self.assertIn(CATALOG_DETAILS_WARNING, done.warnings)
+                self.assertNotIn(SIDE_FAILED, done.warnings)
+                self.assertEqual(seen[0].meta.album_artist, "")
+                self.assertIn(CATALOG_DETAILS_WARNING, seen[0].warnings)
+                self.assertIn("Unknown", Path(done.final_path).parts)
+            store.close()
+
+    async def test_side_work_stops_before_tagging_gives_up(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            seen: list[Job] = []
+
+            async def extra(meta: Metadata) -> list[str]:
+                await asyncio.sleep(30)
+                meta.lyrics = "too late"
+                return []
+
+            async def worker(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                deadline = time.monotonic() + 2
+                while not (folder / "side.json").is_file():
+                    if time.monotonic() > deadline:
+                        raise AssertionError("side metadata never finished")
+                    await asyncio.sleep(0.01)
+                seen.append(Job.model_validate_json((folder / "job.json").read_text()))
+                ready = folder / "ready.mp3"
+                ready.write_bytes(b"synthetic audio placeholder")
+                return ready, {"codec": "mp3", "bitrate": 128}
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(404))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                library.index_published = lambda path, root: None  # type: ignore[method-assign]
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                service.enrichment.extra = extra  # type: ignore[method-assign]
+                service.worker = worker  # type: ignore[method-assign]
+                store.update({"destination": str(root)})
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    meta=Metadata(
+                        id=1,
+                        title="Song",
+                        artist="Band",
+                        album_artist="Band",
+                        album="Album",
+                        duration=180,
+                    ).model_dump(),
+                )
+                started = time.monotonic()
+                with patch("backend.downloads.SIDE_BUDGET_SECONDS", 0.05):
+                    await service.run(job.id)
+                self.assertLess(time.monotonic() - started, 2)
+                done = service.jobs.get(job.id)
+                self.assertEqual(done.stage, "done")
+                self.assertEqual(done.meta.lyrics, "")
+                self.assertEqual(seen[0].meta.lyrics, "")
+                self.assertIn(SIDE_FAILED, done.warnings)
+                self.assertNotIn("Optional metadata", " ".join(done.warnings))
+            store.close()
+
+    async def test_a_later_catalog_response_keeps_lyrics_and_looks_again(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            calls = {"track": 0, "extra": 0}
+
+            async def track(track_id: int) -> Metadata:
+                calls["track"] += 1
+                if calls["track"] == 1:
+                    raise CatalogError("Deezer is rate limited. Try again shortly.", 429)
+                return Metadata(
+                    id=track_id,
+                    title="Song",
+                    artist="Band",
+                    album_artist="Various Artists",
+                    album="Compilation",
+                    genre="Pop",
+                    isrc="USABC1234567",
+                    duration=180,
+                )
+
+            async def extra(meta: Metadata) -> list[str]:
+                calls["extra"] += 1
+                if calls["extra"] == 1:
+                    return ["Lyrics unavailable from LRCLIB"]
+                self.assertEqual(meta.album, "Compilation")
+                self.assertEqual(meta.isrc, "USABC1234567")
+                self.assertEqual(meta.lyrics, "")
+                meta.lyrics = "the words"
+                return []
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(404))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                service.enrichment.track = track  # type: ignore[method-assign]
+                service.enrichment.extra = extra  # type: ignore[method-assign]
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    meta=Metadata(
+                        id=1, title="Song", artist="Band", album="Single", duration=180
+                    ).model_dump(),
+                )
+                folder = root / "stage"
+                folder.mkdir()
+                await service.side_metadata(job.id, folder)
+                missed = service.jobs.get(job.id)
+                self.assertEqual(missed.meta.album_artist, "")
+                self.assertIn(CATALOG_DETAILS_WARNING, missed.warnings)
+                self.assertIn("Lyrics unavailable from LRCLIB", missed.warnings)
+                await service.side_metadata(job.id, folder)
+                found = service.jobs.get(job.id)
+                self.assertEqual(found.meta.lyrics, "the words")
+                self.assertEqual(found.meta.album_artist, "Various Artists")
+                self.assertEqual(found.meta.album, "Compilation")
+                self.assertNotIn(CATALOG_DETAILS_WARNING, found.warnings)
+                self.assertNotIn("Lyrics unavailable from LRCLIB", found.warnings)
+                self.assertEqual(calls, {"track": 2, "extra": 2})
+            store.close()
+
+    async def test_cancelling_side_work_leaves_no_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            started = asyncio.Event()
+
+            async def extra(meta: Metadata) -> list[str]:
+                started.set()
+                await asyncio.sleep(30)
+                return []
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(404))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                service.enrichment.extra = extra  # type: ignore[method-assign]
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    meta=Metadata(
+                        id=1,
+                        title="Song",
+                        artist="Band",
+                        album_artist="Band",
+                        album="Album",
+                        duration=180,
+                    ).model_dump(),
+                )
+                folder = root / "stage"
+                folder.mkdir()
+                task = asyncio.create_task(service.side_metadata(job.id, folder))
+                await asyncio.wait_for(started.wait(), 1)
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                self.assertFalse((folder / "side.json").is_file())
             store.close()

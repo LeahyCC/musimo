@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
 
 from backend.catalog import Result
-from backend.downloads import DownloadError, Downloads
+from backend.downloads import DownloadError, Downloads, listing_metadata
 from backend.job_models import (
     RUNNING,
     TERMINAL,
@@ -109,12 +109,19 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             if job.track_id in wanted and job.format == format and job.target == str(target)
         }
         batch_id = uuid.uuid4().hex
+        summary = Result.model_validate(album["album"])
+        # The listing is enough to start matching. Full tags arrive while the files download.
+        prepared = {
+            track.id: (listing_metadata(track, tracks=summary.track_count or len(tracks)), "")
+            for track in tracks
+        }
         jobs = service.jobs.enqueue_many(
             wanted,
             format,
             str(target),
             batch_id,
             album_id=request.album_id,
+            prepared=prepared,
         )
         skipped_owned += sum(job.stage == "done" for job in jobs)
         skipped_queued = sum(job.id in active_ids for job in jobs if job.stage != "done")

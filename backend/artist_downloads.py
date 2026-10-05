@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.catalog import Album, Artist, CatalogError, Result, safe_media
-from backend.downloads import Downloads
+from backend.downloads import Downloads, listing_metadata
 from backend.job_models import Format
 
 
@@ -159,7 +159,14 @@ class ArtistDownloads:
         wanted = [track_id for track_id in wanted if track_id not in active]
         batch_id = uuid.uuid4().hex
         label = f"{name} · {'all music' if request.all_music else 'albums'}"
-        jobs = service.jobs.enqueue_many(wanted, format, str(target), batch_id, label)
+        prepared = {
+            track.id: (listing_metadata(track, tracks=album.nb_tracks or len(rows)), "")
+            for album, rows in loaded
+            for track in rows
+        }
+        jobs = service.jobs.enqueue_many(
+            wanted, format, str(target), batch_id, label, prepared=prepared
+        )
         owned += sum(job.stage == "done" for job in jobs)
         jobs = [job for job in jobs if job.stage != "done"]
         remaining = {job.track_id for job in jobs}

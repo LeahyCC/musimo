@@ -1,5 +1,6 @@
 import json
 import tempfile
+import threading
 import unittest
 from pathlib import Path
 from typing import cast
@@ -7,7 +8,7 @@ from unittest.mock import patch
 
 from backend.deezer_audio import DeezerAudioError
 from backend.job_models import Candidate, Job, Metadata
-from backend.worker import main, redact
+from backend.worker import base_options, main, redact
 
 
 class WorkerTests(unittest.TestCase):
@@ -52,6 +53,8 @@ class WorkerTests(unittest.TestCase):
                     downloader.call_args.args[0]["extractor_args"],
                     {"youtubepot-bgutilscript": {"server_home": [directory]}},
                 )
+                self.assertEqual(downloader.call_args.args[0]["concurrent_fragment_downloads"], 4)
+                self.assertEqual(downloader.call_args.args[0]["fragment_retries"], 2)
                 downloader.return_value.extract_info.assert_called_once()
                 self.assertFalse(downloader.return_value.extract_info.call_args.kwargs["download"])
                 self.assertEqual(events[-1]["code"], "NO_MATCH")
@@ -150,6 +153,93 @@ class WorkerTests(unittest.TestCase):
                 downloader.return_value.extract_info.assert_not_called()
                 tagger.return_value.write.assert_called_once()
                 self.assertEqual(events[-1]["kind"], "ready")
+
+    def _resume(self, folder: Path, lyrics: str = "") -> tuple[Job, list[dict[str, object]]]:
+        source = folder / "source.m4a"
+        source.write_bytes(b"synthetic audio placeholder")
+        job = Job(
+            id="test",
+            track_id=1,
+            target=str(folder),
+            selected="abcdefghijk",
+            meta=Metadata(id=1, title="Song", artist="Band", lyrics=lyrics),
+            created_at=0,
+            updated_at=0,
+        )
+        (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
+        (folder / "download.json").write_text(
+            json.dumps({"selected": job.selected, "file": source.name}), encoding="utf-8"
+        )
+        return job, []
+
+    def test_tagging_waits_for_metadata_that_arrives_during_the_download(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            job, events = self._resume(folder)
+            (folder / "wait-side").write_bytes(b"")
+
+            def arrive() -> None:
+                updated = job.model_copy(
+                    update={"meta": job.meta.model_copy(update={"lyrics": "the words"})}
+                )
+                temporary = folder / "job.json.tmp"
+                temporary.write_text(updated.model_dump_json(), encoding="utf-8")
+                temporary.replace(folder / "job.json")
+                (folder / "side.json").write_text("{}", encoding="utf-8")
+
+            def record(kind: str, **values: object) -> None:
+                events.append({"kind": kind, **values})
+                if kind == "stage" and values.get("stage") == "tagging":
+                    threading.Timer(0.05, arrive).start()
+
+            with (
+                patch("sys.argv", ["worker", directory]),
+                patch("yt_dlp.YoutubeDL"),
+                patch(
+                    "backend.worker.probe",
+                    return_value={"duration": 180, "codec": "aac", "bitrate": 1},
+                ),
+                patch("backend.worker.Tagger") as tagger,
+                patch("backend.worker.emit", side_effect=record),
+            ):
+                tagger.return_value.prepare.return_value = folder / "source.m4a"
+                main()
+            meta = tagger.return_value.write.call_args.args[1]
+            self.assertEqual(meta.lyrics, "the words")
+            self.assertNotIn("warning", [event["kind"] for event in events])
+
+    def test_tagging_continues_when_optional_metadata_never_arrives(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            _, events = self._resume(folder)
+            (folder / "wait-side").write_bytes(b"")
+
+            def record(kind: str, **values: object) -> None:
+                events.append({"kind": kind, **values})
+
+            with (
+                patch("sys.argv", ["worker", directory]),
+                patch("yt_dlp.YoutubeDL"),
+                patch("backend.worker.SIDE_WAIT_SECONDS", 0.05),
+                patch(
+                    "backend.worker.probe",
+                    return_value={"duration": 180, "codec": "aac", "bitrate": 1},
+                ),
+                patch("backend.worker.Tagger") as tagger,
+                patch("backend.worker.emit", side_effect=record),
+            ):
+                tagger.return_value.prepare.return_value = folder / "source.m4a"
+                main()
+            meta = tagger.return_value.write.call_args.args[1]
+            self.assertEqual(meta.lyrics, "")
+            self.assertIn("warning", [event["kind"] for event in events])
+
+    def test_player_cache_is_used_only_when_configured(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.dict("os.environ", {"MUSIMO_YTDLP_CACHE": directory}):
+                self.assertEqual(base_options()["cachedir"], directory)
+            with patch.dict("os.environ", {"MUSIMO_YTDLP_CACHE": ""}):
+                self.assertIs(base_options()["cachedir"], False)
 
     def test_wrong_duration_never_tags_or_publishes_download(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

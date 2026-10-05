@@ -16,12 +16,13 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
+from pydantic import ValidationError
 
 from backend import mixes
-from backend.catalog import Catalog, CatalogError
+from backend.catalog import Catalog, CatalogError, Result
 from backend.enrichment import Enrichment
 from backend.errors import BLOCKING_CODES, error_guidance, site_label
-from backend.job_models import TERMINAL, Job
+from backend.job_models import TERMINAL, Job, Metadata
 from backend.job_store import Jobs
 from backend.library import Library
 from backend.link_tags import NOTE_PREFIX, LinkTags, tidied, wants_tidy
@@ -37,6 +38,105 @@ from backend.store import Store
 YOUTUBE_ART = ("maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg")
 ART_HOPS = 3
 ART_BYTES = 5 * 1024**2
+# Shown on the card. While it is present, another run of this job loads the catalog again.
+CATALOG_DETAILS_WARNING = "Catalog details unavailable"
+SIDE_FAILED = "Metadata preparation failed"
+# The same bound as the identity fetch. A Deezer cooldown can otherwise sit for minutes.
+CATALOG_DETAILS_SECONDS = 15
+# Tagging waits 60 seconds (worker.SIDE_WAIT_SECONDS). Stop sooner so job.json and side.json
+# are on disk before that wait ends, and the file and the library path share one snapshot.
+SIDE_BUDGET_SECONDS = 55
+ENRICHMENT_MARKERS = ("Lyrics", "MusicBrainz", "Optional metadata", "No ISRC")
+# A catalog payload has none of these. A refresh must not throw away a lookup that already hit.
+_KEPT_FROM_LISTING = (
+    "lyrics",
+    "synced_lyrics",
+    "mb_recording",
+    "mb_track",
+    "mb_release",
+    "mb_release_group",
+    "mb_artist",
+)
+
+
+def listing_metadata(track: Result, *, tracks: int = 1) -> Metadata:
+    """What an album listing already knows, enough to match the recording.
+
+    Genre, label, lyrics and MusicBrainz ids are filled while the file downloads.
+    ``album_artist`` stays empty so that fill still happens; the published path uses it
+    once it has arrived.
+    """
+    return Metadata(
+        id=track.id,
+        title=track.title,
+        artist=track.artist,
+        album=track.album or track.title,
+        duration=float(track.duration),
+        date=f"{track.year:04d}" if track.year else "",
+        isrc=track.isrc,
+        explicit=track.explicit,
+        track=max(1, track.position),
+        tracks=max(1, tracks),
+        disc=max(1, track.disc),
+        art=track.art,
+    )
+
+
+def catalog_details_pending(job: Job) -> bool:
+    """True when a catalog song still needs genre, label and the rest of its tags."""
+    if job.catalog != "deezer" or not job.meta.artist:
+        return False
+    if CATALOG_DETAILS_WARNING in job.warnings:
+        return True
+    meta = job.meta
+    return not (meta.album_artist or meta.genre or meta.label or meta.upc or meta.contributors)
+
+
+def enrichment_pending(job: Job) -> bool:
+    """True when lyrics and MusicBrainz have not been looked up yet."""
+    if job.catalog != "deezer" or not job.meta.artist:
+        return False
+    meta = job.meta
+    if meta.lyrics or meta.synced_lyrics or meta.mb_recording:
+        return False
+    return not any(
+        any(marker in warning for marker in ENRICHMENT_MARKERS) for warning in job.warnings
+    )
+
+
+def merge_catalog_tags(previous: Metadata, fresh: Metadata) -> Metadata:
+    """Keep lyrics and MusicBrainz ids the catalog payload does not carry."""
+    update: dict[str, str] = {}
+    for name in _KEPT_FROM_LISTING:
+        old = getattr(previous, name)
+        if isinstance(old, str) and old and not getattr(fresh, name):
+            update[name] = old
+    return fresh.model_copy(update=update) if update else fresh
+
+
+def drop_stale_enrichment_markers(warnings: list[str]) -> list[str]:
+    """A miss from before the full tags existed must not block one lookup against them."""
+    return [item for item in warnings if not any(marker in item for marker in ENRICHMENT_MARKERS)]
+
+
+def side_work_pending(job: Job, folder: Path) -> bool:
+    """Cover art, catalog tags or a link note still to do. The download does not wait for these."""
+    cover = bool(job.meta.art) and not (folder / "cover.jpg").is_file()
+    note = job.catalog == "link" and job.kind == "music" and not tidied(job)
+    return cover or note or catalog_details_pending(job) or enrichment_pending(job)
+
+
+def write_job_file(folder: Path, job: Job) -> None:
+    temporary = folder / "job.json.tmp"
+    temporary.write_text(job.model_dump_json(), encoding="utf-8")
+    temporary.replace(folder / "job.json")
+
+
+def mark_side_ready(folder: Path) -> None:
+    """Written last, so the worker only re-reads ``job.json`` after it is complete."""
+    temporary = folder / "side.json.tmp"
+    temporary.write_text("{}", encoding="utf-8")
+    temporary.replace(folder / "side.json")
 
 
 def opening_source(settings: Settings, paused: Collection[str]) -> str:
@@ -465,6 +565,68 @@ class Downloads:
         if process is not None:
             await stop_tree(process)
 
+    async def catalog_details(self, job: Job) -> Job:
+        """Full catalog tags. A miss keeps the listing and says so on the card.
+
+        The call is bounded, so a Deezer cooldown cannot sit past the tagging wait.
+        The listing's album artist is left empty: filling it from the track artist would
+        file a compilation under the wrong name. Lyrics already stored are kept, and a
+        miss marker is cleared so the lookup can run once against the full tags.
+        """
+        try:
+            async with asyncio.timeout(CATALOG_DETAILS_SECONDS):
+                fetched = await self.enrichment.track(job.track_id)
+        except (CatalogError, TimeoutError, ValidationError):
+            warnings = list(job.warnings)
+            if CATALOG_DETAILS_WARNING not in warnings:
+                warnings.append(CATALOG_DETAILS_WARNING)
+            return self.jobs.update(job.id, warnings=warnings)
+        meta = merge_catalog_tags(job.meta, fetched)
+        warnings = drop_stale_enrichment_markers(
+            [item for item in job.warnings if item != CATALOG_DETAILS_WARNING]
+        )
+        return self.jobs.update(job.id, meta=meta.model_dump(), warnings=warnings)
+
+    async def side_metadata(self, job_id: str, folder: Path) -> None:
+        """Lyrics, catalog tags and cover art, overlapping the download.
+
+        ``side.json`` is written only after ``job.json``, and not at all when the task is
+        cancelled, so a resumed job does not tag with a half-written record. The work stops
+        inside the tagging wait, so a late catalog response cannot publish a different
+        snapshot from the one embedded in the file.
+        """
+        try:
+            async with asyncio.timeout(SIDE_BUDGET_SECONDS):
+                job = self.jobs.get(job_id)
+                if catalog_details_pending(job):
+                    job = await self.catalog_details(job)
+                if enrichment_pending(job):
+                    warnings = await self.enrichment.extra(job.meta)
+                    job = self.jobs.update(
+                        job.id,
+                        meta=job.meta.model_dump(),
+                        warnings=[*job.warnings, *warnings],
+                    )
+                elif wants_tidy(job):
+                    meta, note = await self.link_tags.tidy(job.meta, site_label(job.source))
+                    job = self.jobs.update(job.id, meta=meta.model_dump(), notes=[*job.notes, note])
+                elif job.catalog == "link" and job.kind == "music" and not tidied(job):
+                    note = f"{NOTE_PREFIX} {site_label(job.source)}"
+                    job = self.jobs.update(job.id, notes=[*job.notes, note])
+                await self.artwork(self.jobs.get(job_id), folder)
+                write_job_file(folder, self.jobs.get(job_id))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            try:
+                job = self.jobs.get(job_id)
+                if SIDE_FAILED not in job.warnings:
+                    job = self.jobs.update(job_id, warnings=[*job.warnings, SIDE_FAILED])
+                write_job_file(folder, job)
+            except Exception:
+                pass
+        mark_side_ready(folder)
+
     async def artwork(self, job: Job, folder: Path) -> None:
         if not job.meta.art or (folder / "cover.jpg").exists():
             return
@@ -740,21 +902,32 @@ class Downloads:
                 retry_at=0,
             )
             if job.catalog == "deezer" and not job.meta.artist:
+                # The search needs a title and artist. Lyrics and the rest can follow.
                 async with asyncio.timeout(15):
                     meta = await self.enrichment.track(job.track_id)
-                    warnings = await self.enrichment.extra(meta)
-                job = self.jobs.update(job_id, meta=meta.model_dump(), warnings=warnings)
-            if wants_tidy(job):
-                # Mixes and radio shows are not catalog recordings. A retry keeps its first note.
-                meta, note = await self.link_tags.tidy(job.meta, site_label(job.source))
-                job = self.jobs.update(job_id, meta=meta.model_dump(), notes=[*job.notes, note])
-            elif job.catalog == "link" and job.kind == "music" and not tidied(job):
-                # The site's tags stay as they are. Say so, so the card shows where they came from.
-                note = f"{NOTE_PREFIX} {site_label(job.source)}"
-                job = self.jobs.update(job_id, notes=[*job.notes, note])
-            await self.artwork(job, folder)
-            ready, info = await self.worker(self.jobs.get(job_id), folder)
-            await self.finish(self.jobs.get(job_id), ready, info)
+                job = self.jobs.update(job_id, meta=meta.model_dump())
+            # Optional tags and the cover run while the file downloads. Tagging waits for them.
+            side: asyncio.Task[None] | None = None
+            if side_work_pending(job, folder):
+                (folder / "side.json").unlink(missing_ok=True)
+                (folder / "wait-side").write_bytes(b"")
+                side = asyncio.create_task(self.side_metadata(job.id, folder))
+            try:
+                ready, info = await self.worker(self.jobs.get(job_id), folder)
+                if side is not None:
+                    await side
+                    side = None
+                await self.finish(self.jobs.get(job_id), ready, info)
+            finally:
+                leftover = side
+                side = None
+                if leftover is not None:
+                    if not leftover.done():
+                        leftover.cancel()
+                    try:
+                        await leftover
+                    except (Exception, asyncio.CancelledError):
+                        pass
             # The worker may have matched on the backup source, so the site that just worked is
             # the job's source now, not the one it started with.
             downloaded = self.jobs.get(job_id).source

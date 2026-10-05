@@ -96,6 +96,8 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         nonlocal store, versions, catalog, library, downloads, links, navidrome, waveforms
+        # Later tracks reuse the YouTube player script instead of fetching it again.
+        os.environ["MUSIMO_YTDLP_CACHE"] = str(data / "ytdlp-cache")
         store = Store(data / "musimo.sqlite3")
         publish_youtube_cookies(data)
         versions = await asyncio.to_thread(runtime_versions)
