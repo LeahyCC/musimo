@@ -43,11 +43,33 @@ class YoutubeCookieTests(unittest.TestCase):
             self.assertFalse(saved(data))
             remove(data)
 
-    def test_a_saved_file_is_passed_to_yt_dlp(self) -> None:
+    def test_httponly_rows_are_kept_and_broken_rows_dropped(self) -> None:
+        # Exporters mark HttpOnly cookies with this prefix, and YouTube's sign-in cookies are
+        # HttpOnly. Dropping them as comments saved a file that could not sign in.
+        signed_in = "#HttpOnly_.youtube.com\tTRUE\t/\tTRUE\t0\t__Secure-3PSID\tghi"
+        extra_field = ".youtube.com\tTRUE\t/\tTRUE\t0\tPREF\tf1\textra"
+        body = clean("\n".join([signed_in, extra_field]))
+        self.assertIn(signed_in, body)
+        self.assertNotIn("extra", body)
+        with self.assertRaises(ValueError):
+            clean(".notyoutube.com\tTRUE\t/\tTRUE\t0\tSID\tx")
+
+    def test_yt_dlp_gets_a_copy_and_its_write_back_leaves_the_saved_file(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "youtube-cookies.txt"
             path.write_text("# Netscape HTTP Cookie File\n" + YOUTUBE + "\n", encoding="utf-8")
+            job = Path(folder) / "job"
+            job.mkdir()
             with patch.dict(os.environ, {"MUSIMO_YOUTUBE_COOKIES": str(path)}):
-                self.assertEqual(base_options()["cookiefile"], str(path))
+                copy = Path(str(base_options(job)["cookiefile"]))
+                self.assertEqual(copy.parent, job)
+                self.assertEqual(copy.read_bytes(), path.read_bytes())
+                # yt-dlp saves its jar to the cookie file on close. A running job must not
+                # undo a file that was replaced or removed in Settings meanwhile.
+                copy.write_text("# Netscape HTTP Cookie File\n" + OTHER + "\n", encoding="utf-8")
+                self.assertNotIn("evil.test", path.read_text(encoding="utf-8"))
+                elsewhere = Path(str(base_options()["cookiefile"]))
+                self.assertNotEqual(elsewhere.parent, job)
+                elsewhere.unlink()
             with patch.dict(os.environ, {"MUSIMO_YOUTUBE_COOKIES": ""}):
                 self.assertNotIn("cookiefile", base_options())

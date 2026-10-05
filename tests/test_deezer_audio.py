@@ -1,3 +1,4 @@
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -5,6 +6,7 @@ from unittest.mock import patch
 
 import httpx
 from Cryptodome.Cipher import Blowfish
+from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
 from backend.deezer_audio import (
@@ -18,6 +20,7 @@ from backend.deezer_audio import (
     decrypt_to,
     formats_to_try,
 )
+from backend.main import create_app
 from backend.models import Settings
 
 
@@ -131,3 +134,34 @@ class DeezerAudioTests(unittest.TestCase):
             written = decrypt_to([bytes(encrypted)], path, key, len(encrypted), None)
             self.assertEqual(written, len(plain))
             self.assertEqual(path.read_bytes(), plain)
+
+    def test_the_account_cookie_only_goes_to_deezer(self) -> None:
+        # A cookie set without a domain went to every host: the media CDN and any redirect.
+        account = Account("ab" * 96)
+        try:
+            own = account.http.build_request("GET", "https://www.deezer.com/ajax/gw-light.php")
+            self.assertIn("arl=", own.headers.get("cookie", ""))
+            for elsewhere in ("https://e-cdns-proxy-1.dzcdn.net/media", "http://mirror.test/x"):
+                with self.subTest(url=elsewhere):
+                    request = account.http.build_request("GET", elsewhere)
+                    self.assertNotIn("arl=", request.headers.get("cookie", ""))
+        finally:
+            account.close()
+
+    def test_settings_replies_never_carry_the_account_cookie(self) -> None:
+        cookie = "ab" * 96
+        with tempfile.TemporaryDirectory() as folder:
+            with TestClient(create_app(Path(folder))) as client:
+                saved = client.patch("/api/settings", json={"deezer_arl": cookie})
+                self.assertEqual(saved.status_code, 200)
+                replies = (
+                    saved.json(),
+                    client.get("/api/settings").json(),
+                    client.get("/api/snapshot").json()["settings"],
+                )
+                for reply in replies:
+                    self.assertNotIn(cookie, json.dumps(reply))
+                    self.assertTrue(reply["deezer_cookie"]["value"])
+                    self.assertIn("youtube_cookies", reply)
+                client.patch("/api/settings", json={"deezer_arl": ""})
+                self.assertFalse(client.get("/api/settings").json()["deezer_cookie"]["value"])

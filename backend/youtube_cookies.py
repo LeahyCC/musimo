@@ -4,13 +4,20 @@ yt-dlp reads the file by path. The text never goes into settings, job records or
 Only YouTube and Google rows are kept, so a full browser export is not replayed to other sites.
 """
 
+import atexit
 import os
+import tempfile
 from pathlib import Path
 
 FILE_NAME = "youtube-cookies.txt"
 MAX_BYTES = 256 * 1024
 # YouTube's login cookies live on these hosts. Anything else in an export is dropped.
 HOSTS = ("youtube.com", "youtube-nocookie.com", "youtu.be", "google.com")
+# Exporters write an HttpOnly cookie as "#HttpOnly_<domain>". It is a row, not a comment, and
+# YouTube's sign-in cookies are HttpOnly. yt-dlp reads the prefix.
+HTTPONLY = "#HttpOnly_"
+# yt-dlp refuses a row with any other field count, and its warning prints the whole row.
+FIELDS = 7
 
 
 class CookieFileError(ValueError):
@@ -43,6 +50,11 @@ def _kept(domain: str) -> bool:
     return any(host == name or host.endswith("." + name) for name in HOSTS)
 
 
+def _youtube(domain: str) -> bool:
+    host = _host(domain)
+    return host in {"youtube.com", "youtu.be"} or host.endswith(".youtube.com")
+
+
 def clean(text: str) -> str:
     """The YouTube and Google rows of a Netscape cookies file, or an error the UI can show."""
     text = text.replace("\r\n", "\n").replace("\r", "\n").strip()
@@ -53,12 +65,13 @@ def clean(text: str) -> str:
     kept: list[str] = []
     saw_youtube = False
     for line in text.split("\n"):
-        if not line or line.startswith("#"):
+        row = line.removeprefix(HTTPONLY)
+        if not row or row.startswith("#"):
             continue
-        parts = line.split("\t")
-        if len(parts) < 7 or not _kept(parts[0]):
+        parts = row.split("\t")
+        if len(parts) != FIELDS or not _kept(parts[0]):
             continue
-        if _host(parts[0]).endswith("youtube.com") or _host(parts[0]) == "youtu.be":
+        if _youtube(parts[0]):
             saw_youtube = True
         kept.append(line)
     if not saw_youtube:
@@ -68,6 +81,13 @@ def clean(text: str) -> str:
     return "# Netscape HTTP Cookie File\n" + "\n".join(kept) + "\n"
 
 
+def _write_private(path: Path, body: bytes) -> None:
+    """Write a file only its owner can read, from the first byte."""
+    handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(handle, "wb") as file:
+        file.write(body)
+
+
 def write(data: Path, text: str) -> None:
     body = clean(text)
     data.mkdir(parents=True, exist_ok=True)
@@ -75,9 +95,8 @@ def write(data: Path, text: str) -> None:
     if target.is_symlink():
         target.unlink()
     temporary = target.with_name(target.name + ".part")
-    temporary.write_text(body, encoding="utf-8")
-    if os.name != "nt":
-        os.chmod(temporary, 0o600)
+    temporary.unlink(missing_ok=True)
+    _write_private(temporary, body.encode())
     temporary.replace(target)
     publish(data)
 
@@ -87,3 +106,27 @@ def remove(data: Path) -> None:
     if target.is_symlink() or target.is_file():
         target.unlink()
     publish(data)
+
+
+def private_copy(folder: Path | None = None) -> str:
+    """A copy of the saved file for this process to hand to yt-dlp, or "" when none is saved.
+
+    yt-dlp writes its cookie jar back to `cookiefile` when it closes. Given the saved file, a job
+    that was already running would put back cookies someone had just replaced or removed in
+    Settings. A copy keeps that write inside this process. It sits in the job folder when there
+    is one, so cancelling the job removes it, and it is deleted when the process exits.
+    """
+    source = os.getenv("MUSIMO_YOUTUBE_COOKIES", "").strip()
+    path = Path(source) if source else None
+    if path is None or not path.is_file() or path.is_symlink():
+        return ""
+    if folder is None:
+        handle, name = tempfile.mkstemp(prefix="musimo-cookies-", suffix=".txt")
+        os.close(handle)
+        copy = Path(name)
+    else:
+        copy = folder / "cookies.txt"
+        copy.unlink(missing_ok=True)
+    _write_private(copy, path.read_bytes())
+    atexit.register(copy.unlink, missing_ok=True)
+    return str(copy)
