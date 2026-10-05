@@ -1,17 +1,19 @@
-"""Save one catalog track from the Deezer account named by MUSIMO_DEEZER_ARL.
+"""Save one catalog track from the Deezer account whose cookie is saved in Settings.
 
-The cookie stays in the environment. Jobs, logs and diagnostics never receive it.
-Naming, tags and format conversion still run on the file afterwards.
+The worker reads the cookie from its file (backend/deezer_cookie.py). Jobs, logs and diagnostics
+never receive it. Naming, tags and format conversion still run on the file afterwards.
 """
 
-import os
 import re
 from collections.abc import Callable, Iterable
 from pathlib import Path
+from typing import NamedTuple
 
 import httpx
 from Cryptodome.Cipher import Blowfish
 from Cryptodome.Hash import MD5
+
+from backend import deezer_cookie
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0"
 BLOCK = 2048
@@ -32,15 +34,32 @@ class DeezerNoTrack(DeezerAudioError):
     """The account cannot play this track, so Deezer has no file to give for it."""
 
 
+class Saved(NamedTuple):
+    path: Path
+    # True when the file is Deezer's FALLBACK, a different recording from the one asked for.
+    alternate: bool
+
+
 def configured() -> bool:
-    return bool(os.environ.get("MUSIMO_DEEZER_ARL", "").strip())
+    return bool(deezer_cookie.published())
 
 
 def account_cookie() -> str:
-    value = os.environ.get("MUSIMO_DEEZER_ARL", "").strip()
+    value = deezer_cookie.read()
     if ARL.fullmatch(value) is None:
-        raise DeezerCookieRejected("MUSIMO_DEEZER_ARL is not a Deezer account cookie")
+        raise DeezerCookieRejected("The saved Deezer cookie is not an account cookie")
     return value
+
+
+def _names_data_error(error: object) -> bool:
+    """True when a gw-light error is DATA_ERROR, in any of the shapes it comes in."""
+    if isinstance(error, dict):
+        return "DATA_ERROR" in error
+    if isinstance(error, list):
+        return any(_names_data_error(item) for item in error)
+    if isinstance(error, str):
+        return "DATA_ERROR" in error
+    return False
 
 
 # Best first. A CDN refusal of one quality is not "no audio": the next one may still play.
@@ -134,15 +153,15 @@ class Account:
     def _refused(payload: dict[str, object], *, track: bool = False) -> None:
         """Raise for a gw-light error. It answers 200 with the error here and empty results.
 
-        DATA_ERROR on a song lookup is how it says it has no such song. The account check is not
-        a song lookup, so the same word there is a refusal. Anything else is a refusal too, which
-        read as no song would file the track as missing while Deezer was only turning the request
-        down.
+        DATA_ERROR on a song lookup is how it says it has no such song, whether the error comes
+        as a dict, a list or a plain string. The account check is not a song lookup, so the same
+        word there is a refusal. Anything else is a refusal too, which read as no song would file
+        the track as missing while Deezer was only turning the request down.
         """
         error = payload.get("error")
         if not error:
             return
-        if track and isinstance(error, dict) and "DATA_ERROR" in error:
+        if track and _names_data_error(error):
             raise DeezerNoTrack("Deezer does not have this track for the account")
         raise DeezerAudioError("Deezer did not answer")
 
@@ -227,8 +246,12 @@ class Account:
             raise DeezerAudioError("Deezer did not return the audio")
         return url
 
-    def save(self, track_id: str, folder: Path, on_progress: Progress | None) -> Path:
-        """Save the account file. A refused quality tries the next one down, then another take."""
+    def save(self, track_id: str, folder: Path, on_progress: Progress | None) -> Saved:
+        """Save the account file. A refused quality tries the next one down, then another take.
+
+        The other take is Deezer's FALLBACK. When its SNG_ID differs it is another recording,
+        so the caller checks its length the strict way.
+        """
         song = self.track(track_id)
         song_id = str(song["SNG_ID"])
         tokens = [(song_id, str(song["TRACK_TOKEN"]))]
@@ -272,7 +295,7 @@ class Account:
                     last = DeezerAudioError("Deezer did not return the audio")
                     continue
                 partial.replace(target)
-                return target
+                return Saved(target, token_id != song_id)
         raise last
 
 
@@ -307,7 +330,7 @@ def decrypt_to(
     return written
 
 
-def fetch(track_id: int, folder: Path, on_progress: Progress | None = None) -> Path:
+def fetch(track_id: int, folder: Path, on_progress: Progress | None = None) -> Saved:
     account = Account(account_cookie())
     try:
         account.login()

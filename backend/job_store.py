@@ -6,6 +6,7 @@ import uuid
 from collections.abc import Callable
 from pathlib import Path
 
+from backend import deezer_cookie
 from backend.job_models import RUNNING, TERMINAL, CatalogName, Format, Job, Metadata
 from backend.sources import Kind
 from backend.store import VISIBLE_ID_SQL, Store
@@ -32,6 +33,21 @@ class Jobs:
                 "SELECT payload FROM jobs"
                 + (" WHERE active=1" if active else "")
                 + " ORDER BY created_at DESC"
+            ).fetchall()
+        return [Job.model_validate_json(row[0]) for row in rows]
+
+    def shown_finished(self, failed: bool | None = None) -> builtins.list[Job]:
+        """Finished jobs still on the queue. `failed` narrows to failures, or to the rest.
+
+        Bulk retry and clear read these. Reading every job parsed the whole history to act on a
+        handful.
+        """
+        where = "active=0 AND coalesce(json_extract(payload,'$.hidden'),0)=0"
+        if failed is not None:
+            where += " AND json_extract(payload,'$.stage')" + ("=" if failed else "!=") + "'failed'"
+        with self.store.lock:
+            rows = self.store.db.execute(
+                f"SELECT payload FROM jobs WHERE {where} ORDER BY created_at DESC"
             ).fetchall()
         return [Job.model_validate_json(row[0]) for row in rows]
 
@@ -113,7 +129,11 @@ class Jobs:
                 if catalog == "deezer" and not named:
                     from backend.downloads import opening_source
 
-                    named = opening_source(self.store.current(), self.store.paused_sources())
+                    named = opening_source(
+                        self.store.current(),
+                        self.store.paused_sources(),
+                        bool(deezer_cookie.published()),
+                    )
                 for track_id in tracks:
                     row = self.store.db.execute(
                         "SELECT payload FROM jobs WHERE catalog=? AND track_id=? "

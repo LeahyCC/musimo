@@ -102,6 +102,11 @@ def account_preview(catalog: float, actual: float) -> bool:
     return actual < 45 and actual < catalog * 0.5
 
 
+def length_differs(catalog: float, actual: float) -> bool:
+    """The strict rule for a recording found some other way than by the track id."""
+    return bool(catalog) and abs(actual - catalog) > max(15, catalog * 0.12)
+
+
 AUDIO_SUFFIXES = {".webm", ".m4a", ".opus", ".mp3", ".ogg", ".flac", ".aac", ".mp4"}
 # How long tagging waits for lyrics, catalog tags and cover art started alongside the download.
 # Longer than the enrichment budget plus the cover fetches, so a fast file still gets its tags.
@@ -284,9 +289,15 @@ def who(info: dict[str, object]) -> str:
     return str(info.get("artist") or ", ".join(listed) or info.get("uploader") or "").strip()
 
 
-def main() -> None:
+def client(options: dict[str, object]) -> Downloader:
+    """A yt-dlp client. The import waits until one is needed, so a song the Deezer account saves
+    does not pay for loading yt-dlp."""
     import yt_dlp  # type: ignore[import-untyped]
 
+    return cast(Downloader, yt_dlp.YoutubeDL(options))
+
+
+def main() -> None:
     folder = Path(sys.argv[1]).resolve()
     job = Job.model_validate_json((folder / "job.json").read_text(encoding="utf-8"))
     version = importlib.metadata.version("yt-dlp")
@@ -380,7 +391,7 @@ def main() -> None:
         options["allowed_extractors"] = link_site.allowed_extractors()
 
     search_options: dict[str, object] = {"extract_flat": True, "skip_download": True}
-    # Assigned in the try below. Declared here so the source walk can replace the client.
+    # Started on first use, so a song the Deezer account saves never loads yt-dlp.
     downloader: Downloader | None = None
     # The source whose format and extractor list that client carries. A catalog job starts with
     # the plain options, which only suit YouTube, so any other site's pick builds its own client.
@@ -388,7 +399,7 @@ def main() -> None:
 
     def search(source_name: str) -> list[Candidate]:
         """Ask one source for the wanted recording. Nothing is downloaded here."""
-        searcher = cast(Downloader, yt_dlp.YoutubeDL(options | search_options))
+        searcher = client(options | search_options)
         try:
             raw = searcher.extract_info(
                 f"{SEARCHES[source_name]}{job.meta.artist} {job.meta.title}"
@@ -424,7 +435,7 @@ def main() -> None:
                 }
             )
 
-        saved_file = fetch(job.track_id, folder, on_progress)
+        saved_file, alternate = fetch(job.track_id, folder, on_progress)
         try:
             try:
                 audio_info = probe(saved_file)
@@ -435,7 +446,14 @@ def main() -> None:
             if duration <= 0:
                 # ffprobe reads some garbage as a zero-length file and exits cleanly.
                 raise ValueError("The Deezer file has no audio in it")
-            if account_preview(job.meta.duration, duration):
+            # Deezer's fallback with another SNG_ID is a different recording, so it gets the same
+            # length check as a search match. The track's own file only refuses a short clip.
+            wrong = (
+                length_differs(job.meta.duration, duration)
+                if alternate
+                else account_preview(job.meta.duration, duration)
+            )
+            if wrong:
                 saved_file.unlink(missing_ok=True)
                 return None
             write_manifest("", saved_file, job.meta.artist, "deezer", False)
@@ -485,6 +503,13 @@ def main() -> None:
             # stopped. Two files fail the single-file check, so only the unfinished one stays.
             drop_audio()
 
+    def plain() -> Downloader:
+        """The download client, started on first use with the job's own options."""
+        nonlocal downloader
+        if downloader is None:
+            downloader = client(options)
+        return downloader
+
     def use_client(picked: Candidate) -> None:
         """Point the download client at the picked recording's own site.
 
@@ -492,8 +517,6 @@ def main() -> None:
         names.
         """
         nonlocal origin, site, asking, downloader, client_for
-        if downloader is None:
-            raise RuntimeError("Downloader was not started")
         matched = by_source(picked.source)
         if matched is None:
             raise ValueError("The chosen recording is from an unlisted site")
@@ -502,30 +525,26 @@ def main() -> None:
             emit("source", source=origin)
         asking = origin
         if picked.source != client_for:
-            downloader.close()
-            downloader = cast(
-                Downloader,
-                yt_dlp.YoutubeDL(
-                    options
-                    | {
-                        "format": matched.audio_format,
-                        "allowed_extractors": matched.allowed_extractors(),
-                    }
-                ),
+            if downloader is not None:
+                downloader.close()
+            downloader = client(
+                options
+                | {
+                    "format": matched.audio_format,
+                    "allowed_extractors": matched.allowed_extractors(),
+                }
             )
             client_for = picked.source
 
     def download_chosen(picked: Candidate) -> tuple[Path, str]:
         nonlocal stage
         use_client(picked)
-        if downloader is None:
-            raise RuntimeError("Downloader was not started")
         emit("stage", stage="downloading")
         stage = "downloading"
         chosen = address(picked.source, picked.id, picked.url)
         if not chosen:
             raise ValueError(f"The chosen recording is not a {site} address")
-        raw = downloader.extract_info(chosen)
+        raw = plain().extract_info(chosen)
         if not isinstance(raw, dict):
             raise ValueError("Download returned no media")
         named = who(raw)
@@ -539,8 +558,7 @@ def main() -> None:
         audio = files[0]
         audio_info = probe(audio)
         duration = float(str(audio_info["duration"]))
-        limit = max(15, job.meta.duration * 0.12)
-        if job.meta.duration and abs(duration - job.meta.duration) > limit:
+        if length_differs(job.meta.duration, duration):
             audio.unlink(missing_ok=True)
             raise WrongLength()
         write_manifest(
@@ -826,7 +844,6 @@ def main() -> None:
         return None
 
     try:
-        downloader = cast(Downloader, yt_dlp.YoutubeDL(options))
         manifest = folder / "download.json"
         source: Path | None = None
         # Who the site says made the recording. A pasted list often gives the title and not this,
@@ -886,7 +903,7 @@ def main() -> None:
             if link_site:
                 # Look before downloading: a live stream never ends and a redirect may have
                 # landed on a list page instead of one recording.
-                info = downloader.extract_info(job.source_url, download=False)
+                info = plain().extract_info(job.source_url, download=False)
                 if not isinstance(info, dict):
                     raise ValueError("Download returned no media")
                 if str(info.get("extractor", "")).lower() not in link_site.items:
@@ -895,9 +912,9 @@ def main() -> None:
                 if live(info):
                     refuse("LIVE_STREAM", "Live streams never finish, so they can't be saved.")
                     return
-                raw = downloader.process_ie_result(info, download=True)
+                raw = plain().process_ie_result(info, download=True)
             elif direct:
-                raw = downloader.extract_info(job.source_url)
+                raw = plain().extract_info(job.source_url)
             else:
                 # Never the ID a stored job carries on its own: the address is rebuilt from the
                 # chosen candidate and has to be a page of that candidate's own source.
@@ -909,7 +926,7 @@ def main() -> None:
                 if not chosen:
                     refuse("SITE_NOT_ALLOWED", f"The chosen recording is not a {site} address")
                     return
-                raw = downloader.extract_info(chosen)
+                raw = plain().extract_info(chosen)
             if not isinstance(raw, dict):
                 raise ValueError("Download returned no media")
             artist = who(raw)
@@ -923,11 +940,7 @@ def main() -> None:
             duration = float(str(audio_info["duration"]))
             # Direct files have no catalog length to check against: feed lengths are rough,
             # stitched-in ads change them, and a pasted link's length is the site's own.
-            if (
-                not direct
-                and job.meta.duration
-                and abs(duration - job.meta.duration) > max(15, job.meta.duration * 0.12)
-            ):
+            if not direct and length_differs(job.meta.duration, duration):
                 refuse("DURATION_MISMATCH", "Downloaded audio duration differs from the catalog")
                 return
             write_manifest(selected, source, artist, origin, job.check_match)

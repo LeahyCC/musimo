@@ -22,6 +22,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.responses import Response
 
+from backend import deezer_cookie
 from backend.activity_api import install_activity_routes
 from backend.artist_downloads import install_artist_download_routes
 from backend.catalog import Catalog, CatalogError
@@ -100,6 +101,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         # Later tracks reuse the YouTube player script instead of fetching it again.
         os.environ["MUSIMO_YTDLP_CACHE"] = str(data / "ytdlp-cache")
         store = Store(data / "musimo.sqlite3")
+        deezer_cookie.adopt(store, data)
         publish_youtube_cookies(data)
         drop_youtube_cookie_copies(data)
         versions = await asyncio.to_thread(runtime_versions)
@@ -194,13 +196,13 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         login, so whoever reaches the app reads these replies, and an account cookie is a login.
         """
         current = store.settings()
-        arl = cast(dict[str, object], current["deezer_arl"])
         return current | {
-            "deezer_arl": {**arl, "value": ""},
+            # The row is kept empty. The cookie lives in its own file.
+            "deezer_arl": {"value": "", "origin": "file", "locked": False},
             "deezer_cookie": {
-                "value": bool(arl["value"]),
-                "origin": arl["origin"],
-                "locked": arl["locked"],
+                "value": deezer_cookie.saved(data),
+                "origin": "file",
+                "locked": False,
             },
             "youtube_cookies": {
                 "value": youtube_cookies_saved(data),
@@ -218,6 +220,9 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         changes = patch.model_dump(exclude_unset=True)
         if None in changes.values():
             raise HTTPException(422, "Setting values cannot be null")
+        # The cookie goes to its own file. An empty value is Remove cookie. The browser leaves
+        # the key out when the box is merely empty (frontend/src/settings-patch.ts).
+        cookie = changes.pop("deezer_arl", None)
         try:
             if "destination" in changes:
                 dest = str(changes["destination"])
@@ -226,7 +231,13 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                     raise HTTPException(
                         422, "Destination must be writable. Read-only mounts cannot be used."
                     )
-            store.update(changes)
+            if changes:
+                store.update(changes)
+            if isinstance(cookie, str):
+                if cookie:
+                    deezer_cookie.write(data, cookie)
+                else:
+                    deezer_cookie.remove(data)
         except LockedSetting as exc:
             raise HTTPException(409, str(exc)) from exc
         except ValidationError as exc:
@@ -354,7 +365,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             "capabilities": {"settings": True, "events": True, "search": True, "downloads": True},
             "navidrome": navidrome_result,
             "last_download": downloads.last_terminal_job(),
-            "deezer_audio": bool(saved.deezer_audio and saved.deezer_arl),
+            "deezer_audio": bool(saved.deezer_audio and deezer_cookie.saved(data)),
             "download_sources": listed_sources(),
         }
 

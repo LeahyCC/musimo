@@ -356,9 +356,7 @@ class Navidrome:
         self.catalog_lock = asyncio.Lock()
 
     def settings(self) -> Settings:
-        with self.store.lock:
-            rows = self.store.db.execute("SELECT key,value FROM settings").fetchall()
-        return Settings.model_validate({row[0]: json.loads(row[1]) for row in rows})
+        return self.store.current()
 
     def configured(self) -> bool:
         return bool(

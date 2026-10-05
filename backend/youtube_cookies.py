@@ -95,7 +95,7 @@ def clean(text: str) -> str:
     return "# Netscape HTTP Cookie File\n" + "\n".join(kept) + "\n"
 
 
-def _write_private(path: Path, body: bytes) -> None:
+def write_private(path: Path, body: bytes) -> None:
     """Write a file only its owner can read, from the first byte."""
     handle = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(handle, "wb") as file:
@@ -110,7 +110,7 @@ def write(data: Path, text: str) -> None:
         target.unlink()
     temporary = target.with_name(target.name + ".part")
     temporary.unlink(missing_ok=True)
-    _write_private(temporary, body.encode())
+    write_private(temporary, body.encode())
     temporary.replace(target)
     drop_copies(data)
     publish(data)
@@ -139,6 +139,6 @@ def private_copy() -> str:
         return ""
     copy = path.with_name(f"{path.stem}.{os.getpid()}{path.suffix}")
     copy.unlink(missing_ok=True)
-    _write_private(copy, path.read_bytes())
+    write_private(copy, path.read_bytes())
     atexit.register(copy.unlink, missing_ok=True)
     return str(copy)
