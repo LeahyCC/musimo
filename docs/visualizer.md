@@ -41,20 +41,25 @@ The way into all of this is a labeled Visualizer control on the stage (On or Off
 
 ## Changing with the music
 
-With Change with the music on (the default, in `/settings/user`), the preset moves by itself. `music-moments.ts` watches the bass level from an analyser on the bus (`bassLevel` in `audio-graph.ts`), sampled once a frame while the stage draws:
+With Change with the music on (the default, in `/settings/user`), the preset moves by itself. `music-moments.ts` watches the bass from an analyser on the bus (`bassReading` in `audio-graph.ts`), once a frame while the stage draws. It keeps a fast average (about half a second) and a slow one (about six seconds), and it treats a sharp rise in the bass as a kick.
 
 ```
-bass level ──► fast average (≈0.5 s)
-           └─► slow average (≈6 s)
+kicks ──► a beat
+where the song is ──► how many beats to wait
 
-fast rises 0.12 above slow (a drop after a quieter part)  ──► random preset, 1.5 s blend
-no drop for 90 s of steady music                          ──► random preset, 5 s blend
-never sooner than 20 s after the last change; picking one yourself restarts that wait
+start of the song     a big hit only, 2.7 s melt
+middle third          every 8 beats, 0.9 s melt
+last third            every 4 beats, 0.35 s melt
+silence               stay
 ```
 
-The analyser reports the bass on a decibel scale squeezed into 0 to 1, where real music sits between about 0.5 and 0.95, so a drop is a rise by a fixed amount rather than a multiple. The numbers were tuned on 88 seconds of a real track with two drops and a song change: 0.12 caught both drops and nothing else. Silence (below 0.08) never triggers anything. It only listens while the stage draws, so a hidden or resting stage changes nothing. `music-moments.test.ts` covers the rules.
+A big hit is the fast average rising 0.12 above the slow one. It was tuned on 88 seconds of a real track with two drops and a song change: 0.12 caught both drops and nothing else. The cut lands on the kick when one arrives, and otherwise after a short wait, so a rise with no separate kick still counts. The melt is shorter than the wait before the next cut, including on a fast song. Picking a preset yourself starts the wait again. The first preset after a page load appears at once. A choice made by hand melts over 2.7 seconds, the way MilkDrop moves between presets.
 
-A new preset blends in over 2.7 seconds, the way MilkDrop moves between presets; the first one after a page load appears at once. A preset whose shaders will not compile in a browser leaves the previous one drawing.
+Which picture it picks depends on the hit. The base pack is split into three piles by how strongly each preset's equations listen for a beat (`visualizer-scenes.ts`): a quiet third, a middle third, and a loud third. A big hit takes the loud pile. A stretch that has gone quieter than the last few seconds takes the quiet pile. Anything else takes the middle. It picks at random inside the pile, and never the picture already showing.
+
+The analyser reports the bass on a decibel scale squeezed into 0 to 1, where real music sits between about 0.5 and 0.95, so a drop is a rise by a fixed amount rather than a multiple. Silence (below 0.08) never triggers anything. It only listens while the stage draws, so a hidden or resting stage changes nothing. `music-moments.test.ts` covers the rules.
+
+A preset whose shaders will not compile in a browser leaves the previous one drawing.
 
 ## The command palette
 

@@ -47,6 +47,8 @@ def install_search_routes(
     ) -> SearchPage:
         if len(q.strip()) < 2:
             raise HTTPException(422, "Enter at least two characters")
+        if not get_catalog().store.current().deezer_catalog:
+            raise HTTPException(422, "Deezer search is turned off in Settings.")
         try:
             async with asyncio.timeout(2.5):
                 timing: dict[str, float] = {}

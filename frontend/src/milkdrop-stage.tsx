@@ -7,15 +7,13 @@ import type { MilkdropPreset, Visualizer } from 'butterchurn'
 import presetPack from 'butterchurn-presets'
 import isSupported from 'butterchurn/dist/isSupported.min.js'
 
-import { audioGraph, bassLevel } from './audio-graph'
+import { audioGraph, bassReading } from './audio-graph'
 import { cx } from './cx'
 import { createMomentDetector } from './music-moments'
-import type { Moment } from './music-moments'
+import type { Scene } from './music-moments'
 
-// How long one preset melts into the next when the choice changes.
+// How long one preset melts into the next when the choice was made by hand.
 const BLEND_SECONDS = 2.7
-// A change the music asked for: quick on a drop so it lands with it, slow on a drift.
-const MOMENT_BLEND_SECONDS: Record<Moment, number> = { drop: 1.5, drift: 5 }
 // Frames averaged into each `data-frame-ms` reading.
 const FRAME_SAMPLE = 30
 
@@ -81,17 +79,21 @@ type Props = {
   preset: string
   onUnsupported: () => void
   /** Asked for a new preset when the music has a moment. Leave it out to keep the preset still. */
-  onMoment?: () => void
+  onMoment?: (scene: Scene) => void
+  /** Where the song is, 0 at the start and 1 at the end. 0 when the length is not known yet. */
+  progress: number
   className?: string
 }
 
-export function MilkdropStage({ preset, onUnsupported, onMoment, className }: Props) {
+export function MilkdropStage({ preset, onUnsupported, onMoment, progress, className }: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [visualizer, setVisualizer] = useState<Visualizer | null>(null)
   const [shown, setShown] = useState(showing)
   // Read from the frame loop, which is set up once per mount and must not restart on a new prop.
   const momentRef = useRef(onMoment)
   momentRef.current = onMoment
+  const progressRef = useRef(progress)
+  progressRef.current = progress
   const moments = useRef(createMomentDetector())
 
   // Keeps the drawing buffer the canvas's size in device pixels, and draws every frame. The popout
@@ -128,6 +130,7 @@ export function MilkdropStage({ preset, onUnsupported, onMoment, className }: Pr
 
     const { analyser } = audioGraph()
     const scratch = new Uint8Array(analyser.frequencyBinCount)
+    const previous = new Float64Array(analyser.frequencyBinCount)
     let frame = 0
     let frames = 0
     let spent = 0
@@ -142,12 +145,13 @@ export function MilkdropStage({ preset, onUnsupported, onMoment, className }: Pr
         frameWarned = true
       }
       spent += performance.now() - start
-      const moment = momentRef.current
-        ? moments.current.sample(bassLevel(analyser, scratch), start)
-        : undefined
-      if (moment) {
-        nextBlend = MOMENT_BLEND_SECONDS[moment]
-        momentRef.current?.()
+      // Sample even when nothing is listening, so the averages stay warm and switching the
+      // feature on mid-song does not look like a drop.
+      const { level, flux } = bassReading(analyser, scratch, previous)
+      const moment = moments.current.sample(level, start, progressRef.current, flux)
+      if (moment && momentRef.current) {
+        nextBlend = moment.blend
+        momentRef.current(moment.scene)
       }
 
       if (++frames === FRAME_SAMPLE) {
@@ -169,12 +173,13 @@ export function MilkdropStage({ preset, onUnsupported, onMoment, className }: Pr
     const chosen = presets[preset]
     if (!visualizer || !chosen) return
     if (loaded !== preset) {
-      // The first preset appears at once; later ones blend in, the way MilkDrop moves between them.
+      // The first preset appears at once. A later one melts for as long as the music asked, or for
+      // the ordinary MilkDrop blend when the choice was made by hand.
       const blend = loaded ? (nextBlend ?? BLEND_SECONDS) : 0
       nextBlend = undefined
       loaded = preset
-      // Any change, by hand or by the music, starts the wait for the next moment again.
-      moments.current.restart(performance.now())
+      // Any change, by hand or by the music, starts the phrase again and waits out this melt.
+      moments.current.restart(performance.now(), blend)
       // A preset whose shaders will not compile here leaves the last one drawing.
       pending = visualizer
         .loadPreset(chosen, blend)

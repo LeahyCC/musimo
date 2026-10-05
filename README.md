@@ -59,9 +59,9 @@ Search and library features:
 - A bounded activity feed in Settings and Diagnostics, with persistent clearing.
 - Personal settings with a theme picker and editor, stored in your browser and movable between browsers as a file.
 
-The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card and bulk Clear failed, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Download verification requires testing with your chosen provider and Navidrome setup.
+The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card clear and bulk Retry errors, Clear errors and Clear no match, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Download verification requires testing with your chosen provider and Navidrome setup.
 
-These are **not finished features**: personalized Discover, automatic release-edition filters, Spotify and Apple Music link imports, paid audio sources, notifications, cookie management, built-in login, multiple users and complete release benchmarks (cold search latency, match accuracy labeling, permitted-music throughput, representative 50k library, native arm64 performance). See [Discover planning](docs/discover.md), [the roadmap](docs/roadmap.md) and [known limitations](CHANGELOG.md#known-limitations).
+These are **not finished features**: personalized Discover, automatic release-edition filters, Spotify and Apple Music link imports, paid audio sources other than a Deezer account, notifications, cookie management beyond pasting a YouTube cookies file or a Deezer cookie, built-in login, multiple users and complete release benchmarks (cold search latency, match accuracy labeling, permitted-music throughput, representative 50k library, native arm64 performance). See [Discover planning](docs/discover.md), [the roadmap](docs/roadmap.md) and [known limitations](CHANGELOG.md#known-limitations).
 
 ## Requirements
 
@@ -156,7 +156,7 @@ For Windows Docker Desktop binds or network shares that do not deliver filesyste
 
 ```dotenv
 MUSIMO_WATCH_MODE=poll
-MUSIMO_POLL_INTERVAL_SECONDS=60
+MUSIMO_POLL_INTERVAL_SECONDS=300
 ```
 
 Shorter polling intervals use more CPU. Both modes also reconcile periodically. Keep SQLite on the local named volume, not SMB/NFS. Music mounts can be network folders, subject to their permissions and filesystem behavior.
@@ -221,7 +221,7 @@ Keyboard controls: `/` focuses search; Ctrl/Cmd+K opens the command palette; Esc
 
 Jobs progress through queued, matching, downloading, optional conversion, tagging, moving, scanning and done. Job cards display the destination and format. Low-confidence matches are flagged. Failures retain their stage and error rather than looking like success.
 
-Each failure shows a reason summary with plain language messages. The NO_MATCH message reads "No matching recording was found on YouTube." Per card attempt counts are shown and reset when retrying. The Failed tab groups failures by download group with reason chips, and offers a bulk Clear failed action. Each finished card also has its own Clear to dismiss it individually. The download arrow on a track becomes Retry with the failure reason in its tooltip.
+Each failure shows a reason summary with plain language messages. The NO_MATCH message names the sites that were asked, such as "No matching recording was found on YouTube." Those tracks sit on the No match tab. Real failures sit on the Errors tab, which groups them by download group with reason chips and offers Retry errors and Clear errors. Clear no match hides the tracks that never found a recording. Per card attempt counts are shown and reset when retrying. Each finished card also has its own Clear to dismiss it individually. The download arrow on a track becomes Retry with the failure reason in its tooltip.
 
 The floating queue button appears only while a download is active. History and queue load more results on scroll.
 
@@ -270,7 +270,7 @@ Copy `.env.example` to `.env` for Compose deployment values. Both `.env` and `co
 - `PUID`, `PGID`: runtime IDs, default `1000`, both nonzero.
 - `MUSIMO_LIBRARY_ROOTS`: container paths, default `/music` in base Compose.
 - `MUSIMO_WATCH_MODE`: `native` or `poll`.
-- `MUSIMO_POLL_INTERVAL_SECONDS`: polling interval, default `60`.
+- `MUSIMO_POLL_INTERVAL_SECONDS`: polling interval, default `300`.
 - `MUSIMO_NAVIDROME_CREDENTIALS_FILE`: optional mounted file for API mode.
 
 Editable settings cover the label, destination, output format, naming template, concurrency, retry limits and Navidrome integration. See [Settings](docs/settings.md) and `backend/models.py` for the current contract.
@@ -438,11 +438,11 @@ The backend serves frontend and API on one origin. SQLite uses WAL and a seriali
 
 API groups:
 
-- Health/settings: `/api/health`, `/api/settings` GET and PATCH, `/api/snapshot`.
+- Health/settings: `/api/health`, `/api/settings` GET and PATCH, `/api/youtube-cookies` PUT and DELETE, `/api/snapshot`.
 - Search: `/api/search`, `/api/album-years`, `/api/albums/{id}`, `/api/artists/{id}`, `/api/artists/{id}/top`, `/api/preview/{id}`.
 - Index: `/api/library` GET, `/api/library/scan` POST, `/api/library/cancel` POST.
 - Player foundation: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/stream/{id}`, `/api/player/art/{id}`. Navidrome-backed library routes at `/api/library/{albums,artists,tracks,playlists}` for browsing; local index routes at `/api/library` GET, `/api/library/scan`, `/api/library/cancel` remain separate.
-- Jobs/batches: `/api/naming-preview`, `/api/jobs` GET and POST, `/api/history`, `/api/batches` POST, `/api/batches/{id}/{pause,resume,cancel,retry}`, `/api/jobs/{id}/pick`, `/api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`, `/api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,resume-source}`.
+- Jobs/batches: `/api/naming-preview`, `/api/jobs` GET and POST, `/api/history`, `/api/batches` POST, `/api/batches/{id}/{pause,resume,cancel,retry}`, `/api/jobs/{id}/pick`, `/api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`, `/api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,clear-unmatched,resume-source}`.
 - Artist downloads: `/api/artists/{id}/download-plan`, `/api/artist-batches`.
 - Podcasts and pasted links: `/api/podcasts`, `/api/podcasts/{id}`, `/api/podcast-episodes` POST, `/api/links/resolve` POST, `/api/links` POST.
 - Activity: `/api/activity` GET and DELETE; deletion takes the observed `through` cursor.

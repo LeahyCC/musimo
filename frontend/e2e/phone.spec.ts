@@ -60,6 +60,8 @@ const activeJob: DownloadJob = {
   selected: '',
   check_match: false,
   attempts: 1,
+  lap: 0,
+  laps: 0,
   retry_at: 0,
   progress: 0.4,
   downloaded: 2_000_000,
@@ -225,7 +227,7 @@ test('the library and download tabs each fit one row at 360px', async ({ page })
   await catalogFixtures(page, [activeJob])
   await page.goto('/downloads')
   const downloadTabs = page.locator('.download-tabs').getByRole('button')
-  await expect(downloadTabs).toHaveCount(4)
+  await expect(downloadTabs).toHaveCount(5)
   const tabRows = new Set<number>()
   for (const tab of await downloadTabs.all()) {
     const rect = await box(tab)

@@ -21,6 +21,7 @@ class ErrorGuidanceTests(unittest.TestCase):
             "POT_MISSING",
             "JS_RUNTIME_MISSING",
             "COOKIES_EXPIRED",
+            "AGE_RESTRICTED",
             "NO_MATCH",
             "DURATION_MISMATCH",
             "RATE_LIMITED",

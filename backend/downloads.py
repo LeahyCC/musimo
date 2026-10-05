@@ -9,19 +9,20 @@ import shutil
 import signal
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import date
 from functools import partial
 from pathlib import Path
 from urllib.parse import urlsplit
 
 import httpx
+from pydantic import ValidationError
 
 from backend import mixes
-from backend.catalog import Catalog, CatalogError
+from backend.catalog import Catalog, CatalogError, Result
 from backend.enrichment import Enrichment
 from backend.errors import BLOCKING_CODES, error_guidance, site_label
-from backend.job_models import TERMINAL, Job
+from backend.job_models import TERMINAL, Job, Metadata
 from backend.job_store import Jobs
 from backend.library import Library
 from backend.link_tags import NOTE_PREFIX, LinkTags, tidied, wants_tidy
@@ -35,10 +36,128 @@ from backend.store import Store
 # YouTube lists its largest thumbnail without checking that it exists, and an older video has
 # none. Each size to fall back to is on the same host, smaller than the one before it.
 YOUTUBE_ART = ("maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg")
-# The second match source, tried only when YouTube found nothing or cannot be used.
-BACKUP_SOURCE = "soundcloud"
 ART_HOPS = 3
 ART_BYTES = 5 * 1024**2
+# Shown on the card. While it is present, another run of this job loads the catalog again.
+CATALOG_DETAILS_WARNING = "Catalog details unavailable"
+SIDE_FAILED = "Metadata preparation failed"
+# The same bound as the identity fetch. A Deezer cooldown can otherwise sit for minutes.
+CATALOG_DETAILS_SECONDS = 15
+# Tagging waits 60 seconds (worker.SIDE_WAIT_SECONDS). Stop sooner so job.json and side.json
+# are on disk before that wait ends, and the file and the library path share one snapshot.
+SIDE_BUDGET_SECONDS = 55
+ENRICHMENT_MARKERS = ("Lyrics", "MusicBrainz", "Optional metadata", "No ISRC")
+# A catalog payload has none of these. A refresh must not throw away a lookup that already hit.
+_KEPT_FROM_LISTING = (
+    "lyrics",
+    "synced_lyrics",
+    "mb_recording",
+    "mb_track",
+    "mb_release",
+    "mb_release_group",
+    "mb_artist",
+)
+
+
+def listing_metadata(track: Result, *, tracks: int = 1) -> Metadata:
+    """What an album listing already knows, enough to match the recording.
+
+    Genre, label, lyrics and MusicBrainz ids are filled while the file downloads.
+    ``album_artist`` stays empty so that fill still happens; the published path uses it
+    once it has arrived.
+    """
+    return Metadata(
+        id=track.id,
+        title=track.title,
+        artist=track.artist,
+        album=track.album or track.title,
+        duration=float(track.duration),
+        date=f"{track.year:04d}" if track.year else "",
+        isrc=track.isrc,
+        explicit=track.explicit,
+        track=max(1, track.position),
+        tracks=max(1, tracks),
+        disc=max(1, track.disc),
+        art=track.art,
+    )
+
+
+def catalog_details_pending(job: Job) -> bool:
+    """True when a catalog song still needs genre, label and the rest of its tags."""
+    if job.catalog != "deezer" or not job.meta.artist:
+        return False
+    if CATALOG_DETAILS_WARNING in job.warnings:
+        return True
+    meta = job.meta
+    return not (meta.album_artist or meta.genre or meta.label or meta.upc or meta.contributors)
+
+
+def enrichment_pending(job: Job) -> bool:
+    """True when lyrics and MusicBrainz have not been looked up yet."""
+    if job.catalog != "deezer" or not job.meta.artist:
+        return False
+    meta = job.meta
+    if meta.lyrics or meta.synced_lyrics or meta.mb_recording:
+        return False
+    return not any(
+        any(marker in warning for marker in ENRICHMENT_MARKERS) for warning in job.warnings
+    )
+
+
+def merge_catalog_tags(previous: Metadata, fresh: Metadata) -> Metadata:
+    """Keep lyrics and MusicBrainz ids the catalog payload does not carry."""
+    update: dict[str, str] = {}
+    for name in _KEPT_FROM_LISTING:
+        old = getattr(previous, name)
+        if isinstance(old, str) and old and not getattr(fresh, name):
+            update[name] = old
+    return fresh.model_copy(update=update) if update else fresh
+
+
+def drop_stale_enrichment_markers(warnings: list[str]) -> list[str]:
+    """A miss from before the full tags existed must not block one lookup against them."""
+    return [item for item in warnings if not any(marker in item for marker in ENRICHMENT_MARKERS)]
+
+
+def side_work_pending(job: Job, folder: Path) -> bool:
+    """Cover art, catalog tags or a link note still to do. The download does not wait for these."""
+    cover = bool(job.meta.art) and not (folder / "cover.jpg").is_file()
+    note = job.catalog == "link" and job.kind == "music" and not tidied(job)
+    return cover or note or catalog_details_pending(job) or enrichment_pending(job)
+
+
+def write_job_file(folder: Path, job: Job) -> None:
+    temporary = folder / "job.json.tmp"
+    temporary.write_text(job.model_dump_json(), encoding="utf-8")
+    temporary.replace(folder / "job.json")
+
+
+def mark_side_ready(folder: Path) -> None:
+    """Written last, so the worker only re-reads ``job.json`` after it is complete."""
+    temporary = folder / "side.json.tmp"
+    temporary.write_text("{}", encoding="utf-8")
+    temporary.replace(folder / "side.json")
+
+
+def opening_source(settings: Settings, paused: Collection[str]) -> str:
+    """The first catalog row that can run.
+
+    A paused row is not asked yet. If every row that could run is paused, name the first of
+    those, so the card is not left on a source that is off or missing from the list.
+    """
+    waiting = ""
+    held = set(paused)
+    for name in settings.source_order:
+        if name in settings.disabled_sources:
+            continue
+        if name == "deezer" and not (settings.deezer_audio and settings.deezer_arl):
+            continue
+        if name in held:
+            if not waiting:
+                waiting = name
+            continue
+        return name
+    return waiting
 
 
 class DownloadError(Exception):
@@ -136,6 +255,9 @@ class Downloads:
         self.today: Callable[[], date] = date.today
         self.running: dict[str, asyncio.Task[None]] = {}
         self.processes: dict[str, asyncio.subprocess.Process] = {}
+        # Sources already counted for a block during this run, so a search block and the
+        # final error do not pause the same source twice.
+        self.noted_blocks: dict[str, set[str]] = {}
         self.stopping = False
         self.task: asyncio.Task[None] | None = None
 
@@ -144,9 +266,25 @@ class Downloads:
         self.wake.set()
 
     def settings(self) -> Settings:
-        with self.store.lock:
-            rows = self.store.db.execute("SELECT key,value FROM settings").fetchall()
-        return Settings.model_validate({row[0]: json.loads(row[1]) for row in rows})
+        return self.store.current()
+
+    def child_env(self) -> dict[str, str]:
+        """The worker's environment.
+
+        The cookie is the saved one, and only while that source is on.
+        """
+        settings = self.settings()
+        env = dict(os.environ)
+        env["MUSIMO_DISABLED_SOURCES"] = ",".join(settings.disabled_sources)
+        env["MUSIMO_SOURCE_ORDER"] = ",".join(settings.source_order)
+        env["MUSIMO_TRIES_PER_SOURCE"] = str(settings.tries_per_source)
+        env["MUSIMO_MAX_ATTEMPTS"] = str(settings.max_attempts)
+        env["MUSIMO_PAUSED_SOURCES"] = ",".join(sorted(self.paused_sources()))
+        if settings.deezer_audio and settings.deezer_arl:
+            env["MUSIMO_DEEZER_ARL"] = settings.deezer_arl
+        else:
+            env.pop("MUSIMO_DEEZER_ARL", None)
+        return env
 
     def controls(self) -> dict[str, object]:
         return self.store.controls()
@@ -195,19 +333,50 @@ class Downloads:
         listed = self.controls()["paused_sources"]
         return {str(source) for source in listed} if isinstance(listed, list) else set()
 
-    def backup(self, job: Job, settings: Settings, paused: set[str]) -> str:
-        """The source this job may fall back to, or "" when it has none.
+    def catalog_hold(self, settings: Settings, paused: set[str]) -> str:
+        """Why a catalog song cannot start, or "" when one source can run.
 
-        Only a catalog track with no recording chosen by hand has one, and only while the setting
-        is on and the backup source itself is not paused.
+        A pause waits, because the banner already says so. A list that is off, or a Deezer
+        row with no cookie and nothing else on, fails the job. Waiting would leave it queued
+        with no reason on the card.
         """
-        allowed = (
-            settings.soundcloud_fallback
-            and job.catalog == "deezer"
-            and job.source == "youtube"
-            and not job.selected
+        name = opening_source(settings, paused)
+        if name in paused:
+            return "paused"
+        return "" if name else "off"
+
+    def fail_closed(self, job: Job) -> None:
+        message = "The sources for this track are turned off in Settings."
+        self.jobs.update(
+            job.id,
+            stage="failed",
+            error_code="DOWNLOAD_FAILED",
+            error=message,
+            error_hint=message,
+            error_fix="settings:sources",
+            retryable=False,
+            speed=0,
+            eta=None,
         )
-        return BACKUP_SOURCE if allowed and BACKUP_SOURCE not in paused else ""
+
+    def note_block(self, job_id: str, source: str, detail: str) -> None:
+        """Count one blocking failure for this run against the source that raised it."""
+        if not source:
+            return
+        seen = self.noted_blocks.setdefault(job_id, set())
+        if source in seen:
+            return
+        seen.add(source)
+        with self.store.lock:
+            failures = self.store.db.execute(
+                "INSERT INTO source_control(source,blocking_failures) VALUES (?,1) "
+                "ON CONFLICT(source) DO UPDATE SET "
+                "blocking_failures=blocking_failures+1 RETURNING blocking_failures",
+                (source,),
+            ).fetchall()[0][0]
+        if failures >= 3:
+            self.set_controls(source_paused=True, source=source)
+        self.store.record_probe("blocked", 0, detail, source=source)
 
     def target(self, raw: str) -> Path:
         # Select a trusted mount without probing a client-supplied filesystem path.
@@ -272,11 +441,22 @@ class Downloads:
                 settings = self.settings()
                 slots = settings.concurrency - len(self.running)
                 for job in reversed(self.jobs.list(active=True)):
-                    # A block on one site must not hold back jobs that download from another. A
-                    # catalog track can be matched on the backup source instead of waiting.
-                    blocked = job.source in paused_sources
-                    switch = blocked and bool(self.backup(job, settings, paused_sources))
-                    if blocked and not switch:
+                    # A block on one site must not hold the others. A catalog song walks its list,
+                    # so it starts while any row in that list can still run.
+                    # Retry clears an automatic pick, so this job walks the list. A hand pick waits.
+                    # `selected` is not the test: the walk stores its own pick there as it goes.
+                    catalog_job = job.catalog == "deezer" and not job.hand_picked
+                    if catalog_job:
+                        hold = self.catalog_hold(settings, paused_sources)
+                        if (
+                            hold == "off"
+                            and job.desired == "run"
+                            and job.stage in {"queued", "retry_wait"}
+                        ):
+                            self.fail_closed(job)
+                        if hold:
+                            continue
+                    elif job.source in paused_sources:
                         continue
                     if job.stage == "retry_wait" and job.retry_at > time.time():
                         delay = min(delay, max(0.01, job.retry_at - time.time()))
@@ -288,8 +468,6 @@ class Downloads:
                         and job.stage in {"queued", "retry_wait"}
                         and job.retry_at <= time.time()
                     ):
-                        if switch:
-                            self.jobs.update(job.id, source=BACKUP_SOURCE)
                         task = asyncio.create_task(self.run(job.id))
                         self.running[job.id] = task
                         task.add_done_callback(partial(self.completed, job.id))
@@ -326,13 +504,20 @@ class Downloads:
             if job.stage not in {"failed", "cancelled"}:
                 raise ValueError("Only failed or cancelled jobs can be retried")
             self.check_destination(self.target(job.target))
-            # A catalog track that fell back to the backup source starts over on YouTube, so a
-            # pause that has since lifted does not leave it on the weaker source for good. A
-            # recording chosen by hand keeps the site it was chosen from.
-            restart = job.catalog == "deezer" and not job.selected
+            # An automatic match walks the list again. A recording chosen by hand stays put.
+            automatic = job.catalog == "deezer" and not job.hand_picked
+            restart: dict[str, object] = {}
+            if automatic:
+                # Show the first row that can run. The worker replaces it when that row is asked.
+                restart = {
+                    "selected": "",
+                    "check_match": False,
+                    "source": opening_source(self.settings(), self.paused_sources()),
+                    "lap": 0,
+                    "laps": 0,
+                }
             return self.jobs.update(
                 job_id,
-                source="youtube" if restart else job.source,
                 stage="queued",
                 desired="run",
                 attempts=0,
@@ -340,6 +525,7 @@ class Downloads:
                 error="",
                 error_code="",
                 hidden=False,
+                **restart,
             )
         if action == "resume":
             if job.stage not in {"paused", "pausing"}:
@@ -379,6 +565,68 @@ class Downloads:
         process = self.processes.get(job_id)
         if process is not None:
             await stop_tree(process)
+
+    async def catalog_details(self, job: Job) -> Job:
+        """Full catalog tags. A miss keeps the listing and says so on the card.
+
+        The call is bounded, so a Deezer cooldown cannot sit past the tagging wait.
+        The listing's album artist is left empty: filling it from the track artist would
+        file a compilation under the wrong name. Lyrics already stored are kept, and a
+        miss marker is cleared so the lookup can run once against the full tags.
+        """
+        try:
+            async with asyncio.timeout(CATALOG_DETAILS_SECONDS):
+                fetched = await self.enrichment.track(job.track_id)
+        except (CatalogError, TimeoutError, ValidationError):
+            warnings = list(job.warnings)
+            if CATALOG_DETAILS_WARNING not in warnings:
+                warnings.append(CATALOG_DETAILS_WARNING)
+            return self.jobs.update(job.id, warnings=warnings)
+        meta = merge_catalog_tags(job.meta, fetched)
+        warnings = drop_stale_enrichment_markers(
+            [item for item in job.warnings if item != CATALOG_DETAILS_WARNING]
+        )
+        return self.jobs.update(job.id, meta=meta.model_dump(), warnings=warnings)
+
+    async def side_metadata(self, job_id: str, folder: Path) -> None:
+        """Lyrics, catalog tags and cover art, overlapping the download.
+
+        ``side.json`` is written only after ``job.json``, and not at all when the task is
+        cancelled, so a resumed job does not tag with a half-written record. The work stops
+        inside the tagging wait, so a late catalog response cannot publish a different
+        snapshot from the one embedded in the file.
+        """
+        try:
+            async with asyncio.timeout(SIDE_BUDGET_SECONDS):
+                job = self.jobs.get(job_id)
+                if catalog_details_pending(job):
+                    job = await self.catalog_details(job)
+                if enrichment_pending(job):
+                    warnings = await self.enrichment.extra(job.meta)
+                    job = self.jobs.update(
+                        job.id,
+                        meta=job.meta.model_dump(),
+                        warnings=[*job.warnings, *warnings],
+                    )
+                elif wants_tidy(job):
+                    meta, note = await self.link_tags.tidy(job.meta, site_label(job.source))
+                    job = self.jobs.update(job.id, meta=meta.model_dump(), notes=[*job.notes, note])
+                elif job.catalog == "link" and job.kind == "music" and not tidied(job):
+                    note = f"{NOTE_PREFIX} {site_label(job.source)}"
+                    job = self.jobs.update(job.id, notes=[*job.notes, note])
+                await self.artwork(self.jobs.get(job_id), folder)
+                write_job_file(folder, self.jobs.get(job_id))
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            try:
+                job = self.jobs.get(job_id)
+                if SIDE_FAILED not in job.warnings:
+                    job = self.jobs.update(job_id, warnings=[*job.warnings, SIDE_FAILED])
+                write_job_file(folder, job)
+            except Exception:
+                pass
+        mark_side_ready(folder)
 
     async def artwork(self, job: Job, folder: Path) -> None:
         if not job.meta.art or (folder / "cover.jpg").exists():
@@ -435,6 +683,7 @@ class Downloads:
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.STDOUT,
             start_new_session=sys.platform != "win32",
+            env=self.child_env(),
             limit=131072,
         )
         self.processes[job.id] = process
@@ -466,10 +715,14 @@ class Downloads:
                         eta=raw.get("eta"),
                     )
                 elif kind == "source":
-                    # The backup source matched, so this job's pauses and error codes are its now.
+                    # The source being asked now, so the card and a later block follow it.
                     source = str(raw.get("source", ""))
-                    if by_source(source) is not None:
-                        self.jobs.update(job.id, source=source)
+                    if source == "deezer" or by_source(source) is not None:
+                        changes: dict[str, object] = {"source": source}
+                        if raw.get("lap"):
+                            changes["lap"] = int(str(raw.get("lap")))
+                            changes["laps"] = int(str(raw.get("laps") or 0))
+                        self.jobs.update(job.id, **changes)
                 elif kind == "candidates":
                     self.jobs.update(
                         job.id,
@@ -480,7 +733,16 @@ class Downloads:
                 elif kind in {"warning", "log"}:
                     tail.append(str(raw.get("message", "")))
                     tail = tail[-8:]
+                elif kind == "blocked":
+                    # Count the block now, so a later source that saves the song does not hide it.
+                    self.note_block(
+                        job.id, str(raw.get("source") or ""), str(raw.get("message") or "")
+                    )
                 elif kind == "error":
+                    # A search can fail before a file exists. The pause belongs to that source.
+                    failed = str(raw.get("source") or "")
+                    if failed == "deezer" or by_source(failed) is not None:
+                        self.jobs.update(job.id, source=failed)
                     failure = DownloadError(
                         str(raw.get("code", "DOWNLOAD_FAILED")),
                         str(raw.get("message", "Worker failed")),
@@ -632,8 +894,6 @@ class Downloads:
                 job_id,
                 # Podcast episodes and pasted links skip the search, so they never show it.
                 stage="matching" if job.catalog == "deezer" else "downloading",
-                # Decided now, so a job queued before the setting changed follows today's answer.
-                backup_source=self.backup(job, self.settings(), self.paused_sources()),
                 attempts=job.attempts + 1,
                 error_code="",
                 error="",
@@ -643,21 +903,42 @@ class Downloads:
                 retry_at=0,
             )
             if job.catalog == "deezer" and not job.meta.artist:
+                # The search needs a title and artist. Lyrics and the rest can follow.
                 async with asyncio.timeout(15):
                     meta = await self.enrichment.track(job.track_id)
-                    warnings = await self.enrichment.extra(meta)
-                job = self.jobs.update(job_id, meta=meta.model_dump(), warnings=warnings)
-            if wants_tidy(job):
-                # Mixes and radio shows are not catalog recordings. A retry keeps its first note.
-                meta, note = await self.link_tags.tidy(job.meta, site_label(job.source))
-                job = self.jobs.update(job_id, meta=meta.model_dump(), notes=[*job.notes, note])
-            elif job.catalog == "link" and job.kind == "music" and not tidied(job):
-                # The site's tags stay as they are. Say so, so the card shows where they came from.
-                note = f"{NOTE_PREFIX} {site_label(job.source)}"
-                job = self.jobs.update(job_id, notes=[*job.notes, note])
-            await self.artwork(job, folder)
-            ready, info = await self.worker(self.jobs.get(job_id), folder)
-            await self.finish(self.jobs.get(job_id), ready, info)
+                job = self.jobs.update(job_id, meta=meta.model_dump())
+            if (
+                job.catalog == "deezer"
+                and not job.hand_picked
+                and self.catalog_hold(self.settings(), self.paused_sources()) == "paused"
+            ):
+                # A block paused the last row that could run while this job fetched its details.
+                # The song waits under the pause banner, as it would have at dispatch, instead of
+                # starting a worker that finds nothing to ask and fails it as turned off.
+                self.jobs.update(job_id, stage="queued", attempts=max(0, job.attempts - 1))
+                return
+            # Optional tags and the cover run while the file downloads. Tagging waits for them.
+            side: asyncio.Task[None] | None = None
+            if side_work_pending(job, folder):
+                (folder / "side.json").unlink(missing_ok=True)
+                (folder / "wait-side").write_bytes(b"")
+                side = asyncio.create_task(self.side_metadata(job.id, folder))
+            try:
+                ready, info = await self.worker(self.jobs.get(job_id), folder)
+                if side is not None:
+                    await side
+                    side = None
+                await self.finish(self.jobs.get(job_id), ready, info)
+            finally:
+                leftover = side
+                side = None
+                if leftover is not None:
+                    if not leftover.done():
+                        leftover.cancel()
+                    try:
+                        await leftover
+                    except (Exception, asyncio.CancelledError):
+                        pass
             # The worker may have matched on the backup source, so the site that just worked is
             # the job's source now, not the one it started with.
             downloaded = self.jobs.get(job_id).source
@@ -748,22 +1029,11 @@ class Downloads:
                     warning = await self.navidrome(job, Path(published.final_path))
                     if warning:
                         self.jobs.update(job.id, warnings=[*job.warnings, warning])
-            # The worker only reports these for the site that raised them, so the count and the
-            # pause belong to this job's source and leave other sites running.
+            # The worker names the source on the error. A block already counted this run is skipped.
             if error.code in BLOCKING_CODES:
-                with self.store.lock:
-                    # Read every row: a RETURNING statement only finishes, and so commits,
-                    # once its cursor is exhausted.
-                    failures = self.store.db.execute(
-                        "INSERT INTO source_control(source,blocking_failures) VALUES (?,1) "
-                        "ON CONFLICT(source) DO UPDATE SET "
-                        "blocking_failures=blocking_failures+1 RETURNING blocking_failures",
-                        (job.source,),
-                    ).fetchall()[0][0]
-                if failures >= 3:
-                    self.set_controls(source_paused=True, source=job.source)
-                self.store.record_probe("blocked", 0, error.detail, source=job.source)
+                self.note_block(job_id, job.source, error.detail)
         finally:
+            self.noted_blocks.pop(job_id, None)
             self.processes.pop(job_id, None)
             self.running.pop(job_id, None)
             self.wake.set()

@@ -5,8 +5,34 @@ from difflib import SequenceMatcher
 from backend.job_models import Candidate, Metadata
 from backend.library import normalize
 
-# Version words are musical differences, not harmless upload decoration.
-VERSION_WORDS = ("live", "cover", "karaoke", "remix", "slowed", "sped", "instrumental")
+# Version words are musical differences, not harmless upload decoration. Each is matched as whole
+# words, so a phrase counts only when its words sit side by side. "originally performed" is how
+# karaoke and cover labels title their Topic uploads.
+VERSION_WORDS = (
+    "live",
+    "cover",
+    "karaoke",
+    "remix",
+    "slowed",
+    "sped",
+    "instrumental",
+    "acoustic",
+    "extended",
+    "nightcore",
+    "8d",
+    "reverb",
+    "lofi",
+    "lo fi",
+    "bass boosted",
+    "originally performed",
+    "1 hour",
+)
+
+
+def has_words(text: str, words: str) -> bool:
+    """Whether normalized `text` holds `words` as whole words."""
+    return f" {words} " in f" {text} "
+
 
 # The score a match must reach to be accepted, and the score below which the job says
 # "check match", per source. SoundCloud is full of remixes, reuploads and sped-up edits, and has
@@ -44,6 +70,7 @@ class Matcher:
         wanted_title, wanted_artist = normalize(meta.title), normalize(meta.artist)
         result_title = normalize(title)
         result_artist = normalize(artist.removesuffix(" - Topic"))
+        led_by_artist = bool(wanted_artist) and result_title.startswith(wanted_artist + " ")
         cleaned = result_title.removeprefix(wanted_artist + " ")
         cleaned = re.sub(r"\b(official|audio|video|lyrics|visualizer|hd|hq)\b", "", cleaned)
         cleaned = " ".join(cleaned.split())
@@ -56,12 +83,21 @@ class Matcher:
         if meta.duration > 0 and (duration <= 0 or delta > max(15, meta.duration * 0.12)):
             return None
         duration_score = max(0, 1 - delta / max(8, meta.duration * 0.08)) if meta.duration else 0.5
-        wanted_words, result_words = wanted_title.split(), cleaned.split()
+        # An artist's name can hold a version word (Acoustic Alchemy, Lofi Fruits Music), and a
+        # title-first upload puts it last, where the prefix strip above misses it. When the title
+        # led with the artist, a word at the end is the version: "Live - I Alone (Live)".
+        versioned = (
+            cleaned.removesuffix(" " + wanted_artist)
+            if wanted_artist and not led_by_artist
+            else cleaned
+        )
         version_mismatch = any(
-            token in result_words and token not in wanted_words for token in VERSION_WORDS
+            has_words(versioned, words) and not has_words(wanted_title, words)
+            for words in VERSION_WORDS
         )
         version_missing = any(
-            token in wanted_words and token not in result_words for token in VERSION_WORDS
+            has_words(wanted_title, words) and not has_words(versioned, words)
+            for words in VERSION_WORDS
         )
         total = (
             0.5 * title_score + 0.3 * artist_score + 0.17 * duration_score + (0.03 if topic else 0)

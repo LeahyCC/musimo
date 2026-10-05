@@ -101,8 +101,9 @@ class Library:
         self.task: asyncio.Task[None] | None = None
         self.background: asyncio.Task[None] | None = None
         self.watch_mode = os.getenv("MUSIMO_WATCH_MODE", "native")
-        # Docker Desktop does not forward host filesystem events. Poll slowly enough for idle use.
-        self.poll_interval = max(1, float(os.getenv("MUSIMO_POLL_INTERVAL_SECONDS", "60")))
+        # Docker Desktop does not forward host filesystem events. Five minutes is enough
+        # for a large mount. The half-hour reconcile still catches moves and deletions.
+        self.poll_interval = max(1, float(os.getenv("MUSIMO_POLL_INTERVAL_SECONDS", "300")))
         self.observer = (
             PollingObserver(timeout=self.poll_interval) if self.watch_mode == "poll" else Observer()
         )
@@ -526,6 +527,10 @@ class Library:
             result.matched_by = ""
             result.matched_album = ""
         # One indexed SQL join for the whole result page. Filesystem access never enters search.
+        # CROSS JOIN keeps each catalog id on jobs(catalog, track_id). A plain join lets
+        # SQLite walk every finished download and parse its JSON, which is most of a
+        # second once the history is large, and the artist download check used to pay
+        # that once per album while holding the database lock.
         payload = json.dumps(
             [
                 {
@@ -555,8 +560,10 @@ class Library:
                 )
                 , matches AS (
                 SELECT w.i,f.path,f.album_key,0 priority
-                FROM wanted w JOIN jobs j ON j.catalog='deezer' AND j.track_id=w.id
-                  AND j.active=0 AND json_extract(j.payload,'$.stage')='done'
+                FROM wanted w
+                CROSS JOIN jobs j INDEXED BY jobs_catalog_track
+                  ON j.catalog='deezer' AND j.track_id=w.id
+                 AND j.active=0 AND json_extract(j.payload,'$.stage')='done'
                 JOIN library_files f ON f.path=json_extract(j.payload,'$.final_path')
                   AND (w.isrc='' OR f.isrc='' OR w.isrc=f.isrc)
                 JOIN library_roots r ON r.path=f.root AND r.enabled=1

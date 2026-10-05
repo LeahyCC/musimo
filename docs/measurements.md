@@ -35,7 +35,7 @@ Live track, album and artist search, year hydration, album detail, artist discog
 
 The first batched ownership query took too long because SQLite selected a broad join. Separate indexed identity joins reduced the final **50-track badge lookup p95 to 0.48 ms** and **cached search HTTP p95 to 2.81 ms** over 50 requests. Seven uncached searches after that change had median **399.43 ms**, p95 **559.34 ms**. Three additional searches were already cached and excluded from the cold sample. The cold 400 ms p95 target remains unmet. These HTTP timings exclude the 200 ms debounce and browser rendering. [Final search evidence](evidence/phase2-final-search.json).
 
-Native filesystem events did not report a host-created fixture within 12 seconds on Docker Desktop. An initial five-second polling trial detected addition in **2.44 seconds** and deletion in **5.00 seconds**, one sample each. That setting used **7.67% of one CPU core** over a 15-second idle sample, so the shipped default was increased to 60 seconds. The generated fixture was removed and the index returned to 2,770 files. [Watcher evidence](evidence/phase2-watcher.json).
+Native filesystem events did not report a host-created fixture within 12 seconds on Docker Desktop. An initial five-second polling trial detected addition in **2.44 seconds** and deletion in **5.00 seconds**, one sample each. That setting used **7.67% of one CPU core** over a 15-second idle sample, so the shipped default was increased to 60 seconds. The default interval is now 300 seconds. The generated fixture was removed and the index returned to 2,770 files. [Watcher evidence](evidence/phase2-watcher.json).
 
 With 60-second polling and a lighter HTTP health probe every 30 seconds, a final 60-second idle sample used **1.463% of one CPU core** and **53.51 MiB anonymous resident memory**. CPU improved but still misses the 1% target. This is one short sample, not a sustained resource qualification. [Resource evidence](evidence/phase2-final-resources.json).
 
@@ -98,3 +98,18 @@ The production image built for `linux/arm64` under QEMU, booted as `aarch64`, be
 With zero active jobs, 120 read-only samples of the live container over **737.9 seconds** averaged **2.349% of one CPU core**, with **12.56% p95**. This fails the 1% idle CPU target with the deployed 60-second polling watcher. Sixty cgroup anonymous-memory samples over 308.2 seconds averaged **82.77 MiB** with **82.97 MiB p95**, passing the 150 MiB target. See [resource evidence](evidence/release-idle-resources.json).
 
 The intended Windows index currently contains **3,681 files**, not a representative mixed-format 50,000-file set. No real files were copied or changed, and no result is claimed for that gate. Fifty distinct permitted music downloads and representative provider album throughput also remain **NOT MEASURED** because no reviewed rights-safe source set was available. Generated tones, repeated film downloads and the single public-domain recording were not counted.
+
+## Large library, 3 October 2026
+
+Read-only checks against the live database (31,039 indexed files, 52,594 jobs, 147 MB of job JSON). Ownership for 12 tracks took about 750 ms because SQLite walked every Deezer job and parsed its payload. Pinning that join to `(catalog, track_id)` brought the same lookup to 0.2 ms. The queue snapshot took 855 ms for the same reason. Opening Albums walked Navidrome in 829 ms the first time and 15 ms from cache. Opening Tracks took 1,790 ms, then 45 ms. The last library walk reported 115.2 seconds for 30,994 files. The browse cache is three minutes so that walk is not repeated every minute. A typed history search still reads job text.
+
+## YouTube search phrase, 3 October 2026
+
+The 100 songs of the [match review corpus](evidence/match-review-corpus.json) were searched again on YouTube with `"provided to youtube by"` in place of `official audio`, and both result sets were scored by the current matcher. YouTube writes that phrase on every label upload. With no listening labels yet, "own upload" below means the chosen video came from the artist's channel (artist similarity at least 0.8) and its length was within 3 seconds.
+
+| Search phrase                            | Songs matched | Own upload, exact length | Decoy picked | Same video as Wikidata |
+| ---------------------------------------- | ------------- | ------------------------ | ------------ | ---------------------- |
+| `official audio` (saved corpus rows)     | 78            | 35                       | 0            | 28                     |
+| `"provided to youtube by"` (live search) | 89            | 64                       | 0            | 37                     |
+
+Before the new version words (bass boosted, 8D and others) the old rows picked two decoys, a bass-boosted reupload and an 8D edit. The new rows are a fresh search, so part of the gap may be YouTube changing since the corpus was captured. Label channels named `<artist> - Topic` were not given a larger lift: in these results most of them that lost were karaoke, cover or soundalike uploads from a channel called `Release - Topic`, and a larger lift would have picked them. A YouTube Music song search was also tried and dropped, because yt-dlp returns it without artist or length.

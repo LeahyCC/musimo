@@ -241,6 +241,8 @@ class Links:
             raise LinkError(422, refusal(url))
         if not site.working:
             raise LinkError(422, unavailable(site))
+        if site.source in self.downloads.settings().disabled_sources:
+            raise LinkError(422, f"{site.label} is turned off in Settings.")
         async with self.resolving:
             raw = await self.extract(canonical(url), site)
         if raw.get("kind") == "error":
