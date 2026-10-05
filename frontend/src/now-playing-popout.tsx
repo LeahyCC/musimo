@@ -19,6 +19,7 @@ import { Disc3 } from 'lucide-react'
 import { ArtworkMenu } from './artwork-menu'
 import type { MenuPoint } from './artwork-menu'
 import { cx } from './cx'
+import type { Scene } from './music-moments'
 import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
 import type { StagePlacement, StageSize, StageView } from './now-playing-overlay'
 import { NowPlayingGlow } from './now-playing-wash'
@@ -27,7 +28,7 @@ import { activeTheme, applyTheme, subscribeTheme } from './theme/store'
 import { Button } from './ui'
 import { leavingStyle, useLeaving } from './use-leaving'
 import { usePhone } from './use-phone'
-import { presetOrDefault, randomPreset, stepPreset } from './visualizer-presets'
+import { presetForScene, presetOrDefault, stepPreset } from './visualizer-presets'
 
 // butterchurn and its presets stay out of the main bundle until a stage wants them.
 const MilkdropStage = lazy(() =>
@@ -75,11 +76,11 @@ type PopoutValue = {
   setPreset: (name: string) => void
   /** Where `[` and `]` go: -1 and 1. */
   cyclePreset: (delta: number) => void
-  /** Whether the preset changes by itself when the music has a moment (a drop, or a long stretch). */
+  /** Whether the preset changes by itself with the beat. */
   autoPresets: boolean
   setAutoPresets: (on: boolean) => void
-  /** Moves to a random other preset: what the music's moments call. */
-  shufflePreset: () => void
+  /** Moves to a preset that fits the moment the music just had. */
+  matchPreset: (scene: Scene) => void
   /**
    * The docked stage's size as chosen. A phone has one size, so read `phone` too: the choice is
    * kept there but does nothing.
@@ -113,7 +114,7 @@ const PopoutContext = createContext<PopoutValue>({
   cyclePreset: noop,
   autoPresets: true,
   setAutoPresets: noop,
-  shufflePreset: noop,
+  matchPreset: noop,
   size: 'small',
   setSize: noop,
   toggleSize: noop,
@@ -189,7 +190,9 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   // On unless it was switched off.
   const [autoPresets, setAutoPresets] = useState(() => stored(AUTO_KEY, 'on') !== 'off')
   useEffect(() => remember(AUTO_KEY, autoPresets ? 'on' : 'off'), [autoPresets])
-  const shufflePreset = useCallback(() => setPresetState((current) => randomPreset(current)), [])
+  const matchPreset = useCallback((scene: Scene) => {
+    setPresetState((current) => presetForScene(current, scene))
+  }, [])
   const toggleView = useCallback(
     () => setView((current) => (current === 'artwork' ? 'visualizer' : 'artwork')),
     [],
@@ -263,7 +266,7 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       cyclePreset,
       autoPresets,
       setAutoPresets,
-      shufflePreset,
+      matchPreset,
       size,
       setSize,
       toggleSize,
@@ -286,7 +289,7 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       setPreset,
       cyclePreset,
       autoPresets,
-      shufflePreset,
+      matchPreset,
       size,
       toggleSize,
       phone,
@@ -500,7 +503,10 @@ function Stage({
           <MilkdropStage
             preset={popout.preset}
             onUnsupported={popout.markUnsupported}
-            onMoment={popout.autoPresets ? popout.shufflePreset : undefined}
+            onMoment={popout.autoPresets ? popout.matchPreset : undefined}
+            progress={
+              player.length > 0 ? Math.min(1, Math.max(0, player.position / player.length)) : 0
+            }
             className="stage-visualizer"
           />
         </Suspense>

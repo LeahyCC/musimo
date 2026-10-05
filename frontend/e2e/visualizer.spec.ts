@@ -192,6 +192,8 @@ test('the preset picker, [ and ], and the choice surviving a reload', async ({
 }) => {
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await showVisualizerFirst(page)
+  // A beat would change the preset under test. This one is about the picker.
+  await page.addInitScript(() => localStorage.setItem('musimo.visualizer-auto', 'off'))
   const stage = await openNowPlaying(page)
   test.skip(!(await hasWebGl2(page)), 'No WebGL 2 in this browser.')
 

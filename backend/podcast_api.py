@@ -26,6 +26,8 @@ def install_podcast_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
     @app.post("/api/podcast-episodes", response_model=Job)
     async def enqueue(request: EpisodeRequest) -> Job:
         service = get()
+        if "podcast" in service.settings().disabled_sources:
+            raise HTTPException(422, "Podcasts are turned off in Settings.")
         try:
             target = service.target(request.target or service.settings().destination)
         except ValueError as exc:

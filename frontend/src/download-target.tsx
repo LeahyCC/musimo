@@ -24,6 +24,62 @@ export function siteLabel(source: string, label?: string): string {
   return label || source.charAt(0).toUpperCase() + source.slice(1)
 }
 
+/** The settings a queued catalog card needs. Already loaded with the queue. */
+export type CatalogSourceChoice = {
+  source_order: readonly string[]
+  disabled_sources: readonly string[]
+  deezer_audio: boolean
+  /** Whether a Deezer cookie is saved. */
+  deezer_cookie: boolean
+}
+
+/**
+ * The first catalog row that can run. Same rules as the server's `opening_source`.
+ * A paused row is skipped while another row can run. If the only hold is a pause, that
+ * row is the one the song is waiting on.
+ */
+export function firstLiveSource(settings: CatalogSourceChoice, paused: readonly string[]): string {
+  const held = new Set(paused)
+  const off = new Set(settings.disabled_sources)
+  let waiting = ''
+  for (const name of settings.source_order) {
+    if (off.has(name)) continue
+    if (name === 'deezer' && !(settings.deezer_audio && settings.deezer_cookie)) continue
+    if (held.has(name)) {
+      if (!waiting) waiting = name
+      continue
+    }
+    return name
+  }
+  return waiting
+}
+
+type CatalogCardJob = {
+  catalog: string
+  stage: string
+  lap: number
+  selected: string
+  source: string
+  source_label?: string
+}
+
+/** What the "from {site}" line should say. A job the worker has already asked keeps its source. */
+export function catalogCardSource(
+  job: CatalogCardJob,
+  settings: CatalogSourceChoice | undefined,
+  paused: readonly string[],
+  labels?: Readonly<Record<string, string>>,
+): { source: string; label?: string } {
+  const stored = { source: job.source, label: job.source_label }
+  const waiting =
+    settings && job.catalog === 'deezer' && job.stage === 'queued' && job.lap === 0 && !job.selected
+  if (!waiting || !settings) return stored
+  const live = firstLiveSource(settings, paused)
+  if (live === job.source) return stored
+  if (!live) return { source: '' }
+  return { source: live, label: labels?.[live] || undefined }
+}
+
 /**
  * Every source paused by blocking errors, with its name. A server from before per-source pausing
  * sends only the flag, and that flag has always meant YouTube.

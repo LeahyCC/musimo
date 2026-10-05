@@ -46,6 +46,9 @@ export const jobSchema = z.object({
   selected: z.string(),
   check_match: z.boolean(),
   attempts: z.number(),
+  // Which trip through the source list. Older servers send neither.
+  lap: z.number().default(0),
+  laps: z.number().default(0),
   retry_at: z.number(),
   progress: z.number(),
   downloaded: z.number(),
@@ -351,6 +354,8 @@ export const lyricsSchema = z.object({
 const field = <T extends z.ZodType>(value: T) =>
   z.object({ value, origin: z.string(), locked: z.boolean() })
 
+export const youtubeCookiesSchema = z.object({ saved: z.boolean() })
+
 export const settingsSchema = z.object({
   library_label: field(z.string()),
   output_format: field(z.enum(['original', 'm4a', 'opus', 'mp3'])),
@@ -361,6 +366,25 @@ export const settingsSchema = z.object({
   destination: field(z.string()),
   naming_template: field(z.string()),
   soundcloud_fallback: field(z.boolean()),
+  // Always empty from the server. Sent only to replace or remove the saved cookie.
+  deezer_arl: field(z.string()).default({ value: '', origin: 'default', locked: false }),
+  // Whether a Deezer cookie is saved. The cookie itself is never sent back.
+  deezer_cookie: field(z.boolean()).default({ value: false, origin: 'default', locked: false }),
+  deezer_catalog: field(z.boolean()).default({ value: true, origin: 'default', locked: false }),
+  deezer_audio: field(z.boolean()).default({ value: true, origin: 'default', locked: false }),
+  disabled_sources: field(z.array(z.string())).default({
+    value: [],
+    origin: 'default',
+    locked: false,
+  }),
+  source_order: field(z.array(z.string())).default({
+    value: ['deezer', 'youtube'],
+    origin: 'default',
+    locked: false,
+  }),
+  tries_per_source: field(z.number()).default({ value: 1, origin: 'default', locked: false }),
+  // Whether a YouTube cookies.txt file is on the server. The text itself is never sent back.
+  youtube_cookies: field(z.boolean()).default({ value: false, origin: 'file', locked: false }),
   navidrome_url: field(z.string()),
   navidrome_mode: field(z.enum(['off', 'watcher', 'api'])),
   navidrome_library_id: field(z.number()),
@@ -415,6 +439,18 @@ export const diagnosticsSchema = z.object({
     search: z.boolean(),
     downloads: z.boolean(),
   }),
+  deezer_audio: z.boolean().default(false),
+  download_sources: z
+    .array(
+      z.object({
+        id: z.string(),
+        label: z.string(),
+        kind: z.string(),
+        working: z.boolean(),
+        note: z.string(),
+      }),
+    )
+    .default([]),
   navidrome: playerCapabilitiesSchema.nullable(),
   last_download: z
     .object({

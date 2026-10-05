@@ -55,8 +55,12 @@ TRACK_FIELDS = (
     # OpenSubsonic's loudness tags, present only on files that carry them.
     "replayGain",
 )
-TRACK_WINDOWS = 4
-TRACK_CACHE_SECONDS = 60
+# Pages fetched together after the first full page, for tracks and for albums.
+# One page comes first, so a small library does not pay for the extra requests.
+PAGE_WINDOWS = 4
+# A full walk of a large library is a second or two. Keeping it for a few minutes
+# stops every scroll and filter from starting that walk again.
+TRACK_CACHE_SECONDS = 180
 TRACK_CACHE_ENTRIES = 4
 # The accepted sort names live here so the request validator and the comparator cannot
 # disagree about which ones exist.
@@ -510,7 +514,8 @@ class Navidrome:
 
         Navidrome cannot filter albums or artists by genre, year or plays across the library,
         so the albums are walked once and each artist is described by what their albums carry.
-        The lock means concurrent callers share one walk.
+        The first page is fetched alone. Further pages come four at a time, the same way
+        tracks do. The lock means concurrent callers share one walk.
         """
         async with self.catalog_lock:
             cached = self.catalog_cache
@@ -526,12 +531,32 @@ class Navidrome:
                 for artist in index.get("artist", [])
                 if isinstance(artist, dict)
             ]
-            albums: list[dict[str, object]] = []
-            while len(albums) < ALBUM_CAP:
-                page = await self.albums(len(albums), ALBUM_PAGE)
-                albums.extend(page)
-                if len(page) < ALBUM_PAGE:
+            # One page first: most libraries fit inside it.
+            albums = await self.albums(0, ALBUM_PAGE)
+            offset = ALBUM_PAGE
+            while len(albums) >= offset and offset < ALBUM_CAP:
+                pages = await asyncio.gather(
+                    *(
+                        self.albums(offset + window * ALBUM_PAGE, ALBUM_PAGE)
+                        for window in range(PAGE_WINDOWS)
+                    )
+                )
+                for page in pages:
+                    albums.extend(page)
+                # The deepest window is the one that proves the end. A nearer window can
+                # come back short when a scan commits mid-walk without meaning there is
+                # nothing beyond it.
+                if len(pages[-1]) < ALBUM_PAGE:
                     break
+                offset += PAGE_WINDOWS * ALBUM_PAGE
+            # A scan running mid-request can shift offsets, so overlapping windows repeat
+            # an album. The first copy wins.
+            unique: dict[str, dict[str, object]] = {}
+            for row in albums:
+                album_id = row.get("id")
+                if album_id:
+                    unique.setdefault(str(album_id), row)
+            albums = list(unique.values())[:ALBUM_CAP]
             fresh = CatalogSnapshot(
                 time.monotonic(),
                 artists,
@@ -643,7 +668,7 @@ class Navidrome:
             pages = await asyncio.gather(
                 *(
                     self.tracks(query, offset + window * TRACK_PAGE, TRACK_PAGE)
-                    for window in range(TRACK_WINDOWS)
+                    for window in range(PAGE_WINDOWS)
                 )
             )
             for page in pages:
@@ -652,7 +677,7 @@ class Navidrome:
             # short when a scan commits mid-walk without meaning there is nothing beyond it.
             if len(pages[-1]) < TRACK_PAGE:
                 break
-            offset += TRACK_WINDOWS * TRACK_PAGE
+            offset += PAGE_WINDOWS * TRACK_PAGE
         # A scan running mid-request can shift offsets, so overlapping windows repeat a track.
         unique = {
             str(row["id"]): {key: row[key] for key in TRACK_FIELDS if key in row}

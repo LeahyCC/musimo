@@ -1,74 +1,161 @@
-// Decides when the visualizer moves to a new preset by itself, from how loud the bass is.
+// Decides when the visualizer moves to a new preset, and which kind of picture fits.
 //
 //   bass level ──► fast average (≈0.5 s)
 //              └─► slow average (≈6 s)
+//   bass flux  ──► a kick, once the rise is sharper than the recent ones
 //
-// A drop after a quieter stretch pushes the fast average well above the slow one, and that is a
-// moment worth a new picture. The analyser reports the bass on a decibel scale squeezed into 0 to 1,
-// where real music sits between about 0.5 and 0.95, so the test is how far the fast average rises
-// above the slow one, not how many times louder it is. Steady music never makes one, so after a long wait the preset moves
-// on anyway. Neither happens sooner than `minGapMs` after the last change, so it never flickers.
+// A kick is a beat. How far through the song decides how many beats to wait before the next
+// picture: only a big hit at the start, then every 8 beats, then every 4. The melt is shorter
+// than that wait, so one change finishes before the next. A big hit is the fast average rising
+// well above the slow one. Silence never starts a change.
+import type { Scene } from './visualizer-scenes'
 
-export type Moment = 'drop' | 'drift'
+export type { Scene } from './visualizer-scenes'
+
+export type Moment = {
+  scene: Scene
+  /** How long this change should melt, in seconds. */
+  blend: number
+}
 
 export type MomentOptions = {
-  /** No change sooner than this after the last one, whatever the music does. */
-  minGapMs: number
-  /** Steady music moves on after this long without a drop. */
-  maxGapMs: number
-  /** How far, on the 0 to 1 scale, the fast average must rise above the slow one for a drop. */
-  rise: number
   /** Below this the music is too quiet to count, so silence never triggers anything. */
   floor: number
+  /** How far, on the 0 to 1 scale, the fast average must rise above the slow one for a drop. */
+  rise: number
+  /** A stretch counts as quiet when the fast average is under the slow one by this much. */
+  quiet: number
+  /** Scheduled changes start once the song is this far through, 0 to 1. */
+  middleAt: number
+  /** Changes get closer once the song is this far through. */
+  lateAt: number
+  /** Beats between pictures in the middle of the song. */
+  middleBeats: number
+  /** Beats between pictures near the end. */
+  lateBeats: number
+  /** Kicks closer than this are the same beat. */
+  minBeatMs: number
+  /** A drop with no kick to land on still cuts, after this long. */
+  dropWaitMs: number
+  blendEarly: number
+  blendMiddle: number
+  blendLate: number
 }
 
 export const MOMENT_DEFAULTS: MomentOptions = {
-  minGapMs: 20_000,
-  maxGapMs: 90_000,
+  floor: 0.08,
   // Tuned on a real track: 0.12 caught its two drops and nothing else; 0.1 also caught a small
   // lift, and 0.15 missed the second drop.
   rise: 0.12,
-  floor: 0.08,
+  quiet: 0.85,
+  middleAt: 1 / 3,
+  lateAt: 2 / 3,
+  middleBeats: 8,
+  lateBeats: 4,
+  minBeatMs: 280,
+  dropWaitMs: 180,
+  blendEarly: 2.7,
+  blendMiddle: 0.9,
+  blendLate: 0.35,
 }
 
 const FAST_MS = 500
 const SLOW_MS = 6000
+const FLUX_MS = 350
 // A long frame (a stalled tab) is counted as this at most, so one gap cannot swing the averages.
 const LONGEST_STEP_MS = 100
+// A kick has to jump by this much, and stand out from the recent flux, or noise would be a beat.
+const FLUX_FLOOR = 0.03
+const FLUX_RATIO = 1.5
+// A couple of seconds of silence clears the phrase, so the next song does not inherit a count.
+const QUIET_RESET_MS = 2000
 
 export function createMomentDetector(options: MomentOptions = MOMENT_DEFAULTS) {
   let fast = 0
   let slow = 0
+  let fluxAvg = 0
   let previous: number | undefined
-  let last: number | undefined
+  let lastBeat: number | undefined
+  let beats = 0
+  let dropArmed = true
+  let dropSince: number | undefined
+  let holdUntil = 0
+  let quietSince: number | undefined
+
+  const blendFor = (progress: number) => {
+    if (progress < options.middleAt) return options.blendEarly
+    if (progress < options.lateAt) return options.blendMiddle
+    return options.blendLate
+  }
+
+  const beatsNeeded = (progress: number) => {
+    if (progress < options.middleAt) return null
+    if (progress < options.lateAt) return options.middleBeats
+    return options.lateBeats
+  }
 
   return {
-    /** Starts the gap again, as a change made by hand does. */
-    restart(now: number) {
-      last = now
+    /**
+     * Starts the phrase again, as a change made by hand does. `blendSeconds` is how long that
+     * change melts, so the next one waits until this one has finished.
+     */
+    restart(now: number, blendSeconds = 0) {
+      beats = 0
+      dropSince = undefined
+      dropArmed = false
+      lastBeat = now
+      holdUntil = now + blendSeconds * 1000
     },
     /**
-     * Feeds one bass level, 0 to 1, taken at `now` in milliseconds. Returns the kind of moment
-     * this is, or undefined for none.
+     * Feeds one bass reading, taken at `now` in milliseconds. `progress` is 0 at the start of the
+     * song and 1 at the end. `flux` is how hard the bass just rose, 0 to 1. Returns the change to
+     * make, or undefined for none.
      */
-    sample(level: number, now: number): Moment | undefined {
-      const step = previous === undefined ? 16 : Math.min(now - previous, LONGEST_STEP_MS)
+    sample(level: number, now: number, progress = 0, flux = 0): Moment | undefined {
+      const step =
+        previous === undefined ? 16 : Math.min(Math.max(0, now - previous), LONGEST_STEP_MS)
       previous = now
-      last ??= now
+      const along = Number.isFinite(progress) ? Math.min(1, Math.max(0, progress)) : 0
       fast += (level - fast) * (1 - Math.exp(-step / FAST_MS))
       slow += (level - slow) * (1 - Math.exp(-step / SLOW_MS))
-      const since = now - last
-      if (since < options.minGapMs || fast < options.floor) return undefined
-      if (fast - slow > options.rise) {
-        last = now
-        return 'drop'
+
+      if (level < options.floor) {
+        quietSince ??= now
+        if (now - quietSince > QUIET_RESET_MS) beats = 0
+        dropSince = undefined
+        fluxAvg += (flux - fluxAvg) * (1 - Math.exp(-step / FLUX_MS))
+        return undefined
+      }
+      quietSince = undefined
+
+      // Compare against the average from before this spike, or the spike raises its own bar.
+      const beat =
+        flux > FLUX_FLOOR &&
+        flux > fluxAvg * FLUX_RATIO &&
+        (lastBeat === undefined || now - lastBeat >= options.minBeatMs)
+      fluxAvg += (flux - fluxAvg) * (1 - Math.exp(-step / FLUX_MS))
+      if (beat) {
+        lastBeat = now
+        beats += 1
       }
 
-      if (since >= options.maxGapMs) {
-        last = now
-        return 'drift'
-      }
-      return undefined
+      const dropReady = dropArmed && fast - slow > options.rise
+      if (dropReady) dropSince ??= now
+      // Re-arm once the rise has settled, including while a melt is still finishing.
+      if (fast - slow < options.rise * 0.5) dropArmed = true
+
+      const dropDue = dropSince !== undefined && (beat || now - dropSince >= options.dropWaitMs)
+      const needed = beatsNeeded(along)
+      const phraseDue = beat && needed !== null && beats >= needed
+      if (now < holdUntil || !(dropDue || phraseDue)) return undefined
+
+      const scene: Scene = dropDue ? 'hard' : fast < slow * options.quiet ? 'soft' : 'pulse'
+      const blend = blendFor(along)
+      beats = 0
+      dropSince = undefined
+      if (dropDue) dropArmed = false
+      holdUntil = now + blend * 1000
+      return { scene, blend }
     },
   }
 }

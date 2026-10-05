@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.catalog import Album, Artist, CatalogError, Result, safe_media
-from backend.downloads import Downloads
+from backend.downloads import Downloads, listing_metadata
 from backend.job_models import Format
 
 
@@ -48,51 +48,58 @@ class ArtistDownloads:
             "Artist catalog is too large for one batch. Download albums individually.", 413
         )
 
-    async def detail(self, album: Album) -> dict[str, object]:
+    async def tracks(self, album: Album) -> list[Result]:
         result = await self.downloads.catalog.album_detail(album.id, background=True)
         if result.get("complete") is not True:
             raise CatalogError("Incomplete track list; retry before downloading this album")
         raw = result.get("tracks", [])
-        tracks = [Result.model_validate(row) for row in raw] if isinstance(raw, list) else []
-        self.downloads.library.annotate(tracks)
-        return {
-            "id": album.id,
-            "title": album.title,
-            "art": safe_media(album.cover_medium),
-            "year": album.release_date[:4],
-            "tracks": [
+        return [Result.model_validate(row) for row in raw] if isinstance(raw, list) else []
+
+    def describe(self, groups: list[tuple[Album, list[Result], str]]) -> list[dict[str, object]]:
+        # One ownership pass for every release. Doing it per album re-ran the library
+        # query, and each run used to scan the whole download history.
+        tracks = [track for _, rows, _ in groups for track in rows]
+        if tracks:
+            self.downloads.library.annotate(tracks)
+        described: list[dict[str, object]] = []
+        for album, rows, error in groups:
+            described.append(
                 {
-                    "id": track.id,
-                    "duration": track.duration,
-                    "owned": track.ownership == "owned",
-                    "identity": f"isrc:{track.isrc}" if track.isrc else f"id:{track.id}",
+                    "id": album.id,
+                    "title": album.title,
+                    "art": safe_media(album.cover_medium),
+                    "year": album.release_date[:4],
+                    "tracks": [
+                        {
+                            "id": track.id,
+                            "duration": track.duration,
+                            "owned": track.ownership == "owned",
+                            "identity": f"isrc:{track.isrc}" if track.isrc else f"id:{track.id}",
+                        }
+                        for track in rows
+                    ],
+                    "error": error,
                 }
-                for track in tracks
-            ],
-            "error": "",
-        }
+            )
+        return described
 
     async def plan(self, artist_id: int, all_music: bool = False) -> dict[str, object]:
         albums = await self.albums(artist_id, all_music)
         slots = asyncio.Semaphore(4)
 
-        async def one(album: Album) -> dict[str, object]:
+        async def one(album: Album) -> tuple[Album, list[Result], str]:
             async with slots:
                 try:
-                    return await self.detail(album)
+                    return album, await self.tracks(album), ""
                 except (CatalogError, TimeoutError) as exc:
-                    return {
-                        "id": album.id,
-                        "title": album.title,
-                        "art": safe_media(album.cover_medium),
-                        "year": album.release_date[:4],
-                        "tracks": [],
-                        "error": exc.detail
-                        if isinstance(exc, CatalogError)
-                        else "Album lookup timed out",
-                    }
+                    return (
+                        album,
+                        [],
+                        exc.detail if isinstance(exc, CatalogError) else "Album lookup timed out",
+                    )
 
-        return {"albums": await asyncio.gather(*(one(album) for album in albums))}
+        groups = list(await asyncio.gather(*(one(album) for album in albums)))
+        return {"albums": self.describe(groups)}
 
     async def enqueue(self, request: ArtistBatchRequest) -> dict[str, object]:
         service = self.downloads
@@ -107,6 +114,14 @@ class ArtistDownloads:
             noun = "releases" if request.all_music else "albums"
             raise ValueError(f"Choose {noun} from this artist's catalog")
         # Resolve every selected album first: a failed lookup must not enqueue half a selection.
+        slots = asyncio.Semaphore(4)
+
+        async def load(album_id: int) -> tuple[Album, list[Result]]:
+            async with slots:
+                return available[album_id], await self.tracks(available[album_id])
+
+        loaded = list(await asyncio.gather(*(load(album_id) for album_id in selected)))
+        self.describe([(album, rows, "") for album, rows in loaded])
         identities: set[str] = set()
         wanted: list[int] = []
         album_tracks: dict[int, list[int]] = {}
@@ -118,25 +133,20 @@ class ArtistDownloads:
             for job in service.jobs.list(active=True)
             if job.format == format and job.target == str(target)
         }
-        for album_id in selected:
-            detail = await self.detail(available[album_id])
-            tracks = detail["tracks"]
-            assert isinstance(tracks, list)
+        for album, rows in loaded:
             before = len(wanted)
-            for raw in tracks:
-                assert isinstance(raw, dict)
-                track_id = int(raw["id"])
-                identity = str(raw["identity"])
+            for track in rows:
+                identity = f"isrc:{track.isrc}" if track.isrc else f"id:{track.id}"
                 if identity in identities:
                     continue
                 identities.add(identity)
-                if request.missing_only and raw["owned"]:
+                if request.missing_only and track.ownership == "owned":
                     owned += 1
-                elif track_id in active:
+                elif track.id in active:
                     queued += 1
                 else:
-                    wanted.append(track_id)
-            album_tracks[album_id] = wanted[before:]
+                    wanted.append(track.id)
+            album_tracks[album.id] = wanted[before:]
         person, _ = await service.catalog.get(f"artist/{request.artist_id}", 86400, background=True)
         name = Artist.model_validate(person).name
         # Recheck active work after the awaited lookups; inserting the selection is one transaction.
@@ -149,7 +159,14 @@ class ArtistDownloads:
         wanted = [track_id for track_id in wanted if track_id not in active]
         batch_id = uuid.uuid4().hex
         label = f"{name} · {'all music' if request.all_music else 'albums'}"
-        jobs = service.jobs.enqueue_many(wanted, format, str(target), batch_id, label)
+        prepared = {
+            track.id: (listing_metadata(track, tracks=album.nb_tracks or len(rows)), "")
+            for album, rows in loaded
+            for track in rows
+        }
+        jobs = service.jobs.enqueue_many(
+            wanted, format, str(target), batch_id, label, prepared=prepared
+        )
         owned += sum(job.stage == "done" for job in jobs)
         jobs = [job for job in jobs if job.stage != "done"]
         remaining = {job.track_id for job in jobs}

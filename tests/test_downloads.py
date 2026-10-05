@@ -16,9 +16,18 @@ from fastapi import FastAPI
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
-from backend.catalog import Catalog
+from backend.catalog import Catalog, CatalogError
 from backend.download_api import install_download_routes
-from backend.downloads import DownloadError, Downloads, digest, publish_file
+from backend.downloads import (
+    CATALOG_DETAILS_WARNING,
+    SIDE_FAILED,
+    DownloadError,
+    Downloads,
+    catalog_details_pending,
+    digest,
+    enrichment_pending,
+    publish_file,
+)
 from backend.job_models import Candidate, Job, Metadata
 from backend.job_store import JobConflict, Jobs
 from backend.library import Library, normalize
@@ -101,6 +110,44 @@ class DurableJobsTests(unittest.TestCase):
             visible_failures = [job for job in jobs.visible() if job.stage == "failed"]
             self.assertEqual(len(visible_failures), 50)
             self.assertEqual(store.job_summary()["failed"], 55)
+            for track_id in range(3):
+                job = jobs.enqueue(track_id + 100, "original", directory)
+                jobs.update(job.id, stage="failed", error_code="TIMEOUT", error="timed out")
+            visible_failures = [job for job in jobs.visible() if job.stage == "failed"]
+            self.assertEqual(
+                sum(job.error_code == "NO_MATCH" for job in visible_failures),
+                50,
+            )
+            self.assertEqual(
+                sum(job.error_code == "TIMEOUT" for job in visible_failures),
+                3,
+            )
+            snapped = store.snapshot()["jobs"]
+            assert isinstance(snapped, list)
+            snap_ids = {row["id"] for row in snapped if isinstance(row, dict)}
+            self.assertEqual({job.id for job in jobs.visible()}, snap_ids)
+            store.close()
+
+    def test_visible_keeps_an_older_batch_sibling_outside_the_recent_window(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "jobs.sqlite3")
+            jobs = Jobs(store, lambda: None)
+            unrelated = jobs.enqueue(9, "original", directory)
+            jobs.update(unrelated.id, stage="done", final_path=str(Path(directory) / "old.opus"))
+            batch = jobs.enqueue_many([1, 2], "original", directory, "batch-one", "Artist")
+            jobs.update(batch[0].id, stage="done", final_path=str(Path(directory) / "sibling.opus"))
+            for track_id in range(50):
+                finished = jobs.enqueue(100 + track_id, "original", directory)
+                jobs.update(
+                    finished.id, stage="done", final_path=str(Path(directory) / f"{track_id}.opus")
+                )
+            visible = {job.id for job in jobs.visible()}
+            self.assertIn(batch[0].id, visible)
+            self.assertIn(batch[1].id, visible)
+            self.assertNotIn(unrelated.id, visible)
+            snapped = store.snapshot()["jobs"]
+            assert isinstance(snapped, list)
+            self.assertEqual(visible, {row["id"] for row in snapped if isinstance(row, dict)})
             store.close()
 
     def test_recording_rank_rejects_wrong_duration_and_prefers_topic(self) -> None:
@@ -122,6 +169,49 @@ class DurableJobsTests(unittest.TestCase):
         self.assertEqual(ranked[0].id, "correct0001")
         self.assertGreater(ranked[0].score, 0.86)
         self.assertNotIn("long0000001", [row.id for row in ranked])
+
+    def test_recording_rank_puts_decoy_uploads_below_the_original(self) -> None:
+        meta = Metadata(id=1, title="Test Song", artist="Test Artist", duration=180)
+        decoys = [
+            "Test Artist - Test Song [Bass boosted]",
+            "Test Artist - Test Song (8D Audio)",
+            "Test Song (Originally Performed by Test Artist)",
+            "Test Song (Nightcore)",
+        ]
+        rows = [
+            Candidate(id=f"decoy{i:06d}", title=title, artist="Test Artist", duration=180)
+            for i, title in enumerate(decoys)
+        ]
+        rows.append(Candidate(id="correct0001", title="Test Song", artist="Uploads", duration=180))
+        ranked = Matcher().rank(meta, rows, min_score=0)
+        self.assertEqual(ranked[0].id, "correct0001")
+        # A wanted title that is itself the 8D version keeps its 8D match.
+        wanted = Metadata(id=2, title="Test Song (8D Audio)", artist="Test Artist", duration=180)
+        score = Matcher().score(wanted, decoys[1], "Test Artist", 180)
+        assert score is not None
+        self.assertFalse(score.version_mismatch or score.version_missing)
+
+    def test_an_artist_named_with_a_version_word_is_not_another_version(self) -> None:
+        # A title-first upload puts the artist last, where the prefix strip missed it, so
+        # "Acoustic Alchemy" read as an acoustic version of the song.
+        matcher = Matcher()
+        meta = Metadata(id=1, title="Mr. Chow", artist="Acoustic Alchemy", duration=200)
+        own = matcher.score(meta, "Mr. Chow - Acoustic Alchemy", "Acoustic Alchemy", 200)
+        assert own is not None
+        self.assertFalse(own.version_mismatch)
+        self.assertGreater(own.total, 0.55)
+        other = Metadata(id=2, title="Mr. Chow", artist="Someone", duration=200)
+        decoy = matcher.score(other, "Mr. Chow (Acoustic)", "Someone", 200)
+        assert decoy is not None
+        self.assertTrue(decoy.version_mismatch)
+        # When the title leads with the artist, a word at the end is the version, even when the
+        # band is called Live.
+        band = Metadata(id=3, title="I Alone", artist="Live", duration=230)
+        live = matcher.score(band, "Live - I Alone (Live)", "Live", 230)
+        studio = matcher.score(band, "I Alone - Live", "Live", 230)
+        assert live is not None and studio is not None
+        self.assertTrue(live.version_mismatch)
+        self.assertFalse(studio.version_mismatch)
 
     def test_output_path_is_contained_and_publication_never_overwrites(self) -> None:
         naming = Naming()
@@ -291,6 +381,14 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(response.status_code, 200)
                     payload = response.json()
                     self.assertEqual({job["album_id"] for job in payload["jobs"]}, {9})
+                    # The listing is stored so matching can start without another catalog fetch.
+                    self.assertEqual(
+                        {job["meta"]["title"] for job in payload["jobs"]}, {"One", "Two"}
+                    )
+                    self.assertEqual({job["meta"]["artist"] for job in payload["jobs"]}, {"Artist"})
+                    self.assertTrue(
+                        all(job["meta"]["album_artist"] == "" for job in payload["jobs"])
+                    )
                     again = (await api.post("/api/batches", json={"album_id": 9})).json()
                     self.assertEqual(
                         [row["id"] for row in payload["jobs"]], [row["id"] for row in again["jobs"]]
@@ -353,6 +451,30 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                     running = service.jobs.enqueue(4, "original", str(root))
                     refused = await api.post(f"/api/jobs/{running.id}/dismiss")
                     self.assertEqual(refused.status_code, 409)
+                    missed = service.jobs.enqueue(5, "original", str(root))
+                    broken = service.jobs.enqueue(6, "original", str(root))
+                    service.jobs.update(
+                        missed.id,
+                        stage="failed",
+                        error_code="NO_MATCH",
+                        error="No sufficiently close recording found",
+                    )
+                    service.jobs.update(
+                        broken.id, stage="failed", error_code="TIMEOUT", error="timed out"
+                    )
+                    self.assertEqual((await api.post("/api/queue/retry-failed")).status_code, 200)
+                    self.assertEqual(service.jobs.get(missed.id).stage, "failed")
+                    self.assertEqual(service.jobs.get(broken.id).stage, "queued")
+                    service.jobs.update(
+                        broken.id, stage="failed", error_code="TIMEOUT", error="timed out"
+                    )
+                    self.assertEqual((await api.post("/api/queue/clear-failed")).status_code, 200)
+                    self.assertFalse(service.jobs.get(missed.id).hidden)
+                    self.assertTrue(service.jobs.get(broken.id).hidden)
+                    self.assertEqual(
+                        (await api.post("/api/queue/clear-unmatched")).status_code, 200
+                    )
+                    self.assertTrue(service.jobs.get(missed.id).hidden)
             store.close()
 
     async def test_pause_stops_worker_preserves_partial_cancel_removes_only_staging(self) -> None:
@@ -607,37 +729,43 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                 self.started.append(job_id)
                 self.jobs.update(job_id, stage="done")
 
-        for fallback, expected in ((True, "soundcloud"), (False, "youtube")):
-            with self.subTest(fallback=fallback):
+        # YouTube is paused after the job is queued. The source was chosen while YouTube
+        # could still run, and it stays until a worker asks the next row.
+        cases = (
+            (["youtube", "soundcloud"], True),
+            (["youtube"], False),
+        )
+        for order, starts in cases:
+            with self.subTest(order=order):
                 with tempfile.TemporaryDirectory() as directory:
                     root = Path(directory).resolve()
                     store = Store(root / "db.sqlite3")
-                    async with httpx.AsyncClient(
-                        transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
-                    ) as client:
-                        library = Library(store, [root], asyncio.Event())
-                        service = Recording(store, Catalog(store, client), library, asyncio.Event())
-                        service.started = []
-                        store.update({"destination": str(root), "soundcloud_fallback": fallback})
-                        job = service.jobs.enqueue(1, "original", str(root))
-                        service.set_controls(source_paused=True, source="youtube")
-                        service.start()
-                        try:
-                            async with asyncio.timeout(2):
-                                while service.jobs.get(job.id).source != expected:
-                                    await asyncio.sleep(0.01)
-                                if fallback:
+                    try:
+                        async with httpx.AsyncClient(
+                            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+                        ) as client:
+                            library = Library(store, [root], asyncio.Event())
+                            service = Recording(
+                                store, Catalog(store, client), library, asyncio.Event()
+                            )
+                            service.started = []
+                            store.update({"destination": str(root), "source_order": order})
+                            job = service.jobs.enqueue(1, "original", str(root))
+                            service.set_controls(source_paused=True, source="youtube")
+                            service.start()
+                            if starts:
+                                async with asyncio.timeout(2):
                                     while job.id not in service.started:
                                         await asyncio.sleep(0.01)
-                        except TimeoutError:
-                            pass
-                        self.assertEqual(service.jobs.get(job.id).source, expected)
-                        # Nothing on YouTube may start while YouTube is paused.
-                        self.assertEqual(service.started, [job.id] if fallback else [])
-                        await service.close()
-                    store.close()
+                            else:
+                                await asyncio.sleep(0.2)
+                            self.assertEqual(service.jobs.get(job.id).source, "youtube")
+                            self.assertEqual(service.started, [job.id] if starts else [])
+                            await service.close()
+                    finally:
+                        store.close()
 
-    async def test_a_retry_sends_a_catalog_track_back_to_youtube(self) -> None:
+    async def test_a_retry_clears_an_automatic_pick_and_keeps_a_hand_pick(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             store = Store(root / "db.sqlite3")
@@ -647,14 +775,232 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                 service = await self.service(root, store, client)
                 store.update({"destination": str(root)})
                 fell_back = service.jobs.enqueue(1, "original", str(root))
-                service.jobs.update(fell_back.id, source="soundcloud", stage="failed")
+                service.jobs.update(
+                    fell_back.id,
+                    source="soundcloud",
+                    selected="abcdefghijk",
+                    stage="failed",
+                )
                 picked = service.jobs.enqueue(2, "original", str(root))
                 service.jobs.update(
-                    picked.id, source="soundcloud", selected="123456", stage="failed"
+                    picked.id,
+                    source="soundcloud",
+                    selected="123456",
+                    hand_picked=True,
+                    stage="failed",
                 )
-                self.assertEqual(service.command(fell_back.id, "retry").source, "youtube")
-                # A recording chosen by hand stays on the site it was chosen from.
-                self.assertEqual(service.command(picked.id, "retry").source, "soundcloud")
+                automatic = service.command(fell_back.id, "retry")
+                self.assertEqual(automatic.selected, "")
+                self.assertEqual(automatic.source, "youtube")
+                self.assertFalse(automatic.hand_picked)
+                kept = service.command(picked.id, "retry")
+                self.assertEqual(kept.source, "soundcloud")
+                self.assertEqual(kept.selected, "123456")
+                self.assertTrue(kept.hand_picked)
+                await service.close()
+            store.close()
+
+    async def test_a_new_catalog_job_names_the_first_source_that_can_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                self.assertIsNone(service.task)
+                cases: tuple[tuple[str, dict[str, object], str], ...] = (
+                    (
+                        "soundcloud when youtube is off",
+                        {
+                            "source_order": ["soundcloud", "deezer"],
+                            "disabled_sources": ["youtube"],
+                        },
+                        "soundcloud",
+                    ),
+                    (
+                        "youtube when it is first and on",
+                        {"source_order": ["youtube", "soundcloud"], "disabled_sources": []},
+                        "youtube",
+                    ),
+                    (
+                        "the next row when deezer has no cookie",
+                        {
+                            "source_order": ["deezer", "soundcloud"],
+                            "deezer_arl": "",
+                            "deezer_audio": True,
+                        },
+                        "soundcloud",
+                    ),
+                    (
+                        "deezer when the cookie is set",
+                        {
+                            "source_order": ["deezer", "youtube"],
+                            "deezer_audio": True,
+                            "deezer_arl": "a" * 192,
+                        },
+                        "deezer",
+                    ),
+                )
+                for track, (label, settings, expected) in enumerate(cases, start=1):
+                    with self.subTest(label=label):
+                        store.update({"destination": str(root), **settings})
+                        job = service.jobs.enqueue(track, "original", str(root))
+                        self.assertEqual(job.source, expected)
+                        self.assertIsNone(service.task)
+                store.update(
+                    {
+                        "destination": str(root),
+                        "source_order": ["youtube", "soundcloud"],
+                        "disabled_sources": [],
+                        "deezer_arl": "",
+                    }
+                )
+                picked = service.jobs.enqueue(20, "original", str(root), source="soundcloud")
+                self.assertEqual(picked.source, "soundcloud")
+                episode = service.jobs.enqueue_many([21], "original", str(root), catalog="podcast")[
+                    0
+                ]
+                self.assertEqual(episode.source, "podcast")
+                link = service.jobs.enqueue_many(
+                    [22], "original", str(root), catalog="link", source="bandcamp"
+                )[0]
+                self.assertEqual(link.source, "bandcamp")
+                service.set_controls(source_paused=True, source="youtube")
+                held = service.jobs.enqueue(23, "original", str(root))
+                self.assertEqual(held.source, "soundcloud")
+                await service.close()
+            store.close()
+
+    async def test_retry_uses_the_first_live_source_when_youtube_is_off(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                store.update(
+                    {
+                        "destination": str(root),
+                        "source_order": ["youtube", "soundcloud"],
+                        "disabled_sources": ["youtube"],
+                    }
+                )
+                failed = service.jobs.enqueue(1, "original", str(root))
+                self.assertEqual(failed.source, "soundcloud")
+                service.jobs.update(
+                    failed.id,
+                    stage="failed",
+                    source="youtube",
+                    selected="abcdefghijk",
+                )
+                retried = service.command(failed.id, "retry")
+                self.assertEqual(retried.source, "soundcloud")
+                self.assertEqual(retried.selected, "")
+                self.assertEqual(retried.lap, 0)
+                store.update(
+                    {
+                        "source_order": ["soundcloud", "youtube"],
+                        "disabled_sources": [],
+                    }
+                )
+                hand = service.jobs.enqueue(2, "original", str(root), source="youtube")
+                self.assertEqual(hand.source, "youtube")
+                service.jobs.update(
+                    hand.id,
+                    stage="failed",
+                    source="youtube",
+                    selected="abcdefghijk",
+                    hand_picked=True,
+                )
+                kept = service.command(hand.id, "retry")
+                self.assertEqual(kept.source, "youtube")
+                self.assertEqual(kept.selected, "abcdefghijk")
+                self.assertTrue(kept.hand_picked)
+                await service.close()
+            store.close()
+
+    async def test_a_catalog_job_fails_when_no_source_can_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                store.update(
+                    {
+                        "destination": str(root),
+                        "source_order": ["youtube"],
+                        "disabled_sources": ["youtube"],
+                    }
+                )
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.start()
+                async with asyncio.timeout(2):
+                    while service.jobs.get(job.id).stage != "failed":
+                        await asyncio.sleep(0.01)
+                failed = service.jobs.get(job.id)
+                self.assertIn("turned off", failed.error_hint)
+                self.assertEqual(failed.error_fix, "settings:sources")
+                await service.close()
+            store.close()
+
+    async def test_a_search_block_pauses_the_source_named_on_the_error(self) -> None:
+        class FakeOut:
+            def __init__(self, payload: bytes) -> None:
+                self.payload = payload
+                self.sent = False
+
+            async def readline(self) -> bytes:
+                if self.sent:
+                    return b""
+                self.sent = True
+                return self.payload
+
+        class FakeProc:
+            def __init__(self) -> None:
+                line = json.dumps(
+                    {
+                        "kind": "error",
+                        "code": "SOURCE_BLOCKED",
+                        "message": "HTTP 403",
+                        "retryable": False,
+                        "hint": "SoundCloud is blocking requests.",
+                        "fix": "diagnostics:sources",
+                        "source": "soundcloud",
+                    }
+                )
+                self.stdout = FakeOut((line + "\n").encode())
+                self.returncode = 0
+                self.pid = 1
+
+            async def wait(self) -> int:
+                return 0
+
+        async def fake_exec(*_args: object, **_kwargs: object) -> FakeProc:
+            return FakeProc()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                store.update({"destination": str(root)})
+                with patch("backend.downloads.asyncio.create_subprocess_exec", fake_exec):
+                    for track in (1, 2, 3):
+                        job = service.jobs.enqueue(track, "original", str(root))
+                        service.jobs.update(
+                            job.id,
+                            source="youtube",
+                            meta=Metadata(id=track, title="x", artist="A").model_dump(),
+                        )
+                        await service.run(job.id)
+                        self.assertEqual(service.jobs.get(job.id).source, "soundcloud")
+                self.assertEqual(service.paused_sources(), {"soundcloud"})
                 await service.close()
             store.close()
 
@@ -731,8 +1077,344 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertEqual(picked.status_code, 200)
                     self.assertEqual(picked.json()["source"], "soundcloud")
+                    self.assertTrue(picked.json()["hand_picked"])
                     unknown = await api.post(
                         f"/api/jobs/{job.id}/pick", json={"candidate_id": "999999999"}
                     )
                     self.assertEqual(unknown.status_code, 422)
+                    # Off means no new downloads from that source, a hand pick included.
+                    store.update({"disabled_sources": ["youtube"]})
+                    service.jobs.update(job.id, stage="failed")
+                    refused = await api.post(
+                        f"/api/jobs/{job.id}/pick", json={"candidate_id": "abcdefghijk"}
+                    )
+                    self.assertEqual(refused.status_code, 422)
+                    self.assertIn("turned off", refused.json()["detail"])
+            store.close()
+
+    async def test_a_pause_that_lands_before_the_worker_leaves_the_song_queued(self) -> None:
+        # The scheduler saw a source that could run, then a block paused it while the job
+        # fetched its details. The worker would find nothing to ask and fail it as turned off.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            try:
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+                ) as client:
+                    service = await self.service(root, store, client)
+                    store.update({"destination": str(root), "source_order": ["youtube"]})
+                    job = service.jobs.enqueue(1, "original", str(root))
+
+                    async def details(track_id: int) -> Metadata:
+                        service.set_controls(source_paused=True, source="youtube")
+                        return Metadata(id=track_id, title="Song", artist="Artist", duration=200)
+
+                    async def no_extra(meta: Metadata) -> list[str]:
+                        return []
+
+                    async def no_art(job: Job, folder: Path) -> None:
+                        return None
+
+                    async def never(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                        raise AssertionError("A worker started while every source was paused")
+
+                    with (
+                        patch.object(service.enrichment, "track", details),
+                        patch.object(service.enrichment, "extra", no_extra),
+                        patch.object(service, "artwork", no_art),
+                        patch.object(service, "worker", never),
+                    ):
+                        await service.run(job.id)
+                    after = service.jobs.get(job.id)
+                    self.assertEqual(after.stage, "queued")
+                    self.assertEqual(after.attempts, 0)
+                    self.assertEqual(after.error_code, "")
+            finally:
+                store.close()
+
+
+class OverlappedMetadataTests(unittest.IsolatedAsyncioTestCase):
+    async def test_lyrics_load_while_the_file_downloads(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            order: list[str] = []
+
+            async def extra(meta: Metadata) -> list[str]:
+                order.append("extra-start")
+                await asyncio.sleep(0.05)
+                meta.lyrics = "the words"
+                order.append("extra-end")
+                return []
+
+            async def worker(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                order.append("worker-start")
+                self.assertEqual(job.meta.lyrics, "")
+                await asyncio.sleep(0.1)
+                order.append("worker-end")
+                ready = folder / "ready.mp3"
+                ready.write_bytes(b"synthetic audio placeholder")
+                return ready, {"codec": "mp3", "bitrate": 128}
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(404))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                library.index_published = lambda path, root: None  # type: ignore[method-assign]
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                service.enrichment.extra = extra  # type: ignore[method-assign]
+                service.worker = worker  # type: ignore[method-assign]
+                store.update({"destination": str(root)})
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    meta=Metadata(
+                        id=1,
+                        title="Song",
+                        artist="Band",
+                        album_artist="Band",
+                        album="Album",
+                        duration=180,
+                    ).model_dump(),
+                )
+                await service.run(job.id)
+                done = service.jobs.get(job.id)
+                self.assertEqual(done.stage, "done")
+                self.assertEqual(done.meta.lyrics, "the words")
+                self.assertEqual(order, ["worker-start", "extra-start", "extra-end", "worker-end"])
+            store.close()
+
+    def test_catalog_and_side_warnings_still_allow_lyrics(self) -> None:
+        job = Job(
+            id="job",
+            track_id=1,
+            target="library",
+            created_at=0,
+            updated_at=0,
+            meta=Metadata(id=1, title="Song", artist="Band"),
+            warnings=[CATALOG_DETAILS_WARNING, SIDE_FAILED],
+        )
+        self.assertTrue(catalog_details_pending(job))
+        self.assertTrue(enrichment_pending(job))
+        blocked = job.model_copy(
+            update={"warnings": ["Optional metadata was not ready before tagging"]}
+        )
+        self.assertFalse(enrichment_pending(blocked))
+
+    async def test_a_catalog_cooldown_keeps_the_listing_tags(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            seen: list[Job] = []
+
+            async def track(track_id: int) -> Metadata:
+                await asyncio.sleep(30)
+                return Metadata(
+                    id=track_id,
+                    title="Song",
+                    artist="Band",
+                    album_artist="Various Artists",
+                    album="Compilation",
+                )
+
+            async def extra(meta: Metadata) -> list[str]:
+                return []
+
+            async def worker(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                deadline = time.monotonic() + 2
+                while not (folder / "side.json").is_file():
+                    if time.monotonic() > deadline:
+                        raise AssertionError("side metadata never finished")
+                    await asyncio.sleep(0.01)
+                seen.append(Job.model_validate_json((folder / "job.json").read_text()))
+                ready = folder / "ready.mp3"
+                ready.write_bytes(b"synthetic audio placeholder")
+                return ready, {"codec": "mp3", "bitrate": 128}
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(404))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                library.index_published = lambda path, root: None  # type: ignore[method-assign]
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                service.enrichment.track = track  # type: ignore[method-assign]
+                service.enrichment.extra = extra  # type: ignore[method-assign]
+                service.worker = worker  # type: ignore[method-assign]
+                store.update({"destination": str(root)})
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    meta=Metadata(
+                        id=1, title="Song", artist="Band", album="Compilation", duration=180
+                    ).model_dump(),
+                )
+                started = time.monotonic()
+                with patch("backend.downloads.CATALOG_DETAILS_SECONDS", 0.05):
+                    await service.run(job.id)
+                self.assertLess(time.monotonic() - started, 2)
+                done = service.jobs.get(job.id)
+                self.assertEqual(done.stage, "done")
+                self.assertEqual(done.meta.album_artist, "")
+                self.assertIn(CATALOG_DETAILS_WARNING, done.warnings)
+                self.assertNotIn(SIDE_FAILED, done.warnings)
+                self.assertEqual(seen[0].meta.album_artist, "")
+                self.assertIn(CATALOG_DETAILS_WARNING, seen[0].warnings)
+                self.assertIn("Unknown", Path(done.final_path).parts)
+            store.close()
+
+    async def test_side_work_stops_before_tagging_gives_up(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            seen: list[Job] = []
+
+            async def extra(meta: Metadata) -> list[str]:
+                await asyncio.sleep(30)
+                meta.lyrics = "too late"
+                return []
+
+            async def worker(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                deadline = time.monotonic() + 2
+                while not (folder / "side.json").is_file():
+                    if time.monotonic() > deadline:
+                        raise AssertionError("side metadata never finished")
+                    await asyncio.sleep(0.01)
+                seen.append(Job.model_validate_json((folder / "job.json").read_text()))
+                ready = folder / "ready.mp3"
+                ready.write_bytes(b"synthetic audio placeholder")
+                return ready, {"codec": "mp3", "bitrate": 128}
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(404))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                library.index_published = lambda path, root: None  # type: ignore[method-assign]
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                service.enrichment.extra = extra  # type: ignore[method-assign]
+                service.worker = worker  # type: ignore[method-assign]
+                store.update({"destination": str(root)})
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    meta=Metadata(
+                        id=1,
+                        title="Song",
+                        artist="Band",
+                        album_artist="Band",
+                        album="Album",
+                        duration=180,
+                    ).model_dump(),
+                )
+                started = time.monotonic()
+                with patch("backend.downloads.SIDE_BUDGET_SECONDS", 0.05):
+                    await service.run(job.id)
+                self.assertLess(time.monotonic() - started, 2)
+                done = service.jobs.get(job.id)
+                self.assertEqual(done.stage, "done")
+                self.assertEqual(done.meta.lyrics, "")
+                self.assertEqual(seen[0].meta.lyrics, "")
+                self.assertIn(SIDE_FAILED, done.warnings)
+                self.assertNotIn("Optional metadata", " ".join(done.warnings))
+            store.close()
+
+    async def test_a_later_catalog_response_keeps_lyrics_and_looks_again(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            calls = {"track": 0, "extra": 0}
+
+            async def track(track_id: int) -> Metadata:
+                calls["track"] += 1
+                if calls["track"] == 1:
+                    raise CatalogError("Deezer is rate limited. Try again shortly.", 429)
+                return Metadata(
+                    id=track_id,
+                    title="Song",
+                    artist="Band",
+                    album_artist="Various Artists",
+                    album="Compilation",
+                    genre="Pop",
+                    isrc="USABC1234567",
+                    duration=180,
+                )
+
+            async def extra(meta: Metadata) -> list[str]:
+                calls["extra"] += 1
+                if calls["extra"] == 1:
+                    return ["Lyrics unavailable from LRCLIB"]
+                self.assertEqual(meta.album, "Compilation")
+                self.assertEqual(meta.isrc, "USABC1234567")
+                self.assertEqual(meta.lyrics, "")
+                meta.lyrics = "the words"
+                return []
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(404))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                service.enrichment.track = track  # type: ignore[method-assign]
+                service.enrichment.extra = extra  # type: ignore[method-assign]
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    meta=Metadata(
+                        id=1, title="Song", artist="Band", album="Single", duration=180
+                    ).model_dump(),
+                )
+                folder = root / "stage"
+                folder.mkdir()
+                await service.side_metadata(job.id, folder)
+                missed = service.jobs.get(job.id)
+                self.assertEqual(missed.meta.album_artist, "")
+                self.assertIn(CATALOG_DETAILS_WARNING, missed.warnings)
+                self.assertIn("Lyrics unavailable from LRCLIB", missed.warnings)
+                await service.side_metadata(job.id, folder)
+                found = service.jobs.get(job.id)
+                self.assertEqual(found.meta.lyrics, "the words")
+                self.assertEqual(found.meta.album_artist, "Various Artists")
+                self.assertEqual(found.meta.album, "Compilation")
+                self.assertNotIn(CATALOG_DETAILS_WARNING, found.warnings)
+                self.assertNotIn("Lyrics unavailable from LRCLIB", found.warnings)
+                self.assertEqual(calls, {"track": 2, "extra": 2})
+            store.close()
+
+    async def test_cancelling_side_work_leaves_no_marker(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            started = asyncio.Event()
+
+            async def extra(meta: Metadata) -> list[str]:
+                started.set()
+                await asyncio.sleep(30)
+                return []
+
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(404))
+            ) as client:
+                library = Library(store, [root], asyncio.Event())
+                service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                service.enrichment.extra = extra  # type: ignore[method-assign]
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    meta=Metadata(
+                        id=1,
+                        title="Song",
+                        artist="Band",
+                        album_artist="Band",
+                        album="Album",
+                        duration=180,
+                    ).model_dump(),
+                )
+                folder = root / "stage"
+                folder.mkdir()
+                task = asyncio.create_task(service.side_metadata(job.id, folder))
+                await asyncio.wait_for(started.wait(), 1)
+                task.cancel()
+                with self.assertRaises(asyncio.CancelledError):
+                    await task
+                self.assertFalse((folder / "side.json").is_file())
             store.close()

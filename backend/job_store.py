@@ -8,7 +8,7 @@ from pathlib import Path
 
 from backend.job_models import RUNNING, TERMINAL, CatalogName, Format, Job, Metadata
 from backend.sources import Kind
-from backend.store import Store
+from backend.store import VISIBLE_ID_SQL, Store
 
 
 class JobConflict(ValueError):
@@ -38,28 +38,26 @@ class Jobs:
     def visible(self) -> builtins.list[Job]:
         with self.store.lock:
             rows = self.store.db.execute(
-                "SELECT payload FROM jobs WHERE active=1 OR "
-                "json_extract(payload,'$.batch_id') IN (SELECT json_extract(payload,'$.batch_id') "
-                "FROM jobs WHERE active=1 AND json_extract(payload,'$.batch_id')!='') OR id IN "
-                "(SELECT id FROM jobs WHERE active=0 AND json_extract(payload,'$.hidden')=0 "
-                "AND json_extract(payload,'$.stage')='failed' ORDER BY created_at DESC LIMIT 50) "
-                "OR id IN (SELECT id FROM jobs WHERE active=0 "
-                "AND json_extract(payload,'$.hidden')=0 "
-                "AND json_extract(payload,'$.stage')!='failed' ORDER BY created_at DESC LIMIT 50) "
-                "ORDER BY created_at DESC"
+                f"SELECT payload FROM jobs WHERE id IN ({VISIBLE_ID_SQL}) ORDER BY created_at DESC"
             ).fetchall()
         return [Job.model_validate_json(row[0]) for row in rows]
 
     def history(self, q: str, since: float, until: float, offset: int) -> dict[str, object]:
-        where = (
-            "active=0 AND created_at BETWEEN ? AND ? AND instr(lower("
-            "json_extract(payload,'$.meta.title') || ' ' || "
-            "json_extract(payload,'$.meta.artist') || ' ' || "
-            "json_extract(payload,'$.meta.album') || ' ' || "
-            "json_extract(payload,'$.final_path')), lower(?))>0"
-        )
+        # An empty search is the history tab opening. Matching an empty needle still
+        # parsed every payload, so a long history made that tab reread the whole table.
+        if q:
+            where = (
+                "active=0 AND created_at BETWEEN ? AND ? AND instr(lower("
+                "json_extract(payload,'$.meta.title') || ' ' || "
+                "json_extract(payload,'$.meta.artist') || ' ' || "
+                "json_extract(payload,'$.meta.album') || ' ' || "
+                "json_extract(payload,'$.final_path')), lower(?))>0"
+            )
+            args: tuple[float | str, ...] = (since, until, q)
+        else:
+            where = "active=0 AND created_at BETWEEN ? AND ?"
+            args = (since, until)
         with self.store.lock:
-            args = (since, until, q)
             total = self.store.db.execute(
                 "SELECT count(*) FROM jobs WHERE " + where, args
             ).fetchone()[0]
@@ -72,9 +70,17 @@ class Jobs:
         return {"jobs": [Job.model_validate_json(row[0]).public() for row in rows], "total": total}
 
     def enqueue(
-        self, track_id: int, format: Format, target: str, *, replace_match: bool = False
+        self,
+        track_id: int,
+        format: Format,
+        target: str,
+        *,
+        replace_match: bool = False,
+        source: str = "",
     ) -> Job:
-        return self.enqueue_many([track_id], format, target, replace_match=replace_match)[0]
+        return self.enqueue_many(
+            [track_id], format, target, replace_match=replace_match, source=source
+        )[0]
 
     def enqueue_many(
         self,
@@ -95,13 +101,19 @@ class Jobs:
     ) -> builtins.list[Job]:
         """Queue tracks, reusing active or completed jobs. `prepared` supplies the metadata and
         file address for podcast and link jobs, which have no catalog lookup later. An empty
-        `source` lets the job take it from its catalog. `kinds` overrides `kind` for a track that is
-        of another kind than its site's, such as a long SoundCloud track. Tracks in `untidied` keep
-        the tags their site gave them."""
+        `source` on a catalog song is the first row that can run. A podcast takes `podcast`.
+        `kinds` overrides `kind` for a track that is of another kind than its site's, such as a
+        long SoundCloud track. Tracks in `untidied` keep the tags their site gave them."""
         jobs: builtins.list[Job] = []
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
+                # One read for the batch. A catalog song takes the first row that can run now.
+                named = source
+                if catalog == "deezer" and not named:
+                    from backend.downloads import opening_source
+
+                    named = opening_source(self.store.current(), self.store.paused_sources())
                 for track_id in tracks:
                     row = self.store.db.execute(
                         "SELECT payload FROM jobs WHERE catalog=? AND track_id=? "
@@ -148,8 +160,8 @@ class Jobs:
                         created_at=now,
                         updated_at=now,
                     )
-                    if source:
-                        job = job.model_copy(update={"source": source})
+                    if named or (catalog == "deezer" and not source):
+                        job = job.model_copy(update={"source": named})
                     self.store.db.execute(
                         "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?)",
                         (

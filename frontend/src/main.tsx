@@ -50,6 +50,7 @@ import {
   settingsSchema,
   snapshotSchema,
   sourceSchema,
+  youtubeCookiesSchema,
 } from './api'
 import type { SettingKey } from './api'
 import { librarySchema } from './api'
@@ -69,6 +70,7 @@ import { PodcastPage } from './podcasts'
 import { scanIsReady, systemIsReady } from './readiness'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
+import { settingsPatch } from './settings-patch'
 import { startTheme } from './theme/store'
 import {
   Button,
@@ -84,7 +86,6 @@ import {
   sectionTitleClassName,
   StatusChip,
   Tag,
-  textLinkClassName,
 } from './ui'
 import type { StatusChipVariant } from './ui'
 import { SettingsSwitch, UserSettingsPage } from './user-settings'
@@ -544,25 +545,11 @@ const controls: {
     section: 'audio',
   },
   {
-    key: 'soundcloud_fallback',
-    label: 'Use SoundCloud when YouTube has no match',
-    help: 'SoundCloud free streams are about 128 kbps, lower than YouTube.',
-    section: 'audio',
-  },
-  {
     key: 'concurrency',
     label: 'Parallel downloads',
     help: 'Two is a conservative starting point for YouTube.',
     min: 1,
     max: 3,
-    section: 'queue',
-  },
-  {
-    key: 'max_attempts',
-    label: 'Maximum attempts',
-    help: 'Includes the first attempt. One disables automatic retries.',
-    min: 1,
-    max: 4,
     section: 'queue',
   },
   {
@@ -583,12 +570,19 @@ const controls: {
   },
 ]
 
-/** A settings value as the form holds it: text, a number, or a switch. */
-type SettingValue = string | number | boolean
+/** A settings value as the form holds it: text, a number, a switch, or a list of turned-off sources. */
+type SettingValue = string | number | boolean | string[]
 
 /** One value as a person reads it, so a switch reads on or off rather than true or false. */
 function settingText(value: SettingValue | undefined): string {
+  if (Array.isArray(value)) return value.join(', ')
   return typeof value === 'boolean' ? (value ? 'on' : 'off') : String(value)
+}
+
+function sameSetting(left: SettingValue | undefined, right: SettingValue | undefined): boolean {
+  if (Array.isArray(left) || Array.isArray(right))
+    return JSON.stringify(left) === JSON.stringify(right)
+  return left === right
 }
 
 function NamingPreview({ template }: { template: string }) {
@@ -610,6 +604,243 @@ function NamingPreview({ template }: { template: string }) {
   )
 }
 
+// A text button is shorter than a finger. On a touch screen it gets the 44px floor.
+const orderButtonClassName =
+  'text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:min-w-11 coarse:items-center coarse:justify-center'
+
+const catalogOrderLabels: Record<string, string> = {
+  deezer: 'Deezer account',
+  youtube: 'YouTube',
+  soundcloud: 'SoundCloud',
+}
+
+function CatalogOrder({
+  order,
+  tries,
+  triesLocked,
+  triesOrigin,
+  laps,
+  lapsLocked,
+  lapsOrigin,
+  orderLocked,
+  orderOrigin,
+  changedElsewhere,
+  deezerOn,
+  hasCookie,
+  disabledSources,
+  paused,
+  disabled,
+  onOrder,
+  onTries,
+  onLaps,
+}: {
+  order: string[]
+  tries: number
+  triesLocked: boolean
+  triesOrigin: string
+  laps: number
+  lapsLocked: boolean
+  lapsOrigin: string
+  orderLocked: boolean
+  orderOrigin: string
+  /** Names of this section's settings that someone saved elsewhere while this page was open. */
+  changedElsewhere: string[]
+  deezerOn: boolean
+  hasCookie: boolean
+  disabledSources: string[]
+  paused: string[]
+  disabled: boolean
+  onOrder: (next: string[]) => void
+  onTries: (next: number) => void
+  onLaps: (next: number) => void
+}) {
+  const spare = Object.keys(catalogOrderLabels).filter((id) => !order.includes(id))
+  const move = (index: number, step: number) => {
+    const next = order.slice()
+    const swap = index + step
+    const item = next[index]
+    const other = next[swap]
+    if (item === undefined || other === undefined) return
+    next[index] = other
+    next[swap] = item
+    onOrder(next)
+  }
+  const hardSkip = (id: string) =>
+    (id === 'deezer' && !deezerOn) ||
+    (id === 'deezer' && !hasCookie) ||
+    disabledSources.includes(id)
+  const skipReason = (id: string) => {
+    if (id === 'deezer' && !deezerOn) return 'Account audio is off'
+    if (disabledSources.includes(id)) return 'Turned off'
+    if (id === 'deezer' && !hasCookie) return 'No cookie yet'
+    if (paused.includes(id)) return 'Paused'
+    return ''
+  }
+  const allSkipped = order.length > 0 && order.every((id) => skipReason(id))
+  const waitingOnPause = allSkipped && order.some((id) => paused.includes(id) && !hardSkip(id))
+  return (
+    <div className="mt-[18px] border-b border-line pb-[16px]">
+      <p className="text-body">
+        Where a song from search is fetched
+        {orderLocked ? <span className="text-warn"> · Locked by {orderOrigin}</span> : null}
+      </p>
+      <p className="mt-[7px] max-w-[420px] text-tiny text-muted">
+        The top row goes first. A failure asks the next row. After the last row, start again. A
+        search with no song moves on straight away.
+      </p>
+      <div className="mt-[14px] grid grid-cols-[1fr_80px] items-center gap-x-[16px] gap-y-[10px] max-phone:grid-cols-1">
+        <label htmlFor="tries_per_source" className="text-small">
+          Tries on one source before the next
+          {triesLocked ? <span className="text-warn"> · Locked by {triesOrigin}</span> : null}
+        </label>
+        {/* Every keystroke is kept, as in the other number settings. A cleared box shows empty
+            rather than 0, and `required` with the range stops a save outside 1 to 4. */}
+        <Field
+          id="tries_per_source"
+          type="number"
+          required
+          min={1}
+          max={4}
+          disabled={disabled || triesLocked}
+          value={tries || ''}
+          onChange={(event) => onTries(Number(event.target.value))}
+        />
+        <label htmlFor="max_attempts" className="text-small">
+          Times around the list
+          {lapsLocked ? <span className="text-warn"> · Locked by {lapsOrigin}</span> : null}
+        </label>
+        <Field
+          id="max_attempts"
+          type="number"
+          required
+          min={1}
+          max={4}
+          disabled={disabled || lapsLocked}
+          value={laps || ''}
+          onChange={(event) => onLaps(Number(event.target.value))}
+        />
+      </div>
+      <p className="mt-[10px] max-w-[420px] text-tiny text-muted">
+        {tries >= 1 && tries <= 4 && laps >= 1 && laps <= 4
+          ? `A failed download is tried ${tries} ${tries === 1 ? 'time' : 'times'} on that source, then the next one. The list is walked ${laps} ${laps === 1 ? 'time' : 'times'}. A pasted link or a podcast uses that same number as its retries.`
+          : 'Both numbers run from 1 to 4.'}
+      </p>
+      {changedElsewhere.length > 0 && (
+        <p className="mt-[10px] max-w-[420px] text-tiny text-warn">
+          Changed elsewhere since you started: {changedElsewhere.join(', ')}. Saving keeps what is
+          on this page.
+        </p>
+      )}
+      {allSkipped && (
+        <p className="mt-[10px] max-w-[420px] text-tiny text-warn">
+          {waitingOnPause
+            ? 'Every row that can run is paused. Songs wait until you resume one.'
+            : 'Nothing in this list can run. A song from search fails until a row can.'}
+        </p>
+      )}
+      <ol className="mt-[8px]">
+        {order.map((id, index) => {
+          const label = catalogOrderLabels[id] ?? id
+          const reason = skipReason(id)
+          return (
+            <li key={id} className="flex items-center gap-[12px] py-[8px] text-small">
+              <span className="w-[16px] text-muted">{index + 1}</span>
+              <span className="min-w-0 flex-1">
+                {label}
+                {reason ? <span className="text-warn"> · {reason}</span> : null}
+              </span>
+              <button
+                type="button"
+                className={orderButtonClassName}
+                aria-label={`Move ${label} up`}
+                disabled={disabled || orderLocked || index === 0}
+                onClick={() => move(index, -1)}
+              >
+                Up
+              </button>
+              <button
+                type="button"
+                className={orderButtonClassName}
+                aria-label={`Move ${label} down`}
+                disabled={disabled || orderLocked || index === order.length - 1}
+                onClick={() => move(index, 1)}
+              >
+                Down
+              </button>
+              <button
+                type="button"
+                className={orderButtonClassName}
+                aria-label={`Remove ${label}`}
+                disabled={disabled || orderLocked || order.length === 1}
+                onClick={() => onOrder(order.filter((item) => item !== id))}
+              >
+                Remove
+              </button>
+            </li>
+          )
+        })}
+      </ol>
+      {spare.length > 0 && (
+        <div className="mt-[8px] flex flex-wrap gap-[12px]">
+          {spare.map((id) => (
+            <button
+              key={id}
+              type="button"
+              className="text-small text-accent underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
+              disabled={disabled || orderLocked}
+              onClick={() => onOrder([...order, id])}
+            >
+              Add {catalogOrderLabels[id]}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SourceRow({
+  id,
+  mark,
+  label,
+  note,
+  on,
+  disabled,
+  lockedBy = '',
+  onChange,
+}: {
+  id: string
+  mark: string
+  label: string
+  note: string
+  on: boolean
+  disabled: boolean
+  /** The environment variable that holds this switch, or "" when Settings may change it. */
+  lockedBy?: string
+  onChange: (on: boolean) => void
+}) {
+  return (
+    <div className="flex items-center gap-[15px] border-b border-line py-[16px]">
+      <span className={sourceLogoClassName}>{mark}</span>
+      <div className="min-w-0 flex-1">
+        <label htmlFor={id} className="text-body">
+          {label}
+          {lockedBy ? <span className="text-warn"> · Locked by {lockedBy}</span> : null}
+        </label>
+        <p className="mt-[4px] text-tiny text-muted">{note}</p>
+      </div>
+      <input
+        id={id}
+        type="checkbox"
+        className="h-[18px] w-[18px] shrink-0 accent-accent coarse:h-[22px] coarse:w-[22px]"
+        checked={on}
+        disabled={disabled || lockedBy !== ''}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+    </div>
+  )
+}
+
 function SettingsPage() {
   const client = useQueryClient()
   const settings = useQuery({
@@ -626,8 +857,17 @@ function SettingsPage() {
   )
   const [conflicts, setConflicts] = useState<Partial<Record<SettingKey, SettingValue>>>({})
   const [saved, setSaved] = useState(false)
+  const [cookieText, setCookieText] = useState('')
+  const [removeCookies, setRemoveCookies] = useState(false)
+  const [removeArl, setRemoveArl] = useState(false)
+  const cookieSaved = settings.data?.youtube_cookies.value === true
+  const cookiePending = cookieText.trim().length > 0 || removeCookies
+  const arlSaved = settings.data?.deezer_cookie.value === true
+  const typedArl = typeof draft.deezer_arl === 'string' ? draft.deezer_arl.trim() : ''
+  // What the source list should assume once this page is saved.
+  const arlAfterSave = typedArl !== '' || (arlSaved && !removeArl)
 
-  const isDirty = Object.keys(draft).length > 0
+  const isDirty = Object.keys(draft).length > 0 || cookiePending || removeArl
 
   useBlocker({
     condition: isDirty,
@@ -651,7 +891,11 @@ function SettingsPage() {
     for (const key of Object.keys(draft) as SettingKey[]) {
       const original = originalValues[key]
       const current = settings.data[key]?.value
-      if (original !== undefined && current !== original && current !== draft[key]) {
+      if (
+        original !== undefined &&
+        !sameSetting(current, original) &&
+        !sameSetting(current, draft[key])
+      ) {
         newConflicts[key] = current
       }
     }
@@ -661,18 +905,51 @@ function SettingsPage() {
     }
   }, [settings.data, draft, originalValues])
 
+  function edit(key: SettingKey, value: SettingValue) {
+    const current = settings.data?.[key]?.value
+    if (!(key in draft)) {
+      setOriginalValues({ ...originalValues, [key]: current })
+    }
+    setDraft({ ...draft, [key]: value })
+    setSaved(false)
+  }
+
+  /** Drop one key from the draft, so saving leaves that setting as it is. */
+  function unedit(key: SettingKey) {
+    const { [key]: _dropped, ...rest } = draft
+    setDraft(rest)
+  }
+
   const save = useMutation({
-    mutationFn: () =>
-      api('settings', settingsSchema, {
+    mutationFn: async () => {
+      if (removeCookies && cookieText.trim().length === 0) {
+        await api('youtube-cookies', youtubeCookiesSchema, { method: 'DELETE' })
+      } else if (cookieText.trim()) {
+        await api('youtube-cookies', youtubeCookiesSchema, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: cookieText }),
+        })
+      }
+
+      const changes = settingsPatch(draft, removeArl)
+      if (Object.keys(changes).length === 0) {
+        return api('settings', settingsSchema)
+      }
+      return api('settings', settingsSchema, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draft),
-      }),
+        body: JSON.stringify(changes),
+      })
+    },
     onSuccess: (data) => {
       client.setQueryData(['settings'], data)
       setDraft({})
       setOriginalValues({})
       setConflicts({})
+      setCookieText('')
+      setRemoveCookies(false)
+      setRemoveArl(false)
       setSaved(true)
     },
   })
@@ -795,6 +1072,11 @@ function SettingsPage() {
                       ? 'Audio quality'
                       : 'Queue & retries'}
                 </h2>
+                {section === 'queue' && (
+                  <p className="mt-[14px] max-w-[520px] text-small text-muted">
+                    How many times a song walks the source list is under Sources.
+                  </p>
+                )}
                 {controls
                   .filter((control) => control.section === section)
                   .map(({ key, label, help, min, max }) => {
@@ -945,25 +1227,209 @@ function SettingsPage() {
             ))}
             <section id="sources" className={settingsSectionClassName}>
               <h2 className={settingsSectionHeadingClassName}>Sources</h2>
-              <div className={sourceSummaryClassName}>
-                <span className={sourceLogoClassName}>d.</span>
-                <div>
-                  <h3 className="mb-[4px]">Deezer</h3>
-                  <p className="text-small">Default catalog. No key required.</p>
-                </div>
-                <Link
-                  to="/diagnostics"
-                  data-ui="text-link"
-                  className={textLinkClassName('ml-auto max-phone:text-tiny')}
-                >
-                  Test connection
-                  <ArrowRight size={15} />
-                </Link>
-              </div>
-              <p className="text-muted text-small">
-                YouTube supplies audio through yt-dlp. Original preserves source quality. Paid
-                sources are not enabled.
+              <p className="mt-[14px] max-w-[520px] text-small text-muted">
+                Turn a source off to stop using it. Paste a new Deezer cookie here when the old one
+                stops working.
               </p>
+              <CatalogOrder
+                order={
+                  (draft.source_order as string[] | undefined) ?? settings.data.source_order.value
+                }
+                tries={Number(draft.tries_per_source ?? settings.data.tries_per_source.value)}
+                triesLocked={settings.data.tries_per_source.locked}
+                triesOrigin={settings.data.tries_per_source.origin}
+                laps={Number(draft.max_attempts ?? settings.data.max_attempts.value)}
+                lapsLocked={settings.data.max_attempts.locked}
+                lapsOrigin={settings.data.max_attempts.origin}
+                orderLocked={settings.data.source_order.locked}
+                orderOrigin={settings.data.source_order.origin}
+                changedElsewhere={(
+                  [
+                    ['source_order', 'the source list'],
+                    ['tries_per_source', 'tries'],
+                    ['max_attempts', 'times around the list'],
+                    ['deezer_catalog', 'Deezer'],
+                    ['deezer_audio', 'Deezer account'],
+                    ['disabled_sources', 'the source switches'],
+                  ] as const
+                )
+                  .filter(([key]) => conflicts[key] !== undefined)
+                  .map(([, name]) => name)}
+                deezerOn={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
+                hasCookie={arlAfterSave}
+                disabledSources={
+                  (draft.disabled_sources as string[] | undefined) ??
+                  settings.data.disabled_sources.value
+                }
+                paused={diagnostics.data?.queue.paused_sources ?? []}
+                disabled={save.isPending}
+                onOrder={(next) => edit('source_order', next)}
+                onTries={(next) => edit('tries_per_source', next)}
+                onLaps={(next) => edit('max_attempts', next)}
+              />
+              <SourceRow
+                id="deezer"
+                mark="d."
+                label="Deezer"
+                note="Search. Album pages and catalog downloads still use the Deezer catalog."
+                on={(draft.deezer_catalog ?? settings.data.deezer_catalog.value) === true}
+                disabled={save.isPending}
+                lockedBy={
+                  settings.data.deezer_catalog.locked ? settings.data.deezer_catalog.origin : ''
+                }
+                onChange={(on) => edit('deezer_catalog', on)}
+              />
+              <SourceRow
+                id="deezer_audio"
+                mark="a."
+                label="Deezer account"
+                note="Turn this off to skip the Deezer account row. The other rows still run."
+                on={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
+                disabled={save.isPending}
+                lockedBy={
+                  settings.data.deezer_audio.locked ? settings.data.deezer_audio.origin : ''
+                }
+                onChange={(on) => edit('deezer_audio', on)}
+              />
+              <div className="grid grid-cols-[1fr_280px] items-center gap-[28px] border-b border-line py-[16px] max-phone:grid-cols-1 max-phone:gap-[10px]">
+                <div>
+                  <label htmlFor="deezer_arl" className="text-body">
+                    Deezer cookie
+                  </label>
+                  <p className="mt-[7px] max-w-[420px] text-tiny">
+                    In the browser, open DevTools, then Storage, then Cookies, and copy arl. Paste a
+                    new one here when it changes. The cookie stays on this server and is not shown
+                    again.
+                  </p>
+                  <p className="mt-[7px] text-tiny text-muted" aria-live="polite">
+                    {removeArl
+                      ? 'The cookie will be removed when you save.'
+                      : arlSaved
+                        ? 'A cookie is saved.'
+                        : 'No Deezer cookie yet.'}
+                  </p>
+                  {arlSaved && (
+                    <button
+                      type="button"
+                      className="mt-[8px] text-small text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
+                      disabled={save.isPending}
+                      onClick={() => {
+                        unedit('deezer_arl')
+                        setRemoveArl(!removeArl)
+                        setSaved(false)
+                      }}
+                    >
+                      {removeArl ? 'Keep cookie' : 'Remove cookie'}
+                    </button>
+                  )}
+                </div>
+                <Field
+                  id="deezer_arl"
+                  type="password"
+                  autoComplete="off"
+                  spellCheck={false}
+                  maxLength={192}
+                  disabled={save.isPending}
+                  placeholder={
+                    arlSaved ? 'Paste a new cookie to replace it' : 'Paste the arl cookie'
+                  }
+                  value={typeof draft.deezer_arl === 'string' ? draft.deezer_arl : ''}
+                  onChange={(e) => {
+                    // An empty box means no change. Removing the cookie is its own button.
+                    if (e.target.value.trim() === '') unedit('deezer_arl')
+                    else edit('deezer_arl', e.target.value.trim())
+                    setRemoveArl(false)
+                  }}
+                />
+              </div>
+              <div className="grid grid-cols-[1fr_280px] items-start gap-[28px] border-b border-line py-[16px] max-phone:grid-cols-1 max-phone:gap-[10px]">
+                <div>
+                  <label htmlFor="youtube_cookies" className="text-body">
+                    YouTube cookies
+                  </label>
+                  <p className="mt-[7px] max-w-[420px] text-tiny">
+                    Paste a Netscape cookies.txt exported while signed in at youtube.com. An
+                    age-restricted video needs it. The file stays on this server and is not shown
+                    again.
+                  </p>
+                  <p className="mt-[7px] text-tiny text-muted" aria-live="polite">
+                    {removeCookies
+                      ? 'The cookie file will be removed when you save.'
+                      : cookieSaved
+                        ? 'A cookie file is saved.'
+                        : 'No YouTube cookie yet.'}
+                  </p>
+                  {cookieSaved && (
+                    <button
+                      type="button"
+                      className="mt-[8px] text-small text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
+                      disabled={save.isPending}
+                      onClick={() => {
+                        setCookieText('')
+                        setRemoveCookies(true)
+                        setSaved(false)
+                      }}
+                    >
+                      Remove cookie
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  id="youtube_cookies"
+                  rows={5}
+                  spellCheck={false}
+                  autoComplete="off"
+                  disabled={save.isPending}
+                  value={cookieText}
+                  placeholder={
+                    cookieSaved ? 'Paste a new file to replace the saved one' : 'Paste cookies.txt'
+                  }
+                  onChange={(event) => {
+                    setCookieText(event.target.value)
+                    setRemoveCookies(false)
+                    setSaved(false)
+                  }}
+                  className="w-full rounded-[5px] border border-line-strong bg-raised px-[11px] py-[10px] text-small text-text"
+                />
+              </div>
+              {(diagnostics.data?.download_sources ?? [])
+                .filter((source) => source.id !== 'deezer' && source.id !== 'deezer_audio')
+                .map((source) => {
+                  const turnedOff = (
+                    (draft.disabled_sources as string[] | undefined) ??
+                    settings.data.disabled_sources.value
+                  ).includes(source.id)
+                  return (
+                    <div key={source.id}>
+                      <SourceRow
+                        id={source.id}
+                        mark={source.label.slice(0, 1)}
+                        label={source.label}
+                        note={
+                          source.working ? source.note : `${source.label} does not work right now.`
+                        }
+                        on={source.working && !turnedOff}
+                        disabled={!source.working || save.isPending}
+                        lockedBy={
+                          settings.data.disabled_sources.locked
+                            ? settings.data.disabled_sources.origin
+                            : ''
+                        }
+                        onChange={(on) => {
+                          const current =
+                            (draft.disabled_sources as string[] | undefined) ??
+                            settings.data.disabled_sources.value
+                          edit(
+                            'disabled_sources',
+                            on
+                              ? current.filter((item) => item !== source.id)
+                              : [...current, source.id],
+                          )
+                        }}
+                      />
+                    </div>
+                  )
+                })}
             </section>
             {/* `save-bar` is the hook `e2e/phone.spec.ts` measures against the bottom bar. The
                 offset keeps it clear of the player, and on a phone the bar and home indicator. */}
@@ -1320,6 +1786,13 @@ function DiagnosticsPage() {
                       {source.source.charAt(0).toUpperCase() + source.source.slice(1)}
                     </h3>
                     <p className="text-small">{source.detail}</p>
+                    {source.source === 'deezer' && (
+                      <p className="text-tiny text-muted">
+                        {data.deezer_audio
+                          ? 'Account audio is on. Catalog tracks save from Deezer, then use your folder names.'
+                          : 'Account audio is off.'}
+                      </p>
+                    )}
                   </div>
                 </div>
                 <div className="mt-[27px] flex items-center justify-between gap-[10px]">

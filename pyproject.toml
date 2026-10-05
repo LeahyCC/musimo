@@ -10,6 +10,7 @@ dependencies = [
   "yt-dlp[default,curl-cffi]==2026.8.19",
   "bgutil-ytdlp-pot-provider==2.0.0",
   "mutagen==1.48.1",
+  "pycryptodomex==3.23.0",
   "watchdog==6.0.0",
 ]
 

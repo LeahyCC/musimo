@@ -1,6 +1,6 @@
 # Terms and responsible use
 
-Last updated: 7 September 2026.
+Last updated: 4 October 2026.
 
 ## Scope
 
@@ -8,9 +8,17 @@ Musimo is software that you install and operate. The project does not provide a 
 
 Musimo's source is governed by the [MIT licence](LICENSE). This document explains responsibilities and project policy. It does not replace that licence, add a field-of-use restriction to it, or claim that installing the software creates a separate signed agreement. An operator offering a service must arrange appropriate terms and acceptance for that service.
 
+## Who answers for a copy
+
+You, and anyone you allow onto your installation, answer for the downloads, files and accounts on it. The maintainers do not run your copy and do not see your library.
+
+If other people can reach your installation, you are the one offering them a service. These project terms do not bind those people. Give them terms they can read before they use it. You answer for that service, including what they download with it.
+
 ## Rights to music and other material
 
 You are responsible for checking whether your intended access, downloading, copying, conversion, tagging, storage, sharing or public performance is permitted. Relevant rights may cover the sound recording, composition, lyrics and artwork separately. Use material you created, material with an applicable permission or licence, or material whose use is otherwise allowed by applicable law.
+
+Do not use Musimo to copy or share material you have no right to copy, to use an account or cookie that is not yours, or to bypass an access control or a technical protection measure. Do not offer other people a download service from your installation unless you have the right to supply those files and terms those people accept.
 
 Possessing a copy, seeing a search result, having a streaming subscription, or finding a technically accessible URL does not by itself establish permission for every use. A library badge only reports an indexed file match. Musimo does not verify ownership, determine public-domain status or authorize a download.
 
@@ -36,7 +44,7 @@ The MIT licence supplies the software without warranty and contains a limitation
 
 To the extent permitted by applicable law, the maintainers and contributors disclaim warranties and liability arising from use, inability to use, configuration, modification or redistribution of Musimo, including data loss, incorrect matches or metadata, provider restrictions and unauthorized use by an operator. Users remain responsible for their own conduct and obligations.
 
-Nothing here excludes liability that cannot lawfully be excluded or limits mandatory rights. These notices do not guarantee immunity from claims and do not transfer a maintainer's own non-excludable legal obligations to users. A hosted service, commercial distribution or jurisdiction-specific agreement needs its own legal review.
+Nothing here excludes liability that cannot lawfully be excluded or limits mandatory rights. These notices do not guarantee immunity from claims and do not transfer a maintainer's own non-excludable legal obligations to users. Copyright, contract and computer-access rules differ by country. This page is not a list of every law, and it does not make a forbidden download allowed. A hosted service, commercial distribution or jurisdiction-specific agreement needs its own legal review.
 
 ## Project support and rights concerns
 

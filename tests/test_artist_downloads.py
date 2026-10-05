@@ -194,6 +194,10 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(response.status_code, 200)
                     batch = response.json()
                     self.assertEqual([row["track_id"] for row in batch["jobs"]], [3, 4])
+                    self.assertEqual(
+                        {row["meta"]["title"] for row in batch["jobs"]}, {"Song 3", "Song 4"}
+                    )
+                    self.assertTrue(all(row["meta"]["artist"] == "Artist" for row in batch["jobs"]))
                     self.assertEqual(batch["albums"], 2)
                     self.assertEqual(batch["skipped_owned"], 1)
                     self.assertEqual(batch["skipped_queued"], 1)

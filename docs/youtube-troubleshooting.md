@@ -8,6 +8,7 @@ The download worker includes the required tools in the image. Start the optional
 - **POT_MISSING or SABR warnings:** check the bgutil helper and that its version matches the installed plugin. Preserve warnings; they can explain missing audio formats even when extraction does not throw an exception.
 - **JS_RUNTIME_MISSING:** inspect Deno and yt-dlp-ejs in Diagnostics. A runtime without the solver scripts is incomplete.
 - **COOKIES_EXPIRED:** replace the selected cookie file. Do not import cookies from a browser automatically or expose their contents in logs.
+- **AGE_RESTRICTED:** YouTube is asking that video for a signed-in age check. Paste a Netscape cookies.txt from a signed-in youtube.com session under Settings, Sources, YouTube cookies. This is one video, so it does not pause YouTube.
 - **SOURCE_BLOCKED / RATE_LIMITED:** pause that source, respect Retry-After and wait. Lower concurrency if failures recur. Do not keep retrying a refused endpoint.
 - **TIMEOUT:** separate catalog lookup, matching and media transfer timings. Retry only the failed stage when its input artifact is intact.
 
