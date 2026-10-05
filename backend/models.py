@@ -30,6 +30,8 @@ CATALOG_ORDER = ("deezer", "youtube", "soundcloud")
 
 
 def clean_order(value: list[str]) -> list[str]:
+    if not value:
+        raise ValueError("Keep at least one source in the list.")
     if any(item not in CATALOG_ORDER for item in value):
         raise ValueError("That source is not in the catalog list.")
     seen: list[str] = []

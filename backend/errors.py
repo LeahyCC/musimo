@@ -3,7 +3,11 @@
 from backend.sources import by_source
 
 # Codes that name YouTube's own helpers (PO token, Deno, cookies). Another site never has them.
-YOUTUBE_ONLY_CODES = frozenset({"POT_MISSING", "JS_RUNTIME_MISSING", "COOKIES_EXPIRED"})
+YOUTUBE_ONLY_CODES = frozenset(
+    {"POT_MISSING", "JS_RUNTIME_MISSING", "COOKIES_EXPIRED", "AGE_RESTRICTED"}
+)
+# Shown instead of yt-dlp's age-check essay. One video, not a broken helper.
+AGE_HINT = "YouTube wants a sign-in to confirm this video's age."
 # A refusal from one site. Podcast episodes each come from a different host, so for them a
 # refusal says nothing about the next episode and must not count toward a pause.
 SITE_REFUSAL_CODES = frozenset({"SOURCE_BLOCKED", "RATE_LIMITED"})
@@ -18,6 +22,16 @@ GEO_MARKERS = ("geolocation", "geo restriction", "geo-restricted", "geo restrict
 GEO_HINTS = {"BBC Sounds": "BBC Sounds only plays in the UK, and this server is not there."}
 
 
+def age_restricted(text: str) -> bool:
+    lower = text.lower()
+    return "confirm your age" in lower or "age-restricted" in lower or "age restricted" in lower
+
+
+def plain_detail(text: str) -> str:
+    """A stored tool line the status row can show. An age check becomes one sentence."""
+    return AGE_HINT if age_restricted(text) else text
+
+
 def geo_restricted(text: str) -> bool:
     lower = text.lower()
     return any(marker in lower for marker in GEO_MARKERS)
@@ -26,6 +40,19 @@ def geo_restricted(text: str) -> bool:
 def site_label(source: str) -> str:
     site = by_source(source)
     return site.label if site else SITE_LABELS.get(source, "the download site")
+
+
+def no_match_hint(labels: list[str]) -> str:
+    """The no-match sentence for the sites that were actually asked."""
+    if not labels:
+        return "No matching recording was found."
+    if len(labels) == 1:
+        named = labels[0]
+    elif len(labels) == 2:
+        named = f"{labels[0]} or {labels[1]}"
+    else:
+        named = ", ".join(labels[:-1]) + ", or " + labels[-1]
+    return f"No matching recording was found on {named}."
 
 
 def source_code(code: str, source: str) -> str:
@@ -75,6 +102,10 @@ def error_guidance(code: str, site: str = "YouTube") -> tuple[str, str]:
         "COOKIES_EXPIRED": (
             "YouTube cookies have expired or are invalid.",
             "diagnostics:sources",
+        ),
+        "AGE_RESTRICTED": (
+            AGE_HINT,
+            "settings:sources",
         ),
         "CATALOG_FAILED": (
             "The music catalog could not be reached.",

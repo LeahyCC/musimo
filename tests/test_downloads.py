@@ -726,7 +726,7 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                     finally:
                         store.close()
 
-    async def test_a_retry_sends_a_catalog_track_back_to_youtube(self) -> None:
+    async def test_a_retry_clears_an_automatic_pick_and_keeps_a_hand_pick(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             store = Store(root / "db.sqlite3")
@@ -736,14 +736,111 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                 service = await self.service(root, store, client)
                 store.update({"destination": str(root)})
                 fell_back = service.jobs.enqueue(1, "original", str(root))
-                service.jobs.update(fell_back.id, source="soundcloud", stage="failed")
+                service.jobs.update(
+                    fell_back.id,
+                    source="soundcloud",
+                    selected="abcdefghijk",
+                    stage="failed",
+                )
                 picked = service.jobs.enqueue(2, "original", str(root))
                 service.jobs.update(
-                    picked.id, source="soundcloud", selected="123456", stage="failed"
+                    picked.id,
+                    source="soundcloud",
+                    selected="123456",
+                    hand_picked=True,
+                    stage="failed",
                 )
-                self.assertEqual(service.command(fell_back.id, "retry").source, "youtube")
-                # A recording chosen by hand stays on the site it was chosen from.
-                self.assertEqual(service.command(picked.id, "retry").source, "soundcloud")
+                automatic = service.command(fell_back.id, "retry")
+                self.assertEqual(automatic.selected, "")
+                self.assertEqual(automatic.source, "youtube")
+                self.assertFalse(automatic.hand_picked)
+                kept = service.command(picked.id, "retry")
+                self.assertEqual(kept.source, "soundcloud")
+                self.assertEqual(kept.selected, "123456")
+                self.assertTrue(kept.hand_picked)
+                await service.close()
+            store.close()
+
+    async def test_a_catalog_job_fails_when_no_source_can_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                store.update(
+                    {
+                        "destination": str(root),
+                        "source_order": ["youtube"],
+                        "disabled_sources": ["youtube"],
+                    }
+                )
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.start()
+                async with asyncio.timeout(2):
+                    while service.jobs.get(job.id).stage != "failed":
+                        await asyncio.sleep(0.01)
+                failed = service.jobs.get(job.id)
+                self.assertIn("turned off", failed.error_hint)
+                self.assertEqual(failed.error_fix, "settings:sources")
+                await service.close()
+            store.close()
+
+    async def test_a_search_block_pauses_the_source_named_on_the_error(self) -> None:
+        class FakeOut:
+            def __init__(self, payload: bytes) -> None:
+                self.payload = payload
+                self.sent = False
+
+            async def readline(self) -> bytes:
+                if self.sent:
+                    return b""
+                self.sent = True
+                return self.payload
+
+        class FakeProc:
+            def __init__(self) -> None:
+                line = json.dumps(
+                    {
+                        "kind": "error",
+                        "code": "SOURCE_BLOCKED",
+                        "message": "HTTP 403",
+                        "retryable": False,
+                        "hint": "SoundCloud is blocking requests.",
+                        "fix": "diagnostics:sources",
+                        "source": "soundcloud",
+                    }
+                )
+                self.stdout = FakeOut((line + "\n").encode())
+                self.returncode = 0
+                self.pid = 1
+
+            async def wait(self) -> int:
+                return 0
+
+        async def fake_exec(*_args: object, **_kwargs: object) -> FakeProc:
+            return FakeProc()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                store.update({"destination": str(root)})
+                with patch("backend.downloads.asyncio.create_subprocess_exec", fake_exec):
+                    for track in (1, 2, 3):
+                        job = service.jobs.enqueue(track, "original", str(root))
+                        service.jobs.update(
+                            job.id,
+                            source="youtube",
+                            meta=Metadata(id=track, title="x", artist="A").model_dump(),
+                        )
+                        await service.run(job.id)
+                        self.assertEqual(service.jobs.get(job.id).source, "soundcloud")
+                self.assertEqual(service.paused_sources(), {"soundcloud"})
                 await service.close()
             store.close()
 
@@ -820,6 +917,7 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertEqual(picked.status_code, 200)
                     self.assertEqual(picked.json()["source"], "soundcloud")
+                    self.assertTrue(picked.json()["hand_picked"])
                     unknown = await api.post(
                         f"/api/jobs/{job.id}/pick", json={"candidate_id": "999999999"}
                     )

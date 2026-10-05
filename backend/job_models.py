@@ -124,8 +124,13 @@ class Job(BaseModel):
     meta: Metadata
     candidates: list[Candidate] = Field(default_factory=list)
     selected: str = ""
+    # Set only when someone presses Use this. An automatic match must not block the source list.
+    hand_picked: bool = False
     check_match: bool = False
     attempts: int = 0
+    # Which trip through the source list this job is on. Zero before the worker has asked anyone.
+    lap: int = 0
+    laps: int = 0
     retry_at: float = 0
     progress: float = 0
     downloaded: int = 0

@@ -136,6 +136,9 @@ class Downloads:
         self.today: Callable[[], date] = date.today
         self.running: dict[str, asyncio.Task[None]] = {}
         self.processes: dict[str, asyncio.subprocess.Process] = {}
+        # Sources already counted for a block during this run, so a search block and the
+        # final error do not pause the same source twice.
+        self.noted_blocks: dict[str, set[str]] = {}
         self.stopping = False
         self.task: asyncio.Task[None] | None = None
 
@@ -211,15 +214,68 @@ class Downloads:
         listed = self.controls()["paused_sources"]
         return {str(source) for source in listed} if isinstance(listed, list) else set()
 
-    def catalog_open(self, settings: Settings, paused: set[str]) -> bool:
-        """A catalog song can start while any source in its order is still usable."""
+    def catalog_hold(self, settings: Settings, paused: set[str]) -> str:
+        """Why a catalog song cannot start, or "" when one source can run.
+
+        A pause waits, because the banner already says so. A list that is off, or a Deezer
+        row with no cookie and nothing else on, fails the job. Waiting would leave it queued
+        with no reason on the card.
+        """
+        held = False
+        for name in settings.source_order:
+            if name in settings.disabled_sources:
+                continue
+            if name == "deezer" and not (settings.deezer_audio and settings.deezer_arl):
+                continue
+            if name in paused:
+                held = True
+                continue
+            return ""
+        return "paused" if held else "off"
+
+    def opening_source(self, settings: Settings) -> str:
+        """The first row an automatic retry should show, until the worker asks it."""
+        paused = self.paused_sources()
         for name in settings.source_order:
             if name in paused or name in settings.disabled_sources:
                 continue
             if name == "deezer" and not (settings.deezer_audio and settings.deezer_arl):
                 continue
-            return True
-        return False
+            return name
+        return "youtube"
+
+    def fail_closed(self, job: Job) -> None:
+        message = "The sources for this track are turned off in Settings."
+        self.jobs.update(
+            job.id,
+            stage="failed",
+            error_code="DOWNLOAD_FAILED",
+            error=message,
+            error_hint=message,
+            error_fix="settings:sources",
+            retryable=False,
+            speed=0,
+            eta=None,
+        )
+
+    def note_block(self, job_id: str, source: str, detail: str) -> None:
+        """Count one blocking failure for this run against the source that raised it."""
+        if not source:
+            return
+        seen = self.noted_blocks.setdefault(job_id, set())
+        if source in seen:
+            return
+        seen.add(source)
+        with self.store.lock:
+            failures = self.store.db.execute(
+                "INSERT INTO source_control(source,blocking_failures) VALUES (?,1) "
+                "ON CONFLICT(source) DO UPDATE SET "
+                "blocking_failures=blocking_failures+1 RETURNING blocking_failures",
+                (source,),
+            ).fetchall()[0][0]
+        if failures >= 3:
+            self.set_controls(source_paused=True, source=source)
+        self.store.record_probe("blocked", 0, detail, source=source)
 
     def backup(self, job: Job, settings: Settings, paused: set[str]) -> str:
         """The source this job may fall back to, or "" when it has none.
@@ -301,11 +357,19 @@ class Downloads:
                 for job in reversed(self.jobs.list(active=True)):
                     # A block on one site must not hold the others. A catalog song walks its list,
                     # so it starts while any row in that list can still run.
+                    # Retry clears an automatic pick, so this job walks the list. A hand pick waits.
                     catalog_job = job.catalog == "deezer" and not job.selected
                     blocked = job.source in paused_sources
                     switch = blocked and bool(self.backup(job, settings, paused_sources))
                     if catalog_job:
-                        if not self.catalog_open(settings, paused_sources):
+                        hold = self.catalog_hold(settings, paused_sources)
+                        if (
+                            hold == "off"
+                            and job.desired == "run"
+                            and job.stage in {"queued", "retry_wait"}
+                        ):
+                            self.fail_closed(job)
+                        if hold:
                             continue
                         switch = False
                     elif blocked and not switch:
@@ -358,13 +422,20 @@ class Downloads:
             if job.stage not in {"failed", "cancelled"}:
                 raise ValueError("Only failed or cancelled jobs can be retried")
             self.check_destination(self.target(job.target))
-            # A catalog track that fell back to the backup source starts over on YouTube, so a
-            # pause that has since lifted does not leave it on the weaker source for good. A
-            # recording chosen by hand keeps the site it was chosen from.
-            restart = job.catalog == "deezer" and not job.selected
+            # An automatic match walks the list again. A recording chosen by hand stays put.
+            automatic = job.catalog == "deezer" and not job.hand_picked
+            restart: dict[str, object] = {}
+            if automatic:
+                # Show the first row that can run. The worker replaces it when that row is asked.
+                restart = {
+                    "selected": "",
+                    "check_match": False,
+                    "source": self.opening_source(self.settings()),
+                    "lap": 0,
+                    "laps": 0,
+                }
             return self.jobs.update(
                 job_id,
-                source="youtube" if restart else job.source,
                 stage="queued",
                 desired="run",
                 attempts=0,
@@ -372,6 +443,7 @@ class Downloads:
                 error="",
                 error_code="",
                 hidden=False,
+                **restart,
             )
         if action == "resume":
             if job.stage not in {"paused", "pausing"}:
@@ -499,11 +571,14 @@ class Downloads:
                         eta=raw.get("eta"),
                     )
                 elif kind == "source":
-                    # The backup source matched, or the account file was used, so pauses and
-                    # error codes follow that source now.
+                    # The source being asked now, so the card and a later block follow it.
                     source = str(raw.get("source", ""))
                     if source == "deezer" or by_source(source) is not None:
-                        self.jobs.update(job.id, source=source)
+                        changes: dict[str, object] = {"source": source}
+                        if raw.get("lap"):
+                            changes["lap"] = int(str(raw.get("lap")))
+                            changes["laps"] = int(str(raw.get("laps") or 0))
+                        self.jobs.update(job.id, **changes)
                 elif kind == "candidates":
                     self.jobs.update(
                         job.id,
@@ -514,7 +589,16 @@ class Downloads:
                 elif kind in {"warning", "log"}:
                     tail.append(str(raw.get("message", "")))
                     tail = tail[-8:]
+                elif kind == "blocked":
+                    # Count the block now, so a later source that saves the song does not hide it.
+                    self.note_block(
+                        job.id, str(raw.get("source") or ""), str(raw.get("message") or "")
+                    )
                 elif kind == "error":
+                    # A search can fail before a file exists. The pause belongs to that source.
+                    failed = str(raw.get("source") or "")
+                    if failed == "deezer" or by_source(failed) is not None:
+                        self.jobs.update(job.id, source=failed)
                     failure = DownloadError(
                         str(raw.get("code", "DOWNLOAD_FAILED")),
                         str(raw.get("message", "Worker failed")),
@@ -782,22 +866,11 @@ class Downloads:
                     warning = await self.navidrome(job, Path(published.final_path))
                     if warning:
                         self.jobs.update(job.id, warnings=[*job.warnings, warning])
-            # The worker only reports these for the site that raised them, so the count and the
-            # pause belong to this job's source and leave other sites running.
+            # The worker names the source on the error. A block already counted this run is skipped.
             if error.code in BLOCKING_CODES:
-                with self.store.lock:
-                    # Read every row: a RETURNING statement only finishes, and so commits,
-                    # once its cursor is exhausted.
-                    failures = self.store.db.execute(
-                        "INSERT INTO source_control(source,blocking_failures) VALUES (?,1) "
-                        "ON CONFLICT(source) DO UPDATE SET "
-                        "blocking_failures=blocking_failures+1 RETURNING blocking_failures",
-                        (job.source,),
-                    ).fetchall()[0][0]
-                if failures >= 3:
-                    self.set_controls(source_paused=True, source=job.source)
-                self.store.record_probe("blocked", 0, error.detail, source=job.source)
+                self.note_block(job_id, job.source, error.detail)
         finally:
+            self.noted_blocks.pop(job_id, None)
             self.processes.pop(job_id, None)
             self.running.pop(job_id, None)
             self.wake.set()

@@ -11,7 +11,15 @@ from pathlib import Path
 from typing import Protocol, cast
 
 from backend.deezer_audio import DeezerAudioError, configured, fetch
-from backend.errors import error_guidance, geo_restricted, site_label, source_code
+from backend.errors import (
+    BLOCKING_CODES,
+    age_restricted,
+    error_guidance,
+    geo_restricted,
+    no_match_hint,
+    site_label,
+    source_code,
+)
 from backend.job_models import Candidate, Job, valid_candidate_id
 from backend.matching import CHECK_BELOW, MIN_SCORE, Matcher
 from backend.sources import by_source, match_entry
@@ -54,6 +62,16 @@ class WrongLength(Exception):
     """The file length is not the catalog track. Another try would fetch the same file."""
 
 
+def account_preview(catalog: float, actual: float) -> bool:
+    """The account file is already the track id. Only a short clip is the wrong file.
+
+    A radio edit can sit half a minute off the length Deezer lists. That is still the song.
+    """
+    if catalog <= 0 or actual <= 0:
+        return False
+    return actual < 45 and actual < catalog * 0.5
+
+
 AUDIO_SUFFIXES = {".webm", ".m4a", ".opus", ".mp3", ".ogg", ".flac", ".aac", ".mp4"}
 
 
@@ -83,6 +101,10 @@ def classify(message: str) -> str:
     lower = message.lower()
     if geo_restricted(lower):
         return "GEO_RESTRICTED"
+    # "confirm your age" also contains "confirm you", which is the bot check. Age comes first,
+    # and it is one video, so it must not pause YouTube.
+    if age_restricted(lower):
+        return "AGE_RESTRICTED"
     if "no suitable extractor" in lower or "unsupported url" in lower:
         return "SITE_NOT_ALLOWED"
     if "confirm you" in lower or "403" in lower:
@@ -129,6 +151,12 @@ def base_options() -> dict[str, object]:
         options["extractor_args"] = {
             "youtubepot-bgutilscript": {"server_home": [server_home]},
         }
+    # A signed-in cookies file lets an age-restricted video through. The path is the server's,
+    # never a path from the browser.
+    cookies = os.getenv("MUSIMO_YOUTUBE_COOKIES", "").strip()
+    cookie_path = Path(cookies) if cookies else None
+    if cookie_path is not None and cookie_path.is_file() and not cookie_path.is_symlink():
+        options["cookiefile"] = str(cookie_path)
     return options
 
 
@@ -204,6 +232,8 @@ def main() -> None:
     # error codes and the pause follow it from that point on.
     origin = job.source
     site = site_label(origin)
+    # The source being asked right now. A failure reports this, not the site the job started on.
+    asking = origin
 
     def refuse(code: str, message: str) -> None:
         hint, fix = error_guidance(code, site)
@@ -215,6 +245,20 @@ def main() -> None:
             hint=hint,
             fix=fix,
             version=version,
+            source=asking,
+        )
+
+    def sources_off() -> None:
+        message = "The sources for this track are turned off in Settings."
+        emit(
+            "error",
+            code="DOWNLOAD_FAILED",
+            message=message,
+            retryable=False,
+            hint=message,
+            fix="settings:sources",
+            version=version,
+            source=asking,
         )
 
     def progress(raw: dict[str, object]) -> None:
@@ -304,8 +348,7 @@ def main() -> None:
         saved_file = fetch(job.track_id, folder, on_progress)
         audio_info = probe(saved_file)
         duration = float(str(audio_info["duration"]))
-        limit = max(15, job.meta.duration * 0.12)
-        if job.meta.duration and abs(duration - job.meta.duration) > limit:
+        if account_preview(job.meta.duration, duration):
             saved_file.unlink(missing_ok=True)
             return None
         temporary = manifest.with_suffix(".tmp")
@@ -368,6 +411,14 @@ def main() -> None:
         temporary.replace(manifest)
         return audio, named
 
+    def note_source(name: str, lap: int, total: int, next_stage: str) -> None:
+        """Tell the queue which source is being asked, before the search or the file."""
+        nonlocal asking, stage
+        asking = name
+        stage = next_stage
+        emit("source", source=name, lap=lap, laps=total)
+        emit("stage", stage=next_stage)
+
     def walk_sources() -> tuple[Path, str, str, str] | None:
         """Ask the catalog list in order, then start again.
 
@@ -378,36 +429,52 @@ def main() -> None:
         order, tries, laps = source_plan()
         usable = [name for name in order if name != "deezer" or configured()]
         if not usable:
-            refuse("NO_MATCH", "The sources for this track are turned off in Settings.")
+            sources_off()
             return None
         matcher = Matcher()
         review: list[Candidate] = []
+        ranked_rows: list[Candidate] = []
         missed: set[str] = set()
-        deezer_error = ""
-        search_error = ""
-        search_origin = origin
+        # Asked, and the search found no song. A wrong length is not one of these.
+        no_song: list[str] = []
+        # source, code, message. The pause follows the source on the error, not the job's start.
+        hits: list[tuple[str, str, str]] = []
+
+        def remember(name: str, code: str, message: str) -> None:
+            hits.append((name, code, message))
+            # Count the block even when a later source saves the song.
+            if code in BLOCKING_CODES:
+                emit("blocked", source=name, code=code, message=message)
+
         wrong_length = False
-        for _lap in range(laps):
+        wrong_from = ""
+        asked: set[str] = set()
+        for lap in range(1, laps + 1):
             for name in usable:
                 if name in missed:
                     continue
+                asked.add(name)
                 if name == "deezer":
+                    note_source(name, lap, laps, "downloading")
                     for _attempt in range(tries):
                         try:
                             saved = account_once()
                         except (DeezerAudioError, OSError, ValueError) as exc:
-                            deezer_error = redact(str(exc)) or "Deezer audio failed"
-                            emit("log", message=deezer_error)
+                            message = redact(str(exc)) or "Deezer audio failed"
+                            emit("log", message=message)
+                            remember("deezer", "DOWNLOAD_FAILED", message)
                             continue
                         if saved is None:
                             missed.add("deezer")
                             wrong_length = True
+                            wrong_from = "deezer"
                             emit("log", message="Deezer file length did not match the catalog")
                             break
                         origin, site = "deezer", site_label("deezer")
                         emit("source", source="deezer")
                         return saved, job.meta.artist, origin, site
                     continue
+                note_source(name, lap, laps, "matching")
                 ranked: list[Candidate] = []
                 answered = False
                 for _attempt in range(tries):
@@ -415,79 +482,134 @@ def main() -> None:
                         candidates = search(name)
                     except Exception as exc:
                         message = redact(str(exc)) or "Search failed"
-                        if source_code(classify(message), name) == "DISK_FULL":
+                        code = source_code(classify(message), name)
+                        if code == "DISK_FULL":
                             raise
-                        search_error, search_origin = message, name
+                        remember(name, code, message)
                         continue
                     answered = True
                     ranked = matcher.rank(job.meta, candidates, min_score=MIN_SCORE[name])
                     if not ranked:
                         review += matcher.rank(job.meta, candidates, min_score=0, min_title=0)
                         missed.add(name)
+                        no_song.append(name)
                     break
                 if not answered or name in missed or not ranked:
                     continue
-                picked = ranked[0]
-                emit(
-                    "candidates",
-                    items=[row.model_dump() for row in ranked],
-                    selected=picked.id,
-                    check_match=picked.score < CHECK_BELOW[picked.source],
-                )
-                for _attempt in range(tries):
+                ranked_rows = ranked
+                length_bad = False
+                for picked in ranked:
+                    emit(
+                        "candidates",
+                        items=[row.model_dump() for row in ranked],
+                        selected=picked.id,
+                        check_match=picked.score < CHECK_BELOW[picked.source],
+                    )
                     try:
                         audio, named = download_chosen(picked)
                     except WrongLength:
-                        missed.add(name)
-                        wrong_length = True
-                        drop_audio()
-                        break
-                    except Exception as exc:
-                        message = redact(str(exc)) or "Download failed"
-                        if source_code(classify(message), picked.source) == "DISK_FULL":
-                            raise
-                        search_error, search_origin = message, picked.source
+                        # This recording is the wrong length. Another result from the same
+                        # search may still be the song, so do not leave the source yet.
+                        length_bad = True
                         drop_audio()
                         continue
+                    except Exception as exc:
+                        message = redact(str(exc)) or "Download failed"
+                        code = source_code(classify(message), picked.source)
+                        if code == "DISK_FULL":
+                            raise
+                        remember(picked.source, code, message)
+                        drop_audio()
+                        break
                     return audio, named, origin, site
-        if search_error:
-            failed = by_source(search_origin)
-            site_name = failed.label if failed else site_label(search_origin)
-            code = source_code(classify(search_error), search_origin)
-            hint, fix = error_guidance(code, site_name)
+                else:
+                    if length_bad:
+                        missed.add(name)
+                        wrong_length = True
+                        wrong_from = name
+        rows = list(ranked_rows)
+        seen_rows = {(row.source, row.id) for row in rows}
+        for row in review:
+            key = (row.source, row.id)
+            if key not in seen_rows:
+                rows.append(row)
+                seen_rows.add(key)
+        if rows:
+            # An automatic pick is not a hand pick. Leave it unselected so Retry walks the list.
+            emit(
+                "candidates",
+                items=[row.model_dump() for row in rows],
+                selected="",
+                check_match=True,
+            )
+        if hits:
+            blocking = [hit for hit in hits if hit[1] in BLOCKING_CODES]
+            chosen = blocking[-1] if blocking else hits[-1]
+            label = site_label(chosen[0])
+            hint, fix = error_guidance(chosen[1], label)
+            if chosen[0] == "deezer" and chosen[1] == "DOWNLOAD_FAILED":
+                hint = chosen[2]
+            extra: list[str] = []
+            seen_bits: set[str] = set()
+            for source_name, code, message in hits:
+                if source_name == chosen[0] and code == chosen[1]:
+                    continue
+                if source_name == "deezer" and message not in seen_bits:
+                    extra.append(message)
+                    seen_bits.add(message)
+            if no_song:
+                extra.append(no_match_hint([site_label(name) for name in no_song]))
+            if extra:
+                hint = f"{hint} {' '.join(extra)}"
             emit(
                 "error",
-                code=code,
-                message=search_error,
+                code=chosen[1],
+                message=hint if chosen[1] == "AGE_RESTRICTED" else chosen[2],
                 retryable=False,
                 hint=hint,
                 fix=fix,
                 version=version,
+                source=chosen[0],
             )
             return None
-        # Deezer failed and no later source was even searched. That is not a YouTube miss.
-        if deezer_error and not missed:
+        # A wrong length is not the end while a source in the list was never asked.
+        if wrong_length and not review and asked >= set(usable):
+            failed = wrong_from or asking
+            hint, fix = error_guidance("DURATION_MISMATCH", site_label(failed))
+            hint = f"The {site_label(failed)} file length differs from the catalog."
+            if no_song:
+                hint = f"{hint} {no_match_hint([site_label(name) for name in no_song])}"
+            skipped = [
+                site_label(name)
+                for name in ("deezer", "youtube", "soundcloud")
+                if name in turned_off()
+            ]
+            if len(skipped) == 1:
+                hint = f"{hint} {skipped[0]} is turned off, so it was not asked."
+            elif skipped:
+                hint = f"{hint} {' and '.join(skipped)} are turned off, so they were not asked."
             emit(
                 "error",
-                code="DOWNLOAD_FAILED",
-                message=deezer_error,
+                code="DURATION_MISMATCH",
+                message="Downloaded audio duration differs from the catalog",
                 retryable=False,
-                hint=deezer_error,
-                fix="retry",
+                hint=hint,
+                fix=fix,
                 version=version,
+                source=failed,
             )
             return None
-        if review:
-            emit(
-                "candidates",
-                items=[row.model_dump() for row in review],
-                selected="",
-                check_match=True,
-            )
-        if wrong_length and not review:
-            refuse("DURATION_MISMATCH", "Downloaded audio duration differs from the catalog")
-            return None
-        refuse("NO_MATCH", "No sufficiently close recording found")
+        names = no_song or [name for name in usable if name not in missed] or list(usable)
+        emit(
+            "error",
+            code="NO_MATCH",
+            message="No sufficiently close recording found",
+            retryable=False,
+            hint=no_match_hint([site_label(name) for name in names]),
+            fix="card:pick",
+            version=version,
+            source=names[-1] if names else asking,
+        )
         return None
 
     try:
@@ -531,7 +653,7 @@ def main() -> None:
                     if name in SEARCHES and name not in off
                 ]
                 if not tried:
-                    refuse("NO_MATCH", "The sources for this track are turned off in Settings.")
+                    sources_off()
                     return
                 for attempt in tried:
                     candidates = search(attempt)
@@ -662,7 +784,7 @@ def main() -> None:
         if code == "DOWNLOAD_FAILED" and stage in {"converting", "tagging"}:
             code = "TRANSCODE_FAILED" if stage == "converting" else "TAG_FAILED"
         hint, fix = error_guidance(code, site)
-        if code == "GEO_RESTRICTED":
+        if code in {"GEO_RESTRICTED", "AGE_RESTRICTED"}:
             # The tool's own wording is detail nobody can act on. The plain sentence is the answer.
             message = hint
         emit(
@@ -673,6 +795,7 @@ def main() -> None:
             hint=hint,
             fix=fix,
             version=version,
+            source=asking,
         )
 
 

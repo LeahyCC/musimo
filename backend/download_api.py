@@ -186,6 +186,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
                 replacement.id,
                 meta=job.meta.model_dump(),
                 selected=request.candidate_id,
+                hand_picked=True,
                 # A recording chosen by hand decides where the job downloads from, so its pauses
                 # and error codes follow that site.
                 source=chosen.source,
@@ -196,6 +197,7 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         return service.jobs.update(
             job.id,
             selected=request.candidate_id,
+            hand_picked=True,
             source=chosen.source,
             stage="queued",
             desired="run",

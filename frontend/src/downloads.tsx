@@ -146,10 +146,13 @@ export const activeCount = (data: QueueData) => data.jobs.filter(activeJob).leng
 const bytes = (value: number) =>
   value >= 1024 ** 2 ? `${(value / 1024 ** 2).toFixed(1)} MB` : `${Math.round(value / 1024)} KB`
 
-export const failureMessage = (job: Pick<DownloadJob, 'error_code' | 'error'>) =>
-  job.error_code === 'NO_MATCH'
-    ? 'No matching recording was found on YouTube. Nothing was downloaded.'
-    : job.error || 'The download stopped without an error message.'
+export const failureMessage = (
+  job: Pick<DownloadJob, 'error_code' | 'error'> & { error_hint?: string },
+) =>
+  job.error_hint ||
+  (job.error_code === 'NO_MATCH'
+    ? 'No matching recording was found. Nothing was downloaded.'
+    : job.error || 'The download stopped without an error message.')
 
 function errorLink(fix: string): { href: string; text: string } | null {
   if (!fix) return null
@@ -427,11 +430,14 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
           <span className="block truncate text-tiny text-muted">
             {job.meta.artist}
             {job.meta.album ? ` · ${job.meta.album}` : ''}
-            {job.catalog === 'link' ? ` · from ${siteLabel(job.source, job.source_label)}` : ''}
+            {job.catalog === 'link' || job.catalog === 'deezer'
+              ? ` · from ${siteLabel(job.source, job.source_label)}`
+              : ''}
+            {job.catalog === 'deezer' && job.laps > 1 && job.lap > 0
+              ? ` · pass ${job.lap} of ${job.laps}`
+              : ` · ${job.attempts} ${job.attempts === 1 ? 'attempt' : 'attempts'}`}
             {' · '}
             {formatLabel(job.format)}
-            {' · '}
-            {job.attempts} {job.attempts === 1 ? 'attempt' : 'attempts'}
             {job.target ? ` · ${job.target}` : ''}
             {job.stage === 'downloading' && (
               <>
@@ -615,9 +621,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
               ))}
             </ul>
           )}
-          {job.candidates.length > 0 && !canPick && (
-            <p>Pause the job to change its recording.</p>
-          )}
+          {job.candidates.length > 0 && !canPick && <p>Pause the job to change its recording.</p>}
           {job.candidates.map((candidate) => (
             <div
               className="flex items-center gap-[8px] border-b border-line py-[6px]"

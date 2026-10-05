@@ -221,6 +221,7 @@ SITES: tuple[Site, ...] = (
         audio_format=KEPT_AUDIO,
         album_lists=("audiomack:album",),
         # yt-dlp 2026.8.19 stops with "Failed to parse JSON" on the live site (19 September 2026).
+        # TODO: check whether yt-dlp PR 17258 has merged (the Audiomack extractor rewrite).
         working=False,
         quality_note=(
             "Audiomack does not say what quality its streams are. Expect a standard "

@@ -5,8 +5,10 @@
 ### Search and downloads
 
 - Save a catalog track from a Deezer account when the cookie is set, then name and tag it like any other download. A miss falls back to the YouTube match
+- Paste a YouTube cookies.txt file in Settings so an age-restricted video can download
 - List the download sources in Settings, with a switch for each and a box to replace the Deezer cookie
-- Order catalog sources in Settings, try each a set number of times, then go around the list again up to Times around the list
+- Order catalog sources in Settings, try each a set number of times, then go around the list again up to Times around the list. A block pauses the source that raised it, and a list where every row is off fails the song instead of leaving it queued
+- Keep a source block on the source that failed, walk the list again on Retry, and show when a row in the order will be skipped
 - Search podcasts from a new Podcasts tab, open a show's latest episodes and download them straight from the publisher's file into `Podcasts/<show>`
 - Pause each download source on its own after repeated blocking errors, and give match candidates their own source and link
 - Search SoundCloud for a catalog track when YouTube has no match, or while YouTube is paused, behind a new off-by-default setting; matches there need a higher score, a job that takes one moves to SoundCloud for pausing and errors, and review candidates name their site

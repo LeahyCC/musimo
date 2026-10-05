@@ -34,6 +34,8 @@ class DeezerAudioTests(unittest.TestCase):
         self.assertEqual(Settings(tries_per_source=2).tries_per_source, 2)
         with self.assertRaises(ValidationError):
             Settings(source_order=["bandcamp"])
+        with self.assertRaises(ValidationError):
+            Settings(source_order=[])
 
     def test_only_known_sources_can_be_turned_off(self) -> None:
         self.assertEqual(Settings(disabled_sources=["youtube"]).disabled_sources, ["youtube"])

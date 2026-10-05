@@ -118,7 +118,7 @@ Open: AcoustID as a fallback for junk metadata, and catalog imports from Spotify
 
 ### Phase 2: SoundCloud as a backup match
 
-Shipped: a Settings switch, "Use SoundCloud when YouTube has no match" (`soundcloud_fallback`, off by default, under Audio quality). SoundCloud is searched with `scsearch8:` only after YouTube answered `NO_MATCH`, or when YouTube was paused or blocked at dispatch. It is never searched beside YouTube, and a `DURATION_MISMATCH` never falls back. It uses a higher bar (accept from 0.70, "check match" below 0.90, against YouTube's 0.55 and 0.86), set in `backend/matching.py`. A job that matches there takes `source` `soundcloud`, so its blocks pause SoundCloud alone. Pressing Retry starts the job over on YouTube. Review candidates name their site.
+Shipped, then replaced: the old "Use SoundCloud when YouTube has no match" switch is gone. SoundCloud is a row in `source_order`, asked when its turn comes, including after a length mismatch on an earlier row. It uses a higher bar (accept from 0.70, "check match" below 0.90, against YouTube's 0.55 and 0.86), set in `backend/matching.py`. A block on a SoundCloud search pauses SoundCloud. Pressing Retry walks the list again. A hand pick stays. Review candidates name their site. The old switch still seeds SoundCloud onto the list once, the first time the order is saved.
 
 Checked: tests on canned search results in `tests/test_worker.py`.
 
@@ -134,7 +134,7 @@ Checked for real: see "Indie sites, checked for real" above. It found the ALAC f
 
 Not checked: Audiomack beyond the failure. A SoundCloud set that is an album was checked at the listing stage only.
 
-Open: Audiomack, until yt-dlp reads the site again (then it is one line, `working`). A SoundCloud profile of about 300 tracks lists in about 14.5 seconds, close to the 20 second limit. `on.soundcloud.com` short links and a custom domain that serves a Bandcamp page are not accepted.
+Open: Audiomack. TODO: check whether [yt-dlp PR 17258](https://github.com/yt-dlp/yt-dlp/pull/17258) has merged (the extractor rewrite). Once it has, bump yt-dlp and set `working` (one line). A SoundCloud profile of about 300 tracks lists in about 14.5 seconds, close to the 20 second limit. `on.soundcloud.com` short links and a custom domain that serves a Bandcamp page are not accepted.
 
 ### Phase 4: DJ mixes and radio shows
 

@@ -50,6 +50,7 @@ import {
   settingsSchema,
   snapshotSchema,
   sourceSchema,
+  youtubeCookiesSchema,
 } from './api'
 import type { SettingKey } from './api'
 import { librarySchema } from './api'
@@ -551,14 +552,6 @@ const controls: {
     section: 'queue',
   },
   {
-    key: 'max_attempts',
-    label: 'Times around the list',
-    help: 'For a song from search, how many times to walk the source list. For a pasted link or a podcast, how many times to retry that one download. One is a single pass.',
-    min: 1,
-    max: 4,
-    section: 'queue',
-  },
-  {
     key: 'retry_base_seconds',
     label: 'Initial backoff (seconds)',
     help: 'Retries use a random delay, increasing after each failure.',
@@ -619,15 +612,31 @@ const catalogOrderLabels: Record<string, string> = {
 function CatalogOrder({
   order,
   tries,
+  laps,
+  lapsLocked,
+  lapsOrigin,
+  deezerOn,
+  hasCookie,
+  disabledSources,
+  paused,
   disabled,
   onOrder,
   onTries,
+  onLaps,
 }: {
   order: string[]
   tries: number
+  laps: number
+  lapsLocked: boolean
+  lapsOrigin: string
+  deezerOn: boolean
+  hasCookie: boolean
+  disabledSources: string[]
+  paused: string[]
   disabled: boolean
   onOrder: (next: string[]) => void
   onTries: (next: number) => void
+  onLaps: (next: number) => void
 }) {
   const spare = Object.keys(catalogOrderLabels).filter((id) => !order.includes(id))
   const move = (index: number, step: number) => {
@@ -640,14 +649,27 @@ function CatalogOrder({
     next[swap] = item
     onOrder(next)
   }
+  const hardSkip = (id: string) =>
+    (id === 'deezer' && !deezerOn) ||
+    (id === 'deezer' && !hasCookie) ||
+    disabledSources.includes(id)
+  const skipReason = (id: string) => {
+    if (id === 'deezer' && !deezerOn) return 'Account audio is off'
+    if (disabledSources.includes(id)) return 'Turned off'
+    if (id === 'deezer' && !hasCookie) return 'No cookie yet'
+    if (paused.includes(id)) return 'Paused'
+    return ''
+  }
+  const allSkipped = order.length > 0 && order.every((id) => skipReason(id))
+  const waitingOnPause = allSkipped && order.some((id) => paused.includes(id) && !hardSkip(id))
   return (
     <div className="mt-[18px] border-b border-line pb-[16px]">
-      <p className="text-body">When a song from search fails</p>
+      <p className="text-body">Where a song from search is fetched</p>
       <p className="mt-[7px] max-w-[420px] text-tiny text-muted">
-        Try the list from the top. After the last one, start again. Times around the list is under
-        Queue. A search with no song moves on straight away.
+        The top row goes first. A failure asks the next row. After the last row, start again. A
+        search with no song moves on straight away.
       </p>
-      <div className="mt-[14px] grid grid-cols-[1fr_80px] items-center gap-[16px] max-phone:grid-cols-1">
+      <div className="mt-[14px] grid grid-cols-[1fr_80px] items-center gap-x-[16px] gap-y-[10px] max-phone:grid-cols-1">
         <label htmlFor="tries_per_source" className="text-small">
           Tries on one source before the next
         </label>
@@ -663,38 +685,76 @@ function CatalogOrder({
             if (next >= 1 && next <= 4) onTries(next)
           }}
         />
+        <label htmlFor="max_attempts" className="text-small">
+          Times around the list
+          {lapsLocked ? <span className="text-warn"> · Locked by {lapsOrigin}</span> : null}
+        </label>
+        <Field
+          id="max_attempts"
+          type="number"
+          min={1}
+          max={4}
+          disabled={disabled || lapsLocked}
+          value={laps}
+          onChange={(event) => {
+            const next = Number(event.target.value)
+            if (next >= 1 && next <= 4) onLaps(next)
+          }}
+        />
       </div>
+      <p className="mt-[10px] max-w-[420px] text-tiny text-muted">
+        A failed download is tried {tries} {tries === 1 ? 'time' : 'times'} on that source, then the
+        next one. The list is walked {laps} {laps === 1 ? 'time' : 'times'}. A pasted link or a
+        podcast uses that same number as its retries.
+      </p>
+      {allSkipped && (
+        <p className="mt-[10px] max-w-[420px] text-tiny text-warn">
+          {waitingOnPause
+            ? 'Every row that can run is paused. Songs wait until you resume one.'
+            : 'Nothing in this list can run. A song from search fails until a row can.'}
+        </p>
+      )}
       <ol className="mt-[8px]">
-        {order.map((id, index) => (
-          <li key={id} className="flex items-center gap-[12px] py-[8px] text-small">
-            <span className="w-[16px] text-muted">{index + 1}</span>
-            <span className="min-w-0 flex-1">{catalogOrderLabels[id] ?? id}</span>
-            <button
-              type="button"
-              className="text-muted underline disabled:opacity-40"
-              disabled={disabled || index === 0}
-              onClick={() => move(index, -1)}
-            >
-              Up
-            </button>
-            <button
-              type="button"
-              className="text-muted underline disabled:opacity-40"
-              disabled={disabled || index === order.length - 1}
-              onClick={() => move(index, 1)}
-            >
-              Down
-            </button>
-            <button
-              type="button"
-              className="text-muted underline disabled:opacity-40"
-              disabled={disabled}
-              onClick={() => onOrder(order.filter((item) => item !== id))}
-            >
-              Remove
-            </button>
-          </li>
-        ))}
+        {order.map((id, index) => {
+          const label = catalogOrderLabels[id] ?? id
+          const reason = skipReason(id)
+          return (
+            <li key={id} className="flex items-center gap-[12px] py-[8px] text-small">
+              <span className="w-[16px] text-muted">{index + 1}</span>
+              <span className="min-w-0 flex-1">
+                {label}
+                {reason ? <span className="text-warn"> · {reason}</span> : null}
+              </span>
+              <button
+                type="button"
+                className="text-muted underline disabled:opacity-40"
+                aria-label={`Move ${label} up`}
+                disabled={disabled || index === 0}
+                onClick={() => move(index, -1)}
+              >
+                Up
+              </button>
+              <button
+                type="button"
+                className="text-muted underline disabled:opacity-40"
+                aria-label={`Move ${label} down`}
+                disabled={disabled || index === order.length - 1}
+                onClick={() => move(index, 1)}
+              >
+                Down
+              </button>
+              <button
+                type="button"
+                className="text-muted underline disabled:opacity-40"
+                aria-label={`Remove ${label}`}
+                disabled={disabled || order.length === 1}
+                onClick={() => onOrder(order.filter((item) => item !== id))}
+              >
+                Remove
+              </button>
+            </li>
+          )
+        })}
       </ol>
       {spare.length > 0 && (
         <div className="mt-[8px] flex flex-wrap gap-[12px]">
@@ -770,8 +830,12 @@ function SettingsPage() {
   )
   const [conflicts, setConflicts] = useState<Partial<Record<SettingKey, SettingValue>>>({})
   const [saved, setSaved] = useState(false)
+  const [cookieText, setCookieText] = useState('')
+  const [removeCookies, setRemoveCookies] = useState(false)
+  const cookieSaved = settings.data?.youtube_cookies.value === true
+  const cookiePending = cookieText.trim().length > 0 || removeCookies
 
-  const isDirty = Object.keys(draft).length > 0
+  const isDirty = Object.keys(draft).length > 0 || cookiePending
 
   useBlocker({
     condition: isDirty,
@@ -819,17 +883,33 @@ function SettingsPage() {
   }
 
   const save = useMutation({
-    mutationFn: () =>
-      api('settings', settingsSchema, {
+    mutationFn: async () => {
+      if (removeCookies && cookieText.trim().length === 0) {
+        await api('youtube-cookies', youtubeCookiesSchema, { method: 'DELETE' })
+      } else if (cookieText.trim()) {
+        await api('youtube-cookies', youtubeCookiesSchema, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ text: cookieText }),
+        })
+      }
+
+      if (Object.keys(draft).length === 0) {
+        return api('settings', settingsSchema)
+      }
+      return api('settings', settingsSchema, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(draft),
-      }),
+      })
+    },
     onSuccess: (data) => {
       client.setQueryData(['settings'], data)
       setDraft({})
       setOriginalValues({})
       setConflicts({})
+      setCookieText('')
+      setRemoveCookies(false)
       setSaved(true)
     },
   })
@@ -952,6 +1032,11 @@ function SettingsPage() {
                       ? 'Audio quality'
                       : 'Queue & retries'}
                 </h2>
+                {section === 'queue' && (
+                  <p className="mt-[14px] max-w-[520px] text-small text-muted">
+                    How many times a song walks the source list is under Sources.
+                  </p>
+                )}
                 {controls
                   .filter((control) => control.section === section)
                   .map(({ key, label, help, min, max }) => {
@@ -1108,15 +1193,23 @@ function SettingsPage() {
               </p>
               <CatalogOrder
                 order={
-                  (draft.source_order as string[] | undefined) ??
-                  settings.data.source_order.value
+                  (draft.source_order as string[] | undefined) ?? settings.data.source_order.value
                 }
-                tries={Number(
-                  draft.tries_per_source ?? settings.data.tries_per_source.value,
-                )}
+                tries={Number(draft.tries_per_source ?? settings.data.tries_per_source.value)}
+                laps={Number(draft.max_attempts ?? settings.data.max_attempts.value)}
+                lapsLocked={settings.data.max_attempts.locked}
+                lapsOrigin={settings.data.max_attempts.origin}
+                deezerOn={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
+                hasCookie={String(draft.deezer_arl ?? settings.data.deezer_arl.value).trim() !== ''}
+                disabledSources={
+                  (draft.disabled_sources as string[] | undefined) ??
+                  settings.data.disabled_sources.value
+                }
+                paused={diagnostics.data?.queue.paused_sources ?? []}
                 disabled={save.isPending}
                 onOrder={(next) => edit('source_order', next)}
                 onTries={(next) => edit('tries_per_source', next)}
+                onLaps={(next) => edit('max_attempts', next)}
               />
               <SourceRow
                 id="deezer"
@@ -1131,7 +1224,7 @@ function SettingsPage() {
                 id="deezer_audio"
                 mark="a."
                 label="Deezer account"
-                note="Saves the account's own file instead of a match from another site."
+                note="Turn this off to skip the Deezer account row. The other rows still run."
                 on={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
                 disabled={save.isPending}
                 onChange={(on) => edit('deezer_audio', on)}
@@ -1155,6 +1248,56 @@ function SettingsPage() {
                   disabled={save.isPending}
                   value={String(draft.deezer_arl ?? settings.data.deezer_arl.value)}
                   onChange={(e) => edit('deezer_arl', e.target.value)}
+                />
+              </div>
+              <div className="grid grid-cols-[1fr_280px] items-start gap-[28px] border-b border-line py-[16px] max-phone:grid-cols-1 max-phone:gap-[10px]">
+                <div>
+                  <label htmlFor="youtube_cookies" className="text-body">
+                    YouTube cookies
+                  </label>
+                  <p className="mt-[7px] max-w-[420px] text-tiny">
+                    Paste a Netscape cookies.txt exported while signed in at youtube.com. An
+                    age-restricted video needs it. The file stays on this server and is not shown
+                    again.
+                  </p>
+                  <p className="mt-[7px] text-tiny text-muted">
+                    {removeCookies
+                      ? 'The cookie file will be removed when you save.'
+                      : cookieSaved
+                        ? 'A cookie file is saved.'
+                        : 'No YouTube cookie yet.'}
+                  </p>
+                  {cookieSaved && (
+                    <button
+                      type="button"
+                      className="mt-[8px] text-small text-muted underline disabled:opacity-40"
+                      disabled={save.isPending}
+                      onClick={() => {
+                        setCookieText('')
+                        setRemoveCookies(true)
+                        setSaved(false)
+                      }}
+                    >
+                      Remove cookie
+                    </button>
+                  )}
+                </div>
+                <textarea
+                  id="youtube_cookies"
+                  rows={5}
+                  spellCheck={false}
+                  autoComplete="off"
+                  disabled={save.isPending}
+                  value={cookieText}
+                  placeholder={
+                    cookieSaved ? 'Paste a new file to replace the saved one' : 'Paste cookies.txt'
+                  }
+                  onChange={(event) => {
+                    setCookieText(event.target.value)
+                    setRemoveCookies(false)
+                    setSaved(false)
+                  }}
+                  className="w-full rounded-[5px] border border-line-strong bg-raised px-[11px] py-[10px] text-small text-text"
                 />
               </div>
               {(diagnostics.data?.download_sources ?? [])
