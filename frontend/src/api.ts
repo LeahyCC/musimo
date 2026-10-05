@@ -304,15 +304,23 @@ export const libraryTracksSchema = page(libraryTrackSchema).extend({
 })
 export const librarySelectionSchema = z.object({
   items: z.array(libraryTrackSchema).default([]),
-  // The rest of a library shuffle, in play order. Empty when the whole selection fit in `items`.
+  // Older responses listed the remaining ids here. A shuffle now keeps that order on the server.
   rest: z.array(z.string()).default([]),
+  total: z.number().default(0),
+  // Set when the pass is larger than the queue. Empty when `items` is the whole pass.
+  seed: z.string().default(''),
+  // Ids already handed out, including any the server could not load.
+  cursor: z.number().default(0),
+})
+export const libraryShuffleWindowSchema = z.object({
+  items: z.array(libraryTrackSchema).default([]),
+  missing: z.array(z.string()).default([]),
+  seed: z.string().default(''),
+  cursor: z.number().default(0),
   total: z.number().default(0),
 })
 export const libraryTrackSearchSchema = z.object({
   items: z.array(libraryTrackSchema).default([]),
-})
-export const libraryTrackLookupSchema = libraryTrackSearchSchema.extend({
-  missing: z.array(z.string()).default([]),
 })
 export const libraryPlaylistsSchema = page(libraryPlaylistSchema).extend({
   liked_id: z.string().default(''),
