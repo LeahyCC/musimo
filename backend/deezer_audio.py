@@ -128,11 +128,21 @@ class Account:
             raise DeezerAudioError("Deezer did not answer") from exc
         if not isinstance(raw, dict):
             raise DeezerAudioError("Deezer did not answer")
-        # gw-light reports a failure here with an empty results object, and still answers 200.
-        # Read as no track, it would file a song as missing while Deezer was only refusing.
-        if raw.get("error"):
-            raise DeezerAudioError("Deezer did not answer")
         return raw
+
+    @staticmethod
+    def _refused(payload: dict[str, object]) -> None:
+        """Raise for a gw-light error. It answers 200 with the error here and empty results.
+
+        DATA_ERROR is how it says it has no such song. Anything else is a refusal, which read as
+        no song would file the track as missing while Deezer was only turning the request down.
+        """
+        error = payload.get("error")
+        if not error:
+            return
+        if isinstance(error, dict) and "DATA_ERROR" in error:
+            raise DeezerNoTrack("Deezer does not have this track for the account")
+        raise DeezerAudioError("Deezer did not answer")
 
     def login(self) -> None:
         payload = self._payload(
@@ -146,6 +156,7 @@ class Account:
                 },
             )
         )
+        self._refused(payload)
         results = payload.get("results")
         if not isinstance(results, dict):
             raise DeezerCookieRejected("Deezer did not accept the account cookie")
@@ -175,6 +186,7 @@ class Account:
                 json={"sng_id": track_id},
             )
         )
+        self._refused(payload)
         song = payload.get("results")
         if not isinstance(song, dict) or not song.get("TRACK_TOKEN") or not song.get("SNG_ID"):
             raise DeezerNoTrack("Deezer does not have this track for the account")

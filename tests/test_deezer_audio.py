@@ -185,3 +185,19 @@ class DeezerAudioTests(unittest.TestCase):
             self.assertNotIsInstance(raised.exception, DeezerNoTrack)
         finally:
             account.close()
+
+    def test_deezer_data_error_is_no_song_and_other_errors_are_refusals(self) -> None:
+        def answering(body: dict[str, object]) -> Account:
+            account = Account("ab" * 96)
+            account.http.close()
+            account.http = httpx.Client(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json=body))
+            )
+            return account
+
+        missing = answering({"error": {"DATA_ERROR": "No song"}, "results": {}})
+        try:
+            with self.assertRaises(DeezerNoTrack):
+                missing.track("1")
+        finally:
+            missing.close()

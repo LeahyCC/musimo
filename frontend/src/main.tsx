@@ -694,10 +694,11 @@ function CatalogOrder({
           {triesLocked ? <span className="text-warn"> · Locked by {triesOrigin}</span> : null}
         </label>
         {/* Every keystroke is kept, as in the other number settings. A cleared box shows empty
-            rather than 0, and the browser's range check stops a save outside 1 to 4. */}
+            rather than 0, and `required` with the range stops a save outside 1 to 4. */}
         <Field
           id="tries_per_source"
           type="number"
+          required
           min={1}
           max={4}
           disabled={disabled || triesLocked}
@@ -711,6 +712,7 @@ function CatalogOrder({
         <Field
           id="max_attempts"
           type="number"
+          required
           min={1}
           max={4}
           disabled={disabled || lapsLocked}

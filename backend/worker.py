@@ -75,6 +75,8 @@ RECORDING_GONE = (
     "no longer available",
     "members-only",
     "requested format is not available",
+    # One region-locked upload. YouTube itself still plays, so it is not a country block.
+    "available in your country",
 )
 
 
@@ -274,8 +276,9 @@ def main() -> None:
             source=asking,
         )
 
-    def sources_off() -> None:
-        message = "The sources for this track are turned off in Settings."
+    def sources_off(
+        message: str = "The sources for this track are turned off in Settings.",
+    ) -> None:
         emit(
             "error",
             code="DOWNLOAD_FAILED",
@@ -302,10 +305,10 @@ def main() -> None:
         )
 
     if job.catalog == "podcast" and "podcast" in turned_off():
-        refuse("SITE_NOT_ALLOWED", "Podcasts are turned off in Settings.")
+        sources_off("Podcasts are turned off in Settings.")
         return
     if job.catalog == "link" and job.source in turned_off():
-        refuse("SITE_NOT_ALLOWED", f"{site} is turned off in Settings.")
+        sources_off(f"{site} is turned off in Settings.")
         return
     if job.catalog == "link" and link_site is None:
         refuse("SITE_NOT_ALLOWED", "This site is no longer on the download list")
@@ -435,6 +438,10 @@ def main() -> None:
         if earlier != mine:
             drop_audio(partial=True)
             marker.write_text(json.dumps(mine), encoding="utf-8")
+        else:
+            # A finished file with no manifest may be another source's, left when a worker was
+            # stopped. Two files fail the single-file check, so only the unfinished one stays.
+            drop_audio()
 
     def use_client(picked: Candidate) -> None:
         """Point the download client at the picked recording's own site.
@@ -828,10 +835,7 @@ def main() -> None:
                     return
                 if picked.source in turned_off():
                     # Off means no new downloads from that source, a hand pick included.
-                    refuse(
-                        "SITE_NOT_ALLOWED",
-                        f"{site_label(picked.source)} is turned off in Settings.",
-                    )
+                    sources_off(f"{site_label(picked.source)} is turned off in Settings.")
                     return
                 # Pauses and error codes follow the site the recording was picked from.
                 use_client(picked)
@@ -909,6 +913,10 @@ def main() -> None:
         # A code only stands where it means something for this job's site, so another site's
         # refusal pauses that site alone and never YouTube.
         code = source_code(code, origin)
+        if code in BLOCKING_CODES and own_fault(code, message):
+            # A private or members-only video says "sign in", which reads as expired cookies. It
+            # is one recording, and must not count toward pausing the site.
+            code = "DOWNLOAD_FAILED"
         if code == "DOWNLOAD_FAILED" and stage in {"converting", "tagging"}:
             code = "TRANSCODE_FAILED" if stage == "converting" else "TAG_FAILED"
         hint, fix = error_guidance(code, site)

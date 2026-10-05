@@ -70,6 +70,7 @@ class Matcher:
         wanted_title, wanted_artist = normalize(meta.title), normalize(meta.artist)
         result_title = normalize(title)
         result_artist = normalize(artist.removesuffix(" - Topic"))
+        led_by_artist = bool(wanted_artist) and result_title.startswith(wanted_artist + " ")
         cleaned = result_title.removeprefix(wanted_artist + " ")
         cleaned = re.sub(r"\b(official|audio|video|lyrics|visualizer|hd|hq)\b", "", cleaned)
         cleaned = " ".join(cleaned.split())
@@ -83,10 +84,11 @@ class Matcher:
             return None
         duration_score = max(0, 1 - delta / max(8, meta.duration * 0.08)) if meta.duration else 0.5
         # An artist's name can hold a version word (Acoustic Alchemy, Lofi Fruits Music), and a
-        # title-first upload puts it last, where the prefix strip above misses it.
+        # title-first upload puts it last, where the prefix strip above misses it. When the title
+        # led with the artist, a word at the end is the version: "Live - I Alone (Live)".
         versioned = (
-            " ".join(f" {cleaned} ".replace(f" {wanted_artist} ", " ").split())
-            if wanted_artist
+            cleaned.removesuffix(" " + wanted_artist)
+            if wanted_artist and not led_by_artist
             else cleaned
         )
         version_mismatch = any(

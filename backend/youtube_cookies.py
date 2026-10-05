@@ -41,10 +41,18 @@ def publish(data: Path) -> None:
 
 
 def drop_copies(data: Path) -> None:
-    """Remove the copies that stopped workers left behind. Only safe before any worker runs."""
+    """Remove the per-process copies, including those a stopped worker left behind.
+
+    A running worker loses nothing it needs: yt-dlp read its copy when it started, and it skips a
+    cookie file it cannot find.
+    """
     for copy in data.glob(f"{Path(FILE_NAME).stem}.*{Path(FILE_NAME).suffix}"):
         if copy.name != FILE_NAME and copy.is_file() and not copy.is_symlink():
-            copy.unlink(missing_ok=True)
+            try:
+                copy.unlink(missing_ok=True)
+            except OSError:
+                # Windows refuses to delete a file another process holds open. It goes later.
+                pass
 
 
 def _host(domain: str) -> str:
@@ -104,6 +112,7 @@ def write(data: Path, text: str) -> None:
     temporary.unlink(missing_ok=True)
     _write_private(temporary, body.encode())
     temporary.replace(target)
+    drop_copies(data)
     publish(data)
 
 
@@ -111,6 +120,7 @@ def remove(data: Path) -> None:
     target = cookie_path(data)
     if target.is_symlink() or target.is_file():
         target.unlink()
+    drop_copies(data)
     publish(data)
 
 

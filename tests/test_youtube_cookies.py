@@ -75,3 +75,16 @@ class YoutubeCookieTests(unittest.TestCase):
                 self.assertTrue(path.exists())
             with patch.dict(os.environ, {"MUSIMO_YOUTUBE_COOKIES": ""}):
                 self.assertNotIn("cookiefile", base_options())
+
+    def test_remove_and_replace_clear_the_copies_stopped_workers_left(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            data = Path(folder)
+            write(data, YOUTUBE)
+            left = data / "youtube-cookies.4242.txt"
+            left.write_text("# Netscape HTTP Cookie File\n" + YOUTUBE + "\n", encoding="utf-8")
+            write(data, YOUTUBE)
+            self.assertFalse(left.exists())
+            left.write_text("# Netscape HTTP Cookie File\n" + YOUTUBE + "\n", encoding="utf-8")
+            remove(data)
+            self.assertFalse(left.exists())
+            self.assertFalse(saved(data))

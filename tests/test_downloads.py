@@ -195,6 +195,14 @@ class DurableJobsTests(unittest.TestCase):
         decoy = matcher.score(other, "Mr. Chow (Acoustic)", "Someone", 200)
         assert decoy is not None
         self.assertTrue(decoy.version_mismatch)
+        # When the title leads with the artist, a word at the end is the version, even when the
+        # band is called Live.
+        band = Metadata(id=3, title="I Alone", artist="Live", duration=230)
+        live = matcher.score(band, "Live - I Alone (Live)", "Live", 230)
+        studio = matcher.score(band, "I Alone - Live", "Live", 230)
+        assert live is not None and studio is not None
+        self.assertTrue(live.version_mismatch)
+        self.assertFalse(studio.version_mismatch)
 
     def test_output_path_is_contained_and_publication_never_overwrites(self) -> None:
         naming = Naming()

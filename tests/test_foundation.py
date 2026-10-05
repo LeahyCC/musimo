@@ -109,6 +109,10 @@ class FoundationTests(unittest.TestCase):
             with patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": ""}):
                 store = Store(Path(folder) / "db.sqlite3")
             self.assertEqual(store.current().source_order, ["deezer", "youtube"])
+            self.assertEqual(
+                store.settings()["source_order"],
+                {"value": ["deezer", "youtube"], "origin": "default", "locked": False},
+            )
             store.close()
 
     def test_csp_allows_webassembly_but_no_eval_or_other_scripts(self) -> None:

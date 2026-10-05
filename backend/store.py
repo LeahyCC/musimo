@@ -242,6 +242,9 @@ class Store:
                     continue
                 env = f"MUSIMO_{key.upper()}"
                 raw = os.environ.get(env)
+                if raw is not None and not raw.strip() and isinstance(default, list):
+                    # Compose passes an unset list as "". That is no choice, so nothing is locked.
+                    raw = None
                 values[key] = default if raw is None else seeded(default, raw)
                 # The account cookie starts from the environment and stays editable, so a new
                 # cookie can be pasted in Settings without a rebuild.

@@ -1202,7 +1202,9 @@ class WalkFollowUpTests(unittest.TestCase):
                 fields={"selected": MATCH["id"], "hand_picked": True, "candidates": [stale]},
             )
             self.assertEqual(asked, [])
-            self.assertEqual(events[-1]["code"], "SITE_NOT_ALLOWED")
+            self.assertEqual(events[-1]["code"], "DOWNLOAD_FAILED")
+            self.assertEqual(events[-1]["fix"], "settings:sources")
+            self.assertEqual(events[-1]["hint"], "YouTube is turned off in Settings.")
 
     def test_a_country_block_is_filed_as_one_plain_sentence(self) -> None:
         # The tool's text names the video, so the summary listed one row per blocked track.
@@ -1212,10 +1214,40 @@ class WalkFollowUpTests(unittest.TestCase):
                 [
                     {"entries": [MATCH]},
                     RuntimeError(
-                        f"ERROR: [youtube] {MATCH['id']}: The uploader has not made this video "
-                        "available in your country"
+                        f"ERROR: [youtube] {MATCH['id']}: This video is not available due to "
+                        "geo restriction"
                     ),
                 ],
             )
             self.assertEqual(events[-1]["code"], "GEO_RESTRICTED")
             self.assertNotIn(str(MATCH["id"]), str(events[-1]["message"]))
+
+    def test_a_hand_picked_private_video_is_not_read_as_expired_cookies(self) -> None:
+        stale = Candidate(id=str(MATCH["id"]), title="Test song", source="youtube").model_dump()
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [
+                    RuntimeError(
+                        f"ERROR: [youtube] {MATCH['id']}: Private video. Sign in if you've been "
+                        "granted access to this video. Use --cookies for the authentication."
+                    )
+                ],
+                fields={"selected": MATCH["id"], "hand_picked": True, "candidates": [stale]},
+            )
+            self.assertEqual(events[-1]["code"], "DOWNLOAD_FAILED")
+
+    def test_a_finished_file_without_a_manifest_does_not_block_the_resumed_pick(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            # A stopped worker left Deezer's finished file and this pick's unfinished one.
+            (folder / "source.flac").write_bytes(b"synthetic account file")
+            (folder / "source.m4a.part").write_bytes(b"half a song")
+            (folder / "partial.json").write_text(
+                json.dumps({"source": "youtube", "id": MATCH["id"]}), encoding="utf-8"
+            )
+            events, _, _ = run_walk(
+                directory, [{"entries": [MATCH]}, {"id": MATCH["id"], "title": "Test song"}]
+            )
+            self.assertEqual(events[-1]["kind"], "ready")
+            self.assertFalse((folder / "source.flac").exists())
