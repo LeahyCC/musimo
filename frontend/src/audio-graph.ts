@@ -4,7 +4,7 @@
 //
 //   each library element:  source -> GainNode -> bus -> speakers
 //                                                  \-> visualizer
-//                                                  \-> analyser (the bass level, for preset changes)
+//                                                  \-> analyser (the bass, for preset changes)
 type AudioGraph = { context: AudioContext; bus: GainNode; analyser: AnalyserNode }
 
 let graph: AudioGraph | undefined
@@ -36,13 +36,38 @@ export async function resumeAudio(): Promise<boolean> {
   return context.state === 'running'
 }
 
-// The low end, about 40 to 190 Hz at 48 kHz, where a drop lands.
+// The low end, about 40 to 190 Hz at 48 kHz, where a kick and a drop land.
 const BASS_BINS = [1, 5] as const
 
-/** How loud the bass is right now, 0 to 1. `scratch` is reused between calls. */
-export function bassLevel(analyser: AnalyserNode, scratch: Uint8Array<ArrayBuffer>) {
+/**
+ * How loud the bass is, and how hard it just rose, both 0 to 1. `scratch` and `previous` are
+ * reused between calls. The rise is what a kick looks like when the bass bed stays loud.
+ */
+export function bassReading(
+  analyser: AnalyserNode,
+  scratch: Uint8Array<ArrayBuffer>,
+  previous: Float64Array,
+) {
   analyser.getByteFrequencyData(scratch)
+  return bassBands(scratch, previous, BASS_BINS[0], BASS_BINS[1])
+}
+
+/** Level and the upward jump across bins `start`..`end`. `previous` keeps the last frame. */
+export function bassBands(
+  bins: ArrayLike<number>,
+  previous: Float64Array,
+  start: number,
+  end: number,
+) {
   let sum = 0
-  for (let bin = BASS_BINS[0]; bin < BASS_BINS[1]; bin++) sum += scratch[bin] ?? 0
-  return sum / ((BASS_BINS[1] - BASS_BINS[0]) * 255)
+  let flux = 0
+  const count = end - start
+  for (let bin = start; bin < end; bin++) {
+    const value = (bins[bin] ?? 0) / 255
+    sum += value
+    const delta = value - (previous[bin] ?? 0)
+    if (delta > 0) flux += delta
+    previous[bin] = value
+  }
+  return { level: sum / count, flux: flux / count }
 }

@@ -1,6 +1,9 @@
 // Only the names: the presets themselves are loaded with the stage, so the pickers stay cheap.
 import { getBasePresetKeys } from 'butterchurn-presets/presetPackMeta.js'
 
+import { HARD_PRESETS, PULSE_PRESETS, SOFT_PRESETS } from './visualizer-scenes'
+import type { Scene } from './visualizer-scenes'
+
 // Where the rule in `presetLabel` reads badly: the title is an author's name, a remix note is
 // fused onto it, or it runs to a sentence. Keyed by the preset's full name.
 export const LABEL_FIXES: Record<string, string> = {
@@ -55,10 +58,23 @@ export const DEFAULT_PRESET = 'Flexi, martin + geiss - dedicated to the sherwin 
 export const presetOrDefault = (name: string) =>
   PRESET_NAMES.includes(name) ? name : DEFAULT_PRESET
 
+const PILES: Record<Scene, readonly string[]> = {
+  soft: SOFT_PRESETS,
+  pulse: PULSE_PRESETS,
+  hard: HARD_PRESETS,
+}
+
 /** Any preset but `name`. `random` is 0 to 1, as `Math.random` gives. */
 export function randomPreset(name: string, random = Math.random()) {
   const others = PRESET_NAMES.filter((other) => other !== name)
   return others[Math.floor(random * others.length)] ?? DEFAULT_PRESET
+}
+
+/** Another preset from the pile that fits `scene`. `random` is 0 to 1. */
+export function presetForScene(name: string, scene: Scene, random = Math.random()) {
+  const pile = PILES[scene].filter((other) => other !== name)
+  const pool = pile.length > 0 ? pile : PRESET_NAMES.filter((other) => other !== name)
+  return pool[Math.floor(random * pool.length)] ?? DEFAULT_PRESET
 }
 
 /** The preset `delta` places along from `name`, wrapping at both ends. */

@@ -28,6 +28,7 @@
 
 ### Library and playback
 
+- Change the MilkDrop preset on the beat. A drop gets a harder picture and a quiet stretch a calmer one, and the changes come closer together as the song goes on
 - Check a polled music folder every five minutes instead of every minute
 - Read Navidrome's album list four pages at a time, the same way tracks are read
 - Give library playback its own audio element and a Web Audio analyser for the coming visualizer, keeping catalog previews off it (#51)
@@ -54,7 +55,7 @@
 - Say "1 album" and "1 song" on an artist page instead of "1 ALBUMS"
 - Show the release year on an artist's popular songs instead of a "…" that never filled in
 - Draw the track's waveform as the Now Playing seek bar, worked out once with ffmpeg and cached in SQLite (a new `waveforms` table, schema version unchanged), with the plain bar while it loads or when there is none
-- Replace the visimo visualizer with MilkDrop, through butterchurn 3.0 beta and its base pack of 107 presets; it needs WebGL 2 rather than WebGPU, so most browsers get it, and the scene and fluid grid settings are gone. The pickers list presets by title, A to Z, and hovering one shows the full name with its authors. The preset changes by itself on a drop in the music, or after a long steady stretch, unless Change with the music is off
+- Replace the visimo visualizer with MilkDrop, through butterchurn 3.0 beta and its base pack of 107 presets; it needs WebGL 2 rather than WebGPU, so most browsers get it, and the scene and fluid grid settings are gone. The pickers list presets by title, A to Z, and hovering one shows the full name with its authors. Change with the music follows the beat, unless it is switched off
 
 ### Testing and CI
 
