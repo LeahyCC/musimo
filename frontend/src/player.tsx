@@ -32,9 +32,10 @@ import {
 
 import {
   api,
+  ApiError,
   libraryPlaylistDetailSchema,
   libraryPlaylistsSchema,
-  libraryTrackLookupSchema,
+  libraryShuffleWindowSchema,
   playerQueueSchema,
   previewSchema,
 } from './api'
@@ -61,14 +62,7 @@ import {
   splitLevel,
 } from './replay-gain'
 import { useReplayGainSettings } from './replay-gain-settings'
-import {
-  consumeUpcoming,
-  dropForRoom,
-  needsMore,
-  QUEUE_LIMIT,
-  reshuffle,
-  SHUFFLE_FETCH,
-} from './shuffle-deck'
+import { dropForRoom, needsMore, QUEUE_LIMIT, SHUFFLE_FETCH, stillWaiting } from './shuffle-deck'
 import type { Deck } from './shuffle-deck'
 import { SLEEP_FADE_SECONDS, sleepChoiceLabel } from './sleep-timer'
 import type { SleepChoice, SleepStatus } from './sleep-timer'
@@ -104,10 +98,17 @@ type Playback = {
   playLibrary: (tracks: LibraryTrack[], index?: number, source?: string) => void
   shuffleLibrary: (tracks: LibraryTrack[], source?: string) => void
   /**
-   * A shuffle of more songs than the saved queue can hold. `items` is the first window, already
-   * in play order, and `rest` is every song after it. The window is refilled as it plays.
+   * A Tracks shuffle. `items` is the first window, already in play order. When the pass is
+   * larger than the queue, `seed` names the order kept on the server and `cursor` is how far
+   * into it `items` reaches. The window is refilled as it plays.
    */
-  playDeck: (tracks: LibraryTrack[], rest: string[], source?: string) => void
+  playDeck: (
+    tracks: LibraryTrack[],
+    seed: string,
+    total: number,
+    cursor: number,
+    source?: string,
+  ) => void
   /**
    * Queue edits. Each one saves the queue. The two that add say what happened in `notice`, and
    * refuse, adding nothing, when the queue would pass the 500 songs Navidrome keeps. Up next
@@ -209,7 +210,7 @@ export const EDITED_SOURCE = 'queue'
 export const RESTORED_SOURCE = 'restored'
 /** Where the entries queued by hand are kept, by position, across a reload. */
 const CHOSEN_KEY = 'musimo.queue-chosen'
-/** The rest of a library shuffle. The saved queue only holds the window that is loaded. */
+/** A Tracks shuffle that does not fit in the saved queue. The order itself stays on the server. */
 const DECK_KEY = 'musimo.shuffle-deck'
 
 /**
@@ -523,14 +524,15 @@ function readDeck(queueIds: string[]): Deck | null {
   try {
     const raw: unknown = JSON.parse(stored(DECK_KEY, ''))
     if (!raw || typeof raw !== 'object') return null
-    const body = raw as { order?: unknown; upcoming?: unknown; queue?: unknown }
-    const order = strings(body.order)
-    const upcoming = strings(body.upcoming)
+    const body = raw as { seed?: unknown; cursor?: unknown; total?: unknown; queue?: unknown }
     const queue = strings(body.queue)
-    if (!order || !upcoming || !queue) return null
+    if (typeof body.seed !== 'string' || !queue) return null
+    if (typeof body.cursor !== 'number' || typeof body.total !== 'number') return null
+    if (!Number.isInteger(body.cursor) || !Number.isInteger(body.total)) return null
+    if (body.cursor < 0 || body.total < 0) return null
     if (queue.length !== queueIds.length || queue.some((id, index) => id !== queueIds[index]))
       return null
-    return { order, upcoming }
+    return { seed: body.seed, cursor: body.cursor, total: body.total }
   } catch {
     return null
   }
@@ -1044,7 +1046,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const index = indexRef.current + 1
     if (index < queue.length) return index
     // Songs still waiting must not wrap around the window that happens to be loaded.
-    if (deck.current && deck.current.upcoming.length > 0) return -1
+    if (deck.current && stillWaiting(deck.current) > 0) return -1
     if (repeat === 'all') return 0
     return -1
   }
@@ -1408,36 +1410,40 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   async function runExtend(): Promise<ExtendResult> {
     const current = deck.current
-    if (!current) return 'idle'
+    // No seed: the whole pass is already in the queue, or the server forgot the order.
+    if (!current || !current.seed) return 'idle'
     const queue = queueRef.current
     const index = indexRef.current
-    if (!needsMore(queue.length, index, current.upcoming.length)) return 'idle'
-    if (current.upcoming.length === 0) {
-      const skip = new Set(queue.map((item) => item.id))
-      const another = reshuffle(current.order, skip)
-      if (!another.length) return 'idle'
-      current.upcoming = another
-    }
+    const waiting = stillWaiting(current)
+    if (!needsMore(queue.length, index, waiting)) return 'idle'
+    // Repeat plays this queue again. There is nothing further to fetch.
+    if (waiting === 0 && queue.length >= current.total) return 'idle'
     // Dropping every played song still has to leave the one that is playing, so this is the
     // most that can be added without the saved queue refusing the lot.
     const room = QUEUE_LIMIT - (queue.length - index)
     if (room <= 0) return 'idle'
-    const ids = current.upcoming.slice(0, Math.min(SHUFFLE_FETCH, room))
+    const limit = Math.min(SHUFFLE_FETCH, room)
     try {
-      const page = await api('library/tracks/lookup', libraryTrackLookupSchema, {
+      const page = await api('library/tracks/shuffle', libraryShuffleWindowSchema, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids }),
+        body: JSON.stringify({
+          seed: current.seed,
+          cursor: current.cursor,
+          limit,
+          // A finished pass starts again without the songs still queued.
+          skip: waiting === 0 ? queue.map((item) => item.id) : [],
+        }),
       })
       if (deck.current !== current) return 'idle'
+      current.seed = page.seed
+      current.cursor = page.cursor
+      current.total = page.total
       const tracks = page.items
-      current.upcoming = consumeUpcoming(
-        current.upcoming,
-        ids,
-        tracks.map((item) => item.id),
-        page.missing,
-      )
-      if (!tracks.length) return page.missing.length ? 'skipped' : 'failed'
+      if (!tracks.length) {
+        if (!page.missing.length) current.seed = ''
+        return page.missing.length ? 'skipped' : 'idle'
+      }
       const drop = dropForRoom(queueRef.current.length, indexRef.current, tracks.length)
       const nextQueue = [...queueRef.current.slice(drop), ...tracks]
       const nextAt = indexRef.current - drop
@@ -1449,8 +1455,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       setCurrentIndex(nextAt)
       void saveQueue()
       return 'added'
-    } catch {
-      /* The ids stay in upcoming. The next attempt, or the track ending, tries again. */
+    } catch (error: unknown) {
+      if (deck.current !== current) return 'idle'
+      // A restart dropped the order. The songs already queued still play in that order.
+      if (error instanceof ApiError && error.code === 'shuffle_expired') {
+        current.seed = ''
+        current.cursor = current.total
+        return 'idle'
+      }
       return 'failed'
     }
   }
@@ -1569,16 +1581,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     playLibrary(items, Math.floor(Math.random() * items.length), origin)
   }
 
-  function playDeck(items: LibraryTrack[], rest: string[], origin = '') {
+  function playDeck(
+    items: LibraryTrack[],
+    seed: string,
+    total: number,
+    cursor: number,
+    origin = '',
+  ) {
     if (!items.length) return
     setShuffle(true)
     playLibrary(items, 0, origin)
+    const count = total > 0 ? total : items.length
+    // The deck is what stops the shuffle toggle from picking at random inside this window.
     deck.current = {
-      order: [...items.map((item) => item.id), ...rest],
-      upcoming: [...rest],
+      seed,
+      cursor: cursor > 0 ? cursor : items.length,
+      total: count,
     }
     void saveQueue()
-    setNotice(`Shuffling ${deck.current.order.length.toLocaleString()} songs.`)
+    setNotice(`Shuffling ${count.toLocaleString()} songs.`)
   }
 
   function toggle() {

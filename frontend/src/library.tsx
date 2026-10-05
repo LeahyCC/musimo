@@ -1170,7 +1170,14 @@ export function LibraryPage({
     mutationFn: ({ shuffled }: { shuffled: boolean }) =>
       api(`library/tracks/selection?${trackSearch}&shuffle=${shuffled}`, librarySelectionSchema),
     onSuccess: (selection, { shuffled }) => {
-      if (shuffled) player.playDeck(selection.items, selection.rest, trackSource)
+      if (shuffled)
+        player.playDeck(
+          selection.items,
+          selection.seed,
+          selection.total,
+          selection.cursor,
+          trackSource,
+        )
       else player.playLibrary(selection.items, 0, trackSource)
     },
   })

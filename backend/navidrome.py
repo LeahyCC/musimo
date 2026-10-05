@@ -26,6 +26,10 @@ class SongMissing(NavidromeError):
     """Navidrome has no such song. A transport failure stays a plain NavidromeError."""
 
 
+class ShuffleExpired(Exception):
+    """The server no longer has this shuffle's order. The queued window can still play."""
+
+
 class PlaylistProtected(RuntimeError):
     pass
 
@@ -35,6 +39,12 @@ LIKED_PLAYLIST_KEY = "liked"
 LIKED_PLAYLIST_NAME = "Liked"
 TRACK_PAGE = 500
 TRACK_CAP = 50_000
+# Browse stops at TRACK_CAP. Shuffle reads the rest and keeps ids only, up to this many songs.
+# Reaching it is an error, so a huge library is not quietly cut short.
+SHUFFLE_GUARD = 1_000_000
+# One pass. Asking for the next window refreshes the clock.
+SHUFFLE_ORDER_SECONDS = 24 * 60 * 60
+SHUFFLE_ORDER_LIMIT = 4
 # The fields the browser's track schema reads. A full Subsonic song is about 4.5 KB; these
 # are a fraction of that, which is what lets the cap cover large libraries.
 TRACK_FIELDS = (
@@ -99,6 +109,13 @@ class TrackSnapshot:
     fetched: float
     rows: list[dict[str, object]]
     facets: dict[str, object]
+    # False when the browse cap hid songs. Shuffle has to read past it.
+    complete: bool
+
+
+def song_id(row: Mapping[str, object]) -> str:
+    value = row.get("id")
+    return str(value) if value else ""
 
 
 def track_text(row: dict[str, object], key: str) -> str:
@@ -334,6 +351,7 @@ class Navidrome:
         self.client = client
         self.track_cache: OrderedDict[str, TrackSnapshot] = OrderedDict()
         self.track_locks: dict[str, asyncio.Lock] = {}
+        self.shuffle_orders: OrderedDict[str, tuple[float, list[str]]] = OrderedDict()
         self.catalog_cache: CatalogSnapshot | None = None
         self.catalog_lock = asyncio.Lock()
 
@@ -664,6 +682,7 @@ class Navidrome:
         # spend four upstream requests to discover that.
         rows = await self.tracks(query, 0, TRACK_PAGE)
         offset = TRACK_PAGE
+        stopped_at_cap = False
         while len(rows) >= offset and offset < TRACK_CAP:
             pages = await asyncio.gather(
                 *(
@@ -678,14 +697,19 @@ class Navidrome:
             if len(pages[-1]) < TRACK_PAGE:
                 break
             offset += PAGE_WINDOWS * TRACK_PAGE
+        else:
+            stopped_at_cap = offset >= TRACK_CAP
         # A scan running mid-request can shift offsets, so overlapping windows repeat a track.
         unique = {
             str(row["id"]): {key: row[key] for key in TRACK_FIELDS if key in row}
             for row in rows
             if row.get("id")
         }
-        bounded = list(unique.values())[:TRACK_CAP]
-        return TrackSnapshot(time.monotonic(), bounded, track_facets(bounded))
+        ordered = list(unique.values())
+        bounded = ordered[:TRACK_CAP]
+        # Stopped at the cap, or sliced songs off: browse does not have the whole library.
+        complete = not stopped_at_cap and len(bounded) == len(ordered)
+        return TrackSnapshot(time.monotonic(), bounded, track_facets(bounded), complete)
 
     def forget_tracks(self) -> None:
         self.track_cache.clear()
@@ -710,6 +734,88 @@ class Navidrome:
             **snapshot.facets,
         }
 
+    def remember_shuffle(self, seed: str, ids: list[str]) -> None:
+        now = time.monotonic()
+        self.expire_shuffles(now)
+        self.shuffle_orders[seed] = (now, ids)
+        self.shuffle_orders.move_to_end(seed)
+        while len(self.shuffle_orders) > SHUFFLE_ORDER_LIMIT:
+            self.shuffle_orders.popitem(last=False)
+
+    def expire_shuffles(self, now: float) -> None:
+        stale = [
+            key
+            for key, (fetched, _ids) in self.shuffle_orders.items()
+            if now - fetched > SHUFFLE_ORDER_SECONDS
+        ]
+        for key in stale:
+            del self.shuffle_orders[key]
+
+    def borrow_shuffle(self, seed: str) -> list[str]:
+        now = time.monotonic()
+        self.expire_shuffles(now)
+        found = self.shuffle_orders.get(seed)
+        if found is None:
+            raise ShuffleExpired("That shuffle is no longer on the server")
+        _fetched, ids = found
+        self.shuffle_orders[seed] = (now, ids)
+        self.shuffle_orders.move_to_end(seed)
+        return ids
+
+    async def ids_after_cap(
+        self,
+        query: str,
+        genres: list[str],
+        years: list[int],
+        seen: set[str],
+    ) -> list[str]:
+        """Song ids past the browse cap.
+
+        Bodies are dropped on purpose. A trimmed song is about 2 KB, so keeping one for
+        every track past 50,000 stays in memory for the whole pass. The player only needs
+        the id until a window is due.
+        """
+        found: list[str] = []
+        offset = TRACK_CAP
+        while offset < SHUFFLE_GUARD:
+            pages = await asyncio.gather(
+                *(
+                    self.tracks(query, offset + window * TRACK_PAGE, TRACK_PAGE)
+                    for window in range(PAGE_WINDOWS)
+                )
+            )
+            for page in pages:
+                for row in filter_tracks(page, genres, years):
+                    text = song_id(row)
+                    if not text or text in seen:
+                        continue
+                    seen.add(text)
+                    found.append(text)
+            # Same end test as the browse walk: the last page of the batch means the library ended.
+            if len(pages[-1]) < TRACK_PAGE:
+                return found
+            offset += PAGE_WINDOWS * TRACK_PAGE
+        raise NavidromeError("This library is too large to shuffle")
+
+    async def ordered_songs(
+        self, ids: list[str], have: Mapping[str, dict[str, object]]
+    ) -> list[dict[str, object]]:
+        """Songs for `ids`, in that order. `have` skips a fetch for songs the walk already held."""
+        fetched = dict(have)
+        need = [text for text in ids if text not in fetched]
+        if need:
+            looked = await self.tracks_by_ids(need)
+            rows = looked["items"]
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    song = cast(dict[str, object], row)
+                    text = song_id(song)
+                    if text:
+                        fetched[text] = song
+        return [fetched[text] for text in ids if text in fetched]
+
     async def select_tracks(
         self,
         query: str,
@@ -719,19 +825,79 @@ class Navidrome:
         shuffle: bool,
         limit: int,
     ) -> dict[str, object]:
-        """Play all and Shuffle draw from the whole filtered library, not the loaded page."""
+        """Play all and Shuffle draw from the whole filtered library, not the loaded page.
+
+        A shuffle larger than the queue keeps its order here, under a seed. The browser
+        asks for the next window. Sending every remaining id would be megabytes, and the
+        browser cannot store that list.
+        """
         snapshot = await self.snapshot(query)
         matched = filter_tracks(snapshot.rows, genres, years)
-        # The saved play queue holds `limit` songs. A shuffle of a larger library keeps
-        # every remaining id so the player can fill the next window without a new sample.
-        if shuffle:
-            order = list(matched)
-            random.shuffle(order)
-        else:
+        if not shuffle:
             order = sort_tracks(matched, sort)
-        window = order[:limit]
-        rest = [str(row["id"]) for row in order[limit:] if row.get("id")] if shuffle else []
-        return {"items": window, "rest": rest, "total": len(matched)}
+            return {
+                "items": order[:limit],
+                "rest": [],
+                "total": len(matched),
+                "seed": "",
+                "cursor": 0,
+            }
+        seen: set[str] = set()
+        ids: list[str] = []
+        by_id: dict[str, dict[str, object]] = {}
+        for row in matched:
+            text = song_id(row)
+            if not text or text in seen:
+                continue
+            seen.add(text)
+            ids.append(text)
+            by_id[text] = row
+        if not snapshot.complete:
+            ids.extend(await self.ids_after_cap(query, genres, years, seen))
+        random.shuffle(ids)
+        cursor = min(limit, len(ids))
+        seed = ""
+        if len(ids) > limit:
+            seed = secrets.token_urlsafe(16)
+            self.remember_shuffle(seed, ids)
+        window = await self.ordered_songs(ids[:cursor], by_id)
+        return {"items": window, "rest": [], "total": len(ids), "seed": seed, "cursor": cursor}
+
+    async def shuffle_window(
+        self, seed: str, cursor: int, limit: int, skip: list[str]
+    ) -> dict[str, object]:
+        """The next songs in a shuffle, or a new pass once that order is used up.
+
+        Songs still in the queue are left out of the new pass so the join does not repeat them.
+        """
+        ids = self.borrow_shuffle(seed)
+        if cursor >= len(ids):
+            skip_set = set(skip)
+            nxt = [text for text in ids if text not in skip_set]
+            if not nxt:
+                return {
+                    "items": [],
+                    "missing": [],
+                    "seed": seed,
+                    "cursor": len(ids),
+                    "total": len(ids),
+                }
+            random.shuffle(nxt)
+            seed = secrets.token_urlsafe(16)
+            self.remember_shuffle(seed, nxt)
+            ids = nxt
+            cursor = 0
+        chunk = ids[cursor : cursor + limit]
+        if not chunk:
+            return {"items": [], "missing": [], "seed": seed, "cursor": cursor, "total": len(ids)}
+        looked = await self.tracks_by_ids(chunk)
+        return {
+            "items": looked["items"],
+            "missing": looked["missing"],
+            "seed": seed,
+            "cursor": cursor + len(chunk),
+            "total": len(ids),
+        }
 
     def cached_tracks(self) -> dict[str, dict[str, object]]:
         found: dict[str, dict[str, object]] = {}

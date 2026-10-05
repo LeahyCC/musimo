@@ -862,14 +862,49 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             sorted(row["id"] for row in shuffled["items"]), ["s1", "s2", "s3"]
                         )
                         self.assertEqual(shuffled["rest"], [])
-                        # Over the queue cap, every song is returned once: a window, then ids.
+                        self.assertEqual(shuffled["seed"], "")
+                        self.assertEqual(shuffled["cursor"], 3)
+                        # Over the queue cap, the remaining songs stay on the server.
                         window = (
                             await client.get("/api/library/tracks/selection?shuffle=true&limit=2")
                         ).json()
-                        covered = [row["id"] for row in window["items"]] + window["rest"]
-                        self.assertEqual(sorted(covered), ["s1", "s2", "s3"])
                         self.assertEqual(len(window["items"]), 2)
-                        self.assertEqual(len(window["rest"]), 1)
+                        self.assertEqual(window["rest"], [])
+                        self.assertEqual(window["total"], 3)
+                        self.assertEqual(window["cursor"], 2)
+                        self.assertTrue(window["seed"])
+                        rest = (
+                            await client.post(
+                                "/api/library/tracks/shuffle",
+                                json={
+                                    "seed": window["seed"],
+                                    "cursor": window["cursor"],
+                                    "limit": 2,
+                                },
+                            )
+                        ).json()
+                        covered = [row["id"] for row in window["items"]] + [
+                            row["id"] for row in rest["items"]
+                        ]
+                        self.assertEqual(sorted(covered), ["s1", "s2", "s3"])
+                        self.assertEqual(rest["cursor"], 3)
+                        again = (
+                            await client.post(
+                                "/api/library/tracks/shuffle",
+                                json={
+                                    "seed": rest["seed"],
+                                    "cursor": rest["cursor"],
+                                    "limit": 2,
+                                    "skip": [row["id"] for row in window["items"]],
+                                },
+                            )
+                        ).json()
+                        self.assertEqual(
+                            [row["id"] for row in again["items"]],
+                            [row["id"] for row in rest["items"]],
+                        )
+                        self.assertEqual(again["total"], 1)
+                        self.assertNotEqual(again["seed"], window["seed"])
                         looked = (
                             await client.post(
                                 "/api/library/tracks/lookup", json={"ids": ["s3", "missing", "s1"]}
@@ -914,6 +949,120 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             (await client.get("/api/library/tracks?sort=nonsense")).status_code, 422
                         )
+            store.close()
+
+    async def test_shuffle_reads_past_the_browse_cap_without_returning_every_id(self) -> None:
+        library = [
+            {
+                "id": f"s{index}",
+                "title": f"Song {index:02d}",
+                "artist": "A",
+                "genre": "Jazz" if index % 2 == 0 else "Rock",
+                "year": 1999,
+            }
+            for index in range(7)
+        ]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                path = request.url.path
+                if path.endswith("/ping"):
+                    return subsonic(serverVersion="0.63.0")
+                if path.endswith("/search3"):
+                    offset = int(request.url.params.get("songOffset", 0))
+                    size = int(request.url.params.get("songCount", 0))
+                    return subsonic(searchResult3={"song": library[offset : offset + size]})
+                if path.endswith("/getSong"):
+                    song_id = request.url.params.get("id")
+                    song = next((row for row in library if row["id"] == song_id), None)
+                    return subsonic(song=song) if song else subsonic()
+                return subsonic()
+
+            with (
+                patch("backend.navidrome.TRACK_CAP", 4),
+                patch("backend.navidrome.TRACK_PAGE", 2),
+                patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
+            ):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    app = FastAPI()
+                    install_player_routes(app, lambda: navidrome)
+                    async with httpx.AsyncClient(
+                        transport=httpx.ASGITransport(app), base_url="http://test"
+                    ) as client:
+                        listing = (await client.get("/api/library/tracks")).json()
+                        self.assertEqual(listing["total"], 4)
+                        self.assertNotIn("s4", [row["id"] for row in listing["items"]])
+                        shuffled = (
+                            await client.get("/api/library/tracks/selection?shuffle=true&limit=2")
+                        ).json()
+                        self.assertEqual(shuffled["total"], 7)
+                        self.assertEqual(shuffled["rest"], [])
+                        self.assertEqual(len(shuffled["items"]), 2)
+                        self.assertTrue(shuffled["seed"])
+                        got = [row["id"] for row in shuffled["items"]]
+                        cursor = shuffled["cursor"]
+                        seed = shuffled["seed"]
+                        for _ in range(6):
+                            if cursor >= shuffled["total"]:
+                                break
+                            page = (
+                                await client.post(
+                                    "/api/library/tracks/shuffle",
+                                    json={"seed": seed, "cursor": cursor, "limit": 2},
+                                )
+                            ).json()
+                            self.assertEqual(page["seed"], seed)
+                            self.assertGreater(page["cursor"], cursor)
+                            got.extend(row["id"] for row in page["items"])
+                            cursor = page["cursor"]
+                        self.assertEqual(sorted(got), [f"s{index}" for index in range(7)])
+                        self.assertEqual(len(got), len(set(got)))
+                        jazz = (
+                            await client.get(
+                                "/api/library/tracks/selection?shuffle=true&genre=Jazz&limit=10"
+                            )
+                        ).json()
+                        self.assertEqual(jazz["total"], 4)
+                        self.assertEqual(jazz["seed"], "")
+                        self.assertEqual(
+                            sorted(row["id"] for row in jazz["items"]),
+                            ["s0", "s2", "s4", "s6"],
+                        )
+                        again = (
+                            await client.post(
+                                "/api/library/tracks/shuffle",
+                                json={"seed": seed, "cursor": cursor, "limit": 2, "skip": got[:2]},
+                            )
+                        ).json()
+                        self.assertEqual(again["total"], 5)
+                        self.assertNotEqual(again["seed"], seed)
+                        self.assertTrue(all(row["id"] not in got[:2] for row in again["items"]))
+                        stored = navidrome.shuffle_orders[seed]
+                        navidrome.shuffle_orders[seed] = (0.0, stored[1])
+                        expired = await client.post(
+                            "/api/library/tracks/shuffle",
+                            json={"seed": seed, "cursor": 0, "limit": 2},
+                        )
+                        self.assertEqual(expired.status_code, 404)
+                        self.assertEqual(expired.json()["code"], "shuffle_expired")
+                        navidrome.forget_tracks()
+                        with patch("backend.navidrome.SHUFFLE_GUARD", 4):
+                            refused = await client.get(
+                                "/api/library/tracks/selection?shuffle=true&limit=2"
+                            )
+                            self.assertEqual(refused.status_code, 503)
+                            self.assertIn("too large", refused.json()["detail"])
             store.close()
 
     async def test_linked_liked_playlist_is_reported_without_creating_it(self) -> None:
