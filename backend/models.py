@@ -68,11 +68,6 @@ class Settings(BaseModel):
     retry_cap_seconds: int = Field(default=60, ge=30, le=300)
     destination: str = "/music"
     naming_template: str = "{album_artist}/{album}/{track:02d} - {title}"
-    # Search SoundCloud for a catalog track when YouTube has no match or cannot be used. Off
-    # until the match benchmark has measured SoundCloud precision.
-    soundcloud_fallback: bool = False
-    # Empty, or a Deezer arl cookie. Editable in Settings, so a new cookie does not need a rebuild.
-    deezer_arl: str = ""
     # Search. Off turns search off. Album pages, track details and catalog downloads still use
     # the catalog, because a download needs the track's details.
     deezer_catalog: bool = True
@@ -92,11 +87,6 @@ class Settings(BaseModel):
     @classmethod
     def template(cls, value: str) -> str:
         return Naming.validate(value)
-
-    @field_validator("deezer_arl")
-    @classmethod
-    def arl_value(cls, value: str) -> str:
-        return clean_arl(value)
 
     @field_validator("disabled_sources")
     @classmethod
@@ -125,7 +115,7 @@ class SettingsPatch(BaseModel):
     retry_cap_seconds: int | None = Field(default=None, ge=30, le=300)
     destination: str | None = None
     naming_template: str | None = None
-    soundcloud_fallback: bool | None = None
+    # The Deezer cookie. It goes to its own file, never the settings table. Empty removes it.
     deezer_arl: str | None = None
     deezer_catalog: bool | None = None
     deezer_audio: bool | None = None

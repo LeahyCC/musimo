@@ -16,6 +16,7 @@ from fastapi import FastAPI
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
+from backend import deezer_cookie
 from backend.catalog import Catalog, CatalogError
 from backend.download_api import install_download_routes
 from backend.downloads import (
@@ -800,8 +801,30 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                 await service.close()
             store.close()
 
+    async def test_the_worker_gets_the_cookie_file_and_never_the_cookie(self) -> None:
+        cookie = "ab" * 96
+        with (
+            tempfile.TemporaryDirectory() as directory,
+            patch.dict("os.environ", {"MUSIMO_DEEZER_ARL": cookie}),
+        ):
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                deezer_cookie.write(root / "data", cookie)
+                env = service.child_env()
+                self.assertNotIn("MUSIMO_DEEZER_ARL", env)
+                self.assertNotIn(cookie, "".join(env.values()))
+                self.assertEqual(env[deezer_cookie.ENV], str(root / "data" / "deezer-arl.txt"))
+                store.update({"deezer_audio": False})
+                self.assertNotIn(deezer_cookie.ENV, service.child_env())
+                await service.close()
+            store.close()
+
     async def test_a_new_catalog_job_names_the_first_source_that_can_run(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
+        with tempfile.TemporaryDirectory() as directory, patch.dict("os.environ"):
             root = Path(directory).resolve()
             store = Store(root / "db.sqlite3")
             async with httpx.AsyncClient(
@@ -825,25 +848,21 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                     ),
                     (
                         "the next row when deezer has no cookie",
-                        {
-                            "source_order": ["deezer", "soundcloud"],
-                            "deezer_arl": "",
-                            "deezer_audio": True,
-                        },
+                        {"source_order": ["deezer", "soundcloud"], "deezer_audio": True},
                         "soundcloud",
                     ),
                     (
                         "deezer when the cookie is set",
-                        {
-                            "source_order": ["deezer", "youtube"],
-                            "deezer_audio": True,
-                            "deezer_arl": "a" * 192,
-                        },
+                        {"source_order": ["deezer", "youtube"], "deezer_audio": True},
                         "deezer",
                     ),
                 )
                 for track, (label, settings, expected) in enumerate(cases, start=1):
                     with self.subTest(label=label):
+                        if label == "deezer when the cookie is set":
+                            deezer_cookie.write(root / "data", "a" * 192)
+                        else:
+                            deezer_cookie.remove(root / "data")
                         store.update({"destination": str(root), **settings})
                         job = service.jobs.enqueue(track, "original", str(root))
                         self.assertEqual(job.source, expected)
@@ -853,9 +872,9 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                         "destination": str(root),
                         "source_order": ["youtube", "soundcloud"],
                         "disabled_sources": [],
-                        "deezer_arl": "",
                     }
                 )
+                deezer_cookie.remove(root / "data")
                 picked = service.jobs.enqueue(20, "original", str(root), source="soundcloud")
                 self.assertEqual(picked.source, "soundcloud")
                 episode = service.jobs.enqueue_many([21], "original", str(root), catalog="podcast")[

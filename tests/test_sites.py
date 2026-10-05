@@ -1124,7 +1124,10 @@ class LabelTests(unittest.TestCase):
             finally:
                 store.close()
         self.assertEqual(controls["paused_sources"], ["bandcamp", "youtube"])
-        self.assertEqual(controls["source_labels"], {"bandcamp": "Bandcamp", "youtube": "YouTube"})
+        labels = controls["source_labels"]
+        assert isinstance(labels, dict)
+        self.assertEqual(labels["bandcamp"], "Bandcamp")
+        self.assertEqual(labels["youtube"], "YouTube")
 
 
 class OnePerTrackTests(unittest.TestCase):

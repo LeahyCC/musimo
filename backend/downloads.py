@@ -18,7 +18,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import ValidationError
 
-from backend import mixes
+from backend import deezer_cookie, mixes
 from backend.catalog import Catalog, CatalogError, Result
 from backend.enrichment import Enrichment
 from backend.errors import BLOCKING_CODES, error_guidance, site_label
@@ -139,8 +139,8 @@ def mark_side_ready(folder: Path) -> None:
     temporary.replace(folder / "side.json")
 
 
-def opening_source(settings: Settings, paused: Collection[str]) -> str:
-    """The first catalog row that can run.
+def opening_source(settings: Settings, paused: Collection[str], cookie: bool) -> str:
+    """The first catalog row that can run. `cookie` says whether a Deezer cookie is saved.
 
     A paused row is not asked yet. If every row that could run is paused, name the first of
     those, so the card is not left on a source that is off or missing from the list.
@@ -150,7 +150,7 @@ def opening_source(settings: Settings, paused: Collection[str]) -> str:
     for name in settings.source_order:
         if name in settings.disabled_sources:
             continue
-        if name == "deezer" and not (settings.deezer_audio and settings.deezer_arl):
+        if name == "deezer" and not (settings.deezer_audio and cookie):
             continue
         if name in held:
             if not waiting:
@@ -271,7 +271,8 @@ class Downloads:
     def child_env(self) -> dict[str, str]:
         """The worker's environment.
 
-        The cookie is the saved one, and only while that source is on.
+        The worker reads the saved cookie file, and only while that source is on. The cookie text
+        itself never goes in: MUSIMO_DEEZER_ARL only seeds the first start.
         """
         settings = self.settings()
         env = dict(os.environ)
@@ -280,10 +281,12 @@ class Downloads:
         env["MUSIMO_TRIES_PER_SOURCE"] = str(settings.tries_per_source)
         env["MUSIMO_MAX_ATTEMPTS"] = str(settings.max_attempts)
         env["MUSIMO_PAUSED_SOURCES"] = ",".join(sorted(self.paused_sources()))
-        if settings.deezer_audio and settings.deezer_arl:
-            env["MUSIMO_DEEZER_ARL"] = settings.deezer_arl
+        env.pop("MUSIMO_DEEZER_ARL", None)
+        cookie = deezer_cookie.published()
+        if settings.deezer_audio and cookie:
+            env[deezer_cookie.ENV] = cookie
         else:
-            env.pop("MUSIMO_DEEZER_ARL", None)
+            env.pop(deezer_cookie.ENV, None)
         return env
 
     def controls(self) -> dict[str, object]:
@@ -340,7 +343,7 @@ class Downloads:
         row with no cookie and nothing else on, fails the job. Waiting would leave it queued
         with no reason on the card.
         """
-        name = opening_source(settings, paused)
+        name = opening_source(settings, paused, bool(deezer_cookie.published()))
         if name in paused:
             return "paused"
         return "" if name else "off"
@@ -440,6 +443,8 @@ class Downloads:
             if not control["paused"]:
                 settings = self.settings()
                 slots = settings.concurrency - len(self.running)
+                # The same for every catalog song in this pass, so it is worked out once.
+                hold = self.catalog_hold(settings, paused_sources)
                 for job in reversed(self.jobs.list(active=True)):
                     # A block on one site must not hold the others. A catalog song walks its list,
                     # so it starts while any row in that list can still run.
@@ -447,7 +452,6 @@ class Downloads:
                     # `selected` is not the test: the walk stores its own pick there as it goes.
                     catalog_job = job.catalog == "deezer" and not job.hand_picked
                     if catalog_job:
-                        hold = self.catalog_hold(settings, paused_sources)
                         if (
                             hold == "off"
                             and job.desired == "run"
@@ -512,7 +516,9 @@ class Downloads:
                 restart = {
                     "selected": "",
                     "check_match": False,
-                    "source": opening_source(self.settings(), self.paused_sources()),
+                    "source": opening_source(
+                        self.settings(), self.paused_sources(), bool(deezer_cookie.published())
+                    ),
                     "lap": 0,
                     "laps": 0,
                 }

@@ -4,10 +4,26 @@ import sqlite3
 import threading
 from pathlib import Path
 
-from backend.models import Settings
+from backend.models import CATALOG_ORDER, Settings, clean_arl
 from backend.sources import source_label
 
 RETAIN_EVENTS = 5000
+# Rows that stay in the settings table but are not settings. Each is stripped before validation,
+# because Settings refuses keys it does not know.
+# deezer_arl held the Deezer cookie. The cookie is a file now and the row stays empty, so a
+# first-start seed from MUSIMO_DEEZER_ARL does not run again after the cookie is removed.
+SECRET_KEYS = frozenset({"deezer_arl"})
+# soundcloud_fallback was the old SoundCloud switch. It only feeds the source_order migration.
+RETIRED_KEYS = frozenset({"soundcloud_fallback"})
+
+
+def settings_only(values: dict[str, object]) -> dict[str, object]:
+    return {
+        key: value
+        for key, value in values.items()
+        if key not in SECRET_KEYS and key not in RETIRED_KEYS
+    }
+
 
 # Same rows the queue shows, each arm on its own index: active work, finished
 # siblings of an active batch, the latest 50 no-match failures, the latest 50 other
@@ -158,6 +174,15 @@ class Store:
                   AND json_extract(payload,'$.stage')!='failed';
             CREATE INDEX IF NOT EXISTS jobs_inactive_recent
                 ON jobs(created_at DESC) WHERE active=0;
+            -- Covers job_summary, so it reads the index and never parses a payload. Grouping
+            -- the payloads took about half a second at 52k jobs.
+            CREATE INDEX IF NOT EXISTS jobs_summary ON jobs(
+                json_extract(payload,'$.stage'),
+                json_extract(payload,'$.error_code'),
+                json_extract(payload,'$.error'),
+                json_extract(payload,'$.error_hint'),
+                json_extract(payload,'$.error_fix')
+            ) WHERE coalesce(json_extract(payload,'$.hidden'),0)=0;
             CREATE TABLE IF NOT EXISTS queue_control (
                 id INTEGER PRIMARY KEY CHECK(id=1), paused INTEGER NOT NULL DEFAULT 0,
                 source_paused INTEGER NOT NULL DEFAULT 0,
@@ -214,8 +239,12 @@ class Store:
             "paused": bool(paused),
             "source_paused": "youtube" in sources,
             "paused_sources": sources,
-            # The names to show for them, so the browser does not keep a table of its own.
-            "source_labels": {source: source_label(source) for source in sources},
+            # The names to show for them and for the catalog rows, so the browser does not keep a
+            # table of its own. A queued card names its first catalog row before anything else
+            # has loaded, and read "Youtube" without this.
+            "source_labels": {
+                source: source_label(source) for source in (*CATALOG_ORDER, *sources)
+            },
         }
 
     def save_library_status(self, payload: dict[str, object]) -> None:
@@ -246,21 +275,24 @@ class Store:
                     # Compose passes an unset list as "". That is no choice, so nothing is locked.
                     raw = None
                 values[key] = default if raw is None else seeded(default, raw)
-                # The account cookie starts from the environment and stays editable, so a new
-                # cookie can be pasted in Settings without a rebuild.
-                editable = key == "deezer_arl"
                 seeds.append(
                     (
                         key,
                         json.dumps(values[key]),
-                        "default" if raw is None or editable else env,
-                        int(raw is not None and not editable),
+                        "default" if raw is None else env,
+                        int(raw is not None),
                     )
                 )
+            if "deezer_arl" not in existing:
+                # The account cookie can start from the environment. The app moves it into its
+                # file at startup and empties this row, and Settings can replace it later.
+                cookie = clean_arl(os.environ.get("MUSIMO_DEEZER_ARL", ""))
+                seeds.append(("deezer_arl", json.dumps(cookie), "default", 0))
             # The old SoundCloud switch becomes a row in the order, once, when the order first
             # appears. Taking it off the list later stays off.
             if "source_order" not in existing and not os.environ.get("MUSIMO_SOURCE_ORDER"):
-                fallback = values["soundcloud_fallback"] is True
+                raw_fallback = os.environ.get("MUSIMO_SOUNDCLOUD_FALLBACK")
+                fallback = raw_fallback is not None and seeded(False, raw_fallback) is True
                 if "soundcloud_fallback" in existing:
                     row = self.db.execute(
                         "SELECT value FROM settings WHERE key='soundcloud_fallback'"
@@ -290,7 +322,31 @@ class Store:
     def current(self) -> Settings:
         with self.lock:
             rows = self.db.execute("SELECT key,value FROM settings").fetchall()
-        return Settings.model_validate({row["key"]: json.loads(row["value"]) for row in rows})
+        return Settings.model_validate(
+            settings_only({row["key"]: json.loads(row["value"]) for row in rows})
+        )
+
+    def stored_secret(self, key: str) -> str:
+        """A secret an older version kept in the settings table, or "" when the row is empty."""
+        with self.lock:
+            row = self.db.execute("SELECT value FROM settings WHERE key=?", (key,)).fetchone()
+        if row is None:
+            return ""
+        value: object = json.loads(row["value"])
+        return value.strip() if isinstance(value, str) else ""
+
+    def clear_secret(self, key: str) -> None:
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                self.db.execute(
+                    "UPDATE settings SET value=?,origin='default',locked=0 WHERE key=?",
+                    (json.dumps(""), key),
+                )
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
 
     def settings(self) -> dict[str, object]:
         with self.lock:
@@ -301,6 +357,7 @@ class Store:
                     "locked": bool(row["locked"]),
                 }
                 for row in self.db.execute("SELECT * FROM settings ORDER BY key")
+                if row["key"] not in RETIRED_KEYS
             }
 
     def _event(self, kind: str, payload: object) -> int:
@@ -373,8 +430,10 @@ class Store:
                     r["key"]: json.loads(r["value"])
                     for r in self.db.execute("SELECT * FROM settings")
                 }
-                Settings.model_validate(current | changes)
+                Settings.model_validate(settings_only(current | changes))
                 for key, value in changes.items():
+                    if key in SECRET_KEYS or key in RETIRED_KEYS:
+                        raise ValueError(f"{key} is not a setting")
                     row = self.db.execute(
                         "SELECT locked FROM settings WHERE key=?", (key,)
                     ).fetchone()
@@ -386,12 +445,7 @@ class Store:
                     )
                 result = self.settings()
                 if changes:
-                    # The activity log and diagnostics export keep the cookie out.
-                    logged = result
-                    field = result.get("deezer_arl")
-                    if isinstance(field, dict) and field.get("value"):
-                        logged = {**result, "deezer_arl": {**field, "value": ""}}
-                    self._event("settings.updated", logged)
+                    self._event("settings.updated", result)
                 self.db.commit()
                 return result
             except Exception:
@@ -424,7 +478,7 @@ class Store:
                 "json_extract(payload,'$.error') error,"
                 "json_extract(payload,'$.error_hint') error_hint,"
                 "json_extract(payload,'$.error_fix') error_fix,"
-                "count(*) amount FROM jobs "
+                "count(*) amount FROM jobs INDEXED BY jobs_summary "
                 "WHERE coalesce(json_extract(payload,'$.hidden'),0)=0 "
                 "GROUP BY stage,error_code,error,error_hint,error_fix ORDER BY amount DESC"
             ).fetchall()

@@ -256,7 +256,17 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         elif action == "resume-source":
             service.set_controls(source_paused=False, source=source)
         failures: list[str] = []
-        for job in service.jobs.list():
+        # Only the jobs the action can touch. Pause, resume and cancel act on unfinished jobs,
+        # and the rest on finished ones still on the queue.
+        if action in {"pause", "resume", "cancel-queued"}:
+            jobs = service.jobs.list(active=True)
+        elif action == "clear-finished":
+            jobs = service.jobs.shown_finished()
+        elif action in {"retry-failed", "clear-failed", "clear-unmatched"}:
+            jobs = service.jobs.shown_finished(failed=True)
+        else:
+            jobs = []
+        for job in jobs:
             try:
                 if action == "pause" and job.stage not in TERMINAL and job.stage != "paused":
                     service.command(job.id, "pause")

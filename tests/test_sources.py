@@ -18,6 +18,9 @@ from backend.job_models import Candidate, Job, Metadata, valid_candidate_id
 from backend.library import Library
 from backend.store import Store
 
+# Every controls reply names the catalog rows, paused or not.
+CATALOG_LABELS = {"deezer": "Deezer", "youtube": "YouTube", "soundcloud": "SoundCloud"}
+
 
 class BlockedYouTube(Downloads):
     """YouTube refuses every request; any other source fails in an ordinary way."""
@@ -110,7 +113,7 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
                         "paused": False,
                         "source_paused": True,
                         "paused_sources": ["youtube"],
-                        "source_labels": {"youtube": "YouTube"},
+                        "source_labels": CATALOG_LABELS,
                     },
                 )
                 self.assertEqual(
@@ -128,7 +131,7 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
                 "paused": False,
                 "source_paused": False,
                 "paused_sources": [],
-                "source_labels": {},
+                "source_labels": CATALOG_LABELS,
             },
         )
 

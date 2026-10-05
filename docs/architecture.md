@@ -75,7 +75,7 @@ Downloads (download_api.py):
 
 - `GET /api/naming-preview`: live naming template preview.
 - `GET /api/jobs`: active jobs.
-- `GET /api/history`: job history with filters.
+- `GET /api/history`: job history with filters. A typed search reads the text of every finished job, so the History box waits for a quarter second pause in typing before it asks.
 - `POST /api/jobs`: create single track job.
 - `POST /api/batches`: create album batch.
 - `POST /api/batches/{id}/{pause,resume,cancel,retry}`: batch actions.

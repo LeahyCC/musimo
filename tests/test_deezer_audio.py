@@ -1,6 +1,10 @@
 import json
+import os
+import sqlite3
+import stat
 import tempfile
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -9,6 +13,7 @@ from Cryptodome.Cipher import Blowfish
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
+from backend import deezer_cookie
 from backend.deezer_audio import (
     BLOCK,
     Account,
@@ -22,15 +27,19 @@ from backend.deezer_audio import (
     formats_to_try,
 )
 from backend.main import create_app
-from backend.models import Settings
+from backend.models import Settings, SettingsPatch
+from backend.store import Store
 
 
 class DeezerAudioTests(unittest.TestCase):
     def test_cookie_setting_accepts_only_the_account_value(self) -> None:
-        self.assertEqual(Settings(deezer_arl="a" * 192).deezer_arl, "a" * 192)
-        self.assertEqual(Settings(deezer_arl="").deezer_arl, "")
+        self.assertEqual(SettingsPatch(deezer_arl="a" * 192).deezer_arl, "a" * 192)
+        self.assertEqual(SettingsPatch(deezer_arl="").deezer_arl, "")
         with self.assertRaises(ValidationError):
-            Settings(deezer_arl="nope")
+            SettingsPatch(deezer_arl="nope")
+        # The cookie is not a setting any more. It lives in its own file.
+        with self.assertRaises(ValidationError):
+            Settings.model_validate({"deezer_arl": "a" * 192})
 
     def test_catalog_order_keeps_the_saved_sequence(self) -> None:
         saved = Settings(source_order=["youtube", "deezer", "youtube"])
@@ -99,18 +108,71 @@ class DeezerAudioTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as directory,
             ):
                 saved = account.save("1", Path(directory), None)
-                self.assertEqual(saved.suffix, ".mp3")
-                self.assertGreaterEqual(saved.stat().st_size, BLOCK)
+                self.assertEqual(saved.path.suffix, ".mp3")
+                self.assertGreaterEqual(saved.path.stat().st_size, BLOCK)
+                self.assertFalse(saved.alternate)
         finally:
             account.close()
         self.assertEqual(asked, ["FLAC", "MP3_320", "MP3_128"])
 
+    def test_a_fallback_of_another_recording_is_marked(self) -> None:
+        account = Account("ab" * 96)
+
+        class Response:
+            def __init__(self, status: int) -> None:
+                self.status = status
+                self.headers: dict[str, str] = {}
+
+            def raise_for_status(self) -> None:
+                if self.status != 200:
+                    raise httpx.HTTPStatusError(
+                        "refused",
+                        request=httpx.Request("GET", "https://cdn.test"),
+                        response=httpx.Response(self.status),
+                    )
+
+            def iter_bytes(self) -> list[bytes]:
+                return [b"\x01" * BLOCK]
+
+            def __enter__(self) -> "Response":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+        # The track's own token is refused, so the file comes from the fallback.
+        try:
+            for fallback_id, alternate in (("2", True), ("1", False)):
+                song = {
+                    "SNG_ID": "1",
+                    "TRACK_TOKEN": "own",
+                    "FALLBACK": {"SNG_ID": fallback_id, "TRACK_TOKEN": "other"},
+                }
+                with (
+                    self.subTest(fallback_id=fallback_id),
+                    patch.object(account, "track", return_value=song),
+                    patch.object(account, "media_url", side_effect=lambda token, _fmt: token),
+                    patch.object(
+                        account.http,
+                        "stream",
+                        side_effect=lambda _method, url: Response(200 if url == "other" else 403),
+                    ),
+                    tempfile.TemporaryDirectory() as directory,
+                ):
+                    saved = account.save("1", Path(directory), None)
+                    self.assertEqual(saved.alternate, alternate)
+        finally:
+            account.close()
+
     def test_cookie_must_be_the_account_value(self) -> None:
-        with (
-            patch.dict("os.environ", {"MUSIMO_DEEZER_ARL": "nope"}),
-            self.assertRaises(DeezerAudioError),
-        ):
-            account_cookie()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "deezer-arl.txt"
+            path.write_text("nope", encoding="utf-8")
+            with (
+                patch.dict("os.environ", {deezer_cookie.ENV: str(path)}),
+                self.assertRaises(DeezerAudioError),
+            ):
+                account_cookie()
 
     def test_stripe_puts_the_plain_audio_back(self) -> None:
         key = blowfish_key("3135556")
@@ -164,8 +226,63 @@ class DeezerAudioTests(unittest.TestCase):
                     self.assertNotIn(cookie, json.dumps(reply))
                     self.assertTrue(reply["deezer_cookie"]["value"])
                     self.assertIn("youtube_cookies", reply)
+                # The file holds it. The settings table never does.
+                arl_file = Path(folder) / "deezer-arl.txt"
+                self.assertEqual(arl_file.read_text(encoding="utf-8"), cookie)
+                if os.name == "posix":
+                    self.assertEqual(stat.S_IMODE(arl_file.stat().st_mode), 0o600)
+                with closing(sqlite3.connect(Path(folder) / "musimo.sqlite3")) as db:
+                    table = db.execute("SELECT group_concat(value) FROM settings").fetchone()[0]
+                self.assertNotIn(cookie, table)
+                # Saving another setting leaves the cookie alone.
+                other = client.patch("/api/settings", json={"concurrency": 3})
+                self.assertEqual(other.status_code, 200)
+                self.assertTrue(other.json()["deezer_cookie"]["value"])
+                self.assertTrue(arl_file.is_file())
                 client.patch("/api/settings", json={"deezer_arl": ""})
                 self.assertFalse(client.get("/api/settings").json()["deezer_cookie"]["value"])
+                self.assertFalse(arl_file.exists())
+
+    def test_a_cookie_in_the_settings_table_moves_to_its_file(self) -> None:
+        cookie = "cd" * 96
+        with tempfile.TemporaryDirectory() as folder, patch.dict("os.environ"):
+            # What an older version left: the cookie in the table, and the retired switch.
+            store = Store(Path(folder) / "musimo.sqlite3")
+            store.db.execute(
+                "UPDATE settings SET value=?,origin='database' WHERE key='deezer_arl'",
+                (json.dumps(cookie),),
+            )
+            store.db.execute(
+                "INSERT INTO settings VALUES ('soundcloud_fallback','true','database',0)"
+            )
+            store.close()
+            with TestClient(create_app(Path(folder))) as client:
+                reply = client.get("/api/settings").json()
+                self.assertTrue(reply["deezer_cookie"]["value"])
+                self.assertNotIn(cookie, json.dumps(reply))
+                self.assertNotIn("soundcloud_fallback", reply)
+                self.assertEqual(
+                    (Path(folder) / "deezer-arl.txt").read_text(encoding="utf-8"), cookie
+                )
+            with closing(sqlite3.connect(Path(folder) / "musimo.sqlite3")) as db:
+                row = db.execute("SELECT value FROM settings WHERE key='deezer_arl'").fetchone()
+            self.assertEqual(json.loads(row[0]), "")
+
+    def test_the_environment_cookie_seeds_the_first_start_only(self) -> None:
+        cookie = "ef" * 96
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.dict("os.environ", {"MUSIMO_DEEZER_ARL": cookie}),
+        ):
+            arl_file = Path(folder) / "deezer-arl.txt"
+            with TestClient(create_app(Path(folder))) as client:
+                self.assertTrue(client.get("/api/settings").json()["deezer_cookie"]["value"])
+                self.assertEqual(arl_file.read_text(encoding="utf-8"), cookie)
+                client.patch("/api/settings", json={"deezer_arl": ""})
+            # Removed in Settings stays removed, though the variable is still set.
+            with TestClient(create_app(Path(folder))) as client:
+                self.assertFalse(client.get("/api/settings").json()["deezer_cookie"]["value"])
+            self.assertFalse(arl_file.exists())
 
     def test_a_gw_light_error_reply_is_not_read_as_a_missing_track(self) -> None:
         # Deezer answers 200 with an error and empty results. That is a refusal, not "no song".
@@ -195,12 +312,15 @@ class DeezerAudioTests(unittest.TestCase):
             )
             return account
 
-        missing = answering({"error": {"DATA_ERROR": "No song"}, "results": {}})
-        try:
-            with self.assertRaises(DeezerNoTrack):
-                missing.track("1")
-        finally:
-            missing.close()
+        errors: tuple[object, ...] = ({"DATA_ERROR": "No song"}, ["DATA_ERROR"], "DATA_ERROR")
+        for error in errors:
+            with self.subTest(error=error):
+                missing = answering({"error": error, "results": {}})
+                try:
+                    with self.assertRaises(DeezerNoTrack):
+                        missing.track("1")
+                finally:
+                    missing.close()
         # The account check is not a song lookup. The same word there must not read as no song.
         account = answering({"error": {"DATA_ERROR": "No song"}, "results": {}})
         try:

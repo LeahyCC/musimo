@@ -1,4 +1,4 @@
-import { Fragment, useDeferredValue, useId, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useId, useLayoutEffect, useRef, useState } from 'react'
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
@@ -52,6 +52,7 @@ import {
   IconButton,
   textLinkClassName,
 } from './ui'
+import { useDebounced } from './use-debounced'
 
 export type QueueData = {
   jobs: DownloadJob[]
@@ -1033,8 +1034,9 @@ function History() {
   const [q, setQ] = useState(''),
     [from, setFrom] = useState(''),
     [until, setUntil] = useState('')
-  // The box stays immediate. The request waits, because a typed search still reads job text.
-  const deferredQ = useDeferredValue(q)
+  // The box stays immediate. The request waits for a pause in typing: a typed search reads the
+  // text of every finished job while it holds the database, about a quarter second at 52k jobs.
+  const deferredQ = useDebounced(q, 250)
   const query = useInfiniteQuery({
     queryKey: ['history', deferredQ, from, until],
     initialPageParam: 0,

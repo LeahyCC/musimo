@@ -365,7 +365,6 @@ export const settingsSchema = z.object({
   retry_cap_seconds: field(z.number()),
   destination: field(z.string()),
   naming_template: field(z.string()),
-  soundcloud_fallback: field(z.boolean()),
   // Always empty from the server. Sent only to replace or remove the saved cookie.
   deezer_arl: field(z.string()).default({ value: '', origin: 'default', locked: false }),
   // Whether a Deezer cookie is saved. The cookie itself is never sent back.

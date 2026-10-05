@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-from backend.deezer_audio import DeezerAudioError
+from backend.deezer_audio import DeezerAudioError, Saved
 from backend.job_models import Candidate, Job, Metadata
 from backend.worker import base_options, main, redact
 
@@ -294,7 +294,7 @@ class WorkerTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch("backend.worker.configured", return_value=True),
-                patch("backend.worker.fetch", return_value=source) as account,
+                patch("backend.worker.fetch", return_value=Saved(source, False)) as account,
                 patch("yt_dlp.YoutubeDL") as downloader,
                 patch("backend.worker.probe", return_value={"duration": 180, "codec": "flac"}),
                 patch("backend.worker.Tagger") as tagger,
@@ -330,7 +330,7 @@ class WorkerTests(unittest.TestCase):
                 patch("sys.argv", ["worker", directory]),
                 patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "deezer,youtube"}),
                 patch("backend.worker.configured", return_value=True),
-                patch("backend.worker.fetch", return_value=source),
+                patch("backend.worker.fetch", return_value=Saved(source, False)),
                 patch("yt_dlp.YoutubeDL") as downloader,
                 patch("backend.worker.probe", return_value={"duration": 180, "codec": "flac"}),
                 patch("backend.worker.Tagger") as tagger,
@@ -359,7 +359,7 @@ class WorkerTests(unittest.TestCase):
                 patch("sys.argv", ["worker", directory]),
                 patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "deezer,youtube"}),
                 patch("backend.worker.configured", return_value=True),
-                patch("backend.worker.fetch", return_value=source),
+                patch("backend.worker.fetch", return_value=Saved(source, False)),
                 patch("yt_dlp.YoutubeDL") as downloader,
                 patch("backend.worker.probe", return_value={"duration": 20}),
                 patch("backend.worker.emit"),
@@ -417,7 +417,7 @@ class WorkerTests(unittest.TestCase):
                 patch("sys.argv", ["worker", directory]),
                 patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "youtube,deezer"}),
                 patch("backend.worker.configured", return_value=True),
-                patch("backend.worker.fetch", return_value=source) as account,
+                patch("backend.worker.fetch", return_value=Saved(source, False)) as account,
                 patch("yt_dlp.YoutubeDL") as downloader,
                 patch("backend.worker.probe", return_value={"duration": 180, "codec": "flac"}),
                 patch("backend.worker.Tagger") as tagger,
@@ -453,7 +453,7 @@ class WorkerTests(unittest.TestCase):
                 patch("sys.argv", ["worker", directory]),
                 patch.dict(
                     "os.environ",
-                    {"MUSIMO_DISABLED_SOURCES": "youtube", "MUSIMO_DEEZER_ARL": ""},
+                    {"MUSIMO_DISABLED_SOURCES": "youtube", "MUSIMO_DEEZER_ARL_FILE": ""},
                 ),
                 patch("yt_dlp.YoutubeDL") as downloader,
                 patch("backend.worker.emit", side_effect=record),
@@ -940,7 +940,7 @@ def run_walk(
     replies: list[object],
     *,
     env: dict[str, str] | None = None,
-    account: Callable[..., Path] | None = None,
+    account: Callable[..., Saved] | None = None,
     lengths: dict[str, object] | None = None,
     fields: dict[str, object] | None = None,
     answer: Callable[..., object] | None = None,
@@ -995,13 +995,13 @@ def run_walk(
     return events, asked, downloader
 
 
-def saves(name: str) -> Callable[..., Path]:
-    """A Deezer fetch that saves `name` in the job folder."""
+def saves(name: str, alternate: bool = False) -> Callable[..., Saved]:
+    """A Deezer fetch that saves `name` in the job folder. `alternate` marks Deezer's fallback."""
 
-    def fetch(track_id: int, folder: Path, progress: object = None) -> Path:
+    def fetch(track_id: int, folder: Path, progress: object = None) -> Saved:
         path = folder / name
         path.write_bytes(b"synthetic account file")
-        return path
+        return Saved(path, alternate)
 
     return fetch
 
@@ -1010,7 +1010,7 @@ class WalkTests(unittest.TestCase):
     """What the catalog walk asks, what it skips, and what it files."""
 
     def test_a_deezer_network_error_still_asks_youtube(self) -> None:
-        def unreachable(*_: object) -> Path:
+        def unreachable(*_: object) -> Saved:
             raise httpx.ConnectError("Temporary failure in name resolution")
 
         with tempfile.TemporaryDirectory() as directory:
@@ -1038,6 +1038,35 @@ class WalkTests(unittest.TestCase):
                 self.assertFalse((Path(directory) / "source.flac").exists())
                 logged = " ".join(str(row["message"]) for row in events if row["kind"] == "log")
                 self.assertNotIn("ffprobe", logged)
+
+    def test_deezer_fallback_of_another_recording_gets_the_strict_length_check(self) -> None:
+        # The catalog says 180 seconds. 150 is inside the account file's loose rule, but a
+        # fallback with another SNG_ID is a different recording, so it is held to 15 seconds.
+        for alternate, kept in ((True, False), (False, True)):
+            with self.subTest(alternate=alternate), tempfile.TemporaryDirectory() as directory:
+                events, asked, _ = run_walk(
+                    directory,
+                    [{"entries": [MATCH]}, {"id": MATCH["id"], "title": "Test song"}],
+                    env={"MUSIMO_SOURCE_ORDER": "deezer,youtube"},
+                    account=saves("source.flac", alternate),
+                    lengths={".flac": 150.0},
+                )
+                self.assertEqual(events[-1]["kind"], "ready")
+                self.assertEqual(not asked, kept)
+                if not kept:
+                    logged = [row["message"] for row in events if row["kind"] == "log"]
+                    self.assertIn("Deezer file length did not match the catalog", logged)
+
+    def test_a_song_the_account_saves_never_starts_yt_dlp(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, downloader = run_walk(
+                directory,
+                [],
+                env={"MUSIMO_SOURCE_ORDER": "deezer,youtube"},
+                account=saves("source.flac"),
+            )
+            self.assertEqual(events[-1]["kind"], "ready")
+            downloader.assert_not_called()
 
     def test_a_recording_that_fails_for_itself_moves_to_the_next_match(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1192,7 +1221,7 @@ class WalkFollowUpTests(unittest.TestCase):
                 self.assertEqual([row for row in events if row["kind"] == "blocked"], [])
 
     def test_a_rate_limit_stays_retryable_when_another_source_failed_last(self) -> None:
-        def refuses(*_: object) -> Path:
+        def refuses(*_: object) -> Saved:
             raise DeezerAudioError("Deezer did not return the audio")
 
         with tempfile.TemporaryDirectory() as directory:
