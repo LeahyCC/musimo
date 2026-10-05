@@ -444,7 +444,8 @@ class Downloads:
                     # A block on one site must not hold the others. A catalog song walks its list,
                     # so it starts while any row in that list can still run.
                     # Retry clears an automatic pick, so this job walks the list. A hand pick waits.
-                    catalog_job = job.catalog == "deezer" and not job.selected
+                    # `selected` is not the test: the walk stores its own pick there as it goes.
+                    catalog_job = job.catalog == "deezer" and not job.hand_picked
                     if catalog_job:
                         hold = self.catalog_hold(settings, paused_sources)
                         if (
@@ -906,6 +907,16 @@ class Downloads:
                 async with asyncio.timeout(15):
                     meta = await self.enrichment.track(job.track_id)
                 job = self.jobs.update(job_id, meta=meta.model_dump())
+            if (
+                job.catalog == "deezer"
+                and not job.hand_picked
+                and self.catalog_hold(self.settings(), self.paused_sources()) == "paused"
+            ):
+                # A block paused the last row that could run while this job fetched its details.
+                # The song waits under the pause banner, as it would have at dispatch, instead of
+                # starting a worker that finds nothing to ask and fails it as turned off.
+                self.jobs.update(job_id, stage="queued", attempts=max(0, job.attempts - 1))
+                return
             # Optional tags and the cover run while the file downloads. Tagging waits for them.
             side: asyncio.Task[None] | None = None
             if side_work_pending(job, folder):

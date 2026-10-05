@@ -101,7 +101,8 @@ def error_guidance(code: str, site: str = "YouTube") -> tuple[str, str]:
         ),
         "COOKIES_EXPIRED": (
             "YouTube cookies have expired or are invalid.",
-            "diagnostics:sources",
+            # The cookie box is under Settings, Sources.
+            "settings:sources",
         ),
         "AGE_RESTRICTED": (
             AGE_HINT,

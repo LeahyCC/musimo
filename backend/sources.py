@@ -451,7 +451,7 @@ def listed_sources() -> list[dict[str, object]]:
             "label": "Deezer",
             "kind": "catalog",
             "working": True,
-            "note": "Search, album pages and track details.",
+            "note": "Search. Album pages and catalog downloads still use the Deezer catalog.",
         },
         {
             "id": "deezer_audio",

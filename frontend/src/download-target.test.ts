@@ -7,7 +7,7 @@ const choice = (over: Partial<CatalogSourceChoice> = {}): CatalogSourceChoice =>
   source_order: ['deezer', 'youtube'],
   disabled_sources: [],
   deezer_audio: true,
-  deezer_arl: '',
+  deezer_cookie: false,
   ...over,
 })
 
@@ -52,10 +52,7 @@ describe('first catalog source', () => {
     )
 
     expect(
-      firstLiveSource(
-        choice({ source_order: ['deezer', 'youtube'], deezer_arl: 'a'.repeat(192) }),
-        [],
-      ),
+      firstLiveSource(choice({ source_order: ['deezer', 'youtube'], deezer_cookie: true }), []),
     ).toBe('deezer')
 
     expect(
@@ -63,7 +60,7 @@ describe('first catalog source', () => {
         choice({
           source_order: ['deezer', 'youtube'],
           deezer_audio: false,
-          deezer_arl: 'a'.repeat(192),
+          deezer_cookie: true,
         }),
         [],
       ),

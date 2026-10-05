@@ -118,7 +118,7 @@ Open: AcoustID as a fallback for junk metadata, and catalog imports from Spotify
 
 ### Phase 2: SoundCloud as a backup match
 
-Shipped, then replaced: the old "Use SoundCloud when YouTube has no match" switch is gone. SoundCloud is a row in `source_order`, asked when its turn comes, including after a length mismatch on an earlier row. It uses a higher bar (accept from 0.70, "check match" below 0.90, against YouTube's 0.55 and 0.86), set in `backend/matching.py`. A block on a SoundCloud search pauses SoundCloud. Pressing Retry walks the list again. A hand pick stays. Review candidates name their site. The old switch still seeds SoundCloud onto the list once, the first time the order is saved.
+Shipped, then replaced: the old "Use SoundCloud when YouTube has no match" switch is gone. SoundCloud is a row in `source_order`, asked when its turn comes, including after a length mismatch on an earlier row. It uses a higher bar (accept from 0.70, "check match" below 0.90, against YouTube's 0.55 and 0.86), set in `backend/matching.py`. A block on a SoundCloud search pauses SoundCloud. A SoundCloud pick downloads with SoundCloud's own format and extractor list, whichever row the job started on. Pressing Retry walks the list again. A hand pick stays. Review candidates name their site. The old switch still seeds SoundCloud onto the list once, the first time the order is saved.
 
 Checked: tests on canned search results in `tests/test_worker.py`.
 

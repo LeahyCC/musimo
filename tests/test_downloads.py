@@ -191,6 +191,28 @@ class DurableJobsTests(unittest.TestCase):
         assert score is not None
         self.assertFalse(score.version_mismatch or score.version_missing)
 
+    def test_an_artist_named_with_a_version_word_is_not_another_version(self) -> None:
+        # A title-first upload puts the artist last, where the prefix strip missed it, so
+        # "Acoustic Alchemy" read as an acoustic version of the song.
+        matcher = Matcher()
+        meta = Metadata(id=1, title="Mr. Chow", artist="Acoustic Alchemy", duration=200)
+        own = matcher.score(meta, "Mr. Chow - Acoustic Alchemy", "Acoustic Alchemy", 200)
+        assert own is not None
+        self.assertFalse(own.version_mismatch)
+        self.assertGreater(own.total, 0.55)
+        other = Metadata(id=2, title="Mr. Chow", artist="Someone", duration=200)
+        decoy = matcher.score(other, "Mr. Chow (Acoustic)", "Someone", 200)
+        assert decoy is not None
+        self.assertTrue(decoy.version_mismatch)
+        # When the title leads with the artist, a word at the end is the version, even when the
+        # band is called Live.
+        band = Metadata(id=3, title="I Alone", artist="Live", duration=230)
+        live = matcher.score(band, "Live - I Alone (Live)", "Live", 230)
+        studio = matcher.score(band, "I Alone - Live", "Live", 230)
+        assert live is not None and studio is not None
+        self.assertTrue(live.version_mismatch)
+        self.assertFalse(studio.version_mismatch)
+
     def test_output_path_is_contained_and_publication_never_overwrites(self) -> None:
         naming = Naming()
         for bad in ["../{title}", "/{title}", "{title.__class__}", "{artist!r}", "x//{title}"]:
@@ -787,7 +809,7 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
             ) as client:
                 service = await self.service(root, store, client)
                 self.assertIsNone(service.task)
-                cases = (
+                cases: tuple[tuple[str, dict[str, object], str], ...] = (
                     (
                         "soundcloud when youtube is off",
                         {
@@ -1060,7 +1082,56 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                         f"/api/jobs/{job.id}/pick", json={"candidate_id": "999999999"}
                     )
                     self.assertEqual(unknown.status_code, 422)
+                    # Off means no new downloads from that source, a hand pick included.
+                    store.update({"disabled_sources": ["youtube"]})
+                    service.jobs.update(job.id, stage="failed")
+                    refused = await api.post(
+                        f"/api/jobs/{job.id}/pick", json={"candidate_id": "abcdefghijk"}
+                    )
+                    self.assertEqual(refused.status_code, 422)
+                    self.assertIn("turned off", refused.json()["detail"])
             store.close()
+
+    async def test_a_pause_that_lands_before_the_worker_leaves_the_song_queued(self) -> None:
+        # The scheduler saw a source that could run, then a block paused it while the job
+        # fetched its details. The worker would find nothing to ask and fail it as turned off.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            try:
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+                ) as client:
+                    service = await self.service(root, store, client)
+                    store.update({"destination": str(root), "source_order": ["youtube"]})
+                    job = service.jobs.enqueue(1, "original", str(root))
+
+                    async def details(track_id: int) -> Metadata:
+                        service.set_controls(source_paused=True, source="youtube")
+                        return Metadata(id=track_id, title="Song", artist="Artist", duration=200)
+
+                    async def no_extra(meta: Metadata) -> list[str]:
+                        return []
+
+                    async def no_art(job: Job, folder: Path) -> None:
+                        return None
+
+                    async def never(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                        raise AssertionError("A worker started while every source was paused")
+
+                    with (
+                        patch.object(service.enrichment, "track", details),
+                        patch.object(service.enrichment, "extra", no_extra),
+                        patch.object(service, "artwork", no_art),
+                        patch.object(service, "worker", never),
+                    ):
+                        await service.run(job.id)
+                    after = service.jobs.get(job.id)
+                    self.assertEqual(after.stage, "queued")
+                    self.assertEqual(after.attempts, 0)
+                    self.assertEqual(after.error_code, "")
+            finally:
+                store.close()
 
 
 class OverlappedMetadataTests(unittest.IsolatedAsyncioTestCase):
