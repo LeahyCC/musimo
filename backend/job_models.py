@@ -158,7 +158,11 @@ class Job(BaseModel):
     def default_source(cls, data: object) -> object:
         # Jobs stored before `source` existed were YouTube matches or podcast feed files.
         if isinstance(data, dict) and "source" not in data:
-            return {**data, "source": "podcast" if data.get("catalog") == "podcast" else "youtube"}
+            data = {**data, "source": "podcast" if data.get("catalog") == "podcast" else "youtube"}
+        # Jobs stored before `hand_picked` existed kept any selection through Retry. Read it as a
+        # hand pick, so an upgrade does not throw away a recording someone chose.
+        if isinstance(data, dict) and "hand_picked" not in data and data.get("selected"):
+            data = {**data, "hand_picked": True}
         return data
 
     def public(self) -> dict[str, object]:

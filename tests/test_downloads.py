@@ -770,7 +770,7 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
             ) as client:
                 service = await self.service(root, store, client)
                 self.assertIsNone(service.task)
-                cases = (
+                cases: tuple[tuple[str, dict[str, object], str], ...] = (
                     (
                         "soundcloud when youtube is off",
                         {
@@ -1044,3 +1044,44 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertEqual(unknown.status_code, 422)
             store.close()
+
+    async def test_a_pause_that_lands_before_the_worker_leaves_the_song_queued(self) -> None:
+        # The scheduler saw a source that could run, then a block paused it while the job
+        # fetched its details. The worker would find nothing to ask and fail it as turned off.
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            try:
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+                ) as client:
+                    service = await self.service(root, store, client)
+                    store.update({"destination": str(root), "source_order": ["youtube"]})
+                    job = service.jobs.enqueue(1, "original", str(root))
+
+                    async def details(track_id: int) -> Metadata:
+                        service.set_controls(source_paused=True, source="youtube")
+                        return Metadata(id=track_id, title="Song", artist="Artist", duration=200)
+
+                    async def no_extra(meta: Metadata) -> list[str]:
+                        return []
+
+                    async def no_art(job: Job, folder: Path) -> None:
+                        return None
+
+                    async def never(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                        raise AssertionError("A worker started while every source was paused")
+
+                    with (
+                        patch.object(service.enrichment, "track", details),
+                        patch.object(service.enrichment, "extra", no_extra),
+                        patch.object(service, "artwork", no_art),
+                        patch.object(service, "worker", never),
+                    ):
+                        await service.run(job.id)
+                    after = service.jobs.get(job.id)
+                    self.assertEqual(after.stage, "queued")
+                    self.assertEqual(after.attempts, 0)
+                    self.assertEqual(after.error_code, "")
+            finally:
+                store.close()

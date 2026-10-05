@@ -24,6 +24,14 @@ class DeezerAudioError(Exception):
     """The account file could not be saved. The worker then tries another source."""
 
 
+class DeezerCookieRejected(DeezerAudioError):
+    """Deezer refused the cookie. Asking again with the same one cannot work."""
+
+
+class DeezerNoTrack(DeezerAudioError):
+    """The account cannot play this track, so Deezer has no file to give for it."""
+
+
 def configured() -> bool:
     return bool(os.environ.get("MUSIMO_DEEZER_ARL", "").strip())
 
@@ -31,7 +39,7 @@ def configured() -> bool:
 def account_cookie() -> str:
     value = os.environ.get("MUSIMO_DEEZER_ARL", "").strip()
     if ARL.fullmatch(value) is None:
-        raise DeezerAudioError("MUSIMO_DEEZER_ARL is not a Deezer account cookie")
+        raise DeezerCookieRejected("MUSIMO_DEEZER_ARL is not a Deezer account cookie")
     return value
 
 
@@ -94,9 +102,14 @@ def decrypt_stripe(chunks: Iterable[bytes], key: bytes) -> bytes:
 
 class Account:
     def __init__(self, cookie: str) -> None:
+        # Scoped to deezer.com. A plain dict sets no domain, and httpx then sends the account
+        # cookie to every host, including the media CDN and wherever a redirect points.
+        jar = httpx.Cookies()
+        jar.set("arl", cookie, domain=".deezer.com")
+        jar.set("comeback", "1", domain=".deezer.com")
         self.http = httpx.Client(
             headers={"User-Agent": USER_AGENT, "Accept": "*/*"},
-            cookies={"arl": cookie, "comeback": "1"},
+            cookies=jar,
             timeout=httpx.Timeout(30.0),
             follow_redirects=True,
         )
@@ -131,16 +144,16 @@ class Account:
         )
         results = payload.get("results")
         if not isinstance(results, dict):
-            raise DeezerAudioError("Deezer did not accept the account cookie")
+            raise DeezerCookieRejected("Deezer did not accept the account cookie")
         user = results.get("USER")
         token = results.get("checkForm")
         if not isinstance(user, dict) or not isinstance(token, str) or not token:
-            raise DeezerAudioError("Deezer did not accept the account cookie")
+            raise DeezerCookieRejected("Deezer did not accept the account cookie")
         if user.get("USER_ID") in {0, "0"}:
-            raise DeezerAudioError("Deezer did not accept the account cookie")
+            raise DeezerCookieRejected("Deezer did not accept the account cookie")
         options = user.get("OPTIONS")
         if not isinstance(options, dict) or not isinstance(options.get("license_token"), str):
-            raise DeezerAudioError("Deezer did not accept the account cookie")
+            raise DeezerCookieRejected("Deezer did not accept the account cookie")
         self.license = str(options["license_token"])
         self.api_token = token
         self.format = choose_format(options.get("web_sound_quality"))
@@ -160,7 +173,7 @@ class Account:
         )
         song = payload.get("results")
         if not isinstance(song, dict) or not song.get("TRACK_TOKEN") or not song.get("SNG_ID"):
-            raise DeezerAudioError("Deezer does not have this track for the account")
+            raise DeezerNoTrack("Deezer does not have this track for the account")
         return song
 
     def media_url(self, token: str, fmt: str | None = None) -> str:
@@ -172,9 +185,7 @@ class Account:
                     "media": [
                         {
                             "type": "FULL",
-                            "formats": [
-                                {"cipher": "BF_CBC_STRIPE", "format": fmt or self.format}
-                            ],
+                            "formats": [{"cipher": "BF_CBC_STRIPE", "format": fmt or self.format}],
                         }
                     ],
                     "track_tokens": [token],

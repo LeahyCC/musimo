@@ -1,9 +1,13 @@
 import json
+import subprocess
 import tempfile
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from typing import cast
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
+
+import httpx
 
 from backend.deezer_audio import DeezerAudioError
 from backend.job_models import Candidate, Job, Metadata
@@ -481,6 +485,24 @@ def soundcloud(
     return {"id": track_id, "title": title, "uploader": artist, "duration": 180, "url": TRACK}
 
 
+def writes_audio(folder: Path, replies: list[object]) -> Callable[..., object]:
+    """yt-dlp answers that save source.m4a on a download, as yt-dlp does, and not on a search.
+
+    The walk clears whatever an earlier run left in the folder, so the file has to appear here.
+    """
+    queue = list(replies)
+
+    def answer(address: object, *args: object, **kwargs: object) -> object:
+        reply = queue.pop(0)
+        if isinstance(reply, BaseException):
+            raise reply
+        if "search8:" not in str(address):
+            (folder / "source.m4a").write_bytes(b"synthetic audio placeholder")
+        return reply
+
+    return answer
+
+
 class BackupSourceTests(unittest.TestCase):
     """The SoundCloud search that runs only after YouTube found nothing."""
 
@@ -505,7 +527,7 @@ class BackupSourceTests(unittest.TestCase):
             patch("backend.worker.emit", side_effect=record),
         ):
             tagger.return_value.prepare.return_value = folder / "source.m4a"
-            downloader.return_value.extract_info.side_effect = answers
+            downloader.return_value.extract_info.side_effect = writes_audio(folder, answers)
             main()
             asked = [
                 str(call.args[0]) for call in downloader.return_value.extract_info.call_args_list
@@ -585,19 +607,22 @@ class BackupSourceTests(unittest.TestCase):
                 patch("backend.worker.Tagger") as tagger,
                 patch("backend.worker.emit", side_effect=record),
             ):
-                downloader.return_value.extract_info.side_effect = [
-                    {
-                        "entries": [
-                            {
-                                "id": "abcdefghijk",
-                                "title": "Test artist - Test song",
-                                "channel": "Test artist",
-                                "duration": 180,
-                            }
-                        ]
-                    },
-                    {"id": "abcdefghijk", "title": "Test song"},
-                ]
+                downloader.return_value.extract_info.side_effect = writes_audio(
+                    folder,
+                    [
+                        {
+                            "entries": [
+                                {
+                                    "id": "abcdefghijk",
+                                    "title": "Test artist - Test song",
+                                    "channel": "Test artist",
+                                    "duration": 180,
+                                }
+                            ]
+                        },
+                        {"id": "abcdefghijk", "title": "Test song"},
+                    ],
+                )
                 main()
                 asked = [
                     str(call.args[0])
@@ -626,20 +651,23 @@ class BackupSourceTests(unittest.TestCase):
                 patch("backend.worker.Tagger") as tagger,
                 patch("backend.worker.emit", side_effect=record),
             ):
-                downloader.return_value.extract_info.side_effect = [
-                    {
-                        "entries": [
-                            {
-                                "id": "abcdefghijk",
-                                "title": "Test artist - Test song",
-                                "channel": "Test artist",
-                                "duration": 180,
-                            }
-                        ]
-                    },
-                    {"id": "abcdefghijk", "title": "Test song"},
-                    {"entries": []},
-                ]
+                downloader.return_value.extract_info.side_effect = writes_audio(
+                    folder,
+                    [
+                        {
+                            "entries": [
+                                {
+                                    "id": "abcdefghijk",
+                                    "title": "Test artist - Test song",
+                                    "channel": "Test artist",
+                                    "duration": 180,
+                                }
+                            ]
+                        },
+                        {"id": "abcdefghijk", "title": "Test song"},
+                        {"entries": []},
+                    ],
+                )
                 main()
                 asked = [
                     str(call.args[0])
@@ -798,3 +826,248 @@ class BackupSourceTests(unittest.TestCase):
             )
             self.assertEqual(asked, ["https://www.youtube.com/watch?v=abcdefghijk"])
             self.assertEqual(events[-1]["source"], "youtube")
+
+
+MATCH = {
+    "id": "abcdefghijk",
+    "title": "Test artist - Test song",
+    "channel": "Test artist",
+    "duration": 180,
+}
+# Ranks above MATCH: the same title on the artist's Topic channel.
+TOPIC = {
+    "id": "bcdefghijkl",
+    "title": "Test song",
+    "channel": "Test artist - Topic",
+    "duration": 180,
+}
+
+
+def run_walk(
+    directory: str,
+    replies: list[object],
+    *,
+    env: dict[str, str] | None = None,
+    account: Callable[..., Path] | None = None,
+    lengths: dict[str, object] | None = None,
+    fields: dict[str, object] | None = None,
+) -> tuple[list[dict[str, object]], list[str], MagicMock]:
+    """Run the worker on one catalog song with yt-dlp, the Deezer fetch and ffprobe faked.
+
+    `replies` answer yt-dlp in order. Without `account` the Deezer row has no cookie. `lengths`
+    maps a file suffix to what ffprobe reports, or to the exception it raises. Returns the events,
+    the addresses yt-dlp was asked for, and the YoutubeDL mock.
+    """
+    folder = Path(directory)
+    job = Job.model_validate(
+        {
+            "id": "test",
+            "track_id": 1,
+            "target": directory,
+            "created_at": 0,
+            "updated_at": 0,
+            "meta": Metadata(
+                id=1, title="Test song", artist="Test artist", duration=180
+            ).model_dump(),
+            **(fields or {}),
+        }
+    )
+    (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
+    events: list[dict[str, object]] = []
+    reported: dict[str, object] = {".m4a": 180.0, ".flac": 180.0, **(lengths or {})}
+
+    def record(kind: str, **values: object) -> None:
+        events.append({"kind": kind, **values})
+
+    def probe(path: Path, accurate: bool = False) -> dict[str, object]:
+        length = reported[path.suffix]
+        if isinstance(length, BaseException):
+            raise length
+        return {"duration": length, "codec": "test"}
+
+    with (
+        patch("sys.argv", ["worker", directory]),
+        patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "youtube", **(env or {})}),
+        patch("backend.worker.configured", return_value=account is not None),
+        patch("backend.worker.fetch", side_effect=account),
+        patch("backend.worker.probe", side_effect=probe),
+        patch("backend.worker.Tagger") as tagger,
+        patch("yt_dlp.YoutubeDL") as downloader,
+        patch("backend.worker.emit", side_effect=record),
+    ):
+        tagger.return_value.prepare.side_effect = lambda source, *_: source
+        downloader.return_value.extract_info.side_effect = writes_audio(folder, replies)
+        main()
+        asked = [str(call.args[0]) for call in downloader.return_value.extract_info.call_args_list]
+    return events, asked, downloader
+
+
+def saves(name: str) -> Callable[..., Path]:
+    """A Deezer fetch that saves `name` in the job folder."""
+
+    def fetch(track_id: int, folder: Path, progress: object = None) -> Path:
+        path = folder / name
+        path.write_bytes(b"synthetic account file")
+        return path
+
+    return fetch
+
+
+class WalkTests(unittest.TestCase):
+    """What the catalog walk asks, what it skips, and what it files."""
+
+    def test_a_deezer_network_error_still_asks_youtube(self) -> None:
+        def unreachable(*_: object) -> Path:
+            raise httpx.ConnectError("Temporary failure in name resolution")
+
+        with tempfile.TemporaryDirectory() as directory:
+            events, asked, _ = run_walk(
+                directory,
+                [{"entries": [MATCH]}, {"id": MATCH["id"], "title": "Test song"}],
+                env={"MUSIMO_SOURCE_ORDER": "deezer,youtube"},
+                account=unreachable,
+            )
+            self.assertTrue(asked[0].startswith("ytsearch8:"))
+            self.assertEqual(events[-1]["kind"], "ready")
+
+    def test_an_unreadable_deezer_file_is_cleared_before_youtube(self) -> None:
+        # The account file stayed behind, and the YouTube download then found two files.
+        for reported in (subprocess.CalledProcessError(1, ["ffprobe"]), 0.0):
+            with self.subTest(reported=reported), tempfile.TemporaryDirectory() as directory:
+                events, _, _ = run_walk(
+                    directory,
+                    [{"entries": [MATCH]}, {"id": MATCH["id"], "title": "Test song"}],
+                    env={"MUSIMO_SOURCE_ORDER": "deezer,youtube"},
+                    account=saves("source.flac"),
+                    lengths={".flac": reported},
+                )
+                self.assertEqual(events[-1]["kind"], "ready")
+                self.assertFalse((Path(directory) / "source.flac").exists())
+                logged = " ".join(str(row["message"]) for row in events if row["kind"] == "log")
+                self.assertNotIn("ffprobe", logged)
+
+    def test_a_recording_that_fails_for_itself_moves_to_the_next_match(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            events, asked, _ = run_walk(
+                directory,
+                [
+                    {"entries": [MATCH, TOPIC]},
+                    RuntimeError(f"ERROR: [youtube] {TOPIC['id']}: Video unavailable"),
+                    {"id": MATCH["id"], "title": "Test song"},
+                ],
+            )
+            self.assertEqual(
+                asked[1:],
+                [
+                    f"https://www.youtube.com/watch?v={TOPIC['id']}",
+                    f"https://www.youtube.com/watch?v={MATCH['id']}",
+                ],
+            )
+            self.assertEqual(events[-1]["kind"], "ready")
+
+    def test_a_block_or_rate_limit_stops_the_source_and_leaves_backoff_to_the_queue(self) -> None:
+        cases = (
+            ("Sign in to confirm you are not a bot", "SOURCE_BLOCKED", False, 1),
+            ("HTTP Error 429: Too Many Requests", "RATE_LIMITED", True, 0),
+            ("Read timed out", "TIMEOUT", True, 0),
+        )
+        for message, code, retryable, blocks in cases:
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as directory:
+                events, asked, _ = run_walk(
+                    directory,
+                    [RuntimeError(message)] * 4,
+                    env={"MUSIMO_MAX_ATTEMPTS": "4"},
+                )
+                self.assertEqual(len(asked), 1)
+                self.assertEqual(events[-1]["code"], code)
+                self.assertEqual(events[-1]["retryable"], retryable)
+                self.assertEqual(len([row for row in events if row["kind"] == "blocked"]), blocks)
+
+    def test_a_later_answer_with_no_song_files_the_job_as_no_match(self) -> None:
+        cover = {"id": "cover000001", "title": "Test song cover", "channel": "Band"}
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [RuntimeError("HTTP Error 500: Internal Server Error"), {"entries": [cover]}],
+                env={"MUSIMO_MAX_ATTEMPTS": "2"},
+            )
+            self.assertEqual(events[-1]["code"], "NO_MATCH")
+
+    def test_a_wrong_length_is_still_the_reason_when_another_source_had_weak_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [
+                    {"entries": [MATCH]},
+                    {"id": MATCH["id"], "title": "Test song"},
+                    {"entries": [soundcloud("Test song (Remix)", "111111111", "Some DJ")]},
+                ],
+                env={"MUSIMO_SOURCE_ORDER": "youtube,soundcloud"},
+                lengths={".m4a": 400.0},
+            )
+            self.assertEqual(events[-1]["code"], "DURATION_MISMATCH")
+            self.assertIn("YouTube", str(events[-1]["hint"]))
+
+    def test_tries_cover_a_failed_download_on_the_same_source(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            events, asked, _ = run_walk(
+                directory,
+                [
+                    {"entries": [MATCH]},
+                    RuntimeError("Connection reset by peer"),
+                    {"id": MATCH["id"], "title": "Test song"},
+                ],
+                env={"MUSIMO_TRIES_PER_SOURCE": "2"},
+            )
+            watch = f"https://www.youtube.com/watch?v={MATCH['id']}"
+            self.assertEqual(asked[1:], [watch, watch])
+            self.assertEqual(events[-1]["kind"], "ready")
+
+    def test_an_automatic_pick_left_from_a_paused_walk_walks_again(self) -> None:
+        stale = Candidate(id=str(MATCH["id"]), title="Test song", source="youtube").model_dump()
+        with tempfile.TemporaryDirectory() as directory:
+            _, asked, _ = run_walk(
+                directory,
+                [{"entries": [MATCH]}, {"id": MATCH["id"], "title": "Test song"}],
+                fields={"selected": MATCH["id"], "hand_picked": False, "candidates": [stale]},
+            )
+            self.assertTrue(asked[0].startswith("ytsearch8:"))
+
+    def test_an_automatic_job_resumes_its_saved_file_after_retry(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            (folder / "source.m4a").write_bytes(b"synthetic audio placeholder")
+            (folder / "download.json").write_text(
+                json.dumps({"selected": MATCH["id"], "file": "source.m4a", "artist": "A"}),
+                encoding="utf-8",
+            )
+            events, asked, _ = run_walk(
+                directory, [], fields={"selected": "", "hand_picked": False}
+            )
+            self.assertEqual(asked, [])
+            self.assertEqual(events[-1]["kind"], "ready")
+
+    def test_a_soundcloud_first_song_downloads_with_the_soundcloud_client(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, downloader = run_walk(
+                directory,
+                [{"entries": [soundcloud("Test artist - Test song")]}, {"id": "123456789"}],
+                env={"MUSIMO_SOURCE_ORDER": "soundcloud"},
+                fields={"source": "soundcloud"},
+            )
+            self.assertEqual(events[-1]["kind"], "ready")
+            built = [cast(dict[str, object], call.args[0]) for call in downloader.call_args_list]
+            allowed = [options.get("allowed_extractors") for options in built]
+            self.assertTrue(any(isinstance(row, list) and "soundcloud" in row for row in allowed))
+
+    def test_a_deezer_file_after_a_youtube_try_is_not_filed_under_that_recording(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [{"entries": [MATCH]}, RuntimeError("Connection reset by peer")],
+                env={"MUSIMO_SOURCE_ORDER": "youtube,deezer"},
+                account=saves("source.flac"),
+            )
+            self.assertEqual(events[-1]["kind"], "ready")
+            last = [row for row in events if row["kind"] == "candidates"][-1]
+            self.assertEqual(last["selected"], "")
