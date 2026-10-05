@@ -16,7 +16,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "coverage==7.16.1",
+    "coverage==7.16.2",
     "mypy==2.4.0",
     "pip-audit==2.10.1",
     "ruff==0.16.10",
