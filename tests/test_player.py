@@ -3,6 +3,7 @@ import gzip
 import hashlib
 import json
 import tempfile
+import time
 import unittest
 from pathlib import Path
 from unittest.mock import patch
@@ -10,7 +11,7 @@ from unittest.mock import patch
 import httpx
 from fastapi import FastAPI
 
-from backend.navidrome import Navidrome, sort_artists
+from backend.navidrome import SHUFFLE_ORDER_SECONDS, Navidrome, sort_artists
 from backend.player_api import install_player_routes
 from backend.store import Store
 
@@ -1049,7 +1050,10 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertNotEqual(again["seed"], seed)
                         self.assertTrue(all(row["id"] not in got[:2] for row in again["items"]))
                         stored = navidrome.shuffle_orders[seed]
-                        navidrome.shuffle_orders[seed] = (0.0, stored[1])
+                        # Older than a day by the same clock the server reads. A fresh CI runner
+                        # has been up for less than a day, so 0.0 is not old enough there.
+                        aged = time.monotonic() - SHUFFLE_ORDER_SECONDS - 1
+                        navidrome.shuffle_orders[seed] = (aged, stored[1])
                         expired = await client.post(
                             "/api/library/tracks/shuffle",
                             json={"seed": seed, "cursor": 0, "limit": 2},
