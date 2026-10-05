@@ -15,6 +15,7 @@ from backend.navidrome import (
     Navidrome,
     NavidromeError,
     PlaylistProtected,
+    ShuffleExpired,
 )
 
 ITEM_ID = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
@@ -38,6 +39,25 @@ MEDIA_HEADERS = {
     "etag",
     "last-modified",
 }
+
+
+class ShuffleWindow(BaseModel):
+    seed: str = Field(min_length=8, max_length=64)
+    cursor: int = Field(default=0, ge=0)
+    limit: int = Field(default=200, ge=1, le=200)
+    skip: list[str] = Field(default_factory=list, max_length=QUEUE_LIMIT)
+
+    @field_validator("seed")
+    @classmethod
+    def valid_seed(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+            raise ValueError("Invalid shuffle seed")
+        return value
+
+    @field_validator("skip")
+    @classmethod
+    def valid_skip(cls, values: list[str]) -> list[str]:
+        return [checked_id(value) for value in values]
 
 
 class TrackLookup(BaseModel):
@@ -138,6 +158,13 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
     async def navidrome_error(_: Request, exc: NavidromeError) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=503)
 
+    @app.exception_handler(ShuffleExpired)
+    async def shuffle_expired(_: Request, exc: ShuffleExpired) -> JSONResponse:
+        return JSONResponse(
+            {"detail": str(exc), "code": "shuffle_expired"},
+            status_code=404,
+        )
+
     @app.exception_handler(PlaylistProtected)
     async def protected_playlist(_: Request, exc: PlaylistProtected) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=409)
@@ -208,6 +235,10 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
         limit: int = Query(default=QUEUE_LIMIT, ge=1, le=QUEUE_LIMIT),
     ) -> dict[str, object]:
         return await get().select_tracks(q.strip(), sort, genre or [], year or [], shuffle, limit)
+
+    @app.post("/api/library/tracks/shuffle")
+    async def shuffle_window(request: ShuffleWindow) -> dict[str, object]:
+        return await get().shuffle_window(request.seed, request.cursor, request.limit, request.skip)
 
     @app.post("/api/library/tracks/lookup")
     async def track_lookup(request: TrackLookup) -> dict[str, object]:

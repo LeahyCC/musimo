@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { consumeUpcoming, dropForRoom, needsMore, reshuffle, SHUFFLE_AHEAD } from './shuffle-deck'
+import { dropForRoom, needsMore, SHUFFLE_AHEAD, stillWaiting } from './shuffle-deck'
 
 describe('library shuffle window', () => {
   it('fetches more only when the playing song is near the end of the loaded window', () => {
@@ -15,14 +15,8 @@ describe('library shuffle window', () => {
     expect(dropForRoom(500, 10, 200)).toBe(10)
   })
 
-  it('keeps ids the server did not account for and drops ones it knows are gone', () => {
-    expect(consumeUpcoming(['a', 'b', 'c', 'd'], ['a', 'b'], ['a'], ['b'])).toEqual(['c', 'd'])
-    expect(consumeUpcoming(['a', 'b', 'c'], ['a', 'b'], [], [])).toEqual(['a', 'b', 'c'])
-  })
-
-  it('starts a new pass without the songs still in the queue', () => {
-    const next = reshuffle(['a', 'b', 'c', 'd'], new Set(['b', 'c']))
-    expect(next).toHaveLength(2)
-    expect(next.slice().sort()).toEqual(['a', 'd'])
+  it('counts songs the server has not sent yet', () => {
+    expect(stillWaiting({ seed: 's', cursor: 500, total: 100_000 })).toBe(99_500)
+    expect(stillWaiting({ seed: '', cursor: 3, total: 3 })).toBe(0)
   })
 })
