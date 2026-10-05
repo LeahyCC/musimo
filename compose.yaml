@@ -11,7 +11,8 @@ services:
       MUSIMO_LIBRARY_ROOTS: /music
       MUSIMO_WATCH_MODE: '${MUSIMO_WATCH_MODE:-native}'
       MUSIMO_POLL_INTERVAL_SECONDS: '${MUSIMO_POLL_INTERVAL_SECONDS:-300}'
-      # Account cookie from .env. Empty keeps catalog tracks on the YouTube match.
+      # Deezer cookie from .env, for the first start only. Musimo moves it into
+      # /data/deezer-arl.txt, and Settings replaces or removes it after that.
       MUSIMO_DEEZER_ARL: '${MUSIMO_DEEZER_ARL:-}'
     volumes:
       - musimo-data:/data
