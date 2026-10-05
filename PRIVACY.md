@@ -27,7 +27,7 @@ These services apply their own policies. Self-hosting does not prevent providers
 
 ## Credentials and logs
 
-Keep credentials in dedicated files outside the repository, with restricted permissions and read-only mounts where supported. Do not store secrets in public issues or screenshots. The current generic settings table is not a secret vault. Cookie upload/management and additional redaction controls are unfinished work.
+Keep credentials in dedicated files outside the repository, with restricted permissions and read-only mounts where supported. Do not store secrets in public issues or screenshots. The current generic settings table is not a secret vault. The Deezer cookie is stored there for now, and the API never sends it back. Cookie upload/management and additional redaction controls are unfinished work.
 
 Diagnostics exports, error text, container logs and reverse-proxy logs can contain identifying details. Inspect and redact them before sharing. Turning off uvicorn access logs does not disable logs in other software or providers. Do not upload the SQLite database for a routine bug report.
 
