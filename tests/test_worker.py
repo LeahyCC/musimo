@@ -1236,6 +1236,38 @@ class WalkFollowUpTests(unittest.TestCase):
                 fields={"selected": MATCH["id"], "hand_picked": True, "candidates": [stale]},
             )
             self.assertEqual(events[-1]["code"], "DOWNLOAD_FAILED")
+            self.assertFalse(events[-1]["retryable"])
+
+    def test_a_hand_picked_recording_that_is_gone_is_not_retried(self) -> None:
+        # A removed or region-locked upload will not appear on the next try. The queue's backoff
+        # is for a rate limit or a timeout, not for this file.
+        stale = Candidate(id=str(MATCH["id"]), title="Test song", source="youtube").model_dump()
+        refusals = (
+            f"ERROR: [youtube] {MATCH['id']}: Video unavailable",
+            f"ERROR: [youtube] {MATCH['id']}: The uploader has not made this video "
+            "available in your country",
+        )
+        for refusal in refusals:
+            with self.subTest(refusal=refusal), tempfile.TemporaryDirectory() as directory:
+                events, _, _ = run_walk(
+                    directory,
+                    [RuntimeError(refusal)],
+                    fields={"selected": MATCH["id"], "hand_picked": True, "candidates": [stale]},
+                )
+                self.assertEqual(events[-1]["code"], "DOWNLOAD_FAILED")
+                self.assertFalse(events[-1]["retryable"])
+
+    def test_a_hand_picked_sign_in_failure_still_counts_as_expired_cookies(self) -> None:
+        # Only the recording's own wording is one file. A plain sign-in failure still pauses.
+        stale = Candidate(id=str(MATCH["id"]), title="Test song", source="youtube").model_dump()
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [RuntimeError("ERROR: [youtube] sign in required")],
+                fields={"selected": MATCH["id"], "hand_picked": True, "candidates": [stale]},
+            )
+            self.assertEqual(events[-1]["code"], "COOKIES_EXPIRED")
+            self.assertFalse(events[-1]["retryable"])
 
     def test_a_finished_file_without_a_manifest_does_not_block_the_resumed_pick(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

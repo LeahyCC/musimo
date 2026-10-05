@@ -201,3 +201,11 @@ class DeezerAudioTests(unittest.TestCase):
                 missing.track("1")
         finally:
             missing.close()
+        # The account check is not a song lookup. The same word there must not read as no song.
+        account = answering({"error": {"DATA_ERROR": "No song"}, "results": {}})
+        try:
+            with self.assertRaises(DeezerAudioError) as raised:
+                account.login()
+            self.assertNotIsInstance(raised.exception, DeezerNoTrack)
+        finally:
+            account.close()

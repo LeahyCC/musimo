@@ -131,16 +131,18 @@ class Account:
         return raw
 
     @staticmethod
-    def _refused(payload: dict[str, object]) -> None:
+    def _refused(payload: dict[str, object], *, track: bool = False) -> None:
         """Raise for a gw-light error. It answers 200 with the error here and empty results.
 
-        DATA_ERROR is how it says it has no such song. Anything else is a refusal, which read as
-        no song would file the track as missing while Deezer was only turning the request down.
+        DATA_ERROR on a song lookup is how it says it has no such song. The account check is not
+        a song lookup, so the same word there is a refusal. Anything else is a refusal too, which
+        read as no song would file the track as missing while Deezer was only turning the request
+        down.
         """
         error = payload.get("error")
         if not error:
             return
-        if isinstance(error, dict) and "DATA_ERROR" in error:
+        if track and isinstance(error, dict) and "DATA_ERROR" in error:
             raise DeezerNoTrack("Deezer does not have this track for the account")
         raise DeezerAudioError("Deezer did not answer")
 
@@ -186,7 +188,7 @@ class Account:
                 json={"sng_id": track_id},
             )
         )
-        self._refused(payload)
+        self._refused(payload, track=True)
         song = payload.get("results")
         if not isinstance(song, dict) or not song.get("TRACK_TOKEN") or not song.get("SNG_ID"):
             raise DeezerNoTrack("Deezer does not have this track for the account")

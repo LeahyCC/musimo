@@ -913,12 +913,14 @@ def main() -> None:
         # A code only stands where it means something for this job's site, so another site's
         # refusal pauses that site alone and never YouTube.
         code = source_code(code, origin)
-        if code in BLOCKING_CODES and own_fault(code, message):
-            # A private or members-only video says "sign in", which reads as expired cookies. It
-            # is one recording, and must not count toward pausing the site.
+        # A private or members-only video says "sign in", which reads as expired cookies. It is
+        # one recording: it must not pause the site, and asking again would fetch the same file.
+        one_recording = own_fault(code, message) and code in BLOCKING_CODES | {"DOWNLOAD_FAILED"}
+        if code in BLOCKING_CODES and one_recording:
             code = "DOWNLOAD_FAILED"
         if code == "DOWNLOAD_FAILED" and stage in {"converting", "tagging"}:
             code = "TRANSCODE_FAILED" if stage == "converting" else "TAG_FAILED"
+            one_recording = False
         hint, fix = error_guidance(code, site)
         if code in {"GEO_RESTRICTED", "AGE_RESTRICTED"}:
             # The tool's own wording is detail nobody can act on. The plain sentence is the answer.
@@ -927,7 +929,7 @@ def main() -> None:
             "error",
             code=code,
             message=message,
-            retryable=code in {"TIMEOUT", "RATE_LIMITED", "DOWNLOAD_FAILED"},
+            retryable=code in {"TIMEOUT", "RATE_LIMITED", "DOWNLOAD_FAILED"} and not one_recording,
             hint=hint,
             fix=fix,
             version=version,
