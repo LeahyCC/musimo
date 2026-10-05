@@ -55,6 +55,8 @@ const failed: DownloadJob = {
   selected: '',
   check_match: false,
   attempts: 1,
+  lap: 0,
+  laps: 0,
   retry_at: 0,
   progress: 0,
   downloaded: 0,

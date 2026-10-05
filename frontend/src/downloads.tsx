@@ -1,4 +1,4 @@
-import { useDeferredValue, useId, useLayoutEffect, useRef, useState } from 'react'
+import { Fragment, useDeferredValue, useId, useLayoutEffect, useRef, useState } from 'react'
 
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import type { QueryClient } from '@tanstack/react-query'
@@ -59,7 +59,7 @@ export type QueueData = {
   summary: {
     active: number
     failed: number
-    failure_reasons: { code: string; message: string; count: number }[]
+    failure_reasons: { code: string; message: string; count: number; hint?: string; fix?: string }[]
   }
 }
 export const activeJob = (job: DownloadJob) => !['done', 'failed', 'cancelled'].includes(job.stage)
@@ -107,15 +107,27 @@ export function updateJob(client: QueryClient, job: DownloadJob) {
       if (activeJob(item)) summary.active = Math.max(0, summary.active + delta)
       if (item.stage !== 'failed') continue
       summary.failed = Math.max(0, summary.failed + delta)
+      // The server groups reasons by hint and fix as well. A no-match hint names the sources
+      // that were asked, so two rows can share a code and message.
       const index = summary.failure_reasons.findIndex(
-        (reason) => reason.code === item.error_code && reason.message === item.error,
+        (reason) =>
+          reason.code === item.error_code &&
+          reason.message === item.error &&
+          (reason.hint ?? '') === item.error_hint &&
+          (reason.fix ?? '') === item.error_fix,
       )
       if (index >= 0) {
         const reason = summary.failure_reasons[index]
         if (reason) summary.failure_reasons[index] = { ...reason, count: reason.count + delta }
         if (summary.failure_reasons[index]?.count === 0) summary.failure_reasons.splice(index, 1)
       } else if (delta > 0) {
-        summary.failure_reasons.push({ code: item.error_code, message: item.error, count: 1 })
+        summary.failure_reasons.push({
+          code: item.error_code,
+          message: item.error,
+          hint: item.error_hint,
+          fix: item.error_fix,
+          count: 1,
+        })
       }
     }
     return {
@@ -424,7 +436,7 @@ function useQueuedCatalogLabel(): {
           source_order: data.source_order.value,
           disabled_sources: data.disabled_sources.value,
           deezer_audio: data.deezer_audio.value,
-          deezer_arl: data.deezer_arl.value,
+          deezer_cookie: data.deezer_cookie.value,
         }
       : undefined,
     paused: pausedSources(queue?.controls).map((row) => row.source),
@@ -464,6 +476,31 @@ function JobCard({
   const running = activeJob(job)
   const canPick = ['queued', 'paused', 'failed', 'cancelled', 'done'].includes(job.stage)
   const shown = catalogCardSource(job, queuedLabel.settings, queuedLabel.paused, queuedLabel.labels)
+  const warningCount =
+    job.warnings.length > 0
+      ? ` · ${job.warnings.length} warning${job.warnings.length === 1 ? '' : 's'}`
+      : ''
+  const facts = [
+    job.meta.artist,
+    job.meta.album,
+    (job.catalog === 'link' || job.catalog === 'deezer') && shown.source
+      ? `from ${siteLabel(shown.source, shown.label)}`
+      : '',
+    job.catalog === 'deezer' && job.laps > 1 && job.lap > 0
+      ? `pass ${job.lap} of ${job.laps}`
+      : `${job.attempts} ${job.attempts === 1 ? 'attempt' : 'attempts'}`,
+    formatLabel(job.format),
+    job.target,
+    job.stage === 'downloading'
+      ? `${bytes(job.downloaded)}${job.total ? ` / ${bytes(job.total)}` : ''} · ${bytes(job.speed)}/s${
+          job.eta !== null ? ` · ${Math.ceil(job.eta)}s left` : ''
+        }`
+      : '',
+    // The done line counts warnings only. A note is not a problem and is shown as text below.
+    job.stage === 'done' && job.codec
+      ? `${job.codec} · ${Math.round(job.actual_bitrate / 1000)} kbps${warningCount}`
+      : '',
+  ].filter(Boolean)
   return (
     <article
       className={cx(
@@ -484,31 +521,12 @@ function JobCard({
         <div className="min-w-0 flex-1">
           <strong className="block truncate text-small">{job.meta.title}</strong>
           <span className="block truncate text-tiny text-muted">
-            {job.meta.artist}
-            {job.meta.album ? ` · ${job.meta.album}` : ''}
-            {(job.catalog === 'link' || job.catalog === 'deezer') && shown.source
-              ? ` · from ${siteLabel(shown.source, shown.label)}`
-              : ''}
-            {job.catalog === 'deezer' && job.laps > 1 && job.lap > 0
-              ? ` · pass ${job.lap} of ${job.laps}`
-              : ` · ${job.attempts} ${job.attempts === 1 ? 'attempt' : 'attempts'}`}
-            {' · '}
-            {formatLabel(job.format)}
-            {job.target ? ` · ${job.target}` : ''}
-            {job.stage === 'downloading' && (
-              <>
-                {' · '}
-                {bytes(job.downloaded)}
-                {job.total ? ` / ${bytes(job.total)}` : ''} · {bytes(job.speed)}/s
-                {job.eta !== null ? ` · ${Math.ceil(job.eta)}s left` : ''}
-              </>
-            )}
-            {job.stage === 'done' && job.codec && (
-              <>
-                {' · '}
-                {job.codec} · {Math.round(job.actual_bitrate / 1000)} kbps
-              </>
-            )}
+            {facts.map((fact, index) => (
+              <Fragment key={index}>
+                {index > 0 && ' · '}
+                <span>{fact}</span>
+              </Fragment>
+            ))}
           </span>
         </div>
         <span className="text-tiny text-accent-hot uppercase">
@@ -635,11 +653,24 @@ function JobCard({
       {job.check_match && (
         <p className="text-tiny text-warn">Check match: the selected recording needs a listen.</p>
       )}
-      {(job.final_path ||
-        job.notes.length > 0 ||
-        job.warnings.length > 0 ||
-        job.candidates.length > 0 ||
-        job.tool_tail) && (
+      {job.notes.map((note, index) => (
+        <p key={index} className="text-tiny text-muted">
+          {note}
+        </p>
+      ))}
+      {job.warnings.length > 0 && (
+        <details className="text-tiny text-muted">
+          <summary className="cursor-pointer">
+            {job.warnings.length} metadata or scanning notes
+          </summary>
+          <ul>
+            {job.warnings.map((warning, index) => (
+              <li key={index}>{warning}</li>
+            ))}
+          </ul>
+        </details>
+      )}
+      {(job.final_path || job.candidates.length > 0 || job.tool_tail) && (
         <details className="text-tiny text-muted">
           <summary className="cursor-pointer">
             {job.candidates.length > 0
@@ -667,16 +698,6 @@ function JobCard({
               </button>
             </div>
           )}
-          {job.notes.map((note, index) => (
-            <p key={index}>{note}</p>
-          ))}
-          {job.warnings.length > 0 && (
-            <ul>
-              {job.warnings.map((warning, index) => (
-                <li key={index}>{warning}</li>
-              ))}
-            </ul>
-          )}
           {job.candidates.length > 0 && !canPick && <p>Pause the job to change its recording.</p>}
           {job.candidates.map((candidate) => (
             <div
@@ -691,7 +712,7 @@ function JobCard({
                 </small>
               </div>
               <a
-                className="shrink-0"
+                className="shrink-0 coarse:inline-flex coarse:min-h-11 coarse:items-center"
                 href={candidate.url || `https://www.youtube.com/watch?v=${candidate.id}`}
                 target="_blank"
                 rel="noreferrer"
@@ -1148,7 +1169,7 @@ export function DownloadsPage() {
             onClick={() => setTab(value)}
           >
             {label}
-            {count !== null && <span className="max-phone:hidden"> ({count})</span>}
+            {count !== null && <span className="max-phone:sr-only"> ({count})</span>}
           </button>
         ))}
       </div>
@@ -1171,7 +1192,7 @@ export function DownloadsPage() {
           {reasons.map((reason) => {
             const link = errorLink(reason.fix || '')
             return (
-              <span key={reason.code + reason.message}>
+              <span key={[reason.code, reason.message, reason.hint, reason.fix].join('|')}>
                 {reason.count} · {reason.hint || reason.message}{' '}
                 {reason.code && <small>({reason.code})</small>}
                 {link &&

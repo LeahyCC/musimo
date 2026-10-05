@@ -603,6 +603,10 @@ function NamingPreview({ template }: { template: string }) {
   )
 }
 
+// A text button is shorter than a finger. On a touch screen it gets the 44px floor.
+const orderButtonClassName =
+  'text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:min-w-11 coarse:items-center coarse:justify-center'
+
 const catalogOrderLabels: Record<string, string> = {
   deezer: 'Deezer account',
   youtube: 'YouTube',
@@ -612,9 +616,13 @@ const catalogOrderLabels: Record<string, string> = {
 function CatalogOrder({
   order,
   tries,
+  triesLocked,
+  triesOrigin,
   laps,
   lapsLocked,
   lapsOrigin,
+  orderLocked,
+  orderOrigin,
   deezerOn,
   hasCookie,
   disabledSources,
@@ -626,9 +634,13 @@ function CatalogOrder({
 }: {
   order: string[]
   tries: number
+  triesLocked: boolean
+  triesOrigin: string
   laps: number
   lapsLocked: boolean
   lapsOrigin: string
+  orderLocked: boolean
+  orderOrigin: string
   deezerOn: boolean
   hasCookie: boolean
   disabledSources: string[]
@@ -664,7 +676,10 @@ function CatalogOrder({
   const waitingOnPause = allSkipped && order.some((id) => paused.includes(id) && !hardSkip(id))
   return (
     <div className="mt-[18px] border-b border-line pb-[16px]">
-      <p className="text-body">Where a song from search is fetched</p>
+      <p className="text-body">
+        Where a song from search is fetched
+        {orderLocked ? <span className="text-warn"> · Locked by {orderOrigin}</span> : null}
+      </p>
       <p className="mt-[7px] max-w-[420px] text-tiny text-muted">
         The top row goes first. A failure asks the next row. After the last row, start again. A
         search with no song moves on straight away.
@@ -672,18 +687,18 @@ function CatalogOrder({
       <div className="mt-[14px] grid grid-cols-[1fr_80px] items-center gap-x-[16px] gap-y-[10px] max-phone:grid-cols-1">
         <label htmlFor="tries_per_source" className="text-small">
           Tries on one source before the next
+          {triesLocked ? <span className="text-warn"> · Locked by {triesOrigin}</span> : null}
         </label>
+        {/* Every keystroke is kept, as in the other number settings, so the box can be cleared
+            and retyped on a phone. Save checks the range. */}
         <Field
           id="tries_per_source"
           type="number"
           min={1}
           max={4}
-          disabled={disabled}
+          disabled={disabled || triesLocked}
           value={tries}
-          onChange={(event) => {
-            const next = Number(event.target.value)
-            if (next >= 1 && next <= 4) onTries(next)
-          }}
+          onChange={(event) => onTries(Number(event.target.value))}
         />
         <label htmlFor="max_attempts" className="text-small">
           Times around the list
@@ -696,10 +711,7 @@ function CatalogOrder({
           max={4}
           disabled={disabled || lapsLocked}
           value={laps}
-          onChange={(event) => {
-            const next = Number(event.target.value)
-            if (next >= 1 && next <= 4) onLaps(next)
-          }}
+          onChange={(event) => onLaps(Number(event.target.value))}
         />
       </div>
       <p className="mt-[10px] max-w-[420px] text-tiny text-muted">
@@ -727,27 +739,27 @@ function CatalogOrder({
               </span>
               <button
                 type="button"
-                className="text-muted underline disabled:opacity-40"
+                className={orderButtonClassName}
                 aria-label={`Move ${label} up`}
-                disabled={disabled || index === 0}
+                disabled={disabled || orderLocked || index === 0}
                 onClick={() => move(index, -1)}
               >
                 Up
               </button>
               <button
                 type="button"
-                className="text-muted underline disabled:opacity-40"
+                className={orderButtonClassName}
                 aria-label={`Move ${label} down`}
-                disabled={disabled || index === order.length - 1}
+                disabled={disabled || orderLocked || index === order.length - 1}
                 onClick={() => move(index, 1)}
               >
                 Down
               </button>
               <button
                 type="button"
-                className="text-muted underline disabled:opacity-40"
+                className={orderButtonClassName}
                 aria-label={`Remove ${label}`}
-                disabled={disabled || order.length === 1}
+                disabled={disabled || orderLocked || order.length === 1}
                 onClick={() => onOrder(order.filter((item) => item !== id))}
               >
                 Remove
@@ -762,8 +774,8 @@ function CatalogOrder({
             <button
               key={id}
               type="button"
-              className="text-small text-accent underline disabled:opacity-40"
-              disabled={disabled}
+              className="text-small text-accent underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
+              disabled={disabled || orderLocked}
               onClick={() => onOrder([...order, id])}
             >
               Add {catalogOrderLabels[id]}
@@ -782,6 +794,7 @@ function SourceRow({
   note,
   on,
   disabled,
+  lockedBy = '',
   onChange,
 }: {
   id: string
@@ -790,6 +803,8 @@ function SourceRow({
   note: string
   on: boolean
   disabled: boolean
+  /** The environment variable that holds this switch, or "" when Settings may change it. */
+  lockedBy?: string
   onChange: (on: boolean) => void
 }) {
   return (
@@ -798,6 +813,7 @@ function SourceRow({
       <div className="min-w-0 flex-1">
         <label htmlFor={id} className="text-body">
           {label}
+          {lockedBy ? <span className="text-warn"> · Locked by {lockedBy}</span> : null}
         </label>
         <p className="mt-[4px] text-tiny text-muted">{note}</p>
       </div>
@@ -807,7 +823,7 @@ function SourceRow({
         aria-label={label}
         className="h-[18px] w-[18px] shrink-0 accent-accent coarse:h-[22px] coarse:w-[22px]"
         checked={on}
-        disabled={disabled}
+        disabled={disabled || lockedBy !== ''}
         onChange={(event) => onChange(event.target.checked)}
       />
     </div>
@@ -832,10 +848,15 @@ function SettingsPage() {
   const [saved, setSaved] = useState(false)
   const [cookieText, setCookieText] = useState('')
   const [removeCookies, setRemoveCookies] = useState(false)
+  const [removeArl, setRemoveArl] = useState(false)
   const cookieSaved = settings.data?.youtube_cookies.value === true
   const cookiePending = cookieText.trim().length > 0 || removeCookies
+  const arlSaved = settings.data?.deezer_cookie.value === true
+  const typedArl = typeof draft.deezer_arl === 'string' ? draft.deezer_arl.trim() : ''
+  // What the source list should assume once this page is saved.
+  const arlAfterSave = typedArl !== '' || (arlSaved && !removeArl)
 
-  const isDirty = Object.keys(draft).length > 0 || cookiePending
+  const isDirty = Object.keys(draft).length > 0 || cookiePending || removeArl
 
   useBlocker({
     condition: isDirty,
@@ -882,6 +903,12 @@ function SettingsPage() {
     setSaved(false)
   }
 
+  /** Drop one key from the draft, so saving leaves that setting as it is. */
+  function unedit(key: SettingKey) {
+    const { [key]: _dropped, ...rest } = draft
+    setDraft(rest)
+  }
+
   const save = useMutation({
     mutationFn: async () => {
       if (removeCookies && cookieText.trim().length === 0) {
@@ -894,13 +921,15 @@ function SettingsPage() {
         })
       }
 
-      if (Object.keys(draft).length === 0) {
+      // An empty arl removes the saved cookie, so it is sent only after Remove cookie.
+      const changes = removeArl ? { ...draft, deezer_arl: '' } : draft
+      if (Object.keys(changes).length === 0) {
         return api('settings', settingsSchema)
       }
       return api('settings', settingsSchema, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(draft),
+        body: JSON.stringify(changes),
       })
     },
     onSuccess: (data) => {
@@ -910,6 +939,7 @@ function SettingsPage() {
       setConflicts({})
       setCookieText('')
       setRemoveCookies(false)
+      setRemoveArl(false)
       setSaved(true)
     },
   })
@@ -1196,11 +1226,15 @@ function SettingsPage() {
                   (draft.source_order as string[] | undefined) ?? settings.data.source_order.value
                 }
                 tries={Number(draft.tries_per_source ?? settings.data.tries_per_source.value)}
+                triesLocked={settings.data.tries_per_source.locked}
+                triesOrigin={settings.data.tries_per_source.origin}
                 laps={Number(draft.max_attempts ?? settings.data.max_attempts.value)}
                 lapsLocked={settings.data.max_attempts.locked}
                 lapsOrigin={settings.data.max_attempts.origin}
+                orderLocked={settings.data.source_order.locked}
+                orderOrigin={settings.data.source_order.origin}
                 deezerOn={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
-                hasCookie={String(draft.deezer_arl ?? settings.data.deezer_arl.value).trim() !== ''}
+                hasCookie={arlAfterSave}
                 disabledSources={
                   (draft.disabled_sources as string[] | undefined) ??
                   settings.data.disabled_sources.value
@@ -1218,6 +1252,9 @@ function SettingsPage() {
                 note="Search, album pages and track details."
                 on={(draft.deezer_catalog ?? settings.data.deezer_catalog.value) === true}
                 disabled={save.isPending}
+                lockedBy={
+                  settings.data.deezer_catalog.locked ? settings.data.deezer_catalog.origin : ''
+                }
                 onChange={(on) => edit('deezer_catalog', on)}
               />
               <SourceRow
@@ -1227,6 +1264,9 @@ function SettingsPage() {
                 note="Turn this off to skip the Deezer account row. The other rows still run."
                 on={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
                 disabled={save.isPending}
+                lockedBy={
+                  settings.data.deezer_audio.locked ? settings.data.deezer_audio.origin : ''
+                }
                 onChange={(on) => edit('deezer_audio', on)}
               />
               <div className="grid grid-cols-[1fr_280px] items-center gap-[28px] border-b border-line py-[16px] max-phone:grid-cols-1 max-phone:gap-[10px]">
@@ -1236,8 +1276,30 @@ function SettingsPage() {
                   </label>
                   <p className="mt-[7px] max-w-[420px] text-tiny">
                     In the browser, open DevTools, then Storage, then Cookies, and copy arl. Paste a
-                    new one here when it changes. Clear the box and save to stop using it.
+                    new one here when it changes. The cookie stays on this server and is not shown
+                    again.
                   </p>
+                  <p className="mt-[7px] text-tiny text-muted">
+                    {removeArl
+                      ? 'The cookie will be removed when you save.'
+                      : arlSaved
+                        ? 'A cookie is saved.'
+                        : 'No Deezer cookie yet.'}
+                  </p>
+                  {arlSaved && !removeArl && (
+                    <button
+                      type="button"
+                      className="mt-[8px] text-small text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
+                      disabled={save.isPending}
+                      onClick={() => {
+                        unedit('deezer_arl')
+                        setRemoveArl(true)
+                        setSaved(false)
+                      }}
+                    >
+                      Remove cookie
+                    </button>
+                  )}
                 </div>
                 <Field
                   id="deezer_arl"
@@ -1246,8 +1308,16 @@ function SettingsPage() {
                   spellCheck={false}
                   maxLength={192}
                   disabled={save.isPending}
-                  value={String(draft.deezer_arl ?? settings.data.deezer_arl.value)}
-                  onChange={(e) => edit('deezer_arl', e.target.value)}
+                  placeholder={
+                    arlSaved ? 'Paste a new cookie to replace it' : 'Paste the arl cookie'
+                  }
+                  value={typeof draft.deezer_arl === 'string' ? draft.deezer_arl : ''}
+                  onChange={(e) => {
+                    // An empty box means no change. Removing the cookie is its own button.
+                    if (e.target.value.trim() === '') unedit('deezer_arl')
+                    else edit('deezer_arl', e.target.value.trim())
+                    setRemoveArl(false)
+                  }}
                 />
               </div>
               <div className="grid grid-cols-[1fr_280px] items-start gap-[28px] border-b border-line py-[16px] max-phone:grid-cols-1 max-phone:gap-[10px]">
@@ -1270,7 +1340,7 @@ function SettingsPage() {
                   {cookieSaved && (
                     <button
                       type="button"
-                      className="mt-[8px] text-small text-muted underline disabled:opacity-40"
+                      className="mt-[8px] text-small text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
                       disabled={save.isPending}
                       onClick={() => {
                         setCookieText('')
@@ -1318,6 +1388,11 @@ function SettingsPage() {
                         }
                         on={source.working && !turnedOff}
                         disabled={!source.working || save.isPending}
+                        lockedBy={
+                          settings.data.disabled_sources.locked
+                            ? settings.data.disabled_sources.origin
+                            : ''
+                        }
                         onChange={(on) => {
                           const current =
                             (draft.disabled_sources as string[] | undefined) ??
