@@ -531,7 +531,7 @@ class BackupSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             events, asked = self.run_worker(
                 directory,
-                self.job(directory, backup_source="soundcloud"),
+                self.job(directory),
                 [
                     {"entries": [{"id": "abcdefghijk", "title": "Unrelated", "duration": 900}]},
                     {"entries": [soundcloud("Test artist - Test song")]},
@@ -570,7 +570,7 @@ class BackupSourceTests(unittest.TestCase):
     def test_no_fallback_after_a_duration_mismatch(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             folder = Path(directory)
-            job = self.job(directory, backup_source="soundcloud")
+            job = self.job(directory)
             (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
             (folder / "source.m4a").write_bytes(b"synthetic audio placeholder")
             events: list[dict[str, object]] = []
@@ -655,7 +655,7 @@ class BackupSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             events, asked = self.run_worker(
                 directory,
-                self.job(directory, backup_source="soundcloud"),
+                self.job(directory),
                 [
                     {"entries": []},
                     {
@@ -681,7 +681,7 @@ class BackupSourceTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             events, _ = self.run_worker(
                 directory,
-                self.job(directory, backup_source="soundcloud"),
+                self.job(directory),
                 [
                     {
                         "entries": [

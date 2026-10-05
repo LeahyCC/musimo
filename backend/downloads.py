@@ -9,7 +9,7 @@ import shutil
 import signal
 import sys
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from datetime import date
 from functools import partial
 from pathlib import Path
@@ -35,10 +35,29 @@ from backend.store import Store
 # YouTube lists its largest thumbnail without checking that it exists, and an older video has
 # none. Each size to fall back to is on the same host, smaller than the one before it.
 YOUTUBE_ART = ("maxresdefault.jpg", "sddefault.jpg", "hqdefault.jpg")
-# The second match source, tried only when YouTube found nothing or cannot be used.
-BACKUP_SOURCE = "soundcloud"
 ART_HOPS = 3
 ART_BYTES = 5 * 1024**2
+
+
+def opening_source(settings: Settings, paused: Collection[str]) -> str:
+    """The first catalog row that can run.
+
+    A paused row is not asked yet. If every row that could run is paused, name the first of
+    those, so the card is not left on a source that is off or missing from the list.
+    """
+    waiting = ""
+    held = set(paused)
+    for name in settings.source_order:
+        if name in settings.disabled_sources:
+            continue
+        if name == "deezer" and not (settings.deezer_audio and settings.deezer_arl):
+            continue
+        if name in held:
+            if not waiting:
+                waiting = name
+            continue
+        return name
+    return waiting
 
 
 class DownloadError(Exception):
@@ -221,28 +240,10 @@ class Downloads:
         row with no cookie and nothing else on, fails the job. Waiting would leave it queued
         with no reason on the card.
         """
-        held = False
-        for name in settings.source_order:
-            if name in settings.disabled_sources:
-                continue
-            if name == "deezer" and not (settings.deezer_audio and settings.deezer_arl):
-                continue
-            if name in paused:
-                held = True
-                continue
-            return ""
-        return "paused" if held else "off"
-
-    def opening_source(self, settings: Settings) -> str:
-        """The first row an automatic retry should show, until the worker asks it."""
-        paused = self.paused_sources()
-        for name in settings.source_order:
-            if name in paused or name in settings.disabled_sources:
-                continue
-            if name == "deezer" and not (settings.deezer_audio and settings.deezer_arl):
-                continue
-            return name
-        return "youtube"
+        name = opening_source(settings, paused)
+        if name in paused:
+            return "paused"
+        return "" if name else "off"
 
     def fail_closed(self, job: Job) -> None:
         message = "The sources for this track are turned off in Settings."
@@ -276,21 +277,6 @@ class Downloads:
         if failures >= 3:
             self.set_controls(source_paused=True, source=source)
         self.store.record_probe("blocked", 0, detail, source=source)
-
-    def backup(self, job: Job, settings: Settings, paused: set[str]) -> str:
-        """The source this job may fall back to, or "" when it has none.
-
-        Only a catalog track with no recording chosen by hand has one, and only while the setting
-        is on and the backup source itself is not paused.
-        """
-        allowed = (
-            settings.soundcloud_fallback
-            and "soundcloud" not in settings.disabled_sources
-            and job.catalog == "deezer"
-            and job.source == "youtube"
-            and not job.selected
-        )
-        return BACKUP_SOURCE if allowed and BACKUP_SOURCE not in paused else ""
 
     def target(self, raw: str) -> Path:
         # Select a trusted mount without probing a client-supplied filesystem path.
@@ -359,8 +345,6 @@ class Downloads:
                     # so it starts while any row in that list can still run.
                     # Retry clears an automatic pick, so this job walks the list. A hand pick waits.
                     catalog_job = job.catalog == "deezer" and not job.selected
-                    blocked = job.source in paused_sources
-                    switch = blocked and bool(self.backup(job, settings, paused_sources))
                     if catalog_job:
                         hold = self.catalog_hold(settings, paused_sources)
                         if (
@@ -371,8 +355,7 @@ class Downloads:
                             self.fail_closed(job)
                         if hold:
                             continue
-                        switch = False
-                    elif blocked and not switch:
+                    elif job.source in paused_sources:
                         continue
                     if job.stage == "retry_wait" and job.retry_at > time.time():
                         delay = min(delay, max(0.01, job.retry_at - time.time()))
@@ -384,8 +367,6 @@ class Downloads:
                         and job.stage in {"queued", "retry_wait"}
                         and job.retry_at <= time.time()
                     ):
-                        if switch:
-                            self.jobs.update(job.id, source=BACKUP_SOURCE)
                         task = asyncio.create_task(self.run(job.id))
                         self.running[job.id] = task
                         task.add_done_callback(partial(self.completed, job.id))
@@ -430,7 +411,7 @@ class Downloads:
                 restart = {
                     "selected": "",
                     "check_match": False,
-                    "source": self.opening_source(self.settings()),
+                    "source": opening_source(self.settings(), self.paused_sources()),
                     "lap": 0,
                     "laps": 0,
                 }
@@ -750,8 +731,6 @@ class Downloads:
                 job_id,
                 # Podcast episodes and pasted links skip the search, so they never show it.
                 stage="matching" if job.catalog == "deezer" else "downloading",
-                # Decided now, so a job queued before the setting changed follows today's answer.
-                backup_source=self.backup(job, self.settings(), self.paused_sources()),
                 attempts=job.attempts + 1,
                 error_code="",
                 error="",

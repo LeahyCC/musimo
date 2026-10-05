@@ -690,8 +690,8 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                 self.started.append(job_id)
                 self.jobs.update(job_id, stage="done")
 
-        # YouTube is paused. The job starts only when another row in the order can run.
-        # The worker, not the queue, picks that row, so the job stays marked YouTube until then.
+        # YouTube is paused after the job is queued. The source was chosen while YouTube
+        # could still run, and it stays until a worker asks the next row.
         cases = (
             (["youtube", "soundcloud"], True),
             (["youtube"], False),
@@ -757,6 +757,127 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                 kept = service.command(picked.id, "retry")
                 self.assertEqual(kept.source, "soundcloud")
                 self.assertEqual(kept.selected, "123456")
+                self.assertTrue(kept.hand_picked)
+                await service.close()
+            store.close()
+
+    async def test_a_new_catalog_job_names_the_first_source_that_can_run(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                self.assertIsNone(service.task)
+                cases = (
+                    (
+                        "soundcloud when youtube is off",
+                        {
+                            "source_order": ["soundcloud", "deezer"],
+                            "disabled_sources": ["youtube"],
+                        },
+                        "soundcloud",
+                    ),
+                    (
+                        "youtube when it is first and on",
+                        {"source_order": ["youtube", "soundcloud"], "disabled_sources": []},
+                        "youtube",
+                    ),
+                    (
+                        "the next row when deezer has no cookie",
+                        {
+                            "source_order": ["deezer", "soundcloud"],
+                            "deezer_arl": "",
+                            "deezer_audio": True,
+                        },
+                        "soundcloud",
+                    ),
+                    (
+                        "deezer when the cookie is set",
+                        {
+                            "source_order": ["deezer", "youtube"],
+                            "deezer_audio": True,
+                            "deezer_arl": "a" * 192,
+                        },
+                        "deezer",
+                    ),
+                )
+                for track, (label, settings, expected) in enumerate(cases, start=1):
+                    with self.subTest(label=label):
+                        store.update({"destination": str(root), **settings})
+                        job = service.jobs.enqueue(track, "original", str(root))
+                        self.assertEqual(job.source, expected)
+                        self.assertIsNone(service.task)
+                store.update(
+                    {
+                        "destination": str(root),
+                        "source_order": ["youtube", "soundcloud"],
+                        "disabled_sources": [],
+                        "deezer_arl": "",
+                    }
+                )
+                picked = service.jobs.enqueue(20, "original", str(root), source="soundcloud")
+                self.assertEqual(picked.source, "soundcloud")
+                episode = service.jobs.enqueue_many([21], "original", str(root), catalog="podcast")[
+                    0
+                ]
+                self.assertEqual(episode.source, "podcast")
+                link = service.jobs.enqueue_many(
+                    [22], "original", str(root), catalog="link", source="bandcamp"
+                )[0]
+                self.assertEqual(link.source, "bandcamp")
+                service.set_controls(source_paused=True, source="youtube")
+                held = service.jobs.enqueue(23, "original", str(root))
+                self.assertEqual(held.source, "soundcloud")
+                await service.close()
+            store.close()
+
+    async def test_retry_uses_the_first_live_source_when_youtube_is_off(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                store.update(
+                    {
+                        "destination": str(root),
+                        "source_order": ["youtube", "soundcloud"],
+                        "disabled_sources": ["youtube"],
+                    }
+                )
+                failed = service.jobs.enqueue(1, "original", str(root))
+                self.assertEqual(failed.source, "soundcloud")
+                service.jobs.update(
+                    failed.id,
+                    stage="failed",
+                    source="youtube",
+                    selected="abcdefghijk",
+                )
+                retried = service.command(failed.id, "retry")
+                self.assertEqual(retried.source, "soundcloud")
+                self.assertEqual(retried.selected, "")
+                self.assertEqual(retried.lap, 0)
+                store.update(
+                    {
+                        "source_order": ["soundcloud", "youtube"],
+                        "disabled_sources": [],
+                    }
+                )
+                hand = service.jobs.enqueue(2, "original", str(root), source="youtube")
+                self.assertEqual(hand.source, "youtube")
+                service.jobs.update(
+                    hand.id,
+                    stage="failed",
+                    source="youtube",
+                    selected="abcdefghijk",
+                    hand_picked=True,
+                )
+                kept = service.command(hand.id, "retry")
+                self.assertEqual(kept.source, "youtube")
+                self.assertEqual(kept.selected, "abcdefghijk")
                 self.assertTrue(kept.hand_picked)
                 await service.close()
             store.close()

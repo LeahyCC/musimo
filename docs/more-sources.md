@@ -162,7 +162,7 @@ Open: a track whose files are all WAV or SHN fails with `DOWNLOAD_FAILED`.
 | 2     | 5, Internet Archive                | Small  | Built. Gave the link path its end-to-end fixture. |
 | 3     | 3, indie sites                     | Small  | Built. Audiomack is switched off.                 |
 | 4     | 4, mixes and radio                 | Medium | Built. TuneIn is switched off.                    |
-| 5     | 2, SoundCloud backup               | Medium | Built, off by default, not measured.              |
+| 5     | 2, SoundCloud                      | Medium | Built. A row in the source list, off until added. |
 
 ## Testing
 
@@ -173,13 +173,13 @@ Open: a track whose files are all WAV or SHN fails with `DOWNLOAD_FAILED`.
 
 ## Docs that carry the detail
 
-[Downloads](downloads.md) (flow, error table, layouts), [architecture](architecture.md) (API list, the "not yet implemented" list, the pause wording), [settings](settings.md) (the SoundCloud switch), [search](search.md) (link handling in the search box), [roadmap](roadmap.md) and `CHANGELOG.md`.
+[Downloads](downloads.md) (flow, error table, layouts), [architecture](architecture.md) (API list, the "not yet implemented" list, the pause wording), [settings](settings.md) (the stored SoundCloud switch), [search](search.md) (link handling in the search box), [roadmap](roadmap.md) and `CHANGELOG.md`.
 
 ## Starting choices
 
 These were defaults picked to get going. Each is cheap to change.
 
 1. Deezer tidy-up on a pasted music link is automatic. The job card says which tags it used. As built.
-2. The SoundCloud backup runs after a YouTube `NO_MATCH` or while YouTube is paused, not after `DURATION_MISMATCH`. As built.
+2. A catalog song walks the source list. A search with no song is not asked again. A file of the wrong length still asks the later rows. As built.
 3. A profile or playlist link is capped at 500 entries (`MAX_ENTRIES` in `backend/links.py`). As built.
 4. `Mixes/` sits beside `Podcasts/` in the chosen music root, with no separate destination setting. As built.

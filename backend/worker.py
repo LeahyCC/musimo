@@ -638,50 +638,8 @@ def main() -> None:
         if source is None:
             selected = job.selected
             picked = next((row for row in job.candidates if row.id == selected), None)
-            if not selected and not direct:
-                emit("stage", stage="matching")
-                matcher = Matcher()
-                ranked: list[Candidate] = []
-                review: list[Candidate] = []
-                # The backup source is asked only after the first found nothing at all, never
-                # beside it: it holds many more remixes and reuploads of the same song.
-                # A source with no search of its own is never asked, so it cannot be matched.
-                off = turned_off()
-                tried = [
-                    name
-                    for name in (origin, job.backup_source)
-                    if name in SEARCHES and name not in off
-                ]
-                if not tried:
-                    sources_off()
-                    return
-                for attempt in tried:
-                    candidates = search(attempt)
-                    ranked = matcher.rank(job.meta, candidates, min_score=MIN_SCORE[attempt])
-                    if ranked:
-                        break
-                    # Rejected rows are kept for review, from each source that was asked.
-                    review += matcher.rank(job.meta, candidates, min_score=0, min_title=0)
-                if not ranked:
-                    if review:
-                        emit(
-                            "candidates",
-                            items=[row.model_dump() for row in review],
-                            selected="",
-                            check_match=True,
-                        )
-                    refuse("NO_MATCH", "No sufficiently close recording found")
-                    return
-                picked = ranked[0]
-                selected = picked.id
-                emit(
-                    "candidates",
-                    items=[row.model_dump() for row in ranked],
-                    selected=selected,
-                    check_match=picked.score < CHECK_BELOW[picked.source],
-                )
             if picked and picked.source != origin:
-                # The job downloads from the backup source now, so pauses and error codes are its.
+                # Pauses and error codes follow the site the recording was picked from.
                 matched = by_source(picked.source)
                 if matched is None:
                     refuse("SITE_NOT_ALLOWED", "The chosen recording is from an unlisted site")

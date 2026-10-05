@@ -82,7 +82,7 @@ Public documentation and contribution templates are in place. Container releases
 
 Known measurement gaps after 0.4.0:
 
-- Independent labels for the 100-case music-match corpus (corpus exists, labels pending), and SoundCloud rows in it so the backup source's thresholds can be measured
+- Independent labels for the 100-case music-match corpus (corpus exists, labels pending), and SoundCloud rows in it so its thresholds can be measured
 - Fifty distinct permitted music downloads (one public-domain fixture verified)
 - Provider album throughput
 - Representative 50k mixed-format library (synthetic 50k scan passes in 45s)

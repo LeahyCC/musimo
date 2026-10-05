@@ -180,7 +180,11 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             raise HTTPException(409, "This track already has another active job")
         if job.stage == "done":
             replacement = service.jobs.enqueue(
-                job.track_id, job.format, job.target, replace_match=True
+                job.track_id,
+                job.format,
+                job.target,
+                replace_match=True,
+                source=chosen.source,
             )
             return service.jobs.update(
                 replacement.id,

@@ -70,9 +70,17 @@ class Jobs:
         return {"jobs": [Job.model_validate_json(row[0]).public() for row in rows], "total": total}
 
     def enqueue(
-        self, track_id: int, format: Format, target: str, *, replace_match: bool = False
+        self,
+        track_id: int,
+        format: Format,
+        target: str,
+        *,
+        replace_match: bool = False,
+        source: str = "",
     ) -> Job:
-        return self.enqueue_many([track_id], format, target, replace_match=replace_match)[0]
+        return self.enqueue_many(
+            [track_id], format, target, replace_match=replace_match, source=source
+        )[0]
 
     def enqueue_many(
         self,
@@ -93,13 +101,19 @@ class Jobs:
     ) -> builtins.list[Job]:
         """Queue tracks, reusing active or completed jobs. `prepared` supplies the metadata and
         file address for podcast and link jobs, which have no catalog lookup later. An empty
-        `source` lets the job take it from its catalog. `kinds` overrides `kind` for a track that is
-        of another kind than its site's, such as a long SoundCloud track. Tracks in `untidied` keep
-        the tags their site gave them."""
+        `source` on a catalog song is the first row that can run. A podcast takes `podcast`.
+        `kinds` overrides `kind` for a track that is of another kind than its site's, such as a
+        long SoundCloud track. Tracks in `untidied` keep the tags their site gave them."""
         jobs: builtins.list[Job] = []
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
+                # One read for the batch. A catalog song takes the first row that can run now.
+                named = source
+                if catalog == "deezer" and not named:
+                    from backend.downloads import opening_source
+
+                    named = opening_source(self.store.current(), self.store.paused_sources())
                 for track_id in tracks:
                     row = self.store.db.execute(
                         "SELECT payload FROM jobs WHERE catalog=? AND track_id=? "
@@ -146,8 +160,8 @@ class Jobs:
                         created_at=now,
                         updated_at=now,
                     )
-                    if source:
-                        job = job.model_copy(update={"source": source})
+                    if named or (catalog == "deezer" and not source):
+                        job = job.model_copy(update={"source": named})
                     self.store.db.execute(
                         "INSERT INTO jobs VALUES (?,?,?,?,?,?,?,?,?)",
                         (

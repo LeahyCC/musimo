@@ -29,7 +29,14 @@ import {
 } from './api'
 import type { Controls, DownloadJob, MusicResult } from './api'
 import { cx } from './cx'
-import { formatLabel, FormatOptions, pausedSources, siteLabel } from './download-target'
+import {
+  catalogCardSource,
+  formatLabel,
+  FormatOptions,
+  pausedSources,
+  siteLabel,
+} from './download-target'
+import type { CatalogSourceChoice } from './download-target'
 import { InfiniteScroll } from './infinite-scroll'
 import { PageTitle } from './page-title'
 import { RowMenu } from './row-menu'
@@ -389,7 +396,55 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
   )
 }
 
-function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boolean }) {
+function useQueuedCatalogLabel(): {
+  settings?: CatalogSourceChoice
+  paused: string[]
+  labels: Record<string, string>
+} {
+  const client = useQueryClient()
+  // Read the cache the queue already filled. A card must not fetch settings, or a slow
+  // reply would paint YouTube and then replace it.
+  const settings = useQuery({
+    queryKey: ['settings'],
+    queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
+    enabled: false,
+  })
+  const diagnostics = useQuery({
+    queryKey: ['diagnostics'],
+    queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
+    enabled: false,
+  })
+  const queue = client.getQueryData<QueueData>(['jobs'])
+  const data = settings.data
+  const labels: Record<string, string> = { ...(queue?.controls.source_labels ?? {}) }
+  for (const row of diagnostics.data?.download_sources ?? []) labels[row.id] = row.label
+  return {
+    settings: data
+      ? {
+          source_order: data.source_order.value,
+          disabled_sources: data.disabled_sources.value,
+          deezer_audio: data.deezer_audio.value,
+          deezer_arl: data.deezer_arl.value,
+        }
+      : undefined,
+    paused: pausedSources(queue?.controls).map((row) => row.source),
+    labels,
+  }
+}
+
+function JobCard({
+  job,
+  focusable = false,
+  queuedLabel,
+}: {
+  job: DownloadJob
+  focusable?: boolean
+  queuedLabel: {
+    settings?: CatalogSourceChoice
+    paused: readonly string[]
+    labels: Record<string, string>
+  }
+}) {
   const client = useQueryClient()
   const [copied, setCopied] = useState(false)
   const action = useMutation({
@@ -408,6 +463,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
   const busy = action.isPending || pick.isPending
   const running = activeJob(job)
   const canPick = ['queued', 'paused', 'failed', 'cancelled', 'done'].includes(job.stage)
+  const shown = catalogCardSource(job, queuedLabel.settings, queuedLabel.paused, queuedLabel.labels)
   return (
     <article
       className={cx(
@@ -430,8 +486,8 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
           <span className="block truncate text-tiny text-muted">
             {job.meta.artist}
             {job.meta.album ? ` · ${job.meta.album}` : ''}
-            {job.catalog === 'link' || job.catalog === 'deezer'
-              ? ` · from ${siteLabel(job.source, job.source_label)}`
+            {(job.catalog === 'link' || job.catalog === 'deezer') && shown.source
+              ? ` · from ${siteLabel(shown.source, shown.label)}`
               : ''}
             {job.catalog === 'deezer' && job.laps > 1 && job.lap > 0
               ? ` · pass ${job.lap} of ${job.laps}`
@@ -667,6 +723,7 @@ function JobCard({ job, focusable = false }: { job: DownloadJob; focusable?: boo
 }
 
 function JobList({ jobs }: { jobs: DownloadJob[] }) {
+  const queuedLabel = useQueuedCatalogLabel()
   const parent = useRef<HTMLDivElement>(null)
   const [focusedIndex, setFocusedIndex] = useState(0)
   const virtual = useVirtualizer({
@@ -714,7 +771,12 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
       // A bare 1fr track has a min-content floor, so one long title widened the page.
       <div className="grid grid-cols-[minmax(0,1fr)] gap-[4px]" onKeyDown={handleKeyDown}>
         {jobs.map((job, index) => (
-          <JobCard key={job.id} job={job} focusable={index === focusedIndex} />
+          <JobCard
+            key={job.id}
+            job={job}
+            focusable={index === focusedIndex}
+            queuedLabel={queuedLabel}
+          />
         ))}
       </div>
     )
@@ -746,7 +808,11 @@ function JobList({ jobs }: { jobs: DownloadJob[] }) {
                 ref={virtual.measureElement}
                 data-index={row.index}
               >
-                <JobCard job={job} focusable={row.index === focusedIndex} />
+                <JobCard
+                  job={job}
+                  focusable={row.index === focusedIndex}
+                  queuedLabel={queuedLabel}
+                />
               </div>
             ) : null
           })}

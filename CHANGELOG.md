@@ -4,6 +4,7 @@
 
 ### Search and downloads
 
+- Name a queued catalog song with the first source that can run, so the card is right before a worker starts
 - Save a catalog track from a Deezer account when the cookie is set, then name and tag it like any other download. A miss falls back to the YouTube match
 - Paste a YouTube cookies.txt file in Settings so an age-restricted video can download
 - List the download sources in Settings, with a switch for each and a box to replace the Deezer cookie

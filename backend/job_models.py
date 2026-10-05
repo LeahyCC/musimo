@@ -109,9 +109,6 @@ class Job(BaseModel):
     source: str = "youtube"
     # Podcast episodes and pasted links download this address directly instead of matching.
     source_url: str = ""
-    # The source to search when `source` finds nothing at all. Set when the job is dispatched,
-    # from the SoundCloud setting, so a job queued before it was switched on follows today's rule.
-    backup_source: str = ""
     # Mixes and radio shows run long, so they get the episode timeout.
     kind: Kind = "music"
     # False for a pasted recording that must keep the tags its site gave it. Set when it is queued.
