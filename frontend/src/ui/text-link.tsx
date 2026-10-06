@@ -1,8 +1,8 @@
 import { forwardRef } from 'react'
 import type { AnchorHTMLAttributes } from 'react'
 
-import { cx } from '../cx'
-import type { ClassName } from '../cx'
+import { cx } from '../lib/cx'
+import type { ClassName } from '../lib/cx'
 
 /** The `.text-link` look as a class string, for elements the component can't wrap (routed links,
  * or a button standing in for a link). */

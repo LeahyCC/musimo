@@ -13,8 +13,10 @@ from Cryptodome.Cipher import Blowfish
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from backend import deezer_cookie
-from backend.deezer_audio import (
+from backend.core.models import Settings, SettingsPatch
+from backend.core.store import Store
+from backend.integrations import deezer_cookie
+from backend.integrations.deezer_audio import (
     BLOCK,
     Account,
     DeezerAudioError,
@@ -27,8 +29,6 @@ from backend.deezer_audio import (
     formats_to_try,
 )
 from backend.main import create_app
-from backend.models import Settings, SettingsPatch
-from backend.store import Store
 
 
 class DeezerAudioTests(unittest.TestCase):

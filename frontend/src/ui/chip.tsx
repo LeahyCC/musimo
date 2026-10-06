@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from 'react'
 
-import { cx } from '../cx'
+import { cx } from '../lib/cx'
 
 /** A small, always-good-colored label, e.g. "SAVED IN YOUR DATABASE". */
 export function Tag({ className, ...props }: HTMLAttributes<HTMLSpanElement>) {

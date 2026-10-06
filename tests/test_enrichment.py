@@ -4,10 +4,10 @@ from pathlib import Path
 
 import httpx
 
-from backend.catalog import Catalog
-from backend.enrichment import Enrichment
-from backend.job_models import Metadata
-from backend.store import Store
+from backend.core.job_models import Metadata
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog
+from backend.integrations.enrichment import Enrichment
 
 
 class EnrichmentTests(unittest.IsolatedAsyncioTestCase):

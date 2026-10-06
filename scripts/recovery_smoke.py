@@ -13,10 +13,10 @@ from pathlib import Path, PurePosixPath
 
 import httpx
 
-from backend.downloads import digest
-from backend.job_models import RUNNING, Metadata
-from backend.job_store import Jobs
-from backend.store import Store
+from backend.core.job_models import RUNNING, Metadata
+from backend.core.store import Store
+from backend.jobs.job_store import Jobs
+from backend.jobs.publish import digest
 
 
 def seed() -> None:

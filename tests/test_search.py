@@ -9,10 +9,10 @@ from unittest.mock import patch
 import httpx
 from fastapi import FastAPI
 
-from backend.catalog import Catalog, CatalogError, Result, Track, safe_media
-from backend.library import Library
-from backend.search_api import install_search_routes
-from backend.store import Store
+from backend.api.search_api import install_search_routes
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog, CatalogError, Result, Track, safe_media
+from backend.library.index import Library
 
 TRACK = {
     "id": 1,
@@ -241,7 +241,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
             album=["Discovery"],
             isrc=["GBDUW0000053"],
         )
-        with patch("backend.library.mutagen.File", return_value=audio) as reader:
+        with patch("backend.library.index.mutagen.File", return_value=audio) as reader:
             self.library.scan()
             self.library.scan()
             self.assertEqual(reader.call_count, 1)
@@ -254,7 +254,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         )
         path.write_bytes(b"changed fixture")
         audio["title"] = ["Replacement title"]
-        with patch("backend.library.mutagen.File", return_value=audio):
+        with patch("backend.library.index.mutagen.File", return_value=audio):
             self.library.refresh({str(path)})
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM library_fts").fetchone()[0], 1)
         self.assertEqual(

@@ -16,10 +16,14 @@ from fastapi import FastAPI
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 
-from backend import deezer_cookie
-from backend.catalog import Catalog, CatalogError
-from backend.download_api import install_download_routes
-from backend.downloads import (
+from backend.api.download_api import install_download_routes
+from backend.core.job_models import Candidate, Job, Metadata
+from backend.core.naming import Naming
+from backend.core.store import Store
+from backend.core.text import normalize
+from backend.integrations import deezer_cookie
+from backend.integrations.catalog import Catalog, CatalogError
+from backend.jobs.downloads import (
     CATALOG_DETAILS_WARNING,
     SIDE_FAILED,
     DownloadError,
@@ -29,13 +33,10 @@ from backend.downloads import (
     enrichment_pending,
     publish_file,
 )
-from backend.job_models import Candidate, Job, Metadata
-from backend.job_store import JobConflict, Jobs
-from backend.library import Library, normalize
-from backend.matching import Matcher
-from backend.naming import Naming
-from backend.store import Store
-from backend.tagging import Tagger, probe
+from backend.jobs.job_store import JobConflict, Jobs
+from backend.jobs.matching import Matcher
+from backend.jobs.tagging import Tagger, probe
+from backend.library.index import Library
 
 
 class DurableJobsTests(unittest.TestCase):
@@ -534,7 +535,7 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                     asyncio.Event(),
                 )
                 with patch(
-                    "backend.downloads.shutil.disk_usage",
+                    "backend.jobs.downloads.shutil.disk_usage",
                     return_value=shutil._ntuple_diskusage(100, 100, 0),
                 ):
                     with self.assertRaises(DownloadError) as caught:
@@ -1009,7 +1010,7 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
             ) as client:
                 service = await self.service(root, store, client)
                 store.update({"destination": str(root)})
-                with patch("backend.downloads.asyncio.create_subprocess_exec", fake_exec):
+                with patch("backend.jobs.downloads.asyncio.create_subprocess_exec", fake_exec):
                     for track in (1, 2, 3):
                         job = service.jobs.enqueue(track, "original", str(root))
                         service.jobs.update(
@@ -1269,7 +1270,7 @@ class OverlappedMetadataTests(unittest.IsolatedAsyncioTestCase):
                     ).model_dump(),
                 )
                 started = time.monotonic()
-                with patch("backend.downloads.CATALOG_DETAILS_SECONDS", 0.05):
+                with patch("backend.jobs.downloads.CATALOG_DETAILS_SECONDS", 0.05):
                     await service.run(job.id)
                 self.assertLess(time.monotonic() - started, 2)
                 done = service.jobs.get(job.id)
@@ -1326,7 +1327,7 @@ class OverlappedMetadataTests(unittest.IsolatedAsyncioTestCase):
                     ).model_dump(),
                 )
                 started = time.monotonic()
-                with patch("backend.downloads.SIDE_BUDGET_SECONDS", 0.05):
+                with patch("backend.jobs.downloads.SIDE_BUDGET_SECONDS", 0.05):
                     await service.run(job.id)
                 self.assertLess(time.monotonic() - started, 2)
                 done = service.jobs.get(job.id)

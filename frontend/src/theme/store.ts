@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 
+import { clearStored, readStored, writeStored } from '../lib/storage'
 import {
   CUSTOM_THEMES_VERSION,
   HEX_COLOR,
@@ -47,37 +48,6 @@ let previewed: Theme | null = null
 let snapshot: Snapshot = { theme: DEFAULT_THEME, themes: BUILT_IN_THEMES }
 let started = false
 const listeners = new Set<() => void>()
-
-/* Every read and write goes through these three. A private window throws on the first touch of
-   localStorage, and a browser with storage turned off throws on every one. */
-function readStored(key: string): string | null {
-  try {
-    return localStorage.getItem(key)
-  } catch {
-    return null
-  }
-}
-
-/** False when the browser refused: storage is off, or it is full. */
-function writeStored(key: string, value: string): boolean {
-  try {
-    if (localStorage.getItem(key) !== value) localStorage.setItem(key, value)
-
-    return true
-  } catch {
-    return false
-  }
-}
-
-function clearStored(key: string): boolean {
-  try {
-    localStorage.removeItem(key)
-
-    return true
-  } catch {
-    return false
-  }
-}
 
 /* The list keeps its identity until a theme is added, changed or removed, so a picker subscribed
    to it does not re-render on every step of a color drag in the editor. */

@@ -273,7 +273,7 @@ Copy `.env.example` to `.env` for Compose deployment values. Both `.env` and `co
 - `MUSIMO_POLL_INTERVAL_SECONDS`: polling interval, default `300`.
 - `MUSIMO_NAVIDROME_CREDENTIALS_FILE`: optional mounted file for API mode.
 
-Editable settings cover the label, destination, output format, naming template, concurrency, retry limits and Navidrome integration. See [Settings](docs/settings.md) and `backend/models.py` for the current contract.
+Editable settings cover the label, destination, output format, naming template, concurrency, retry limits and Navidrome integration. See [Settings](docs/settings.md) and `backend/core/models.py` for the current contract.
 
 Setting environment variables are **first-run bootstrap values**. Pass a value such as `MUSIMO_CONCURRENCY=3` through the container's `environment:` block to seed and lock it. Merely adding an arbitrary key to `.env` does not pass it into the container.
 
@@ -453,12 +453,29 @@ Contracts can change before a stable release. The live schema is at `/openapi.js
 Repository layout:
 
 ```text
-backend/       API, state, catalog, indexing and download services
-frontend/src/  React screens, player, queue and shared UI
-scripts/       smoke tests and benchmarks
-tests/         regression tests
-docs/          setup, behavior, evidence and proposals
-.github/       checks, contribution templates and ownership
+backend/          API, state, catalog, indexing and download services
+  main.py         app setup, middleware and serving the built frontend
+  api/            every route module, one per area
+  core/           SQLite store, settings and job models, errors, file naming, the site
+                  allowlist, text normalizing, secret files
+  jobs/           the download pipeline: queue, worker, yt-dlp options, matching, tagging,
+                  publishing files, pasted links
+  library/        local file index, Navidrome client and browse filters, seek bar waveforms
+  integrations/   Deezer catalog and audio, MusicBrainz, podcast directory, saved cookies
+frontend/src/     React screens, player, queue and shared UI
+  main.tsx        mounts the app
+  api.ts          every backend call and the zod schema it is read with
+  app/            shell, routes, live events, command palette
+  features/       one folder per screen or engine: search, library, downloads, links,
+                  podcasts, player, now-playing, visualizer, settings, diagnostics
+  components/     pieces more than one screen uses
+  ui/             primitives: Button, Panel, Field and the rest
+  theme/          color tokens, built-in themes, the theme store
+  lib/            small helpers and hooks
+scripts/          smoke tests and benchmarks
+tests/            regression tests
+docs/             setup, behavior, evidence and proposals
+.github/          checks, contribution templates and ownership
 ```
 
 ## Contributing and support

@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 
 SITES = Path(__file__).with_name("source_probe_sites.json")
 # Only these get the PO token provider. It is YouTube's own helper, and another site has no use
-# for it. Kept beside `backend.sources` (a test compares them) because this script runs alone.
+# for it. Kept beside `backend.core.sources` (a test compares them) because this script runs alone.
 YOUTUBE_HOSTS = frozenset(
     {"youtube.com", "www.youtube.com", "m.youtube.com", "music.youtube.com", "youtu.be"}
 )

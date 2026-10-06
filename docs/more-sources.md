@@ -16,7 +16,7 @@ Spotify, Apple Music and Tidal audio are DRM and stay out. A pasted Spotify or A
 
 Against the pinned yt-dlp 2026.8.19 on 19 September 2026, every extractor below exists and reports itself as working. That flag only means upstream has not marked it broken. Nine sites were then downloaded from for real: YouTube (one pasted link, on a Windows install without the PO token provider), the Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, HearThisAt, NTS (through the Mixcloud copy of the show) and BBC Sounds. Audiomack and TuneIn failed and are switched off in the site table (`working`). Mixcloud was read but not downloaded on its own; NTS's download went through Mixcloud's extractor, so it is covered that way. The YouTube entry of the probe site list was not run, because the probe expects the PO token provider, and SoundCloud as a match source was not run against the live site at all.
 
-The table is the site table in `backend/sources.py`, in its order.
+The table is the site table in `backend/core/sources.py`, in its order.
 
 | Site             | Kind    | Extractors                                                               | Result                                                                                             |
 | ---------------- | ------- | ------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------- |
@@ -90,7 +90,7 @@ Each phase lists what shipped, what was checked, and what stays open. "Tests" me
 
 Shipped:
 
-- **Site table.** `backend/sources.py` holds `SITES`, one row per site: label, kind (`music`, `mix`, `radio`), hosts, extractors, and the per-site rules the later phases needed. The worker passes the row's extractors as yt-dlp's `allowed_extractors`, which switches off the generic extractor, so a redirect to an unlisted site fails. Only `https` links to a listed host are read: no IP address host, no user or password, no odd port. Artwork hosts are allowlisted too, since the server fetches the cover. No cookies, logins or yt-dlp arguments come from the browser.
+- **Site table.** `backend/core/sources.py` holds `SITES`, one row per site: label, kind (`music`, `mix`, `radio`), hosts, extractors, and the per-site rules the later phases needed. The worker passes the row's extractors as yt-dlp's `allowed_extractors`, which switches off the generic extractor, so a redirect to an unlisted site fails. Only `https` links to a listed host are read: no IP address host, no user or password, no odd port. Artwork hosts are allowlisted too, since the server fetches the cover. No cookies, logins or yt-dlp arguments come from the browser.
 - **Link jobs.** `Job.catalog` gains `link`. `source_url` (already used by podcasts) holds the address, `track_id` is a stable 63 bit hash of `extractor:id` so the duplicate check and "reuse a finished job" keep working, and `Job.source` names the site for display, pausing and error mapping.
 - **Worker.** Podcasts and links download the address in the job: no search, no catalog length check. A live stream is refused before download. Mixes and radio get the hour-long budget episodes have.
 - **Per-source pause.** The `source_control` table (schema version 4) keeps a pause flag and a blocking-failure count per source, and the old single YouTube flag moves across on upgrade. The dispatcher skips a queued job only when its own source is paused. `POT_MISSING`, `JS_RUNTIME_MISSING` and `COOKIES_EXPIRED` only apply to YouTube jobs. `GEO_RESTRICTED` never counts toward a pause, and podcast refusals never do either.
@@ -104,9 +104,9 @@ Open: nothing planned.
 
 Shipped:
 
-- **Preview.** `POST /api/links/resolve` checks the address against the table, then runs `python -m backend.resolver` in its own process group, without downloading, for at most 20 seconds. It lists at most 500 entries and returns a preview with a token that lasts ten minutes. The server keeps 32 previews and runs two lookups at once. A browser that cancels stops the lookup and its child process.
+- **Preview.** `POST /api/links/resolve` checks the address against the table, then runs `python -m backend.jobs.resolver` in its own process group, without downloading, for at most 20 seconds. It lists at most 500 entries and returns a preview with a token that lasts ten minutes. The server keeps 32 previews and runs two lookups at once. A browser that cancels stops the lookup and its child process.
 - **Queue.** `POST /api/links` takes the token and the ticked entry IDs and queues from the saved preview, so titles, file addresses and paths never come from the browser. More than one entry becomes a download group.
-- **Review sheet.** The search box opens it for a whole pasted link (`frontend/src/links.tsx`): one recording, or a tick list for a playlist or profile with owned songs unticked and a profile starting with nothing ticked. It shows where the file lands, the format and the site's quality note, and keeps Download off when the destination is missing or read-only.
+- **Review sheet.** The search box opens it for a whole pasted link (`frontend/src/features/links/links.tsx`): one recording, or a tick list for a playlist or profile with owned songs unticked and a profile starting with nothing ticked. It shows where the file lands, the format and the site's quality note, and keeps Download off when the destination is missing or read-only.
 - **Tags.** A loose track of kind `music` gets one Deezer lookup by artist, title and length just before its first attempt. A confident hit swaps in the catalog's tags, and otherwise the site's tags stay. The job carries a note saying which. Mixes and radio shows never call the catalog. A pasted YouTube link goes through the same path with `source` `youtube`.
 - **Refusals.** An unlisted site, a Spotify or Apple link, a live stream and a site that is switched off each get their own plain sentence.
 
@@ -118,7 +118,7 @@ Open: AcoustID as a fallback for junk metadata, and catalog imports from Spotify
 
 ### Phase 2: SoundCloud as a backup match
 
-Shipped, then replaced: the old "Use SoundCloud when YouTube has no match" switch is gone. SoundCloud is a row in `source_order`, asked when its turn comes, including after a length mismatch on an earlier row. It uses a higher bar (accept from 0.70, "check match" below 0.90, against YouTube's 0.55 and 0.86), set in `backend/matching.py`. A block on a SoundCloud search pauses SoundCloud. A SoundCloud pick downloads with SoundCloud's own format and extractor list, whichever row the job started on. Pressing Retry walks the list again. A hand pick stays. Review candidates name their site. The old switch still seeds SoundCloud onto the list once, the first time the order is saved.
+Shipped, then replaced: the old "Use SoundCloud when YouTube has no match" switch is gone. SoundCloud is a row in `source_order`, asked when its turn comes, including after a length mismatch on an earlier row. It uses a higher bar (accept from 0.70, "check match" below 0.90, against YouTube's 0.55 and 0.86), set in `backend/jobs/matching.py`. A block on a SoundCloud search pauses SoundCloud. A SoundCloud pick downloads with SoundCloud's own format and extractor list, whichever row the job started on. Pressing Retry walks the list again. A hand pick stays. Review candidates name their site. The old switch still seeds SoundCloud onto the list once, the first time the order is saved.
 
 Checked: tests on canned search results in `tests/test_worker.py`.
 
@@ -181,5 +181,5 @@ These were defaults picked to get going. Each is cheap to change.
 
 1. Deezer tidy-up on a pasted music link is automatic. The job card says which tags it used. As built.
 2. A catalog song walks the source list. A search with no song is not asked again. A file of the wrong length still asks the later rows. As built.
-3. A profile or playlist link is capped at 500 entries (`MAX_ENTRIES` in `backend/links.py`). As built.
+3. A profile or playlist link is capped at 500 entries (`MAX_ENTRIES` in `backend/jobs/links.py`). As built.
 4. `Mixes/` sits beside `Podcasts/` in the chosen music root, with no separate destination setting. As built.

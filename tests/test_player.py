@@ -12,9 +12,9 @@ from unittest.mock import patch
 import httpx
 from fastapi import FastAPI
 
-from backend.navidrome import SHUFFLE_ORDER_SECONDS, Navidrome, sort_artists
-from backend.player_api import install_player_routes
-from backend.store import Store
+from backend.api.player_api import install_player_routes
+from backend.core.store import Store
+from backend.library.navidrome import SHUFFLE_ORDER_SECONDS, Navidrome, sort_artists
 
 
 def subsonic(**payload: object) -> httpx.Response:
@@ -376,7 +376,9 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
-                patch("backend.navidrome.PLACEHOLDER_ART", {hashlib.sha256(star).hexdigest()}),
+                patch(
+                    "backend.library.navidrome.PLACEHOLDER_ART", {hashlib.sha256(star).hexdigest()}
+                ),
             ):
                 async with httpx.AsyncClient(
                     transport=httpx.MockTransport(upstream)
@@ -690,7 +692,7 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
 
             with (
                 patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
-                patch("backend.navidrome.ALBUM_PAGE", 2),
+                patch("backend.library.navidrome.ALBUM_PAGE", 2),
             ):
                 async with httpx.AsyncClient(
                     transport=httpx.MockTransport(upstream)
@@ -989,8 +991,8 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 return subsonic()
 
             with (
-                patch("backend.navidrome.TRACK_CAP", 4),
-                patch("backend.navidrome.TRACK_PAGE", 2),
+                patch("backend.library.navidrome.TRACK_CAP", 4),
+                patch("backend.library.navidrome.TRACK_PAGE", 2),
                 patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
             ):
                 async with httpx.AsyncClient(
@@ -1065,7 +1067,7 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(expired.status_code, 404)
                         self.assertEqual(expired.json()["code"], "shuffle_expired")
                         navidrome.forget_tracks()
-                        with patch("backend.navidrome.SHUFFLE_GUARD", 4):
+                        with patch("backend.library.navidrome.SHUFFLE_GUARD", 4):
                             refused = await client.get(
                                 "/api/library/tracks/selection?shuffle=true&limit=2"
                             )
@@ -1076,7 +1078,7 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
     async def test_shuffle_orders_are_capped_by_the_ids_they_hold(self) -> None:
         async with httpx.AsyncClient() as upstream_client:
             navidrome = Navidrome(cast(Store, None), upstream_client)
-            with patch("backend.navidrome.SHUFFLE_ID_LIMIT", 10):
+            with patch("backend.library.navidrome.SHUFFLE_ID_LIMIT", 10):
                 # Many small passes, as from several devices, all stay.
                 for index in range(6):
                     navidrome.remember_shuffle(f"small{index}", [f"s{index}"])
@@ -1118,8 +1120,8 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 return subsonic()
 
             with (
-                patch("backend.navidrome.TRACK_CAP", 4),
-                patch("backend.navidrome.TRACK_PAGE", 2),
+                patch("backend.library.navidrome.TRACK_CAP", 4),
+                patch("backend.library.navidrome.TRACK_PAGE", 2),
                 patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
             ):
                 async with httpx.AsyncClient(

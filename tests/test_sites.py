@@ -12,14 +12,16 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-from backend import resolver, sources
-from backend.catalog import Catalog
-from backend.downloads import ART_HOPS, Downloads, art_candidates
-from backend.job_models import LinkRequest, Metadata
-from backend.library import Library, normalize
-from backend.links import LinkError, Links
-from backend.sources import Site
-from backend.store import Store
+from backend.core import sources
+from backend.core.job_models import LinkRequest, Metadata
+from backend.core.sources import Site
+from backend.core.store import Store
+from backend.core.text import normalize
+from backend.integrations.catalog import Catalog
+from backend.jobs import resolver
+from backend.jobs.downloads import ART_HOPS, Downloads, art_candidates
+from backend.jobs.links import LinkError, Links
+from backend.library.index import Library
 
 JPEG = b"\xff\xd8\xff\xe0synthetic cover"
 
@@ -239,7 +241,8 @@ def captured(
         return dict(page) if page is not None else None
 
     with patch(
-        "backend.resolver.emit", side_effect=lambda kind, **v: events.append({"kind": kind, **v})
+        "backend.jobs.resolver.emit",
+        side_effect=lambda kind, **v: events.append({"kind": kind, **v}),
     ):
         resolver.resolve(downloader, site_of(source), url, lookup)
     assert events[-1]["kind"] == "preview", events[-1]
@@ -544,7 +547,7 @@ class SoundCloudMappingTests(unittest.TestCase):
                 raise RuntimeError("HTTP Error 429: Too Many Requests")
             return cloud_track(1)
 
-        with patch("backend.resolver.time.sleep") as pause:
+        with patch("backend.jobs.resolver.time.sleep") as pause:
             found = resolver.looked_up(lookup, ["https://soundcloud.com/levi/t1"], 5)
         self.assertEqual(len(calls), 2)
         self.assertEqual(list(found), ["https://soundcloud.com/levi/t1"])
@@ -1091,7 +1094,7 @@ class LabelTests(unittest.TestCase):
         self.assertEqual(sources.source_label("newsite"), "Newsite")
 
     def test_a_job_carries_its_label_in_its_public_payload(self) -> None:
-        from backend.job_models import Job
+        from backend.core.job_models import Job
 
         for source, label in (
             ("bandcamp", "Bandcamp"),
@@ -1136,7 +1139,7 @@ class OnePerTrackTests(unittest.TestCase):
             {"id": f"t{n}", "title": f"Title {n}", "track": f"Title {n}", "duration": 100}
             for n in range(200)
         ]
-        with patch("backend.resolver.normalize", wraps=normalize) as spy:
+        with patch("backend.jobs.resolver.normalize", wraps=normalize) as spy:
             kept = resolver.one_per_track(rows)
         self.assertEqual(len(kept), 200)
         self.assertEqual(spy.call_count, 200)

@@ -15,17 +15,17 @@ from unittest.mock import patch
 import httpx
 from fastapi import FastAPI
 
-from backend.navidrome import Navidrome
-from backend.player_api import install_player_routes
-from backend.store import Store
-from backend.waveform import (
+from backend.api.player_api import install_player_routes
+from backend.api.waveform_api import install_waveform_routes
+from backend.core.store import Store
+from backend.library.navidrome import Navidrome
+from backend.library.waveform import (
     WAVEFORM_POINTS,
     PeakReader,
     WaveformService,
     WaveformUnavailable,
     decode_file,
     fold_peaks,
-    install_waveform_routes,
 )
 
 PEAKS = bytes(index % 256 for index in range(WAVEFORM_POINTS))
@@ -232,7 +232,7 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
             decoder = FakeDecoder(hang)
             songs: dict[str, dict[str, object]] = {"song-1": {"path": "slow.flac"}}
             async with serving(base, songs, decoder, [library]) as s:
-                with patch("backend.waveform.DECODE_SECONDS", 0.05):
+                with patch("backend.library.waveform.DECODE_SECONDS", 0.05):
                     first = await s.peaks("song-1")
                     second = await s.peaks("song-1")
 
@@ -267,7 +267,7 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
             decoder = FakeDecoder()
             songs: dict[str, dict[str, object]] = {"song-1": {"size": 20}}
             async with serving(base, songs, decoder, []) as s:
-                with patch("backend.waveform.STREAM_LIMIT_BYTES", 4):
+                with patch("backend.library.waveform.STREAM_LIMIT_BYTES", 4):
                     response = await s.peaks("song-1")
 
                 self.assertEqual(response.status_code, 404)
@@ -327,7 +327,7 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
                 "song-c": {"path": "c.flac"},
             }
             async with serving(base, songs, decoder, [library]) as s:
-                with patch("backend.waveform.QUEUE_LIMIT", 1):
+                with patch("backend.library.waveform.QUEUE_LIMIT", 1):
                     running = asyncio.create_task(s.peaks("song-a"))
                     await asyncio.wait_for(started.wait(), 5)
                     waiting = asyncio.create_task(s.peaks("song-b"))
@@ -362,7 +362,7 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
             async with serving(base, songs, decoder, [library]) as s:
                 running = asyncio.create_task(s.peaks("song-a"))
                 await asyncio.wait_for(started.wait(), 5)
-                with patch("backend.waveform.QUEUE_WAIT_SECONDS", 0.05):
+                with patch("backend.library.waveform.QUEUE_WAIT_SECONDS", 0.05):
                     gave_up = await s.peaks("song-b")
                 gate.set()
 
@@ -389,7 +389,7 @@ def pcm(*samples: int) -> bytes:
 class PeakTests(unittest.TestCase):
     def test_reader_takes_the_loudest_sample_of_each_window_across_split_reads(self) -> None:
         data = pcm(100, -300, 20, 5, -32768, 7, 40)
-        with patch("backend.waveform.WINDOW_SAMPLES", 2):
+        with patch("backend.library.waveform.WINDOW_SAMPLES", 2):
             reader = PeakReader()
             # Split inside a sample, and inside a window.
             reader.feed(data[:3])

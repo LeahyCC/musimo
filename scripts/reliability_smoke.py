@@ -13,12 +13,13 @@ import httpx
 import mutagen
 from fastapi import FastAPI
 
-from backend.catalog import Catalog
-from backend.download_api import install_download_routes
-from backend.downloads import DownloadError, Downloads, digest
-from backend.job_models import Job, Metadata
-from backend.library import Library
-from backend.store import Store
+from backend.api.download_api import install_download_routes
+from backend.core.job_models import Job, Metadata
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog
+from backend.jobs.downloads import DownloadError, Downloads
+from backend.jobs.publish import digest
+from backend.library.index import Library
 
 
 class FixtureDownloads(Downloads):

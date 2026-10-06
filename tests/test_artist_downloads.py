@@ -6,13 +6,14 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI
 
-from backend.artist_downloads import ArtistDownloads, install_artist_download_routes
-from backend.catalog import Catalog, Result
-from backend.download_api import install_download_routes
-from backend.downloads import Downloads
-from backend.library import Library
-from backend.search_api import install_search_routes
-from backend.store import Store
+from backend.api.artist_download_api import install_artist_download_routes
+from backend.api.download_api import install_download_routes
+from backend.api.search_api import install_search_routes
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog, Result
+from backend.jobs.artist_downloads import ArtistDownloads
+from backend.jobs.downloads import Downloads
+from backend.library.index import Library
 
 
 class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):

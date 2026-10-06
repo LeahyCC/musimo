@@ -67,7 +67,7 @@ Use the existing settings/event patterns for persistence and invalidation. A suc
 
 ## Provider feasibility
 
-Deezer discography lookup is already implemented in `backend/search_api.py`; that is enough for the initial familiar-artist sections. Test any related-artist endpoint against the current provider behavior before making it a requirement.
+Deezer discography lookup is already implemented in `backend/api/search_api.py`; that is enough for the initial familiar-artist sections. Test any related-artist endpoint against the current provider behavior before making it a requirement.
 
 ListenBrainz documents a seed-artist radio endpoint returning related artist/recording identities. This is a plausible optional provider, but it needs MusicBrainz artist IDs and a catalog-resolution step. It is not a drop-in Deezer recommendation list. See the [ListenBrainz core API](https://listenbrainz.readthedocs.io/en/latest/users/api/core.html#id29).
 

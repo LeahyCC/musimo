@@ -1,0 +1,343 @@
+import re
+from collections.abc import AsyncIterator, Callable
+from typing import Annotated
+
+import httpx
+from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
+
+from backend.library.navidrome import (
+    ALBUM_SORTS,
+    ARTIST_SHOWS,
+    ARTIST_SORTS,
+    TRACK_SORTS,
+    Navidrome,
+    NavidromeError,
+    PlaylistProtected,
+    ShuffleExpired,
+)
+
+ITEM_ID = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
+# Musimo's own ceiling on one saved play queue. Kept from the original queue validator.
+QUEUE_LIMIT = 500
+TrackQuery = Annotated[str, Query(max_length=200)]
+TrackSort = Annotated[str, Query(pattern=f"^({'|'.join(TRACK_SORTS)})$")]
+TrackGenres = Annotated[
+    list[Annotated[str, StringConstraints(max_length=120)]] | None, Query(max_length=60)
+]
+TrackYears = Annotated[list[int] | None, Query(max_length=200)]
+AlbumSort = Annotated[str, Query(pattern=f"^({'|'.join(ALBUM_SORTS)})$")]
+ArtistSort = Annotated[str, Query(pattern=f"^({'|'.join(ARTIST_SORTS)})$")]
+ArtistShow = Annotated[str, Query(pattern=f"^({'|'.join(ARTIST_SHOWS)})?$")]
+BYTE_RANGE = re.compile(r"^bytes=\d*-\d*$")
+MEDIA_HEADERS = {
+    "accept-ranges",
+    "content-length",
+    "content-range",
+    "content-type",
+    "etag",
+    "last-modified",
+}
+
+
+class ShuffleWindow(BaseModel):
+    seed: str = Field(min_length=8, max_length=64)
+    cursor: int = Field(default=0, ge=0)
+    limit: int = Field(default=200, ge=1, le=200)
+    skip: list[str] = Field(default_factory=list, max_length=QUEUE_LIMIT)
+
+    @field_validator("seed")
+    @classmethod
+    def valid_seed(cls, value: str) -> str:
+        if not re.fullmatch(r"[A-Za-z0-9_-]+", value):
+            raise ValueError("Invalid shuffle seed")
+        return value
+
+    @field_validator("skip")
+    @classmethod
+    def valid_skip(cls, values: list[str]) -> list[str]:
+        return [checked_id(value) for value in values]
+
+
+class TrackLookup(BaseModel):
+    ids: list[str] = Field(min_length=1, max_length=200)
+
+    @field_validator("ids")
+    @classmethod
+    def valid_ids(cls, values: list[str]) -> list[str]:
+        return [checked_id(value) for value in values]
+
+
+class QueueUpdate(BaseModel):
+    ids: list[str] = Field(max_length=QUEUE_LIMIT)
+    current: str = ""
+    position: int = Field(default=0, ge=0)
+
+    @field_validator("ids")
+    @classmethod
+    def valid_ids(cls, values: list[str]) -> list[str]:
+        return [checked_id(value) for value in values]
+
+    @field_validator("current")
+    @classmethod
+    def valid_current(cls, value: str) -> str:
+        return checked_id(value) if value else value
+
+    @model_validator(mode="after")
+    def current_is_queued(self) -> "QueueUpdate":
+        if self.current and self.current not in self.ids:
+            raise ValueError("Current track must be in the queue")
+        return self
+
+
+class ScrobbleUpdate(BaseModel):
+    id: str
+    submission: bool
+
+    @field_validator("id")
+    @classmethod
+    def valid_id(cls, value: str) -> str:
+        return checked_id(value)
+
+
+class PlaylistCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+    song_ids: list[str] = Field(default_factory=list, max_length=500)
+
+    @field_validator("name")
+    @classmethod
+    def non_blank_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Playlist name cannot be blank")
+        return value
+
+    @field_validator("song_ids")
+    @classmethod
+    def valid_song_ids(cls, values: list[str]) -> list[str]:
+        return [checked_id(value) for value in values]
+
+
+class PlaylistUpdate(BaseModel):
+    name: str = Field(min_length=1, max_length=200)
+
+    @field_validator("name")
+    @classmethod
+    def non_blank_name(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("Playlist name cannot be blank")
+        return value
+
+
+class PlaylistSongUpdate(BaseModel):
+    song_id_to_add: str | None = None
+    song_index_to_remove: int | None = Field(default=None, ge=0)
+
+    @field_validator("song_id_to_add")
+    @classmethod
+    def valid_song_id(cls, value: str | None) -> str | None:
+        return checked_id(value) if value is not None else value
+
+    @model_validator(mode="after")
+    def exactly_one_change(self) -> "PlaylistSongUpdate":
+        if (self.song_id_to_add is None) == (self.song_index_to_remove is None):
+            raise ValueError("Provide either song_id_to_add or song_index_to_remove")
+        return self
+
+
+def checked_id(value: str) -> str:
+    if not ITEM_ID.fullmatch(value):
+        raise HTTPException(422, "Invalid Navidrome item ID")
+    return value
+
+
+def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
+    @app.exception_handler(NavidromeError)
+    async def navidrome_error(_: Request, exc: NavidromeError) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=503)
+
+    @app.exception_handler(ShuffleExpired)
+    async def shuffle_expired(_: Request, exc: ShuffleExpired) -> JSONResponse:
+        return JSONResponse(
+            {"detail": str(exc), "code": "shuffle_expired"},
+            status_code=404,
+        )
+
+    @app.exception_handler(PlaylistProtected)
+    async def protected_playlist(_: Request, exc: PlaylistProtected) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=409)
+
+    @app.get("/api/player/capabilities")
+    async def capabilities() -> dict[str, object]:
+        return await get().capabilities()
+
+    @app.get("/api/library/albums")
+    async def albums(
+        q: TrackQuery = "",
+        sort: AlbumSort = "newest",
+        genre: TrackGenres = None,
+        year: TrackYears = None,
+        offset: int = Query(default=0, ge=0),
+        size: int = Query(default=50, ge=1, le=100),
+    ) -> dict[str, object]:
+        return await get().browse_albums(q.strip(), sort, genre or [], year or [], offset, size)
+
+    @app.get("/api/library/artists")
+    async def artists(
+        q: TrackQuery = "",
+        sort: ArtistSort = "name",
+        genre: TrackGenres = None,
+        year: TrackYears = None,
+        show: ArtistShow = "",
+        offset: int = Query(default=0, ge=0),
+        size: int = Query(default=100, ge=1, le=200),
+    ) -> dict[str, object]:
+        return await get().browse_artists(
+            q.strip(), sort, genre or [], year or [], show, offset, size
+        )
+
+    @app.put("/api/library/artists/{artist_id}/favourite", status_code=204)
+    async def favourite_artist(artist_id: str) -> None:
+        await get().favourite_artist(checked_id(artist_id), True)
+
+    @app.delete("/api/library/artists/{artist_id}/favourite", status_code=204)
+    async def unfavourite_artist(artist_id: str) -> None:
+        await get().favourite_artist(checked_id(artist_id), False)
+
+    @app.get("/api/library/tracks")
+    async def tracks(
+        q: TrackQuery = "",
+        sort: TrackSort = "title",
+        genre: TrackGenres = None,
+        year: TrackYears = None,
+        offset: int = Query(default=0, ge=0),
+        size: int = Query(default=100, ge=1, le=200),
+    ) -> dict[str, object]:
+        return await get().browse_tracks(q.strip(), sort, genre or [], year or [], offset, size)
+
+    @app.get("/api/library/tracks/search")
+    async def track_search(
+        q: TrackQuery = "",
+        size: int = Query(default=20, ge=1, le=50),
+    ) -> dict[str, object]:
+        """One upstream page, for pickers that only need a handful of matches."""
+        return {"items": await get().tracks(q.strip(), 0, size)}
+
+    @app.get("/api/library/tracks/selection")
+    async def track_selection(
+        q: TrackQuery = "",
+        sort: TrackSort = "title",
+        genre: TrackGenres = None,
+        year: TrackYears = None,
+        shuffle: bool = Query(default=False),
+        limit: int = Query(default=QUEUE_LIMIT, ge=1, le=QUEUE_LIMIT),
+    ) -> dict[str, object]:
+        return await get().select_tracks(q.strip(), sort, genre or [], year or [], shuffle, limit)
+
+    @app.post("/api/library/tracks/shuffle")
+    async def shuffle_window(request: ShuffleWindow) -> dict[str, object]:
+        return await get().shuffle_window(request.seed, request.cursor, request.limit, request.skip)
+
+    @app.post("/api/library/tracks/lookup")
+    async def track_lookup(request: TrackLookup) -> dict[str, object]:
+        return await get().tracks_by_ids(request.ids)
+
+    @app.get("/api/library/playlists")
+    async def playlists() -> dict[str, object]:
+        return {"items": await get().playlists(), "liked_id": get().liked_id()}
+
+    @app.get("/api/library/playlists/liked")
+    async def liked_playlist() -> dict[str, object]:
+        return await get().linked_playlist()
+
+    @app.get("/api/library/playlists/{playlist_id}")
+    async def playlist(playlist_id: str) -> dict[str, object]:
+        return await get().playlist(checked_id(playlist_id))
+
+    @app.post("/api/library/playlists")
+    async def create_playlist(request: PlaylistCreate) -> dict[str, object]:
+        return await get().create_playlist(request.name.strip(), request.song_ids)
+
+    @app.patch("/api/library/playlists/{playlist_id}")
+    async def update_playlist(playlist_id: str, request: PlaylistUpdate) -> dict[str, object]:
+        return await get().update_playlist(checked_id(playlist_id), request.name.strip())
+
+    @app.post("/api/library/playlists/{playlist_id}/songs")
+    async def update_playlist_songs(
+        playlist_id: str, request: PlaylistSongUpdate
+    ) -> dict[str, object]:
+        checked_playlist_id = checked_id(playlist_id)
+        if request.song_id_to_add is not None:
+            return await get().add_playlist_song(checked_playlist_id, request.song_id_to_add)
+        return await get().remove_playlist_song(
+            checked_playlist_id, request.song_index_to_remove or 0
+        )
+
+    @app.delete("/api/library/playlists/{playlist_id}", status_code=204)
+    async def delete_playlist(playlist_id: str) -> None:
+        await get().delete_playlist(checked_id(playlist_id))
+
+    @app.get("/api/library/albums/{album_id}")
+    async def album(album_id: str) -> dict[str, object]:
+        return await get().album(checked_id(album_id))
+
+    @app.get("/api/library/artists/{artist_id}")
+    async def artist(artist_id: str) -> dict[str, object]:
+        return await get().artist(checked_id(artist_id))
+
+    @app.get("/api/library/artists/{artist_id}/tracks")
+    async def artist_tracks(artist_id: str) -> dict[str, object]:
+        return {"items": await get().artist_tracks(checked_id(artist_id))}
+
+    @app.get("/api/player/song/{song_id}")
+    async def song(song_id: str) -> dict[str, object]:
+        return await get().song(checked_id(song_id))
+
+    @app.get("/api/player/queue")
+    async def play_queue() -> dict[str, object]:
+        return await get().play_queue()
+
+    @app.put("/api/player/queue", status_code=204)
+    async def save_play_queue(update: QueueUpdate) -> None:
+        await get().save_play_queue(update.ids, update.current, update.position)
+
+    @app.post("/api/player/scrobble", status_code=204)
+    async def scrobble(update: ScrobbleUpdate) -> None:
+        await get().scrobble(update.id, update.submission)
+
+    @app.get("/api/player/lyrics/{song_id}")
+    async def lyrics(song_id: str) -> dict[str, object]:
+        return {"items": await get().lyrics(checked_id(song_id))}
+
+    async def media_response(endpoint: str, item_id: str, range_header: str) -> StreamingResponse:
+        if range_header and not BYTE_RANGE.fullmatch(range_header):
+            raise HTTPException(416, "Only one byte range is supported")
+        return proxied(await get().media(endpoint, checked_id(item_id), range_header))
+
+    def proxied(response: httpx.Response) -> StreamingResponse:
+        async def content() -> AsyncIterator[bytes]:
+            try:
+                async for chunk in response.aiter_bytes():
+                    yield chunk
+            finally:
+                await response.aclose()
+
+        headers = {
+            name: value for name, value in response.headers.items() if name.lower() in MEDIA_HEADERS
+        }
+        # httpx hands over the decoded body, so a compressed response's length no longer fits.
+        if response.headers.get("content-encoding"):
+            headers = {
+                name: value for name, value in headers.items() if name.lower() != "content-length"
+            }
+        return StreamingResponse(content(), status_code=response.status_code, headers=headers)
+
+    @app.get("/api/player/stream/{song_id}")
+    async def stream(song_id: str, request: Request) -> StreamingResponse:
+        return await media_response("stream", song_id, request.headers.get("range", ""))
+
+    @app.get("/api/player/art/{cover_id}")
+    async def art(cover_id: str) -> StreamingResponse:
+        return proxied(await get().cover_art(checked_id(cover_id)))

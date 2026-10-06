@@ -16,16 +16,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 
-from backend import mixes, resolver, sources
-from backend.catalog import Catalog
-from backend.downloads import DownloadError, Downloads
-from backend.errors import BLOCKING_CODES, error_guidance, geo_restricted
-from backend.job_models import Job, LinkRequest, Metadata
-from backend.library import Library
-from backend.links import LinkError, Links, stable_id
-from backend.sources import Kind, Site
-from backend.store import Store
-from backend.worker import main as worker_main
+from backend.core import sources
+from backend.core.errors import BLOCKING_CODES, error_guidance, geo_restricted
+from backend.core.job_models import Job, LinkRequest, Metadata
+from backend.core.sources import Kind, Site
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog
+from backend.jobs import mixes, resolver
+from backend.jobs.downloads import DownloadError, Downloads
+from backend.jobs.links import LinkError, Links, stable_id
+from backend.jobs.worker import main as worker_main
+from backend.library.index import Library
 
 TODAY = date(2026, 9, 19)
 BBC_GEO = "BBC Sounds only plays in the UK, and this server is not there."
@@ -722,10 +723,10 @@ class WorkerTests(unittest.TestCase):
         with (
             patch("sys.argv", ["worker", job.target]),
             patch("yt_dlp.YoutubeDL") as downloader,
-            patch("backend.worker.probe", return_value={"duration": 900}),
-            patch("backend.worker.Tagger") as tagger,
+            patch("backend.jobs.worker.probe", return_value={"duration": 900}),
+            patch("backend.jobs.worker.Tagger") as tagger,
             patch(
-                "backend.worker.emit",
+                "backend.jobs.worker.emit",
                 side_effect=lambda kind, **v: events.append({"kind": kind, **v}),
             ),
         ):
@@ -782,7 +783,8 @@ def run_resolver(
     downloader.extract_info.side_effect = [dict(answer) for answer in answers]
     events: list[dict[str, object]] = []
     with patch(
-        "backend.resolver.emit", side_effect=lambda kind, **v: events.append({"kind": kind, **v})
+        "backend.jobs.resolver.emit",
+        side_effect=lambda kind, **v: events.append({"kind": kind, **v}),
     ):
         resolver.resolve(
             downloader,
@@ -902,7 +904,7 @@ class ResolverTests(unittest.TestCase):
             patch("sys.stdin", MagicMock(read=lambda: request)),
             patch("yt_dlp.YoutubeDL") as downloader,
             patch(
-                "backend.resolver.emit",
+                "backend.jobs.resolver.emit",
                 side_effect=lambda kind, **v: events.append({"kind": kind, **v}),
             ),
         ):
@@ -974,6 +976,6 @@ class ReadingPagesTests(unittest.TestCase):
             "title": "dj (uploads)",
             "entries": [{"_type": "url", "ie_key": "Mixcloud", "id": "dj_m1", "url": f"{user}m1/"}],
         }
-        with patch("backend.resolver.BUDGET_SECONDS", 0):
+        with patch("backend.jobs.resolver.BUDGET_SECONDS", 0):
             preview = run_resolver("mixcloud", user, [listed], {f"{user}m1/": {"title": "Mix 1"}})
         self.assertEqual((preview["entries"], preview["partial"]), ([], True))

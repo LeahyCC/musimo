@@ -10,9 +10,10 @@ from unittest.mock import MagicMock, patch
 
 import httpx
 
-from backend.deezer_audio import DeezerAudioError, Saved
-from backend.job_models import Candidate, Job, Metadata
-from backend.worker import base_options, main, redact
+from backend.core.job_models import Candidate, Job, Metadata
+from backend.integrations.deezer_audio import DeezerAudioError, Saved
+from backend.jobs.worker import main
+from backend.jobs.ytdlp import base_options, redact
 
 
 class WorkerTests(unittest.TestCase):
@@ -37,8 +38,8 @@ class WorkerTests(unittest.TestCase):
                 patch("sys.argv", ["worker", directory]),
                 patch.dict("os.environ", {"MUSIMO_POT_SERVER_HOME": directory}),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.emit", side_effect=record),
-                patch("backend.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.Tagger") as tagger,
             ):
                 downloader.return_value.extract_info.return_value = {
                     "entries": [
@@ -111,7 +112,7 @@ class WorkerTests(unittest.TestCase):
                     with (
                         patch("sys.argv", ["worker", directory]),
                         patch("yt_dlp.YoutubeDL") as downloader,
-                        patch("backend.worker.emit", side_effect=record),
+                        patch("backend.jobs.worker.emit", side_effect=record),
                     ):
                         downloader.return_value.extract_info.side_effect = RuntimeError(
                             message + " https://provider.test/?token=private"
@@ -148,9 +149,9 @@ class WorkerTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.probe", return_value={"duration": 180}),
-                patch("backend.worker.Tagger") as tagger,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.probe", return_value={"duration": 180}),
+                patch("backend.jobs.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 tagger.return_value.prepare.return_value = source
                 main()
@@ -200,11 +201,11 @@ class WorkerTests(unittest.TestCase):
                 patch("sys.argv", ["worker", directory]),
                 patch("yt_dlp.YoutubeDL"),
                 patch(
-                    "backend.worker.probe",
+                    "backend.jobs.worker.probe",
                     return_value={"duration": 180, "codec": "aac", "bitrate": 1},
                 ),
-                patch("backend.worker.Tagger") as tagger,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 tagger.return_value.prepare.return_value = folder / "source.m4a"
                 main()
@@ -224,13 +225,13 @@ class WorkerTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch("yt_dlp.YoutubeDL"),
-                patch("backend.worker.SIDE_WAIT_SECONDS", 0.05),
+                patch("backend.jobs.worker.SIDE_WAIT_SECONDS", 0.05),
                 patch(
-                    "backend.worker.probe",
+                    "backend.jobs.worker.probe",
                     return_value={"duration": 180, "codec": "aac", "bitrate": 1},
                 ),
-                patch("backend.worker.Tagger") as tagger,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 tagger.return_value.prepare.return_value = folder / "source.m4a"
                 main()
@@ -262,9 +263,9 @@ class WorkerTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.probe", return_value={"duration": 400}),
-                patch("backend.worker.Tagger") as tagger,
-                patch("backend.worker.emit") as emit,
+                patch("backend.jobs.worker.probe", return_value={"duration": 400}),
+                patch("backend.jobs.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit") as emit,
             ):
                 downloader.return_value.extract_info.return_value = {}
                 main()
@@ -293,12 +294,12 @@ class WorkerTests(unittest.TestCase):
 
             with (
                 patch("sys.argv", ["worker", directory]),
-                patch("backend.worker.configured", return_value=True),
-                patch("backend.worker.fetch", return_value=Saved(source, False)) as account,
+                patch("backend.jobs.worker.configured", return_value=True),
+                patch("backend.jobs.worker.fetch", return_value=Saved(source, False)) as account,
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.probe", return_value={"duration": 180, "codec": "flac"}),
-                patch("backend.worker.Tagger") as tagger,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.probe", return_value={"duration": 180, "codec": "flac"}),
+                patch("backend.jobs.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 tagger.return_value.prepare.return_value = source
                 main()
@@ -329,12 +330,12 @@ class WorkerTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "deezer,youtube"}),
-                patch("backend.worker.configured", return_value=True),
-                patch("backend.worker.fetch", return_value=Saved(source, False)),
+                patch("backend.jobs.worker.configured", return_value=True),
+                patch("backend.jobs.worker.fetch", return_value=Saved(source, False)),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.probe", return_value={"duration": 180, "codec": "flac"}),
-                patch("backend.worker.Tagger") as tagger,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.probe", return_value={"duration": 180, "codec": "flac"}),
+                patch("backend.jobs.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 tagger.return_value.prepare.return_value = source
                 main()
@@ -358,11 +359,11 @@ class WorkerTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "deezer,youtube"}),
-                patch("backend.worker.configured", return_value=True),
-                patch("backend.worker.fetch", return_value=Saved(source, False)),
+                patch("backend.jobs.worker.configured", return_value=True),
+                patch("backend.jobs.worker.fetch", return_value=Saved(source, False)),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.probe", return_value={"duration": 20}),
-                patch("backend.worker.emit"),
+                patch("backend.jobs.worker.probe", return_value={"duration": 20}),
+                patch("backend.jobs.worker.emit"),
             ):
                 downloader.return_value.extract_info.return_value = {"entries": []}
                 main()
@@ -382,12 +383,12 @@ class WorkerTests(unittest.TestCase):
             (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
             with (
                 patch("sys.argv", ["worker", directory]),
-                patch("backend.worker.configured", return_value=True),
+                patch("backend.jobs.worker.configured", return_value=True),
                 patch(
-                    "backend.worker.fetch", side_effect=DeezerAudioError("cookie rejected")
+                    "backend.jobs.worker.fetch", side_effect=DeezerAudioError("cookie rejected")
                 ) as account,
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.emit"),
+                patch("backend.jobs.worker.emit"),
             ):
                 downloader.return_value.extract_info.return_value = {"entries": []}
                 main()
@@ -416,12 +417,12 @@ class WorkerTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "youtube,deezer"}),
-                patch("backend.worker.configured", return_value=True),
-                patch("backend.worker.fetch", return_value=Saved(source, False)) as account,
+                patch("backend.jobs.worker.configured", return_value=True),
+                patch("backend.jobs.worker.fetch", return_value=Saved(source, False)) as account,
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.probe", return_value={"duration": 180, "codec": "flac"}),
-                patch("backend.worker.Tagger") as tagger,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.probe", return_value={"duration": 180, "codec": "flac"}),
+                patch("backend.jobs.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 downloader.return_value.extract_info.return_value = {
                     "entries": [{"id": "abcdefghijk", "title": "Unrelated", "duration": 900}]
@@ -456,7 +457,7 @@ class WorkerTests(unittest.TestCase):
                     {"MUSIMO_DISABLED_SOURCES": "youtube", "MUSIMO_DEEZER_ARL_FILE": ""},
                 ),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 main()
             downloader.return_value.extract_info.assert_not_called()
@@ -486,12 +487,12 @@ class WorkerTests(unittest.TestCase):
                         "MUSIMO_MAX_ATTEMPTS": "1",
                     },
                 ),
-                patch("backend.worker.configured", return_value=True),
+                patch("backend.jobs.worker.configured", return_value=True),
                 patch(
-                    "backend.worker.fetch", side_effect=DeezerAudioError("cookie rejected")
+                    "backend.jobs.worker.fetch", side_effect=DeezerAudioError("cookie rejected")
                 ) as account,
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.emit"),
+                patch("backend.jobs.worker.emit"),
             ):
                 downloader.return_value.extract_info.return_value = {"entries": []}
                 main()
@@ -520,12 +521,12 @@ class WorkerTests(unittest.TestCase):
                         "MUSIMO_MAX_ATTEMPTS": "2",
                     },
                 ),
-                patch("backend.worker.configured", return_value=True),
+                patch("backend.jobs.worker.configured", return_value=True),
                 patch(
-                    "backend.worker.fetch", side_effect=DeezerAudioError("cookie rejected")
+                    "backend.jobs.worker.fetch", side_effect=DeezerAudioError("cookie rejected")
                 ) as account,
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.emit"),
+                patch("backend.jobs.worker.emit"),
             ):
                 downloader.return_value.extract_info.return_value = {"entries": []}
                 main()
@@ -552,10 +553,10 @@ class WorkerTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "deezer,youtube"}),
-                patch("backend.worker.configured", return_value=True),
-                patch("backend.worker.fetch", side_effect=DeezerAudioError("cookie rejected")),
+                patch("backend.jobs.worker.configured", return_value=True),
+                patch("backend.jobs.worker.fetch", side_effect=DeezerAudioError("cookie rejected")),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 downloader.return_value.extract_info.return_value = {"entries": []}
                 main()
@@ -612,9 +613,9 @@ class BackupSourceTests(unittest.TestCase):
             patch("sys.argv", ["worker", directory]),
             patch.dict("os.environ", env),
             patch("yt_dlp.YoutubeDL") as downloader,
-            patch("backend.worker.probe", return_value={"duration": 180}),
-            patch("backend.worker.Tagger") as tagger,
-            patch("backend.worker.emit", side_effect=record),
+            patch("backend.jobs.worker.probe", return_value={"duration": 180}),
+            patch("backend.jobs.worker.Tagger") as tagger,
+            patch("backend.jobs.worker.emit", side_effect=record),
         ):
             tagger.return_value.prepare.return_value = folder / "source.m4a"
             downloader.return_value.extract_info.side_effect = writes_audio(folder, answers)
@@ -693,11 +694,11 @@ class BackupSourceTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "youtube"}),
-                patch("backend.worker.configured", return_value=False),
+                patch("backend.jobs.worker.configured", return_value=False),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.probe", return_value={"duration": 400}),
-                patch("backend.worker.Tagger") as tagger,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.probe", return_value={"duration": 400}),
+                patch("backend.jobs.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 downloader.return_value.extract_info.side_effect = writes_audio(
                     folder,
@@ -739,9 +740,9 @@ class BackupSourceTests(unittest.TestCase):
                 patch("sys.argv", ["worker", directory]),
                 patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "youtube,soundcloud"}),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.probe", return_value={"duration": 400}),
-                patch("backend.worker.Tagger") as tagger,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.probe", return_value={"duration": 400}),
+                patch("backend.jobs.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 downloader.return_value.extract_info.side_effect = writes_audio(
                     folder,
@@ -981,12 +982,12 @@ def run_walk(
     with (
         patch("sys.argv", ["worker", directory]),
         patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "youtube", **(env or {})}),
-        patch("backend.worker.configured", return_value=account is not None),
-        patch("backend.worker.fetch", side_effect=account),
-        patch("backend.worker.probe", side_effect=probe),
-        patch("backend.worker.Tagger") as tagger,
+        patch("backend.jobs.worker.configured", return_value=account is not None),
+        patch("backend.jobs.worker.fetch", side_effect=account),
+        patch("backend.jobs.worker.probe", side_effect=probe),
+        patch("backend.jobs.worker.Tagger") as tagger,
         patch("yt_dlp.YoutubeDL") as downloader,
-        patch("backend.worker.emit", side_effect=record),
+        patch("backend.jobs.worker.emit", side_effect=record),
     ):
         tagger.return_value.prepare.side_effect = lambda source, *_: source
         downloader.return_value.extract_info.side_effect = answer or writes_audio(folder, replies)

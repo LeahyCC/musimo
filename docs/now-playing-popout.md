@@ -58,7 +58,7 @@ Small (default)                            Large
 
 ## Lyrics
 
-The Lyrics tab is `LyricsPanel` in `frontend/src/lyrics.tsx`, keyed by track so each track starts fresh. The lines come from `GET /api/player/lyrics/{id}`; each line's `start` is in milliseconds and the item's `synced` flag says whether they are timed.
+The Lyrics tab is `LyricsPanel` in `frontend/src/features/now-playing/lyrics.tsx`, keyed by track so each track starts fresh. The lines come from `GET /api/player/lyrics/{id}`; each line's `start` is in milliseconds and the item's `synced` flag says whether they are timed.
 
 ```
 +-------------------------------------------+
@@ -206,14 +206,14 @@ L, Q and S are bound to the page, not the stage, so they work without the stage 
 
 ## Code
 
-- `frontend/src/artwork-menu.tsx`: the right-click menu on the stage.
-- `frontend/src/lyrics.tsx`: `LyricsPanel`, the synced list that follows the player, the lyrics view (`LyricsView` and the strip's `StripTransport` and `StripSeek`), the timing offset and its storage. `frontend/src/lyrics.test.ts` covers the current-line lookup and the offset map.
-- `frontend/src/now-playing-controls.tsx`: the title, byline and control row under the stage.
+- `frontend/src/features/now-playing/artwork-menu.tsx`: the right-click menu on the stage.
+- `frontend/src/features/now-playing/lyrics.tsx`: `LyricsPanel`, the synced list that follows the player, the lyrics view (`LyricsView` and the strip's `StripTransport` and `StripSeek`), the timing offset and its storage. `frontend/src/features/now-playing/lyrics.test.ts` covers the current-line lookup and the offset map.
+- `frontend/src/features/now-playing/now-playing-controls.tsx`: the title, byline and control row under the stage.
 - `frontend/src/ui/tabs.tsx`: `TabList`, the tab row and its arrow keys.
-- `frontend/src/now-playing-popout.tsx`: the provider at the app root (the popout window, the request that carries full screen back to the tab) and the stage itself. The docked stage's size is a container query: its slot is a size container, and the stage is `min(100cqw, 100cqh)` wide and square in Small, or `100cqw` by `100cqh` in Large (`dockedStageClassName`). The choice (`size`, `setSize`, `toggleSize`, kept as `musimo.now-playing-size`) and `phone`, whether the window is under the breakpoint, live in the provider beside the view and the preset. `useStageVisible` also carries the 10 second pause rest.
-- `frontend/src/now-playing-overlay.tsx`: the top bar, the transport drawn over the picture in full screen and the popout (`StageControls`, switched by the `controls` prop), the always-visible Visualizer control (toggle and preset picker), the small or large stage button (docked only, and not on a phone), the idle fade and the shortcuts. The idle fade is on the two bars, not on `.stage-overlay`, which is what lets the Visualizer control outlast it.
-- `frontend/src/milkdrop-stage.tsx`: the butterchurn (MilkDrop) stage, loaded on demand; see [the visualizer note](visualizer.md).
-- `frontend/src/player.tsx` exposes the transport (`seek`, `cycleRepeat`, `toggleShuffle`, `toggleMute`, `setVolume`, `audio()`, `liked`, `stop`) the page's control row and the overlay need to duplicate the footer's controls, the overlay in a separate document.
+- `frontend/src/features/now-playing/now-playing-popout.tsx`: the provider at the app root (the popout window, the request that carries full screen back to the tab) and the stage itself. The docked stage's size is a container query: its slot is a size container, and the stage is `min(100cqw, 100cqh)` wide and square in Small, or `100cqw` by `100cqh` in Large (`dockedStageClassName`). The choice (`size`, `setSize`, `toggleSize`, kept as `musimo.now-playing-size`) and `phone`, whether the window is under the breakpoint, live in the provider beside the view and the preset. `useStageVisible` also carries the 10 second pause rest.
+- `frontend/src/features/now-playing/now-playing-overlay.tsx`: the top bar, the transport drawn over the picture in full screen and the popout (`StageControls`, switched by the `controls` prop), the always-visible Visualizer control (toggle and preset picker), the small or large stage button (docked only, and not on a phone), the idle fade and the shortcuts. The idle fade is on the two bars, not on `.stage-overlay`, which is what lets the Visualizer control outlast it.
+- `frontend/src/features/visualizer/milkdrop-stage.tsx`: the butterchurn (MilkDrop) stage, loaded on demand; see [the visualizer note](visualizer.md).
+- `frontend/src/features/player/player.tsx` exposes the transport (`seek`, `cycleRepeat`, `toggleShuffle`, `toggleMute`, `setVolume`, `audio()`, `liked`, `stop`) the page's control row and the overlay need to duplicate the footer's controls, the overlay in a separate document.
 
 ## Checks
 

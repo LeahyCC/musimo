@@ -20,13 +20,14 @@ from typing import cast
 import httpx
 import mutagen
 
-from backend.catalog import Catalog
-from backend.downloads import Downloads, digest
-from backend.job_models import Job, LinkRequest, Metadata
-from backend.library import Library
-from backend.links import Links
-from backend.store import Store
-from backend.tagging import probe
+from backend.core.job_models import Job, LinkRequest, Metadata
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog
+from backend.jobs.downloads import Downloads
+from backend.jobs.links import Links
+from backend.jobs.publish import digest
+from backend.jobs.tagging import probe
+from backend.library.index import Library
 
 SOURCE = "https://upload.wikimedia.org/wikipedia/commons/6/65/Star_Spangled_Banner_instrumental.ogg"
 CREDIT = "https://commons.wikimedia.org/wiki/File:Star_Spangled_Banner_instrumental.ogg"

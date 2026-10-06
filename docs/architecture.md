@@ -40,26 +40,33 @@ Events have an increasing ID, type, payload and timestamp. Retain a bounded repl
 
 ## APIs
 
-Implemented routes:
+Implemented routes (module paths are under `backend/`). `main.py` creates the app, installs each module's routes, adds the same-origin and security-header middleware, and serves the built frontend.
 
-Main (main.py):
+Settings (api/settings_api.py):
 
-- `GET /api/health`: database readiness, app version and uptime.
 - `GET /api/settings`: effective values, origin and lock status.
 - `PATCH /api/settings`: validated partial updates, atomic persistence, rejects locked fields.
+- `PUT` and `DELETE /api/youtube-cookies`: save or remove the YouTube cookies file.
+
+Events (api/events_api.py):
+
 - `GET /api/snapshot`: settings, jobs and an event cursor from a consistent snapshot.
 - `GET /api/events?after=N`: SSE replay and live events; Last-Event-ID wins on reconnect.
+
+Health and diagnostics (api/diagnostics_api.py):
+
+- `GET /api/health`: database readiness, app version and uptime.
 - `GET /api/diagnostics`: runtime versions, disk availability, database mode, source status, library status, queue controls, Navidrome capabilities and last terminal job.
 - `POST /api/diagnostics/test/deezer`: real bounded catalog probe, measured latency and persisted result.
 - `POST /api/diagnostics/test/destination`: destination write test with elapsed time.
 - `GET /api/diagnostics/export`: sanitized diagnostics JSON. ZIP log export is not yet implemented.
 
-Activity (activity_api.py):
+Activity (api/activity_api.py):
 
 - `GET /api/activity`: activity events with cursor and count.
 - `DELETE /api/activity`: clears through the observed cursor.
 
-Search (search_api.py):
+Search (api/search_api.py):
 
 - `GET /api/search`: cancellable search fan-out with kind, query, index.
 - `GET /api/album-years`: batch year hydration for up to 50 albums.
@@ -71,7 +78,7 @@ Search (search_api.py):
 - `POST /api/library/scan`: start scan.
 - `POST /api/library/cancel`: cancel scan.
 
-Downloads (download_api.py):
+Downloads (api/download_api.py):
 
 - `GET /api/naming-preview`: live naming template preview.
 - `GET /api/jobs`: active jobs.
@@ -83,23 +90,23 @@ Downloads (download_api.py):
 - `POST /api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`: job actions.
 - `POST /api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,clear-unmatched,resume-source}`: queue commands. `retry-failed` and `clear-failed` skip `NO_MATCH`. `clear-unmatched` hides those. `resume-source` takes `?source=` and defaults to `youtube`.
 
-Artist downloads (artist_downloads.py):
+Artist downloads (api/artist_download_api.py, jobs/artist_downloads.py):
 
 - `GET /api/artists/{id}/download-plan`: checked release list with all_music flag.
 - `POST /api/artist-batches`: artist batch creation with selected releases.
 
-Podcasts (podcast_api.py, podcasts.py):
+Podcasts (api/podcast_api.py, integrations/podcasts.py):
 
 - `GET /api/podcasts`: show search in Apple's podcast directory.
 - `GET /api/podcasts/{id}`: show and latest episodes.
 - `POST /api/podcast-episodes`: queue one episode as a `podcast` job.
 
-Pasted links (link_api.py, links.py, link_tags.py, mixes.py, sources.py, resolver.py):
+Pasted links (api/link_api.py, jobs/links.py, jobs/link_tags.py, jobs/mixes.py, core/sources.py, jobs/resolver.py):
 
 - `POST /api/links/resolve`: checks the link against the site allowlist, reads it in a child process within 20 seconds without downloading (at most 500 entries), and returns a preview with a token that lasts ten minutes. The preview names the site, says whether the link is a single recording or a profile, and carries the site's `quality_note` and a `partial` flag. Each entry has its `kind` and, for a mix or radio show, the `lands` path it will be filed under. A refusal is 422 with a plain sentence, a lookup that runs out of time is 504, and a browser that cancels gets 499. Two lookups run at once and the server keeps 32 previews.
 - `POST /api/links`: queues ticked entries from a saved preview as `link` jobs; more than one becomes a download group. An expired token is 404 and an entry that is not in the preview is 422.
 
-Player (player_api.py):
+Player (api/player_api.py):
 
 - `GET /api/player/capabilities`: connection, server version and extensions.
 - `GET /api/library/albums[/{id}]`: whole-library album browsing with search, genre, year and sort, plus the detail resource.
@@ -121,11 +128,11 @@ Player (player_api.py):
 - `PUT /api/player/queue`: save queue.
 - `POST /api/player/scrobble`: report now playing and completed listens.
 - `GET /api/player/lyrics/{id}`: Navidrome lyrics with LRCLIB fallback.
-- `GET /api/player/waveform/{id}` (waveform.py): about 800 normalized peaks for the Now Playing seek bar. One ffmpeg decode from the file on disk when Navidrome's path resolves inside a library root, otherwise from a copy of the stream; cached in `waveforms`; one decode at a time with 8 waiting, 404 when there are none or a wait or decode times out, 503 when the line is full.
+- `GET /api/player/waveform/{id}` (api/waveform_api.py, library/waveform.py): about 800 normalized peaks for the Now Playing seek bar. One ffmpeg decode from the file on disk when Navidrome's path resolves inside a library root, otherwise from a copy of the stream; cached in `waveforms`; one decode at a time with 8 waiting, 404 when there are none or a wait or decode times out, 503 when the line is full.
 - `GET /api/player/stream/{id}`: proxied audio with range forwarding.
 - `GET /api/player/art/{id}`: proxied cover artwork; an artist without a photo gets their newest album cover.
 
-Errors (errors.py):
+Errors (core/errors.py):
 
 - `error_guidance(code, site)`: 19 code hint and fix table used by worker.py, downloads.py and store.py job_summary. Maps error codes to plain language hints and suggested actions, naming the job's site where the hint is about one.
 - `source_code(code, source)`: keeps a code only where it means something for the job's source.
@@ -140,7 +147,7 @@ Not yet implemented:
 - Updater controls.
 - Lyric backfill jobs.
 
-Same-origin JSON writes reject cross-origin browser requests. No wildcard CORS. The service binds loopback. It accepts two secrets, a YouTube cookies file and a Deezer cookie, and never sends either back. Optional password sessions, secret files and encrypted credential storage precede LAN-facing credential features. Arbitrary URLs, output paths, redirects and yt-dlp arguments require allowlists before download APIs ship; deny executable hooks and output overrides. Pasted links meet this through `backend/sources.py`: only `https` links to a listed host are read, never an IP address host, a link with a user or password, or a non-default port. yt-dlp gets the site's extractors as `allowed_extractors`, which turns off the generic extractor, so a redirect to an unlisted site fails in both the preview and the worker. The worker also checks that a job's own address belongs to the site the job says it is from, and a job whose site has left the table fails with `SITE_NOT_ALLOWED`. Artwork is fetched by the server, so its hosts are on the same list and a redirect is followed only to another of that site's image hosts. The browser sends only the link and then a preview token with entry IDs; titles, file addresses, artwork and output paths come from the server's saved preview, and no cookies or yt-dlp options are accepted.
+Same-origin JSON writes reject cross-origin browser requests. No wildcard CORS. The service binds loopback. It accepts two secrets, a YouTube cookies file and a Deezer cookie, and never sends either back. Optional password sessions, secret files and encrypted credential storage precede LAN-facing credential features. Arbitrary URLs, output paths, redirects and yt-dlp arguments require allowlists before download APIs ship; deny executable hooks and output overrides. Pasted links meet this through `backend/core/sources.py`: only `https` links to a listed host are read, never an IP address host, a link with a user or password, or a non-default port. yt-dlp gets the site's extractors as `allowed_extractors`, which turns off the generic extractor, so a redirect to an unlisted site fails in both the preview and the worker. The worker also checks that a job's own address belongs to the site the job says it is from, and a job whose site has left the table fails with `SITE_NOT_ALLOWED`. Artwork is fetched by the server, so its hosts are on the same list and a redirect is followed only to another of that site's image hosts. The browser sends only the link and then a preview token with entry IDs; titles, file addresses, artwork and output paths come from the server's saved preview, and no cookies or yt-dlp options are accepted.
 
 ## Job state machine
 

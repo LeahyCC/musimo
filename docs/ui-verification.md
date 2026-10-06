@@ -93,7 +93,7 @@ Not verified on a device: the safe-area insets and the 16px zoom rule were reaso
 
 ## Track rows and album cards, 19 September 2026
 
-Every desktop track row carried a badge, Preview, a format select, a grey tick and a kebab, and every album card repeated "to /library · Original source quality". Changed in `frontend/src/downloads.tsx`, `search.tsx` and `download-target.tsx`, with checks in `e2e/cards.spec.ts`, `album.spec.ts`, `download-options.spec.ts` and `app.spec.ts`:
+Every desktop track row carried a badge, Preview, a format select, a grey tick and a kebab, and every album card repeated "to /library · Original source quality". Changed in `frontend/src/features/downloads/downloads.tsx`, `search.tsx` and `download-target.tsx`, with checks in `e2e/cards.spec.ts`, `album.spec.ts`, `download-options.spec.ts` and `app.spec.ts`:
 
 - The format select left the row on every screen; the options popover, already used on phones, holds Format beside Download to. The row is the badge, Preview, one download button and the kebab. The chosen format is on the button's tooltip and accessible name.
 - An owned track shows its badge and no disabled tick. Edition matches, queued and downloaded-earlier badges, the retry state and the per-download override are unchanged.

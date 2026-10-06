@@ -10,13 +10,13 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI
 
-from backend.catalog import Catalog
-from backend.download_api import install_download_routes
-from backend.downloads import DownloadError, Downloads
-from backend.errors import error_guidance, site_label
-from backend.job_models import Candidate, Job, Metadata, valid_candidate_id
-from backend.library import Library
-from backend.store import Store
+from backend.api.download_api import install_download_routes
+from backend.core.errors import error_guidance, site_label
+from backend.core.job_models import Candidate, Job, Metadata, valid_candidate_id
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog
+from backend.jobs.downloads import DownloadError, Downloads
+from backend.library.index import Library
 
 # Every controls reply names the catalog rows, paused or not.
 CATALOG_LABELS = {"deezer": "Deezer", "youtube": "YouTube", "soundcloud": "SoundCloud"}

@@ -4,8 +4,8 @@ from pathlib import Path
 
 from fastapi.testclient import TestClient
 
+from backend.core.store import Store
 from backend.main import create_app
-from backend.store import Store
 
 
 class ActivityTests(unittest.TestCase):

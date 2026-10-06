@@ -16,14 +16,15 @@ import httpx
 import yt_dlp  # type: ignore[import-untyped]
 from fastapi import FastAPI
 
-from backend import resolver, sources
-from backend.catalog import Catalog
-from backend.downloads import Downloads
-from backend.library import Library
-from backend.link_api import install_link_routes
-from backend.links import Links
-from backend.sources import Site
-from backend.store import Store
+from backend.api.link_api import install_link_routes
+from backend.core import sources
+from backend.core.sources import Site
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog
+from backend.jobs import resolver
+from backend.jobs.downloads import Downloads
+from backend.jobs.links import Links
+from backend.library.index import Library
 
 ITEM = "Goldberg_Demo-1"
 
@@ -86,7 +87,8 @@ def preview(raw: dict[str, object]) -> list[dict[str, object]]:
     downloader.extract_info.return_value = raw
     events: list[dict[str, object]] = []
     with patch(
-        "backend.resolver.emit", side_effect=lambda kind, **v: events.append({"kind": kind, **v})
+        "backend.jobs.resolver.emit",
+        side_effect=lambda kind, **v: events.append({"kind": kind, **v}),
     ):
         resolver.resolve(downloader, site(), f"https://archive.org/details/{ITEM}")
     assert events[-1]["kind"] == "preview", events[-1]

@@ -1,6 +1,6 @@
 import type { KeyboardEvent } from 'react'
 
-import { cx } from '../cx'
+import { cx } from '../lib/cx'
 
 export type TabItem<Id extends string> = { id: Id; label: string }
 

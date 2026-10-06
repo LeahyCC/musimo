@@ -6,8 +6,8 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from backend.core.store import LockedSetting, Store
 from backend.main import create_app
-from backend.store import LockedSetting, Store
 
 
 class FoundationTests(unittest.TestCase):
@@ -19,7 +19,10 @@ class FoundationTests(unittest.TestCase):
             with (
                 patch.dict("os.environ", {"MUSIMO_LIBRARY_ROOTS": str(music)}),
                 TestClient(create_app(data)) as client,
-                patch("backend.downloads.Path", side_effect=AssertionError("Untrusted path probe")),
+                patch(
+                    "backend.jobs.downloads.Path",
+                    side_effect=AssertionError("Untrusted path probe"),
+                ),
             ):
                 for path in (str(data), "../outside", "//untrusted.invalid/share"):
                     self.assertEqual(
