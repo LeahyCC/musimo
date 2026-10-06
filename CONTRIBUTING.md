@@ -35,7 +35,7 @@ Use the isolated test music folder. The README explains host mounts, the fronten
 
 ## Tests and documentation
 
-Run the checks relevant to your change, then the required repository checks:
+Run the checks relevant to your change, then the required repository checks. GitHub Actions does not run on pull requests, so these run on your machine: `npm ci --prefix frontend` installs git hooks that run `scripts/check.sh fast` before each commit and `scripts/check.sh full` (the list below) before each push.
 
 ```sh
 uv run ruff check backend tests scripts

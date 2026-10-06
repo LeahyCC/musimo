@@ -8,6 +8,10 @@ The combined image built successfully and ran Python 3.14.7. All 41 container te
 
 ## Local checks
 
+GitHub Actions no longer runs on pushes or pull requests (see [GitHub checks](#github-checks)), so these checks run on your machine. `npm ci --prefix frontend` points git at `.githooks/`, which runs `scripts/check.sh fast` (lockfile, Ruff, ESLint and Prettier, about 15 seconds) before each commit and `scripts/check.sh full` (everything below, about a minute) before each push. If you installed before the hooks existed, run `git config core.hooksPath .githooks` once. `scripts/check.sh browser` runs the Docker smoke and Playwright suite from [Browser and container checks](#browser-and-container-checks); it is too slow for a hook, so run it by hand for UI changes. Skip a hook once with `--no-verify`.
+
+The full check runs:
+
 ```sh
 uv sync --locked
 npm ci --prefix frontend
@@ -127,17 +131,17 @@ The Wikimedia case stays as it was. To verify Navidrome's watcher, run a separat
 
 ## GitHub checks
 
-`CI required` is the stable merge gate. It fails if Python, frontend, Docker/browser or dependency checks fail or are cancelled. Workflows run on pull requests, main pushes and manual dispatch. Fork PRs run without repository secrets, with read-only default permissions and without persistent Git credentials. Actions are pinned to upstream commit SHAs; Dependabot opens update PRs. See [GitHub's workflow security guidance](https://docs.github.com/en/actions/reference/security/secure-use).
+Workflows run only by manual dispatch (Actions, pick the workflow, Run workflow), so pushes, pull requests and spam PRs from forks start no runs. The [local hooks](#local-checks) run the same checks before code leaves your machine. `CI required` still summarises a manual CI run: it fails if Python, frontend, Docker/browser or dependency checks fail or are cancelled. Manual runs have read-only default permissions and no persistent Git credentials. Actions are pinned to upstream commit SHAs; Dependabot opens update PRs. See [GitHub's workflow security guidance](https://docs.github.com/en/actions/reference/security/secure-use).
 
-CodeQL scans Python, JavaScript/TypeScript and Actions on PRs, main pushes and weekly. Dependency review rejects new high/critical vulnerabilities in PRs. Python runtime dependencies are audited for known vulnerabilities; npm includes development dependencies and fails at high severity. Dependabot provides ongoing update notifications. Fix findings through reviewed PRs rather than adding blanket audit ignores.
+CodeQL scans Python, JavaScript/TypeScript and Actions when dispatched by hand. Dependency review only runs on pull request events, so it is idle while CI is manual. Python runtime dependencies are audited for known vulnerabilities; npm includes development dependencies and fails at high severity. Dependabot provides ongoing update notifications. Fix findings through reviewed PRs rather than adding blanket audit ignores.
 
-CI verifies that the Python runtime export matches the uv lock:
+`scripts/check.sh full` verifies that the Python runtime export matches the uv lock:
 
 ```sh
 uv export --locked --no-header --no-dev --no-emit-project --format requirements-txt --output-file requirements.lock
 ```
 
-Main requires a pull request and resolved review conversations. Its ruleset blocks deletion and force pushes. It requires an up-to-date branch, `CI required`, the three CodeQL jobs and the CodeQL security-finding gate. No actor has a bypass. A second maintainer's approval is optional while the project has one maintainer.
+Main requires a pull request and resolved review conversations. Its ruleset blocks deletion and force pushes. It no longer requires status checks or CodeQL results, because nothing runs them automatically. No actor has a bypass. A second maintainer's approval is optional while the project has one maintainer.
 
 Dependency changes include manifests, locks and exports in the same PR. Required status names and protection are maintained on GitHub; update those settings before renaming a required job. There is no automatic merge, release or container publication workflow.
 

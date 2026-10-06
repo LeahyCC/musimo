@@ -1,11 +1,7 @@
 name: CodeQL
 
+# Manual only: Actions > CodeQL > Run workflow.
 on:
-  push:
-    branches: [main]
-  pull_request:
-  schedule:
-    - cron: '37 8 * * 1'
   workflow_dispatch:
 
 permissions:
