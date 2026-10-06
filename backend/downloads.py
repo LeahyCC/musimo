@@ -269,6 +269,8 @@ class Downloads:
         self.noted_blocks: dict[str, set[str]] = {}
         self.stopping = False
         self.task: asyncio.Task[None] | None = None
+        # Tests move this so a pause between groups does not wait on the wall clock.
+        self.now: Callable[[], float] = time.time
 
     def notify(self) -> None:
         self.changed.set()
@@ -443,15 +445,75 @@ class Downloads:
         if self.task:
             await self.task
 
+    def pace_room(self, settings: Settings, slots: int) -> tuple[int, float | None]:
+        """Slots left in this group, and the seconds left in a pause between groups.
+
+        A track count or a wait of 0 turns the pause off. The pause is there so a
+        long queue does not keep the connection busy the whole time.
+        """
+        if settings.pace_tracks < 1 or settings.pace_minutes < 1:
+            self._clear_pace()
+            return slots, None
+        started, until = self.store.pace()
+        now = self.now()
+        if until > now:
+            return 0, max(0.01, until - now)
+        if until > 0:
+            self.store.set_pace(0, 0.0, announce=True)
+            self.notify()
+            started = 0
+        # Tracks still running belong to this group, so a failure can be replaced
+        # without letting the next group begin early.
+        room = settings.pace_tracks - started - len(self.running)
+        return min(slots, max(0, room)), None
+
+    def _clear_pace(self) -> None:
+        started, until = self.store.pace()
+        if started == 0 and until == 0:
+            return
+        self.store.set_pace(0, 0.0, announce=until > 0)
+        if until > 0:
+            self.notify()
+
+    def note_done(self) -> None:
+        """Count one finished track, and begin the pause once that group is idle.
+
+        A failure or a cancel does not count: it did not take a full download.
+        The wait starts only after the tracks already going have finished, so the
+        gap is a quiet connection rather than a timer running beside the last files.
+        """
+        settings = self.settings()
+        if settings.pace_tracks < 1 or settings.pace_minutes < 1:
+            return
+        started, until = self.store.pace()
+        now = self.now()
+        if until > now:
+            return
+        started += 1
+        if started >= settings.pace_tracks and not self.running:
+            until = now + settings.pace_minutes * 60
+        else:
+            until = 0.0
+        previous = self.store.pace()
+        if (started, until) == previous:
+            return
+        self.store.set_pace(started, until, announce=until != previous[1])
+        if until != previous[1]:
+            self.notify()
+
     async def schedule(self) -> None:
         while not self.stopping:
             self.wake.clear()
             control = self.controls()
             paused_sources = self.paused_sources()
             delay = 60.0
+            settings = self.settings()
+            # A manual pause still lets a group pause count down.
+            slots = 0 if control["paused"] else settings.concurrency - len(self.running)
+            slots, rest = self.pace_room(settings, slots)
+            if rest is not None:
+                delay = min(delay, rest)
             if not control["paused"]:
-                settings = self.settings()
-                slots = settings.concurrency - len(self.running)
                 # The same for every catalog song in this pass, so it is worked out once.
                 hold = self.catalog_hold(settings, paused_sources)
                 for job in reversed(self.jobs.list(active=True)):
@@ -491,10 +553,13 @@ class Downloads:
                 pass
 
     def completed(self, job_id: str, task: asyncio.Task[None]) -> None:
+        finished = False
         if self.running.get(job_id) is task:
             self.running.pop(job_id, None)
             job = self.jobs.get(job_id)
-            if job.stage in {"pausing", "cancelling"}:
+            if job.stage == "done":
+                finished = True
+            elif job.stage in {"pausing", "cancelling"}:
                 if job.desired == "cancel":
                     self.cleanup(job)
                 self.jobs.update(
@@ -505,6 +570,8 @@ class Downloads:
                     if job.desired == "run"
                     else "paused",
                 )
+        if finished:
+            self.note_done()
         self.wake.set()
 
     def command(self, job_id: str, action: str) -> Job:

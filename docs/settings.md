@@ -14,6 +14,8 @@ A status summary at the top of the Settings page shows overall system readiness 
 - `max_attempts`: 1–4, default 4. For a song from search, how many times to walk the source list (one is a single pass). For a pasted link or a podcast, how many times to retry that one download. It sits with the source list, next to `tries_per_source`.
 - `retry_base_seconds`: 1–30, default 2.
 - `retry_cap_seconds`: 30–300, default 60.
+- `pace_tracks`: 0–500, default 0. How many tracks may finish before a wait. A failed or cancelled track does not count. 0 turns the pause off.
+- `pace_minutes`: 0–1440, default 0. Minutes to wait after those tracks have finished, before the next ones start. 0 turns the pause off. The pause runs only when both numbers are above 0. It is there so a long queue does not keep the connection busy the whole time. The same tracks still download. The wait is kept across a restart, and the Downloads page says when the next tracks will start.
 
 Set `MUSIMO_` plus the uppercase key in the container environment to seed and lock a value on first creation, for example `MUSIMO_CONCURRENCY=3`. An on or off setting takes `1`, `true`, `yes` or `on` for on and anything else for off (`MUSIMO_DEEZER_AUDIO=0`). Later env changes do not replace an existing row. Its original env name remains visible in the UI and API, and PATCH returns 409 for a locked setting. Removing the variable does not unlock the database record. There is no unlock UI yet.
 

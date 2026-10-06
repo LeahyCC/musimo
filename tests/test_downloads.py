@@ -7,6 +7,7 @@ import sys
 import tempfile
 import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import patch
 
@@ -15,6 +16,7 @@ import mutagen
 from fastapi import FastAPI
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
+from pydantic import ValidationError
 
 from backend import deezer_cookie
 from backend.catalog import Catalog, CatalogError
@@ -1437,3 +1439,178 @@ class OverlappedMetadataTests(unittest.IsolatedAsyncioTestCase):
                     await task
                 self.assertFalse((folder / "side.json").is_file())
             store.close()
+
+
+def clock_now(clock: list[float]) -> Callable[[], float]:
+    def now() -> float:
+        return clock[0]
+
+    return now
+
+
+def pace_until(service: Downloads) -> float:
+    raw = service.controls()["pace_until"]
+    if isinstance(raw, bool) or not isinstance(raw, int | float):
+        raise AssertionError(raw)
+    return float(raw)
+
+
+class HoldingDownloads(Downloads):
+    """Starts a job and then waits, so a test can see how many tracks were allowed out."""
+
+    def __init__(self, store: Store, catalog: Catalog, library: Library) -> None:
+        super().__init__(store, catalog, library, asyncio.Event())
+        self.started: list[str] = []
+        self.gate = asyncio.Event()
+
+    async def run(self, job_id: str) -> None:
+        self.started.append(job_id)
+        await self.gate.wait()
+        self.jobs.update(job_id, stage="done")
+
+
+class PaceTests(unittest.IsolatedAsyncioTestCase):
+    """A pause after a set number of tracks, so a long queue does not stay on the connection."""
+
+    async def _open(
+        self, *, tracks: int, minutes: int, concurrency: int = 3
+    ) -> tuple[Path, Store, HoldingDownloads]:
+        self.temporary = tempfile.TemporaryDirectory()
+        root = Path(self.temporary.name).resolve()
+        store = Store(root / "db.sqlite3")
+        store.update(
+            {
+                "destination": str(root),
+                "concurrency": concurrency,
+                "source_order": ["youtube"],
+                "pace_tracks": tracks,
+                "pace_minutes": minutes,
+            }
+        )
+        client = httpx.AsyncClient(
+            transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+        )
+        self.client = client
+        library = Library(store, [root], asyncio.Event())
+        service = HoldingDownloads(store, Catalog(store, client), library)
+        return root, store, service
+
+    async def _close(self, store: Store, service: Downloads) -> None:
+        await service.close()
+        await self.client.aclose()
+        store.close()
+        self.temporary.cleanup()
+
+    def test_pace_numbers_stay_in_range(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            store = Store(Path(directory) / "db.sqlite3")
+            try:
+                rejected: tuple[dict[str, object], ...] = (
+                    {"pace_tracks": -1},
+                    {"pace_tracks": 501},
+                    {"pace_minutes": -1},
+                    {"pace_minutes": 1441},
+                )
+                for changes in rejected:
+                    with self.subTest(changes=changes):
+                        with self.assertRaises(ValidationError):
+                            store.update(changes)
+                store.update({"pace_tracks": 0, "pace_minutes": 0})
+                store.update({"pace_tracks": 500, "pace_minutes": 1440})
+            finally:
+                store.close()
+
+    async def test_a_group_of_tracks_then_a_pause_then_the_next_group(self) -> None:
+        clock = [1_000_000.0]
+        _root, store, service = await self._open(tracks=2, minutes=10)
+        service.now = clock_now(clock)
+        try:
+            for track in (1, 2, 3, 4):
+                service.jobs.enqueue(track, "original", str(_root))
+            service.start()
+            async with asyncio.timeout(2):
+                while len(service.started) < 2:
+                    await asyncio.sleep(0.01)
+            await asyncio.sleep(0.05)
+            self.assertEqual(len(service.started), 2)
+            self.assertEqual(pace_until(service), 0)
+            service.gate.set()
+            async with asyncio.timeout(2):
+                while pace_until(service) <= clock[0]:
+                    await asyncio.sleep(0.01)
+            self.assertEqual(len(service.started), 2)
+            clock[0] = pace_until(service) + 1
+            service.wake.set()
+            async with asyncio.timeout(2):
+                while len(service.started) < 4:
+                    await asyncio.sleep(0.01)
+            async with asyncio.timeout(2):
+                while pace_until(service) <= clock[0]:
+                    await asyncio.sleep(0.01)
+        finally:
+            await self._close(store, service)
+
+    async def test_a_saved_pause_holds_until_its_time(self) -> None:
+        clock = [1_000_000.0]
+        root, store, service = await self._open(tracks=2, minutes=10)
+        service.now = clock_now(clock)
+        store.set_pace(2, clock[0] + 500, announce=False)
+        try:
+            service.jobs.enqueue(1, "original", str(root))
+            service.start()
+            await asyncio.sleep(0.05)
+            self.assertEqual(service.started, [])
+            clock[0] += 501
+            service.wake.set()
+            async with asyncio.timeout(2):
+                while len(service.started) < 1:
+                    await asyncio.sleep(0.01)
+        finally:
+            await self._close(store, service)
+
+    async def test_a_failed_track_does_not_count_toward_the_pause(self) -> None:
+        clock = [1_000_000.0]
+        root, store, service = await self._open(tracks=1, minutes=10, concurrency=1)
+
+        async def run(job_id: str) -> None:
+            service.started.append(job_id)
+            if len(service.started) == 1:
+                service.jobs.update(job_id, stage="failed")
+                return
+            await service.gate.wait()
+
+        service.run = run  # type: ignore[method-assign]
+        service.now = clock_now(clock)
+        try:
+            service.jobs.enqueue(1, "original", str(root))
+            service.jobs.enqueue(2, "original", str(root))
+            service.start()
+            async with asyncio.timeout(2):
+                while len(service.started) < 2:
+                    await asyncio.sleep(0.01)
+            self.assertEqual(pace_until(service), 0)
+        finally:
+            await self._close(store, service)
+
+    async def test_either_zero_means_no_pause(self) -> None:
+        cases: tuple[dict[str, object], ...] = (
+            {"pace_tracks": 0, "pace_minutes": 30},
+            {"pace_tracks": 5, "pace_minutes": 0},
+        )
+        for changes in cases:
+            with self.subTest(changes=changes):
+                clock = [1_000_000.0]
+                root, store, service = await self._open(tracks=1, minutes=1)
+                service.now = clock_now(clock)
+                store.update(changes)
+                store.set_pace(4, clock[0] + 9999, announce=False)
+                try:
+                    for track in (1, 2):
+                        service.jobs.enqueue(track, "original", str(root))
+                    service.start()
+                    async with asyncio.timeout(2):
+                        while len(service.started) < 2:
+                            await asyncio.sleep(0.01)
+                    self.assertEqual(store.pace(), (0, 0.0))
+                finally:
+                    await self._close(store, service)
