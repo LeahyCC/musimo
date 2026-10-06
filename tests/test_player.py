@@ -1050,8 +1050,8 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(again["total"], 5)
                         self.assertNotEqual(again["seed"], seed)
                         self.assertTrue(all(row["id"] not in got[:2] for row in again["items"]))
-                        # The finished pass gives its place to the next one.
-                        self.assertNotIn(seed, navidrome.shuffle_orders)
+                        # The finished pass stays for another device or a retried request.
+                        self.assertIn(seed, navidrome.shuffle_orders)
                         seed = again["seed"]
                         stored = navidrome.shuffle_orders[seed]
                         # Older than a day by the same clock the server reads. A fresh CI runner
@@ -1084,9 +1084,10 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 # A large one pushes out the oldest until the ids fit again.
                 navidrome.remember_shuffle("large", [f"l{index}" for index in range(8)])
                 self.assertEqual(list(navidrome.shuffle_orders), ["small4", "small5", "large"])
-                # The next pass replaces the finished one instead of crowding out another.
-                navidrome.remember_shuffle("next", ["l0"], replaces="large")
-                self.assertEqual(list(navidrome.shuffle_orders), ["small4", "small5", "next"])
+                # A pass that is asked again stays ahead of the untouched ones.
+                navidrome.borrow_shuffle("small4")
+                navidrome.remember_shuffle("next", ["l0", "l1"])
+                self.assertEqual(list(navidrome.shuffle_orders), ["small4", "next"])
 
     async def test_a_second_shuffle_reuses_the_walk_past_the_browse_cap(self) -> None:
         library = [{"id": f"s{index}", "title": f"Song {index}"} for index in range(7)]
@@ -1131,6 +1132,10 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                     self.assertGreater(walked, 0)
                     second = await navidrome.select_tracks("", "title", [], [], True, 2)
                     self.assertEqual(len(past_cap), walked)
+                    # A new browse snapshot walks the rest again, so offsets line up at the cap.
+                    navidrome.track_cache.clear()
+                    await navidrome.select_tracks("", "title", [], [], True, 2)
+                    self.assertEqual(len(past_cap), 2 * walked)
                     self.assertEqual(first["total"], 7)
                     self.assertEqual(second["total"], 7)
                     self.assertNotEqual(first["seed"], second["seed"])

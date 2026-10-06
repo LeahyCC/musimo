@@ -34,6 +34,13 @@ class DeezerNoTrack(DeezerAudioError):
     """The account cannot play this track, so Deezer has no file to give for it."""
 
 
+def _passing(exc: BaseException) -> bool:
+    """A timeout or a rate limit. Every other quality would wait or be refused the same way."""
+    if isinstance(exc, httpx.TimeoutException):
+        return True
+    return isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code == 429
+
+
 class Saved(NamedTuple):
     path: Path
     # True when the file is Deezer's FALLBACK, a different recording from the one asked for.
@@ -281,13 +288,16 @@ class Account:
                         )
                 except DeezerAudioError as exc:
                     partial.unlink(missing_ok=True)
+                    if exc.__cause__ is not None and _passing(exc.__cause__):
+                        # The worker reads the cause and retries the song later.
+                        raise
                     last = exc
                     continue
                 except httpx.HTTPError as exc:
                     partial.unlink(missing_ok=True)
+                    if _passing(exc):
+                        raise DeezerAudioError("Deezer did not return the audio") from exc
                     last = DeezerAudioError("Deezer did not return the audio")
-                    # Kept so the worker can tell a timeout or a rate limit from a refusal.
-                    last.__cause__ = exc
                     continue
                 except BaseException:
                     partial.unlink(missing_ok=True)

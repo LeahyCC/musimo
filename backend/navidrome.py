@@ -6,6 +6,7 @@ import random
 import re
 import secrets
 import time
+from array import array
 from collections import OrderedDict
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
@@ -48,8 +49,8 @@ SHUFFLE_ORDER_SECONDS = 24 * 60 * 60
 # count: a few clicks on one device must not push out another device's pass. Two of the largest
 # libraries fit, or many small ones.
 SHUFFLE_ID_LIMIT = 2 * SHUFFLE_GUARD
-# Songs past the browse cap, as ids with the two fields the filters read. Kept as long as a
-# browse snapshot, so a second Shuffle click does not walk the rest of the library again.
+# Songs past the browse cap, as ids with the two fields the filters read. Kept with the browse
+# snapshot they continue, so a second Shuffle click does not walk the rest of the library again.
 TAIL_CACHE_ENTRIES = 2
 # The fields the browser's track schema reads. A full Subsonic song is about 4.5 KB; these
 # are a fraction of that, which is what lets the cap cover large libraries.
@@ -121,10 +122,15 @@ class TrackSnapshot:
 
 @dataclass(frozen=True)
 class TailSnapshot:
-    fetched: float
-    # Past the browse cap: id, casefolded genre and year, in library order. Bodies are dropped,
-    # because a trimmed song is about 2 KB and a large library has hundreds of thousands here.
-    rows: list[tuple[str, str, int]]
+    # The browse snapshot this continues. Offsets shift when the library changes, so a tail
+    # walked against another snapshot could repeat or miss songs at the cap.
+    after: float
+    # Past the browse cap, in library order, as three parallel columns: id, casefolded genre and
+    # year. Bodies are dropped, because a trimmed song is about 2 KB and a large library has
+    # hundreds of thousands here. Genres are shared strings, so that column is only pointers.
+    ids: list[str]
+    genres: list[str]
+    years: array[int]
 
 
 def song_id(row: Mapping[str, object]) -> str:
@@ -143,6 +149,19 @@ def track_number(row: dict[str, object], key: str) -> float:
     return float(value) if isinstance(value, int | float) and not isinstance(value, bool) else 0.0
 
 
+def track_genre(row: dict[str, object]) -> str:
+    return track_text(row, "genre")
+
+
+def track_year(row: dict[str, object]) -> int:
+    return int(track_number(row, "year"))
+
+
+def wanted(genre: str, year: int, genres: set[str], years: set[int]) -> bool:
+    """The filter rule, shared by browse and the ids past the cap. `genres` are casefolded."""
+    return (not genres or genre in genres) and (not years or year in years)
+
+
 def filter_tracks(
     rows: list[dict[str, object]], genres: list[str], years: list[int]
 ) -> list[dict[str, object]]:
@@ -151,8 +170,7 @@ def filter_tracks(
     return [
         row
         for row in rows
-        if (not wanted_genres or track_text(row, "genre") in wanted_genres)
-        and (not wanted_years or int(track_number(row, "year")) in wanted_years)
+        if wanted(track_genre(row), track_year(row), wanted_genres, wanted_years)
     ]
 
 
@@ -749,12 +767,11 @@ class Navidrome:
             **snapshot.facets,
         }
 
-    def remember_shuffle(self, seed: str, ids: list[str], replaces: str = "") -> None:
-        """Keep a pass under its seed. `replaces` is the finished pass this one follows."""
+    def remember_shuffle(self, seed: str, ids: list[str]) -> None:
+        """Keep a pass under its seed. A finished pass is not dropped at once: another device or
+        a retried request may still ask with its seed. Untouched, it is the first to go."""
         now = time.monotonic()
         self.expire_shuffles(now)
-        if replaces:
-            self.shuffle_orders.pop(replaces, None)
         self.shuffle_orders[seed] = (now, ids)
         self.shuffle_orders.move_to_end(seed)
         held = sum(len(order) for _fetched, order in self.shuffle_orders.values())
@@ -782,17 +799,17 @@ class Navidrome:
         self.shuffle_orders.move_to_end(seed)
         return ids
 
-    async def tail(self, query: str) -> TailSnapshot:
-        """Songs past the browse cap, cached and locked the way snapshot() is."""
+    async def tail(self, query: str, after: float) -> TailSnapshot:
+        """Songs past the browse cap, walked once per browse snapshot (`after` is its time)."""
         key = query.casefold()
         lock = self.tail_locks.setdefault(key, asyncio.Lock())
         try:
             async with lock:
                 cached = self.tail_cache.get(key)
-                if cached and time.monotonic() - cached.fetched < TRACK_CACHE_SECONDS:
+                if cached and cached.after == after:
                     self.tail_cache.move_to_end(key)
                     return cached
-                fresh = await self.walk_tail(query)
+                fresh = await self.walk_tail(query, after)
                 self.tail_cache[key] = fresh
                 self.tail_cache.move_to_end(key)
                 while len(self.tail_cache) > TAIL_CACHE_ENTRIES:
@@ -802,8 +819,11 @@ class Navidrome:
             if not lock.locked() and self.tail_locks.get(key) is lock:
                 del self.tail_locks[key]
 
-    async def walk_tail(self, query: str) -> TailSnapshot:
-        rows: list[tuple[str, str, int]] = []
+    async def walk_tail(self, query: str, after: float) -> TailSnapshot:
+        ids: list[str] = []
+        genres: list[str] = []
+        years = array("l")
+        shared: dict[str, str] = {}
         seen: set[str] = set()
         offset = TRACK_CAP
         while offset < SHUFFLE_GUARD:
@@ -819,16 +839,20 @@ class Navidrome:
                     if not text or text in seen:
                         continue
                     seen.add(text)
-                    rows.append((text, track_text(row, "genre"), int(track_number(row, "year"))))
+                    ids.append(text)
+                    genre = track_genre(row)
+                    genres.append(shared.setdefault(genre, genre))
+                    years.append(track_year(row))
             # Same end test as the browse walk: the last page of the batch means the library ended.
             if len(pages[-1]) < TRACK_PAGE:
-                return TailSnapshot(time.monotonic(), rows)
+                return TailSnapshot(after, ids, genres, years)
             offset += PAGE_WINDOWS * TRACK_PAGE
         raise NavidromeError("This library is too large to shuffle")
 
     async def ids_after_cap(
         self,
         query: str,
+        after: float,
         genres: list[str],
         years: list[int],
         seen: set[str],
@@ -837,13 +861,10 @@ class Navidrome:
         until a window is due."""
         wanted_genres = {genre.casefold() for genre in genres}
         wanted_years = set(years)
+        tail = await self.tail(query, after)
         found: list[str] = []
-        for text, genre, year in (await self.tail(query)).rows:
-            if text in seen:
-                continue
-            if wanted_genres and genre not in wanted_genres:
-                continue
-            if wanted_years and year not in wanted_years:
+        for text, genre, year in zip(tail.ids, tail.genres, tail.years, strict=True):
+            if text in seen or not wanted(genre, year, wanted_genres, wanted_years):
                 continue
             seen.add(text)
             found.append(text)
@@ -905,7 +926,7 @@ class Navidrome:
             ids.append(text)
             by_id[text] = row
         if not snapshot.complete:
-            ids.extend(await self.ids_after_cap(query, genres, years, seen))
+            ids.extend(await self.ids_after_cap(query, snapshot.fetched, genres, years, seen))
         random.shuffle(ids)
         cursor = min(limit, len(ids))
         seed = ""
@@ -935,9 +956,8 @@ class Navidrome:
                     "total": len(ids),
                 }
             random.shuffle(nxt)
-            finished = seed
             seed = secrets.token_urlsafe(16)
-            self.remember_shuffle(seed, nxt, replaces=finished)
+            self.remember_shuffle(seed, nxt)
             ids = nxt
             cursor = 0
         chunk = ids[cursor : cursor + limit]

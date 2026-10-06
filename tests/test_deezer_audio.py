@@ -115,6 +115,51 @@ class DeezerAudioTests(unittest.TestCase):
             account.close()
         self.assertEqual(asked, ["FLAC", "MP3_320", "MP3_128"])
 
+    def test_a_timeout_or_rate_limit_stops_the_quality_walk(self) -> None:
+        def timed_out(_method: str, _url: str) -> object:
+            raise httpx.ReadTimeout("The read operation timed out")
+
+        class Limited:
+            def raise_for_status(self) -> None:
+                request = httpx.Request("GET", "https://cdn.test/audio")
+                response = httpx.Response(429, request=request)
+                raise httpx.HTTPStatusError("limited", request=request, response=response)
+
+            def __enter__(self) -> "Limited":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+        for stream, cause in ((timed_out, httpx.ReadTimeout), (lambda *_: Limited(), None)):
+            with self.subTest(cause=cause):
+                account = Account("ab" * 96)
+                account.format = "FLAC"
+                asked: list[str] = []
+
+                def media(_token: str, fmt: str | None = None, asked: list[str] = asked) -> str:
+                    asked.append(fmt or "")
+                    return "https://cdn.test/audio"
+
+                try:
+                    with (
+                        patch.object(
+                            account,
+                            "track",
+                            return_value={"SNG_ID": "1", "TRACK_TOKEN": "token"},
+                        ),
+                        patch.object(account, "media_url", side_effect=media),
+                        patch.object(account.http, "stream", side_effect=stream),
+                        tempfile.TemporaryDirectory() as directory,
+                        self.assertRaises(DeezerAudioError) as raised,
+                    ):
+                        account.save("1", Path(directory), None)
+                finally:
+                    account.close()
+                # A later refusal would hide why, so the walk stops with the cause kept.
+                self.assertEqual(asked, ["FLAC"])
+                self.assertIsInstance(raised.exception.__cause__, httpx.HTTPError)
+
     def test_a_fallback_of_another_recording_is_marked(self) -> None:
         account = Account("ab" * 96)
 

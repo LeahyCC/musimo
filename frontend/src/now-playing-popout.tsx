@@ -129,7 +129,9 @@ const SIZE_KEY = 'musimo.now-playing-size'
 // A paused stage draws nothing new, so after this long the visualizer gives its canvas back.
 const PAUSE_REST_MS = 10_000
 const PRESET_KEY = 'musimo.visualizer-preset'
-const AUTO_KEY = 'musimo.visualizer-auto'
+// Older versions wrote 'on' here on every visit, so only an 'off' in it was a real choice.
+const LEGACY_AUTO_KEY = 'musimo.visualizer-auto'
+const AUTO_KEY = 'musimo.visualizer-auto-choice'
 const NOTICE_KEY = 'musimo.now-playing-visualizer-notice'
 const UNSUPPORTED = 'This browser has no WebGL 2, so the stage shows the artwork.'
 
@@ -191,7 +193,10 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   // On unless it was switched off, or off to start with under reduced motion. Only a choice made
   // by hand is stored, so the system setting keeps deciding until there is one.
   const [autoPresets, setAutoPresetsState] = useState(() =>
-    autoPresetsOn(stored(AUTO_KEY, ''), prefersReducedMotion()),
+    autoPresetsOn(
+      stored(AUTO_KEY, '') || (stored(LEGACY_AUTO_KEY, '') === 'off' ? 'off' : ''),
+      prefersReducedMotion(),
+    ),
   )
   const setAutoPresets = useCallback((on: boolean) => {
     setAutoPresetsState(on)

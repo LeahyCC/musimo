@@ -209,10 +209,12 @@ async def stop_tree(process: asyncio.subprocess.Process) -> None:
     """Stop a child started with its own process group, and everything it started.
 
     A stopped child cannot run its own exit cleanup, so its copy of the YouTube cookie is
-    removed here.
+    removed here. One that had already exited cleaned up itself, and its pid may belong to
+    another process by now.
     """
-    if process.returncode is None:
-        await _stop_group(process)
+    if process.returncode is not None:
+        return
+    await _stop_group(process)
     drop_copy(process.pid)
 
 

@@ -1471,11 +1471,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   // The loaded window ran out while more songs are still on the way. Wait for them, then play.
-  // A song picked or a stop while it waits wins: playing on from the old spot would undo it.
+  // A song picked, a preview started or a stop while it waits wins: playing on from the old spot
+  // would undo it.
   async function fillThenPlay(autoplay: boolean) {
     const startDeck = deck.current
     const startLoads = libraryLoads.current
-    const movedOn = () => deck.current !== startDeck || libraryLoads.current !== startLoads
+    const startMode = mode.current
+    const startPreview = previewCurrent.current
+    const movedOn = () =>
+      deck.current !== startDeck ||
+      libraryLoads.current !== startLoads ||
+      mode.current !== startMode ||
+      previewCurrent.current !== startPreview
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const before = queueRef.current.length
       const result = await extendDeck()
