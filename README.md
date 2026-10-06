@@ -354,7 +354,7 @@ Include version/revision, OS, Docker/Compose versions, screen, reproduction step
 
 For a native Windows installation, follow the [Windows setup guide](docs/windows.md), including the launcher and download helper setup.
 
-CI uses Python 3.12 and 3.14, Node 26 and uv. Dependencies are locked in `uv.lock` and `frontend/package-lock.json`. See [Testing and CI](docs/testing.md) for isolated browser tests, coverage and required checks.
+Checks run locally: `npm ci --prefix frontend` installs git hooks that run `scripts/check.sh` before each commit and push, and GitHub Actions only runs by hand. Use Python 3.12 or 3.14, Node 26 and uv. Dependencies are locked in `uv.lock` and `frontend/package-lock.json`. See [Testing and CI](docs/testing.md) for isolated browser tests, coverage and required checks.
 
 ```sh
 uv sync --locked

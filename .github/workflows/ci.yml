@@ -1,9 +1,8 @@
 name: CI
 
+# Manual only: Actions > CI > Run workflow. Run scripts/check.sh locally instead;
+# the git hooks in .githooks run it before each commit and push.
 on:
-  push:
-    branches: [main]
-  pull_request:
   workflow_dispatch:
 
 permissions:
