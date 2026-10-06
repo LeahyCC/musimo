@@ -17,6 +17,8 @@ HOSTS = ("youtube.com", "youtube-nocookie.com", "youtu.be", "google.com")
 HTTPONLY = "#HttpOnly_"
 # yt-dlp refuses a row with any other field count, and its warning prints the whole row.
 FIELDS = 7
+# The copies this process made, so later yt-dlp clients share one and keep its write-back.
+_made: set[Path] = set()
 
 
 class CookieFileError(ValueError):
@@ -38,6 +40,26 @@ def publish(data: Path) -> None:
         os.environ["MUSIMO_YOUTUBE_COOKIES"] = str(cookie_path(data))
     else:
         os.environ.pop("MUSIMO_YOUTUBE_COOKIES", None)
+
+
+def copy_path(saved_file: Path, pid: int) -> Path:
+    """Where process `pid` keeps its copy of the saved file."""
+    return saved_file.with_name(f"{saved_file.stem}.{pid}{saved_file.suffix}")
+
+
+def drop_copy(pid: int) -> None:
+    """Remove the copy a stopped process made. SIGTERM and SIGKILL skip its own atexit."""
+    source = os.getenv("MUSIMO_YOUTUBE_COOKIES", "").strip()
+    if not source:
+        # Remove cookie already cleared every copy.
+        return
+    copy = copy_path(Path(source), pid)
+    if copy.is_file() and not copy.is_symlink():
+        try:
+            copy.unlink(missing_ok=True)
+        except OSError:
+            # Windows refuses to delete a file another process holds open. It goes later.
+            pass
 
 
 def drop_copies(data: Path) -> None:
@@ -131,14 +153,19 @@ def private_copy() -> str:
     that was already running would put back cookies someone had just replaced or removed in
     Settings. A copy keeps that write inside this process. It sits beside the saved file on the
     data volume: a job's staging folder is in the music library, which may be shared. The copy
-    goes when the process exits, and the next start removes any a stopped worker left.
+    goes when the process exits. The server removes the copy of a process it had to stop, and the
+    next start removes any left after a crash.
     """
     source = os.getenv("MUSIMO_YOUTUBE_COOKIES", "").strip()
     path = Path(source) if source else None
     if path is None or not path.is_file() or path.is_symlink():
         return ""
-    copy = path.with_name(f"{path.stem}.{os.getpid()}{path.suffix}")
+    copy = copy_path(path, os.getpid())
+    if copy in _made and copy.is_file():
+        return str(copy)
     copy.unlink(missing_ok=True)
     write_private(copy, path.read_bytes())
-    atexit.register(copy.unlink, missing_ok=True)
+    if copy not in _made:
+        _made.add(copy)
+        atexit.register(copy.unlink, missing_ok=True)
     return str(copy)

@@ -11,6 +11,8 @@ import time
 from pathlib import Path
 from typing import Protocol, cast
 
+import httpx
+
 from backend.deezer_audio import DeezerCookieRejected, DeezerNoTrack, configured, fetch
 from backend.errors import (
     BLOCKING_CODES,
@@ -164,6 +166,23 @@ def classify(message: str) -> str:
     return "DOWNLOAD_FAILED"
 
 
+def deezer_code(exc: BaseException, message: str) -> str:
+    """The code for a failed Deezer try. A timeout or a rate limit stays retryable.
+
+    The account code wraps httpx errors in its own, so the cause chain is read too. Other
+    wording is not read the yt-dlp way: a Deezer refusal is not a YouTube block.
+    """
+    link: BaseException | None = exc
+    while link is not None:
+        if isinstance(link, httpx.TimeoutException):
+            return "TIMEOUT"
+        if isinstance(link, httpx.HTTPStatusError) and link.response.status_code == 429:
+            return "RATE_LIMITED"
+        link = link.__cause__
+    code = classify(message)
+    return code if code in {"DISK_FULL", "RATE_LIMITED", "TIMEOUT"} else "DOWNLOAD_FAILED"
+
+
 def emit(kind: str, **values: object) -> None:
     print(json.dumps({"kind": kind, **values}), flush=True)
 
@@ -204,11 +223,18 @@ def base_options() -> dict[str, object]:
         options["extractor_args"] = {
             "youtubepot-bgutilscript": {"server_home": [server_home]},
         }
-    # A signed-in cookies file lets an age-restricted video through. The path is the server's,
-    # never a path from the browser, and yt-dlp gets its own copy because it writes back to it.
-    if cookies := private_copy():
-        options["cookiefile"] = cookies
     return options
+
+
+def cookie_options() -> dict[str, object]:
+    """The signed-in cookies file, which lets an age-restricted video through.
+
+    The path is the server's, never a path from the browser, and yt-dlp gets its own copy because
+    it writes back to it. Asked for only when a yt-dlp client is built, so a song the Deezer
+    account saves leaves no copy of the cookie on disk.
+    """
+    cookies = private_copy()
+    return {"cookiefile": cookies} if cookies else {}
 
 
 def live(info: dict[str, object]) -> bool:
@@ -294,7 +320,7 @@ def client(options: dict[str, object]) -> Downloader:
     does not pay for loading yt-dlp."""
     import yt_dlp  # type: ignore[import-untyped]
 
-    return cast(Downloader, yt_dlp.YoutubeDL(options))
+    return cast(Downloader, yt_dlp.YoutubeDL(options | cookie_options()))
 
 
 def main() -> None:
@@ -644,12 +670,14 @@ def main() -> None:
                             # Whatever failed, the next source still gets asked. The attempt has
                             # already removed the file it saved.
                             message = redact(str(exc)) or "Deezer audio failed"
-                            if classify(message) == "DISK_FULL":
+                            code = deezer_code(exc, message)
+                            if code == "DISK_FULL":
                                 raise
                             emit("log", message=message)
-                            remember("deezer", "DOWNLOAD_FAILED", message)
+                            remember("deezer", code, message)
                             if isinstance(exc, DeezerCookieRejected):
                                 stopped.add("deezer")
+                            if "deezer" in stopped:
                                 break
                             continue
                         if saved is None:

@@ -19,6 +19,7 @@ import { Disc3 } from 'lucide-react'
 import { ArtworkMenu } from './artwork-menu'
 import type { MenuPoint } from './artwork-menu'
 import { cx } from './cx'
+import { autoPresetsOn, prefersReducedMotion } from './music-moments'
 import type { Scene } from './music-moments'
 import { NowPlayingOverlay, useOverlayIdle, useStageKeys } from './now-playing-overlay'
 import type { StagePlacement, StageSize, StageView } from './now-playing-overlay'
@@ -187,9 +188,15 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
   useEffect(() => remember(VIEW_KEY, view), [view])
   useEffect(() => remember(SIZE_KEY, size), [size])
   useEffect(() => remember(PRESET_KEY, preset), [preset])
-  // On unless it was switched off.
-  const [autoPresets, setAutoPresets] = useState(() => stored(AUTO_KEY, 'on') !== 'off')
-  useEffect(() => remember(AUTO_KEY, autoPresets ? 'on' : 'off'), [autoPresets])
+  // On unless it was switched off, or off to start with under reduced motion. Only a choice made
+  // by hand is stored, so the system setting keeps deciding until there is one.
+  const [autoPresets, setAutoPresetsState] = useState(() =>
+    autoPresetsOn(stored(AUTO_KEY, ''), prefersReducedMotion()),
+  )
+  const setAutoPresets = useCallback((on: boolean) => {
+    setAutoPresetsState(on)
+    remember(AUTO_KEY, on ? 'on' : 'off')
+  }, [])
   const matchPreset = useCallback((scene: Scene) => {
     setPresetState((current) => presetForScene(current, scene))
   }, [])
@@ -289,6 +296,7 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       setPreset,
       cyclePreset,
       autoPresets,
+      setAutoPresets,
       matchPreset,
       size,
       toggleSize,

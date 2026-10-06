@@ -9,7 +9,13 @@ import isSupported from 'butterchurn/dist/isSupported.min.js'
 
 import { audioGraph, bassReading } from './audio-graph'
 import { cx } from './cx'
-import { createMomentDetector } from './music-moments'
+import { createLatestQueue } from './latest-queue'
+import {
+  CALM_MOMENTS,
+  createMomentDetector,
+  MOMENT_DEFAULTS,
+  prefersReducedMotion,
+} from './music-moments'
 import type { Scene } from './music-moments'
 
 // How long one preset melts into the next when the choice was made by hand.
@@ -35,6 +41,7 @@ let shared: Visualizer | null | undefined
 let loaded = ''
 let showing = ''
 let pending: Promise<void> = Promise.resolve()
+const loadInTurn = createLatestQueue()
 // Set when the music asked for the next change, so that load uses the moment's blend.
 let nextBlend: number | undefined
 let frameWarned = false
@@ -94,7 +101,10 @@ export function MilkdropStage({ preset, onUnsupported, onMoment, progress, class
   momentRef.current = onMoment
   const progressRef = useRef(progress)
   progressRef.current = progress
-  const moments = useRef(createMomentDetector())
+  // Read when the stage mounts, so a change to the system setting applies from the next one.
+  const moments = useRef(
+    createMomentDetector(prefersReducedMotion() ? CALM_MOMENTS : MOMENT_DEFAULTS),
+  )
 
   // Keeps the drawing buffer the canvas's size in device pixels, and draws every frame. The popout
   // is a window of its own, so its frames and resizes come from that window: the tab's would be
@@ -181,12 +191,17 @@ export function MilkdropStage({ preset, onUnsupported, onMoment, progress, class
       // Any change, by hand or by the music, starts the phrase again and waits out this melt.
       moments.current.restart(performance.now(), blend)
       // A preset whose shaders will not compile here leaves the last one drawing.
-      pending = visualizer
-        .loadPreset(chosen, blend)
-        .then(() => {
+      // butterchurn's load waits on itself part way through, so two quick changes run side by
+      // side could finish in the wrong order. They go one after another, and a change that a newer
+      // one replaced while it waited is dropped.
+      pending = loadInTurn(async () => {
+        try {
+          await visualizer.loadPreset(chosen, blend)
           showing = preset
-        })
-        .catch((error: unknown) => console.warn(`MilkDrop preset "${preset}" did not load`, error))
+        } catch (error: unknown) {
+          console.warn(`MilkDrop preset "${preset}" did not load`, error)
+        }
+      }).then(() => {})
     }
     let live = true
     void pending.then(() => {

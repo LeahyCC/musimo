@@ -1,5 +1,7 @@
+import asyncio
 import json
 import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -7,8 +9,9 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from backend.downloads import stop_tree
 from backend.main import create_app
-from backend.worker import base_options
+from backend.worker import base_options, cookie_options
 from backend.youtube_cookies import clean, drop_copies, remove, saved, write
 
 YOUTUBE = ".youtube.com\tTRUE\t/\tTRUE\t0\tLOGIN_INFO\tabc"
@@ -59,7 +62,11 @@ class YoutubeCookieTests(unittest.TestCase):
             path = Path(folder) / "youtube-cookies.txt"
             path.write_text("# Netscape HTTP Cookie File\n" + YOUTUBE + "\n", encoding="utf-8")
             with patch.dict(os.environ, {"MUSIMO_YOUTUBE_COOKIES": str(path)}):
-                copy = Path(str(base_options()["cookiefile"]))
+                # Building the shared options makes no copy. Only a yt-dlp client asks for one.
+                self.assertNotIn("cookiefile", base_options())
+                copy = Path(str(cookie_options()["cookiefile"]))
+                # Later clients in the same process share the copy and its write-back.
+                self.assertEqual(Path(str(cookie_options()["cookiefile"])), copy)
                 # Beside the saved file on the data volume, never in a job's staging folder,
                 # which sits in the music library.
                 self.assertNotEqual(copy, path)
@@ -74,7 +81,7 @@ class YoutubeCookieTests(unittest.TestCase):
                 self.assertFalse(copy.exists())
                 self.assertTrue(path.exists())
             with patch.dict(os.environ, {"MUSIMO_YOUTUBE_COOKIES": ""}):
-                self.assertNotIn("cookiefile", base_options())
+                self.assertEqual(cookie_options(), {})
 
     def test_remove_and_replace_clear_the_copies_stopped_workers_left(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
@@ -88,3 +95,31 @@ class YoutubeCookieTests(unittest.TestCase):
             remove(data)
             self.assertFalse(left.exists())
             self.assertFalse(saved(data))
+
+    def test_the_server_removes_the_copy_of_a_worker_it_stopped(self) -> None:
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "youtube-cookies.txt"
+            path.write_text("# Netscape HTTP Cookie File\n" + YOUTUBE + "\n", encoding="utf-8")
+            with patch.dict(os.environ, {"MUSIMO_YOUTUBE_COOKIES": str(path)}):
+
+                async def stop_a_worker() -> Path:
+                    # A worker that makes its copy and then hangs, as a paused job's would.
+                    process = await asyncio.create_subprocess_exec(
+                        sys.executable,
+                        "-c",
+                        "import time\n"
+                        "from backend.youtube_cookies import private_copy\n"
+                        "print(private_copy(), flush=True)\n"
+                        "time.sleep(60)\n",
+                        stdout=asyncio.subprocess.PIPE,
+                        start_new_session=sys.platform != "win32",
+                    )
+                    assert process.stdout is not None
+                    copy = Path((await process.stdout.readline()).decode().strip())
+                    self.assertTrue(copy.is_file())
+                    await stop_tree(process)
+                    return copy
+
+                copy = asyncio.run(stop_a_worker())
+                self.assertFalse(copy.exists())
+                self.assertTrue(path.exists())

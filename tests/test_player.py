@@ -6,6 +6,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 import httpx
@@ -1049,6 +1050,9 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(again["total"], 5)
                         self.assertNotEqual(again["seed"], seed)
                         self.assertTrue(all(row["id"] not in got[:2] for row in again["items"]))
+                        # The finished pass gives its place to the next one.
+                        self.assertNotIn(seed, navidrome.shuffle_orders)
+                        seed = again["seed"]
                         stored = navidrome.shuffle_orders[seed]
                         # Older than a day by the same clock the server reads. A fresh CI runner
                         # has been up for less than a day, so 0.0 is not old enough there.
@@ -1067,6 +1071,69 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                             )
                             self.assertEqual(refused.status_code, 503)
                             self.assertIn("too large", refused.json()["detail"])
+            store.close()
+
+    async def test_shuffle_orders_are_capped_by_the_ids_they_hold(self) -> None:
+        async with httpx.AsyncClient() as upstream_client:
+            navidrome = Navidrome(cast(Store, None), upstream_client)
+            with patch("backend.navidrome.SHUFFLE_ID_LIMIT", 10):
+                # Many small passes, as from several devices, all stay.
+                for index in range(6):
+                    navidrome.remember_shuffle(f"small{index}", [f"s{index}"])
+                self.assertEqual(len(navidrome.shuffle_orders), 6)
+                # A large one pushes out the oldest until the ids fit again.
+                navidrome.remember_shuffle("large", [f"l{index}" for index in range(8)])
+                self.assertEqual(list(navidrome.shuffle_orders), ["small4", "small5", "large"])
+                # The next pass replaces the finished one instead of crowding out another.
+                navidrome.remember_shuffle("next", ["l0"], replaces="large")
+                self.assertEqual(list(navidrome.shuffle_orders), ["small4", "small5", "next"])
+
+    async def test_a_second_shuffle_reuses_the_walk_past_the_browse_cap(self) -> None:
+        library = [{"id": f"s{index}", "title": f"Song {index}"} for index in range(7)]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            store = Store(root / "musimo.sqlite3")
+            store.update({"navidrome_url": "http://navidrome:4533"})
+            credentials = root / "navidrome.json"
+            credentials.write_text(
+                json.dumps({"username": "listener", "password": "private password"}),
+                encoding="utf-8",
+            )
+            past_cap: list[int] = []
+
+            def upstream(request: httpx.Request) -> httpx.Response:
+                path = request.url.path
+                if path.endswith("/ping"):
+                    return subsonic(serverVersion="0.63.0")
+                if path.endswith("/search3"):
+                    offset = int(request.url.params.get("songOffset", 0))
+                    size = int(request.url.params.get("songCount", 0))
+                    if offset >= 4:
+                        past_cap.append(offset)
+                    return subsonic(searchResult3={"song": library[offset : offset + size]})
+                if path.endswith("/getSong"):
+                    song_id = request.url.params.get("id")
+                    song = next((row for row in library if row["id"] == song_id), None)
+                    return subsonic(song=song) if song else subsonic()
+                return subsonic()
+
+            with (
+                patch("backend.navidrome.TRACK_CAP", 4),
+                patch("backend.navidrome.TRACK_PAGE", 2),
+                patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
+            ):
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(upstream)
+                ) as upstream_client:
+                    navidrome = Navidrome(store, upstream_client)
+                    first = await navidrome.select_tracks("", "title", [], [], True, 2)
+                    walked = len(past_cap)
+                    self.assertGreater(walked, 0)
+                    second = await navidrome.select_tracks("", "title", [], [], True, 2)
+                    self.assertEqual(len(past_cap), walked)
+                    self.assertEqual(first["total"], 7)
+                    self.assertEqual(second["total"], 7)
+                    self.assertNotEqual(first["seed"], second["seed"])
             store.close()
 
     async def test_linked_liked_playlist_is_reported_without_creating_it(self) -> None:

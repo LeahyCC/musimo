@@ -603,7 +603,9 @@ function VisualizerSettings() {
           </FieldSelect>
           <p id="visualizer-auto-note" className="text-tiny">
             Follows the beat. Early in a song only a big hit changes it, slowly. Later it changes
-            every few beats, quicker near the end, and a quiet part gets a calmer picture.
+            every few beats, quicker near the end, and a quiet part gets a calmer picture. The whole
+            picture can change about once a second, which flashes; with reduced motion set on this
+            device it starts off, and when on it changes at most every 8 seconds, slowly.
           </p>
         </div>
       </fieldset>

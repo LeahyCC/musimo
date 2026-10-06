@@ -1234,6 +1234,61 @@ class WalkFollowUpTests(unittest.TestCase):
             self.assertEqual(events[-1]["code"], "RATE_LIMITED")
             self.assertTrue(events[-1]["retryable"])
 
+    def test_a_deezer_timeout_with_no_youtube_song_stays_retryable(self) -> None:
+        calls: list[int] = []
+
+        def stalls(*_: object) -> Saved:
+            calls.append(1)
+            raise httpx.ReadTimeout("The read operation timed out")
+
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [{"entries": []}],
+                env={"MUSIMO_SOURCE_ORDER": "deezer,youtube", "MUSIMO_MAX_ATTEMPTS": "3"},
+                account=stalls,
+            )
+            self.assertEqual(events[-1]["code"], "TIMEOUT")
+            self.assertEqual(events[-1]["source"], "deezer")
+            self.assertTrue(events[-1]["retryable"])
+            # A stalled Deezer is not asked again this run, so it cannot use up the budget.
+            self.assertEqual(len(calls), 1)
+
+    def test_a_wrapped_deezer_rate_limit_stays_retryable(self) -> None:
+        def limited(*_: object) -> Saved:
+            request = httpx.Request("GET", "https://media.deezer.com/v1/get_url")
+            response = httpx.Response(429, request=request)
+            try:
+                response.raise_for_status()
+            except httpx.HTTPStatusError as exc:
+                raise DeezerAudioError("Deezer did not answer") from exc
+            raise AssertionError("unreachable")
+
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [{"entries": []}],
+                env={"MUSIMO_SOURCE_ORDER": "deezer,youtube"},
+                account=limited,
+            )
+            self.assertEqual(events[-1]["code"], "RATE_LIMITED")
+            self.assertTrue(events[-1]["retryable"])
+
+    def test_a_plain_deezer_refusal_is_not_read_as_a_youtube_block(self) -> None:
+        def refuses(*_: object) -> Saved:
+            raise DeezerAudioError("Deezer answered 403, sign in again")
+
+        with tempfile.TemporaryDirectory() as directory:
+            events, _, _ = run_walk(
+                directory,
+                [{"entries": []}],
+                env={"MUSIMO_SOURCE_ORDER": "deezer,youtube"},
+                account=refuses,
+            )
+            self.assertEqual(events[-1]["code"], "DOWNLOAD_FAILED")
+            self.assertFalse(events[-1]["retryable"])
+            self.assertEqual([row for row in events if row["kind"] == "blocked"], [])
+
     def test_an_earlier_failure_does_not_outrank_a_later_wrong_length(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             events, _, _ = run_walk(

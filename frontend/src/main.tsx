@@ -52,7 +52,7 @@ import {
   sourceSchema,
   youtubeCookiesSchema,
 } from './api'
-import type { SettingKey } from './api'
+import type { SettingKey, Settings } from './api'
 import { librarySchema } from './api'
 import { namingSchema } from './api'
 import { controlsSchema, jobSchema } from './api'
@@ -70,7 +70,7 @@ import { PodcastPage } from './podcasts'
 import { scanIsReady, systemIsReady } from './readiness'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
-import { settingsPatch } from './settings-patch'
+import { cleanArl, settingsPatch, withYoutubeCookies } from './settings-patch'
 import { startTheme } from './theme/store'
 import {
   Button,
@@ -863,7 +863,7 @@ function SettingsPage() {
   const cookieSaved = settings.data?.youtube_cookies.value === true
   const cookiePending = cookieText.trim().length > 0 || removeCookies
   const arlSaved = settings.data?.deezer_cookie.value === true
-  const typedArl = typeof draft.deezer_arl === 'string' ? draft.deezer_arl.trim() : ''
+  const typedArl = typeof draft.deezer_arl === 'string' ? cleanArl(draft.deezer_arl) : ''
   // What the source list should assume once this page is saved.
   const arlAfterSave = typedArl !== '' || (arlSaved && !removeArl)
 
@@ -922,14 +922,24 @@ function SettingsPage() {
 
   const save = useMutation({
     mutationFn: async () => {
+      let cookies: { saved: boolean } | undefined
       if (removeCookies && cookieText.trim().length === 0) {
-        await api('youtube-cookies', youtubeCookiesSchema, { method: 'DELETE' })
+        cookies = await api('youtube-cookies', youtubeCookiesSchema, { method: 'DELETE' })
       } else if (cookieText.trim()) {
-        await api('youtube-cookies', youtubeCookiesSchema, {
+        cookies = await api('youtube-cookies', youtubeCookiesSchema, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ text: cookieText }),
         })
+      }
+
+      // The cookie file has changed whatever the settings save below does, so the page says so
+      // now rather than still offering to save or remove it.
+      if (cookies) {
+        const saved = cookies.saved
+        client.setQueryData<Settings>(['settings'], (old) => old && withYoutubeCookies(old, saved))
+        setCookieText('')
+        setRemoveCookies(false)
       }
 
       const changes = settingsPatch(draft, removeArl)
@@ -952,6 +962,8 @@ function SettingsPage() {
       setRemoveArl(false)
       setSaved(true)
     },
+    // A failed save may still have changed something on the server, so read back what is there.
+    onError: () => client.invalidateQueries({ queryKey: ['settings'] }),
   })
   // The confirmation is for the moment after a save. Left up, the bar would be back to saying
   // nothing while still taking room at the foot of the page.
@@ -1328,7 +1340,6 @@ function SettingsPage() {
                   type="password"
                   autoComplete="off"
                   spellCheck={false}
-                  maxLength={192}
                   disabled={save.isPending}
                   placeholder={
                     arlSaved ? 'Paste a new cookie to replace it' : 'Paste the arl cookie'
@@ -1436,14 +1447,23 @@ function SettingsPage() {
             {/* With nothing to save there is nothing to say, so the bar comes only with an edit, a
                 failed save, or the confirmation that follows a save. */}
             {(isDirty || saved || save.isError) && (
-              <div className="save-bar sticky bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+8px)] z-sticky flex items-center justify-between gap-[15px] rounded-[7px] border border-good-line bg-good-bg px-[17px] py-[13px] max-phone:p-[12px]">
-                <span className="text-small" role="status">
-                  {save.isError
-                    ? save.error.message
-                    : saved
-                      ? 'Saved. You can safely refresh.'
-                      : 'You have unsaved changes.'}
-                </span>
+              <div
+                className={cx(
+                  'save-bar sticky bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+8px)] z-sticky flex items-center justify-between gap-[15px] rounded-[7px] border px-[17px] py-[13px] max-phone:p-[12px]',
+                  save.isError
+                    ? 'border-danger-line bg-danger-bg text-danger'
+                    : 'border-good-line bg-good-bg',
+                )}
+              >
+                {save.isError ? (
+                  <span className="text-small" role="alert">
+                    {save.error.message}
+                  </span>
+                ) : (
+                  <span className="text-small" role="status">
+                    {saved ? 'Saved. You can safely refresh.' : 'You have unsaved changes.'}
+                  </span>
+                )}
                 <Button
                   variant="primary"
                   type="submit"

@@ -497,7 +497,23 @@ export async function api<T>(path: string, schema: z.ZodType<T>, init?: RequestI
     if (problem.success) {
       throw new ApiError(problem.data.detail, problem.data.code)
     }
+    const invalid = validationSchema.safeParse(data)
+    if (invalid.success && invalid.data.detail.length > 0) {
+      throw new ApiError(validationMessage(invalid.data.detail))
+    }
     throw new Error(`Request failed (${response.status})`)
   }
   return schema.parse(data)
+}
+
+// FastAPI's request validation sends detail as a list of problems, each with a msg.
+const validationSchema = z.object({ detail: z.array(z.object({ msg: z.string() })) })
+
+// Pydantic puts "Value error, " ahead of a validator's own words, which only reads as noise here.
+export function validationMessage(problems: { msg: string }[]): string {
+  return problems
+    .map((problem) => problem.msg.replace(/^Value error, /, '').trim())
+    .filter(Boolean)
+    .map((msg) => (/[.!?]$/.test(msg) ? msg : `${msg}.`))
+    .join(' ')
 }

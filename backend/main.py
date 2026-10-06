@@ -102,6 +102,9 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         os.environ["MUSIMO_YTDLP_CACHE"] = str(data / "ytdlp-cache")
         store = Store(data / "musimo.sqlite3")
         deezer_cookie.adopt(store, data)
+        # The seed has done its job. Out of the environment, the link resolver, waveform and
+        # ffmpeg children cannot inherit the cookie.
+        os.environ.pop("MUSIMO_DEEZER_ARL", None)
         publish_youtube_cookies(data)
         drop_youtube_cookie_copies(data)
         versions = await asyncio.to_thread(runtime_versions)
