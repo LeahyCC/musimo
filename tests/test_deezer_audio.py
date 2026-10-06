@@ -324,7 +324,10 @@ class DeezerAudioTests(unittest.TestCase):
                 self.assertTrue(client.get("/api/settings").json()["deezer_cookie"]["value"])
                 self.assertEqual(arl_file.read_text(encoding="utf-8"), cookie)
                 client.patch("/api/settings", json={"deezer_arl": ""})
-            # Removed in Settings stays removed, though the variable is still set.
+                # Seeded, so the server's children cannot inherit it.
+                self.assertNotIn("MUSIMO_DEEZER_ARL", os.environ)
+            # Removed in Settings stays removed, though the variable is set again.
+            os.environ["MUSIMO_DEEZER_ARL"] = cookie
             with TestClient(create_app(Path(folder))) as client:
                 self.assertFalse(client.get("/api/settings").json()["deezer_cookie"]["value"])
             self.assertFalse(arl_file.exists())

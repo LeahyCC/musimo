@@ -283,9 +283,11 @@ class Account:
                     partial.unlink(missing_ok=True)
                     last = exc
                     continue
-                except httpx.HTTPError:
+                except httpx.HTTPError as exc:
                     partial.unlink(missing_ok=True)
                     last = DeezerAudioError("Deezer did not return the audio")
+                    # Kept so the worker can tell a timeout or a rate limit from a refusal.
+                    last.__cause__ = exc
                     continue
                 except BaseException:
                     partial.unlink(missing_ok=True)

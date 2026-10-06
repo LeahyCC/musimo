@@ -22,7 +22,7 @@ from urllib.parse import quote, urlsplit
 from backend.errors import geo_restricted
 from backend.library import normalize
 from backend.sources import Site, by_source, match, match_entry, reaches
-from backend.worker import Downloader, base_options, emit, live, redact
+from backend.worker import Downloader, base_options, cookie_options, emit, live, redact
 
 # One more than the preview cap, so the server can say the list was cut short.
 LIMIT = 501
@@ -473,13 +473,17 @@ def main() -> None:
     # Said first, before the slow read, so a resolve that runs out of time still told the server
     # what kind of page it was on.
     emit("page", extractor=page_extractor(url))
-    options = base_options() | {
-        "skip_download": True,
-        "extract_flat": "in_playlist",
-        "noplaylist": False,
-        "playlistend": LIMIT,
-        "allowed_extractors": site.allowed_extractors(),
-    }
+    options = (
+        base_options()
+        | cookie_options()
+        | {
+            "skip_download": True,
+            "extract_flat": "in_playlist",
+            "noplaylist": False,
+            "playlistend": LIMIT,
+            "allowed_extractors": site.allowed_extractors(),
+        }
+    )
     downloader = cast(Downloader, yt_dlp.YoutubeDL(options))
 
     def lookup(address: str) -> dict[str, object] | None:

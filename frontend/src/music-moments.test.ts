@@ -1,6 +1,12 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { createMomentDetector, MOMENT_DEFAULTS } from './music-moments'
+import {
+  autoPresetsOn,
+  CALM_MOMENTS,
+  createMomentDetector,
+  MOMENT_DEFAULTS,
+  prefersReducedMotion,
+} from './music-moments'
 
 const FRAME = 16
 
@@ -129,5 +135,48 @@ describe('music moments', () => {
     const beatMs = 60_000 / 180
     expect(MOMENT_DEFAULTS.blendLate * 1000).toBeLessThan(MOMENT_DEFAULTS.lateBeats * beatMs)
     expect(MOMENT_DEFAULTS.blendMiddle * 1000).toBeLessThan(MOMENT_DEFAULTS.middleBeats * beatMs)
+  })
+})
+
+describe('reduced motion', () => {
+  afterEach(() => vi.unstubAllGlobals())
+
+  // Late in a song the defaults change about every 2 s; calm moments wait 8 s and melt slowly.
+  it('spaces changes at least 8 s apart late in a song, with a long melt', () => {
+    const detector = createMomentDetector(CALM_MOMENTS)
+    feedBeats(detector, 0, 8_000, 0)
+    detector.restart(8_000, 0)
+    const moments = feedBeats(detector, 8_000, 30_000, 0.9, 0)
+    expect(moments.length).toBeGreaterThan(1)
+    expect(moments.every((moment) => moment.blend >= 2)).toBe(true)
+    for (let i = 1; i < moments.length; i++)
+      expect((moments[i]?.at ?? 0) - (moments[i - 1]?.at ?? 0)).toBeGreaterThanOrEqual(8_000)
+    expect(feedBeats(createMomentDetector(), 8_000, 30_000, 0.9, 0).length).toBeGreaterThan(
+      moments.length,
+    )
+  })
+
+  it('also waits out the gap after a change made by hand', () => {
+    const detector = createMomentDetector(CALM_MOMENTS)
+    feedBeats(detector, 0, 8_000, 0)
+    detector.restart(8_000, 0)
+    expect(feedBeats(detector, 8_000, 7_900, 0.9, 0)).toEqual([])
+  })
+
+  it('starts "Change with the music" off for reduced motion unless it was chosen', () => {
+    expect(autoPresetsOn('', false)).toBe(true)
+    expect(autoPresetsOn('', true)).toBe(false)
+    expect(autoPresetsOn('on', true)).toBe(true)
+    expect(autoPresetsOn('off', false)).toBe(false)
+  })
+
+  it('reads the system setting, and says no where it cannot be read', () => {
+    expect(prefersReducedMotion()).toBe(false)
+    vi.stubGlobal('window', {})
+    expect(prefersReducedMotion()).toBe(false)
+    vi.stubGlobal('window', {
+      matchMedia: (query: string) => ({ matches: query === '(prefers-reduced-motion: reduce)' }),
+    })
+    expect(prefersReducedMotion()).toBe(true)
   })
 })

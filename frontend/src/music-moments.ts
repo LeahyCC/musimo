@@ -40,6 +40,8 @@ export type MomentOptions = {
   blendEarly: number
   blendMiddle: number
   blendLate: number
+  /** The least time from one change to the next, whatever the beat says. */
+  minGapMs: number
 }
 
 export const MOMENT_DEFAULTS: MomentOptions = {
@@ -57,6 +59,39 @@ export const MOMENT_DEFAULTS: MomentOptions = {
   blendEarly: 2.7,
   blendMiddle: 0.9,
   blendLate: 0.35,
+  minGapMs: 0,
+}
+
+/**
+ * For someone who asked for less motion. Late in a song the defaults change the whole picture
+ * about once a second with a quick melt, which can flash. Here every change waits at least 8 s
+ * and melts as slowly as one chosen by hand.
+ */
+export const CALM_MOMENTS: MomentOptions = {
+  ...MOMENT_DEFAULTS,
+  blendEarly: 2.7,
+  blendMiddle: 2.7,
+  blendLate: 2.7,
+  minGapMs: 8000,
+}
+
+/** Whether the system asks for reduced motion. False where there is no way to ask. */
+export function prefersReducedMotion(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    typeof window.matchMedia === 'function' &&
+    window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  )
+}
+
+/**
+ * Whether "Change with the music" is on, from what was stored ('on', 'off', or nothing yet). A
+ * choice made in settings stands; with none, it starts off for someone who asked for less motion.
+ */
+export function autoPresetsOn(stored: string, reducedMotion: boolean): boolean {
+  if (stored === 'on') return true
+  if (stored === 'off') return false
+  return !reducedMotion
 }
 
 const FAST_MS = 500
@@ -104,7 +139,7 @@ export function createMomentDetector(options: MomentOptions = MOMENT_DEFAULTS) {
       dropSince = undefined
       dropArmed = false
       lastBeat = now
-      holdUntil = now + blendSeconds * 1000
+      holdUntil = now + Math.max(blendSeconds * 1000, options.minGapMs)
     },
     /**
      * Feeds one bass reading, taken at `now` in milliseconds. `progress` is 0 at the start of the
@@ -154,7 +189,7 @@ export function createMomentDetector(options: MomentOptions = MOMENT_DEFAULTS) {
       beats = 0
       dropSince = undefined
       if (dropDue) dropArmed = false
-      holdUntil = now + blend * 1000
+      holdUntil = now + Math.max(blend * 1000, options.minGapMs)
       return { scene, blend }
     },
   }
