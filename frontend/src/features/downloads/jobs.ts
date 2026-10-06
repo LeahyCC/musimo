@@ -20,6 +20,16 @@ export const unmatchedJob = (job: Pick<DownloadJob, 'stage' | 'error_code'>) =>
 export const errorJob = (job: Pick<DownloadJob, 'stage' | 'error_code'>) =>
   job.stage === 'failed' && job.error_code !== 'NO_MATCH'
 
+/** The queue line while a pause between groups of tracks is still ahead. `now` is milliseconds. */
+export function paceWaitText(paceUntil: number, now: number): string {
+  if (!(paceUntil > 0) || paceUntil * 1000 <= now) return ''
+  const time = new Date(paceUntil * 1000).toLocaleTimeString([], {
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+  return `Waiting until ${time} before the next tracks.`
+}
+
 /** Counts from the server's reason list, which covers jobs past the 50 the page shows. */
 export function failureTallies(summary: QueueData['summary'] | undefined, jobs: DownloadJob[]) {
   const reasons = summary?.failure_reasons ?? []
@@ -88,6 +98,7 @@ export function updateJob(client: QueryClient, job: DownloadJob) {
         source_paused: false,
         paused_sources: [],
         source_labels: {},
+        pace_until: 0,
       },
       summary,
       jobs: [job, ...(old?.jobs ?? []).filter((item) => item.id !== job.id)],

@@ -6,7 +6,7 @@ import { RowMenu } from '../../components/row-menu'
 import type { RowMenuAction } from '../../components/row-menu'
 import { Button, ErrorBanner, FieldSelect } from '../../ui'
 import { pausedSources } from './download-target'
-import { activeJob, failureTallies, useJobs } from './jobs'
+import { activeJob, failureTallies, paceWaitText, useJobs } from './jobs'
 import type { QueueData } from './jobs'
 
 export function QueueControls() {
@@ -37,6 +37,9 @@ export function QueueControls() {
     },
   })
   const visible = (queue.data?.jobs ?? []).filter((job) => !job.hidden)
+  const wait = visible.some(activeJob)
+    ? paceWaitText(queue.data?.controls.pace_until ?? 0, Date.now())
+    : ''
   const { unmatched, errors } = failureTallies(queue.data?.summary, visible)
   const hasFinished = queue.data?.jobs.some((job) => !job.hidden && !activeJob(job)) ?? false
   const moreActions: RowMenuAction[] = [
@@ -109,6 +112,11 @@ export function QueueControls() {
           <RowMenu label="More queue actions" actions={moreActions} disabled={command.isPending} />
         )}
       </div>
+      {wait && (
+        <p className="mb-3 text-small text-muted" role="status">
+          {wait}
+        </p>
+      )}
       {paused.map(({ source, label }) => (
         <ErrorBanner role="alert" key={source}>
           {label} paused after repeated blocking errors.{' '}

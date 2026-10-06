@@ -83,6 +83,10 @@ def install_settings_routes(
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         notify()
+        # The queue reads these on its next pass. Wake it so a pause change is not
+        # stuck behind the wait it is already in.
+        if changes.keys() & {"pace_tracks", "pace_minutes"}:
+            get_downloads().wake.set()
         return public_settings(store, data)
 
     @app.put("/api/youtube-cookies")

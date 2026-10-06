@@ -114,13 +114,22 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
                         "source_paused": True,
                         "paused_sources": ["youtube"],
                         "source_labels": CATALOG_LABELS,
+                        "pace_until": 0.0,
                     },
+                )
+                self.assertEqual(
+                    tuple(
+                        store.db.execute(
+                            "SELECT pace_started, pace_until FROM queue_control"
+                        ).fetchone()
+                    ),
+                    (0, 0.0),
                 )
                 self.assertEqual(
                     [tuple(row) for row in store.db.execute("SELECT * FROM source_control")],
                     [("youtube", 1, 2)],
                 )
-                self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], 4)
+                self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], 5)
             finally:
                 store.close()
 
@@ -132,6 +141,7 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
                 "source_paused": False,
                 "paused_sources": [],
                 "source_labels": CATALOG_LABELS,
+                "pace_until": 0.0,
             },
         )
 

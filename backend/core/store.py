@@ -97,7 +97,7 @@ class Store:
         self.db.execute("PRAGMA busy_timeout=5000")
         self.db.execute("PRAGMA foreign_keys=ON")
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 4:
+        if version > 5:
             raise RuntimeError("Database is newer than this application; do not downgrade in place")
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -215,6 +215,16 @@ class Store:
                 PRAGMA user_version=4;
                 COMMIT;
             """)
+        if version < 5:
+            # The pause between groups of downloads. The count is how many tracks have
+            # finished since the last wait, and pace_until is the unix time that wait ends.
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                ALTER TABLE queue_control ADD COLUMN pace_started INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE queue_control ADD COLUMN pace_until REAL NOT NULL DEFAULT 0;
+                PRAGMA user_version=5;
+                COMMIT;
+            """)
         self.seed()
 
     def paused_sources(self) -> list[str]:
@@ -233,10 +243,12 @@ class Store:
         keep reading it.
         """
         with self.lock:
-            paused = self.db.execute("SELECT paused FROM queue_control WHERE id=1").fetchone()[0]
+            row = self.db.execute(
+                "SELECT paused, pace_until FROM queue_control WHERE id=1"
+            ).fetchone()
             sources = self.paused_sources()
         return {
-            "paused": bool(paused),
+            "paused": bool(row["paused"]),
             "source_paused": "youtube" in sources,
             "paused_sources": sources,
             # The names to show for them and for the catalog rows, so the browser does not keep a
@@ -245,7 +257,33 @@ class Store:
             "source_labels": {
                 source: source_label(source) for source in (*CATALOG_ORDER, *sources)
             },
+            # Unix time the pause between groups ends. 0 means the queue is not waiting.
+            "pace_until": float(row["pace_until"]),
         }
+
+    def pace(self) -> tuple[int, float]:
+        """Tracks started since the last pause, and the unix time that pause ends."""
+        with self.lock:
+            row = self.db.execute(
+                "SELECT pace_started, pace_until FROM queue_control WHERE id=1"
+            ).fetchone()
+        return int(row["pace_started"]), float(row["pace_until"])
+
+    def set_pace(self, started: int, until: float, *, announce: bool) -> None:
+        """Store the pause between groups. `announce` publishes it on the queue stream."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                self.db.execute(
+                    "UPDATE queue_control SET pace_started=?, pace_until=? WHERE id=1",
+                    (started, until),
+                )
+                if announce:
+                    self._event("queue.updated", self.controls())
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
 
     def save_library_status(self, payload: dict[str, object]) -> None:
         with self.lock:

@@ -80,6 +80,8 @@ export const controlsSchema = z.object({
   paused_sources: z.array(z.string()).default([]),
   // The server's name for each paused source. Older servers send none.
   source_labels: z.record(z.string(), z.string()).default({}),
+  // Unix time a pause between groups of tracks ends. 0 means the queue is not waiting.
+  pace_until: z.number().default(0),
 })
 export type Controls = z.infer<typeof controlsSchema>
 export const jobSummarySchema = z.object({
@@ -371,6 +373,8 @@ export const settingsSchema = z.object({
   max_attempts: field(z.number()),
   retry_base_seconds: field(z.number()),
   retry_cap_seconds: field(z.number()),
+  pace_tracks: field(z.number()).default({ value: 0, origin: 'default', locked: false }),
+  pace_minutes: field(z.number()).default({ value: 0, origin: 'default', locked: false }),
   destination: field(z.string()),
   naming_template: field(z.string()),
   // Always empty from the server. Sent only to replace or remove the saved cookie.
