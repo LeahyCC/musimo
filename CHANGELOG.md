@@ -5,6 +5,7 @@
 ### Search and downloads
 
 - Pause between groups of downloads from Settings: a track count, then a wait in minutes, so a long queue does not keep the connection busy the whole time
+- Remove a stopped worker's YouTube cookie copy when Windows launched Python through another process, so the filename's process id is the interpreter's, not the launcher's
 - Start the file download while lyrics, MusicBrainz, remaining catalog tags and the cover are still loading, and tag once they arrive. Album and artist batches keep the listing's title, artist and length so matching does not wait on another catalog call per track. A catalog miss keeps those listing tags instead of waiting out a Deezer cooldown, and a later catalog response keeps lyrics already found. Fragmented audio downloads four pieces at a time, and yt-dlp reuses a player cache in the data directory
 - Name a queued catalog song with the first source that can run, so the card is right before a worker starts
 - Save a catalog track from a Deezer account when the cookie is set, then name and tag it like any other download. A miss falls back to the YouTube match
