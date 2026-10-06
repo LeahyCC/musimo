@@ -13,7 +13,8 @@ from backend.main import create_app
 class FoundationTests(unittest.TestCase):
     def test_destination_selects_configured_roots_without_resolving_input(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
-            data = Path(folder)
+            # The app resolves its roots. macOS keeps temp folders behind a /var symlink.
+            data = Path(folder).resolve()
             music = data / "music"
             music.mkdir()
             with (
@@ -187,7 +188,7 @@ class FoundationTests(unittest.TestCase):
 
     def test_read_only_destinations_are_rejected(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
-            data = Path(folder)
+            data = Path(folder).resolve()
             readonly = data / "readonly"
             readonly.mkdir()
             writable = data / "writable"
@@ -216,7 +217,7 @@ class FoundationTests(unittest.TestCase):
 
     def test_destination_write_probe_succeeds_on_writable_path(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
-            data = Path(folder)
+            data = Path(folder).resolve()
             music = data / "music"
             music.mkdir()
             with (
