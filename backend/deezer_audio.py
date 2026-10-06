@@ -259,8 +259,8 @@ class Account:
         if isinstance(fallback, dict) and fallback.get("TRACK_TOKEN"):
             tokens.append((str(fallback.get("SNG_ID") or song_id), str(fallback["TRACK_TOKEN"])))
         last = DeezerAudioError("Deezer did not return the audio")
-        for fmt in formats_to_try(self.format):
-            for token_id, token in tokens:
+        for token_id, token in tokens:
+            for fmt in formats_to_try(self.format):
                 try:
                     url = self.media_url(token, fmt)
                 except DeezerAudioError as exc:

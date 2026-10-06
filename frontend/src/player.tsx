@@ -680,6 +680,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const request = useRef<AbortController | null>(null)
   const previewCurrent = useRef<MusicResult | null>(null)
   const libraryCurrent = useRef<LibraryTrack | null>(null)
+  // Bumped on every library load, so a wait for more shuffle songs can tell the listener moved on.
+  const libraryLoads = useRef(0)
   const queueRef = useRef<LibraryTrack[]>([])
   const indexRef = useRef(-1)
   // A library shuffle bigger than the saved queue. Null for an album, a playlist, or a short list.
@@ -1325,6 +1327,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     mode.current = 'library'
     previewCurrent.current = null
     libraryCurrent.current = item
+    libraryLoads.current += 1
     wantPlay.current = autoplay
     chosen.current.delete(item)
     saveChosen()
@@ -1468,10 +1471,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   // The loaded window ran out while more songs are still on the way. Wait for them, then play.
+  // A song picked or a stop while it waits wins: playing on from the old spot would undo it.
   async function fillThenPlay(autoplay: boolean) {
+    const startDeck = deck.current
+    const startLoads = libraryLoads.current
+    const movedOn = () => deck.current !== startDeck || libraryLoads.current !== startLoads
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const before = queueRef.current.length
       const result = await extendDeck()
+      if (movedOn()) return
       if (queueRef.current.length > before) break
       if (result !== 'skipped') break
     }

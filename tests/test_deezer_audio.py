@@ -164,6 +164,51 @@ class DeezerAudioTests(unittest.TestCase):
         finally:
             account.close()
 
+    def test_every_quality_of_the_track_comes_before_the_fallback(self) -> None:
+        account = Account("ab" * 96)
+        account.format = "FLAC"
+        asked: list[tuple[str, str]] = []
+
+        def media(token: str, fmt: str | None = None) -> str:
+            asked.append((token, fmt or ""))
+            if fmt == "FLAC":
+                raise DeezerAudioError("refused")
+            return "https://cdn.test/audio"
+
+        class Response:
+            headers: dict[str, str] = {}
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def iter_bytes(self) -> list[bytes]:
+                return [b"\x01" * BLOCK]
+
+            def __enter__(self) -> "Response":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+        song = {
+            "SNG_ID": "1",
+            "TRACK_TOKEN": "own",
+            "FALLBACK": {"SNG_ID": "2", "TRACK_TOKEN": "other"},
+        }
+        try:
+            with (
+                patch.object(account, "track", return_value=song),
+                patch.object(account, "media_url", side_effect=media),
+                patch.object(account.http, "stream", side_effect=lambda *_args: Response()),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                saved = account.save("1", Path(directory), None)
+                self.assertEqual(saved.path.suffix, ".mp3")
+                self.assertFalse(saved.alternate)
+        finally:
+            account.close()
+        self.assertEqual(asked, [("own", "FLAC"), ("own", "MP3_320")])
+
     def test_cookie_must_be_the_account_value(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "deezer-arl.txt"
