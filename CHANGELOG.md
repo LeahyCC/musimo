@@ -4,6 +4,7 @@
 
 ### Search and downloads
 
+- Count a saved download toward the pause between groups before the queue starts the next one. A SoundCloud match links to the public page, not the API address. A saved file drops the tool's failed lookup lines. A name lookup miss is retried instead of being called a missing recording
 - Pause between groups of downloads from Settings: a track count, then a wait in minutes, so a long queue does not keep the connection busy the whole time
 - Remove a stopped worker's YouTube cookie copy when Windows launched Python through another process, so the filename's process id is the interpreter's, not the launcher's
 - Start the file download while lyrics, MusicBrainz, remaining catalog tags and the cover are still loading, and tag once they arrive. Album and artist batches keep the listing's title, artist and length so matching does not wait on another catalog call per track. A catalog miss keeps those listing tags instead of waiting out a Deezer cooldown, and a later catalog response keeps lyrics already found. Fragmented audio downloads four pieces at a time, and yt-dlp reuses a player cache in the data directory

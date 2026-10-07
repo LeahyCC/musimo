@@ -27,6 +27,22 @@ def age_restricted(text: str) -> bool:
     return "confirm your age" in lower or "age-restricted" in lower or "age restricted" in lower
 
 
+# The resolver was down. The site was never asked, so this is not "no recording".
+LOOKUP_MARKERS = (
+    "name or service not known",
+    "no address associated with hostname",
+    "failed to resolve",
+    "temporary failure in name resolution",
+    "nodename nor servname",
+)
+
+
+def name_lookup_failed(text: str) -> bool:
+    """Whether the tool never reached the site because the name did not resolve."""
+    lower = text.lower()
+    return any(marker in lower for marker in LOOKUP_MARKERS)
+
+
 def plain_detail(text: str) -> str:
     """A stored tool line the status row can show. An age check becomes one sentence."""
     return AGE_HINT if age_restricted(text) else text
@@ -130,6 +146,10 @@ def error_guidance(code: str, site: str = "YouTube") -> tuple[str, str]:
         ),
         "TIMEOUT": (
             "The download stage timed out before completing.",
+            "retry",
+        ),
+        "LOOKUP_FAILED": (
+            "The site's name could not be looked up. It will be tried again.",
             "retry",
         ),
         "LIVE_STREAM": (

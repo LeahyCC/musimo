@@ -231,6 +231,8 @@ def _cookie_pids(pid: int) -> list[int]:
 
 def _descendant_pids(root: int) -> list[int]:
     """Live processes that descend from `root`. Empty when the snapshot cannot be taken."""
+    if sys.platform != "win32":
+        return []
 
     class ProcessEntry(ctypes.Structure):
         _fields_ = [
@@ -625,13 +627,12 @@ class Downloads:
                 pass
 
     def completed(self, job_id: str, task: asyncio.Task[None]) -> None:
-        finished = False
+        # A normal finish is counted in release(), which runs first. This still
+        # frees a slot when a test or a stop replaces run() and never releases it.
         if self.running.get(job_id) is task:
             self.running.pop(job_id, None)
             job = self.jobs.get(job_id)
-            if job.stage == "done":
-                finished = True
-            elif job.stage in {"pausing", "cancelling"}:
+            if job.stage in {"pausing", "cancelling"}:
                 if job.desired == "cancel":
                     self.cleanup(job)
                 self.jobs.update(
@@ -642,7 +643,20 @@ class Downloads:
                     if job.desired == "run"
                     else "paused",
                 )
-        if finished:
+        self.wake.set()
+
+    def release(self, job_id: str) -> None:
+        """Free the slot and count a saved track before the queue looks again.
+
+        The done callback runs after the worker has already left `running` and
+        woken the queue, so a count kept there never sees the track.
+        """
+        self.running.pop(job_id, None)
+        try:
+            saved = self.jobs.get(job_id).stage == "done"
+        except (KeyError, ValidationError):
+            saved = False
+        if saved:
             self.note_done()
         self.wake.set()
 
@@ -909,19 +923,23 @@ class Downloads:
                     ready = folder / str(raw.get("file", ""))
                     info = {str(key): value for key, value in raw.items()}
             await process.wait()
-        if tail:
-            self.jobs.update(job.id, tool_tail="\n".join(tail)[-3000:])
-        if failure:
-            raise failure
         if (
-            process.returncode != 0
+            failure is not None
+            or process.returncode != 0
             or ready is None
             or ready.parent != folder
             or not ready.is_file()
         ):
+            # The lines are only useful when nothing was saved.
+            if tail:
+                self.jobs.update(job.id, tool_tail="\n".join(tail)[-3000:])
+            if failure:
+                raise failure
             raise DownloadError(
                 "DOWNLOAD_FAILED", "Worker stopped before producing a tagged audio file", True
             )
+        # A later success drops a lookup miss left by an earlier attempt.
+        self.jobs.update(job.id, tool_tail="")
         return ready, info
 
     async def navidrome(self, job: Job, path: Path) -> str | None:
@@ -1189,5 +1207,4 @@ class Downloads:
         finally:
             self.noted_blocks.pop(job_id, None)
             self.processes.pop(job_id, None)
-            self.running.pop(job_id, None)
-            self.wake.set()
+            self.release(job_id)

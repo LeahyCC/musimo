@@ -35,7 +35,8 @@ class SlowStopDownloads(Downloads):
         super().__init__(store, catalog, library, asyncio.Event())
         self.entered = asyncio.Event()
         self.stopped = asyncio.Event()
-        self.release = asyncio.Event()
+        # Not Downloads.release: that frees the queue slot when the job finishes.
+        self.proceed = asyncio.Event()
 
     async def worker(self, job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
         self.jobs.update(job.id, stage="downloading")
@@ -45,7 +46,7 @@ class SlowStopDownloads(Downloads):
 
     async def stop_process(self, job_id: str) -> None:
         self.stopped.set()
-        await self.release.wait()
+        await self.proceed.wait()
 
 
 class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
@@ -233,12 +234,12 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
                 await asyncio.wait_for(service.stopped.wait(), 2)
                 service.command(job.id, "pause")
                 service.command(job.id, "cancel")
-                service.release.set()
+                service.proceed.set()
                 await asyncio.wait_for(asyncio.gather(*service.running.values()), 2)
                 self.assertEqual(service.jobs.get(job.id).stage, "cancelled")
                 self.assertFalse(service.folder(job).exists())
             finally:
-                service.release.set()
+                service.proceed.set()
                 await service.close()
 
     async def test_global_resume_during_pause_does_not_strand_jobs(self) -> None:
@@ -258,12 +259,12 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
                     await asyncio.wait_for(service.stopped.wait(), 2)
                     self.assertEqual((await api.post("/api/queue/resume")).status_code, 200)
                 service.entered.clear()
-                service.release.set()
+                service.proceed.set()
                 await asyncio.wait_for(service.entered.wait(), 2)
                 self.assertEqual(service.jobs.get(job.id).stage, "downloading")
                 self.assertFalse(service.controls()["paused"])
             finally:
-                service.release.set()
+                service.proceed.set()
                 await service.close()
 
     async def test_incomplete_album_queues_nothing(self) -> None:

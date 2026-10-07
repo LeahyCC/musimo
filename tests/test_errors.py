@@ -16,6 +16,7 @@ class ErrorGuidanceTests(unittest.TestCase):
             "DOWNLOAD_FAILED",
             "CATALOG_FAILED",
             "TIMEOUT",
+            "LOOKUP_FAILED",
             "INTERNAL_ERROR",
             "SOURCE_BLOCKED",
             "POT_MISSING",
