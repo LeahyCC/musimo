@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest'
 
 import { jobSchema } from './api'
 import type { DownloadJob } from './api'
-import { errorJob, failureTallies, unmatchedJob, updateJob } from './downloads'
+import { errorJob, failureTallies, paceWaitText, unmatchedJob, updateJob } from './downloads'
 import type { QueueData } from './downloads'
 
 const job = (over: Partial<DownloadJob>): DownloadJob =>
@@ -80,7 +80,13 @@ describe('failure piles', () => {
     ]
     client.setQueryData<QueueData>(['jobs'], {
       jobs: [both],
-      controls: { paused: false, source_paused: false, paused_sources: [], source_labels: {} },
+      controls: {
+        paused: false,
+        source_paused: false,
+        paused_sources: [],
+        source_labels: {},
+        pace_until: 0,
+      },
       summary: { active: 0, failed: 3, failure_reasons: reasons },
     })
 
@@ -96,5 +102,20 @@ describe('failure piles', () => {
     expect(after?.map((reason) => [reason.hint, reason.count])).toEqual([
       ['No matching recording was found on YouTube.', 2],
     ])
+  })
+})
+
+describe('paceWaitText', () => {
+  it('names the clock time while a pause is still ahead', () => {
+    const until = Date.parse('2026-10-06T15:45:00') / 1000
+    const text = paceWaitText(until, Date.parse('2026-10-06T15:00:00'))
+    expect(text.startsWith('Waiting until ')).toBe(true)
+    expect(text.endsWith(' before the next tracks.')).toBe(true)
+  })
+
+  it('says nothing once the pause is over, or when there is none', () => {
+    expect(paceWaitText(0, 1)).toBe('')
+    expect(paceWaitText(10, 10_000)).toBe('')
+    expect(paceWaitText(10, 20_000)).toBe('')
   })
 })

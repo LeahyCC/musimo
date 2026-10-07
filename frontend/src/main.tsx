@@ -568,6 +568,22 @@ const controls: {
     max: 300,
     section: 'queue',
   },
+  {
+    key: 'pace_tracks',
+    label: 'Tracks before a pause',
+    help: 'How many tracks to finish, then wait. A failed track does not count. 0 keeps going.',
+    min: 0,
+    max: 500,
+    section: 'queue',
+  },
+  {
+    key: 'pace_minutes',
+    label: 'Minutes to wait',
+    help: 'How long to wait after those tracks finish, before the next ones. 0 on either number keeps going.',
+    min: 0,
+    max: 1440,
+    section: 'queue',
+  },
 ]
 
 /** A settings value as the form holds it: text, a number, a switch, or a list of turned-off sources. */

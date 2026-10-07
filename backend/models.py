@@ -66,6 +66,10 @@ class Settings(BaseModel):
     max_attempts: int = Field(default=4, ge=1, le=4)
     retry_base_seconds: int = Field(default=2, ge=1, le=30)
     retry_cap_seconds: int = Field(default=60, ge=30, le=300)
+    # How many tracks may finish before a wait. 0, or a wait of 0, means no pause.
+    pace_tracks: int = Field(default=0, ge=0, le=500)
+    # Minutes to wait after that many tracks have finished, before the next ones start.
+    pace_minutes: int = Field(default=0, ge=0, le=1440)
     destination: str = "/music"
     naming_template: str = "{album_artist}/{album}/{track:02d} - {title}"
     # Search. Off turns search off. Album pages, track details and catalog downloads still use
@@ -113,6 +117,8 @@ class SettingsPatch(BaseModel):
     max_attempts: int | None = Field(default=None, ge=1, le=4)
     retry_base_seconds: int | None = Field(default=None, ge=1, le=30)
     retry_cap_seconds: int | None = Field(default=None, ge=30, le=300)
+    pace_tracks: int | None = Field(default=None, ge=0, le=500)
+    pace_minutes: int | None = Field(default=None, ge=0, le=1440)
     destination: str | None = None
     naming_template: str | None = None
     # The Deezer cookie. It goes to its own file, never the settings table. Empty removes it.
