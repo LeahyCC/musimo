@@ -231,6 +231,8 @@ def _cookie_pids(pid: int) -> list[int]:
 
 def _descendant_pids(root: int) -> list[int]:
     """Live processes that descend from `root`. Empty when the snapshot cannot be taken."""
+    if sys.platform != "win32":
+        return []
 
     class ProcessEntry(ctypes.Structure):
         _fields_ = [
