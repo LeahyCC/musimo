@@ -78,6 +78,14 @@ class WorkerTests(unittest.TestCase):
             "LOOKUP_FAILED",
         )
 
+    def test_a_tool_footer_is_not_a_bot_check(self) -> None:
+        self.assertEqual(
+            classify("Confirm you are on the latest version using yt-dlp -U"), "DOWNLOAD_FAILED"
+        )
+        self.assertEqual(classify("Sign in to confirm you are not a bot"), "SOURCE_BLOCKED")
+        self.assertEqual(classify("[SSL: UNEXPECTED_EOF_WHILE_READING]"), "CONNECTION_FAILED")
+        self.assertEqual(classify("HTTP Error 403: Forbidden SSL handshake"), "SOURCE_BLOCKED")
+
     def test_logs_redact_urls_and_bound_output(self) -> None:
         output = redact("x" * 4000 + " https://provider.test/media?token=secret")
         self.assertLessEqual(len(output), 3000)
@@ -1162,6 +1170,10 @@ class WalkTests(unittest.TestCase):
                 self.assertEqual(events[-1]["code"], code)
                 self.assertEqual(events[-1]["retryable"], retryable)
                 self.assertEqual(len([row for row in events if row["kind"] == "blocked"]), blocks)
+                noted = 1 if code in {"RATE_LIMITED", "TIMEOUT"} else 0
+                self.assertEqual(
+                    len([row for row in events if row["kind"] == "source_error"]), noted
+                )
 
     def test_a_later_answer_with_no_song_files_the_job_as_no_match(self) -> None:
         cover = {"id": "cover000001", "title": "Test song cover", "channel": "Band"}

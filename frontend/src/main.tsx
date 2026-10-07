@@ -45,6 +45,7 @@ import {
 
 import {
   api,
+  commandSchema,
   destinationTestSchema,
   diagnosticsSchema,
   settingsSchema,
@@ -67,10 +68,11 @@ import { PageTitle } from './page-title'
 import { CommandPalette } from './palette'
 import { artUrl, PlayerProvider, usePlayer } from './player'
 import { PodcastPage } from './podcasts'
-import { scanIsReady, systemIsReady } from './readiness'
+import { lastDownloadMark, lastDownloadSummary, scanIsReady, systemIsReady } from './readiness'
 import { RecentActivity } from './recent-activity'
 import { AlbumPage, ArtistPage, SearchPage, validateArtistSearch, validateSearch } from './search'
 import { cleanArl, settingsPatch, withYoutubeCookies } from './settings-patch'
+import { orderTrouble, sourceProblems } from './source-status'
 import { startTheme } from './theme/store'
 import {
   Button,
@@ -645,6 +647,7 @@ function CatalogOrder({
   hasCookie,
   disabledSources,
   paused,
+  trouble,
   disabled,
   onOrder,
   onTries,
@@ -665,6 +668,8 @@ function CatalogOrder({
   hasCookie: boolean
   disabledSources: string[]
   paused: string[]
+  /** Short mark for a source that is blocked or failing, keyed by source id. */
+  trouble: Record<string, string>
   disabled: boolean
   onOrder: (next: string[]) => void
   onTries: (next: number) => void
@@ -690,6 +695,7 @@ function CatalogOrder({
     if (disabledSources.includes(id)) return 'Turned off'
     if (id === 'deezer' && !hasCookie) return 'No cookie yet'
     if (paused.includes(id)) return 'Paused'
+    if (trouble[id]) return trouble[id]
     return ''
   }
   const allSkipped = order.length > 0 && order.every((id) => skipReason(id))
@@ -823,6 +829,7 @@ function SourceRow({
   on,
   disabled,
   lockedBy = '',
+  warn = false,
   onChange,
 }: {
   id: string
@@ -833,6 +840,8 @@ function SourceRow({
   disabled: boolean
   /** The environment variable that holds this switch, or "" when Settings may change it. */
   lockedBy?: string
+  /** The note is a problem with this source, so it is drawn in the warning color. */
+  warn?: boolean
   onChange: (on: boolean) => void
 }) {
   return (
@@ -843,7 +852,7 @@ function SourceRow({
           {label}
           {lockedBy ? <span className="text-warn"> · Locked by {lockedBy}</span> : null}
         </label>
-        <p className="mt-[4px] text-tiny text-muted">{note}</p>
+        <p className={cx('mt-[4px] text-tiny', warn ? 'text-warn' : 'text-muted')}>{note}</p>
       </div>
       <input
         id={id}
@@ -999,6 +1008,13 @@ function SettingsPage() {
       }
     }
   }, [settings.isSuccess])
+
+  const problems = sourceProblems(
+    diagnostics.data?.sources ?? [],
+    pausedSources(diagnostics.data?.queue),
+    diagnostics.data?.download_sources ?? [],
+  )
+  const problemFor = (id: string) => problems.find((problem) => problem.id === id)
 
   return (
     <>
@@ -1290,6 +1306,7 @@ function SettingsPage() {
                   settings.data.disabled_sources.value
                 }
                 paused={diagnostics.data?.queue.paused_sources ?? []}
+                trouble={orderTrouble(problems)}
                 disabled={save.isPending}
                 onOrder={(next) => edit('source_order', next)}
                 onTries={(next) => edit('tries_per_source', next)}
@@ -1299,7 +1316,11 @@ function SettingsPage() {
                 id="deezer"
                 mark="d."
                 label="Deezer"
-                note="Search. Album pages and catalog downloads still use the Deezer catalog."
+                note={
+                  problemFor('deezer')?.detail ??
+                  'Search. Album pages and catalog downloads still use the Deezer catalog.'
+                }
+                warn={problemFor('deezer') !== undefined}
                 on={(draft.deezer_catalog ?? settings.data.deezer_catalog.value) === true}
                 disabled={save.isPending}
                 lockedBy={
@@ -1311,7 +1332,11 @@ function SettingsPage() {
                 id="deezer_audio"
                 mark="a."
                 label="Deezer account"
-                note="Turn this off to skip the Deezer account row. The other rows still run."
+                note={
+                  problemFor('deezer_audio')?.detail ??
+                  'Turn this off to skip the Deezer account row. The other rows still run.'
+                }
+                warn={problemFor('deezer_audio') !== undefined}
                 on={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
                 disabled={save.isPending}
                 lockedBy={
@@ -1426,6 +1451,7 @@ function SettingsPage() {
                     (draft.disabled_sources as string[] | undefined) ??
                     settings.data.disabled_sources.value
                   ).includes(source.id)
+                  const problem = problemFor(source.id)
                   return (
                     <div key={source.id}>
                       <SourceRow
@@ -1433,8 +1459,11 @@ function SettingsPage() {
                         mark={source.label.slice(0, 1)}
                         label={source.label}
                         note={
-                          source.working ? source.note : `${source.label} does not work right now.`
+                          source.working
+                            ? (problem?.detail ?? source.note)
+                            : `${source.label} does not work right now.`
                         }
+                        warn={!source.working || problem !== undefined}
                         on={source.working && !turnedOff}
                         disabled={!source.working || save.isPending}
                         lockedBy={
@@ -1519,6 +1548,16 @@ function DiagnosticsPage() {
       api('diagnostics/test/destination', destinationTestSchema, { method: 'POST' }),
     onSuccess: () => void client.invalidateQueries({ queryKey: ['diagnostics'] }),
   })
+  const resumeSource = useMutation({
+    mutationFn: (sourceName: string) =>
+      api(`queue/resume-source?source=${encodeURIComponent(sourceName)}`, commandSchema, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['diagnostics'] })
+      void client.invalidateQueries({ queryKey: ['jobs'] })
+    },
+  })
   const data = diagnostics.data
   const gb = (bytes: number | null) =>
     bytes === null ? 'Unknown' : `${(bytes / 1024 ** 3).toFixed(1)} GB`
@@ -1555,8 +1594,22 @@ function DiagnosticsPage() {
 
             // `health-strip` is a bare hook: `e2e/app.spec.ts` reads the strip by class.
             return (
-              <div className="health-strip my-[28px] flex items-center gap-[17px] rounded-[8px] border border-good-line bg-good-bg px-[25px] py-[22px] max-phone:p-[19px]">
-                <span className="flex rounded-full border border-good-line p-[7px] text-accent">
+              <div
+                className={cx(
+                  'health-strip my-[28px] flex items-center gap-[17px] rounded-[8px] border px-[25px] py-[22px] max-phone:p-[19px]',
+                  overallReady
+                    ? 'border-good-line bg-good-bg'
+                    : 'border-danger-line bg-danger-bg text-danger',
+                )}
+              >
+                <span
+                  className={cx(
+                    'flex rounded-full border p-[7px]',
+                    overallReady
+                      ? 'border-good-line text-accent'
+                      : 'border-danger-line text-danger',
+                  )}
+                >
                   {overallReady ? <Check size={24} /> : <AlertCircle size={24} />}
                 </span>
                 <div>
@@ -1735,52 +1788,71 @@ function DiagnosticsPage() {
                     </div>
                   </div>
                 ))}
-              {pausedSources(data.queue)
-                .filter((p) => p.source !== 'youtube')
-                .map((p) => (
-                  <div key={p.source} className={readinessItemClassName}>
+              {sourceProblems(data.sources, pausedSources(data.queue), data.download_sources)
+                .filter((problem) => problem.id !== 'youtube')
+                .map((problem) => (
+                  <div key={problem.id} className={readinessItemClassName}>
                     <StatusChip
                       emphasis
                       className="readiness-badge"
                       variant={readinessChip['not-ready']}
                     >
                       <X size={14} />
-                      Paused
+                      {problem.paused ? 'Paused' : 'Not ready'}
                     </StatusChip>
                     <div className="flex-1">
                       <strong className="mb-[4px] block text-small text-text">
-                        {p.label} downloads
+                        {problem.title}
                       </strong>
-                      <p className="text-tiny text-muted">Paused after repeated blocking errors.</p>
+                      <p className="text-tiny text-muted">{problem.detail}</p>
                     </div>
+                    {problem.paused && (
+                      <Button
+                        onClick={() => resumeSource.mutate(problem.id)}
+                        disabled={resumeSource.isPending}
+                      >
+                        Try {problem.label} again
+                      </Button>
+                    )}
                   </div>
                 ))}
-              {data.last_download && (
-                <div className={readinessItemClassName}>
-                  <StatusChip
-                    emphasis
-                    className="readiness-badge"
-                    variant={
-                      readinessChip[data.last_download.stage === 'done' ? 'ready' : 'not-ready']
-                    }
-                  >
-                    {data.last_download.stage === 'done' ? <Check size={14} /> : <X size={14} />}
-                    {data.last_download.stage === 'done' ? 'Success' : 'Failed'}
-                  </StatusChip>
-                  <div className="flex-1">
-                    <strong className="mb-[4px] block text-small text-text">Last download</strong>
-                    <p className="text-tiny text-muted">
-                      {data.last_download.stage === 'done'
-                        ? 'Completed successfully'
-                        : data.last_download.stage === 'failed'
-                          ? `Failed${data.last_download.error_code ? `: ${data.last_download.error_code}` : ''}`
-                          : `Cancelled`}
-                      {' · '}
-                      {new Date(data.last_download.created_at * 1000).toLocaleString()}
-                    </p>
-                  </div>
-                </div>
+              {resumeSource.isError && (
+                <ErrorBanner role="alert">{resumeSource.error.message}</ErrorBanner>
               )}
+              {data.last_download &&
+                (() => {
+                  const mark = lastDownloadMark(
+                    data.last_download.stage,
+                    data.last_download.error_code,
+                  )
+                  const MarkIcon =
+                    mark.tone === 'ready' ? Check : mark.tone === 'not-ready' ? X : Minus
+                  return (
+                    <div className={readinessItemClassName}>
+                      <StatusChip
+                        emphasis
+                        className="readiness-badge"
+                        variant={readinessChip[mark.tone]}
+                      >
+                        <MarkIcon size={14} />
+                        {mark.word}
+                      </StatusChip>
+                      <div className="flex-1">
+                        <strong className="mb-[4px] block text-small text-text">
+                          Last download
+                        </strong>
+                        <p className="text-tiny text-muted">
+                          {lastDownloadSummary(
+                            data.last_download.stage,
+                            data.last_download.error_code,
+                          )}
+                          {' · '}
+                          {new Date(data.last_download.created_at * 1000).toLocaleString()}
+                        </p>
+                      </div>
+                    </div>
+                  )
+                })()}
               {!data.last_download && (
                 <div className={readinessItemClassName}>
                   <StatusChip
@@ -1803,50 +1875,64 @@ function DiagnosticsPage() {
             className="grid grid-cols-2 gap-[22px] max-tablet:gap-[15px] max-phone:grid-cols-1"
             id="sources"
           >
-            {data.sources.map((source) => (
-              <Panel key={source.source}>
-                <div className={sectionHeadingClassName}>
-                  <h2 className={sectionTitleClassName}>
-                    {source.source === 'deezer' ? 'Catalog connection' : 'Download source'}
-                  </h2>
-                  <StatusChip variant={source.status === 'healthy' ? 'good' : 'default'}>
-                    {source.status}
-                  </StatusChip>
-                </div>
-                <div className={sourceSummaryClassName}>
-                  <span className={sourceLogoClassName}>
-                    {source.source === 'deezer' ? 'd.' : source.source.charAt(0).toUpperCase()}
-                  </span>
-                  <div>
-                    <h3 className="mb-[4px]">
-                      {source.source.charAt(0).toUpperCase() + source.source.slice(1)}
-                    </h3>
-                    <p className="text-small">{source.detail}</p>
+            {data.sources.map((source) => {
+              const listed = data.download_sources.find((row) => row.id === source.source)
+              const name =
+                listed?.label ?? source.source.charAt(0).toUpperCase() + source.source.slice(1)
+              const statusWord =
+                source.status === 'healthy'
+                  ? 'Healthy'
+                  : source.status === 'blocked'
+                    ? 'Blocked'
+                    : source.status === 'error'
+                      ? 'Error'
+                      : source.status
+              return (
+                <Panel key={source.source}>
+                  <div className={sectionHeadingClassName}>
+                    <h2 className={sectionTitleClassName}>
+                      {source.source === 'deezer' ? 'Catalog connection' : 'Download source'}
+                    </h2>
+                    <StatusChip variant={source.status === 'healthy' ? 'good' : 'danger'}>
+                      {statusWord}
+                    </StatusChip>
+                  </div>
+                  <div className={sourceSummaryClassName}>
+                    <span className={sourceLogoClassName}>
+                      {source.source === 'deezer' ? 'd.' : name.charAt(0).toUpperCase()}
+                    </span>
+                    <div>
+                      <h3 className="mb-[4px]">{name}</h3>
+                      <p className="text-small">{source.detail}</p>
+                      {source.source === 'deezer' && (
+                        <p className="text-tiny text-muted">
+                          {data.deezer_audio
+                            ? 'Account audio is on. Catalog tracks save from Deezer, then use your folder names.'
+                            : 'Account audio is off.'}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="mt-[27px] flex items-center justify-between gap-[10px]">
+                    <span className="text-caption text-muted">
+                      {source.latency_ms !== null
+                        ? `${source.latency_ms} ms · ${new Date(source.checked_at).toLocaleTimeString()}`
+                        : 'Not tested recently'}
+                    </span>
                     {source.source === 'deezer' && (
-                      <p className="text-tiny text-muted">
-                        {data.deezer_audio
-                          ? 'Account audio is on. Catalog tracks save from Deezer, then use your folder names.'
-                          : 'Account audio is off.'}
-                      </p>
+                      <Button
+                        onClick={() => probe.mutate(source.source)}
+                        disabled={probe.isPending}
+                      >
+                        {probe.isPending ? 'Testing…' : 'Test now'}
+                        <ArrowRight size={14} />
+                      </Button>
                     )}
                   </div>
-                </div>
-                <div className="mt-[27px] flex items-center justify-between gap-[10px]">
-                  <span className="text-caption text-muted">
-                    {source.latency_ms !== null
-                      ? `${source.latency_ms} ms · ${new Date(source.checked_at).toLocaleTimeString()}`
-                      : 'Not tested recently'}
-                  </span>
-                  {source.source === 'deezer' && (
-                    <Button onClick={() => probe.mutate(source.source)} disabled={probe.isPending}>
-                      {probe.isPending ? 'Testing…' : 'Test now'}
-                      <ArrowRight size={14} />
-                    </Button>
-                  )}
-                </div>
-                {probe.isError && <ErrorBanner role="alert">{probe.error.message}</ErrorBanner>}
-              </Panel>
-            ))}
+                  {probe.isError && <ErrorBanner role="alert">{probe.error.message}</ErrorBanner>}
+                </Panel>
+              )
+            })}
             <Panel id="disk">
               <div className={sectionHeadingClassName}>
                 <h2 className={sectionTitleClassName}>Persistent storage</h2>

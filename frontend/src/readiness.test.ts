@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
 import { diagnosticsSchema } from './api'
-import { rootIsReady, scanIsReady, systemIsReady } from './readiness'
+import {
+  lastDownloadMark,
+  lastDownloadSummary,
+  rootIsReady,
+  scanIsReady,
+  systemIsReady,
+} from './readiness'
 
 const disk = { path: '/music', free_bytes: 100, total_bytes: 200, exists: true, writable: true }
 const youtube = {
@@ -84,6 +90,11 @@ describe('systemIsReady', () => {
     expect(systemIsReady(diagnostics({ sources: [{ ...youtube, status: 'down' }] }))).toBe(false)
   })
 
+  it('is not ready when another source is failing', () => {
+    const soundcloud = { ...youtube, source: 'soundcloud', status: 'error', detail: 'dropped' }
+    expect(systemIsReady(diagnostics({ sources: [youtube, soundcloud] }))).toBe(false)
+  })
+
   it('is not ready when Navidrome is down, and ignores it when there is none', () => {
     const navidrome = { configured: true, available: true, version: '0.55', detail: '' }
     expect(systemIsReady(diagnostics({ navidrome }))).toBe(true)
@@ -92,9 +103,22 @@ describe('systemIsReady', () => {
     expect(systemIsReady(diagnostics({ navidrome: null }))).toBe(true)
   })
 
-  it('is not ready when the last download failed', () => {
-    const last = { stage: 'failed', error_code: 'NO_MATCH', created_at: 1 }
+  it('is not ready when the last download failed for a source or the install', () => {
+    const last = { stage: 'failed', error_code: 'SOURCE_BLOCKED', created_at: 1 }
     expect(systemIsReady(diagnostics({ last_download: last }))).toBe(false)
     expect(systemIsReady(diagnostics({ last_download: { ...last, stage: 'done' } }))).toBe(true)
+  })
+
+  it('stays ready when the last song simply had no match', () => {
+    const last = { stage: 'failed', error_code: 'NO_MATCH', created_at: 1 }
+    expect(systemIsReady(diagnostics({ last_download: last }))).toBe(true)
+    expect(lastDownloadSummary('failed', 'NO_MATCH')).toBe('No close recording')
+    expect(lastDownloadSummary('failed', 'SOURCE_BLOCKED')).toBe('Failed: SOURCE_BLOCKED')
+    expect(lastDownloadMark('done', '')).toEqual({ tone: 'ready', word: 'Success' })
+    expect(lastDownloadMark('failed', 'NO_MATCH')).toEqual({ tone: 'not-tested', word: 'Note' })
+    expect(lastDownloadMark('failed', 'SOURCE_BLOCKED')).toEqual({
+      tone: 'not-ready',
+      word: 'Failed',
+    })
   })
 })

@@ -41,6 +41,7 @@ import { InfiniteScroll } from './infinite-scroll'
 import { PageTitle } from './page-title'
 import { RowMenu } from './row-menu'
 import type { RowMenuAction } from './row-menu'
+import { sourceProblems } from './source-status'
 import {
   Button,
   buttonClassName,
@@ -949,6 +950,10 @@ function QueueControls() {
     queryKey: ['settings'],
     queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
   })
+  const diagnostics = useQuery({
+    queryKey: ['diagnostics'],
+    queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
+  })
   const concurrency = useMutation({
     mutationFn: (value: number) =>
       api('settings', settingsSchema, {
@@ -1004,8 +1009,13 @@ function QueueControls() {
         ]
       : []),
   ]
-  // One line per paused site.
+  // One line per paused site. A source that failed without being paused gets a quieter line.
   const paused = pausedSources(queue.data?.controls)
+  const trouble = sourceProblems(
+    diagnostics.data?.sources ?? [],
+    paused,
+    diagnostics.data?.download_sources ?? [],
+  ).filter((problem) => !problem.paused)
   return (
     <>
       <div className="my-4 flex flex-wrap gap-2 max-phone:grid max-phone:grid-cols-2">
@@ -1050,6 +1060,11 @@ function QueueControls() {
           {wait}
         </p>
       )}
+      {trouble.map((problem) => (
+        <p className="mb-3 text-small text-warn" role="status" key={problem.id}>
+          {problem.label}: {problem.detail} <Link to="/diagnostics">Check diagnostics</Link>
+        </p>
+      ))}
       {paused.map(({ source, label }) => (
         <ErrorBanner role="alert" key={source}>
           {label} paused after repeated blocking errors.{' '}

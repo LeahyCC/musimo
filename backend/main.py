@@ -28,7 +28,7 @@ from backend.artist_downloads import install_artist_download_routes
 from backend.catalog import Catalog, CatalogError
 from backend.download_api import install_download_routes
 from backend.downloads import Downloads
-from backend.errors import plain_detail
+from backend.errors import shown_health
 from backend.library import Library
 from backend.link_api import install_link_routes
 from backend.links import Links
@@ -357,10 +357,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             "health": await health(),
             "versions": versions,
             "disks": disks,
-            "sources": [
-                {**row, "detail": plain_detail(str(row.get("detail", "")))}
-                for row in store.source_health()
-            ],
+            "sources": [shown_health(row) for row in store.source_health()],
             "events": store.activity()["events"],
             "database": {
                 "mode": "wal",

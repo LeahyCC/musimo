@@ -18,6 +18,7 @@ from backend.deezer_audio import DeezerCookieRejected, DeezerNoTrack, configured
 from backend.errors import (
     BLOCKING_CODES,
     age_restricted,
+    connection_failure,
     error_guidance,
     geo_restricted,
     name_lookup_failed,
@@ -145,13 +146,14 @@ def classify(message: str) -> str:
     lower = message.lower()
     if geo_restricted(lower):
         return "GEO_RESTRICTED"
-    # "confirm your age" also contains "confirm you", which is the bot check. Age comes first,
-    # and it is one video, so it must not pause YouTube.
+    # Age comes first. It is one video, so it must not pause the source. The bot check says
+    # "not a bot". yt-dlp also writes "Confirm you are on the latest version" on errors it
+    # cannot explain, and that is not a sign-in wall.
     if age_restricted(lower):
         return "AGE_RESTRICTED"
     if "no suitable extractor" in lower or "unsupported url" in lower:
         return "SITE_NOT_ALLOWED"
-    if "confirm you" in lower or "403" in lower:
+    if "not a bot" in lower or "403" in lower:
         return "SOURCE_BLOCKED"
     if "429" in lower:
         return "RATE_LIMITED"
@@ -167,6 +169,11 @@ def classify(message: str) -> str:
         return "TIMEOUT"
     if name_lookup_failed(lower):
         return "LOOKUP_FAILED"
+    # After the specific codes. A 403 that also mentions ssl stays a block, and the sentence
+    # follows that code. A name that did not resolve is already LOOKUP_FAILED. A dropped
+    # connection has no code of its own until here.
+    if connection_failure(message):
+        return "CONNECTION_FAILED"
     return "DOWNLOAD_FAILED"
 
 
@@ -184,7 +191,7 @@ def deezer_code(exc: BaseException, message: str) -> str:
             return "RATE_LIMITED"
         link = link.__cause__
     code = classify(message)
-    kept = {"DISK_FULL", "RATE_LIMITED", "TIMEOUT", "LOOKUP_FAILED"}
+    kept = {"DISK_FULL", "RATE_LIMITED", "TIMEOUT", "LOOKUP_FAILED", "CONNECTION_FAILED"}
     return code if code in kept else "DOWNLOAD_FAILED"
 
 
@@ -652,9 +659,12 @@ def main() -> None:
 
         def remember(name: str, code: str, message: str) -> None:
             hits.append((name, code, message, False))
-            # Count the block even when a later source saves the song.
+            # Count the block even when a later source saves the song. A rate limit, a timeout
+            # or a dropped connection is recorded too, without counting toward a pause.
             if code in BLOCKING_CODES:
                 emit("blocked", source=name, code=code, message=message)
+            elif code in TRANSIENT_CODES or code == "CONNECTION_FAILED":
+                emit("source_error", source=name, code=code, message=message)
             if code in STOPPING_CODES:
                 stopped.add(name)
 
@@ -1034,7 +1044,8 @@ def main() -> None:
             "error",
             code=code,
             message=message,
-            retryable=code in TRANSIENT_CODES | {"DOWNLOAD_FAILED"} and not one_recording,
+            retryable=code in TRANSIENT_CODES | {"DOWNLOAD_FAILED", "CONNECTION_FAILED"}
+            and not one_recording,
             hint=hint,
             fix=fix,
             version=version,

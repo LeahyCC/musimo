@@ -21,7 +21,7 @@ from pydantic import ValidationError
 from backend import deezer_cookie, mixes
 from backend.catalog import Catalog, CatalogError, Result
 from backend.enrichment import Enrichment
-from backend.errors import BLOCKING_CODES, error_guidance, site_label
+from backend.errors import BLOCKING_CODES, error_guidance, health_line, site_label
 from backend.job_models import TERMINAL, Job, Metadata
 from backend.job_store import Jobs
 from backend.library import Library
@@ -167,6 +167,15 @@ class DownloadError(Exception):
     ) -> None:
         self.code, self.detail, self.retryable = code, detail, retryable
         self.hint, self.fix = hint, fix
+
+
+def health_source(source: str) -> str:
+    """The health row for a download outcome.
+
+    The catalog probe keeps the name deezer. Account downloads show on the account switch,
+    and the source list still pauses that account as deezer.
+    """
+    return "deezer_audio" if source == "deezer" else source
 
 
 def art_candidates(url: str) -> list[str]:
@@ -447,7 +456,15 @@ class Downloads:
             eta=None,
         )
 
-    def note_block(self, job_id: str, source: str, detail: str) -> None:
+    def note_trouble(self, source: str, code: str, detail: str) -> None:
+        """Remember a source problem that should show, without counting toward a pause."""
+        if not source:
+            return
+        self.store.record_probe(
+            "error", 0, health_line(code, source, detail), source=health_source(source)
+        )
+
+    def note_block(self, job_id: str, source: str, detail: str, code: str = "") -> None:
         """Count one blocking failure for this run against the source that raised it."""
         if not source:
             return
@@ -464,7 +481,9 @@ class Downloads:
             ).fetchall()[0][0]
         if failures >= 3:
             self.set_controls(source_paused=True, source=source)
-        self.store.record_probe("blocked", 0, detail, source=source)
+        self.store.record_probe(
+            "blocked", 0, health_line(code, source, detail), source=health_source(source)
+        )
 
     def target(self, raw: str) -> Path:
         # Select a trusted mount without probing a client-supplied filesystem path.
@@ -904,7 +923,17 @@ class Downloads:
                 elif kind == "blocked":
                     # Count the block now, so a later source that saves the song does not hide it.
                     self.note_block(
-                        job.id, str(raw.get("source") or ""), str(raw.get("message") or "")
+                        job.id,
+                        str(raw.get("source") or ""),
+                        str(raw.get("message") or ""),
+                        str(raw.get("code") or ""),
+                    )
+                elif kind == "source_error":
+                    # A rate limit, a timeout or a dropped connection. Show it, and do not pause.
+                    self.note_trouble(
+                        str(raw.get("source") or ""),
+                        str(raw.get("code") or ""),
+                        str(raw.get("message") or ""),
                     )
                 elif kind == "error":
                     # A search can fail before a file exists. The pause belongs to that source.
@@ -1114,9 +1143,12 @@ class Downloads:
             # The worker may have matched on the backup source, so the site that just worked is
             # the job's source now, not the one it started with.
             downloaded = self.jobs.get(job_id).source
-            if downloaded == "youtube":
+            if downloaded:
                 self.store.record_probe(
-                    "healthy", 0, "Last YouTube download completed", source="youtube"
+                    "healthy",
+                    0,
+                    f"Last {site_label(downloaded)} download completed",
+                    source=health_source(downloaded),
                 )
             with self.store.lock:
                 self.store.db.execute(
@@ -1203,7 +1235,14 @@ class Downloads:
                         self.jobs.update(job.id, warnings=[*job.warnings, warning])
             # The worker names the source on the error. A block already counted this run is skipped.
             if error.code in BLOCKING_CODES:
-                self.note_block(job_id, job.source, error.detail)
+                self.note_block(job_id, job.source, error.detail, error.code)
+            elif job.source and error.code in {
+                "RATE_LIMITED",
+                "TIMEOUT",
+                "LOOKUP_FAILED",
+                "CONNECTION_FAILED",
+            }:
+                self.note_trouble(job.source, error.code, error.detail)
         finally:
             self.noted_blocks.pop(job_id, None)
             self.processes.pop(job_id, None)
