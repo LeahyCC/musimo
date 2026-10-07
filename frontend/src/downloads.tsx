@@ -69,6 +69,22 @@ export const unmatchedJob = (job: Pick<DownloadJob, 'stage' | 'error_code'>) =>
 export const errorJob = (job: Pick<DownloadJob, 'stage' | 'error_code'>) =>
   job.stage === 'failed' && job.error_code !== 'NO_MATCH'
 
+const API_LISTEN_HOSTS = new Set(['api.soundcloud.com', 'api-v2.soundcloud.com'])
+
+/** A page someone can open. The SoundCloud API address only answers 401 in a browser. */
+export function listenHref(candidate: { url: string; id: string; source: string }): string {
+  const fallback =
+    candidate.source === 'youtube' ? `https://www.youtube.com/watch?v=${candidate.id}` : ''
+  const href = candidate.url || fallback
+  if (!href) return ''
+  try {
+    if (API_LISTEN_HOSTS.has(new URL(href).hostname)) return ''
+  } catch {
+    return ''
+  }
+  return href
+}
+
 /** The queue line while a pause between groups of tracks is still ahead. `now` is milliseconds. */
 export function paceWaitText(paceUntil: number, now: number): string {
   if (!(paceUntil > 0) || paceUntil * 1000 <= now) return ''
@@ -713,34 +729,39 @@ function JobCard({
             </div>
           )}
           {job.candidates.length > 0 && !canPick && <p>Pause the job to change its recording.</p>}
-          {job.candidates.map((candidate) => (
-            <div
-              className="flex items-center gap-[8px] border-b border-line py-[6px]"
-              key={`${candidate.source}:${candidate.id}`}
-            >
-              <div className="min-w-0 flex-1">
-                <strong className="block truncate">{candidate.title}</strong>
-                <small className="block truncate">
-                  {siteLabel(candidate.source, candidate.source_label)} · {candidate.artist} ·{' '}
-                  {Math.round(candidate.score * 100)}% · {candidate.reason}
-                </small>
+          {job.candidates.map((candidate) => {
+            const href = listenHref(candidate)
+            return (
+              <div
+                className="flex items-center gap-[8px] border-b border-line py-[6px]"
+                key={`${candidate.source}:${candidate.id}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <strong className="block truncate">{candidate.title}</strong>
+                  <small className="block truncate">
+                    {siteLabel(candidate.source, candidate.source_label)} · {candidate.artist} ·{' '}
+                    {Math.round(candidate.score * 100)}% · {candidate.reason}
+                  </small>
+                </div>
+                {href && (
+                  <a
+                    className="shrink-0 coarse:inline-flex coarse:min-h-11 coarse:items-center"
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Listen ↗
+                  </a>
+                )}
+                <Button
+                  disabled={!canPick || busy || candidate.id === job.selected}
+                  onClick={() => pick.mutate(candidate.id)}
+                >
+                  {candidate.id === job.selected ? 'Selected' : 'Use this'}
+                </Button>
               </div>
-              <a
-                className="shrink-0 coarse:inline-flex coarse:min-h-11 coarse:items-center"
-                href={candidate.url || `https://www.youtube.com/watch?v=${candidate.id}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Listen ↗
-              </a>
-              <Button
-                disabled={!canPick || busy || candidate.id === job.selected}
-                onClick={() => pick.mutate(candidate.id)}
-              >
-                {candidate.id === job.selected ? 'Selected' : 'Use this'}
-              </Button>
-            </div>
-          ))}
+            )
+          })}
           {job.tool_tail && (
             <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">
               yt-dlp {job.tool_version}

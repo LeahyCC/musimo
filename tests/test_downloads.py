@@ -1465,8 +1465,11 @@ class HoldingDownloads(Downloads):
 
     async def run(self, job_id: str) -> None:
         self.started.append(job_id)
-        await self.gate.wait()
-        self.jobs.update(job_id, stage="done")
+        try:
+            await self.gate.wait()
+            self.jobs.update(job_id, stage="done")
+        finally:
+            self.release(job_id)
 
 
 class PaceTests(unittest.IsolatedAsyncioTestCase):
@@ -1614,3 +1617,99 @@ class PaceTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(store.pace(), (0, 0.0))
                 finally:
                     await self._close(store, service)
+
+    async def test_a_real_run_counts_the_saved_track(self) -> None:
+        clock = [1_000_000.0]
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            store.update(
+                {
+                    "destination": str(root),
+                    "concurrency": 1,
+                    "source_order": ["youtube"],
+                    "pace_tracks": 1,
+                    "pace_minutes": 10,
+                }
+            )
+            try:
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(lambda _: httpx.Response(404))
+                ) as client:
+                    library = Library(store, [root], asyncio.Event())
+                    library.index_published = lambda path, library_root: None  # type: ignore[method-assign, assignment]
+                    service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                    service.now = clock_now(clock)
+
+                    async def worker(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                        ready = folder / "ready.mp3"
+                        ready.write_bytes(b"synthetic audio placeholder")
+                        return ready, {"codec": "mp3", "bitrate": 128}
+
+                    async def extra(_meta: Metadata) -> list[str]:
+                        return []
+
+                    service.worker = worker  # type: ignore[method-assign]
+                    service.enrichment.extra = extra  # type: ignore[method-assign, assignment]
+                    job = service.jobs.enqueue(1, "original", str(root))
+                    service.jobs.update(
+                        job.id,
+                        meta=Metadata(
+                            id=1, title="Song", artist="Band", album="Album", duration=180
+                        ).model_dump(),
+                    )
+                    await service.run(job.id)
+                    saved = service.jobs.get(job.id)
+                    self.assertEqual(saved.stage, "done")
+                    self.assertGreater(pace_until(service), clock[0])
+            finally:
+                store.close()
+
+    async def test_a_saved_file_drops_the_tool_log(self) -> None:
+        class FakeOut:
+            def __init__(self, lines: list[bytes]) -> None:
+                self.lines = lines
+
+            async def readline(self) -> bytes:
+                if not self.lines:
+                    return b""
+                return self.lines.pop(0)
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            store.update({"destination": str(root)})
+            try:
+                async with httpx.AsyncClient(
+                    transport=httpx.MockTransport(lambda _: httpx.Response(404))
+                ) as client:
+                    library = Library(store, [root], asyncio.Event())
+                    service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                    job = service.jobs.enqueue(1, "original", str(root))
+                    service.jobs.update(job.id, tool_tail="Name or service not known")
+                    folder = root / "stage"
+                    folder.mkdir()
+                    ready = folder / "ready.mp3"
+
+                    class FakeProc:
+                        def __init__(self) -> None:
+                            line = json.dumps(
+                                {"kind": "log", "message": "Name or service not known"}
+                            )
+                            done = json.dumps({"kind": "ready", "file": "ready.mp3"})
+                            self.stdout = FakeOut([(line + "\n").encode(), (done + "\n").encode()])
+                            self.returncode = 0
+                            self.pid = 1
+
+                        async def wait(self) -> int:
+                            ready.write_bytes(b"synthetic audio placeholder")
+                            return 0
+
+                    async def fake_exec(*_args: object, **_kwargs: object) -> FakeProc:
+                        return FakeProc()
+
+                    with patch("backend.downloads.asyncio.create_subprocess_exec", fake_exec):
+                        _path, _info = await service.worker(job, folder)
+                    self.assertEqual(service.jobs.get(job.id).tool_tail, "")
+            finally:
+                store.close()

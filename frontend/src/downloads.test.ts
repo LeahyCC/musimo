@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest'
 
 import { jobSchema } from './api'
 import type { DownloadJob } from './api'
-import { errorJob, failureTallies, paceWaitText, unmatchedJob, updateJob } from './downloads'
+import {
+  errorJob,
+  failureTallies,
+  listenHref,
+  paceWaitText,
+  unmatchedJob,
+  updateJob,
+} from './downloads'
 import type { QueueData } from './downloads'
 
 const job = (over: Partial<DownloadJob>): DownloadJob =>
@@ -102,6 +109,30 @@ describe('failure piles', () => {
     expect(after?.map((reason) => [reason.hint, reason.count])).toEqual([
       ['No matching recording was found on YouTube.', 2],
     ])
+  })
+})
+
+describe('listenHref', () => {
+  it('keeps a public page and drops the SoundCloud API address', () => {
+    expect(
+      listenHref({
+        source: 'soundcloud',
+        id: '2053567800',
+        url: 'https://soundcloud.com/circus/rubber-dub',
+      }),
+    ).toBe('https://soundcloud.com/circus/rubber-dub')
+
+    expect(
+      listenHref({
+        source: 'soundcloud',
+        id: '2053567800',
+        url: 'https://api.soundcloud.com/tracks/soundcloud%3Atracks%3A2053567800',
+      }),
+    ).toBe('')
+
+    expect(listenHref({ source: 'youtube', id: 'abcdefghijk', url: '' })).toBe(
+      'https://www.youtube.com/watch?v=abcdefghijk',
+    )
   })
 })
 
