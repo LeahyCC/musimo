@@ -43,9 +43,56 @@ def name_lookup_failed(text: str) -> bool:
     return any(marker in lower for marker in LOOKUP_MARKERS)
 
 
+# A dropped connection. Not a block: the next song may go through, and it must not pause the source.
+# A name that did not resolve is LOOKUP_FAILED, so that wording stays out of these markers.
+CONNECTION_LINE = "The connection dropped before the site answered."
+_CONNECTION_MARKERS = (
+    "unexpected_eof",
+    "ssl",
+    "connection reset",
+    "connection aborted",
+    "connection refused",
+    "network is unreachable",
+    "unable to download api page",
+)
+
+
+def connection_failure(text: str) -> bool:
+    """Whether a tool line is a dropped connection rather than the site refusing the account."""
+    lower = text.lower()
+    return any(marker in lower for marker in _CONNECTION_MARKERS)
+
+
 def plain_detail(text: str) -> str:
-    """A stored tool line the status row can show. An age check becomes one sentence."""
-    return AGE_HINT if age_restricted(text) else text
+    """A stored tool line the status row can show. An age check or a dump becomes one sentence."""
+    if age_restricted(text):
+        return AGE_HINT
+    # yt-dlp appends this to errors it cannot explain. It is not a sign-in check.
+    if "confirm you are on the latest version" in text.lower():
+        return "The download tool hit an error it could not explain."
+    line = " ".join(text.split())
+    if len(line) > 180:
+        return line[:177].rstrip() + "..."
+    return line
+
+
+def health_line(code: str, source: str, detail: str) -> str:
+    """The one sentence stored for a source after it fails. The code was chosen earlier."""
+    hint = error_guidance(code, site_label(source))[0] if code else ""
+    return hint or plain_detail(detail)
+
+
+def shown_health(row: dict[str, object]) -> dict[str, object]:
+    """What Diagnostics shows.
+
+    A connection dump stored as a block, from before that failure had its own code, is shown
+    as an error. New rows already carry the code's sentence.
+    """
+    raw = str(row.get("detail", ""))
+    status = str(row.get("status", ""))
+    if status == "blocked" and connection_failure(raw):
+        return {**row, "status": "error", "detail": CONNECTION_LINE}
+    return {**row, "status": status, "detail": plain_detail(raw)}
 
 
 def geo_restricted(text: str) -> bool:
@@ -151,6 +198,10 @@ def error_guidance(code: str, site: str = "YouTube") -> tuple[str, str]:
         "LOOKUP_FAILED": (
             "The site's name could not be looked up. It will be tried again.",
             "retry",
+        ),
+        "CONNECTION_FAILED": (
+            CONNECTION_LINE,
+            "diagnostics:sources",
         ),
         "LIVE_STREAM": (
             "Live streams never finish, so they can't be saved.",

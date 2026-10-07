@@ -1022,6 +1022,207 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                         await service.run(job.id)
                         self.assertEqual(service.jobs.get(job.id).source, "soundcloud")
                 self.assertEqual(service.paused_sources(), {"soundcloud"})
+                saved = {
+                    str(row["source"]): row
+                    for row in store.source_health()
+                    if row["source"] == "soundcloud"
+                }
+                self.assertEqual(saved["soundcloud"]["status"], "blocked")
+                self.assertIn("SoundCloud is blocking", str(saved["soundcloud"]["detail"]))
+                self.assertNotIn("HTTP 403", str(saved["soundcloud"]["detail"]))
+                await service.close()
+            store.close()
+
+    async def test_a_dropped_connection_is_recorded_without_a_pause(self) -> None:
+        class FakeOut:
+            def __init__(self, payload: bytes) -> None:
+                self.payload = payload
+                self.sent = False
+
+            async def readline(self) -> bytes:
+                if self.sent:
+                    return b""
+                self.sent = True
+                return self.payload
+
+        class FakeProc:
+            def __init__(self) -> None:
+                line = json.dumps(
+                    {
+                        "kind": "source_error",
+                        "code": "CONNECTION_FAILED",
+                        "message": "[SSL: UNEXPECTED_EOF_WHILE_READING]",
+                        "source": "bandcamp",
+                    }
+                )
+                self.stdout = FakeOut((line + "\n").encode())
+                self.returncode = 0
+                self.pid = 1
+
+            async def wait(self) -> int:
+                return 0
+
+        async def fake_exec(*_args: object, **_kwargs: object) -> FakeProc:
+            return FakeProc()
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                store.update({"destination": str(root)})
+                with patch("backend.downloads.asyncio.create_subprocess_exec", fake_exec):
+                    job = service.jobs.enqueue(1, "original", str(root))
+                    service.jobs.update(
+                        job.id,
+                        source="bandcamp",
+                        meta=Metadata(id=1, title="x", artist="A").model_dump(),
+                    )
+                    await service.run(job.id)
+                self.assertEqual(service.paused_sources(), set())
+                row = next(item for item in store.source_health() if item["source"] == "bandcamp")
+                self.assertEqual(row["status"], "error")
+                self.assertIn("connection dropped", str(row["detail"]))
+                await service.close()
+            store.close()
+
+    async def test_a_finished_download_clears_that_sources_error(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = await self.service(root, store, client)
+                store.update({"destination": str(root)})
+                store.record_probe(
+                    "error",
+                    0,
+                    "The connection dropped before the site answered.",
+                    source="soundcloud",
+                )
+
+                async def worker(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                    ready = folder / "ready.mp3"
+                    ready.write_bytes(b"synthetic audio placeholder")
+                    return ready, {"codec": "mp3", "bitrate": 128}
+
+                service.worker = worker  # type: ignore[method-assign]
+                service.library.index_published = lambda path, root: None  # type: ignore[method-assign]
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    source="soundcloud",
+                    meta=Metadata(id=1, title="Song", artist="Band", album="Album").model_dump(),
+                )
+                await service.run(job.id)
+                self.assertEqual(service.jobs.get(job.id).stage, "done")
+                row = next(item for item in store.source_health() if item["source"] == "soundcloud")
+                self.assertEqual(row["status"], "healthy")
+                self.assertIn("SoundCloud", str(row["detail"]))
+                await service.close()
+            store.close()
+
+    async def test_a_deezer_download_leaves_the_catalog_probe_alone(self) -> None:
+        class Dropped(Downloads):
+            async def worker(self, job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                raise DownloadError("CONNECTION_FAILED", "socket reset")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = Dropped(
+                    store,
+                    Catalog(store, client),
+                    Library(store, [root], asyncio.Event()),
+                    asyncio.Event(),
+                )
+                store.update({"destination": str(root)})
+                store.record_probe("healthy", 12, "Keyless catalog responded", source="deezer")
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    source="deezer",
+                    meta=Metadata(id=1, title="Song", artist="Band", album="Album").model_dump(),
+                )
+                await service.run(job.id)
+                rows = {str(row["source"]): row for row in store.source_health()}
+                self.assertEqual(rows["deezer"]["status"], "healthy")
+                self.assertEqual(rows["deezer"]["detail"], "Keyless catalog responded")
+                self.assertEqual(rows["deezer_audio"]["status"], "error")
+                self.assertIn("connection dropped", str(rows["deezer_audio"]["detail"]))
+                self.assertEqual(service.paused_sources(), set())
+                counts = dict(
+                    store.db.execute("SELECT source, blocking_failures FROM source_control")
+                )
+                self.assertNotIn("deezer", counts)
+                self.assertNotIn("deezer_audio", counts)
+
+                async def worker(job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                    ready = folder / "ready.mp3"
+                    ready.write_bytes(b"synthetic audio placeholder")
+                    return ready, {"codec": "mp3", "bitrate": 128}
+
+                service.worker = worker  # type: ignore[method-assign]
+                service.library.index_published = lambda path, root: None  # type: ignore[method-assign]
+                done = service.jobs.enqueue(2, "original", str(root))
+                service.jobs.update(
+                    done.id,
+                    source="deezer",
+                    meta=Metadata(id=2, title="Song", artist="Band", album="Album").model_dump(),
+                )
+                await service.run(done.id)
+                rows = {str(row["source"]): row for row in store.source_health()}
+                self.assertEqual(rows["deezer"]["detail"], "Keyless catalog responded")
+                self.assertEqual(rows["deezer_audio"]["status"], "healthy")
+                self.assertIn("Deezer", str(rows["deezer_audio"]["detail"]))
+                await service.close()
+            store.close()
+
+    async def test_a_deezer_block_pauses_the_account_and_spares_the_catalog(self) -> None:
+        class Blocked(Downloads):
+            async def worker(self, job: Job, folder: Path) -> tuple[Path, dict[str, object]]:
+                raise DownloadError("SOURCE_BLOCKED", "HTTP 403")
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            async with httpx.AsyncClient(
+                transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))
+            ) as client:
+                service = Blocked(
+                    store,
+                    Catalog(store, client),
+                    Library(store, [root], asyncio.Event()),
+                    asyncio.Event(),
+                )
+                store.update({"destination": str(root)})
+                store.record_probe("healthy", 12, "Keyless catalog responded", source="deezer")
+                job = service.jobs.enqueue(1, "original", str(root))
+                service.jobs.update(
+                    job.id,
+                    source="deezer",
+                    meta=Metadata(id=1, title="Song", artist="Band").model_dump(),
+                )
+                await service.run(job.id)
+                rows = {str(row["source"]): row for row in store.source_health()}
+                self.assertEqual(rows["deezer"]["detail"], "Keyless catalog responded")
+                self.assertEqual(rows["deezer_audio"]["status"], "blocked")
+                self.assertIn("Deezer is blocking", str(rows["deezer_audio"]["detail"]))
+                self.assertEqual(service.paused_sources(), set())
+                count = store.db.execute(
+                    "SELECT blocking_failures FROM source_control WHERE source='deezer'"
+                ).fetchone()
+                self.assertEqual(count[0], 1)
+                other = store.db.execute(
+                    "SELECT source FROM source_control WHERE source='deezer_audio'"
+                ).fetchone()
+                self.assertIsNone(other)
                 await service.close()
             store.close()
 

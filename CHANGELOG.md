@@ -4,6 +4,7 @@
 
 ### Search and downloads
 
+- Show a problem for every download source in Settings, Diagnostics and the queue, not only a YouTube failure or a paused SoundCloud row. A dropped connection is its own error and does not pause the source. A finished download clears that source's error. A Deezer account download keeps its own row, apart from the catalog probe. A song with no match no longer marks the whole install as needing attention
 - Count a saved download toward the pause between groups before the queue starts the next one. A SoundCloud match links to the public page, not the API address. A saved file drops the tool's failed lookup lines. A name lookup miss is retried instead of being called a missing recording
 - Pause between groups of downloads from Settings: a track count, then a wait in minutes, so a long queue does not keep the connection busy the whole time
 - Remove a stopped worker's YouTube cookie copy when Windows launched Python through another process, so the filename's process id is the interpreter's, not the launcher's
