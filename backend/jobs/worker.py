@@ -8,14 +8,17 @@ import subprocess
 import sys
 import time
 from pathlib import Path
+from urllib.parse import urlsplit
 
 import httpx
 
 from backend.core.errors import (
     BLOCKING_CODES,
     age_restricted,
+    connection_failure,
     error_guidance,
     geo_restricted,
+    name_lookup_failed,
     no_match_hint,
     site_label,
     source_code,
@@ -43,9 +46,9 @@ def turned_off() -> set[str]:
 # A block or a rate limit stops that source for the rest of the walk: asking again at once only
 # prolongs it. A timeout usually means the next try times out too. The queue's backoff retries the
 # song later instead.
-STOPPING_CODES = BLOCKING_CODES | {"RATE_LIMITED", "TIMEOUT"}
+STOPPING_CODES = BLOCKING_CODES | {"RATE_LIMITED", "TIMEOUT", "LOOKUP_FAILED"}
 # Failures worth the queue's own backoff retry once the walk is over.
-TRANSIENT_CODES = frozenset({"RATE_LIMITED", "TIMEOUT"})
+TRANSIENT_CODES = frozenset({"RATE_LIMITED", "TIMEOUT", "LOOKUP_FAILED"})
 # What yt-dlp says when one recording cannot be had. The next match may still play.
 RECORDING_GONE = (
     "video unavailable",
@@ -121,13 +124,14 @@ def classify(message: str) -> str:
     lower = message.lower()
     if geo_restricted(lower):
         return "GEO_RESTRICTED"
-    # "confirm your age" also contains "confirm you", which is the bot check. Age comes first,
-    # and it is one video, so it must not pause YouTube.
+    # Age comes first. It is one video, so it must not pause the source. The bot check says
+    # "not a bot". yt-dlp also writes "Confirm you are on the latest version" on errors it
+    # cannot explain, and that is not a sign-in wall.
     if age_restricted(lower):
         return "AGE_RESTRICTED"
     if "no suitable extractor" in lower or "unsupported url" in lower:
         return "SITE_NOT_ALLOWED"
-    if "confirm you" in lower or "403" in lower:
+    if "not a bot" in lower or "403" in lower:
         return "SOURCE_BLOCKED"
     if "429" in lower:
         return "RATE_LIMITED"
@@ -141,6 +145,13 @@ def classify(message: str) -> str:
         return "DISK_FULL"
     if "timed out" in lower:
         return "TIMEOUT"
+    if name_lookup_failed(lower):
+        return "LOOKUP_FAILED"
+    # After the specific codes. A 403 that also mentions ssl stays a block, and the sentence
+    # follows that code. A name that did not resolve is already LOOKUP_FAILED. A dropped
+    # connection has no code of its own until here.
+    if connection_failure(message):
+        return "CONNECTION_FAILED"
     return "DOWNLOAD_FAILED"
 
 
@@ -158,7 +169,8 @@ def deezer_code(exc: BaseException, message: str) -> str:
             return "RATE_LIMITED"
         link = link.__cause__
     code = classify(message)
-    return code if code in {"DISK_FULL", "RATE_LIMITED", "TIMEOUT"} else "DOWNLOAD_FAILED"
+    kept = {"DISK_FULL", "RATE_LIMITED", "TIMEOUT", "LOOKUP_FAILED", "CONNECTION_FAILED"}
+    return code if code in kept else "DOWNLOAD_FAILED"
 
 
 def address(source: str, candidate_id: str, url: str) -> str:
@@ -171,6 +183,21 @@ def address(source: str, candidate_id: str, url: str) -> str:
     return url if site is not None and match_entry(url) is site else ""
 
 
+def candidate_url(source: str, candidate_id: str, entry: dict[str, object]) -> str:
+    """The page a person can open, or the tool's own address when that page is missing.
+
+    SoundCloud search rows often carry the API address in `url` and the public page in
+    `webpage_url`. The API address answers 401 in a browser.
+    """
+    page = str(entry.get("webpage_url") or "")
+    raw = str(entry.get("url") or "")
+    chosen = address(source, candidate_id, page)
+    host = urlsplit(chosen).hostname or ""
+    if chosen and host not in {"api.soundcloud.com", "api-v2.soundcloud.com"}:
+        return chosen
+    return address(source, candidate_id, raw)
+
+
 def found(source: str, entries: object) -> list[Candidate]:
     """One search's results, keeping only rows that are a single recording on that source."""
     rows: list[Candidate] = []
@@ -180,7 +207,7 @@ def found(source: str, entries: object) -> list[Candidate]:
         if not isinstance(entry, dict):
             continue
         candidate_id = str(entry.get("id", ""))
-        url = address(source, candidate_id, str(entry.get("url") or entry.get("webpage_url") or ""))
+        url = candidate_url(source, candidate_id, entry)
         if not url:
             continue
         artist = str(
@@ -544,9 +571,12 @@ def main() -> None:
 
         def remember(name: str, code: str, message: str) -> None:
             hits.append((name, code, message, False))
-            # Count the block even when a later source saves the song.
+            # Count the block even when a later source saves the song. A rate limit, a timeout
+            # or a dropped connection is recorded too, without counting toward a pause.
             if code in BLOCKING_CODES:
                 emit("blocked", source=name, code=code, message=message)
+            elif code in TRANSIENT_CODES or code == "CONNECTION_FAILED":
+                emit("source_error", source=name, code=code, message=message)
             if code in STOPPING_CODES:
                 stopped.add(name)
 
@@ -712,7 +742,8 @@ def main() -> None:
                 if source_name == "deezer" and message not in seen_bits:
                     extra.append(message)
                     seen_bits.add(message)
-            if no_song:
+            # The name lookup is the failure. A miss on another site would only be a guess.
+            if chosen[1] != "LOOKUP_FAILED" and no_song:
                 extra.append(no_match_hint([site_label(name) for name in no_song]))
             if extra:
                 hint = f"{hint} {' '.join(extra)}"
@@ -925,7 +956,8 @@ def main() -> None:
             "error",
             code=code,
             message=message,
-            retryable=code in {"TIMEOUT", "RATE_LIMITED", "DOWNLOAD_FAILED"} and not one_recording,
+            retryable=code in TRANSIENT_CODES | {"DOWNLOAD_FAILED", "CONNECTION_FAILED"}
+            and not one_recording,
             hint=hint,
             fix=fix,
             version=version,

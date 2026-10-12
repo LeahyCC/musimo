@@ -20,6 +20,22 @@ export const unmatchedJob = (job: Pick<DownloadJob, 'stage' | 'error_code'>) =>
 export const errorJob = (job: Pick<DownloadJob, 'stage' | 'error_code'>) =>
   job.stage === 'failed' && job.error_code !== 'NO_MATCH'
 
+const API_LISTEN_HOSTS = new Set(['api.soundcloud.com', 'api-v2.soundcloud.com'])
+
+/** A page someone can open. The SoundCloud API address only answers 401 in a browser. */
+export function listenHref(candidate: { url: string; id: string; source: string }): string {
+  const fallback =
+    candidate.source === 'youtube' ? `https://www.youtube.com/watch?v=${candidate.id}` : ''
+  const href = candidate.url || fallback
+  if (!href) return ''
+  try {
+    if (API_LISTEN_HOSTS.has(new URL(href).hostname)) return ''
+  } catch {
+    return ''
+  }
+  return href
+}
+
 /** The queue line while a pause between groups of tracks is still ahead. `now` is milliseconds. */
 export function paceWaitText(paceUntil: number, now: number): string {
   if (!(paceUntil > 0) || paceUntil * 1000 <= now) return ''

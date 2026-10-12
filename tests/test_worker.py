@@ -12,7 +12,7 @@ import httpx
 
 from backend.core.job_models import Candidate, Job, Metadata
 from backend.integrations.deezer_audio import DeezerAudioError, Saved
-from backend.jobs.worker import main
+from backend.jobs.worker import classify, found, main
 from backend.jobs.ytdlp import base_options, redact
 
 
@@ -70,6 +70,22 @@ class WorkerTests(unittest.TestCase):
                 self.assertEqual(items[0]["source"], "youtube")
                 self.assertEqual(items[0]["url"], "https://www.youtube.com/watch?v=cover000001")
                 tagger.assert_not_called()
+
+    def test_a_name_lookup_miss_is_its_own_retry(self) -> None:
+        self.assertEqual(
+            classify(
+                "Failed to resolve 'api-v2.soundcloud.com' ([Errno -2] Name or service not known)"
+            ),
+            "LOOKUP_FAILED",
+        )
+
+    def test_a_tool_footer_is_not_a_bot_check(self) -> None:
+        self.assertEqual(
+            classify("Confirm you are on the latest version using yt-dlp -U"), "DOWNLOAD_FAILED"
+        )
+        self.assertEqual(classify("Sign in to confirm you are not a bot"), "SOURCE_BLOCKED")
+        self.assertEqual(classify("[SSL: UNEXPECTED_EOF_WHILE_READING]"), "CONNECTION_FAILED")
+        self.assertEqual(classify("HTTP Error 403: Forbidden SSL handshake"), "SOURCE_BLOCKED")
 
     def test_logs_redact_urls_and_bound_output(self) -> None:
         output = redact("x" * 4000 + " https://provider.test/media?token=secret")
@@ -566,6 +582,38 @@ class WorkerTests(unittest.TestCase):
             self.assertIn("cookie rejected", str(error["hint"]))
             self.assertIn("YouTube", str(error["hint"]))
 
+    def test_a_name_lookup_miss_is_retried_instead_of_a_missing_song(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            folder = Path(directory)
+            job = Job(
+                id="test",
+                track_id=1,
+                target=directory,
+                meta=Metadata(id=1, title="Test song", artist="Test artist", duration=180),
+                created_at=0,
+                updated_at=0,
+            )
+            (folder / "job.json").write_text(job.model_dump_json(), encoding="utf-8")
+            events: list[dict[str, object]] = []
+
+            def record(kind: str, **values: object) -> None:
+                events.append({"kind": kind, **values})
+
+            with (
+                patch("sys.argv", ["worker", directory]),
+                patch.dict("os.environ", {"MUSIMO_SOURCE_ORDER": "youtube"}),
+                patch("yt_dlp.YoutubeDL") as downloader,
+                patch("backend.jobs.worker.emit", side_effect=record),
+            ):
+                downloader.return_value.extract_info.side_effect = OSError(
+                    "[Errno -2] Name or service not known"
+                )
+                main()
+            error = events[-1]
+            self.assertEqual(error["code"], "LOOKUP_FAILED")
+            self.assertIs(error["retryable"], True)
+            self.assertNotIn("No matching recording", str(error["hint"]))
+
 
 TRACK = "https://soundcloud.com/artist/test-song"
 
@@ -667,6 +715,24 @@ class BackupSourceTests(unittest.TestCase):
             self.assertEqual(items[0]["url"], TRACK)
             self.assertEqual(chosen["selected"], "123456789")
             self.assertEqual(events[-1]["kind"], "ready")
+
+    def test_a_soundcloud_page_is_kept_when_the_tool_also_gives_the_api_address(self) -> None:
+        entry = soundcloud("Test artist - Test song")
+        entry["url"] = "https://api.soundcloud.com/tracks/soundcloud%3Atracks%3A123456789"
+        entry["webpage_url"] = TRACK
+        self.assertEqual(found("soundcloud", [entry])[0].url, TRACK)
+        # The public page still wins when the tool puts the API address in webpage_url.
+        swapped = soundcloud("Test artist - Test song")
+        swapped["url"] = TRACK
+        swapped["webpage_url"] = (
+            "https://api-v2.soundcloud.com/tracks/soundcloud%3Atracks%3A123456789"
+        )
+        self.assertEqual(found("soundcloud", [swapped])[0].url, TRACK)
+        # No public page: keep the API address, which is what the download can open.
+        api = "https://api.soundcloud.com/tracks/soundcloud%3Atracks%3A123456789"
+        only = soundcloud("Test artist - Test song")
+        only["url"] = api
+        self.assertEqual(found("soundcloud", [only])[0].url, api)
 
     def test_no_fallback_when_the_setting_is_off(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -1105,6 +1171,10 @@ class WalkTests(unittest.TestCase):
                 self.assertEqual(events[-1]["code"], code)
                 self.assertEqual(events[-1]["retryable"], retryable)
                 self.assertEqual(len([row for row in events if row["kind"] == "blocked"]), blocks)
+                noted = 1 if code in {"RATE_LIMITED", "TIMEOUT"} else 0
+                self.assertEqual(
+                    len([row for row in events if row["kind"] == "source_error"]), noted
+                )
 
     def test_a_later_answer_with_no_song_files_the_job_as_no_match(self) -> None:
         cover = {"id": "cover000001", "title": "Test song cover", "channel": "Band"}

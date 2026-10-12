@@ -15,7 +15,7 @@ from urllib.parse import urlsplit
 import httpx
 from pydantic import ValidationError
 
-from backend.core.errors import BLOCKING_CODES, error_guidance, site_label
+from backend.core.errors import BLOCKING_CODES, error_guidance, health_line, site_label
 from backend.core.job_models import TERMINAL, Job, Metadata
 from backend.core.models import Settings
 from backend.core.naming import Naming
@@ -170,6 +170,15 @@ class DownloadError(Exception):
         self.hint, self.fix = hint, fix
 
 
+def health_source(source: str) -> str:
+    """The health row for a download outcome.
+
+    The catalog probe keeps the name deezer. Account downloads show on the account switch,
+    and the source list still pauses that account as deezer.
+    """
+    return "deezer_audio" if source == "deezer" else source
+
+
 def art_candidates(url: str) -> list[str]:
     """The addresses to try for one cover, best first."""
     parts = urlsplit(url)
@@ -308,7 +317,15 @@ class Downloads:
             eta=None,
         )
 
-    def note_block(self, job_id: str, source: str, detail: str) -> None:
+    def note_trouble(self, source: str, code: str, detail: str) -> None:
+        """Remember a source problem that should show, without counting toward a pause."""
+        if not source:
+            return
+        self.store.record_probe(
+            "error", 0, health_line(code, source, detail), source=health_source(source)
+        )
+
+    def note_block(self, job_id: str, source: str, detail: str, code: str = "") -> None:
         """Count one blocking failure for this run against the source that raised it."""
         if not source:
             return
@@ -325,7 +342,9 @@ class Downloads:
             ).fetchall()[0][0]
         if failures >= 3:
             self.set_controls(source_paused=True, source=source)
-        self.store.record_probe("blocked", 0, detail, source=source)
+        self.store.record_probe(
+            "blocked", 0, health_line(code, source, detail), source=health_source(source)
+        )
 
     def target(self, raw: str) -> Path:
         # Select a trusted mount without probing a client-supplied filesystem path.
@@ -488,13 +507,12 @@ class Downloads:
                 pass
 
     def completed(self, job_id: str, task: asyncio.Task[None]) -> None:
-        finished = False
+        # A normal finish is counted in release(), which runs first. This still
+        # frees a slot when a test or a stop replaces run() and never releases it.
         if self.running.get(job_id) is task:
             self.running.pop(job_id, None)
             job = self.jobs.get(job_id)
-            if job.stage == "done":
-                finished = True
-            elif job.stage in {"pausing", "cancelling"}:
+            if job.stage in {"pausing", "cancelling"}:
                 if job.desired == "cancel":
                     self.cleanup(job)
                 self.jobs.update(
@@ -505,7 +523,20 @@ class Downloads:
                     if job.desired == "run"
                     else "paused",
                 )
-        if finished:
+        self.wake.set()
+
+    def release(self, job_id: str) -> None:
+        """Free the slot and count a saved track before the queue looks again.
+
+        The done callback runs after the worker has already left `running` and
+        woken the queue, so a count kept there never sees the track.
+        """
+        self.running.pop(job_id, None)
+        try:
+            saved = self.jobs.get(job_id).stage == "done"
+        except (KeyError, ValidationError):
+            saved = False
+        if saved:
             self.note_done()
         self.wake.set()
 
@@ -753,7 +784,17 @@ class Downloads:
                 elif kind == "blocked":
                     # Count the block now, so a later source that saves the song does not hide it.
                     self.note_block(
-                        job.id, str(raw.get("source") or ""), str(raw.get("message") or "")
+                        job.id,
+                        str(raw.get("source") or ""),
+                        str(raw.get("message") or ""),
+                        str(raw.get("code") or ""),
+                    )
+                elif kind == "source_error":
+                    # A rate limit, a timeout or a dropped connection. Show it, and do not pause.
+                    self.note_trouble(
+                        str(raw.get("source") or ""),
+                        str(raw.get("code") or ""),
+                        str(raw.get("message") or ""),
                     )
                 elif kind == "error":
                     # A search can fail before a file exists. The pause belongs to that source.
@@ -772,19 +813,23 @@ class Downloads:
                     ready = folder / str(raw.get("file", ""))
                     info = {str(key): value for key, value in raw.items()}
             await process.wait()
-        if tail:
-            self.jobs.update(job.id, tool_tail="\n".join(tail)[-3000:])
-        if failure:
-            raise failure
         if (
-            process.returncode != 0
+            failure is not None
+            or process.returncode != 0
             or ready is None
             or ready.parent != folder
             or not ready.is_file()
         ):
+            # The lines are only useful when nothing was saved.
+            if tail:
+                self.jobs.update(job.id, tool_tail="\n".join(tail)[-3000:])
+            if failure:
+                raise failure
             raise DownloadError(
                 "DOWNLOAD_FAILED", "Worker stopped before producing a tagged audio file", True
             )
+        # A later success drops a lookup miss left by an earlier attempt.
+        self.jobs.update(job.id, tool_tail="")
         return ready, info
 
     def layout(self, job: Job, extension: str) -> str:
@@ -927,9 +972,12 @@ class Downloads:
             # The worker may have matched on the backup source, so the site that just worked is
             # the job's source now, not the one it started with.
             downloaded = self.jobs.get(job_id).source
-            if downloaded == "youtube":
+            if downloaded:
                 self.store.record_probe(
-                    "healthy", 0, "Last YouTube download completed", source="youtube"
+                    "healthy",
+                    0,
+                    f"Last {site_label(downloaded)} download completed",
+                    source=health_source(downloaded),
                 )
             with self.store.lock:
                 self.store.db.execute(
@@ -1003,9 +1051,15 @@ class Downloads:
             )
             # The worker names the source on the error. A block already counted this run is skipped.
             if error.code in BLOCKING_CODES:
-                self.note_block(job_id, job.source, error.detail)
+                self.note_block(job_id, job.source, error.detail, error.code)
+            elif job.source and error.code in {
+                "RATE_LIMITED",
+                "TIMEOUT",
+                "LOOKUP_FAILED",
+                "CONNECTION_FAILED",
+            }:
+                self.note_trouble(job.source, error.code, error.detail)
         finally:
             self.noted_blocks.pop(job_id, None)
             self.processes.pop(job_id, None)
-            self.running.pop(job_id, None)
-            self.wake.set()
+            self.release(job_id)

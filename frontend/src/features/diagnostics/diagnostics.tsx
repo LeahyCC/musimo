@@ -14,6 +14,7 @@ import {
 
 import {
   api,
+  commandSchema,
   destinationTestSchema,
   diagnosticsSchema,
   settingsSchema,
@@ -36,8 +37,9 @@ import {
 } from '../../ui'
 import type { StatusChipVariant } from '../../ui'
 import { pausedSources } from '../downloads/download-target'
-import { scanIsReady, systemIsReady } from './readiness'
+import { lastDownloadMark, lastDownloadSummary, scanIsReady, systemIsReady } from './readiness'
 import { RecentActivity } from './recent-activity'
+import { sourceProblems } from './source-status'
 
 const sourceSummaryClassName = 'my-[20px] flex items-center gap-[15px]'
 
@@ -85,6 +87,16 @@ export function DiagnosticsPage() {
       api('diagnostics/test/destination', destinationTestSchema, { method: 'POST' }),
     onSuccess: () => void client.invalidateQueries({ queryKey: ['diagnostics'] }),
   })
+  const resumeSource = useMutation({
+    mutationFn: (sourceName: string) =>
+      api(`queue/resume-source?source=${encodeURIComponent(sourceName)}`, commandSchema, {
+        method: 'POST',
+      }),
+    onSuccess: () => {
+      void client.invalidateQueries({ queryKey: ['diagnostics'] })
+      void client.invalidateQueries({ queryKey: ['jobs'] })
+    },
+  })
   const data = diagnostics.data
   const size = (bytes: number | null) => (bytes === null ? 'Unknown' : formatBytes(bytes))
   useEffect(() => {
@@ -120,8 +132,22 @@ export function DiagnosticsPage() {
 
             // `health-strip` is a bare hook: `e2e/app.spec.ts` reads the strip by class.
             return (
-              <div className="health-strip my-[28px] flex items-center gap-[17px] rounded-[8px] border border-good-line bg-good-bg px-[25px] py-[22px] max-phone:p-[19px]">
-                <span className="flex rounded-full border border-good-line p-[7px] text-accent">
+              <div
+                className={cx(
+                  'health-strip my-[28px] flex items-center gap-[17px] rounded-[8px] border px-[25px] py-[22px] max-phone:p-[19px]',
+                  overallReady
+                    ? 'border-good-line bg-good-bg'
+                    : 'border-danger-line bg-danger-bg text-danger',
+                )}
+              >
+                <span
+                  className={cx(
+                    'flex rounded-full border p-[7px]',
+                    overallReady
+                      ? 'border-good-line text-accent'
+                      : 'border-danger-line text-danger',
+                  )}
+                >
                   {overallReady ? <Check size={24} /> : <AlertCircle size={24} />}
                 </span>
                 <div>
@@ -298,24 +324,32 @@ export function DiagnosticsPage() {
                     </div>
                   </div>
                 ))}
-              {pausedSources(data.queue)
-                .filter((p) => p.source !== 'youtube')
-                .map((p) => (
-                  <div key={p.source} className={readinessItemClassName}>
+              {sourceProblems(data.sources, pausedSources(data.queue), data.download_sources)
+                .filter((problem) => problem.id !== 'youtube')
+                .map((problem) => (
+                  <div key={problem.id} className={readinessItemClassName}>
                     <StatusChip
                       emphasis
                       className="readiness-badge"
                       variant={readinessChip['not-ready']}
                     >
                       <X size={14} />
-                      Paused
+                      {problem.paused ? 'Paused' : 'Not ready'}
                     </StatusChip>
                     <div className="flex-1">
                       <strong className="mb-[4px] block text-small text-text">
-                        {p.label} downloads
+                        {problem.title}
                       </strong>
-                      <p className="text-tiny text-muted">Paused after repeated blocking errors.</p>
+                      <p className="text-tiny text-muted">{problem.detail}</p>
                     </div>
+                    {problem.paused && (
+                      <Button
+                        onClick={() => resumeSource.mutate(problem.id)}
+                        disabled={resumeSource.isPending}
+                      >
+                        Try {problem.label} again
+                      </Button>
+                    )}
                   </div>
                 ))}
               {data.last_download && (
@@ -324,20 +358,24 @@ export function DiagnosticsPage() {
                     emphasis
                     className="readiness-badge"
                     variant={
-                      readinessChip[data.last_download.stage === 'done' ? 'ready' : 'not-ready']
+                      readinessChip[
+                        lastDownloadMark(data.last_download.stage, data.last_download.error_code)
+                          .tone
+                      ]
                     }
                   >
-                    {data.last_download.stage === 'done' ? <Check size={14} /> : <X size={14} />}
-                    {data.last_download.stage === 'done' ? 'Success' : 'Failed'}
+                    {lastDownloadMark(data.last_download.stage, data.last_download.error_code)
+                      .tone === 'ready' ? (
+                      <Check size={14} />
+                    ) : (
+                      <X size={14} />
+                    )}
+                    {lastDownloadMark(data.last_download.stage, data.last_download.error_code).word}
                   </StatusChip>
                   <div className="flex-1">
                     <strong className="mb-[4px] block text-small text-text">Last download</strong>
                     <p className="text-tiny text-muted">
-                      {data.last_download.stage === 'done'
-                        ? 'Completed successfully'
-                        : data.last_download.stage === 'failed'
-                          ? `Failed${data.last_download.error_code ? `: ${data.last_download.error_code}` : ''}`
-                          : `Cancelled`}
+                      {lastDownloadSummary(data.last_download.stage, data.last_download.error_code)}
                       {' · '}
                       {new Date(data.last_download.created_at * 1000).toLocaleString()}
                     </p>

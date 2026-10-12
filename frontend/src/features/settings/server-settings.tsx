@@ -17,6 +17,8 @@ import { cx } from '../../lib/cx'
 import { Button, ErrorBanner, Field, FieldSelect, Tag } from '../../ui'
 import { systemIsReady } from '../diagnostics/readiness'
 import { RecentActivity } from '../diagnostics/recent-activity'
+import { orderTrouble, sourceProblems } from '../diagnostics/source-status'
+import { pausedSources } from '../downloads/download-target'
 import { LibraryPanel } from './library-panel'
 import { cleanArl, settingsPatch, withYoutubeCookies } from './settings-patch'
 import { CatalogOrder, SourceRow } from './source-controls'
@@ -160,6 +162,12 @@ export function SettingsPage() {
   const typedArl = typeof draft.deezer_arl === 'string' ? cleanArl(draft.deezer_arl) : ''
   // What the source list should assume once this page is saved.
   const arlAfterSave = typedArl !== '' || (arlSaved && !removeArl)
+  const problems = sourceProblems(
+    diagnostics.data?.sources ?? [],
+    pausedSources(diagnostics.data?.queue),
+    diagnostics.data?.download_sources ?? [],
+  )
+  const problemFor = (id: string) => problems.find((problem) => problem.id === id)
 
   const isDirty = Object.keys(draft).length > 0 || cookiePending || removeArl
 
@@ -558,6 +566,7 @@ export function SettingsPage() {
                   settings.data.disabled_sources.value
                 }
                 paused={diagnostics.data?.queue.paused_sources ?? []}
+                trouble={orderTrouble(problems)}
                 disabled={save.isPending}
                 onOrder={(next) => edit('source_order', next)}
                 onTries={(next) => edit('tries_per_source', next)}
@@ -567,7 +576,11 @@ export function SettingsPage() {
                 id="deezer"
                 mark="d."
                 label="Deezer"
-                note="Search. Album pages and catalog downloads still use the Deezer catalog."
+                note={
+                  problemFor('deezer')?.detail ??
+                  'Search. Album pages and catalog downloads still use the Deezer catalog.'
+                }
+                warn={problemFor('deezer') !== undefined}
                 on={(draft.deezer_catalog ?? settings.data.deezer_catalog.value) === true}
                 disabled={save.isPending}
                 lockedBy={
@@ -579,7 +592,11 @@ export function SettingsPage() {
                 id="deezer_audio"
                 mark="a."
                 label="Deezer account"
-                note="Turn this off to skip the Deezer account row. The other rows still run."
+                note={
+                  problemFor('deezer_audio')?.detail ??
+                  'Turn this off to skip the Deezer account row. The other rows still run.'
+                }
+                warn={problemFor('deezer_audio') !== undefined}
                 on={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
                 disabled={save.isPending}
                 lockedBy={
@@ -694,6 +711,7 @@ export function SettingsPage() {
                     (draft.disabled_sources as string[] | undefined) ??
                     settings.data.disabled_sources.value
                   ).includes(source.id)
+                  const problem = problemFor(source.id)
                   return (
                     <div key={source.id}>
                       <SourceRow
@@ -701,8 +719,11 @@ export function SettingsPage() {
                         mark={source.label.slice(0, 1)}
                         label={source.label}
                         note={
-                          source.working ? source.note : `${source.label} does not work right now.`
+                          source.working
+                            ? (problem?.detail ?? source.note)
+                            : `${source.label} does not work right now.`
                         }
+                        warn={!source.working || problem !== undefined}
                         on={source.working && !turnedOff}
                         disabled={!source.working || save.isPending}
                         lockedBy={

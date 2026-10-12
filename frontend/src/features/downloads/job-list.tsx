@@ -12,6 +12,7 @@ import { formatBytes } from '../../lib/format'
 import { Button, ErrorBanner, IconButton, textLinkClassName } from '../../ui'
 import { catalogCardSource, formatLabel, pausedSources, siteLabel } from './download-target'
 import type { CatalogSourceChoice } from './download-target'
+import { listenHref } from './jobs'
 import { activeJob, errorJob, failureMessage, unmatchedJob, updateJob } from './jobs'
 import type { QueueData } from './jobs'
 
@@ -330,34 +331,39 @@ function JobCard({
             </div>
           )}
           {job.candidates.length > 0 && !canPick && <p>Pause the job to change its recording.</p>}
-          {job.candidates.map((candidate) => (
-            <div
-              className="flex items-center gap-[8px] border-b border-line py-[6px]"
-              key={`${candidate.source}:${candidate.id}`}
-            >
-              <div className="min-w-0 flex-1">
-                <strong className="block truncate">{candidate.title}</strong>
-                <small className="block truncate">
-                  {siteLabel(candidate.source, candidate.source_label)} · {candidate.artist} ·{' '}
-                  {Math.round(candidate.score * 100)}% · {candidate.reason}
-                </small>
+          {job.candidates.map((candidate) => {
+            const href = listenHref(candidate)
+            return (
+              <div
+                className="flex items-center gap-[8px] border-b border-line py-[6px]"
+                key={`${candidate.source}:${candidate.id}`}
+              >
+                <div className="min-w-0 flex-1">
+                  <strong className="block truncate">{candidate.title}</strong>
+                  <small className="block truncate">
+                    {siteLabel(candidate.source, candidate.source_label)} · {candidate.artist} ·{' '}
+                    {Math.round(candidate.score * 100)}% · {candidate.reason}
+                  </small>
+                </div>
+                {href && (
+                  <a
+                    className="shrink-0 coarse:inline-flex coarse:min-h-11 coarse:items-center"
+                    href={href}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Listen ↗
+                  </a>
+                )}
+                <Button
+                  disabled={!canPick || busy || candidate.id === job.selected}
+                  onClick={() => pick.mutate(candidate.id)}
+                >
+                  {candidate.id === job.selected ? 'Selected' : 'Use this'}
+                </Button>
               </div>
-              <a
-                className="shrink-0 coarse:inline-flex coarse:min-h-11 coarse:items-center"
-                href={candidate.url || `https://www.youtube.com/watch?v=${candidate.id}`}
-                target="_blank"
-                rel="noreferrer"
-              >
-                Listen ↗
-              </a>
-              <Button
-                disabled={!canPick || busy || candidate.id === job.selected}
-                onClick={() => pick.mutate(candidate.id)}
-              >
-                {candidate.id === job.selected ? 'Selected' : 'Use this'}
-              </Button>
-            </div>
-          ))}
+            )
+          })}
           {job.tool_tail && (
             <pre className="whitespace-pre-wrap [overflow-wrap:anywhere]">
               yt-dlp {job.tool_version}

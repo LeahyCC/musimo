@@ -10,7 +10,7 @@ from typing import cast
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 
-from backend.core.errors import plain_detail
+from backend.core.errors import shown_health
 from backend.core.sources import listed_sources
 from backend.core.store import Store
 from backend.integrations import deezer_cookie
@@ -94,10 +94,7 @@ def install_diagnostics_routes(
             "health": await health(),
             "versions": get_versions(),
             "disks": disks,
-            "sources": [
-                {**row, "detail": plain_detail(str(row.get("detail", "")))}
-                for row in store.source_health()
-            ],
+            "sources": [shown_health(row) for row in store.source_health()],
             "events": store.activity()["events"],
             "database": {
                 "mode": "wal",

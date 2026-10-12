@@ -1,4 +1,5 @@
 import { SourceMark } from '../../components/source-mark'
+import { cx } from '../../lib/cx'
 import { Field } from '../../ui'
 
 // A text button is shorter than a finger. On a touch screen it gets the 44px floor.
@@ -26,6 +27,7 @@ export function CatalogOrder({
   hasCookie,
   disabledSources,
   paused,
+  trouble,
   disabled,
   onOrder,
   onTries,
@@ -46,6 +48,8 @@ export function CatalogOrder({
   hasCookie: boolean
   disabledSources: string[]
   paused: string[]
+  /** Short mark for a source that is blocked or failing, keyed by source id. */
+  trouble: Record<string, string>
   disabled: boolean
   onOrder: (next: string[]) => void
   onTries: (next: number) => void
@@ -71,6 +75,7 @@ export function CatalogOrder({
     if (disabledSources.includes(id)) return 'Turned off'
     if (id === 'deezer' && !hasCookie) return 'No cookie yet'
     if (paused.includes(id)) return 'Paused'
+    if (trouble[id]) return trouble[id]
     return ''
   }
   const allSkipped = order.length > 0 && order.every((id) => skipReason(id))
@@ -204,6 +209,7 @@ export function SourceRow({
   on,
   disabled,
   lockedBy = '',
+  warn = false,
   onChange,
 }: {
   id: string
@@ -214,6 +220,8 @@ export function SourceRow({
   disabled: boolean
   /** The environment variable that holds this switch, or "" when Settings may change it. */
   lockedBy?: string
+  /** The note is a problem with this source, so it is drawn in the warning color. */
+  warn?: boolean
   onChange: (on: boolean) => void
 }) {
   return (
@@ -224,7 +232,7 @@ export function SourceRow({
           {label}
           {lockedBy ? <span className="text-warn"> · Locked by {lockedBy}</span> : null}
         </label>
-        <p className="mt-[4px] text-tiny text-muted">{note}</p>
+        <p className={cx('mt-[4px] text-tiny', warn ? 'text-warn' : 'text-muted')}>{note}</p>
       </div>
       <input
         id={id}
