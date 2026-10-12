@@ -17,7 +17,7 @@ from backend.integrations import deezer_cookie
 from backend.integrations.catalog import Catalog, CatalogError
 from backend.jobs.downloads import Downloads
 from backend.library.index import Library
-from backend.library.navidrome import Navidrome
+from backend.library.player import Player
 from backend.version import VERSION
 
 
@@ -30,13 +30,13 @@ def install_diagnostics_routes(
     get_catalog: Callable[[], Catalog],
     get_library: Callable[[], Library],
     get_downloads: Callable[[], Downloads],
-    get_navidrome: Callable[[], Navidrome],
+    get_player: Callable[[], Player],
     notify: Callable[[], None],
 ) -> None:
     probe_lock = asyncio.Lock()
     last_probe = 0.0
-    navidrome_cache: dict[str, object] | None = None
-    navidrome_cache_time = 0.0
+    player_cache: dict[str, object] | None = None
+    player_cache_time = 0.0
 
     @app.get("/api/health")
     async def health() -> dict[str, object]:
@@ -50,8 +50,8 @@ def install_diagnostics_routes(
 
     @app.get("/api/diagnostics")
     async def diagnostics() -> dict[str, object]:
-        nonlocal navidrome_cache, navidrome_cache_time
-        store, downloads, navidrome = get_store(), get_downloads(), get_navidrome()
+        nonlocal player_cache, player_cache_time
+        store, downloads, player = get_store(), get_downloads(), get_player()
         roots = os.getenv("MUSIMO_LIBRARY_ROOTS", "/music").split(os.pathsep)
         disks: list[dict[str, object]] = []
         for root in [str(data), *roots]:
@@ -77,16 +77,16 @@ def install_diagnostics_routes(
                     }
                 )
 
-        # Cache Navidrome capabilities for 30 seconds to avoid repeated pings
-        navidrome_result = None
-        if navidrome:
+        # Capabilities only stat the music folders. Keep the answer for 30 seconds.
+        player_result = None
+        if player:
             now = time.monotonic()
-            if navidrome_cache is None or now - navidrome_cache_time > 30:
-                navidrome_result = await navidrome.capabilities()
-                navidrome_cache = navidrome_result
-                navidrome_cache_time = now
+            if player_cache is None or now - player_cache_time > 30:
+                player_result = await player.capabilities()
+                player_cache = player_result
+                player_cache_time = now
             else:
-                navidrome_result = navidrome_cache
+                player_result = player_cache
 
         first, latest = store.bounds()
         saved = store.current()
@@ -107,7 +107,7 @@ def install_diagnostics_routes(
             "library": get_library().status(),
             "queue": downloads.controls(),
             "capabilities": {"settings": True, "events": True, "search": True, "downloads": True},
-            "navidrome": navidrome_result,
+            "player": player_result,
             "last_download": downloads.last_terminal_job(),
             "deezer_audio": bool(saved.deezer_audio and deezer_cookie.saved(data)),
             "download_sources": listed_sources(),

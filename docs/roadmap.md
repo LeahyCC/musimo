@@ -20,7 +20,7 @@ Version 0.4.0 (10 September 2026) completed the core search, download and playba
 - ✓ Diagnostics shows library roots (mounted, writable, free space)
 - ✓ Diagnostics shows selected destination with write-test button
 - ✓ Diagnostics shows last library scan (state, file count, when)
-- ✓ Diagnostics shows Navidrome status (configured, available, version, mode)
+- ✓ Diagnostics shows the library status (configured, available, version, mode)
 - ✓ Diagnostics shows YouTube helper availability with pause state
 - ✓ Diagnostics shows last download outcome with error code
 - ✓ Settings displays overall status summary with link to Diagnostics
@@ -33,7 +33,7 @@ Version 0.4.0 (10 September 2026) completed the core search, download and playba
 - ✓ Settings drafts survive SSE events
 - ✓ Conflict notices appear when a value changes elsewhere
 - ✓ Navigation guards block unsaved changes from being lost
-- ✓ Navidrome library browsing for albums, artists, tracks and playlists
+- ✓ library browsing for albums, artists, tracks and playlists
 - ✓ Playlist CRUD with inline rename
 - ✓ Linked liked playlist with thumbs up button
 - ✓ Add to playlist picker with inline creation
@@ -67,7 +67,7 @@ Two sites are in the list but switched off because yt-dlp cannot read them today
 
 ## Finish the existing journey first
 
-Search → inspect recording → choose destination/format → queue → see progress → handle failure → find the finished file in Navidrome. The core flow is working in 0.4.0; validation of the complete path still depends on your chosen provider, Navidrome setup and storage configuration.
+Search → inspect recording → choose destination/format → queue → see progress → handle failure → find the finished file in the library. The core flow is working in 0.4.0; validation of the complete path still depends on your chosen provider, the library setup and storage configuration.
 
 ## Next improvements
 

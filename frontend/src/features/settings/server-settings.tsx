@@ -48,26 +48,6 @@ const controls: {
     section: 'library',
   },
   {
-    key: 'navidrome_mode',
-    label: 'Navidrome scanning',
-    help: 'Watcher uses Navidrome’s file watcher. API requests a selective scan with the same credentials file used by the player.',
-    section: 'library',
-  },
-  {
-    key: 'navidrome_url',
-    label: 'Navidrome address',
-    help: 'Used for playback and API scans. Playback also needs MUSIMO_NAVIDROME_CREDENTIALS_FILE mounted in Compose.',
-    section: 'library',
-  },
-  {
-    key: 'navidrome_library_id',
-    label: 'Navidrome library ID',
-    help: 'The library number used for API scanning.',
-    section: 'library',
-    min: 1,
-    max: 100000,
-  },
-  {
     key: 'library_label',
     label: 'Library label',
     help: 'A familiar name for your primary music folder.',
@@ -445,7 +425,7 @@ export function SettingsPage() {
                                 setSaved(false)
                               }}
                             />
-                          ) : key === 'destination' || key === 'navidrome_mode' ? (
+                          ) : key === 'destination' ? (
                             <FieldSelect
                               id={key}
                               value={entered}
@@ -458,22 +438,12 @@ export function SettingsPage() {
                                 setSaved(false)
                               }}
                             >
-                              {key === 'destination'
-                                ? diagnostics.data?.disks.slice(1).map((disk) => (
-                                    <option
-                                      key={disk.path}
-                                      value={disk.path}
-                                      disabled={!disk.writable}
-                                    >
-                                      {disk.path}
-                                      {disk.writable ? '' : ' (read-only)'}
-                                    </option>
-                                  ))
-                                : ['off', 'watcher', 'api'].map((mode) => (
-                                    <option key={mode} value={mode}>
-                                      {mode}
-                                    </option>
-                                  ))}
+                              {diagnostics.data?.disks.slice(1).map((disk) => (
+                                <option key={disk.path} value={disk.path} disabled={!disk.writable}>
+                                  {disk.path}
+                                  {disk.writable ? '' : ' (read-only)'}
+                                </option>
+                              ))}
                             </FieldSelect>
                           ) : key === 'output_format' ? (
                             <FieldSelect
@@ -500,7 +470,7 @@ export function SettingsPage() {
                               min={min}
                               max={max}
                               maxLength={min === undefined ? 400 : undefined}
-                              required={key !== 'navidrome_url'}
+                              required
                               disabled={setting.locked || save.isPending}
                               value={entered}
                               onChange={(e) => {

@@ -129,7 +129,7 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
                     [tuple(row) for row in store.db.execute("SELECT * FROM source_control")],
                     [("youtube", 1, 2)],
                 )
-                self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], 5)
+                self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], 6)
             finally:
                 store.close()
 

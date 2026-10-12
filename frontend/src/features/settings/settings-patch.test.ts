@@ -46,9 +46,6 @@ describe('withYoutubeCookies', () => {
       destination: field('/music'),
       naming_template: field('{artist}'),
       youtube_cookies: { value: true, origin: 'file', locked: false },
-      navidrome_url: field(''),
-      navidrome_mode: field('off'),
-      navidrome_library_id: field(0),
     })
     const after = withYoutubeCookies(settings, false)
     expect(after.youtube_cookies).toEqual({ value: false, origin: 'file', locked: false })

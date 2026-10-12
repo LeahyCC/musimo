@@ -1,5 +1,6 @@
 import json
 import os
+import secrets
 import sqlite3
 import threading
 from pathlib import Path
@@ -15,6 +16,84 @@ RETAIN_EVENTS = 5000
 SECRET_KEYS = frozenset({"deezer_arl"})
 # soundcloud_fallback was the old SoundCloud switch. It only feeds the source_order migration.
 RETIRED_KEYS = frozenset({"soundcloud_fallback"})
+# Playback used to ask a separate server. The version 6 upgrade deletes these rows.
+# They are not settings: Settings refuses keys it does not know, so leaving a row would
+# stop the database from opening.
+REMOVED_SETTING_KEYS = ("navidrome_url", "navidrome_mode", "navidrome_library_id")
+
+
+def new_song_id() -> str:
+    """Opaque song id: `tr-` plus 16 hex characters, inside the player's id rule."""
+    return "tr-" + secrets.token_hex(8)
+
+
+def note_library_change(db: sqlite3.Connection) -> None:
+    """Bump the library revision. The caller holds the store lock and a write transaction."""
+    db.execute("UPDATE library_revision SET value=value+1 WHERE id=1")
+
+
+def drop_song_references(db: sqlite3.Connection, song_ids: list[str]) -> None:
+    """Drop playlist, queue and waveform rows for songs that just left the index.
+
+    The caller holds the store lock and a write transaction. Positions are packed
+    again so a playlist index still matches the row the browser asked to remove.
+    """
+    ids = [song_id for song_id in song_ids if song_id]
+    if not ids:
+        return
+    payload = json.dumps(ids)
+    playlists = [
+        int(row[0])
+        for row in db.execute(
+            "SELECT DISTINCT playlist_id FROM playlist_songs "
+            "WHERE song_id IN (SELECT value FROM json_each(?))",
+            (payload,),
+        )
+    ]
+    db.execute(
+        "DELETE FROM playlist_songs WHERE song_id IN (SELECT value FROM json_each(?))",
+        (payload,),
+    )
+    for playlist_id in playlists:
+        _repack_playlist(db, playlist_id)
+    db.execute(
+        "DELETE FROM play_queue_songs WHERE song_id IN (SELECT value FROM json_each(?))",
+        (payload,),
+    )
+    db.execute(
+        "DELETE FROM waveforms WHERE song_id IN (SELECT value FROM json_each(?))",
+        (payload,),
+    )
+    _repack_queue(db)
+
+
+def _repack_playlist(db: sqlite3.Connection, playlist_id: int) -> None:
+    songs = [
+        str(row[0])
+        for row in db.execute(
+            "SELECT song_id FROM playlist_songs WHERE playlist_id=? ORDER BY position",
+            (playlist_id,),
+        )
+    ]
+    db.execute("DELETE FROM playlist_songs WHERE playlist_id=?", (playlist_id,))
+    db.executemany(
+        "INSERT INTO playlist_songs VALUES (?,?,?)",
+        [(playlist_id, index, song_id) for index, song_id in enumerate(songs)],
+    )
+
+
+def _repack_queue(db: sqlite3.Connection) -> None:
+    songs = [
+        str(row[0]) for row in db.execute("SELECT song_id FROM play_queue_songs ORDER BY position")
+    ]
+    current = str(db.execute("SELECT current_id FROM play_queue WHERE id=1").fetchone()[0])
+    db.execute("DELETE FROM play_queue_songs")
+    db.executemany(
+        "INSERT INTO play_queue_songs VALUES (?,?)",
+        list(enumerate(songs)),
+    )
+    if current not in songs:
+        db.execute("UPDATE play_queue SET current_id='', position_ms=0 WHERE id=1")
 
 
 def settings_only(values: dict[str, object]) -> dict[str, object]:
@@ -97,7 +176,7 @@ class Store:
         self.db.execute("PRAGMA busy_timeout=5000")
         self.db.execute("PRAGMA foreign_keys=ON")
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 5:
+        if version > 6:
             raise RuntimeError("Database is newer than this application; do not downgrade in place")
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -223,6 +302,93 @@ class Store:
                 ALTER TABLE queue_control ADD COLUMN pace_started INTEGER NOT NULL DEFAULT 0;
                 ALTER TABLE queue_control ADD COLUMN pace_until REAL NOT NULL DEFAULT 0;
                 PRAGMA user_version=5;
+                COMMIT;
+            """)
+        if version < 6:
+            # One transaction. Song ids are assigned in SQL so a path that is not valid
+            # UTF-8 is never decoded. added_at comes from mtime so an existing library
+            # still has a "newest" order. Waveform rows were keyed by the old playback ids.
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                ALTER TABLE library_files ADD COLUMN song_id TEXT NOT NULL DEFAULT '';
+                ALTER TABLE library_files ADD COLUMN added_at TEXT NOT NULL DEFAULT '';
+                ALTER TABLE library_files ADD COLUMN track INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE library_files ADD COLUMN disc INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE library_files ADD COLUMN year INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE library_files ADD COLUMN genre TEXT NOT NULL DEFAULT '';
+                ALTER TABLE library_files ADD COLUMN genres TEXT NOT NULL DEFAULT '[]';
+                ALTER TABLE library_files ADD COLUMN album_artist TEXT NOT NULL DEFAULT '';
+                ALTER TABLE library_files ADD COLUMN compilation INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE library_files ADD COLUMN replaygain_track_gain REAL;
+                ALTER TABLE library_files ADD COLUMN replaygain_album_gain REAL;
+                ALTER TABLE library_files ADD COLUMN replaygain_track_peak REAL;
+                ALTER TABLE library_files ADD COLUMN replaygain_album_peak REAL;
+                ALTER TABLE library_files ADD COLUMN suffix TEXT NOT NULL DEFAULT '';
+                ALTER TABLE library_files ADD COLUMN content_type TEXT NOT NULL DEFAULT '';
+                ALTER TABLE library_files ADD COLUMN bitrate INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE library_files ADD COLUMN sample_rate INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE library_files ADD COLUMN bit_depth INTEGER;
+                ALTER TABLE library_files ADD COLUMN channels INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE library_files ADD COLUMN has_art INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE library_files ADD COLUMN tags_version INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE library_files ADD COLUMN record_labels TEXT NOT NULL DEFAULT '[]';
+                ALTER TABLE library_files ADD COLUMN play_count INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE library_files ADD COLUMN last_played TEXT;
+                UPDATE library_files
+                    SET song_id = 'tr-' || lower(hex(randomblob(8)))
+                    WHERE song_id = '';
+                UPDATE library_files
+                    SET song_id = 'tr-' || lower(hex(randomblob(8)))
+                    WHERE song_id IN (
+                        SELECT song_id FROM library_files
+                        WHERE song_id != '' GROUP BY song_id HAVING count(*) > 1
+                    );
+                UPDATE library_files
+                    SET added_at = strftime(
+                        '%Y-%m-%dT%H:%M:%fZ', mtime_ns / 1000000000.0, 'unixepoch'
+                    )
+                    WHERE added_at = '';
+                CREATE UNIQUE INDEX IF NOT EXISTS library_song_id
+                    ON library_files(song_id) WHERE song_id != '';
+                CREATE TABLE IF NOT EXISTS playlists (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    name TEXT NOT NULL,
+                    public INTEGER NOT NULL DEFAULT 0,
+                    created TEXT NOT NULL,
+                    changed TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS playlist_songs (
+                    playlist_id INTEGER NOT NULL REFERENCES playlists(id) ON DELETE CASCADE,
+                    position INTEGER NOT NULL,
+                    song_id TEXT NOT NULL,
+                    PRIMARY KEY (playlist_id, position)
+                );
+                CREATE INDEX IF NOT EXISTS playlist_songs_song ON playlist_songs(song_id);
+                CREATE TABLE IF NOT EXISTS artist_favourites (
+                    artist_id TEXT PRIMARY KEY,
+                    starred_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS play_queue (
+                    id INTEGER PRIMARY KEY CHECK(id=1),
+                    current_id TEXT NOT NULL DEFAULT '',
+                    position_ms INTEGER NOT NULL DEFAULT 0,
+                    changed TEXT NOT NULL DEFAULT ''
+                );
+                INSERT OR IGNORE INTO play_queue(id) VALUES (1);
+                CREATE TABLE IF NOT EXISTS play_queue_songs (
+                    position INTEGER PRIMARY KEY,
+                    song_id TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS library_revision (
+                    id INTEGER PRIMARY KEY CHECK(id=1),
+                    value INTEGER NOT NULL DEFAULT 0
+                );
+                INSERT OR IGNORE INTO library_revision(id) VALUES (1);
+                DELETE FROM waveforms;
+                DELETE FROM settings WHERE key IN (
+                    'navidrome_url', 'navidrome_mode', 'navidrome_library_id'
+                );
+                PRAGMA user_version=6;
                 COMMIT;
             """)
         self.seed()
@@ -631,6 +797,321 @@ class Store:
                 self._event("source.updated", result)
                 self.db.commit()
                 return result
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def _timestamp(self) -> str:
+        return str(self.db.execute("SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now')").fetchone()[0])
+
+    def library_revision(self) -> int:
+        with self.lock:
+            row = self.db.execute("SELECT value FROM library_revision WHERE id=1").fetchone()
+            return int(row[0])
+
+    def bump_library_revision(self) -> int:
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                note_library_change(self.db)
+                value = int(
+                    self.db.execute("SELECT value FROM library_revision WHERE id=1").fetchone()[0]
+                )
+                self.db.commit()
+                return value
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def _playlist(self, playlist_id: int) -> dict[str, object] | None:
+        row = self.db.execute("SELECT * FROM playlists WHERE id=?", (playlist_id,)).fetchone()
+        if row is None:
+            return None
+        songs = [
+            str(item[0])
+            for item in self.db.execute(
+                "SELECT song_id FROM playlist_songs WHERE playlist_id=? ORDER BY position",
+                (playlist_id,),
+            )
+        ]
+        return {
+            "id": int(row["id"]),
+            "name": str(row["name"]),
+            "public": bool(row["public"]),
+            "created": str(row["created"]),
+            "changed": str(row["changed"]),
+            "song_ids": songs,
+        }
+
+    def create_playlist(self, name: str, song_ids: list[str]) -> dict[str, object]:
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                now = self._timestamp()
+                cur = self.db.execute(
+                    "INSERT INTO playlists (name, public, created, changed) VALUES (?,?,?,?)",
+                    (name, 0, now, now),
+                )
+                playlist_id = int(cur.lastrowid or 0)
+                self.db.executemany(
+                    "INSERT INTO playlist_songs VALUES (?,?,?)",
+                    [(playlist_id, index, song_id) for index, song_id in enumerate(song_ids)],
+                )
+                result = self._playlist(playlist_id)
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
+        if result is None:
+            raise RuntimeError("Playlist insert did not return a row")
+        return result
+
+    def playlist(self, playlist_id: int) -> dict[str, object] | None:
+        with self.lock:
+            return self._playlist(playlist_id)
+
+    def list_playlists(self) -> list[dict[str, object]]:
+        with self.lock:
+            rows = self.db.execute(
+                """
+                SELECT p.id, p.name, p.public, p.created, p.changed,
+                    count(s.song_id) AS song_count,
+                    coalesce(sum(f.duration), 0) AS duration
+                FROM playlists p
+                LEFT JOIN playlist_songs s ON s.playlist_id=p.id
+                LEFT JOIN library_files f ON f.song_id=s.song_id AND s.song_id!=''
+                GROUP BY p.id
+                ORDER BY p.id
+                """
+            ).fetchall()
+        return [
+            {
+                "id": int(row["id"]),
+                "name": str(row["name"]),
+                "public": bool(row["public"]),
+                "created": str(row["created"]),
+                "changed": str(row["changed"]),
+                "song_count": int(row["song_count"]),
+                "duration": float(row["duration"]),
+            }
+            for row in rows
+        ]
+
+    def rename_playlist(self, playlist_id: int, name: str) -> dict[str, object] | None:
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                if self._playlist(playlist_id) is None:
+                    self.db.rollback()
+                    return None
+                self.db.execute(
+                    "UPDATE playlists SET name=?, changed=? WHERE id=?",
+                    (name, self._timestamp(), playlist_id),
+                )
+                result = self._playlist(playlist_id)
+                self.db.commit()
+                return result
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def add_playlist_song(self, playlist_id: int, song_id: str) -> dict[str, object] | None:
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                if self._playlist(playlist_id) is None:
+                    self.db.rollback()
+                    return None
+                position = int(
+                    self.db.execute(
+                        "SELECT count(*) FROM playlist_songs WHERE playlist_id=?",
+                        (playlist_id,),
+                    ).fetchone()[0]
+                )
+                self.db.execute(
+                    "INSERT INTO playlist_songs VALUES (?,?,?)",
+                    (playlist_id, position, song_id),
+                )
+                self.db.execute(
+                    "UPDATE playlists SET changed=? WHERE id=?",
+                    (self._timestamp(), playlist_id),
+                )
+                result = self._playlist(playlist_id)
+                self.db.commit()
+                return result
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def remove_playlist_song(self, playlist_id: int, index: int) -> dict[str, object] | None:
+        """Remove the song at a dense index and pack the positions that follow it."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                songs = [
+                    str(row[0])
+                    for row in self.db.execute(
+                        "SELECT song_id FROM playlist_songs WHERE playlist_id=? ORDER BY position",
+                        (playlist_id,),
+                    )
+                ]
+                if self._playlist(playlist_id) is None or index < 0 or index >= len(songs):
+                    self.db.rollback()
+                    return None
+                del songs[index]
+                self.db.execute("DELETE FROM playlist_songs WHERE playlist_id=?", (playlist_id,))
+                self.db.executemany(
+                    "INSERT INTO playlist_songs VALUES (?,?,?)",
+                    [(playlist_id, position, song_id) for position, song_id in enumerate(songs)],
+                )
+                self.db.execute(
+                    "UPDATE playlists SET changed=? WHERE id=?",
+                    (self._timestamp(), playlist_id),
+                )
+                result = self._playlist(playlist_id)
+                self.db.commit()
+                return result
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def delete_playlist(self, playlist_id: int) -> bool:
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                cur = self.db.execute("DELETE FROM playlists WHERE id=?", (playlist_id,))
+                self.db.commit()
+                return cur.rowcount > 0
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def set_artist_favourite(self, artist_id: str, favourite: bool) -> str | None:
+        """Star an artist, or clear the star. A second star keeps the original time."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                if favourite:
+                    self.db.execute(
+                        """
+                        INSERT INTO artist_favourites VALUES (?,?)
+                        ON CONFLICT(artist_id) DO NOTHING
+                        """,
+                        (artist_id, self._timestamp()),
+                    )
+                    row = self.db.execute(
+                        "SELECT starred_at FROM artist_favourites WHERE artist_id=?",
+                        (artist_id,),
+                    ).fetchone()
+                    starred = str(row[0]) if row else None
+                else:
+                    self.db.execute("DELETE FROM artist_favourites WHERE artist_id=?", (artist_id,))
+                    starred = None
+                self.db.commit()
+                return starred
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def artist_favourites(self) -> dict[str, str]:
+        with self.lock:
+            return {
+                str(row[0]): str(row[1])
+                for row in self.db.execute("SELECT artist_id, starred_at FROM artist_favourites")
+            }
+
+    def record_play(self, song_id: str) -> bool:
+        """Add one play. last_played only moves forward."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                now = self._timestamp()
+                cur = self.db.execute(
+                    """
+                    UPDATE library_files
+                    SET play_count=play_count+1,
+                        last_played=CASE
+                            WHEN last_played IS NULL OR last_played < ? THEN ?
+                            ELSE last_played
+                        END
+                    WHERE song_id=?
+                    """,
+                    (now, now, song_id),
+                )
+                self.db.commit()
+                return cur.rowcount > 0
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def write_play_queue(self, song_ids: list[str], current: str, position_ms: int) -> None:
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                self.db.execute("DELETE FROM play_queue_songs")
+                self.db.executemany(
+                    "INSERT INTO play_queue_songs VALUES (?,?)",
+                    list(enumerate(song_ids)),
+                )
+                self.db.execute(
+                    "UPDATE play_queue SET current_id=?, position_ms=?, changed=? WHERE id=1",
+                    (current, position_ms, self._timestamp()),
+                )
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def read_play_queue(self) -> dict[str, object]:
+        """The saved queue, without songs the index no longer has.
+
+        A missing current song is cleared. The cleaned queue is written back.
+        """
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                rows = self.db.execute(
+                    "SELECT song_id FROM play_queue_songs ORDER BY position"
+                ).fetchall()
+                header = self.db.execute(
+                    "SELECT current_id, position_ms, changed FROM play_queue WHERE id=1"
+                ).fetchone()
+                song_ids = [str(row[0]) for row in rows]
+                if song_ids:
+                    present = {
+                        str(row[0])
+                        for row in self.db.execute(
+                            "SELECT song_id FROM library_files "
+                            "WHERE song_id IN (SELECT value FROM json_each(?)) AND song_id!=''",
+                            (json.dumps(song_ids),),
+                        )
+                    }
+                else:
+                    present = set()
+                kept = [song_id for song_id in song_ids if song_id in present]
+                current = str(header["current_id"])
+                position = int(header["position_ms"])
+                if current not in kept:
+                    current = ""
+                    position = 0
+                if kept != song_ids or current != str(header["current_id"]):
+                    self.db.execute("DELETE FROM play_queue_songs")
+                    self.db.executemany(
+                        "INSERT INTO play_queue_songs VALUES (?,?)",
+                        list(enumerate(kept)),
+                    )
+                    self.db.execute(
+                        "UPDATE play_queue SET current_id=?, position_ms=? WHERE id=1",
+                        (current, position),
+                    )
+                changed = str(header["changed"])
+                self.db.commit()
+                return {
+                    "current": current,
+                    "position": position,
+                    "changed": changed,
+                    "song_ids": kept,
+                }
             except Exception:
                 self.db.rollback()
                 raise

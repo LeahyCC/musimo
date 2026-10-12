@@ -77,7 +77,7 @@ No Spotify credentials or paid recommendation subscription is required for the p
 
 ## Later: listening-based recommendations
 
-Offer an explicit connection to Navidrome favorites/play counts or ListenBrainz listening data. First verify the actual server/API fields and permissions; the current scanner cannot infer them. Explain exactly what is read or submitted and allow disconnect/reset without deleting music.
+Offer an explicit connection to the library favorites/play counts or ListenBrainz listening data. First verify the actual server/API fields and permissions; the current scanner cannot infer them. Explain exactly what is read or submitted and allow disconnect/reset without deleting music.
 
 With those signals, add recently played artists, overlooked artists and new releases since a known refresh date. Keep the library-only mode useful. Do not silently upload listening history or enable scrobbling.
 

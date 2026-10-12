@@ -10,7 +10,7 @@ const LOSSY = new Set(['mp3', 'aac', 'm4a', 'ogg', 'oga', 'opus', 'wma'])
 
 const numbers = new Intl.NumberFormat('en')
 
-/** A number Navidrome sent, or undefined where it sent nothing or a zero standing for "unknown". */
+/** A number from the file, or undefined where it is missing or a zero standing for "unknown". */
 function positive(value: number | undefined) {
   return value !== undefined && Number.isFinite(value) && value > 0 ? value : undefined
 }
@@ -36,7 +36,7 @@ export function channelsText(count: number) {
   return `${count} channels`
 }
 
-/** "FLAC, 44.1 kHz, 1,012 kbps", with whatever Navidrome did not send left out. */
+/** "FLAC, 44.1 kHz, 1,012 kbps", with whatever the file did not provide left out. */
 export function fileSummary(song: SongDetail) {
   return [
     formatName(song),
@@ -55,7 +55,7 @@ export function isLowQualityLossy(song: SongDetail) {
   )
 }
 
-/** `show` of the number when Navidrome sent a usable one, otherwise nothing. */
+/** `show` of the number when the file has a usable one, otherwise nothing. */
 function shown(value: number | undefined, show: (value: number) => string) {
   const number = positive(value)
   return number === undefined ? undefined : show(number)
@@ -89,7 +89,7 @@ export function contributorGroups(song: SongDetail) {
   return [...groups].map(([role, names]) => ({ role, names }))
 }
 
-/** A count such as a year or track number, or nothing where Navidrome sent none or a 0. */
+/** A count such as a year or track number, or nothing where the file has none or a 0. */
 function counted(value: number | undefined) {
   return shown(value, String)
 }
@@ -123,7 +123,7 @@ export function otherAlbums(albums: LibraryAlbum[], currentId: string | undefine
     .slice(0, limit)
 }
 
-/** When it was last played as a timestamp, or undefined where Navidrome sent none or nonsense. */
+/** When it was last played as a timestamp, or undefined where there is none or nonsense. */
 export function playedAt(song: SongDetail) {
   const time = song.played ? Date.parse(song.played) : Number.NaN
   return Number.isFinite(time) ? time : undefined

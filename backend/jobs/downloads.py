@@ -34,7 +34,6 @@ from backend.jobs.processes import stop_tree
 from backend.jobs.publish import digest as digest
 from backend.jobs.publish import publish_file as publish_file
 from backend.library.index import Library
-from backend.library.navidrome import Navidrome, NavidromeError
 
 # YouTube lists its largest thumbnail without checking that it exists, and an older video has
 # none. Each size to fall back to is on the same host, smaller than the one before it.
@@ -189,10 +188,8 @@ class Downloads:
         catalog: Catalog,
         library: Library,
         changed: asyncio.Event,
-        navidrome: Navidrome | None = None,
     ) -> None:
         self.store, self.catalog, self.library, self.changed = store, catalog, library, changed
-        self.navidrome_client = navidrome or Navidrome(store, catalog.client)
         self.wake = asyncio.Event()
         self.jobs = Jobs(store, self.notify)
         self.enrichment = Enrichment(catalog)
@@ -790,37 +787,6 @@ class Downloads:
             )
         return ready, info
 
-    async def navidrome(self, job: Job, path: Path) -> str | None:
-        settings = self.settings()
-        if settings.navidrome_mode == "off":
-            return "Navidrome integration is not configured"
-        if settings.navidrome_mode == "watcher":
-            return None
-        scan_folder = path.parent
-        if job.batch_id:
-            siblings = [
-                row for row in self.jobs.list() if row.batch_id == job.batch_id and row.id != job.id
-            ]
-            if any(row.stage not in TERMINAL for row in siblings):
-                return None
-            scan_folder = Path(
-                os.path.commonpath(
-                    [
-                        str(path.parent),
-                        *[str(Path(row.final_path).parent) for row in siblings if row.final_path],
-                    ]
-                )
-            )
-        try:
-            relative = scan_folder.relative_to(self.target(job.target)).as_posix()
-            if relative == ".":
-                relative = ""
-            target = f"{settings.navidrome_library_id}:{relative}"
-            await self.navidrome_client.start_scan(target)
-        except (OSError, ValueError, NavidromeError):
-            return "Navidrome scan failed; file is saved. Check integration settings."
-        return None
-
     def layout(self, job: Job, extension: str) -> str:
         """Where a finished file lands, relative to the chosen library root."""
         if job.catalog == "podcast":
@@ -875,9 +841,8 @@ class Downloads:
                 except FileExistsError:
                     pass
         await asyncio.to_thread(self.library.index_published, target, root)
-        warning = await self.navidrome(job, target)
         current = self.jobs.get(job.id)
-        warnings = current.warnings + ([warning] if warning else [])
+        warnings = list(current.warnings)
         details = info or {}
         self.jobs.update(
             job.id,
@@ -1036,19 +1001,6 @@ class Downloads:
                 speed=0,
                 eta=None,
             )
-            if not retry and job.batch_id and settings.navidrome_mode == "api":
-                published = next(
-                    (
-                        row
-                        for row in self.jobs.list()
-                        if row.batch_id == job.batch_id and row.stage == "done" and row.final_path
-                    ),
-                    None,
-                )
-                if published:
-                    warning = await self.navidrome(job, Path(published.final_path))
-                    if warning:
-                        self.jobs.update(job.id, warnings=[*job.warnings, warning])
             # The worker names the source on the error. A block already counted this run is skipped.
             if error.code in BLOCKING_CODES:
                 self.note_block(job_id, job.source, error.detail)

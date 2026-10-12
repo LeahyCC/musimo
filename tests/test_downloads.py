@@ -281,7 +281,6 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             store = Store(root / "db.sqlite3")
-            store.update({"navidrome_mode": "watcher"})
             audio = root / "published.opus"
             subprocess.run(
                 [
@@ -332,14 +331,12 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                 await service.close()
             store.close()
 
-    async def test_batch_api_idempotency_controls_and_scan_target(self) -> None:
+    async def test_batch_api_idempotency_and_controls(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             store = Store(root / "db.sqlite3")
-            requests: list[httpx.Request] = []
 
             def upstream(request: httpx.Request) -> httpx.Response:
-                requests.append(request)
                 if request.url.path == "/album/9":
                     return httpx.Response(
                         200,
@@ -369,13 +366,7 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
             async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
                 library = Library(store, [root], asyncio.Event())
                 service = Downloads(store, Catalog(store, client), library, asyncio.Event())
-                store.update(
-                    {
-                        "destination": str(root),
-                        "navidrome_mode": "api",
-                        "navidrome_url": "http://navidrome:4533",
-                    }
-                )
+                store.update({"destination": str(root)})
                 app = FastAPI()
                 install_download_routes(app, lambda: service)
                 async with httpx.AsyncClient(
@@ -409,21 +400,6 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                         ).status_code,
                         422,
                     )
-                job = service.jobs.list()[0]
-                credentials = root / "credentials.json"
-                credentials.write_text(
-                    json.dumps({"username": "fixture", "password": "test secret"}), encoding="utf-8"
-                )
-                with patch.dict(
-                    "os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}
-                ):
-                    self.assertIsNone(
-                        await service.navidrome(job, root / "Artist" / "Album" / "track.opus")
-                    )
-                request = requests[-1]
-                self.assertEqual(request.url.params["target"], "1:Artist/Album")
-                self.assertNotIn("test secret", str(request.url))
-                self.assertNotIn("test secret", json.dumps(store.snapshot()))
             store.close()
 
     async def test_failed_jobs_clear_individually_and_in_bulk_without_touching_done(self) -> None:
@@ -600,7 +576,10 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                     library_file = root / "track1.flac"
                     library_file.write_bytes(b"dummy")
                     store.db.execute(
-                        "INSERT INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO library_files ("
+                        "path, root, mtime_ns, size, generation, title, artist, album, "
+                        "title_key, artist_key, album_key, duration, isrc, mbid"
+                        ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             str(library_file),
                             str(root),

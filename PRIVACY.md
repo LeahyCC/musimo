@@ -20,7 +20,7 @@ The browser stores preview volume in local storage. Search/filter state appears 
 - Enabled audio sources receive worker matching/download requests from the server.
 - MusicBrainz can receive identifiers for optional metadata enrichment.
 - LRCLIB can receive track, artist, album and duration for lyrics lookup.
-- A configured Navidrome server receives scan requests; API mode uses configured authentication.
+- A configured the library server receives scan requests; API mode uses configured authentication.
 - Package registries and container registries receive requests during installation and updates.
 
 These services apply their own policies. Self-hosting does not prevent providers, your network operator or your proxy from observing requests. Optional discovery and listening-history features are only planned; no current claim of a private recommendation service is made.

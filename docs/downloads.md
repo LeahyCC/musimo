@@ -57,7 +57,7 @@ Set the Deezer cookie in Settings, or with `MUSIMO_DEEZER_ARL` for the first sta
 
 An episode downloads the publisher's own file, so there is no YouTube search, match review or duration check (feed lengths are rough and stitched-in ads change them). `POST /api/podcast-episodes` takes the show and episode IDs; the server looks the episode up again and never takes a file address from the browser. Jobs are stored with `catalog` set to `podcast` and the file address in `source_url`, so episode numbers never collide with Deezer track numbers.
 
-Episodes keep the format the show publishes (usually MP3 or AAC) and land at `Podcasts/<show>/<YYYY-MM-DD> - <title>.<ext>` in the chosen folder, ignoring the music naming template. Tags use the host as artist, the show as album, the release date and the genre Podcast, with the show's artwork. The files are indexed like music, so Navidrome shows each show as an album. A worker gets an hour per episode instead of ten minutes. Episode jobs have `source` set to `podcast`. Host errors are reported as `DOWNLOAD_FAILED` and never count toward the YouTube block; a YouTube pause does not hold back episodes.
+Episodes keep the format the show publishes (usually MP3 or AAC) and land at `Podcasts/<show>/<YYYY-MM-DD> - <title>.<ext>` in the chosen folder, ignoring the music naming template. Tags use the host as artist, the show as album, the release date and the genre Podcast, with the show's artwork. The files are indexed like music, so the library shows each show as an album. A worker gets an hour per episode instead of ten minutes. Episode jobs have `source` set to `podcast`. Host errors are reported as `DOWNLOAD_FAILED` and never count toward the YouTube block; a YouTube pause does not hold back episodes.
 
 ## Pasted links
 
@@ -189,11 +189,9 @@ An album or artist batch stores each track's title, artist and length from the l
 
 Mutagen writes native ID3, MP4 or Vorbis tags, embedded cover artwork and lyrics. Synced lyrics also produce an LRC sidecar. MP3 uses the standard MusicBrainz recording UFID; MP4 uses the standard mixed-case MusicBrainz freeform names. Folder artwork is kept when already present.
 
-## Navidrome
+## After a download
 
-Choose `watcher` only when Navidrome's file watcher is enabled and watches the same music folder. This was verified on the local Windows installation with a public-domain U.S. Navy Band recording: the new file appeared in Navidrome's database with its written artist and title.
-
-For explicit scanning, select `api`, set the Navidrome URL and library ID, and mount a JSON credentials file containing `username` and `password`. Set `MUSIMO_NAVIDROME_CREDENTIALS_FILE` to its container path. The file stays outside generic settings and diagnostics. Requests use a salted Subsonic token and `target=<library id>:<relative folder>`. API failures keep the saved file and add a warning. API scanning has fixture coverage but has not been exercised against this installation with real credentials.
+A finished file is indexed as soon as it is published. The next library view can play it. There is no separate scan to request.
 
 ## Controls and failures
 
@@ -234,14 +232,14 @@ Failed downloads display a plain hint with a link to the relevant setting or dia
 | `DOWNLOAD_FAILED`    | The download stopped without a specific cause.                 | Retry button                     |
 | `INTERNAL_ERROR`     | An unexpected error occurred during processing.                | Report with tool output          |
 
-Successful downloads with Navidrome or artwork warnings now show the warning count in the done job heading while keeping the details element collapsed. The heading reads "opus · 161 kbps · 2 warnings" so successful jobs with scan notes remain visible without being marked as failures. A job's `notes`, such as where a pasted link's tags came from, are not counted there.
+Successful downloads with the library or artwork warnings now show the warning count in the done job heading while keeping the details element collapsed. The heading reads "opus · 161 kbps · 2 warnings" so successful jobs with scan notes remain visible without being marked as failures. A job's `notes`, such as where a pasted link's tags came from, are not counted there.
 
 ## Verification and remaining gates
 
 Automated tests cover Python 3.12 compatibility and Windows/Docker Python 3.14. They cover prior search/settings behavior plus queue identity, restart state, actual worker termination, protected publication, disk failure and tag round trips for all four output choices.
 
-The live public-domain fixture took 2.852 seconds from download through local indexing and appeared in Navidrome. Its transport is Wikimedia, feeding the regular resumed worker; it does not validate YouTube matching. The link case of the same script took a track of the Open Goldberg Variations through the whole pasted-link road on 19 September 2026: resolve, queue, the real worker, tagging and indexing took 5.047 seconds and left an MP3 tagged with the item's artist, album, date and track 5 of 32 (see [testing](testing.md#reliability-and-indexing-checks)). The separate YouTube open-film fixture completed through the actual worker, paused in 26.4 ms, preserved paused state across restart, then recovered after the container was killed during download.
+The live public-domain fixture took 2.852 seconds from download through local indexing and appeared in the library. Its transport is Wikimedia, feeding the regular resumed worker; it does not validate YouTube matching. The link case of the same script took a track of the Open Goldberg Variations through the whole pasted-link road on 19 September 2026: resolve, queue, the real worker, tagging and indexing took 5.047 seconds and left an MP3 tagged with the item's artist, album, date and track 5 of 32 (see [testing](testing.md#reliability-and-indexing-checks)). The separate YouTube open-film fixture completed through the actual worker, paused in 26.4 ms, preserved paused state across restart, then recovered after the container was killed during download.
 
 A 100-recording public review corpus is prepared, including live, cover, remix, instrumental, karaoke and ambiguous-title risks. Independent listening labels are still missing, so match precision remains NOT MEASURED. See [Music match review](match-review.md). The ARM64 image builds, boots and passes 41 backend tests under emulation; native ARM hardware remains unmeasured. Custom quality, imports, cookie management, source update controls and notifications remain open. See [measurements](measurements.md) and the original [brief](brief.md).
 
-The 7 September reliability checks exercised a generated 12-track album with real workers on Windows and Linux: pause, durable queue reopen, automatic retry, tags, immediate indexing and duplicate prevention. A separate Docker SIGKILL interrupted three workers during an MP3 batch; the same 12 jobs completed after restart with matching file hashes and no duplicates. The public-domain music fixture also passed through the worker into an isolated Windows Navidrome instance, whose watcher imported the written tags. These generated batches do not measure provider throughput or music-match accuracy. Commands and fixture boundaries are in [Testing and CI](testing.md#reliability-and-indexing-checks).
+The 7 September reliability checks exercised a generated 12-track album with real workers on Windows and Linux: pause, durable queue reopen, automatic retry, tags, immediate indexing and duplicate prevention. A separate Docker SIGKILL interrupted three workers during an MP3 batch; the same 12 jobs completed after restart with matching file hashes and no duplicates. The public-domain music fixture also passed through the worker into an isolated Windows the library instance, whose watcher imported the written tags. These generated batches do not measure provider throughput or music-match accuracy. Commands and fixture boundaries are in [Testing and CI](testing.md#reliability-and-indexing-checks).

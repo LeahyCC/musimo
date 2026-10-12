@@ -22,7 +22,7 @@ from backend.jobs.publish import digest
 def seed() -> None:
     store = Store(Path("/data/musimo.sqlite3"))
     try:
-        store.update({"concurrency": 3, "navidrome_mode": "off"})
+        store.update({"concurrency": 3})
         store.db.execute("UPDATE queue_control SET paused=1")
         source = Path("/tmp/fixture.opus")
         subprocess.run(

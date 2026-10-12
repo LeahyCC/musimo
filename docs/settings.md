@@ -4,7 +4,7 @@ Settings are validated and stored in SQLite. Edit the form, then use Save change
 
 The sticky save bar appears only when there is something to say: while there are unsaved changes ("You have unsaved changes." with an enabled Save changes button), after a failed save (the error, with the draft kept), and for six seconds after a successful save ("Saved. You can safely refresh."). With nothing changed there is no bar and no idle Save button. The bar carries the `.save-bar` hook that `e2e/phone.spec.ts` measures against the bottom bar.
 
-A status summary at the top of the Settings page shows overall system readiness (ready or needs attention) with a link to Diagnostics for detailed component status. The Diagnostics "Ready to download?" strip reads the same answer. Both call `systemIsReady` in `frontend/src/features/diagnostics/readiness.ts`, so they cannot disagree. The system is ready when every library root is mounted, writable and reporting free space, the library scan is `idle`, `scanning` or `done` (a finished scan is healthy, only a failed, cancelled or interrupted one is not), Navidrome is reachable whenever the server reports it at all, the YouTube helper is healthy, and the last download did not fail. `readiness.test.ts` covers each rule.
+A status summary at the top of the Settings page shows overall system readiness (ready or needs attention) with a link to Diagnostics for detailed component status. The Diagnostics "Ready to download?" strip reads the same answer. Both call `systemIsReady` in `frontend/src/features/diagnostics/readiness.ts`, so they cannot disagree. The system is ready when every library root is mounted, writable and reporting free space, the library scan is `idle`, `scanning` or `done` (a finished scan is healthy, only a failed, cancelled or interrupted one is not), the library is reachable whenever the server reports it at all, the YouTube helper is healthy, and the last download did not fail. `readiness.test.ts` covers each rule.
 
 ## Editable settings
 
@@ -31,9 +31,7 @@ Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGI
 - Deezer cookie: the account's `arl` cookie, pasted under Sources (192 hex characters). The file is `deezer-arl.txt` on the data volume, mode `0600` where the filesystem allows it, and the worker reads it from there. Settings only learns that one is saved: `deezer_cookie` is true while the file exists. The PATCH body still takes `deezer_arl` to replace it, or `""` to remove it, but the value never reaches the settings table. That row stays, always empty, and every reply sends it empty. An empty box leaves the saved cookie alone. Only Remove cookie, then Save, sends the empty value. `MUSIMO_DEEZER_ARL` seeds the first start only. At startup a cookie still in the settings table (an older version kept it there, and the first-start seed puts it there) moves into the file and the row is emptied. A file that is already there wins. After that the file is what downloads use, and a removed cookie stays removed even if the variable is still set.
 - `deezer_catalog`: on by default. Off turns Deezer search off. Album pages, track details and catalog downloads still use the catalog, because a download needs the track's details.
 - The old SoundCloud switch (`soundcloud_fallback`, or `MUSIMO_SOUNDCLOUD_FALLBACK`) is no longer a setting. On the first start with `source_order`, an on value adds SoundCloud to the end of the list. A stored row is left in the table, skipped when settings are read, and not sent to the browser. A PATCH that names it is refused. How the list behaves is in [downloads](downloads.md#catalog-source-order).
-- `navidrome_mode`: `off`, `watcher` or `api`, default `off`.
-- `navidrome_url`: server URL for API scanning and library playback. It must be HTTP or HTTPS and cannot contain credentials, a query or fragment. The help text names `MUSIMO_NAVIDROME_CREDENTIALS_FILE`.
-- `navidrome_library_id`: positive library number, default 1. The UI caps it at 100000; the backend requires 1 or more.
+  The old playback-server address, scan mode and library number are not settings. A database from before this version drops those rows when it opens.
 
 Library's empty state links to `/settings#library`. Any field id works as an anchor (`destination`, `naming_template`, `output_format` and the others); the page scrolls to and focuses it. Download failure links use these anchors. The liked playlist link is persisted outside the settings table in `linked_playlists` and is untouched by settings saves.
 
@@ -45,15 +43,15 @@ When a setting changes elsewhere (another tab, another user, or the Downloads pa
 
 Navigation guards block in-app Link clicks and browser tab close/refresh while the draft holds unsaved keys. The blocker shows a confirmation dialog. Saving clears the draft, removes conflict notices, and shows "Saved. You can safely refresh."
 
-See [downloads](downloads.md) for staging, formats and metadata. See [library player](player.md) for playback and shared Navidrome credentials.
+See [downloads](downloads.md) for staging, formats and metadata. See [library player](player.md) for playback.
 
 ## Not yet available
 
-Destination selection, naming templates and Navidrome watcher/API modes are implemented. Notifications, source-specific budgets, proxy options and updater controls are not yet present. Secrets belong in dedicated files or encrypted storage, not this generic settings table. The YouTube cookies file and the Deezer cookie file both follow that.
+Destination selection and naming templates are implemented. Notifications, source-specific budgets, proxy options and updater controls are not yet present. Secrets belong in dedicated files or encrypted storage, not this generic settings table. The YouTube cookies file and the Deezer cookie file both follow that.
 
 Settings now includes a library scan panel with live counts, elapsed time, rescan and cancel. A cancelled scan retains the prior index.
 
-The diagnostics export contains runtime versions, mount paths, library scan status, source test status, navidrome, last_download and recent events. Navidrome API credentials are mounted as a separate JSON file and are shared by scan and player calls. ZIP log export and a secret-redaction layer are hardening tasks.
+The diagnostics export contains runtime versions, mount paths, library scan status, source test status, the player, last_download and recent events. ZIP log export and a secret-redaction layer are hardening tasks.
 
 ## Your settings
 

@@ -36,7 +36,7 @@ from backend.integrations.youtube_cookies import publish as publish_youtube_cook
 from backend.jobs.downloads import Downloads
 from backend.jobs.links import Links
 from backend.library.index import Library
-from backend.library.navidrome import Navidrome
+from backend.library.player import Player
 from backend.library.waveform import WaveformService
 from backend.version import VERSION
 
@@ -80,12 +80,12 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     library: Library
     downloads: Downloads
     links: Links
-    navidrome: Navidrome
+    player: Player
     waveforms: WaveformService
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        nonlocal store, versions, catalog, library, downloads, links, navidrome, waveforms
+        nonlocal store, versions, catalog, library, downloads, links, player, waveforms
         # Later tracks reuse the YouTube player script instead of fetching it again.
         os.environ["MUSIMO_YTDLP_CACHE"] = str(data / "ytdlp-cache")
         store = Store(data / "musimo.sqlite3")
@@ -96,27 +96,20 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         publish_youtube_cookies(data)
         drop_youtube_cookie_copies(data)
         versions = await asyncio.to_thread(runtime_versions)
-        async with (
-            httpx.AsyncClient(
-                timeout=2.2, follow_redirects=False, headers={"User-Agent": f"Musimo/{VERSION}"}
-            ) as client,
-            httpx.AsyncClient(
-                timeout=httpx.Timeout(connect=5, read=30, write=5, pool=5),
-                follow_redirects=False,
-                headers={"User-Agent": f"Musimo/{VERSION}"},
-            ) as navidrome_http,
-        ):
+        async with httpx.AsyncClient(
+            timeout=2.2, follow_redirects=False, headers={"User-Agent": f"Musimo/{VERSION}"}
+        ) as client:
             catalog = Catalog(store, client)
-            navidrome = Navidrome(store, navidrome_http)
             roots = [
                 Path(root).resolve()
                 for root in os.getenv("MUSIMO_LIBRARY_ROOTS", "/music").split(os.pathsep)
                 if root
             ]
-            waveforms = WaveformService(store, navidrome, roots)
+            player = Player(store, roots, client)
+            waveforms = WaveformService(store, player)
             library = Library(store, roots, changed)
             library.start()
-            downloads = Downloads(store, catalog, library, changed, navidrome)
+            downloads = Downloads(store, catalog, library, changed)
             downloads.start()
             links = Links(downloads)
             try:
@@ -131,7 +124,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_activity_routes(app, lambda: store, changed.set)
     install_download_routes(app, lambda: downloads)
     install_artist_download_routes(app, lambda: downloads)
-    install_player_routes(app, lambda: navidrome)
+    install_player_routes(app, lambda: player)
     install_waveform_routes(app, lambda: waveforms)
     install_podcast_routes(app, lambda: downloads)
     install_link_routes(app, lambda: links)
@@ -146,7 +139,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         lambda: catalog,
         lambda: library,
         lambda: downloads,
-        lambda: navidrome,
+        lambda: player,
         changed.set,
     )
 
@@ -180,7 +173,10 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             "img-src 'self' https: data:; media-src 'self' https:; "
             "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
         )
-        if request.url.path.startswith("/api/"):
+        # Cover ids change with the image, so those responses may be cached.
+        if request.url.path.startswith("/api/") and not request.url.path.startswith(
+            "/api/player/art/"
+        ):
             response.headers["Cache-Control"] = "no-store"
         return response
 

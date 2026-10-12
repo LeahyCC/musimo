@@ -61,7 +61,7 @@ export function addToHistory(
   return [entry, ...entries].slice(0, HISTORY_LIMIT)
 }
 
-/** The track a history row plays again. Play counts are Navidrome's, so the copy carries none. */
+/** The track a history row plays again. Play counts stay with the library, so the copy carries none. */
 export const historyTrack = (entry: HistoryEntry): LibraryTrack => ({
   id: entry.id,
   title: entry.title,

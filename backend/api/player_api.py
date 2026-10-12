@@ -1,21 +1,21 @@
 import re
-from collections.abc import AsyncIterator, Callable
+from collections.abc import Callable
 from typing import Annotated
 
-import httpx
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
-from backend.library.navidrome import (
+from backend.library.player import (
     ALBUM_SORTS,
     ARTIST_SHOWS,
     ARTIST_SORTS,
     TRACK_SORTS,
-    Navidrome,
-    NavidromeError,
+    Player,
+    PlayerError,
     PlaylistProtected,
     ShuffleExpired,
+    SongMissing,
 )
 
 ITEM_ID = re.compile(r"^[A-Za-z0-9._:-]{1,200}$")
@@ -31,14 +31,8 @@ AlbumSort = Annotated[str, Query(pattern=f"^({'|'.join(ALBUM_SORTS)})$")]
 ArtistSort = Annotated[str, Query(pattern=f"^({'|'.join(ARTIST_SORTS)})$")]
 ArtistShow = Annotated[str, Query(pattern=f"^({'|'.join(ARTIST_SHOWS)})?$")]
 BYTE_RANGE = re.compile(r"^bytes=\d*-\d*$")
-MEDIA_HEADERS = {
-    "accept-ranges",
-    "content-length",
-    "content-range",
-    "content-type",
-    "etag",
-    "last-modified",
-}
+# The cover id changes when the image does, so a browser can keep the bytes.
+ART_CACHE = "public, max-age=31536000, immutable"
 
 
 class ShuffleWindow(BaseModel):
@@ -149,14 +143,18 @@ class PlaylistSongUpdate(BaseModel):
 
 def checked_id(value: str) -> str:
     if not ITEM_ID.fullmatch(value):
-        raise HTTPException(422, "Invalid Navidrome item ID")
+        raise HTTPException(422, "Invalid item ID")
     return value
 
 
-def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
-    @app.exception_handler(NavidromeError)
-    async def navidrome_error(_: Request, exc: NavidromeError) -> JSONResponse:
+def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:
+    @app.exception_handler(PlayerError)
+    async def player_error(_: Request, exc: PlayerError) -> JSONResponse:
         return JSONResponse({"detail": str(exc)}, status_code=503)
+
+    @app.exception_handler(SongMissing)
+    async def song_missing(_: Request, exc: SongMissing) -> JSONResponse:
+        return JSONResponse({"detail": str(exc)}, status_code=404)
 
     @app.exception_handler(ShuffleExpired)
     async def shuffle_expired(_: Request, exc: ShuffleExpired) -> JSONResponse:
@@ -311,33 +309,25 @@ def install_player_routes(app: FastAPI, get: Callable[[], Navidrome]) -> None:
     async def lyrics(song_id: str) -> dict[str, object]:
         return {"items": await get().lyrics(checked_id(song_id))}
 
-    async def media_response(endpoint: str, item_id: str, range_header: str) -> StreamingResponse:
+    @app.get("/api/player/stream/{song_id}")
+    async def stream(song_id: str, request: Request) -> FileResponse:
+        # More than one range is refused before FileResponse, which would otherwise serve it.
+        range_header = request.headers.get("range", "")
         if range_header and not BYTE_RANGE.fullmatch(range_header):
             raise HTTPException(416, "Only one byte range is supported")
-        return proxied(await get().media(endpoint, checked_id(item_id), range_header))
-
-    def proxied(response: httpx.Response) -> StreamingResponse:
-        async def content() -> AsyncIterator[bytes]:
-            try:
-                async for chunk in response.aiter_bytes():
-                    yield chunk
-            finally:
-                await response.aclose()
-
-        headers = {
-            name: value for name, value in response.headers.items() if name.lower() in MEDIA_HEADERS
-        }
-        # httpx hands over the decoded body, so a compressed response's length no longer fits.
-        if response.headers.get("content-encoding"):
-            headers = {
-                name: value for name, value in headers.items() if name.lower() != "content-length"
-            }
-        return StreamingResponse(content(), status_code=response.status_code, headers=headers)
-
-    @app.get("/api/player/stream/{song_id}")
-    async def stream(song_id: str, request: Request) -> StreamingResponse:
-        return await media_response("stream", song_id, request.headers.get("range", ""))
+        song = checked_id(song_id)
+        path = get().local_file(song)
+        if path is None:
+            raise HTTPException(404, "Track not found")
+        return FileResponse(path, media_type=get().media_type(song))
 
     @app.get("/api/player/art/{cover_id}")
-    async def art(cover_id: str) -> StreamingResponse:
-        return proxied(await get().cover_art(checked_id(cover_id)))
+    async def art(cover_id: str) -> Response:
+        found = await get().cover(checked_id(cover_id))
+        if found is None:
+            raise HTTPException(404, "Cover not found")
+        return Response(
+            content=found.body,
+            media_type=found.media_type,
+            headers={"ETag": found.etag, "Cache-Control": ART_CACHE},
+        )

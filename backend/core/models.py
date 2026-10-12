@@ -1,6 +1,5 @@
 import re
 from typing import Literal
-from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -41,22 +40,6 @@ def clean_order(value: list[str]) -> list[str]:
     return seen
 
 
-def clean_navidrome_url(value: str) -> str:
-    if not value:
-        return value
-    parsed = urlsplit(value)
-    if (
-        parsed.scheme not in {"http", "https"}
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.query
-        or parsed.fragment
-    ):
-        raise ValueError("Use a plain http or https Navidrome URL without credentials or a query")
-    return value.rstrip("/")
-
-
 class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -83,9 +66,6 @@ class Settings(BaseModel):
     source_order: list[str] = Field(default_factory=lambda: ["deezer", "youtube"])
     # Download failures on the current source before the next one. A search with no song moves on.
     tries_per_source: int = Field(default=1, ge=1, le=4)
-    navidrome_url: str = ""
-    navidrome_mode: Literal["off", "watcher", "api"] = "off"
-    navidrome_library_id: int = Field(default=1, ge=1)
 
     @field_validator("naming_template")
     @classmethod
@@ -101,11 +81,6 @@ class Settings(BaseModel):
     @classmethod
     def order_value(cls, value: list[str]) -> list[str]:
         return clean_order(value)
-
-    @field_validator("navidrome_url")
-    @classmethod
-    def navidrome_address(cls, value: str) -> str:
-        return clean_navidrome_url(value)
 
 
 class SettingsPatch(BaseModel):
@@ -128,9 +103,6 @@ class SettingsPatch(BaseModel):
     disabled_sources: list[str] | None = None
     source_order: list[str] | None = None
     tries_per_source: int | None = Field(default=None, ge=1, le=4)
-    navidrome_url: str | None = None
-    navidrome_mode: Literal["off", "watcher", "api"] | None = None
-    navidrome_library_id: int | None = Field(default=None, ge=1)
 
     @field_validator("deezer_arl")
     @classmethod
@@ -146,8 +118,3 @@ class SettingsPatch(BaseModel):
     @classmethod
     def order_value(cls, value: list[str] | None) -> list[str] | None:
         return None if value is None else clean_order(value)
-
-    @field_validator("navidrome_url")
-    @classmethod
-    def navidrome_address(cls, value: str | None) -> str | None:
-        return clean_navidrome_url(value) if value is not None else None

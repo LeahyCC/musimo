@@ -7,7 +7,9 @@ from unittest.mock import patch
 from fastapi.testclient import TestClient
 
 from backend.core.store import LockedSetting, Store
+from backend.library.player import PLAYING, UNMOUNTED
 from backend.main import create_app
+from backend.version import VERSION
 
 
 class FoundationTests(unittest.TestCase):
@@ -246,19 +248,22 @@ class FoundationTests(unittest.TestCase):
                 self.assertIsInstance(result["success"], bool)
                 self.assertGreaterEqual(result["elapsed_ms"], 0)
 
-    def test_diagnostics_includes_navidrome_and_last_download(self) -> None:
+    def test_diagnostics_includes_the_player_and_last_download(self) -> None:
         with tempfile.TemporaryDirectory() as folder:
             data = Path(folder)
             with TestClient(create_app(data)) as client:
                 diagnostics = client.get("/api/diagnostics").json()
-                self.assertIn("navidrome", diagnostics)
+                self.assertIn("player", diagnostics)
+                self.assertNotIn("navidrome", diagnostics)
                 self.assertIn("last_download", diagnostics)
                 self.assertIn("library", diagnostics)
                 self.assertIn("queue", diagnostics)
                 self.assertIn("capabilities", diagnostics)
                 self.assertIsNone(diagnostics["last_download"])
-                self.assertIsNotNone(diagnostics["navidrome"])
-                self.assertFalse(diagnostics["navidrome"]["configured"])
+                player = diagnostics["player"]
+                self.assertIn(player["detail"], (PLAYING, UNMOUNTED))
+                self.assertNotIn("playback server", player["detail"])
+                self.assertEqual(player["version"], VERSION)
                 self.assertFalse(diagnostics["deezer_audio"])
 
 

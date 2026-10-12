@@ -2,7 +2,7 @@
 
 Copy the prompt below into an assistant that can browse the web and run commands on the computer that will host Musimo. A chat-only assistant can guide you through the same steps. Leave anything you do not know blank.
 
-The prompt asks the assistant to inspect the machine, use the current repository, and verify a working installation. Navidrome and remote access are optional. It does not assume someone else's folder paths, accounts or Docker setup.
+The prompt asks the assistant to inspect the machine, use the current repository, and verify a working installation. the library and remote access are optional. It does not assume someone else's folder paths, accounts or Docker setup.
 
 ## Copy this prompt
 
@@ -15,7 +15,7 @@ My details, if known:
 - Computer/server and operating system:
 - Existing music folder(s):
 - Folder where new downloads should go:
-- Existing Navidrome server, or whether I want one installed:
+- Existing the library server, or whether I want one installed:
 - Access needed: this computer only, home network, or remotely through Tailscale:
 - Existing Musimo or another music app to migrate from:
 
@@ -50,7 +50,7 @@ Keep the matching pinned helper/plugin versions from the repository. The helper 
 
 The default address is http://127.0.0.1:8765. Keep the loopback bind initially. If the port is occupied, choose a free host port in .env and use it consistently. Check docker compose ps, recent service logs, /api/health and Diagnostics. A healthy container does not prove catalog access or downloads work.
 
-Save my destination and format. Scan the mounted collection and wait for completion. Navidrome is separate and is not included in this Compose stack. If I want it, reuse my existing installation or install it from its current official instructions. Both apps must see the same host music folder. Choose watcher mode when its watcher works, or configure API scanning using the documented library ID and a credentials file mounted read-only from outside the checkout. Keep passwords out of chat, logs and Git. Verify connectivity from inside Musimo: localhost there refers to the container itself.
+Save my destination and format. Scan the mounted collection and wait for completion. the library is separate and is not included in this Compose stack. If I want it, reuse my existing installation or install it from its current official instructions. Both apps must see the same host music folder. Choose watcher mode when its watcher works, or configure API scanning using the documented library ID and a credentials file mounted read-only from outside the checkout. Keep passwords out of chat, logs and Git. Verify connectivity from inside Musimo: localhost there refers to the container itself.
 
 4. Set up remote access only if requested.
 
@@ -65,7 +65,7 @@ Test through the final HTTPS address, including saving a setting and live queue 
 - Open search, find an artist, open an album and play an available preview.
 - Confirm an existing known file is indexed and gets the expected library badge, if I have a collection.
 - Download one recording I have permission to obtain. Use my selected example or a verified permitted fixture. Confirm the job finishes, the full audio file plays, its tags are sensible, and it exists in the intended host folder. Report missing optional artwork or lyrics honestly. A preview clip or a queued job is not a successful full download.
-- Confirm the new file is indexed in Musimo and, if configured, appears and plays in Navidrome.
+- Confirm the new file is indexed in Musimo and, if configured, appears and plays in the library.
 - Open Download all albums on an artist. Check selection and album/song counts without submitting an entire discography just to test installation.
 - Once the test job has finished, restart only this Musimo service. Confirm health, saved preferences, library index and history survive, and the page reconnects to live updates.
 - Check the host's Docker/service startup arrangement. Explain any login or sleep dependency that prevents unattended availability. Do not reboot the host without arranging it with me.

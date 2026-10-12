@@ -1,4 +1,4 @@
-"""Filtering, sorting and filter choices for the library pages, on rows Navidrome sent."""
+"""Filtering, sorting and filter choices for the library pages."""
 
 import re
 from collections.abc import Mapping

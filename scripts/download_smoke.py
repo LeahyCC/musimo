@@ -70,9 +70,7 @@ def prepare(root: Path, directory: str) -> Store:
     if not root.is_dir():
         raise ValueError("Mount an existing test destination")
     store = Store(Path(directory) / "fixture.sqlite3")
-    store.update(
-        {"destination": str(root), "naming_template": TEMPLATE, "navidrome_mode": "watcher"}
-    )
+    store.update({"destination": str(root), "naming_template": TEMPLATE})
     return store
 
 

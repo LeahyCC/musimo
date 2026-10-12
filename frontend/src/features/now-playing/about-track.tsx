@@ -28,7 +28,7 @@ const MORE_ALBUMS = 8
 const MORE_SONGS = 10
 
 /**
- * What Navidrome knows about one song. The About tab and the line under the artist share this key,
+ * What the library knows about one song. The About tab and the line under the artist share this key,
  * so opening the tab costs no second request. The details are a bonus: a failed read shows less,
  * never an error.
  */
@@ -75,7 +75,7 @@ const quietLinkClassName = 'text-small text-muted underline hover:text-text'
 
 /**
  * The file behind the track, where it sits in the world, how it has been listened to and what else
- * of this artist and album is in the library. Whatever Navidrome does not have is left out.
+ * of this artist and album is in the library. Whatever the file does not have is left out.
  */
 export function AboutPanel({ track, visible }: { track: LibraryTrack; visible: boolean }) {
   // The tab's panel stays mounted while hidden, so nothing beyond the song reads until it shows.

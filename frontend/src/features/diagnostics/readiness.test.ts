@@ -35,7 +35,7 @@ const diagnostics = (patch: Record<string, unknown> = {}) =>
     library,
     queue: { paused: false, source_paused: false },
     capabilities: { settings: true, events: true, search: true, downloads: true },
-    navidrome: null,
+    player: null,
     last_download: null,
     ...patch,
   })
@@ -84,12 +84,12 @@ describe('systemIsReady', () => {
     expect(systemIsReady(diagnostics({ sources: [{ ...youtube, status: 'down' }] }))).toBe(false)
   })
 
-  it('is not ready when Navidrome is down, and ignores it when there is none', () => {
-    const navidrome = { configured: true, available: true, version: '0.55', detail: '' }
-    expect(systemIsReady(diagnostics({ navidrome }))).toBe(true)
-    const down = { ...navidrome, available: false }
-    expect(systemIsReady(diagnostics({ navidrome: down }))).toBe(false)
-    expect(systemIsReady(diagnostics({ navidrome: null }))).toBe(true)
+  it('is not ready when the player is unavailable, and ignores it when there is none', () => {
+    const player = { configured: true, available: true, version: '0.4.0', detail: '' }
+    expect(systemIsReady(diagnostics({ player }))).toBe(true)
+    const down = { ...player, available: false }
+    expect(systemIsReady(diagnostics({ player: down }))).toBe(false)
+    expect(systemIsReady(diagnostics({ player: null }))).toBe(true)
   })
 
   it('is not ready when the last download failed', () => {

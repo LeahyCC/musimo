@@ -217,8 +217,8 @@ export const libraryTrackSchema = z.object({
 })
 export type LibraryTrack = z.infer<typeof libraryTrackSchema>
 
-// One song as `GET /api/player/song/{id}` passes it through: the file's own facts, the listening
-// record and OpenSubsonic's credits. Each is present only when Navidrome has it.
+// One song as `GET /api/player/song/{id}` returns it: the file's own facts and the listening
+// record. Each is present only when the file has it.
 export const songDetailSchema = z.object({
   id: z.string(),
   suffix: z.string().optional(),
@@ -396,9 +396,6 @@ export const settingsSchema = z.object({
   tries_per_source: field(z.number()).default({ value: 1, origin: 'default', locked: false }),
   // Whether a YouTube cookies.txt file is on the server. The text itself is never sent back.
   youtube_cookies: field(z.boolean()).default({ value: false, origin: 'file', locked: false }),
-  navidrome_url: field(z.string()),
-  navidrome_mode: field(z.enum(['off', 'watcher', 'api'])),
-  navidrome_library_id: field(z.number()),
 })
 export type Settings = z.infer<typeof settingsSchema>
 export type SettingKey = keyof Settings
@@ -462,7 +459,7 @@ export const diagnosticsSchema = z.object({
       }),
     )
     .default([]),
-  navidrome: playerCapabilitiesSchema.nullable(),
+  player: playerCapabilitiesSchema.nullable(),
   last_download: z
     .object({
       stage: z.string(),

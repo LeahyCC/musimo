@@ -111,7 +111,7 @@ type Playback = {
   ) => void
   /**
    * Queue edits. Each one saves the queue. The two that add say what happened in `notice`, and
-   * refuse, adding nothing, when the queue would pass the 500 songs Navidrome keeps. Up next
+   * refuse, adding nothing, when the queue would pass the 500 songs it keeps. Up next
    * announces the other three itself, where the listener made them.
    */
   playNext: (tracks: LibraryTrack[]) => void
@@ -195,7 +195,7 @@ const PlayerContext = createContext<Playback>({
 })
 export const usePlayer = () => useContext(PlayerContext)
 
-const LIBRARY_NOTICE = 'Your Navidrome library'
+const LIBRARY_NOTICE = 'Your music library'
 const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
 const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
 const SLEEP_ENDED_NOTICE = 'Sleep timer ended. Playback paused.'
@@ -236,7 +236,7 @@ export function queueHash(ids: readonly string[]) {
 }
 
 /**
- * The entries queued by hand, as text to keep. Navidrome's saved queue holds ids only, so the
+ * The entries queued by hand, as text to keep. The saved queue holds ids only, so the
  * places of these entries are kept beside a fingerprint of the queue they belong to. Empty text
  * when nothing was chosen, which is nothing to keep.
  */
@@ -272,7 +272,7 @@ export function decodeChosen(queue: readonly LibraryTrack[], saved: string) {
 /** Empty when `adding` more songs fit beside `size` already queued, else the reason they do not. */
 export function queueOverflow(size: number, adding: number) {
   if (size + adding <= QUEUE_LIMIT) return ''
-  return `The queue is full. Navidrome saves ${QUEUE_LIMIT} songs and this would make ${size + adding}. Nothing was added.`
+  return `The queue is full. It holds ${QUEUE_LIMIT} songs and this would make ${size + adding}. Nothing was added.`
 }
 
 /** Where the playing track sits after `from` moves to `to`, so a reorder never loses its place. */
@@ -455,7 +455,7 @@ export const preloadDue = (length: number, time: number) =>
   length > 0 && length - time <= PRELOAD_LEAD_SECONDS
 
 export const skippedNotice = (title: string) => `Skipped ${title}, it could not be played`
-export const failureLimitNotice = `Stopped after ${MAX_FAILURES} tracks in a row could not be played. Check the connection to Navidrome.`
+export const failureLimitNotice = `Stopped after ${MAX_FAILURES} tracks in a row could not be played. Check that the music folder is mounted.`
 
 const streamUrl = (track: LibraryTrack) => `/api/player/stream/${encodeURIComponent(track.id)}`
 
@@ -957,7 +957,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           if (announce) setNotice(QUEUE_SAVE_FAILED)
           return false
         }
-        // The deck fingerprint has to match the queue Navidrome actually stored.
+        // The deck fingerprint has to match the queue that was actually stored.
         if (deckAtSave && deck.current === deckAtSave) writeDeck(deckAtSave, ids)
         return true
       })
@@ -1280,7 +1280,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   // A library track would not load or play. Skips to the next and says which, until too many in a
-  // row have failed, which more likely means Navidrome is out of reach than that every song is bad.
+  // row have failed, which more likely means the music folder is out of reach than that every song is bad.
   function skipUnplayable() {
     const failed = libraryCurrent.current
     if (!failed) return

@@ -36,7 +36,7 @@ The tidy-screens work adds these specs. They describe what each one asserts; a r
 
 Unit tests (`vitest`) cover the shared readiness rule (`readiness.test.ts`), the feed grouping (`activity-runs.test.ts`) and the remembered searches (`recent-searches.test.ts`).
 
-The frontend production build and focused backend tests pass. The separate testing task owns broader browser regression automation and CI. [Download verification](downloads.md) records worker/publication/recovery checks, including the permitted fixture that appeared in Navidrome.
+The frontend production build and focused backend tests pass. The separate testing task owns broader browser regression automation and CI. [Download verification](downloads.md) records worker/publication/recovery checks, including the permitted fixture that appeared in the library.
 
 ## Visual walk, 10 September 2026
 
@@ -141,7 +141,7 @@ Not yet verified in a browser: this change was written in an environment with no
 
 ## Known limits
 
-Library albums, artists and tracks filter and sort on the server; playlist sorts still apply to the loaded list. Catalog search on the Search page is unchanged and says so in the help inside its Filters panel. Navidrome's saved play queue holds 500 songs, so Play all over a larger library plays the first 500. Shuffle plays the whole filtered library, past the 50,000 song browse cap as well: the queue holds a window and the server fills the next one as it plays. Whole-library track browsing reads up to 50,000 songs from Navidrome, so a library beyond that size describes the first 50,000 it returns.
+Library albums, artists and tracks filter and sort on the server; playlist sorts still apply to the loaded list. Catalog search on the Search page is unchanged and says so in the help inside its Filters panel. the library's saved play queue holds 500 songs, so Play all over a larger library plays the first 500. Shuffle plays the whole filtered library, past the 50,000 song browse cap as well: the queue holds a window and the server fills the next one as it plays. Whole-library track browsing reads up to 50,000 songs from the library, so a library beyond that size describes the first 50,000 it returns.
 
 Track navigation checks added on 10 September 2026 cover highlighted row focus (including tracks outside the initial virtual window), aria-current marking, "Back to results" restoring search state, and no-preview state showing disabled controls and labels. These join the existing automated browser regression suite.
 

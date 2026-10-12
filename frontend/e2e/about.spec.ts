@@ -24,7 +24,7 @@ const flac = {
   contributors: [{ role: 'producer', artist: { name: 'Maker' } }],
 }
 
-/** Opens Now Playing with `song` as what Navidrome says about Alpha, or nothing at all. */
+/** Opens Now Playing with `song` as what the library says about Alpha, or nothing at all. */
 async function openNowPlaying(page: Page, song: Record<string, unknown> | null, tab = 'about') {
   await page.addInitScript((saved) => {
     localStorage.setItem('musimo.now-playing-view', 'artwork')
@@ -91,7 +91,7 @@ test('About lists the file, the release, the listening and what else is owned', 
   await expect(file).toContainText('Stereo')
   await expect(file).toContainText('34.2 MB')
   await expect(file).toContainText('Harbor Static/Clear Water/01 Alpha.flac')
-  // Navidrome sent a bit depth of 0, which is "not known" and gets no row.
+  // A bit depth of 0 is "not known" and gets no row.
   await expect(panel.getByText('Bit depth')).toHaveCount(0)
 
   const release = panel.locator('section', { has: page.getByRole('heading', { name: 'Release' }) })

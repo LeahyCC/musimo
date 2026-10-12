@@ -8,7 +8,7 @@ export function PopularityChart({ albums }: { albums: LibraryAlbum[] }) {
   if (points.length < 2 || peak === 0)
     return (
       <p className="text-small text-muted">
-        Navidrome has not recorded enough plays for these releases to chart yet.
+        Not enough plays are recorded for these releases to chart yet.
       </p>
     )
   const width = 620

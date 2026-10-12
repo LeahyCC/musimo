@@ -73,7 +73,7 @@ test('an unavailable destination is flagged on one line', async ({ page }) => {
         },
         queue: { paused: false, source_paused: false },
         capabilities: { settings: true, events: true, search: true, downloads: true },
-        navidrome: null,
+        player: null,
         last_download: null,
       },
     }),

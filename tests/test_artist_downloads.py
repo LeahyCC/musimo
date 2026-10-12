@@ -31,7 +31,10 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
                 job = downloads.jobs.enqueue(77, "original", str(root))
                 downloads.jobs.update(job.id, stage="done", final_path=str(saved))
                 store.db.execute(
-                    "INSERT INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO library_files ("
+                    "path, root, mtime_ns, size, generation, title, artist, album, "
+                    "title_key, artist_key, album_key, duration, isrc, mbid"
+                    ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         str(saved),
                         str(root),
@@ -144,7 +147,10 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
                 catalog = Catalog(store, source)
                 library = Library(store, [root], asyncio.Event())
                 store.db.execute(
-                    "INSERT INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    "INSERT INTO library_files ("
+                    "path, root, mtime_ns, size, generation, title, artist, album, "
+                    "title_key, artist_key, album_key, duration, isrc, mbid"
+                    ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                     (
                         str(root / "owned.opus"),
                         str(root),

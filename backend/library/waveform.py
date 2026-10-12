@@ -1,16 +1,16 @@
 """Waveform peaks for the Now Playing seek bar.
 
-One ffmpeg decode per track, cached in SQLite until the file changes. ffmpeg reads the file from
-disk when Navidrome's path for it resolves inside a library root, and otherwise a copy of
-Navidrome's stream. Only one decode runs at a time, a short line waits behind it, and anything
-that takes too long is given up on, so a big album cannot start twenty ffmpeg processes.
+One ffmpeg decode per track, cached in SQLite until the file changes. ffmpeg reads the file
+from disk when its path resolves inside a library root. A missing file, a symlink or a path
+outside the roots has no peaks. Only one decode runs at a time, a short line waits behind it,
+and anything that takes too long is given up on, so a big album cannot start twenty ffmpeg
+processes.
 """
 
 import asyncio
 import contextlib
 import subprocess
 import sys
-import tempfile
 from array import array
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
@@ -18,7 +18,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from backend.core.store import Store
-from backend.library.navidrome import Navidrome
+from backend.library.player import Player
 
 WAVEFORM_POINTS = 800
 # Written into every cache key. Bump it when the way peaks are worked out changes, so rows made by
@@ -27,16 +27,13 @@ WAVEFORM_VERSION = 1
 # Peaks do not need hi-fi, and a low rate keeps the decode and the arithmetic small.
 DECODE_RATE = 8000
 # 12.5 ms of audio per window. The windows are folded down to WAVEFORM_POINTS at the end, so the
-# result does not depend on the length Navidrome reports.
+# result does not depend on how long the file is.
 WINDOW_SAMPLES = 100
 READ_BYTES = 1 << 16
 # How many requests may wait behind the decode that is running, and how long each may wait.
 QUEUE_LIMIT = 8
 QUEUE_WAIT_SECONDS = 30.0
 DECODE_SECONDS = 60.0
-# A stream is copied to disk before ffmpeg reads it (some formats cannot be decoded from a pipe),
-# so a runaway download is stopped here.
-STREAM_LIMIT_BYTES = 512 * 1024 * 1024
 # Tracks that failed to decode, remembered so a broken file is not retried on every visit.
 FAILURE_MEMORY = 256
 
@@ -163,22 +160,20 @@ class WaveformService:
     def __init__(
         self,
         store: Store,
-        navidrome: Navidrome,
-        roots: list[Path],
+        player: Player,
         decode: Decoder = decode_file,
     ) -> None:
         self.store = store
-        self.navidrome = navidrome
-        # Resolved, so the containment check below compares like with like.
-        self.roots = [root.resolve() for root in roots]
+        self.player = player
         self.decode = decode
         self.turn = asyncio.Semaphore(1)
         self.waiting = 0
         self.failures: OrderedDict[str, str] = OrderedDict()
 
     async def peaks(self, song_id: str) -> list[float]:
-        song = await self.navidrome.song(song_id)
-        source = await asyncio.to_thread(self.locate, song)
+        source = await asyncio.to_thread(self.locate, song_id)
+        if source is None:
+            raise WaveformUnavailable("This track is not in the library")
         stored = self.store.waveform(song_id, source.fingerprint)
         if stored is None:
             if self.failures.get(song_id) == source.fingerprint:
@@ -186,28 +181,16 @@ class WaveformService:
             stored = await self.compute(song_id, source)
         return peak_values(stored)
 
-    def locate(self, song: dict[str, object]) -> Source:
-        """The file on disk if Navidrome's path resolves inside a library root, else the stream."""
-        relative = song.get("path")
-        found = self.on_disk(relative) if isinstance(relative, str) and relative else None
-        if found:
-            return found
-        # Navidrome bumps `updated` when a scan sees the file change, and size backs it up.
-        stamp = f"{song.get('size', 0)}:{song.get('updated') or song.get('created') or ''}"
-        return Source(f"v{WAVEFORM_VERSION}:stream:{stamp}", None)
-
-    def on_disk(self, relative: str) -> Source | None:
-        for root in self.roots:
-            try:
-                # A path that climbs out of the root, or a link that leads out, is not ours.
-                candidate = (root / relative).resolve()
-                if not candidate.is_relative_to(root) or not candidate.is_file():
-                    continue
-                stat = candidate.stat()
-            except (OSError, ValueError):
-                continue
-            return Source(f"v{WAVEFORM_VERSION}:disk:{stat.st_size}:{stat.st_mtime_ns}", candidate)
-        return None
+    def locate(self, song_id: str) -> Source | None:
+        """The file when it is inside a library root. A symlink or an outside path is refused."""
+        path = self.player.local_file(song_id)
+        if path is None:
+            return None
+        try:
+            stat = path.stat()
+        except OSError:
+            return None
+        return Source(f"v{WAVEFORM_VERSION}:disk:{stat.st_size}:{stat.st_mtime_ns}", path)
 
     async def compute(self, song_id: str, source: Source) -> bytes:
         if self.waiting >= QUEUE_LIMIT:
@@ -239,26 +222,11 @@ class WaveformService:
         finally:
             self.turn.release()
 
-    async def run(self, song_id: str, source: Source) -> bytes:
-        if source.path is not None:
-            return await self.decode(source.path)
-        with tempfile.TemporaryDirectory(prefix="musimo-waveform-") as directory:
-            copy = Path(directory) / "stream"
-            await self.download(song_id, copy)
-            return await self.decode(copy)
-
-    async def download(self, song_id: str, target: Path) -> None:
-        response = await self.navidrome.media("stream", song_id)
-        written = 0
-        try:
-            with target.open("wb") as out:
-                async for chunk in response.aiter_bytes():
-                    written += len(chunk)
-                    if written > STREAM_LIMIT_BYTES:
-                        raise WaveformUnavailable("The file is too large to work out")
-                    out.write(chunk)
-        finally:
-            await response.aclose()
+    async def run(self, _song_id: str, source: Source) -> bytes:
+        path = source.path
+        if path is None:
+            raise WaveformUnavailable("This track is not in the library")
+        return await self.decode(path)
 
     def remember_failure(self, song_id: str, fingerprint: str) -> None:
         self.failures[song_id] = fingerprint

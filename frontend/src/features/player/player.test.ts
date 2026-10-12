@@ -212,7 +212,7 @@ describe('queueEntryKey', () => {
 
 describe('isPassiveNotice', () => {
   it('holds back the lines that only say where the sound comes from', () => {
-    expect(isPassiveNotice('Your Navidrome library')).toBe(true)
+    expect(isPassiveNotice('Your music library')).toBe(true)
     expect(isPassiveNotice('Queue restored. Press play to continue.')).toBe(true)
   })
 

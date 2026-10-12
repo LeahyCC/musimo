@@ -553,7 +553,7 @@ export function LibraryPage({
   const playlistLiked = Boolean(playlist) && playlist?.id === likedId
   const detailTracks = playlist?.entry ?? albumDetail.data?.song ?? []
   // Four different covers make a mosaic; fewer show the first, and a playlist with no covered
-  // song falls back to the one Navidrome made for it.
+  // song falls back to that song's own cover.
   const playlistCovers = [
     ...new Set((playlist?.entry ?? []).flatMap((song) => (song.coverArt ? [song.coverArt] : []))),
   ]
@@ -629,14 +629,14 @@ export function LibraryPage({
       <EmptyPanel tall>
         <Library size={36} />
         <h1>Your music library lives here.</h1>
-        <p>{capabilities.data?.detail ?? 'Navidrome is not ready.'}</p>
+        <p>{capabilities.data?.detail ?? 'The music folder is not ready.'}</p>
         <Link
           data-ui="button"
           className={buttonClassName('primary', 'mx-auto')}
           to="/settings"
           hash="library"
         >
-          Connect Navidrome
+          Choose a music folder
         </Link>
       </EmptyPanel>
     )
@@ -768,7 +768,7 @@ export function LibraryPage({
             {/* Both labels share one cell so the tag keeps its width while the busy one shows. */}
             <span className="grid">
               <span className="[grid-area:1/1]" style={{ visibility: busy ? 'hidden' : undefined }}>
-                NAVIDROME READY
+                LIBRARY READY
               </span>
               {busy && <span className="[grid-area:1/1]">Opening music…</span>}
             </span>
@@ -1415,9 +1415,7 @@ export function LibraryPage({
               <section className="grid gap-[10px] mt-[26px]">
                 <div className={sectionHeadingClassName}>
                   <h2 className="text-strong">Popularity</h2>
-                  <span className={sectionCaptionClassName}>
-                    Navidrome play counts by release year
-                  </span>
+                  <span className={sectionCaptionClassName}>Play counts by release year</span>
                 </div>
                 <PopularityChart albums={artistDetail.data.album} />
               </section>

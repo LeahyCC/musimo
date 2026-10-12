@@ -1,764 +1,949 @@
+"""The local player: browse, stream, art, lyrics and library state, from files on disk."""
+
 import asyncio
-import gzip
-import hashlib
-import json
 import tempfile
 import time
 import unittest
+import wave
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import cast
 from unittest.mock import patch
 
 import httpx
 from fastapi import FastAPI
+from mutagen.id3 import (
+    APIC,
+    ID3,
+    TALB,
+    TCMP,
+    TCON,
+    TDRC,
+    TIT2,
+    TPE1,
+    TPE2,
+    TPOS,
+    TPUB,
+    TRCK,
+    TXXX,
+    USLT,
+)
+from mutagen.wave import WAVE
 
 from backend.api.player_api import install_player_routes
+from backend.core.job_models import Metadata
 from backend.core.store import Store
-from backend.library.navidrome import SHUFFLE_ORDER_SECONDS, Navidrome, sort_artists
+from backend.integrations.catalog import Catalog
+from backend.jobs.downloads import Downloads
+from backend.library.browse import sort_artists
+from backend.library.index import Library
+from backend.library.player import (
+    PLAYING,
+    SHUFFLE_GUARD,
+    SHUFFLE_ID_LIMIT,
+    SHUFFLE_ORDER_SECONDS,
+    UNMOUNTED,
+    Player,
+)
+from backend.version import VERSION
 
 
-def subsonic(**payload: object) -> httpx.Response:
-    return httpx.Response(200, json={"subsonic-response": {"status": "ok", **payload}})
+def write_wav(path: Path, frames: int = 800) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(8000)
+        handle.writeframes(b"\0\0" * frames)
+
+
+def tag_from(path: Path, fields: dict[str, object]) -> None:
+    genres = fields.get("genres")
+    tag(
+        path,
+        title=str(fields["title"]),
+        artist=str(fields["artist"]),
+        album=str(fields.get("album") or ""),
+        album_artist=str(fields.get("album_artist") or ""),
+        track=str(fields.get("track") or ""),
+        year=str(fields.get("year") or ""),
+        genres=[str(item) for item in genres] if isinstance(genres, list) else None,
+        compilation=bool(fields.get("compilation")),
+        label=str(fields.get("label") or ""),
+    )
+
+
+def tag(path: Path, **fields: object) -> None:
+    audio = WAVE(path)
+    audio.add_tags()
+    assert isinstance(audio.tags, ID3)
+    tags = audio.tags
+    tags.add(TIT2(encoding=3, text=str(fields["title"])))
+    tags.add(TPE1(encoding=3, text=str(fields["artist"])))
+    if fields.get("album"):
+        tags.add(TALB(encoding=3, text=str(fields["album"])))
+    if fields.get("album_artist"):
+        tags.add(TPE2(encoding=3, text=str(fields["album_artist"])))
+    if fields.get("track"):
+        tags.add(TRCK(encoding=3, text=str(fields["track"])))
+    if fields.get("disc"):
+        tags.add(TPOS(encoding=3, text=str(fields["disc"])))
+    if fields.get("year"):
+        tags.add(TDRC(encoding=3, text=str(fields["year"])))
+    genres = fields.get("genres")
+    if isinstance(genres, list) and genres:
+        tags.add(TCON(encoding=3, text=[str(genre) for genre in genres]))
+    if fields.get("compilation"):
+        tags.add(TCMP(encoding=3, text="1"))
+    if fields.get("gain"):
+        tags.add(TXXX(encoding=3, desc="REPLAYGAIN_TRACK_GAIN", text=str(fields["gain"])))
+    if fields.get("album_gain"):
+        tags.add(TXXX(encoding=3, desc="REPLAYGAIN_ALBUM_GAIN", text=str(fields["album_gain"])))
+    if fields.get("peak"):
+        tags.add(TXXX(encoding=3, desc="REPLAYGAIN_TRACK_PEAK", text=str(fields["peak"])))
+    if fields.get("label"):
+        tags.add(TPUB(encoding=3, text=str(fields["label"])))
+    if fields.get("lyrics"):
+        tags.add(USLT(encoding=3, lang="eng", desc="", text=str(fields["lyrics"])))
+    pictures = fields.get("pictures")
+    if isinstance(pictures, list):
+        for kind, data in pictures:
+            tags.add(APIC(encoding=3, mime="image/jpeg", type=int(kind), desc="", data=data))
+    audio.save()
 
 
 class PlayerTests(unittest.IsolatedAsyncioTestCase):
-    async def test_library_capabilities_and_ranged_media_use_navidrome(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
+    async def asyncSetUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self.tmp.name).resolve()
+        self.music = self.base / "music"
+        self.music.mkdir()
+        self.store = Store(self.base / "musimo.sqlite3")
+        self.library = Library(self.store, [self.music], asyncio.Event())
+        self.player = Player(self.store, [self.music])
+
+    async def asyncTearDown(self) -> None:
+        self.store.close()
+        self.tmp.cleanup()
+
+    def titles(self) -> dict[str, str]:
+        return {
+            str(row["title"]): str(row["song_id"])
+            for row in self.store.db.execute("SELECT title, song_id FROM library_files")
+        }
+
+    def stamp(self, title: str, added: str) -> None:
+        self.store.db.execute("UPDATE library_files SET added_at=? WHERE title=?", (added, title))
+
+    @asynccontextmanager
+    async def api(self, player: Player | None = None) -> AsyncIterator[httpx.AsyncClient]:
+        app = FastAPI()
+        install_player_routes(app, lambda: self.player if player is None else player)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://test"
+        ) as client:
+            yield client
+
+    async def test_capabilities_follow_the_music_folder(self) -> None:
+        async with self.api() as client:
+            ready = (await client.get("/api/player/capabilities")).json()
+        self.assertEqual(
+            ready,
+            {
+                "configured": True,
+                "available": True,
+                "version": VERSION,
+                "detail": PLAYING,
+            },
+        )
+        unmounted = await Player(self.store, [self.base / "missing"]).capabilities()
+        self.assertEqual(unmounted["configured"], True)
+        self.assertEqual(unmounted["available"], False)
+        self.assertEqual(unmounted["detail"], UNMOUNTED)
+        self.assertEqual(unmounted["version"], VERSION)
+        absent = await Player(self.store, []).capabilities()
+        self.assertEqual(absent["configured"], False)
+        self.assertEqual(absent["available"], False)
+        self.assertEqual(absent["detail"], UNMOUNTED)
+        self.assertNotIn("playback server", str(ready["detail"]) + str(unmounted["detail"]))
+
+    async def test_albums_filter_and_sort_across_the_library(self) -> None:
+        for album, artist, title, year, genres in (
+            ("Stone 10", "Zia", "Beacon", "1999", ["Jazz"]),
+            ("Stone 9", "Mox", "Anchor", "2011", ["Rock"]),
+            ("Anchor", "Ame", "Cinder", "2011", ["jazz"]),
+        ):
+            path = self.music / artist / album / f"{title}.wav"
+            write_wav(path)
+            tag(
+                path,
+                title=title,
+                artist=artist,
+                album=album,
+                album_artist=artist,
+                year=year,
+                genres=genres,
             )
-            requests: list[httpx.Request] = []
+        self.library.scan()
+        for title, added in (
+            ("Beacon", "2026-03-01T00:00:00.000Z"),
+            ("Cinder", "2026-02-01T00:00:00.000Z"),
+            ("Anchor", "2026-01-01T00:00:00.000Z"),
+        ):
+            self.stamp(title, added)
 
-            def upstream(request: httpx.Request) -> httpx.Response:
-                requests.append(request)
-                if request.url.host == "lrclib.net":
-                    return httpx.Response(
-                        200,
-                        json={
-                            "plainLyrics": "First line\nSecond line",
-                            "syncedLyrics": "[00:01.25]First line\n[00:03.00]Second line",
-                        },
-                    )
-                path = request.url.path
-                if path.endswith("/ping"):
-                    return subsonic(serverVersion="0.63.0")
-                if path.endswith("/getAlbumList2"):
-                    return subsonic(albumList2={"album": [{"id": "album-1", "name": "One"}]})
-                if path.endswith("/getArtists"):
-                    return subsonic(
-                        artists={
-                            "index": [
-                                {"name": "A", "artist": [{"id": "artist-1", "name": "Artist"}]}
-                            ]
-                        }
-                    )
-                if path.endswith("/search3"):
-                    if request.url.params.get("albumCount") != "0":
-                        return subsonic(searchResult3={"album": [{"id": "album-1", "name": "One"}]})
-                    if request.url.params.get("artistCount") != "0":
-                        return subsonic(
-                            searchResult3={"artist": [{"id": "artist-1", "name": "Artist"}]}
-                        )
-                    return subsonic(searchResult3={"song": [{"id": "song-1", "title": "Track"}]})
-                if path.endswith("/getPlaylists"):
-                    return subsonic(playlists={"playlist": [{"id": "playlist-1"}]})
-                if path.endswith("/getPlaylist"):
-                    return subsonic(playlist={"id": "playlist-1", "entry": [{"id": "song-1"}]})
-                if path.endswith("/createPlaylist"):
-                    return subsonic(playlist={"id": "playlist-2", "name": "Road trip"})
-                if path.endswith("/updatePlaylist") or path.endswith("/deletePlaylist"):
-                    return subsonic()
-                if path.endswith("/getAlbum"):
-                    return subsonic(
-                        album={
-                            "id": "album-1",
-                            "recordLabels": [{"name": "Static Records"}],
-                            "song": [{"id": "song-1"}],
-                        }
-                    )
-                if path.endswith("/getArtist"):
-                    return subsonic(artist={"id": "artist-1", "album": [{"id": "album-1"}]})
-                if path.endswith("/getSong"):
-                    return subsonic(
-                        song={
-                            "id": request.url.params.get("id"),
-                            "title": "Track",
-                            "artist": "Artist",
-                            "album": "One",
-                            "duration": 180,
-                            # What the About tab reads: the file's own facts, the listening
-                            # record and OpenSubsonic's credits.
-                            "suffix": "flac",
-                            "bitRate": 1012,
-                            "samplingRate": 44100,
-                            "bitDepth": 16,
-                            "channelCount": 2,
-                            "size": 35_840_000,
-                            "path": "Artist/One/01 Track.flac",
-                            "playCount": 4,
-                            "played": "2026-09-01T18:30:00Z",
-                            "contributors": [
-                                {"role": "producer", "artist": {"id": "artist-2", "name": "Maker"}}
-                            ],
-                        }
-                    )
-                if path.endswith("/getPlayQueue"):
-                    return subsonic(
-                        playQueue={
-                            "current": "song-1",
-                            "position": 1200,
-                            "entry": [{"id": "song-1"}],
-                        }
-                    )
-                if path.endswith("/savePlayQueue") or path.endswith("/scrobble"):
-                    return subsonic()
-                if path.endswith("/getLyricsBySongId"):
-                    if request.url.params.get("id") == "no-lyrics":
-                        return subsonic(lyricsList={"structuredLyrics": []})
-                    return subsonic(
-                        lyricsList={
-                            "structuredLyrics": [
-                                {"displayArtist": "Artist", "line": [{"value": "Words"}]}
-                            ]
-                        }
-                    )
-                if path.endswith("/stream"):
-                    self.assertEqual(request.headers.get("range"), "bytes=2-5")
-                    return httpx.Response(
-                        206,
-                        content=b"udio",
-                        headers={
-                            "Accept-Ranges": "bytes",
-                            "Content-Range": "bytes 2-5/8",
-                            "Content-Type": "audio/ogg",
-                            "X-Upstream-Secret": "no",
-                        },
-                    )
-                if path.endswith("/getCoverArt"):
-                    return httpx.Response(
-                        200, content=b"image", headers={"Content-Type": "image/jpeg"}
-                    )
-                return httpx.Response(404)
+        async with self.api() as client:
 
-            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    app = FastAPI()
-                    install_player_routes(app, lambda: navidrome)
-                    async with httpx.AsyncClient(
-                        transport=httpx.ASGITransport(app), base_url="http://test"
-                    ) as client:
-                        capabilities = (await client.get("/api/player/capabilities")).json()
-                        self.assertTrue(capabilities["available"])
-                        self.assertEqual(capabilities["version"], "0.63.0")
-                        self.assertEqual(
-                            (await client.get("/api/library/albums")).json()["items"][0]["id"],
-                            "album-1",
-                        )
-                        self.assertEqual(
-                            (await client.get("/api/library/artists")).json()["items"][0]["id"],
-                            "artist-1",
-                        )
-                        self.assertEqual(
-                            (await client.get("/api/library/albums?q=one")).json()["items"][0][
-                                "id"
-                            ],
-                            "album-1",
-                        )
-                        self.assertEqual(
-                            (await client.get("/api/library/artists?q=artist")).json()["items"][0][
-                                "id"
-                            ],
-                            "artist-1",
-                        )
-                        self.assertEqual(
-                            (await client.get("/api/library/tracks?q=track")).json()["items"][0][
-                                "id"
-                            ],
-                            "song-1",
-                        )
-                        self.assertEqual(
-                            (await client.get("/api/library/playlists")).json()["items"][0]["id"],
-                            "playlist-1",
-                        )
-                        self.assertEqual(
-                            (await client.get("/api/library/playlists/playlist-1")).json()["id"],
-                            "playlist-1",
-                        )
-                        created = await client.post(
-                            "/api/library/playlists",
-                            json={"name": "Road trip", "song_ids": ["song-1"]},
-                        )
-                        self.assertEqual(created.status_code, 200)
-                        self.assertEqual(created.json()["id"], "playlist-2")
-                        renamed = await client.patch(
-                            "/api/library/playlists/playlist-1", json={"name": "Morning"}
-                        )
-                        self.assertEqual(renamed.status_code, 200)
-                        added = await client.post(
-                            "/api/library/playlists/playlist-1/songs",
-                            json={"song_id_to_add": "song-2"},
-                        )
-                        self.assertEqual(added.status_code, 200)
-                        removed = await client.post(
-                            "/api/library/playlists/playlist-1/songs",
-                            json={"song_index_to_remove": 0},
-                        )
-                        self.assertEqual(removed.status_code, 200)
-                        self.assertEqual(
-                            (
-                                await client.post(
-                                    "/api/library/playlists/playlist-1/songs",
-                                    json={"song_id_to_add": "song-1", "song_index_to_remove": 0},
-                                )
-                            ).status_code,
-                            422,
-                        )
-                        self.assertEqual(
-                            (await client.delete("/api/library/playlists/playlist-1")).status_code,
-                            204,
-                        )
-                        album = (await client.get("/api/library/albums/album-1")).json()
-                        self.assertEqual(album["id"], "album-1")
-                        self.assertEqual(album["recordLabels"], [{"name": "Static Records"}])
-                        self.assertEqual(
-                            (await client.get("/api/library/artists/artist-1")).json()["id"],
-                            "artist-1",
-                        )
-                        self.assertEqual(
-                            (await client.get("/api/library/artists/artist-1/tracks")).json()[
-                                "items"
-                            ][0]["id"],
-                            "song-1",
-                        )
-                        song = (await client.get("/api/player/song/song-1")).json()
-                        self.assertEqual(song["id"], "song-1")
-                        # The song is passed through whole, so the file and listening facts the
-                        # About tab shows arrive without a trimmed field list to keep in step.
-                        self.assertEqual(
-                            {key: song[key] for key in ("suffix", "bitRate", "samplingRate")},
-                            {"suffix": "flac", "bitRate": 1012, "samplingRate": 44100},
-                        )
-                        self.assertEqual(
-                            {key: song[key] for key in ("bitDepth", "channelCount", "size")},
-                            {"bitDepth": 16, "channelCount": 2, "size": 35_840_000},
-                        )
-                        self.assertEqual(song["path"], "Artist/One/01 Track.flac")
-                        self.assertEqual(song["played"], "2026-09-01T18:30:00Z")
-                        self.assertEqual(song["contributors"][0]["role"], "producer")
-                        self.assertEqual(
-                            (await client.get("/api/player/queue")).json()["current"], "song-1"
-                        )
-                        saved = await client.put(
-                            "/api/player/queue",
-                            json={
-                                "ids": ["song-1", "song-2"],
-                                "current": "song-1",
-                                "position": 1200,
-                            },
-                        )
-                        self.assertEqual(saved.status_code, 204)
-                        self.assertEqual(
-                            (
-                                await client.put(
-                                    "/api/player/queue",
-                                    json={
-                                        "ids": ["song-1"],
-                                        "current": "song-2",
-                                        "position": 0,
-                                    },
-                                )
-                            ).status_code,
-                            422,
-                        )
-                        # Navidrome keeps 500 songs, and the queue editor relies on the last one
-                        # being accepted and the next being refused.
-                        for count, status in ((500, 204), (501, 422)):
-                            self.assertEqual(
-                                (
-                                    await client.put(
-                                        "/api/player/queue",
-                                        json={
-                                            "ids": [f"song-{n}" for n in range(count)],
-                                            "current": "song-1",
-                                            "position": 0,
-                                        },
-                                    )
-                                ).status_code,
-                                status,
-                            )
-                        self.assertEqual(
-                            (
-                                await client.post(
-                                    "/api/player/scrobble",
-                                    json={"id": "song-1", "submission": False},
-                                )
-                            ).status_code,
-                            204,
-                        )
-                        self.assertEqual(
-                            len((await client.get("/api/player/lyrics/song-1")).json()["items"]), 1
-                        )
-                        fallback_lyrics = (await client.get("/api/player/lyrics/no-lyrics")).json()[
-                            "items"
-                        ][0]
-                        self.assertTrue(fallback_lyrics["synced"])
-                        self.assertEqual(fallback_lyrics["line"][0]["start"], 1250)
-                        audio = await client.get(
-                            "/api/player/stream/song-1", headers={"Range": "bytes=2-5"}
-                        )
-                        self.assertEqual(audio.status_code, 206)
-                        self.assertEqual(audio.content, b"udio")
-                        self.assertEqual(audio.headers["content-range"], "bytes 2-5/8")
-                        self.assertNotIn("x-upstream-secret", audio.headers)
-                        art = await client.get("/api/player/art/song-1")
-                        self.assertEqual(art.content, b"image")
-                        self.assertEqual(art.headers["content-type"], "image/jpeg")
-                        self.assertEqual(
-                            (
-                                await client.get(
-                                    "/api/player/stream/song-1", headers={"Range": "items=1-2"}
-                                )
-                            ).status_code,
-                            416,
-                        )
-                        self.assertEqual(
-                            (await client.get("/api/library/albums/bad!id")).status_code, 422
-                        )
+            async def names(search: str) -> list[str]:
+                body = (await client.get(f"/api/library/albums?{search}")).json()
+                return [row["name"] for row in body["items"]]
 
-            self.assertTrue(requests)
-            for request in requests:
-                if request.url.host == "lrclib.net":
-                    continue
-                self.assertEqual(request.url.params["u"], "listener")
-                self.assertNotIn("private password", str(request.url))
-            save_request = next(
-                request for request in requests if request.url.path.endswith("/savePlayQueue")
+            listing = (await client.get("/api/library/albums")).json()
+            self.assertEqual(
+                [row["name"] for row in listing["items"]], ["Stone 10", "Anchor", "Stone 9"]
             )
-            self.assertEqual(save_request.url.params.get_list("id"), ["song-1", "song-2"])
-            store.close()
+            self.assertEqual(listing["total"], 3)
+            self.assertEqual([genre.casefold() for genre in listing["genres"]], ["jazz", "rock"])
+            self.assertEqual(listing["years"], [2011, 1999])
+            self.assertEqual(await names("sort=title"), ["Anchor", "Stone 9", "Stone 10"])
+            self.assertEqual(await names("sort=artist"), ["Anchor", "Stone 9", "Stone 10"])
+            self.assertEqual(await names("sort=year"), ["Anchor", "Stone 9", "Stone 10"])
+            self.assertEqual(await names("genre=JAZZ"), ["Stone 10", "Anchor"])
+            self.assertEqual(await names("year=2011&sort=title"), ["Anchor", "Stone 9"])
+            self.assertEqual(await names("q=zia"), ["Stone 10"])
+            self.assertEqual(await names("q=stone&sort=title"), ["Stone 9", "Stone 10"])
+            self.assertEqual((await client.get("/api/library/albums?sort=random")).status_code, 422)
 
-    async def test_artist_without_a_photo_shows_their_newest_album_cover(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
+    async def test_artists_follow_album_artists_and_what_their_albums_carry(self) -> None:
+        rows = (
+            ("Zia", "Stone", "Beacon", "1999", ["Jazz"], "2026-03-01T00:00:00.000Z"),
+            ("Mox", "Stone", "Anchor", "2011", ["Rock", "jazz"], "2026-01-01T00:00:00.000Z"),
+            ("Mox", "Extra", "Bonus", "2011", ["Rock"], "2020-01-01T00:00:00.000Z"),
+            ("Ame", "Soul", "Cinder", "2011", ["Soul"], "2026-02-01T00:00:00.000Z"),
+        )
+        for artist, album, title, year, genres, _added in rows:
+            path = self.music / artist / album / f"{title}.wav"
+            write_wav(path)
+            tag(
+                path,
+                title=title,
+                artist=artist,
+                album=album,
+                album_artist=artist,
+                year=year,
+                genres=genres,
             )
-            star = b"star"
-            art = {"ar-pictured_0": b"photo", "al-new": b"new cover", "al-old": b"old cover"}
-            albums = {
-                "photoless": [
-                    {"id": "old", "coverArt": "al-old", "year": 2010},
-                    {"id": "bare", "coverArt": "al-bare", "year": 2024},
-                    {"id": "new", "coverArt": "al-new", "year": 2020},
-                    {"id": "none"},
-                ],
-                "coverless": [{"id": "bare", "coverArt": "al-bare", "year": 2024}],
-            }
+        self.library.scan()
+        for row in rows:
+            self.stamp(str(row[2]), str(row[5]))
+        ids = self.titles()
 
-            def upstream(request: httpx.Request) -> httpx.Response:
-                cover_id = request.url.params.get("id", "")
-                if request.url.path.endswith("/getArtist"):
-                    return subsonic(artist={"id": cover_id, "album": albums[cover_id]})
-                # Navidrome answers anything it has no picture for with the same star.
-                return httpx.Response(200, content=art.get(cover_id, star))
+        async with self.api() as client:
+            await client.post(
+                "/api/player/scrobble", json={"id": ids["Anchor"], "submission": True}
+            )
+            listing = (await client.get("/api/library/artists")).json()
+            by_name = {row["name"]: row for row in listing["items"]}
+            await client.put(f"/api/library/artists/{by_name['Mox']['id']}/favourite")
 
-            with (
-                patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
-                patch(
-                    "backend.library.navidrome.PLACEHOLDER_ART", {hashlib.sha256(star).hexdigest()}
+            async def names(search: str) -> list[str]:
+                body = (await client.get(f"/api/library/artists?{search}")).json()
+                return [row["name"] for row in body["items"]]
+
+            self.assertEqual(await names(""), ["Ame", "Mox", "Zia"])
+            self.assertEqual((await client.get("/api/library/artists")).json()["total"], 3)
+            facets = (await client.get("/api/library/artists")).json()
+            self.assertEqual(
+                [genre.casefold() for genre in facets["genres"]], ["jazz", "rock", "soul"]
+            )
+            self.assertEqual(facets["years"], [2011, 1999])
+            self.assertEqual(await names("genre=JAZZ"), ["Mox", "Zia"])
+            self.assertEqual(await names("year=2011"), ["Ame", "Mox"])
+            self.assertEqual(await names("genre=Soul&year=2011"), ["Ame"])
+            self.assertEqual(await names("show=played"), ["Mox"])
+            self.assertEqual(await names("show=unplayed"), ["Ame", "Zia"])
+            self.assertEqual(await names("show=favourites"), ["Mox"])
+            self.assertEqual(await names("q=m"), ["Ame", "Mox"])
+            self.assertEqual(await names("sort=albums"), ["Mox", "Ame", "Zia"])
+            self.assertEqual(await names("sort=recent"), ["Zia", "Ame", "Mox"])
+            page = (await client.get("/api/library/artists?offset=1&size=1")).json()
+            self.assertEqual(page["items"][0]["name"], "Mox")
+            self.assertEqual(page["next_offset"], 2)
+            self.assertEqual((await client.get("/api/library/artists?sort=plays")).status_code, 422)
+            self.assertEqual(
+                (await client.get("/api/library/artists?show=everyone")).status_code, 422
+            )
+            await client.put(f"/api/library/artists/{by_name['Zia']['id']}/favourite")
+            await client.delete(f"/api/library/artists/{by_name['Mox']['id']}/favourite")
+            self.assertEqual(await names("show=favourites"), ["Zia"])
+
+    async def test_album_identity_and_artist_links(self) -> None:
+        files: list[tuple[str, dict[str, object]]] = [
+            (
+                "ACDC/Back/thunder.wav",
+                dict(title="Thunder", artist="AC/DC", album="Back in Black", album_artist="AC/DC"),
+            ),
+            (
+                "Someone/Mix/feature.wav",
+                dict(
+                    title="Feature",
+                    artist="Guest feat. AC/DC",
+                    album="Mixtape",
+                    album_artist="Someone",
                 ),
-            ):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    app = FastAPI()
-                    install_player_routes(app, lambda: navidrome)
-                    async with httpx.AsyncClient(
-                        transport=httpx.ASGITransport(app), base_url="http://test"
-                    ) as client:
-
-                        async def picture(cover_id: str) -> bytes:
-                            return (await client.get(f"/api/player/art/{cover_id}")).content
-
-                        self.assertEqual(await picture("ar-photoless_0"), b"new cover")
-                        self.assertEqual(await picture("ar-pictured_0"), b"photo")
-                        self.assertEqual(await picture("ar-coverless_0"), star)
-                        self.assertEqual(await picture("al-bare"), star)
-            store.close()
-
-    async def test_missing_configuration_is_a_capability_not_an_error(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "musimo.sqlite3")
-            async with httpx.AsyncClient(
-                transport=httpx.MockTransport(lambda _: httpx.Response(500))
-            ) as upstream_client:
-                navidrome = Navidrome(store, upstream_client)
-                app = FastAPI()
-                install_player_routes(app, lambda: navidrome)
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app), base_url="http://test"
-                ) as client:
-                    response = await client.get("/api/player/capabilities")
-                    self.assertEqual(response.status_code, 200)
-                    self.assertEqual(
-                        response.json(),
-                        {
-                            "configured": False,
-                            "available": False,
-                            "version": "",
-                            "detail": (
-                                "Add a Navidrome address in Settings to enable library playback"
-                            ),
-                        },
-                    )
-                    store.update({"navidrome_url": "http://navidrome:4533"})
-                    self.assertEqual(
-                        (await client.get("/api/player/capabilities")).json()["detail"],
-                        "Mount a Navidrome credentials file to enable library playback",
-                    )
-                    self.assertEqual((await client.get("/api/library/albums")).status_code, 503)
-            store.close()
-
-    async def test_linked_playlist_route_creates_and_reuses_default(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
-            )
-            requests = {"created": 0}
-
-            def upstream(request: httpx.Request) -> httpx.Response:
-                path = request.url.path
-                if path.endswith("/ping"):
-                    return subsonic(serverVersion="0.63.0")
-                if path.endswith("/getPlaylists"):
-                    return subsonic(playlists={"playlist": []})
-                if path.endswith("/createPlaylist"):
-                    requests["created"] += 1
-                    return subsonic(
-                        playlist={
-                            "id": f"liked-{requests['created']}",
-                            "name": "Liked",
-                            "entry": [],
-                        }
-                    )
-                if path.endswith("/getPlaylist"):
-                    return subsonic(
-                        playlist={"id": request.url.params.get("id"), "name": "Liked", "entry": []}
-                    )
-                return subsonic()
-
-            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    app = FastAPI()
-                    install_player_routes(app, lambda: navidrome)
-                    async with httpx.AsyncClient(
-                        transport=httpx.ASGITransport(app), base_url="http://test"
-                    ) as client:
-                        first = (await client.get("/api/library/playlists/liked")).json()
-                        second = (await client.get("/api/library/playlists/liked")).json()
-                        self.assertEqual(first["id"], second["id"])
-                        self.assertEqual(first["name"], "Liked")
-                        self.assertEqual(requests["created"], 1)
-            store.close()
-
-    async def test_artist_browsing_filters_by_what_their_albums_carry(self) -> None:
-        artists = [
-            {"id": "zia", "name": "Zia", "albumCount": 1},
-            {"id": "mox", "name": "Mox", "albumCount": 3, "starred": "2026-01-01T00:00:00Z"},
-            {"id": "ame", "name": "Ame", "albumCount": 2, "sortName": "Ame"},
+            ),
+            (
+                "Rock/Roll/tune.wav",
+                dict(title="Tune", artist="Rock & Roll", album="Roll", album_artist="Rock & Roll"),
+            ),
+            (
+                "Comp/Album/one.wav",
+                dict(title="Compilation", artist="Various Track", album="Comp", compilation=True),
+            ),
+            ("Loose/A/a.wav", dict(title="Loose A", artist="Loose")),
+            ("Loose/B/b.wav", dict(title="Loose B", artist="Loose")),
+            (
+                "Same/One/left.wav",
+                dict(
+                    title="Left",
+                    artist="Same",
+                    album="Shared",
+                    album_artist="Same",
+                    year="1990",
+                    track="1",
+                ),
+            ),
+            (
+                "Same/Two/right.wav",
+                dict(
+                    title="Right",
+                    artist="Same",
+                    album="Shared",
+                    album_artist="Same",
+                    year="2020",
+                    track="2",
+                    label="Static Records",
+                ),
+            ),
         ]
-        albums = [
-            {"id": "a1", "artistId": "zia", "genre": "Jazz", "year": 1999, "created": "2026-03"},
-            {
-                "id": "a2",
-                "artistId": "mox",
-                "genres": [{"name": "Rock"}, {"name": "jazz"}],
-                "year": 2011,
-                "created": "2026-01",
-                "playCount": 4,
-            },
-            # A shared album counts for every artist on it.
-            {
-                "id": "a3",
-                "artists": [{"id": "ame"}, {"id": "zia"}],
-                "genre": "Soul",
-                "year": 2011,
-                "created": "2026-02",
-            },
-        ]
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
+        for relative, fields in files:
+            path = self.music / relative
+            write_wav(path)
+            tag_from(path, fields)
+        self.library.scan()
+
+        async with self.api() as client:
+            artists = (await client.get("/api/library/artists?size=50")).json()["items"]
+            names = {row["name"] for row in artists}
+            self.assertIn("AC/DC", names)
+            self.assertIn("Rock & Roll", names)
+            self.assertIn("Various Artists", names)
+            self.assertNotIn("AC", names)
+            self.assertNotIn("DC", names)
+            self.assertNotIn("Guest", names)
+            self.assertNotIn("Rock", names)
+            tracks = {
+                row["title"]: row
+                for row in (await client.get("/api/library/tracks?size=50")).json()["items"]
+            }
+            self.assertEqual(tracks["Feature"]["artistId"], tracks["Thunder"]["artistId"])
+            self.assertEqual(tracks["Feature"]["artist"], "Guest feat. AC/DC")
+            albums = {
+                row["name"]: row
+                for row in (await client.get("/api/library/albums?size=50")).json()["items"]
+            }
+            self.assertEqual(albums["Comp"]["artist"], "Various Artists")
+            self.assertEqual(albums["Shared"]["songCount"], 2)
+            self.assertEqual(albums["Shared"]["year"], 2020)
+            loose = [row["name"] for row in albums.values() if row["artist"] == "Loose"]
+            self.assertEqual(sorted(loose), ["A", "B"])
+            detail = (await client.get(f"/api/library/albums/{albums['Shared']['id']}")).json()
+            self.assertEqual([row["title"] for row in detail["song"]], ["Left", "Right"])
+            self.assertEqual(detail["recordLabels"], [{"name": "Static Records"}])
+            various = next(row for row in artists if row["name"] == "Various Artists")
+            self.assertEqual(tracks["Compilation"]["artistId"], various["id"])
+            acdc = next(row for row in artists if row["name"] == "AC/DC")
+            acdc_tracks = (await client.get(f"/api/library/artists/{acdc['id']}/tracks")).json()
+            self.assertEqual([row["title"] for row in acdc_tracks["items"]], ["Thunder"])
+
+    async def test_tracks_filter_sort_and_shuffle(self) -> None:
+        for artist, album, title, year, genres, gain in (
+            ("Zia", "One", "Beacon", "1999", ["Jazz"], {}),
+            (
+                "Mox",
+                "Two",
+                "Anchor",
+                "2011",
+                ["Rock"],
+                {"gain": "-6.5 dB", "album_gain": "-7.25 dB", "peak": "0.98"},
+            ),
+            ("Ame", "Three", "Cinder", "2011", ["Jazz"], {}),
+        ):
+            path = self.music / artist / f"{title}.wav"
+            write_wav(path)
+            tag(
+                path,
+                title=title,
+                artist=artist,
+                album=album,
+                album_artist=artist,
+                year=year,
+                genres=genres,
+                **gain,
             )
-            walks = {"count": 0}
-            stars: list[tuple[str, str]] = []
+        self.library.scan()
+        ids = self.titles()
 
-            def upstream(request: httpx.Request) -> httpx.Response:
-                path = request.url.path
-                if path.endswith("/getArtists"):
-                    walks["count"] += 1
-                    return subsonic(artists={"index": [{"name": "A", "artist": artists}]})
-                if path.endswith("/getAlbumList2"):
-                    offset = int(request.url.params.get("offset", 0))
-                    return subsonic(albumList2={"album": albums[offset:]})
-                if path.endswith("/star") or path.endswith("/unstar"):
-                    stars.append((path.rsplit("/", 1)[1], request.url.params["artistId"]))
-                    return subsonic()
-                return subsonic()
-
-            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    app = FastAPI()
-                    install_player_routes(app, lambda: navidrome)
-                    async with httpx.AsyncClient(
-                        transport=httpx.ASGITransport(app), base_url="http://test"
-                    ) as client:
-
-                        async def names(search: str) -> list[str]:
-                            response = await client.get(f"/api/library/artists?{search}")
-                            return [row["name"] for row in response.json()["items"]]
-
-                        listing = (await client.get("/api/library/artists")).json()
-                        self.assertEqual(
-                            [row["name"] for row in listing["items"]], ["Ame", "Mox", "Zia"]
-                        )
-                        self.assertEqual(listing["total"], 3)
-                        self.assertEqual(listing["genres"], ["Jazz", "Rock", "Soul"])
-                        self.assertEqual(listing["years"], [2011, 1999])
-                        self.assertEqual(await names("genre=JAZZ"), ["Mox", "Zia"])
-                        self.assertEqual(await names("year=2011"), ["Ame", "Mox", "Zia"])
-                        self.assertEqual(await names("genre=Soul&year=2011"), ["Ame", "Zia"])
-                        self.assertEqual(await names("show=played"), ["Mox"])
-                        self.assertEqual(await names("show=unplayed"), ["Ame", "Zia"])
-                        self.assertEqual(await names("show=favourites"), ["Mox"])
-                        self.assertEqual(await names("q=m"), ["Ame", "Mox"])
-                        self.assertEqual(await names("sort=albums"), ["Mox", "Ame", "Zia"])
-                        self.assertEqual(await names("sort=recent"), ["Zia", "Ame", "Mox"])
-                        page = (await client.get("/api/library/artists?offset=1&size=1")).json()
-                        self.assertEqual(page["next_offset"], 2)
-                        self.assertEqual(
-                            (await client.get("/api/library/artists?sort=plays")).status_code, 422
-                        )
-                        self.assertEqual(
-                            (await client.get("/api/library/artists?show=everyone")).status_code,
-                            422,
-                        )
-
-                        put = await client.put("/api/library/artists/zia/favourite")
-                        self.assertEqual(put.status_code, 204)
-                        self.assertEqual(await names("show=favourites"), ["Mox", "Zia"])
-                        await client.delete("/api/library/artists/mox/favourite")
-                        self.assertEqual(await names("show=favourites"), ["Zia"])
-                        self.assertEqual(stars, [("star", "zia"), ("unstar", "mox")])
-                        # Every call above came from one walk of the library.
-                        self.assertEqual(walks["count"], 1)
-                        navidrome.forget_tracks()
-                        await client.get("/api/library/artists")
-                        self.assertEqual(walks["count"], 2)
-            store.close()
-
-    async def test_album_browsing_filters_and_sorts_the_whole_library(self) -> None:
-        albums = [
-            {
-                "id": "b",
-                "name": "Stone 10",
-                "artist": "Zia",
-                "genre": "Jazz",
-                "year": 1999,
-                "created": "2026-03",
-            },
-            {
-                "id": "a",
-                "name": "Stone 9",
-                "artist": "Mox",
-                "genres": [{"name": "Rock"}],
-                "year": 2011,
-                "created": "2026-01",
-            },
-            {
-                "id": "c",
-                "name": "Anchor",
-                "artist": "Ame",
-                "genre": "jazz",
-                "year": 2011,
-                "created": "2026-02",
-            },
-        ]
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
+        async with self.api() as client:
+            listing = (await client.get("/api/library/tracks")).json()
+            self.assertEqual(
+                [row["title"] for row in listing["items"]], ["Anchor", "Beacon", "Cinder"]
             )
-
-            def upstream(request: httpx.Request) -> httpx.Response:
-                if request.url.path.endswith("/getAlbumList2"):
-                    offset = int(request.url.params.get("offset", 0))
-                    return subsonic(albumList2={"album": albums[offset:]})
-                return subsonic(artists={"index": []})
-
-            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    app = FastAPI()
-                    install_player_routes(app, lambda: navidrome)
-                    async with httpx.AsyncClient(
-                        transport=httpx.ASGITransport(app), base_url="http://test"
-                    ) as client:
-
-                        async def ids(search: str) -> list[str]:
-                            response = await client.get(f"/api/library/albums?{search}")
-                            return [row["id"] for row in response.json()["items"]]
-
-                        listing = (await client.get("/api/library/albums")).json()
-                        self.assertEqual([row["id"] for row in listing["items"]], ["b", "c", "a"])
-                        self.assertEqual(listing["total"], 3)
-                        self.assertEqual(listing["genres"], ["Jazz", "Rock"])
-                        self.assertEqual(listing["years"], [2011, 1999])
-                        self.assertEqual(await ids("sort=title"), ["c", "a", "b"])
-                        self.assertEqual(await ids("sort=artist"), ["c", "a", "b"])
-                        self.assertEqual(await ids("sort=year"), ["c", "a", "b"])
-                        self.assertEqual(await ids("genre=JAZZ"), ["b", "c"])
-                        self.assertEqual(await ids("year=2011&sort=title"), ["c", "a"])
-                        self.assertEqual(await ids("q=zia"), ["b"])
-                        self.assertEqual(await ids("q=stone&sort=title"), ["a", "b"])
-                        self.assertEqual(
-                            (await client.get("/api/library/albums?sort=random")).status_code,
-                            422,
-                        )
-            store.close()
-
-    async def test_a_long_album_list_is_fetched_four_pages_at_a_time(self) -> None:
-        # A page of two, so the test does not need five hundred albums.
-        albums = [{"id": f"a{n}", "name": f"Album {n}", "artistId": "zia"} for n in range(5)]
-        # The same album twice, as a scan can when windows overlap.
-        albums.append({"id": "a4", "name": "Album 4 again", "artistId": "zia"})
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
+            self.assertNotIn("path", listing["items"][0])
+            anchor = next(row for row in listing["items"] if row["title"] == "Anchor")
+            beacon = next(row for row in listing["items"] if row["title"] == "Beacon")
+            self.assertEqual(
+                anchor["replayGain"], {"trackGain": -6.5, "albumGain": -7.25, "trackPeak": 0.98}
             )
-            offsets: list[int] = []
-
-            def upstream(request: httpx.Request) -> httpx.Response:
-                if request.url.path.endswith("/getArtists"):
-                    return subsonic(
-                        artists={"index": [{"name": "A", "artist": [{"id": "zia", "name": "Zia"}]}]}
-                    )
-                if request.url.path.endswith("/getAlbumList2"):
-                    offset = int(request.url.params.get("offset", 0))
-                    size = int(request.url.params.get("size", 2))
-                    offsets.append(offset)
-                    return subsonic(albumList2={"album": albums[offset : offset + size]})
-                return subsonic()
-
-            with (
-                patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
-                patch("backend.library.navidrome.ALBUM_PAGE", 2),
-            ):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    snapshot = await navidrome.catalog()
-            # The first page is alone. The next four offsets go out together, and the
-            # short last page stops the walk. The repeated album is kept once.
-            self.assertEqual(offsets[0], 0)
-            self.assertEqual(set(offsets), {0, 2, 4, 6, 8})
-            self.assertEqual([row["id"] for row in snapshot.albums], ["a0", "a1", "a2", "a3", "a4"])
-            store.close()
-
-    async def test_media_errors_are_not_passed_on_as_media(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
+            self.assertNotIn("replayGain", beacon)
+            self.assertEqual(listing["total"], 3)
+            self.assertEqual([genre.casefold() for genre in listing["genres"]], ["jazz", "rock"])
+            self.assertEqual(listing["years"], [2011, 1999])
+            by_artist = (await client.get("/api/library/tracks?sort=artist")).json()
+            self.assertEqual(
+                [row["title"] for row in by_artist["items"]], ["Cinder", "Anchor", "Beacon"]
             )
-            drawing = b"<svg xmlns='http://www.w3.org/2000/svg'/>" * 20
-
-            def upstream(request: httpx.Request) -> httpx.Response:
-                cover_id = request.url.params.get("id")
-                if cover_id == "gone":
-                    # What Navidrome sends for an item it does not have.
-                    return httpx.Response(
-                        200,
-                        content=gzip.compress(b'{"subsonic-response":{"status":"failed"}}'),
-                        headers={"Content-Type": "application/json", "Content-Encoding": "gzip"},
-                    )
-                packed = gzip.compress(drawing)
-                return httpx.Response(
-                    200,
-                    content=packed,
-                    headers={
-                        "Content-Type": "image/svg+xml",
-                        "Content-Encoding": "gzip",
-                        "Content-Length": str(len(packed)),
+            page = (await client.get("/api/library/tracks?size=1&offset=1")).json()
+            self.assertEqual(page["items"][0]["title"], "Beacon")
+            self.assertEqual(page["next_offset"], 2)
+            self.assertEqual(page["total"], 3)
+            filtered = (await client.get("/api/library/tracks?genre=Jazz&year=2011")).json()
+            self.assertEqual([row["title"] for row in filtered["items"]], ["Cinder"])
+            self.assertEqual(filtered["total"], 1)
+            self.assertEqual([genre.casefold() for genre in filtered["genres"]], ["jazz", "rock"])
+            selection = (await client.get("/api/library/tracks/selection?sort=year&limit=2")).json()
+            self.assertEqual([row["title"] for row in selection["items"]], ["Anchor", "Cinder"])
+            self.assertEqual(selection["total"], 3)
+            shuffled = (await client.get("/api/library/tracks/selection?shuffle=true")).json()
+            self.assertEqual(
+                sorted(row["title"] for row in shuffled["items"]), ["Anchor", "Beacon", "Cinder"]
+            )
+            self.assertEqual(shuffled["rest"], [])
+            self.assertEqual(shuffled["seed"], "")
+            self.assertEqual(shuffled["cursor"], 3)
+            window = (await client.get("/api/library/tracks/selection?shuffle=true&limit=2")).json()
+            self.assertEqual(len(window["items"]), 2)
+            self.assertEqual(window["rest"], [])
+            self.assertEqual(window["total"], 3)
+            self.assertEqual(window["cursor"], 2)
+            self.assertTrue(window["seed"])
+            rest = (
+                await client.post(
+                    "/api/library/tracks/shuffle",
+                    json={"seed": window["seed"], "cursor": window["cursor"], "limit": 2},
+                )
+            ).json()
+            covered = [row["id"] for row in window["items"]] + [row["id"] for row in rest["items"]]
+            self.assertEqual(sorted(covered), sorted(ids.values()))
+            self.assertEqual(rest["cursor"], 3)
+            again = (
+                await client.post(
+                    "/api/library/tracks/shuffle",
+                    json={
+                        "seed": rest["seed"],
+                        "cursor": rest["cursor"],
+                        "limit": 2,
+                        "skip": [row["id"] for row in window["items"]],
                     },
                 )
+            ).json()
+            self.assertEqual(
+                [row["id"] for row in again["items"]], [row["id"] for row in rest["items"]]
+            )
+            self.assertEqual(again["total"], 1)
+            self.assertNotEqual(again["seed"], window["seed"])
+            looked = (
+                await client.post(
+                    "/api/library/tracks/lookup",
+                    json={"ids": [ids["Cinder"], "missing", ids["Beacon"]]},
+                )
+            ).json()
+            self.assertEqual([row["id"] for row in looked["items"]], [ids["Cinder"], ids["Beacon"]])
+            self.assertEqual(looked["missing"], ["missing"])
+            found = (await client.get("/api/library/tracks/search?q=cinder")).json()
+            self.assertEqual([row["title"] for row in found["items"]], ["Cinder"])
+            self.assertEqual(
+                (await client.get("/api/library/tracks?sort=nonsense")).status_code, 422
+            )
 
-            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    app = FastAPI()
-                    install_player_routes(app, lambda: navidrome)
-                    async with httpx.AsyncClient(
-                        transport=httpx.ASGITransport(app), base_url="http://test"
-                    ) as client:
-                        self.assertEqual(
-                            (await client.get("/api/player/art/gone")).status_code, 503
-                        )
-                        # The body arrives decoded, so the compressed length must not go with it.
-                        art = await client.get("/api/player/art/drawing")
-                        self.assertEqual(art.content, drawing)
-                        self.assertNotEqual(
-                            art.headers.get("content-length"), str(len(gzip.compress(drawing)))
-                        )
-            store.close()
+    async def test_search_finds_short_and_unusual_names(self) -> None:
+        for artist, title in (
+            ("MØ", "North"),
+            ("AC/DC", "Highway"),
+            ("Ry", "Small"),
+            ("Blue", "Beacon"),
+        ):
+            path = self.music / artist / f"{title}.wav"
+            write_wav(path)
+            tag(path, title=title, artist=artist, album="Album", album_artist=artist)
+        self.library.scan()
+        async with self.api() as client:
+            for query, title in (
+                ("MØ", "North"),
+                ("AC/DC", "Highway"),
+                ("Ry", "Small"),
+                ("Beacon", "Beacon"),
+            ):
+                body = (await client.get("/api/library/tracks/search", params={"q": query})).json()
+                self.assertEqual([row["title"] for row in body["items"]], [title], query)
 
+    async def test_a_shuffle_expires_and_a_huge_one_is_refused(self) -> None:
+        for title in ("One", "Two"):
+            path = self.music / f"{title}.wav"
+            write_wav(path)
+            tag(path, title=title, artist="A", album="A", album_artist="A")
+        self.library.scan()
+        async with self.api() as client:
+            window = (await client.get("/api/library/tracks/selection?shuffle=true&limit=1")).json()
+            seed = window["seed"]
+            stored = self.player.shuffle_orders[seed]
+            aged = time.monotonic() - SHUFFLE_ORDER_SECONDS - 1
+            self.player.shuffle_orders[seed] = (aged, stored[1])
+            expired = await client.post(
+                "/api/library/tracks/shuffle",
+                json={"seed": seed, "cursor": 0, "limit": 1},
+            )
+            self.assertEqual(expired.status_code, 404)
+            self.assertEqual(expired.json()["code"], "shuffle_expired")
+            with patch("backend.library.player.SHUFFLE_GUARD", 1):
+                refused = await client.get("/api/library/tracks/selection?shuffle=true&limit=1")
+            self.assertEqual(refused.status_code, 503)
+            self.assertIn("too large", refused.json()["detail"])
+        self.assertGreater(SHUFFLE_GUARD, 1)
+
+    def test_shuffle_orders_are_capped_by_the_ids_they_hold(self) -> None:
+        player = Player(cast(Store, None), [])
+        with patch("backend.library.player.SHUFFLE_ID_LIMIT", 10):
+            for index in range(6):
+                player.remember_shuffle(f"small{index}", [f"s{index}"])
+            self.assertEqual(len(player.shuffle_orders), 6)
+            player.remember_shuffle("large", [f"l{index}" for index in range(8)])
+            self.assertEqual(list(player.shuffle_orders), ["small4", "small5", "large"])
+            player.remember_shuffle("next", ["l0"], replaces="large")
+            self.assertEqual(list(player.shuffle_orders), ["small4", "small5", "next"])
+        self.assertGreater(SHUFFLE_ID_LIMIT, 10)
+
+    async def test_stream_ranges_artwork_and_song_facts(self) -> None:
+        path = self.music / "Artist" / "Album" / "song.wav"
+        write_wav(path)
+        tag(
+            path,
+            title="Song",
+            artist="Artist",
+            album="Album",
+            album_artist="Artist",
+            year="2020",
+            pictures=[(0, b"other"), (3, b"front")],
+        )
+        disc = self.music / "Band" / "Album" / "CD1" / "disc.wav"
+        write_wav(disc)
+        tag(disc, title="Disc", artist="Band", album="Live", album_artist="Band")
+        (self.music / "Band" / "Album" / "cover.jpg").write_bytes(b"parent-cover")
+        (self.music / "Band" / "Album" / "cover.1.jpg").write_bytes(b"not-this")
+        plain = self.music / "Plain" / "song.wav"
+        write_wav(plain)
+        tag(plain, title="Plain", artist="Plain", album="Plain", album_artist="Plain")
+        old = self.music / "Band" / "Old" / "old.wav"
+        new = self.music / "Band" / "New" / "new.wav"
+        bare = self.music / "Band" / "Bare" / "bare.wav"
+        for file, title, album, year in (
+            (old, "Old", "Old", "2010"),
+            (new, "New", "New", "2020"),
+            (bare, "Bare", "Bare", "2024"),
+        ):
+            write_wav(file)
+            tag(file, title=title, artist="Band", album=album, album_artist="Band", year=year)
+        (old.parent / "cover.jpg").write_bytes(b"old-cover")
+        (new.parent / "cover.jpg").write_bytes(b"new-cover")
+        self.library.scan()
+        ids = self.titles()
+        raw = path.read_bytes()
+
+        async with self.api() as client:
+            song = (await client.get(f"/api/player/song/{ids['Song']}")).json()
+            self.assertEqual(song["path"], "Artist/Album/song.wav")
+            self.assertEqual(song["suffix"], "wav")
+            self.assertEqual(song["contentType"], "audio/wav")
+            self.assertEqual(song["samplingRate"], 8000)
+            self.assertEqual(song["bitDepth"], 16)
+            self.assertEqual(song["channelCount"], 1)
+            self.assertEqual(song["size"], path.stat().st_size)
+            audio = await client.get(
+                f"/api/player/stream/{ids['Song']}", headers={"Range": "bytes=0-1"}
+            )
+            self.assertEqual(audio.status_code, 206)
+            self.assertEqual(audio.content, raw[:2])
+            self.assertEqual(audio.headers["content-range"], f"bytes 0-1/{len(raw)}")
+            self.assertEqual(audio.headers["content-type"], "audio/wav")
+            self.assertEqual(audio.headers["accept-ranges"], "bytes")
+            size = len(raw)
+            self.assertEqual(
+                (
+                    await client.get(
+                        f"/api/player/stream/{ids['Song']}", headers={"Range": f"bytes={size}-"}
+                    )
+                ).status_code,
+                416,
+            )
+            self.assertEqual(
+                (
+                    await client.get(
+                        f"/api/player/stream/{ids['Song']}", headers={"Range": "bytes=0-1,2-3"}
+                    )
+                ).status_code,
+                416,
+            )
+            self.assertEqual(
+                (
+                    await client.get(
+                        f"/api/player/stream/{ids['Song']}", headers={"Range": "items=1-2"}
+                    )
+                ).status_code,
+                416,
+            )
+            tracks = {
+                row["title"]: row
+                for row in (await client.get("/api/library/tracks?size=20")).json()["items"]
+            }
+            front = await client.get(f"/api/player/art/{tracks['Song']['coverArt']}")
+            self.assertEqual(front.status_code, 200)
+            self.assertEqual(front.content, b"front")
+            self.assertEqual(front.headers["content-type"], "image/jpeg")
+            self.assertIn("etag", front.headers)
+            disc_art = await client.get(f"/api/player/art/{tracks['Disc']['coverArt']}")
+            self.assertEqual(disc_art.content, b"parent-cover")
+            self.assertNotIn("coverArt", tracks["Plain"])
+            self.assertEqual(
+                (await client.get(f"/api/player/art/{ids['Plain']}_00000000")).status_code, 404
+            )
+            artists = {
+                row["name"]: row
+                for row in (await client.get("/api/library/artists?size=20")).json()["items"]
+            }
+            band = await client.get(f"/api/player/art/{artists['Band']['coverArt']}")
+            self.assertEqual(band.content, b"new-cover")
+            missing = await client.get("/api/library/albums/bad!id")
+            self.assertEqual(missing.status_code, 422)
+            self.assertEqual(missing.json()["detail"], "Invalid item ID")
+            self.assertNotIn("playback server", missing.text)
+
+    async def test_playlists_queue_and_scrobble(self) -> None:
+        for title in ("One", "Two"):
+            path = self.music / f"{title}.wav"
+            write_wav(path)
+            tag(path, title=title, artist="A", album="A", album_artist="A")
+        self.library.scan()
+        ids = self.titles()
+        one, two = ids["One"], ids["Two"]
+
+        async with self.api() as client:
+            unlinked = (await client.get("/api/library/playlists")).json()
+            self.assertEqual(unlinked["liked_id"], "")
+            named = await client.post(
+                "/api/library/playlists", json={"name": "Liked", "song_ids": []}
+            )
+            self.assertEqual(
+                (await client.delete(f"/api/library/playlists/{named.json()['id']}")).status_code,
+                204,
+            )
+            first = (await client.get("/api/library/playlists/liked")).json()
+            second = (await client.get("/api/library/playlists/liked")).json()
+            self.assertEqual(first["id"], second["id"])
+            self.assertEqual(first["name"], "Liked")
+            self.assertTrue(str(first["id"]).startswith("pl-"))
+            refused = await client.delete(f"/api/library/playlists/{first['id']}")
+            self.assertEqual(refused.status_code, 409)
+            self.assertEqual(refused.json()["detail"], "The liked playlist cannot be deleted")
+            self.store.set_linked_playlist("liked", "old-server")
+            listing = (await client.get("/api/library/playlists")).json()
+            self.assertEqual(listing["liked_id"], first["id"])
+            adopted = (await client.get("/api/library/playlists/liked")).json()
+            self.assertEqual(adopted["id"], first["id"])
+            self.assertEqual([row["name"] for row in listing["items"]], ["Liked"])
+
+            created = await client.post(
+                "/api/library/playlists", json={"name": "Road trip", "song_ids": [one]}
+            )
+            self.assertEqual(created.status_code, 200)
+            playlist_id = created.json()["id"]
+            self.assertEqual(created.json()["entry"][0]["id"], one)
+            renamed = await client.patch(
+                f"/api/library/playlists/{playlist_id}", json={"name": "Morning"}
+            )
+            self.assertEqual(renamed.json()["name"], "Morning")
+            added = await client.post(
+                f"/api/library/playlists/{playlist_id}/songs", json={"song_id_to_add": two}
+            )
+            self.assertEqual([row["id"] for row in added.json()["entry"]], [one, two])
+            removed = await client.post(
+                f"/api/library/playlists/{playlist_id}/songs", json={"song_index_to_remove": 0}
+            )
+            self.assertEqual([row["id"] for row in removed.json()["entry"]], [two])
+            self.assertEqual(
+                (
+                    await client.post(
+                        f"/api/library/playlists/{playlist_id}/songs",
+                        json={"song_id_to_add": one, "song_index_to_remove": 0},
+                    )
+                ).status_code,
+                422,
+            )
+            self.assertEqual(
+                (await client.delete(f"/api/library/playlists/{playlist_id}")).status_code, 204
+            )
+
+            saved = await client.put(
+                "/api/player/queue", json={"ids": [one, two], "current": one, "position": 1200}
+            )
+            self.assertEqual(saved.status_code, 204)
+            queue = (await client.get("/api/player/queue")).json()
+            self.assertEqual(queue["current"], one)
+            self.assertEqual(queue["position"], 1200)
+            self.assertEqual([row["id"] for row in queue["entry"]], [one, two])
+            self.assertEqual(
+                (
+                    await client.put(
+                        "/api/player/queue", json={"ids": [one], "current": two, "position": 0}
+                    )
+                ).status_code,
+                422,
+            )
+            for count, status in ((500, 204), (501, 422)):
+                self.assertEqual(
+                    (
+                        await client.put(
+                            "/api/player/queue",
+                            json={
+                                "ids": [f"tr-{index:016x}" for index in range(count)],
+                                "current": "tr-0000000000000000",
+                                "position": 0,
+                            },
+                        )
+                    ).status_code,
+                    status,
+                )
+
+            self.assertEqual(
+                (
+                    await client.post("/api/player/scrobble", json={"id": one, "submission": False})
+                ).status_code,
+                204,
+            )
+            self.assertEqual((await client.get(f"/api/player/song/{one}")).json()["playCount"], 0)
+            self.assertEqual(
+                (
+                    await client.post("/api/player/scrobble", json={"id": one, "submission": True})
+                ).status_code,
+                204,
+            )
+            played = (await client.get(f"/api/player/song/{one}")).json()
+            self.assertEqual(played["playCount"], 1)
+            self.assertTrue(played["played"])
+            await client.post("/api/player/scrobble", json={"id": one, "submission": True})
+            self.assertEqual((await client.get(f"/api/player/song/{one}")).json()["playCount"], 2)
+            albums = (await client.get("/api/library/albums")).json()["items"]
+            self.assertEqual(albums[0]["playCount"], 2)
+
+    async def test_lyrics_prefer_sidecar_then_embedded_then_lrclib(self) -> None:
+        path = self.music / "Artist" / "song.wav"
+        write_wav(path)
+        tag(
+            path,
+            title="Song",
+            artist="Artist",
+            album="Album",
+            album_artist="Artist",
+            lyrics="[00:02.00]Embedded",
+        )
+        path.with_suffix(".lrc").write_text("\ufeff[00:01.00]Sidecar\n", encoding="utf-8")
+        self.library.scan()
+        song_id = self.titles()["Song"]
+        calls = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            calls["n"] += 1
+            self.assertEqual(request.url.params["track_name"], "Song")
+            return httpx.Response(
+                200,
+                json={"syncedLyrics": "[00:01.25]Remote", "plainLyrics": "Remote"},
+            )
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            player = Player(self.store, [self.music], http)
+            async with self.api(player) as client:
+                sidecar = (await client.get(f"/api/player/lyrics/{song_id}")).json()["items"][0]
+                self.assertEqual(sidecar["line"][0], {"start": 1000, "value": "Sidecar"})
+                self.assertTrue(sidecar["synced"])
+                self.assertEqual(calls["n"], 0)
+                path.with_suffix(".lrc").unlink()
+                embedded = (await client.get(f"/api/player/lyrics/{song_id}")).json()["items"][0]
+                self.assertEqual(embedded["line"][0]["value"], "Embedded")
+                self.assertEqual(embedded["line"][0]["start"], 2000)
+                self.assertEqual(calls["n"], 0)
+                write_wav(path)
+                tag(path, title="Song", artist="Artist", album="Album", album_artist="Artist")
+                self.library.scan()
+                remote = (await client.get(f"/api/player/lyrics/{song_id}")).json()["items"][0]
+                self.assertEqual(remote["line"][0], {"start": 1250, "value": "Remote"})
+                self.assertEqual(calls["n"], 1)
+                path.with_suffix(".lrc").write_bytes("歌词".encode("gbk"))
+                rough = await client.get(f"/api/player/lyrics/{song_id}")
+                self.assertEqual(rough.status_code, 200)
+                self.assertGreaterEqual(len(rough.json()["items"][0]["line"]), 1)
+                self.assertEqual(calls["n"], 1)
+
+    async def test_an_id_survives_a_rescan_and_a_removed_file_leaves_the_queue(self) -> None:
+        path = self.music / "Artist" / "song.wav"
+        write_wav(path)
+        tag(path, title="First", artist="Artist", album="Album", album_artist="Artist")
+        self.library.scan()
+        song_id = self.titles()["First"]
+        added = str(
+            self.store.db.execute(
+                "SELECT added_at FROM library_files WHERE song_id=?", (song_id,)
+            ).fetchone()["added_at"]
+        )
+        write_wav(path)
+        tag(path, title="Second", artist="Artist", album="Album", album_artist="Artist")
+        self.library.scan()
+        self.assertEqual(self.titles()["Second"], song_id)
+        self.assertEqual(
+            str(
+                self.store.db.execute(
+                    "SELECT added_at FROM library_files WHERE song_id=?", (song_id,)
+                ).fetchone()["added_at"]
+            ),
+            added,
+        )
+        async with self.api() as client:
+            self.assertEqual(
+                (await client.get(f"/api/player/song/{song_id}")).json()["id"], song_id
+            )
+            created = await client.post(
+                "/api/library/playlists", json={"name": "Keep", "song_ids": [song_id]}
+            )
+            playlist_id = created.json()["id"]
+            await client.put(
+                "/api/player/queue", json={"ids": [song_id], "current": song_id, "position": 10}
+            )
+            stored = self.store.db.execute(
+                "SELECT path FROM library_files WHERE song_id=?", (song_id,)
+            ).fetchone()
+            self.library.remove(str(stored["path"]))
+            self.assertEqual(
+                (await client.get(f"/api/library/playlists/{playlist_id}")).json()["songCount"], 0
+            )
+            queue = (await client.get("/api/player/queue")).json()
+            self.assertEqual(queue["entry"], [])
+            self.assertEqual(queue["current"], "")
+            self.assertEqual((await client.get(f"/api/player/stream/{song_id}")).status_code, 404)
+
+    async def test_a_song_id_cannot_reach_outside_a_root(self) -> None:
+        inside = self.music / "inside.wav"
+        outside = self.base / "outside.wav"
+        write_wav(inside)
+        write_wav(outside)
+        tag(inside, title="Inside", artist="A", album="A", album_artist="A")
+        self.library.scan()
+        song_id = self.titles()["Inside"]
+        async with self.api() as client:
+            self.assertEqual((await client.get(f"/api/player/stream/{song_id}")).status_code, 200)
+            inside.unlink()
+            inside.symlink_to(outside)
+            self.assertEqual((await client.get(f"/api/player/stream/{song_id}")).status_code, 404)
+            inside.unlink()
+            write_wav(inside)
+            self.store.db.execute(
+                "UPDATE library_files SET path=? WHERE song_id=?", (str(outside), song_id)
+            )
+            self.assertEqual((await client.get(f"/api/player/stream/{song_id}")).status_code, 404)
+            self.store.db.execute(
+                "UPDATE library_files SET path=? WHERE song_id=?", (str(inside), song_id)
+            )
+            self.store.db.execute("UPDATE library_roots SET enabled=0")
+            self.store.bump_library_revision()
+            self.assertEqual((await client.get(f"/api/player/stream/{song_id}")).status_code, 404)
+            self.assertEqual((await client.get("/api/library/tracks")).json()["total"], 0)
+
+    async def test_replacing_a_cover_changes_its_url(self) -> None:
+        folder = self.music / "Band" / "Album"
+        path = folder / "song.wav"
+        write_wav(path)
+        tag(path, title="Song", artist="Band", album="Album", album_artist="Band")
+        cover = folder / "cover.jpg"
+        cover.write_bytes(b"first")
+        self.library.scan()
+        before = self.store.library_revision()
+        async with self.api() as client:
+            first = (await client.get("/api/library/albums")).json()["items"][0]["coverArt"]
+            cover.write_bytes(b"second-image")
+            self.library.refresh({str(cover)})
+            self.assertGreater(self.store.library_revision(), before)
+            again = (await client.get("/api/library/albums")).json()["items"][0]
+            self.assertNotEqual(again["coverArt"], first)
+            art = await client.get(f"/api/player/art/{again['coverArt']}")
+            self.assertEqual(art.status_code, 200)
+            self.assertEqual(art.content, b"second-image")
+            self.assertIn("immutable", art.headers["cache-control"])
+
+    async def test_a_finished_download_is_browsable_and_streamable(self) -> None:
+        def refuse(request: httpx.Request) -> httpx.Response:
+            raise AssertionError(f"no separate playback server: {request.url}")
+
+        async with httpx.AsyncClient(transport=httpx.MockTransport(refuse)) as http:
+            downloads = Downloads(
+                self.store, Catalog(self.store, http), self.library, asyncio.Event()
+            )
+            job = downloads.jobs.enqueue(7, "original", str(self.music))
+            job = downloads.jobs.update(
+                job.id,
+                meta=Metadata(
+                    id=7,
+                    title="Finished",
+                    artist="Downloaded",
+                    album_artist="Downloaded",
+                    album="Shelf",
+                    track=1,
+                ).model_dump(),
+            )
+            ready = self.base / "ready.wav"
+            write_wav(ready)
+            tag(
+                ready,
+                title="Finished",
+                artist="Downloaded",
+                album="Shelf",
+                album_artist="Downloaded",
+            )
+            await downloads.finish(job, ready)
+
+        done = downloads.jobs.get(job.id)
+        self.assertEqual(done.stage, "done")
+        published = Path(done.final_path)
+        self.assertTrue(published.is_file())
+        self.assertTrue(published.is_relative_to(self.music))
+        async with self.api() as client:
+            albums = (await client.get("/api/library/albums")).json()
+            self.assertEqual([row["name"] for row in albums["items"]], ["Shelf"])
+            song_id = self.titles()["Finished"]
+            stream = await client.get(f"/api/player/stream/{song_id}")
+            self.assertEqual(stream.status_code, 200)
+            self.assertEqual(stream.headers["content-type"], "audio/wav")
+            self.assertEqual(stream.content, published.read_bytes())
+
+
+class SortTests(unittest.TestCase):
     def test_artist_names_sort_numbers_as_numbers(self) -> None:
         rows: list[dict[str, object]] = [
             {"name": "311"},
@@ -770,460 +955,6 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
             [row["name"] for row in sort_artists(rows, {}, "name")],
             ["9 Theory", "100mg", "311", "Abba"],
         )
-
-    async def test_track_browsing_filters_sorts_and_shuffles_the_whole_library(self) -> None:
-        library = [
-            {
-                "id": "s1",
-                "title": "Beacon",
-                "artist": "Zia",
-                "genre": "Jazz",
-                "year": 1999,
-                # The browser never reads this, so the snapshot does not keep it.
-                "path": "Zia/Beacon.flac",
-            },
-            {
-                "id": "s2",
-                "title": "Anchor",
-                "artist": "Mox",
-                "genre": "Rock",
-                "year": 2011,
-                "replayGain": {"trackGain": -6.5, "albumGain": -7.25, "trackPeak": 0.98},
-            },
-            {"id": "s3", "title": "Cinder", "artist": "Ame", "genre": "Jazz", "year": 2011},
-        ]
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
-            )
-            searches = {"count": 0}
-
-            def upstream(request: httpx.Request) -> httpx.Response:
-                path = request.url.path
-                if path.endswith("/ping"):
-                    return subsonic(serverVersion="0.63.0")
-                if path.endswith("/search3"):
-                    searches["count"] += 1
-                    offset = int(request.url.params.get("songOffset", 0))
-                    return subsonic(searchResult3={"song": library[offset:]})
-                if path.endswith("/getSong") and request.url.params.get("id") == "down":
-                    return httpx.Response(500, json={"detail": "down"})
-                return subsonic()
-
-            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    app = FastAPI()
-                    install_player_routes(app, lambda: navidrome)
-                    async with httpx.AsyncClient(
-                        transport=httpx.ASGITransport(app), base_url="http://test"
-                    ) as client:
-                        listing = (await client.get("/api/library/tracks")).json()
-                        self.assertEqual(
-                            [row["id"] for row in listing["items"]], ["s2", "s1", "s3"]
-                        )
-                        self.assertNotIn("path", listing["items"][1])
-                        # ReplayGain rides along when Navidrome has it, and is absent when not.
-                        self.assertEqual(
-                            listing["items"][0]["replayGain"],
-                            {"trackGain": -6.5, "albumGain": -7.25, "trackPeak": 0.98},
-                        )
-                        self.assertNotIn("replayGain", listing["items"][1])
-                        self.assertEqual(listing["total"], 3)
-                        self.assertEqual(listing["genres"], ["Jazz", "Rock"])
-                        self.assertEqual(listing["years"], [2011, 1999])
-                        by_artist = (await client.get("/api/library/tracks?sort=artist")).json()
-                        self.assertEqual(
-                            [row["id"] for row in by_artist["items"]], ["s3", "s2", "s1"]
-                        )
-                        # Sorting and totals must cover the library, not the requested page.
-                        page = (await client.get("/api/library/tracks?size=1&offset=1")).json()
-                        self.assertEqual([row["id"] for row in page["items"]], ["s1"])
-                        self.assertEqual(page["next_offset"], 2)
-                        self.assertEqual(page["total"], 3)
-                        filtered = (
-                            await client.get("/api/library/tracks?genre=Jazz&year=2011")
-                        ).json()
-                        self.assertEqual([row["id"] for row in filtered["items"]], ["s3"])
-                        self.assertEqual(filtered["total"], 1)
-                        self.assertEqual(filtered["genres"], ["Jazz", "Rock"])
-                        selection = (
-                            await client.get("/api/library/tracks/selection?sort=year&limit=2")
-                        ).json()
-                        self.assertEqual([row["id"] for row in selection["items"]], ["s2", "s3"])
-                        self.assertEqual(selection["total"], 3)
-                        shuffled = (
-                            await client.get("/api/library/tracks/selection?shuffle=true")
-                        ).json()
-                        self.assertEqual(
-                            sorted(row["id"] for row in shuffled["items"]), ["s1", "s2", "s3"]
-                        )
-                        self.assertEqual(shuffled["rest"], [])
-                        self.assertEqual(shuffled["seed"], "")
-                        self.assertEqual(shuffled["cursor"], 3)
-                        # Over the queue cap, the remaining songs stay on the server.
-                        window = (
-                            await client.get("/api/library/tracks/selection?shuffle=true&limit=2")
-                        ).json()
-                        self.assertEqual(len(window["items"]), 2)
-                        self.assertEqual(window["rest"], [])
-                        self.assertEqual(window["total"], 3)
-                        self.assertEqual(window["cursor"], 2)
-                        self.assertTrue(window["seed"])
-                        rest = (
-                            await client.post(
-                                "/api/library/tracks/shuffle",
-                                json={
-                                    "seed": window["seed"],
-                                    "cursor": window["cursor"],
-                                    "limit": 2,
-                                },
-                            )
-                        ).json()
-                        covered = [row["id"] for row in window["items"]] + [
-                            row["id"] for row in rest["items"]
-                        ]
-                        self.assertEqual(sorted(covered), ["s1", "s2", "s3"])
-                        self.assertEqual(rest["cursor"], 3)
-                        again = (
-                            await client.post(
-                                "/api/library/tracks/shuffle",
-                                json={
-                                    "seed": rest["seed"],
-                                    "cursor": rest["cursor"],
-                                    "limit": 2,
-                                    "skip": [row["id"] for row in window["items"]],
-                                },
-                            )
-                        ).json()
-                        self.assertEqual(
-                            [row["id"] for row in again["items"]],
-                            [row["id"] for row in rest["items"]],
-                        )
-                        self.assertEqual(again["total"], 1)
-                        self.assertNotEqual(again["seed"], window["seed"])
-                        looked = (
-                            await client.post(
-                                "/api/library/tracks/lookup", json={"ids": ["s3", "missing", "s1"]}
-                            )
-                        ).json()
-                        self.assertEqual([row["id"] for row in looked["items"]], ["s3", "s1"])
-                        self.assertEqual(looked["missing"], ["missing"])
-                        self.assertEqual(
-                            (
-                                await client.post(
-                                    "/api/library/tracks/lookup", json={"ids": ["down"]}
-                                )
-                            ).status_code,
-                            503,
-                        )
-                        cached = searches["count"]
-                        await client.get("/api/library/tracks")
-                        self.assertEqual(searches["count"], cached)
-                        # A library inside one page costs one upstream request, not a
-                        # speculative fan-out, and concurrent callers share that one walk.
-                        navidrome.forget_tracks()
-                        searches["count"] = 0
-                        await asyncio.gather(
-                            client.get("/api/library/tracks"),
-                            client.get("/api/library/tracks/selection"),
-                        )
-                        self.assertEqual(searches["count"], 1)
-                        # The picker endpoint asks Navidrome directly instead of walking.
-                        navidrome.forget_tracks()
-                        searches["count"] = 0
-                        picker = (await client.get("/api/library/tracks/search?q=cinder")).json()
-                        self.assertEqual([row["id"] for row in picker["items"]], ["s1", "s2", "s3"])
-                        self.assertEqual(searches["count"], 1)
-                        self.assertEqual(
-                            (await client.get("/api/library/tracks")).json()["total"], 3
-                        )
-                        # A scan changes what search3 returns, so the snapshot is dropped.
-                        searches["count"] = 0
-                        await navidrome.start_scan("1:Artist/Album")
-                        await client.get("/api/library/tracks")
-                        self.assertGreater(searches["count"], 0)
-                        self.assertEqual(
-                            (await client.get("/api/library/tracks?sort=nonsense")).status_code, 422
-                        )
-            store.close()
-
-    async def test_shuffle_reads_past_the_browse_cap_without_returning_every_id(self) -> None:
-        library = [
-            {
-                "id": f"s{index}",
-                "title": f"Song {index:02d}",
-                "artist": "A",
-                "genre": "Jazz" if index % 2 == 0 else "Rock",
-                "year": 1999,
-            }
-            for index in range(7)
-        ]
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
-            )
-
-            def upstream(request: httpx.Request) -> httpx.Response:
-                path = request.url.path
-                if path.endswith("/ping"):
-                    return subsonic(serverVersion="0.63.0")
-                if path.endswith("/search3"):
-                    offset = int(request.url.params.get("songOffset", 0))
-                    size = int(request.url.params.get("songCount", 0))
-                    return subsonic(searchResult3={"song": library[offset : offset + size]})
-                if path.endswith("/getSong"):
-                    song_id = request.url.params.get("id")
-                    song = next((row for row in library if row["id"] == song_id), None)
-                    return subsonic(song=song) if song else subsonic()
-                return subsonic()
-
-            with (
-                patch("backend.library.navidrome.TRACK_CAP", 4),
-                patch("backend.library.navidrome.TRACK_PAGE", 2),
-                patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
-            ):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    app = FastAPI()
-                    install_player_routes(app, lambda: navidrome)
-                    async with httpx.AsyncClient(
-                        transport=httpx.ASGITransport(app), base_url="http://test"
-                    ) as client:
-                        listing = (await client.get("/api/library/tracks")).json()
-                        self.assertEqual(listing["total"], 4)
-                        self.assertNotIn("s4", [row["id"] for row in listing["items"]])
-                        shuffled = (
-                            await client.get("/api/library/tracks/selection?shuffle=true&limit=2")
-                        ).json()
-                        self.assertEqual(shuffled["total"], 7)
-                        self.assertEqual(shuffled["rest"], [])
-                        self.assertEqual(len(shuffled["items"]), 2)
-                        self.assertTrue(shuffled["seed"])
-                        got = [row["id"] for row in shuffled["items"]]
-                        cursor = shuffled["cursor"]
-                        seed = shuffled["seed"]
-                        for _ in range(6):
-                            if cursor >= shuffled["total"]:
-                                break
-                            page = (
-                                await client.post(
-                                    "/api/library/tracks/shuffle",
-                                    json={"seed": seed, "cursor": cursor, "limit": 2},
-                                )
-                            ).json()
-                            self.assertEqual(page["seed"], seed)
-                            self.assertGreater(page["cursor"], cursor)
-                            got.extend(row["id"] for row in page["items"])
-                            cursor = page["cursor"]
-                        self.assertEqual(sorted(got), [f"s{index}" for index in range(7)])
-                        self.assertEqual(len(got), len(set(got)))
-                        jazz = (
-                            await client.get(
-                                "/api/library/tracks/selection?shuffle=true&genre=Jazz&limit=10"
-                            )
-                        ).json()
-                        self.assertEqual(jazz["total"], 4)
-                        self.assertEqual(jazz["seed"], "")
-                        self.assertEqual(
-                            sorted(row["id"] for row in jazz["items"]),
-                            ["s0", "s2", "s4", "s6"],
-                        )
-                        again = (
-                            await client.post(
-                                "/api/library/tracks/shuffle",
-                                json={"seed": seed, "cursor": cursor, "limit": 2, "skip": got[:2]},
-                            )
-                        ).json()
-                        self.assertEqual(again["total"], 5)
-                        self.assertNotEqual(again["seed"], seed)
-                        self.assertTrue(all(row["id"] not in got[:2] for row in again["items"]))
-                        # The finished pass gives its place to the next one.
-                        self.assertNotIn(seed, navidrome.shuffle_orders)
-                        seed = again["seed"]
-                        stored = navidrome.shuffle_orders[seed]
-                        # Older than a day by the same clock the server reads. A fresh CI runner
-                        # has been up for less than a day, so 0.0 is not old enough there.
-                        aged = time.monotonic() - SHUFFLE_ORDER_SECONDS - 1
-                        navidrome.shuffle_orders[seed] = (aged, stored[1])
-                        expired = await client.post(
-                            "/api/library/tracks/shuffle",
-                            json={"seed": seed, "cursor": 0, "limit": 2},
-                        )
-                        self.assertEqual(expired.status_code, 404)
-                        self.assertEqual(expired.json()["code"], "shuffle_expired")
-                        navidrome.forget_tracks()
-                        with patch("backend.library.navidrome.SHUFFLE_GUARD", 4):
-                            refused = await client.get(
-                                "/api/library/tracks/selection?shuffle=true&limit=2"
-                            )
-                            self.assertEqual(refused.status_code, 503)
-                            self.assertIn("too large", refused.json()["detail"])
-            store.close()
-
-    async def test_shuffle_orders_are_capped_by_the_ids_they_hold(self) -> None:
-        async with httpx.AsyncClient() as upstream_client:
-            navidrome = Navidrome(cast(Store, None), upstream_client)
-            with patch("backend.library.navidrome.SHUFFLE_ID_LIMIT", 10):
-                # Many small passes, as from several devices, all stay.
-                for index in range(6):
-                    navidrome.remember_shuffle(f"small{index}", [f"s{index}"])
-                self.assertEqual(len(navidrome.shuffle_orders), 6)
-                # A large one pushes out the oldest until the ids fit again.
-                navidrome.remember_shuffle("large", [f"l{index}" for index in range(8)])
-                self.assertEqual(list(navidrome.shuffle_orders), ["small4", "small5", "large"])
-                # The next pass replaces the finished one instead of crowding out another.
-                navidrome.remember_shuffle("next", ["l0"], replaces="large")
-                self.assertEqual(list(navidrome.shuffle_orders), ["small4", "small5", "next"])
-
-    async def test_a_second_shuffle_reuses_the_walk_past_the_browse_cap(self) -> None:
-        library = [{"id": f"s{index}", "title": f"Song {index}"} for index in range(7)]
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
-            )
-            past_cap: list[int] = []
-
-            def upstream(request: httpx.Request) -> httpx.Response:
-                path = request.url.path
-                if path.endswith("/ping"):
-                    return subsonic(serverVersion="0.63.0")
-                if path.endswith("/search3"):
-                    offset = int(request.url.params.get("songOffset", 0))
-                    size = int(request.url.params.get("songCount", 0))
-                    if offset >= 4:
-                        past_cap.append(offset)
-                    return subsonic(searchResult3={"song": library[offset : offset + size]})
-                if path.endswith("/getSong"):
-                    song_id = request.url.params.get("id")
-                    song = next((row for row in library if row["id"] == song_id), None)
-                    return subsonic(song=song) if song else subsonic()
-                return subsonic()
-
-            with (
-                patch("backend.library.navidrome.TRACK_CAP", 4),
-                patch("backend.library.navidrome.TRACK_PAGE", 2),
-                patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}),
-            ):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    first = await navidrome.select_tracks("", "title", [], [], True, 2)
-                    walked = len(past_cap)
-                    self.assertGreater(walked, 0)
-                    second = await navidrome.select_tracks("", "title", [], [], True, 2)
-                    self.assertEqual(len(past_cap), walked)
-                    self.assertEqual(first["total"], 7)
-                    self.assertEqual(second["total"], 7)
-                    self.assertNotEqual(first["seed"], second["seed"])
-            store.close()
-
-    async def test_linked_liked_playlist_is_reported_without_creating_it(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            root = Path(directory)
-            store = Store(root / "musimo.sqlite3")
-            store.update({"navidrome_url": "http://navidrome:4533"})
-            credentials = root / "navidrome.json"
-            credentials.write_text(
-                json.dumps({"username": "listener", "password": "private password"}),
-                encoding="utf-8",
-            )
-            deleted: list[str] = []
-            created: list[str] = []
-
-            def upstream(request: httpx.Request) -> httpx.Response:
-                path = request.url.path
-                if path.endswith("/getPlaylists"):
-                    return subsonic(
-                        playlists={
-                            "playlist": [
-                                {"id": "p1", "name": "Road trip", "songCount": 4},
-                                {"id": "p2", "name": "Liked", "songCount": 9},
-                            ]
-                        }
-                    )
-                if path.endswith("/createPlaylist"):
-                    created.append(str(request.url.params.get("name")))
-                    return subsonic(playlist={"id": "p3", "name": "Liked", "entry": []})
-                if path.endswith("/deletePlaylist"):
-                    deleted.append(str(request.url.params.get("id")))
-                return subsonic()
-
-            with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
-                async with httpx.AsyncClient(
-                    transport=httpx.MockTransport(upstream)
-                ) as upstream_client:
-                    navidrome = Navidrome(store, upstream_client)
-                    app = FastAPI()
-                    install_player_routes(app, lambda: navidrome)
-                    async with httpx.AsyncClient(
-                        transport=httpx.ASGITransport(app), base_url="http://test"
-                    ) as client:
-                        # Nothing is linked yet, so listing reports no liked playlist and
-                        # creates none: a playlist merely named Liked is still deletable.
-                        unlinked = (await client.get("/api/library/playlists")).json()
-                        self.assertEqual(unlinked["liked_id"], "")
-                        self.assertEqual(created, [])
-                        self.assertEqual(
-                            (await client.delete("/api/library/playlists/p2")).status_code, 204
-                        )
-
-                        store.set_linked_playlist("liked", "p2")
-                        listing = (await client.get("/api/library/playlists")).json()
-                        self.assertEqual(listing["liked_id"], "p2")
-                        self.assertEqual([row["id"] for row in listing["items"]], ["p1", "p2"])
-                        self.assertEqual(created, [])
-                        refused = await client.delete("/api/library/playlists/p2")
-                        self.assertEqual(refused.status_code, 409)
-                        self.assertEqual(
-                            refused.json()["detail"], "The liked playlist cannot be deleted"
-                        )
-                        self.assertEqual(
-                            (await client.delete("/api/library/playlists/p1")).status_code, 204
-                        )
-                        self.assertEqual(deleted, ["p2", "p1"])
-            store.close()
-
-    def test_navidrome_url_rejects_credentials_and_non_http_schemes(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            store = Store(Path(directory) / "musimo.sqlite3")
-            for value in (
-                "file:///music",
-                "http://user:password@navidrome:4533",
-                "http://navidrome:4533?token=secret",
-            ):
-                with self.subTest(value=value), self.assertRaises(ValueError):
-                    store.update({"navidrome_url": value})
-            store.update({"navidrome_url": "https://music.test/navidrome/"})
-            self.assertEqual(
-                store.settings()["navidrome_url"],
-                {
-                    "value": "https://music.test/navidrome/",
-                    "origin": "database",
-                    "locked": False,
-                },
-            )
-            store.close()
 
 
 if __name__ == "__main__":

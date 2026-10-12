@@ -219,7 +219,10 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
             self.library.stop.set()
             if self.library.background:
                 await self.library.background
-            self.assertEqual(self.library.pending, {final, str(self.root / "Album")})
+            self.assertEqual(
+                self.library.pending,
+                {final, str(self.root / "Album"), str(self.root / "Album" / "cover.jpg")},
+            )
 
     async def test_repeated_stop_commands_finish_cleanup(self) -> None:
         async with httpx.AsyncClient() as client:

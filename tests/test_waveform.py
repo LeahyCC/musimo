@@ -1,5 +1,4 @@
 import asyncio
-import json
 import os
 import shutil
 import struct
@@ -15,10 +14,10 @@ from unittest.mock import patch
 import httpx
 from fastapi import FastAPI
 
-from backend.api.player_api import install_player_routes
 from backend.api.waveform_api import install_waveform_routes
 from backend.core.store import Store
-from backend.library.navidrome import Navidrome
+from backend.library.index import Library
+from backend.library.player import Player
 from backend.library.waveform import (
     WAVEFORM_POINTS,
     PeakReader,
@@ -29,11 +28,15 @@ from backend.library.waveform import (
 )
 
 PEAKS = bytes(index % 256 for index in range(WAVEFORM_POINTS))
-STREAM_BYTES = b"audio from navidrome"
 
 
-def subsonic(**payload: object) -> httpx.Response:
-    return httpx.Response(200, json={"subsonic-response": {"status": "ok", **payload}})
+def write_wav(path: Path) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(1)
+        handle.setsampwidth(2)
+        handle.setframerate(8000)
+        handle.writeframes(b"\0\0" * 800)
 
 
 class FakeDecoder:
@@ -64,9 +67,12 @@ class Serving:
     client: httpx.AsyncClient
     service: WaveformService
     store: Store
-    streamed: list[str]
+    ids: dict[str, str]
 
-    async def peaks(self, song_id: str) -> httpx.Response:
+    async def peaks(self, name: str) -> httpx.Response:
+        return await self.peaks_id(self.ids[name])
+
+    async def peaks_id(self, song_id: str) -> httpx.Response:
         return await self.client.get(f"/api/player/waveform/{song_id}")
 
     def cached(self) -> int:
@@ -75,65 +81,48 @@ class Serving:
 
 @asynccontextmanager
 async def serving(
-    directory: Path,
-    songs: dict[str, dict[str, object]],
-    decoder: FakeDecoder,
-    roots: list[Path],
+    directory: Path, names: list[str], decoder: FakeDecoder
 ) -> AsyncIterator[Serving]:
-    """The waveform route in front of a mocked Navidrome that knows `songs`."""
+    """Waveforms for generated files under a temporary music root."""
+    root = directory / "music"
+    root.mkdir()
+    for name in names:
+        write_wav(root / name)
     store = Store(directory / "musimo.sqlite3")
-    store.update({"navidrome_url": "http://navidrome:4533"})
-    credentials = directory / "navidrome.json"
-    credentials.write_text(
-        json.dumps({"username": "listener", "password": "private password"}), encoding="utf-8"
-    )
-    streamed: list[str] = []
-
-    def upstream(request: httpx.Request) -> httpx.Response:
-        song_id = request.url.params.get("id", "")
-        if request.url.path.endswith("/getSong") and song_id in songs:
-            return subsonic(song={"id": song_id, **songs[song_id]})
-        if request.url.path.endswith("/stream"):
-            streamed.append(song_id)
-            return httpx.Response(200, content=STREAM_BYTES, headers={"Content-Type": "audio/mpeg"})
-        return httpx.Response(404)
-
+    library = Library(store, [root], asyncio.Event())
     try:
-        with patch.dict("os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}):
-            async with httpx.AsyncClient(
-                transport=httpx.MockTransport(upstream)
-            ) as upstream_client:
-                navidrome = Navidrome(store, upstream_client)
-                service = WaveformService(store, navidrome, roots, decoder)
-                app = FastAPI()
-                install_player_routes(app, lambda: navidrome)
-                install_waveform_routes(app, lambda: service)
-                async with httpx.AsyncClient(
-                    transport=httpx.ASGITransport(app), base_url="http://test"
-                ) as client:
-                    yield Serving(client, service, store, streamed)
+        library.scan()
+        ids: dict[str, str] = {}
+        for name in names:
+            row = store.db.execute(
+                "SELECT song_id FROM library_files WHERE path=?", (str(root / name),)
+            ).fetchone()
+            if row is None:
+                found = [
+                    str(item["path"]) for item in store.db.execute("SELECT path FROM library_files")
+                ]
+                raise AssertionError(f"{root / name} was not indexed; have {found}")
+            ids[name] = str(row["song_id"])
+        player = Player(store, [root])
+        service = WaveformService(store, player, decoder)
+        app = FastAPI()
+        install_waveform_routes(app, lambda: service)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app), base_url="http://test"
+        ) as client:
+            yield Serving(client, service, store, ids)
     finally:
         store.close()
-
-
-def library_with(base: Path, *names: str) -> Path:
-    library = base / "music"
-    for name in names:
-        (library / name).parent.mkdir(parents=True, exist_ok=True)
-        (library / name).write_bytes(b"first")
-    return library
 
 
 class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_file_in_the_library_is_decoded_once_then_read_from_the_cache(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
-            library = library_with(base, "Artist/One/01 Track.flac")
             decoder = FakeDecoder()
-            songs: dict[str, dict[str, object]] = {"song-1": {"path": "Artist/One/01 Track.flac"}}
-            async with serving(base, songs, decoder, [library]) as s:
-                first = await s.peaks("song-1")
-                second = await s.peaks("song-1")
+            async with serving(base, ["Artist/One/01 Track.wav"], decoder) as opened:
+                first = await opened.peaks("Artist/One/01 Track.wav")
+                second = await opened.peaks("Artist/One/01 Track.wav")
 
                 self.assertEqual(first.status_code, 200)
                 peaks = first.json()["peaks"]
@@ -141,86 +130,68 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
                 self.assertTrue(all(0 <= value <= 1 for value in peaks))
                 self.assertEqual(peaks[255], 1.0)
                 self.assertEqual(second.json(), first.json())
-                # Read from where it lies, never through Navidrome.
-                self.assertEqual(decoder.calls, [library / "Artist/One/01 Track.flac"])
-                self.assertEqual(s.streamed, [])
-                self.assertEqual(s.cached(), 1)
+                self.assertEqual(len(decoder.calls), 1)
+                self.assertEqual(
+                    decoder.calls[0], (base / "music" / "Artist/One/01 Track.wav").resolve()
+                )
+                self.assertEqual(opened.cached(), 1)
 
     async def test_a_changed_file_is_worked_out_again_and_replaces_its_row(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
-            library = library_with(base, "one.flac")
-            track = library / "one.flac"
             decoder = FakeDecoder()
-            songs: dict[str, dict[str, object]] = {"song-1": {"path": "one.flac"}}
-            async with serving(base, songs, decoder, [library]) as s:
-                await s.peaks("song-1")
-                await s.peaks("song-1")
+            async with serving(base, ["one.wav"], decoder) as opened:
+                track = base / "music" / "one.wav"
+                await opened.peaks("one.wav")
+                await opened.peaks("one.wav")
                 self.assertEqual(len(decoder.calls), 1)
 
-                # A different size is a different file.
                 track.write_bytes(b"a longer second take")
-                await s.peaks("song-1")
+                await opened.peaks("one.wav")
                 self.assertEqual(len(decoder.calls), 2)
 
-                # So is the same size with a later modified time.
                 stat = track.stat()
                 os.utime(track, ns=(stat.st_atime_ns, stat.st_mtime_ns + 5_000_000_000))
-                await s.peaks("song-1")
+                await opened.peaks("one.wav")
                 self.assertEqual(len(decoder.calls), 3)
 
-                await s.peaks("song-1")
+                await opened.peaks("one.wav")
                 self.assertEqual(len(decoder.calls), 3)
-                self.assertEqual(s.cached(), 1)
+                self.assertEqual(opened.cached(), 1)
 
-    async def test_a_path_outside_every_root_is_read_from_the_stream_instead(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory).resolve()
-            library = library_with(base, "inside.flac")
-            (base / "elsewhere.flac").write_bytes(b"not part of the library")
-            decoder = FakeDecoder()
-            songs: dict[str, dict[str, object]] = {
-                # Climbs out of the root to a file that exists, which must not be read.
-                "song-1": {"path": "../elsewhere.flac", "size": 20, "updated": "2026-01-01"},
-                "song-2": {"path": "Not/On/Disk.flac", "size": 20, "updated": "2026-01-01"},
-                "song-3": {"size": 20, "updated": "2026-01-01"},
-            }
-            async with serving(base, songs, decoder, [library]) as s:
-                for song_id in songs:
-                    self.assertEqual((await s.peaks(song_id)).status_code, 200)
-
-                self.assertEqual(s.streamed, ["song-1", "song-2", "song-3"])
-                # ffmpeg was handed a copy of the stream, which is gone once it is done with it.
-                self.assertEqual(decoder.contents, [STREAM_BYTES] * 3)
-                for copy in decoder.calls:
-                    self.assertNotEqual(copy.parent, base)
-                    self.assertFalse(copy.exists())
-
-    async def test_a_stream_is_worked_out_again_when_navidrome_says_it_changed(self) -> None:
+    async def test_a_path_outside_the_roots_or_a_symlink_is_not_decoded(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
             decoder = FakeDecoder()
-            songs: dict[str, dict[str, object]] = {
-                "song-1": {"size": 20, "updated": "2026-01-01T00:00:00Z"}
-            }
-            async with serving(base, songs, decoder, []) as s:
-                await s.peaks("song-1")
-                await s.peaks("song-1")
+            async with serving(base, ["inside.wav"], decoder) as opened:
+                outside = base / "elsewhere.wav"
+                write_wav(outside)
+                song_id = opened.ids["inside.wav"]
+                self.assertEqual((await opened.peaks("inside.wav")).status_code, 200)
+
+                inside = base / "music" / "inside.wav"
+                inside.unlink()
+                inside.symlink_to(outside)
+                self.assertEqual((await opened.peaks("inside.wav")).status_code, 404)
+
+                inside.unlink()
+                write_wav(inside)
+                opened.store.db.execute(
+                    "UPDATE library_files SET path=? WHERE song_id=?", (str(outside), song_id)
+                )
+                self.assertEqual((await opened.peaks("inside.wav")).status_code, 404)
+                opened.store.db.execute(
+                    "UPDATE library_files SET path=? WHERE song_id=?", (str(inside), song_id)
+                )
+                opened.store.db.execute(
+                    "UPDATE library_roots SET enabled=0 WHERE path=?", (str(base / "music"),)
+                )
+                self.assertEqual((await opened.peaks("inside.wav")).status_code, 404)
                 self.assertEqual(len(decoder.calls), 1)
-
-                songs["song-1"]["updated"] = "2026-02-01T00:00:00Z"
-                await s.peaks("song-1")
-                self.assertEqual(len(decoder.calls), 2)
-
-                songs["song-1"]["size"] = 21
-                await s.peaks("song-1")
-                self.assertEqual(len(decoder.calls), 3)
-                self.assertEqual(s.cached(), 1)
 
     async def test_a_decode_that_takes_too_long_is_404_and_is_not_retried(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
-            library = library_with(base, "slow.flac")
             interrupted: list[bool] = []
 
             async def hang(_: Path) -> None:
@@ -230,64 +201,43 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
                     interrupted.append(True)
 
             decoder = FakeDecoder(hang)
-            songs: dict[str, dict[str, object]] = {"song-1": {"path": "slow.flac"}}
-            async with serving(base, songs, decoder, [library]) as s:
+            async with serving(base, ["slow.wav"], decoder) as opened:
                 with patch("backend.library.waveform.DECODE_SECONDS", 0.05):
-                    first = await s.peaks("song-1")
-                    second = await s.peaks("song-1")
+                    first = await opened.peaks("slow.wav")
+                    second = await opened.peaks("slow.wav")
 
                 self.assertEqual(first.status_code, 404)
                 self.assertEqual(second.status_code, 404)
-                # The decode was stopped, and a file that timed out is not tried again unchanged.
                 self.assertEqual(interrupted, [True])
                 self.assertEqual(len(decoder.calls), 1)
-                self.assertEqual(s.cached(), 0)
-                # The turn was handed back, so the next track is not stuck behind this one.
-                self.assertFalse(s.service.turn.locked())
+                self.assertEqual(opened.cached(), 0)
+                self.assertFalse(opened.service.turn.locked())
 
     async def test_a_file_that_cannot_be_decoded_is_404(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
-            library = library_with(base, "broken.flac")
 
             async def refuse(_: Path) -> None:
                 raise WaveformUnavailable("ffmpeg could not decode the file")
 
             decoder = FakeDecoder(refuse)
-            songs: dict[str, dict[str, object]] = {"song-1": {"path": "broken.flac"}}
-            async with serving(base, songs, decoder, [library]) as s:
-                self.assertEqual((await s.peaks("song-1")).status_code, 404)
-                self.assertEqual((await s.peaks("song-1")).status_code, 404)
+            async with serving(base, ["broken.wav"], decoder) as opened:
+                self.assertEqual((await opened.peaks("broken.wav")).status_code, 404)
+                self.assertEqual((await opened.peaks("broken.wav")).status_code, 404)
                 self.assertEqual(len(decoder.calls), 1)
-                self.assertEqual(s.cached(), 0)
-
-    async def test_a_stream_over_the_limit_is_404_without_a_decode(self) -> None:
-        with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory).resolve()
-            decoder = FakeDecoder()
-            songs: dict[str, dict[str, object]] = {"song-1": {"size": 20}}
-            async with serving(base, songs, decoder, []) as s:
-                with patch("backend.library.waveform.STREAM_LIMIT_BYTES", 4):
-                    response = await s.peaks("song-1")
-
-                self.assertEqual(response.status_code, 404)
-                self.assertEqual(decoder.calls, [])
+                self.assertEqual(opened.cached(), 0)
 
     async def test_only_one_decode_runs_at_a_time(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
-            names = [f"track-{number}.flac" for number in range(5)]
-            library = library_with(base, *names)
+            names = [f"track-{number}.wav" for number in range(5)]
 
             async def work(_: Path) -> None:
                 await asyncio.sleep(0.01)
 
             decoder = FakeDecoder(work)
-            songs: dict[str, dict[str, object]] = {
-                f"song-{number}": {"path": name} for number, name in enumerate(names)
-            }
-            async with serving(base, songs, decoder, [library]) as s:
-                responses = await asyncio.gather(*(s.peaks(song_id) for song_id in songs))
+            async with serving(base, names, decoder) as opened:
+                responses = await asyncio.gather(*(opened.peaks(name) for name in names))
 
                 self.assertEqual([response.status_code for response in responses], [200] * 5)
                 self.assertEqual(len(decoder.calls), 5)
@@ -296,15 +246,15 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_the_same_track_asked_for_twice_at_once_is_decoded_once(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
-            library = library_with(base, "one.flac")
 
             async def work(_: Path) -> None:
                 await asyncio.sleep(0.02)
 
             decoder = FakeDecoder(work)
-            songs: dict[str, dict[str, object]] = {"song-1": {"path": "one.flac"}}
-            async with serving(base, songs, decoder, [library]) as s:
-                first, second = await asyncio.gather(s.peaks("song-1"), s.peaks("song-1"))
+            async with serving(base, ["one.wav"], decoder) as opened:
+                first, second = await asyncio.gather(
+                    opened.peaks("one.wav"), opened.peaks("one.wav")
+                )
 
                 self.assertEqual((first.status_code, second.status_code), (200, 200))
                 self.assertEqual(len(decoder.calls), 1)
@@ -312,7 +262,6 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_full_line_is_told_to_try_again(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
-            library = library_with(base, "a.flac", "b.flac", "c.flac")
             started = asyncio.Event()
             gate = asyncio.Event()
 
@@ -321,20 +270,15 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
                 await gate.wait()
 
             decoder = FakeDecoder(work)
-            songs: dict[str, dict[str, object]] = {
-                "song-a": {"path": "a.flac"},
-                "song-b": {"path": "b.flac"},
-                "song-c": {"path": "c.flac"},
-            }
-            async with serving(base, songs, decoder, [library]) as s:
+            async with serving(base, ["a.wav", "b.wav", "c.wav"], decoder) as opened:
                 with patch("backend.library.waveform.QUEUE_LIMIT", 1):
-                    running = asyncio.create_task(s.peaks("song-a"))
+                    running = asyncio.create_task(opened.peaks("a.wav"))
                     await asyncio.wait_for(started.wait(), 5)
-                    waiting = asyncio.create_task(s.peaks("song-b"))
-                    while s.service.waiting < 1:
+                    waiting = asyncio.create_task(opened.peaks("b.wav"))
+                    while opened.service.waiting < 1:
                         await asyncio.sleep(0.005)
 
-                    refused = await s.peaks("song-c")
+                    refused = await opened.peaks("c.wav")
                     gate.set()
                     results = await asyncio.gather(running, waiting)
 
@@ -346,7 +290,6 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_waiting_too_long_for_a_turn_is_404(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
-            library = library_with(base, "a.flac", "b.flac")
             started = asyncio.Event()
             gate = asyncio.Event()
 
@@ -355,30 +298,25 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
                 await gate.wait()
 
             decoder = FakeDecoder(work)
-            songs: dict[str, dict[str, object]] = {
-                "song-a": {"path": "a.flac"},
-                "song-b": {"path": "b.flac"},
-            }
-            async with serving(base, songs, decoder, [library]) as s:
-                running = asyncio.create_task(s.peaks("song-a"))
+            async with serving(base, ["a.wav", "b.wav"], decoder) as opened:
+                running = asyncio.create_task(opened.peaks("a.wav"))
                 await asyncio.wait_for(started.wait(), 5)
                 with patch("backend.library.waveform.QUEUE_WAIT_SECONDS", 0.05):
-                    gave_up = await s.peaks("song-b")
+                    gave_up = await opened.peaks("b.wav")
                 gate.set()
 
                 self.assertEqual(gave_up.status_code, 404)
                 self.assertEqual((await running).status_code, 200)
-                self.assertEqual(s.service.waiting, 0)
-                # It never got as far as decoding, so it may simply ask again.
+                self.assertEqual(opened.service.waiting, 0)
                 self.assertEqual(len(decoder.calls), 1)
 
     async def test_an_unknown_song_and_a_bad_id_are_refused(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
             decoder = FakeDecoder()
-            async with serving(base, {}, decoder, []) as s:
-                self.assertEqual((await s.peaks("no-such-song")).status_code, 503)
-                self.assertEqual((await s.peaks("not%20an%20id")).status_code, 422)
+            async with serving(base, ["one.wav"], decoder) as opened:
+                self.assertEqual((await opened.peaks_id("tr-0123456789abcdef")).status_code, 404)
+                self.assertEqual((await opened.peaks_id("not%20an%20id")).status_code, 422)
                 self.assertEqual(decoder.calls, [])
 
 
@@ -391,11 +329,9 @@ class PeakTests(unittest.TestCase):
         data = pcm(100, -300, 20, 5, -32768, 7, 40)
         with patch("backend.library.waveform.WINDOW_SAMPLES", 2):
             reader = PeakReader()
-            # Split inside a sample, and inside a window.
             reader.feed(data[:3])
             reader.feed(data[3:8])
             reader.feed(data[8:])
-            # The last window holds one sample and still counts.
             self.assertEqual(reader.finish(), [300, 20, 32768, 40])
 
     def test_folding_keeps_the_loudest_window_of_each_bucket_and_scales_to_255(self) -> None:

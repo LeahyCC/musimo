@@ -21,7 +21,7 @@ describe('fileSummary', () => {
     )
   })
 
-  it('leaves out what Navidrome did not send, and a zero standing for unknown', () => {
+  it('leaves out what the file did not provide, and a zero standing for unknown', () => {
     expect(fileSummary(song({ suffix: 'mp3', bitRate: 320 }))).toBe('MP3, 320 kbps')
     expect(fileSummary(song({ suffix: 'ogg', samplingRate: 0, bitRate: 0 }))).toBe('OGG')
     expect(fileSummary(song())).toBe('')
@@ -179,7 +179,7 @@ describe('otherAlbums', () => {
 })
 
 describe('playedAt', () => {
-  it('reads Navidrome’s timestamp', () => {
+  it('reads the stored timestamp', () => {
     expect(playedAt(song({ played: '2026-09-01T18:30:00Z' }))).toBe(Date.UTC(2026, 8, 1, 18, 30))
   })
 

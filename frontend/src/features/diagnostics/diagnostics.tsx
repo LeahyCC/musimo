@@ -234,27 +234,27 @@ export function DiagnosticsPage() {
                   </p>
                 </div>
               </div>
-              {data.navidrome && settings.data && (
+              {data.player && settings.data && (
                 <div className={readinessItemClassName}>
                   <StatusChip
                     emphasis
                     className="readiness-badge"
                     variant={
                       readinessChip[
-                        data.navidrome.available
+                        data.player.available
                           ? 'ready'
-                          : data.navidrome.configured
+                          : data.player.configured
                             ? 'not-ready'
                             : 'not-tested'
                       ]
                     }
                   >
-                    {data.navidrome.available ? (
+                    {data.player.available ? (
                       <>
                         <Check size={14} />
                         Ready
                       </>
-                    ) : data.navidrome.configured ? (
+                    ) : data.player.configured ? (
                       <>
                         <X size={14} />
                         Not ready
@@ -267,11 +267,9 @@ export function DiagnosticsPage() {
                     )}
                   </StatusChip>
                   <div className="flex-1">
-                    <strong className="mb-[4px] block text-small text-text">Navidrome</strong>
+                    <strong className="mb-[4px] block text-small text-text">Player</strong>
                     <p className="text-tiny text-muted">
-                      {data.navidrome.available
-                        ? `${data.navidrome.version} · ${String(settings.data.navidrome_mode.value)} mode`
-                        : data.navidrome.detail}
+                      {data.player.available ? data.player.version : data.player.detail}
                     </p>
                   </div>
                 </div>

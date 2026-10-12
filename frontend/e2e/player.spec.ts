@@ -23,7 +23,7 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
         configured: true,
         available: true,
         version: '0.63.2',
-        detail: 'Navidrome is ready',
+        detail: 'Playing from your music folders',
       },
     }),
   )
@@ -143,7 +143,7 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
 
   await page.goto('/library')
   await expect(page.getByRole('heading', { name: 'Library', exact: true })).toBeVisible()
-  await expect(page.getByText('NAVIDROME READY')).toBeVisible()
+  await expect(page.getByText('LIBRARY READY')).toBeVisible()
   await page.getByLabel('Search albums').fill('clear water')
   await expect(page.getByRole('button', { name: 'Open Clear Water' })).toBeVisible()
   await openLibraryFilters(page, isMobile)

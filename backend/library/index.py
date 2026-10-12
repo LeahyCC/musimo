@@ -6,7 +6,7 @@ import time
 import uuid
 from collections.abc import Callable
 from pathlib import Path
-from typing import Literal, Protocol, cast
+from typing import Literal
 
 import mutagen
 from mutagen.easymp4 import EasyMP4Tags
@@ -14,30 +14,19 @@ from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
 from watchdog.observers.polling import PollingObserver
 
-from backend.core.store import Store
+from backend.core.store import Store, drop_song_references, new_song_id, note_library_change
 from backend.core.text import normalize
 from backend.integrations.catalog import Result
+from backend.library.player import is_cover_image
+from backend.library.tags import TAGS_VERSION, facts_for
 
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".opus", ".ogg", ".wav", ".aiff", ".wma", ".webm"}
+# Junk folder names, beside the dot folders already ignored. Compared case-insensitively.
+JUNK_FOLDERS = {"@eadir", "#snapshot", "#recycle", "$recycle.bin"}
 # One transaction per file made a 22k unchanged walk take minutes, and downloads waited on it.
 STAMP_BATCH = 500
+# Easy MP4 has no ISRC key until something registers it. The tag round-trip reads it that way.
 EasyMP4Tags.RegisterFreeformKey("isrc", "ISRC")
-
-
-class AudioInfo(Protocol):
-    length: float
-
-
-class AudioFile(Protocol):
-    info: AudioInfo
-
-    def get(self, key: str, default: object = None) -> object: ...
-
-
-def tag_text(value: object) -> str:
-    if isinstance(value, (list, tuple)):
-        return str(value[0]) if value else ""
-    return str(value) if value is not None else ""
 
 
 def _folder_gone(path: Path) -> bool:
@@ -50,6 +39,10 @@ def _folder_gone(path: Path) -> bool:
     return False
 
 
+def skipped_folder(name: str) -> bool:
+    return name.startswith(".") or name.casefold() in JUNK_FOLDERS
+
+
 def tags_still_match(
     suffix: str,
     stored_mtime: int,
@@ -57,9 +50,13 @@ def tags_still_match(
     title: str,
     artist: str,
     album: str,
+    tags_version: int,
     mtime_ns: int,
     size: int,
 ) -> bool:
+    # A row from before the player columns exists has to be read once, or the new fields stay empty.
+    if tags_version != TAGS_VERSION:
+        return False
     # Earlier versions stored blank WAV/AIFF tags. Those rows have to be read again.
     if suffix in {".wav", ".aiff"} and not any((title, artist, album)):
         return False
@@ -78,7 +75,12 @@ class Changes(FileSystemEventHandler):
             for raw in (event.src_path, getattr(event, "dest_path", "")):
                 if isinstance(raw, (str, bytes)) and raw:
                     path = os.fsdecode(raw)
-                    if event.is_directory or Path(path).suffix.lower() in AUDIO_EXTENSIONS:
+                    file = Path(path)
+                    if (
+                        event.is_directory
+                        or file.suffix.lower() in AUDIO_EXTENSIONS
+                        or is_cover_image(file)
+                    ):
                         self.notify(path)
 
 
@@ -224,7 +226,8 @@ class Library:
         for root in self.roots:
             if path.is_relative_to(root):
                 # Staging files must never become ownership evidence or trigger scans.
-                if not any(part.startswith(".") for part in path.relative_to(root).parts):
+                relative = path.relative_to(root).parts
+                if not any(skipped_folder(part) for part in relative):
                     return root
         return None
 
@@ -239,6 +242,12 @@ class Library:
         generation = self.generation
         for raw in paths:
             path = Path(raw)
+            if is_cover_image(path):
+                # The cover id is fixed until the catalog is rebuilt. A new revision
+                # gives the image a new URL, so the immutable art cache can stay.
+                if self.visible_root(path) is not None:
+                    self.store.bump_library_revision()
+                continue
             if path.suffix.lower() not in AUDIO_EXTENSIONS:
                 self._drop_removed_folder(path)
                 continue
@@ -277,16 +286,31 @@ class Library:
         for item in stale:
             self.remove(str(item))
 
-    def _known(self, root: Path) -> dict[str, tuple[int, int, str, str, str]]:
+    def _known(self, root: Path) -> dict[str, tuple[int, int, str, str, str, int]]:
         with self.store.lock:
             rows = self.store.db.execute(
-                "SELECT path, mtime_ns, size, title, artist, album FROM library_files WHERE root=?",
+                "SELECT path, mtime_ns, size, title, artist, album, tags_version "
+                "FROM library_files WHERE root=?",
                 (str(root),),
             ).fetchall()
         return {
-            str(row[0]): (int(row[1]), int(row[2]), str(row[3]), str(row[4]), str(row[5]))
+            str(row[0]): (
+                int(row[1]),
+                int(row[2]),
+                str(row[3]),
+                str(row[4]),
+                str(row[5]),
+                int(row[6]),
+            )
             for row in rows
         }
+
+    def _holds_rows(self, root: Path) -> bool:
+        with self.store.lock:
+            count = self.store.db.execute(
+                "SELECT count(*) FROM library_files WHERE root=?", (str(root),)
+            ).fetchone()[0]
+        return int(count) > 0
 
     def _stamp(self, generation: str, paths: list[str]) -> None:
         if not paths:
@@ -320,12 +344,23 @@ class Library:
                             (str(root), generation),
                         )
                     ]
+                    song_ids = [
+                        str(row[0])
+                        for row in self.store.db.execute(
+                            "SELECT song_id FROM library_files WHERE root=? AND generation!=? "
+                            "AND song_id!=''",
+                            (str(root), generation),
+                        )
+                    ]
                     self.store.db.executemany(
                         "DELETE FROM library_files WHERE path=?", [(path,) for path in stale]
                     )
                     self.store.db.executemany(
                         "DELETE FROM library_fts WHERE path=?", [(path,) for path in stale]
                     )
+                    drop_song_references(self.store.db, song_ids)
+                    if stale:
+                        note_library_change(self.store.db)
                     self.store.db.commit()
                 except Exception:
                     self.store.db.rollback()
@@ -341,9 +376,11 @@ class Library:
         started = time.monotonic()
         last_publish = 0.0
         walked = indexed = errors = 0
+        held_empty = False
         try:
             for root in self.roots:
                 root_errors = 0
+                root_audio = 0
                 batch: list[str] = []
                 if not root.is_dir():
                     errors += 1
@@ -358,7 +395,7 @@ class Library:
                     dirs[:] = [
                         d
                         for d in dirs
-                        if not d.startswith(".") and not (Path(directory) / d).is_symlink()
+                        if not skipped_folder(d) and not (Path(directory) / d).is_symlink()
                     ]
                     for name in files:
                         if self.cancelled.is_set():
@@ -371,6 +408,7 @@ class Library:
                         ):
                             continue
                         walked += 1
+                        root_audio += 1
                         try:
                             row = known.get(str(path))
                             stat = path.stat() if row is not None else None
@@ -406,22 +444,36 @@ class Library:
                         break
                 self._stamp(generation, batch)
                 # Cancelled or unreadable scans must not erase files they never visited.
+                # An empty folder is the same shape as a music disk that has not mounted yet.
+                # Pruning it would drop every playlist, play count and the queue for that root.
                 if not self.cancelled.is_set() and root_errors == 0:
-                    self._prune(root, generation)
+                    if root_audio == 0 and self._holds_rows(root):
+                        held_empty = True
+                    else:
+                        self._prune(root, generation)
                 errors += root_errors
                 if self.cancelled.is_set():
                     break
+            if self.cancelled.is_set():
+                detail = "Scan cancelled; previous index preserved"
+            elif errors:
+                detail = (
+                    "Scan complete with unreadable files or folders; previous entries preserved"
+                )
+            elif held_empty:
+                detail = (
+                    "Scan complete. An empty music folder was left unchanged "
+                    "so a missing mount does not erase the library."
+                )
+            else:
+                detail = "Scan complete"
             self.state.update(
                 status="cancelled" if self.cancelled.is_set() else "done",
                 walked=walked,
                 indexed=indexed,
                 errors=errors,
                 elapsed=round(time.monotonic() - started, 1),
-                detail="Scan cancelled; previous index preserved"
-                if self.cancelled.is_set()
-                else "Scan complete"
-                if errors == 0
-                else "Scan complete with unreadable files or folders; previous entries preserved",
+                detail=detail,
             )
         except Exception as exc:
             self.state.update(status="failed", detail=f"Scan failed: {type(exc).__name__}")
@@ -433,7 +485,8 @@ class Library:
         stat = path.stat()
         with self.store.lock:
             old = self.store.db.execute(
-                "SELECT mtime_ns,size,title,artist,album FROM library_files WHERE path=?",
+                "SELECT mtime_ns,size,title,artist,album,tags_version "
+                "FROM library_files WHERE path=?",
                 (str(path),),
             ).fetchone()
             if old and tags_still_match(
@@ -443,6 +496,7 @@ class Library:
                 str(old[2]),
                 str(old[3]),
                 str(old[4]),
+                int(old[5]),
                 stat.st_mtime_ns,
                 stat.st_size,
             ):
@@ -450,47 +504,127 @@ class Library:
                     "UPDATE library_files SET generation=? WHERE path=?", (generation, str(path))
                 )
                 return True
-        audio = cast(AudioFile | None, mutagen.File(path, easy=True))
+        # One open. Easy mode would drop ReplayGain, compilation and pictures.
+        audio = mutagen.File(path)
         if audio is None:
             raise ValueError("Unsupported or invalid audio")
-        # WAV and AIFF expose native ID3 frames even when Mutagen is asked for easy tags.
-        title, artist, album = (
-            tag_text(audio.get(key) or audio.get(frame))
-            for key, frame in (("title", "TIT2"), ("artist", "TPE1"), ("album", "TALB"))
-        )
-        isrc = tag_text(audio.get("isrc") or audio.get("TSRC")).upper().replace("-", "")
-        mbid = tag_text(audio.get("musicbrainz_trackid") or audio.get("TXXX:MusicBrainz Track Id"))
-        identifier = getattr(audio.get("UFID:http://musicbrainz.org"), "data", b"")
-        if not mbid and isinstance(identifier, bytes):
-            mbid = identifier.decode("ascii", errors="ignore")
+        facts = facts_for(audio, path.suffix.lower(), stat.st_size)
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
+                # REPLACE would delete the row and drop the song id, and any playlist or
+                # queue entry that points at it. A blank id is filled; an existing one stays.
+                added_at = self.store.db.execute(
+                    "SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now')"
+                ).fetchone()
                 self.store.db.execute(
-                    "INSERT OR REPLACE INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    """
+                    INSERT INTO library_files (
+                        path, root, mtime_ns, size, generation,
+                        title, artist, album, title_key, artist_key, album_key,
+                        duration, isrc, mbid, song_id, added_at,
+                        track, disc, year, genre, genres, album_artist, compilation,
+                        replaygain_track_gain, replaygain_album_gain,
+                        replaygain_track_peak, replaygain_album_peak,
+                        suffix, content_type, bitrate, sample_rate, bit_depth, channels,
+                        has_art, tags_version, record_labels
+                    ) VALUES (
+                        ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
+                        ?,?,?,?,?,?,?,
+                        ?,?,?,?,
+                        ?,?,?,?,?,?,
+                        ?,?,?
+                    )
+                    ON CONFLICT(path) DO UPDATE SET
+                        root=excluded.root,
+                        mtime_ns=excluded.mtime_ns,
+                        size=excluded.size,
+                        generation=excluded.generation,
+                        title=excluded.title,
+                        artist=excluded.artist,
+                        album=excluded.album,
+                        title_key=excluded.title_key,
+                        artist_key=excluded.artist_key,
+                        album_key=excluded.album_key,
+                        duration=excluded.duration,
+                        isrc=excluded.isrc,
+                        mbid=excluded.mbid,
+                        track=excluded.track,
+                        disc=excluded.disc,
+                        year=excluded.year,
+                        genre=excluded.genre,
+                        genres=excluded.genres,
+                        album_artist=excluded.album_artist,
+                        compilation=excluded.compilation,
+                        replaygain_track_gain=excluded.replaygain_track_gain,
+                        replaygain_album_gain=excluded.replaygain_album_gain,
+                        replaygain_track_peak=excluded.replaygain_track_peak,
+                        replaygain_album_peak=excluded.replaygain_album_peak,
+                        suffix=excluded.suffix,
+                        content_type=excluded.content_type,
+                        bitrate=excluded.bitrate,
+                        sample_rate=excluded.sample_rate,
+                        bit_depth=excluded.bit_depth,
+                        channels=excluded.channels,
+                        has_art=excluded.has_art,
+                        tags_version=excluded.tags_version,
+                        record_labels=excluded.record_labels,
+                        song_id=CASE
+                            WHEN library_files.song_id='' THEN excluded.song_id
+                            ELSE library_files.song_id
+                        END,
+                        added_at=CASE
+                            WHEN library_files.added_at='' THEN excluded.added_at
+                            ELSE library_files.added_at
+                        END
+                    """,
                     (
                         str(path),
                         str(root),
                         stat.st_mtime_ns,
                         stat.st_size,
                         generation,
-                        title,
-                        artist,
-                        album,
-                        normalize(title),
-                        normalize(artist),
-                        normalize(album),
-                        audio.info.length,
-                        isrc,
-                        mbid,
+                        facts.title,
+                        facts.artist,
+                        facts.album,
+                        normalize(facts.title),
+                        normalize(facts.artist),
+                        normalize(facts.album),
+                        facts.duration,
+                        facts.isrc,
+                        facts.mbid,
+                        new_song_id(),
+                        "" if added_at is None else str(added_at[0]),
+                        facts.track,
+                        facts.disc,
+                        facts.year,
+                        facts.genre,
+                        facts.genres,
+                        facts.album_artist,
+                        facts.compilation,
+                        facts.replaygain_track_gain,
+                        facts.replaygain_album_gain,
+                        facts.replaygain_track_peak,
+                        facts.replaygain_album_peak,
+                        facts.suffix,
+                        facts.content_type,
+                        facts.bitrate,
+                        facts.sample_rate,
+                        facts.bit_depth,
+                        facts.channels,
+                        facts.has_art,
+                        TAGS_VERSION,
+                        facts.record_labels,
                     ),
                 )
+                note_library_change(self.store.db)
                 # New paths cannot have old text rows. FTS cannot index its path column,
                 # so deleting before every first insert makes a cold scan quadratic.
                 if old is not None:
                     self.store.db.execute("DELETE FROM library_fts WHERE path=?", (str(path),))
                 self.store.db.execute(
-                    "INSERT INTO library_fts VALUES (?,?,?,?)", (str(path), title, artist, album)
+                    "INSERT INTO library_fts VALUES (?,?,?,?)",
+                    (str(path), facts.title, facts.artist, facts.album),
                 )
                 self.store.db.commit()
             except Exception:
@@ -502,8 +636,14 @@ class Library:
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
+                row = self.store.db.execute(
+                    "SELECT song_id FROM library_files WHERE path=?", (path,)
+                ).fetchone()
                 self.store.db.execute("DELETE FROM library_files WHERE path=?", (path,))
                 self.store.db.execute("DELETE FROM library_fts WHERE path=?", (path,))
+                if row is not None:
+                    drop_song_references(self.store.db, [str(row[0])])
+                    note_library_change(self.store.db)
                 self.store.db.commit()
             except Exception:
                 self.store.db.rollback()

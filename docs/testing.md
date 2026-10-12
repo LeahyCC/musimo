@@ -127,7 +127,7 @@ uv run python -m scripts.download_smoke /path/to/test-root --case link
 
 `scripts/source_probe.py --site-list` makes one attempt against one public URL per allowed site that has a licensed recording, from `scripts/source_probe_sites.json` (Mixcloud, NTS, HearThisAt, BBC Sounds and TuneIn have none, and a test names them), and writes the same report as a single-URL run (with a `site` on each row). `--only <source>` limits it to one site. Each entry gives its own yt-dlp format and says why the item is safe to use; the PO token argument goes only to YouTube URLs. The YouTube entry needs the PO token provider, so outside the container run it with `--only archive`. Results go into [measurements](measurements.md).
 
-The Wikimedia case stays as it was. To verify Navidrome's watcher, run a separate Navidrome instance watching that root with its own data directory and loopback port, then confirm the written title/artist in that instance's index. Do not point these checks at the live library or restart its services.
+The Wikimedia case stays as it was. To verify the library's watcher, run a separate the library instance watching that root with its own data directory and loopback port, then confirm the written title/artist in that instance's index. Do not point these checks at the live library or restart its services.
 
 ## GitHub checks
 
@@ -147,4 +147,4 @@ Dependency changes include manifests, locks and exports in the same PR. Required
 
 The initial CodeQL review led to allowlisted static filenames and download destinations. Requests cannot select files outside the built frontend or cause arbitrary destination paths to be resolved. Root public files are discovered at startup; dynamic assets remain under `/assets`.
 
-The Navidrome scan integration has one documented hashing exception: [Subsonic authentication](https://www.subsonic.org/pages/api.jsp) requires `MD5(password + salt)` for its request token. Musimo uses a fresh random salt for each call and does not store that token as a password hash. Replacing the algorithm would break the protocol. This exception applies only to that token calculation, not other hashing or password storage.
+Playback reads files from the music folders. There is no separate playback server and no authentication token for one.
