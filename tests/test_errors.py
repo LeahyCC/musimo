@@ -2,8 +2,8 @@
 
 import unittest
 
-from backend.errors import error_guidance, health_line, shown_health
-from backend.store import Store
+from backend.core.errors import error_guidance, health_line, shown_health
+from backend.core.store import Store
 
 
 class ErrorGuidanceTests(unittest.TestCase):
@@ -71,7 +71,7 @@ class ErrorGuidanceTests(unittest.TestCase):
         import tempfile
         from pathlib import Path
 
-        from backend.job_store import Jobs
+        from backend.jobs.job_store import Jobs
 
         with tempfile.TemporaryDirectory() as directory:
             store = Store(Path(directory) / "jobs.sqlite3")

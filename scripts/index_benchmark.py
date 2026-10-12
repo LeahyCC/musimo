@@ -14,9 +14,9 @@ from pathlib import Path
 from mutagen.id3 import TALB, TIT2, TPE1
 from mutagen.wave import WAVE
 
-from backend.catalog import Result
-from backend.library import Library
-from backend.store import Store
+from backend.core.store import Store
+from backend.integrations.catalog import Result
+from backend.library.index import Library
 
 
 async def measure(files: int, parent: Path | None) -> dict[str, object]:

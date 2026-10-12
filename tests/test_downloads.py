@@ -18,10 +18,14 @@ from mutagen.id3 import ID3
 from mutagen.mp4 import MP4
 from pydantic import ValidationError
 
-from backend import deezer_cookie
-from backend.catalog import Catalog, CatalogError
-from backend.download_api import install_download_routes
-from backend.downloads import (
+from backend.api.download_api import install_download_routes
+from backend.core.job_models import Candidate, Job, Metadata
+from backend.core.naming import Naming
+from backend.core.store import Store
+from backend.core.text import normalize
+from backend.integrations import deezer_cookie
+from backend.integrations.catalog import Catalog, CatalogError
+from backend.jobs.downloads import (
     CATALOG_DETAILS_WARNING,
     SIDE_FAILED,
     DownloadError,
@@ -31,13 +35,10 @@ from backend.downloads import (
     enrichment_pending,
     publish_file,
 )
-from backend.job_models import Candidate, Job, Metadata
-from backend.job_store import JobConflict, Jobs
-from backend.library import Library, normalize
-from backend.matching import Matcher
-from backend.naming import Naming
-from backend.store import Store
-from backend.tagging import Tagger, probe
+from backend.jobs.job_store import JobConflict, Jobs
+from backend.jobs.matching import Matcher
+from backend.jobs.tagging import Tagger, probe
+from backend.library.index import Library
 
 
 class DurableJobsTests(unittest.TestCase):
@@ -280,7 +281,6 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             store = Store(root / "db.sqlite3")
-            store.update({"navidrome_mode": "watcher"})
             audio = root / "published.opus"
             subprocess.run(
                 [
@@ -331,14 +331,12 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                 await service.close()
             store.close()
 
-    async def test_batch_api_idempotency_controls_and_scan_target(self) -> None:
+    async def test_batch_api_idempotency_and_controls(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory).resolve()
             store = Store(root / "db.sqlite3")
-            requests: list[httpx.Request] = []
 
             def upstream(request: httpx.Request) -> httpx.Response:
-                requests.append(request)
                 if request.url.path == "/album/9":
                     return httpx.Response(
                         200,
@@ -368,13 +366,7 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
             async with httpx.AsyncClient(transport=httpx.MockTransport(upstream)) as client:
                 library = Library(store, [root], asyncio.Event())
                 service = Downloads(store, Catalog(store, client), library, asyncio.Event())
-                store.update(
-                    {
-                        "destination": str(root),
-                        "navidrome_mode": "api",
-                        "navidrome_url": "http://navidrome:4533",
-                    }
-                )
+                store.update({"destination": str(root)})
                 app = FastAPI()
                 install_download_routes(app, lambda: service)
                 async with httpx.AsyncClient(
@@ -408,21 +400,6 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                         ).status_code,
                         422,
                     )
-                job = service.jobs.list()[0]
-                credentials = root / "credentials.json"
-                credentials.write_text(
-                    json.dumps({"username": "fixture", "password": "test secret"}), encoding="utf-8"
-                )
-                with patch.dict(
-                    "os.environ", {"MUSIMO_NAVIDROME_CREDENTIALS_FILE": str(credentials)}
-                ):
-                    self.assertIsNone(
-                        await service.navidrome(job, root / "Artist" / "Album" / "track.opus")
-                    )
-                request = requests[-1]
-                self.assertEqual(request.url.params["target"], "1:Artist/Album")
-                self.assertNotIn("test secret", str(request.url))
-                self.assertNotIn("test secret", json.dumps(store.snapshot()))
             store.close()
 
     async def test_failed_jobs_clear_individually_and_in_bulk_without_touching_done(self) -> None:
@@ -536,7 +513,7 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                     asyncio.Event(),
                 )
                 with patch(
-                    "backend.downloads.shutil.disk_usage",
+                    "backend.jobs.downloads.shutil.disk_usage",
                     return_value=shutil._ntuple_diskusage(100, 100, 0),
                 ):
                     with self.assertRaises(DownloadError) as caught:
@@ -599,7 +576,10 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                     library_file = root / "track1.flac"
                     library_file.write_bytes(b"dummy")
                     store.db.execute(
-                        "INSERT INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                        "INSERT INTO library_files ("
+                        "path, root, mtime_ns, size, generation, title, artist, album, "
+                        "title_key, artist_key, album_key, duration, isrc, mbid"
+                        ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
                         (
                             str(library_file),
                             str(root),
@@ -1011,7 +991,7 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
             ) as client:
                 service = await self.service(root, store, client)
                 store.update({"destination": str(root)})
-                with patch("backend.downloads.asyncio.create_subprocess_exec", fake_exec):
+                with patch("backend.jobs.downloads.asyncio.create_subprocess_exec", fake_exec):
                     for track in (1, 2, 3):
                         job = service.jobs.enqueue(track, "original", str(root))
                         service.jobs.update(
@@ -1073,7 +1053,7 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
             ) as client:
                 service = await self.service(root, store, client)
                 store.update({"destination": str(root)})
-                with patch("backend.downloads.asyncio.create_subprocess_exec", fake_exec):
+                with patch("backend.jobs.downloads.asyncio.create_subprocess_exec", fake_exec):
                     job = service.jobs.enqueue(1, "original", str(root))
                     service.jobs.update(
                         job.id,
@@ -1472,7 +1452,7 @@ class OverlappedMetadataTests(unittest.IsolatedAsyncioTestCase):
                     ).model_dump(),
                 )
                 started = time.monotonic()
-                with patch("backend.downloads.CATALOG_DETAILS_SECONDS", 0.05):
+                with patch("backend.jobs.downloads.CATALOG_DETAILS_SECONDS", 0.05):
                     await service.run(job.id)
                 self.assertLess(time.monotonic() - started, 2)
                 done = service.jobs.get(job.id)
@@ -1529,7 +1509,7 @@ class OverlappedMetadataTests(unittest.IsolatedAsyncioTestCase):
                     ).model_dump(),
                 )
                 started = time.monotonic()
-                with patch("backend.downloads.SIDE_BUDGET_SECONDS", 0.05):
+                with patch("backend.jobs.downloads.SIDE_BUDGET_SECONDS", 0.05):
                     await service.run(job.id)
                 self.assertLess(time.monotonic() - started, 2)
                 done = service.jobs.get(job.id)
@@ -1909,7 +1889,7 @@ class PaceTests(unittest.IsolatedAsyncioTestCase):
                     async def fake_exec(*_args: object, **_kwargs: object) -> FakeProc:
                         return FakeProc()
 
-                    with patch("backend.downloads.asyncio.create_subprocess_exec", fake_exec):
+                    with patch("backend.jobs.downloads.asyncio.create_subprocess_exec", fake_exec):
                         _path, _info = await service.worker(job, folder)
                     self.assertEqual(service.jobs.get(job.id).tool_tail, "")
             finally:

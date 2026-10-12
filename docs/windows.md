@@ -35,7 +35,7 @@ Private Tailscale Serve works with the same loopback address as the Docker deplo
 
 Finish or pause active jobs, stop only Musimo, and back up its complete `/data` directory. Preserve the original volume and music as rollback copies. Copy state to a new Windows directory; never run both installations against it.
 
-Stored paths must be translated using the actual Docker mount mappings. This includes the destination setting, library roots/files/search index and download history targets/final paths. Change a Navidrome `host.docker.internal` URL to the host's loopback URL. Keep settings locks and all job IDs, metadata and history. Rescan after switching to reconcile filesystem timestamps. An unmodified Linux database is not ready for native Windows use.
+Stored paths must be translated using the actual Docker mount mappings. This includes the destination setting, library roots/files/search index and download history targets/final paths. Change a the library `host.docker.internal` URL to the host's loopback URL. Keep settings locks and all job IDs, metadata and history. Rescan after switching to reconcile filesystem timestamps. An unmodified Linux database is not ready for native Windows use.
 
 Before retiring the container, verify database integrity and record counts, saved settings, search, library badges, playback, a permitted download, pause/cancel, restart, remote access and startup. Stop the native service before restoring the Docker copy. Keep personal migration records and backups outside Git.
 

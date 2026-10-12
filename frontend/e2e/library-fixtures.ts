@@ -49,7 +49,7 @@ export function bodyNumber(body: Record<string, unknown>, key: string): number |
 }
 
 /**
- * The player routes every library spec needs: a ready Navidrome, an empty saved queue, and
+ * The player routes every library spec needs: a ready library, an empty saved queue, and
  * real decodable audio so playback actually starts and pause states appear.
  */
 export async function playerFixtures(page: Page): Promise<void> {
@@ -65,7 +65,7 @@ export async function playerFixtures(page: Page): Promise<void> {
         configured: true,
         available: true,
         version: '0.63.2',
-        detail: 'Navidrome is ready',
+        detail: 'Playing from your music folders',
       },
     }),
   )

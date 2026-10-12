@@ -14,7 +14,7 @@ type Save = { ids: string[]; current: string }
 
 /**
  * Restores this queue with its first song loaded, without starting playback, and records every
- * save the player sends back to Navidrome. Like Navidrome, it hands back the queue as it was last
+ * save the player sends back. It hands back the queue as it was last
  * saved, so a reload restores the edits made before it.
  */
 async function restoreQueue(page: Page, queue: LibraryTrack[]) {
@@ -235,14 +235,14 @@ test('after a reload with shuffle on, a song queued to play next still plays nex
     .poll(() => lastSave(saves)?.ids)
     .toEqual(['song-a', 'song-e', 'song-b', 'song-c', 'song-d'])
 
-  // Navidrome gives the ids back and nothing else, so what was chosen has to come from the browser.
+  // The saved queue gives the ids back and nothing else, so what was chosen has to come from the browser.
   await page.reload()
   await expect(page.locator('.live-player')).toContainText('Alpha')
   await page.getByRole('button', { name: 'Next track' }).click()
   await expect(page.locator('.live-player')).toContainText('Echo')
 })
 
-test('adding past the 500 songs Navidrome keeps is refused with a message', async ({ page }) => {
+test('adding past the 500 songs the queue keeps is refused with a message', async ({ page }) => {
   const full = Array.from({ length: 500 }, (_, index) =>
     librarySong(`filler-${index}`, { title: `Filler ${index}` }),
   )

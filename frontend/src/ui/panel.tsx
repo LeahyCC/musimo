@@ -1,6 +1,6 @@
 import type { HTMLAttributes } from 'react'
 
-import { cx } from '../cx'
+import { cx } from '../lib/cx'
 
 /** A bordered content box: settings sources, diagnostics cards, the readiness panel. */
 export function Panel({ className, ...props }: HTMLAttributes<HTMLElement>) {

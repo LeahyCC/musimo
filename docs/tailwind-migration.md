@@ -317,7 +317,7 @@ Two lanes can run at once after phase 3 because search and library touch differe
 
 **Check:** the new spec, `e2e/a11y.spec.ts` and `e2e/phone.spec.ts`.
 
-What shipped in phase T2: `frontend/src/user-settings.tsx` is the page, all utilities and primitives. The theme rules it needs that are not pure page state live in the store (`saveAndActivate`, `hasRoomForTheme`, `isBuiltInTheme`, `themeFileName`, the file size cap) so a later caller cannot do half of one. `Field` grew `invalid` and `fullWidth` options because a call site cannot swap a primitive's border or width by passing another utility. `frontend/src/theme/contrast.ts` holds the pairs the readability report checks; it refuses the three and four digit hex the arithmetic would accept, because the editor does. The native color input's swatch is the one handwritten rule the page added to the sheet.
+What shipped in phase T2: `frontend/src/features/settings/user-settings.tsx` is the page, all utilities and primitives. The theme rules it needs that are not pure page state live in the store (`saveAndActivate`, `hasRoomForTheme`, `isBuiltInTheme`, `themeFileName`, the file size cap) so a later caller cannot do half of one. `Field` grew `invalid` and `fullWidth` options because a call site cannot swap a primitive's border or width by passing another utility. `frontend/src/theme/contrast.ts` holds the pairs the readability report checks; it refuses the three and four digit hex the arithmetic would accept, because the editor does. The native color input's swatch is the one handwritten rule the page added to the sheet.
 
 ### Phase 2: primitives
 

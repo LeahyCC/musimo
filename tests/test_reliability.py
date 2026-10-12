@@ -15,12 +15,12 @@ from mutagen.id3 import TALB, TIT2, TPE1, TSRC, UFID
 from mutagen.wave import WAVE
 from watchdog.events import DirCreatedEvent, FileCreatedEvent, FileMovedEvent
 
-from backend.catalog import Catalog, Result
-from backend.download_api import install_download_routes
-from backend.downloads import Downloads
-from backend.job_models import Job, Metadata
-from backend.library import Library
-from backend.store import Store
+from backend.api.download_api import install_download_routes
+from backend.core.job_models import Job, Metadata
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog, Result
+from backend.jobs.downloads import Downloads
+from backend.library.index import Library
 
 
 def write_wav(path: Path) -> None:
@@ -220,7 +220,10 @@ class ReliabilityTests(unittest.IsolatedAsyncioTestCase):
             self.library.stop.set()
             if self.library.background:
                 await self.library.background
-            self.assertEqual(self.library.pending, {final, str(self.root / "Album")})
+            self.assertEqual(
+                self.library.pending,
+                {final, str(self.root / "Album"), str(self.root / "Album" / "cover.jpg")},
+            )
 
     async def test_repeated_stop_commands_finish_cleanup(self) -> None:
         async with httpx.AsyncClient() as client:

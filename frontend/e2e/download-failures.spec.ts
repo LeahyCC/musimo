@@ -443,9 +443,6 @@ test('error hints link to the relevant setting or diagnostic', async ({ page }) 
         destination: { value: '/music', locked: false, origin: '' },
         output_format: { value: 'original', locked: false, origin: '' },
         naming_template: { value: '{artist}/{album}/{title}', locked: false, origin: '' },
-        navidrome_mode: { value: 'off', locked: false, origin: '' },
-        navidrome_url: { value: '', locked: false, origin: '' },
-        navidrome_library_id: { value: '', locked: false, origin: '' },
         concurrency: { value: 2, locked: false, origin: '' },
         max_attempts: { value: 4, locked: false, origin: '' },
         retry_base_seconds: { value: 5, locked: false, origin: '' },
@@ -587,7 +584,7 @@ test('done jobs with warnings show the count in their heading', async ({ page })
     error: '',
     error_hint: '',
     error_fix: '',
-    warnings: ['Navidrome scan delayed', 'Artwork fallback used'],
+    warnings: ['Library scan delayed', 'Artwork fallback used'],
     codec: 'opus',
     actual_bitrate: 161000,
   }

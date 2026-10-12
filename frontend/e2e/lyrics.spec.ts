@@ -5,7 +5,7 @@ import { librarySong, playerFixtures } from './library-fixtures'
 
 const song = librarySong('song-1', { title: 'First Light', duration: 30 })
 
-// Times are milliseconds, as Navidrome sends them.
+// Times are milliseconds.
 const SYNCED = {
   items: [
     {

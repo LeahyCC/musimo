@@ -10,13 +10,13 @@ from pathlib import Path
 import httpx
 from fastapi import FastAPI
 
-from backend.catalog import Catalog
-from backend.download_api import install_download_routes
-from backend.downloads import DownloadError, Downloads
-from backend.errors import error_guidance, site_label
-from backend.job_models import Candidate, Job, Metadata, valid_candidate_id
-from backend.library import Library
-from backend.store import Store
+from backend.api.download_api import install_download_routes
+from backend.core.errors import error_guidance, site_label
+from backend.core.job_models import Candidate, Job, Metadata, valid_candidate_id
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog
+from backend.jobs.downloads import DownloadError, Downloads
+from backend.library.index import Library
 
 # Every controls reply names the catalog rows, paused or not.
 CATALOG_LABELS = {"deezer": "Deezer", "youtube": "YouTube", "soundcloud": "SoundCloud"}
@@ -129,7 +129,7 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
                     [tuple(row) for row in store.db.execute("SELECT * FROM source_control")],
                     [("youtube", 1, 2)],
                 )
-                self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], 5)
+                self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], 6)
             finally:
                 store.close()
 

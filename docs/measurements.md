@@ -4,8 +4,8 @@ Run date: 6 September 2026 HST. Host: Windows desktop, Docker Desktop Linux/amd6
 
 ## Completed research checks
 
-- Navidrome ping: 0.63.2, 82 ms in an unauthenticated request. This confirms version/reachability only.
-- Navidrome database: 2,738 media files, one library, counted read-only.
+- the library ping: 0.63.2, 82 ms in an unauthenticated request. This confirms version/reachability only.
+- the library database: 2,738 media files, one library, counted read-only.
 - Watcher: live log entries showed scans triggered and completed on the same date.
 - Direct Deezer search: one request, 583 ms. Track details: one request, 499 ms. Neither sample is a p95.
 - First container Deezer run: 60/60 requests succeeded at roughly 9.5 starts/second. This is not a discovered hard limit.
@@ -29,7 +29,7 @@ Every unavailable metric must be printed as NOT IMPLEMENTED or NOT MEASURED by t
 
 ## Phase 2 container checks
 
-The live scanner indexed **2,770 files with zero errors** from the verified Windows library mounted read-only. This filesystem count is separate from the earlier 2,738-row Navidrome database snapshot. A subsequent unchanged-file scan took **23.8 seconds**. The initial scan was interrupted by an application rebuild, so no uninterrupted cold-scan duration is claimed.
+The live scanner indexed **2,770 files with zero errors** from the verified Windows library mounted read-only. This filesystem count is separate from the earlier 2,738-row the library database snapshot. A subsequent unchanged-file scan took **23.8 seconds**. The initial scan was interrupted by an application rebuild, so no uninterrupted cold-scan duration is claimed.
 
 Live track, album and artist search, year hydration, album detail, artist discography, Deezer preview HTTP range access, an iTunes fallback lookup and route reloads passed. A real library recording, 1991's “Chant”, returned an owned badge. Eight Python tests, strict typing and the React production build passed. A restart with an SSE stream held open took **2.97 seconds**; settings and event replay survived it. Browser rendering, keyboard interaction and audible playback were not exercised.
 
@@ -57,7 +57,7 @@ Known development-tool notices: this Windows user's npm config contains an unsup
 
 ## Phase 3 download checks
 
-Public-domain music fixture: 2.852 seconds from HTTP transfer through the regular resumed worker, tagging, atomic publication and immediate local indexing. Navidrome’s Windows watcher indexed the U.S. Navy Band recording with its written title and artist. Actual audio packet bitrate: 342,624 bps Vorbis, duration 78.263 seconds. This fixture uses Wikimedia transport; it does not measure YouTube music matching. See [fixture evidence](evidence/phase3-public-domain.json).
+Public-domain music fixture: 2.852 seconds from HTTP transfer through the regular resumed worker, tagging, atomic publication and immediate local indexing. the library’s Windows watcher indexed the U.S. Navy Band recording with its written title and artist. Actual audio packet bitrate: 342,624 bps Vorbis, duration 78.263 seconds. This fixture uses Wikimedia transport; it does not measure YouTube music matching. See [fixture evidence](evidence/phase3-public-domain.json).
 
 The real YouTube worker downloaded the verified open-film fixture as Opus at 125,785 bps. Pause acknowledgement took 10.44 ms and worker stop completed in 26.4 ms. Paused state survived a container restart. Killing the container after the first 1,024 bytes then restarting recovered the same job to completion. See [pause](evidence/phase3-pause.json) and [recovery](evidence/phase3-recovery.json).
 
@@ -75,7 +75,7 @@ A 12-track generated Opus batch, concurrency three, completed after resume in 4.
 
 A separate Docker SIGKILL interrupted three active workers in a twelve-track MP3 batch. The same twelve jobs finished and were indexed within 6.163 seconds of restarting, with no duplicate files and matching stored hashes. Its source was twelve generated 30-second tones. This checks process/container recovery, not interrupted network downloads; the earlier Phase 3 transport experiment covers that separately.
 
-The existing [public-domain U.S. Navy Band fixture](https://commons.wikimedia.org/wiki/File:Star_Spangled_Banner_instrumental.ogg) took 3.349 seconds through HTTP transfer, worker preparation, tags, publication and local indexing. A separate Windows Navidrome 0.63.2 instance watched the isolated output folder and imported the correct title and artist. The live library and its services were not changed.
+The existing [public-domain U.S. Navy Band fixture](https://commons.wikimedia.org/wiki/File:Star_Spangled_Banner_instrumental.ogg) took 3.349 seconds through HTTP transfer, worker preparation, tags, publication and local indexing. A separate Windows the library 0.63.2 instance watched the isolated output folder and imported the correct title and artist. The live library and its services were not changed.
 
 The live catalog baseline still missed the cold-search target: ten distinct uncached queries had median 407.61 ms and p95 597.71 ms. Fifty cached requests had median 2.83 ms and p95 3.52 ms against an empty test library. These HTTP timings exclude the browser debounce and rendering, and the catalog code did not change. Final foundation snapshot HTTP p95 was 1.42 ms over fifty requests.
 
@@ -101,7 +101,7 @@ The intended Windows index currently contains **3,681 files**, not a representat
 
 ## Large library, 3 October 2026
 
-Read-only checks against the live database (31,039 indexed files, 52,594 jobs, 147 MB of job JSON). Ownership for 12 tracks took about 750 ms because SQLite walked every Deezer job and parsed its payload. Pinning that join to `(catalog, track_id)` brought the same lookup to 0.2 ms. The queue snapshot took 855 ms for the same reason. Opening Albums walked Navidrome in 829 ms the first time and 15 ms from cache. Opening Tracks took 1,790 ms, then 45 ms. The last library walk reported 115.2 seconds for 30,994 files. The browse cache is three minutes so that walk is not repeated every minute. A typed history search still reads job text.
+Read-only checks against the live database (31,039 indexed files, 52,594 jobs, 147 MB of job JSON). Ownership for 12 tracks took about 750 ms because SQLite walked every Deezer job and parsed its payload. Pinning that join to `(catalog, track_id)` brought the same lookup to 0.2 ms. The queue snapshot took 855 ms for the same reason. Opening Albums walked the library in 829 ms the first time and 15 ms from cache. Opening Tracks took 1,790 ms, then 45 ms. The last library walk reported 115.2 seconds for 30,994 files. The browse cache is three minutes so that walk is not repeated every minute. A typed history search still reads job text.
 
 ## YouTube search phrase, 3 October 2026
 

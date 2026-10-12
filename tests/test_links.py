@@ -14,18 +14,19 @@ from unittest.mock import MagicMock, patch
 import httpx
 from fastapi import FastAPI
 
-from backend import links, resolver, sources
-from backend.catalog import Catalog, SearchPage
-from backend.downloads import DownloadError, Downloads
-from backend.errors import error_guidance, source_code
-from backend.job_models import Job, Metadata
-from backend.library import Library
-from backend.link_api import install_link_routes
-from backend.link_tags import cleaned
-from backend.links import MAX_RESOLVES, Links, stable_id
-from backend.sources import Kind, Site
-from backend.store import Store
-from backend.worker import main as worker_main
+from backend.api.link_api import install_link_routes
+from backend.core import sources
+from backend.core.errors import error_guidance, source_code
+from backend.core.job_models import Job, Metadata
+from backend.core.sources import Kind, Site
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog, SearchPage
+from backend.jobs import links, resolver
+from backend.jobs.downloads import DownloadError, Downloads
+from backend.jobs.link_tags import cleaned
+from backend.jobs.links import MAX_RESOLVES, Links, stable_id
+from backend.jobs.worker import main as worker_main
+from backend.library.index import Library
 
 ART = "https://i.ytimg.com/vi/abcdefghijk/hqdefault.jpg"
 
@@ -451,7 +452,7 @@ class ResolverTests(unittest.TestCase):
         downloader.extract_info.side_effect = list(answers)
         events: list[dict[str, object]] = []
         with patch(
-            "backend.resolver.emit",
+            "backend.jobs.resolver.emit",
             side_effect=lambda kind, **v: events.append({"kind": kind, **v}),
         ):
             resolver.resolve(downloader, sources.SITES[0], url)
@@ -599,7 +600,7 @@ class ResolverTests(unittest.TestCase):
         with (
             patch("sys.stdin", io.StringIO('{"url": "https://evil.test/a", "source": "youtube"}')),
             patch("yt_dlp.YoutubeDL") as downloader,
-            patch("backend.resolver.emit", side_effect=record),
+            patch("backend.jobs.resolver.emit", side_effect=record),
         ):
             resolver.main()
         downloader.assert_not_called()
@@ -612,7 +613,7 @@ class ResolverTests(unittest.TestCase):
                 io.StringIO('{"url": "https://youtu.be/abcdefghijk", "source": "youtube"}'),
             ),
             patch("yt_dlp.YoutubeDL") as downloader,
-            patch("backend.resolver.emit", side_effect=record),
+            patch("backend.jobs.resolver.emit", side_effect=record),
         ):
             downloader.return_value.extract_info.side_effect = RuntimeError(
                 "No suitable extractor found for URL https://elsewhere.test"
@@ -664,9 +665,9 @@ class LinkWorkerTests(unittest.TestCase):
             patch("sys.argv", ["worker", directory]),
             patch("yt_dlp.YoutubeDL") as downloader,
             # The site's own length is the truth for a link, so a mismatch is not checked.
-            patch("backend.worker.probe", return_value={"duration": 900}),
-            patch("backend.worker.Tagger") as tagger,
-            patch("backend.worker.emit", side_effect=record),
+            patch("backend.jobs.worker.probe", return_value={"duration": 900}),
+            patch("backend.jobs.worker.Tagger") as tagger,
+            patch("backend.jobs.worker.emit", side_effect=record),
         ):
             if isinstance(info, Exception):
                 downloader.return_value.extract_info.side_effect = info
@@ -1179,7 +1180,7 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
             await asyncio.sleep(30)
 
         self.service.catalog.search = stuck  # type: ignore[method-assign,assignment]
-        with patch("backend.link_tags.BUDGET_SECONDS", 0.05):
+        with patch("backend.jobs.link_tags.BUDGET_SECONDS", 0.05):
             job = await self.run_link()
         self.assertEqual(job.stage, "done")
         self.assertTrue(job.notes[0].startswith("Tagged from YouTube, the catalog lookup failed"))
@@ -1332,7 +1333,7 @@ class TidyTests(unittest.IsolatedAsyncioTestCase):
             return await search(query, *rest)
 
         self.service.catalog.search = second_one_hangs  # type: ignore[method-assign,assignment]
-        with patch("backend.link_tags.BUDGET_SECONDS", 0.05):
+        with patch("backend.jobs.link_tags.BUDGET_SECONDS", 0.05):
             _, note = await self.tidy("Band - Song (Official Video)", "BandVEVO")
         self.assertEqual(len(asked), 2)
         self.assertTrue(note.startswith("Tagged from YouTube, the catalog lookup failed"))
@@ -1472,7 +1473,7 @@ class DisconnectTests(unittest.IsolatedAsyncioTestCase):
             limit: int = 2**16,
         ) -> asyncio.subprocess.Process:
             # Stand in for the resolver only. The taskkill that stops it runs for real.
-            resolver_call = args[:2] == ("-m", "backend.resolver")
+            resolver_call = args[:2] == ("-m", "backend.jobs.resolver")
             process = await start(
                 program,
                 *(("-c", "import time; time.sleep(60)") if resolver_call else args),
@@ -1490,7 +1491,7 @@ class DisconnectTests(unittest.IsolatedAsyncioTestCase):
         links = Links(self.service)
         app = FastAPI()
         install_link_routes(app, lambda: links)
-        with patch("backend.links.asyncio.create_subprocess_exec", sleeper):
+        with patch("backend.jobs.links.asyncio.create_subprocess_exec", sleeper):
             await call_and_hang_up(app, "https://youtu.be/abcdefghijk", started)
         self.assertEqual(len(children), 1)
         self.assertIsNotNone(children[0].returncode)

@@ -2,12 +2,12 @@
 
 from pathlib import Path
 
-from backend.job_models import Metadata
-from backend.job_store import Jobs
-from backend.store import Store
+from backend.core.job_models import Metadata
+from backend.core.store import Store
+from backend.jobs.job_store import Jobs
 
 store = Store(Path("/data/musimo.sqlite3"))
-store.update({"concurrency": 1, "navidrome_mode": "off"})
+store.update({"concurrency": 1})
 jobs = Jobs(store, lambda: None)
 job = jobs.enqueue(1, "original", "/music")
 jobs.update(

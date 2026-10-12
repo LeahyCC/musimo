@@ -1,7 +1,7 @@
 import { forwardRef } from 'react'
 import type { InputHTMLAttributes, SelectHTMLAttributes } from 'react'
 
-import { cx } from '../cx'
+import { cx } from '../lib/cx'
 
 /* `cx` only joins strings, so a caller cannot swap the border, the text color or the width by
    passing another utility for the same property: which one wins is up to the order of the built

@@ -33,9 +33,10 @@
 
 ### Library and playback
 
+- Play from the music folders. Playback no longer uses a separate server. Playlists, favourites, play counts, and the saved queue from that server do not carry over. Rolling back after the version 6 upgrade needs the backup taken before it
 - Change the MilkDrop preset on the beat. A drop gets a harder picture and a quiet stretch a calmer one, and the changes come closer together as the song goes on
 - Check a polled music folder every five minutes instead of every minute
-- Read Navidrome's album list four pages at a time, the same way tracks are read
+- Read the library's album list four pages at a time, the same way tracks are read
 - Give library playback its own audio element and a Web Audio analyser for the coming visualizer, keeping catalog previews off it (#51)
 - Extract bands, energy, onsets, a beat pulse and tempo from library playback in a worker, ready for the visualizer (#52)
 - Draw a WebGPU particle field on the Now Playing stage, with a view toggle, a debug overlay and a particle count setting; browsers without WebGPU keep the artwork (#53)
@@ -49,14 +50,14 @@
 - Move the visualizer into [visimo](https://github.com/LeahyCC/visimo) and consume it as a dependency, so scenes and presets can be tuned against a dropped track instead of a library
 - Add visimo's Kaleidoscope scene and its Prism preset to the visualizer, which brings the scene select back to the stage's top bar
 - Lay out the Artists grid like the Albums grid: big round picture, name and album count below, play on hover
-- Show an artist's newest album cover in place of Navidrome's star when it has no photo of them
+- Show an artist's newest album cover in place of the library's star when it has no photo of them
 - Filter the Artists tab by genre, year, favourites and played or never played, sort it by recently added, and mark an artist as a favourite from their page
 - Filter and sort Albums on the server, so genre and year cover the whole library instead of the albums already scrolled past
 - Browse libraries up to 50,000 songs on the Tracks tab (it stopped at 10,000), keeping only the fields the page reads so the larger cap costs less memory than the old one
 - Shuffle on the Tracks tab plays every matching song once, in a random order, and refills the 500-song queue as it goes
 - Lay Now Playing out as two columns that fit the window: the stage with the title and every player control under it, and one tabbed panel of Up next and Lyrics beside it (under the controls on a phone), so neither starts below the fold. Up next now lists only what follows the playing track and says where the queue came from
 - Follow synced lyrics on Now Playing: the current line is highlighted and kept in view, a line can be clicked to seek there, timing can be nudged half a second at a time and is remembered per track, and `L` opens a large lyrics view that takes over the content area, with the track and its controls in a strip along the bottom. Lyrics with no times say so, and a track with none can be searched again
-- Edit the play queue: Play next and Add to queue from a song's row menu (and for a whole album or playlist), remove, drag or use the move buttons and Alt with an arrow to reorder Up next, Clear queue, and Save as playlist. Every change is saved to Navidrome, and adding past its 500 song limit is refused with a message instead of dropping songs
+- Edit the play queue: Play next and Add to queue from a song's row menu (and for a whole album or playlist), remove, drag or use the move buttons and Alt with an arrow to reorder Up next, Clear queue, and Save as playlist. Every change is saved to the library, and adding past its 500 song limit is refused with a message instead of dropping songs
 - Say "1 album" and "1 song" on an artist page instead of "1 ALBUMS"
 - Show the release year on an artist's popular songs instead of a "…" that never filled in
 - Draw the track's waveform as the Now Playing seek bar, worked out once with ffmpeg and cached in SQLite (a new `waveforms` table, schema version unchanged), with the plain bar while it loads or when there is none
@@ -74,7 +75,7 @@
 - Update the bgutil plugin and helper together to 2.0.0, including the exported runtime lock and native Windows setup instructions
 - Let the dev proxy target another backend with `MUSIMO_API_TARGET`, and keep writes through it from being refused as cross-origin (#50)
 - Let the dev proxy reach an https backend such as Tailscale Serve and still save (#55)
-- Stop passing Navidrome's error for a missing item on as broken artwork, and stop sending a compressed length with a decoded body
+- Stop passing the library's error for a missing item on as broken artwork, and stop sending a compressed length with a decoded body
 
 ### UI and accessibility
 
@@ -95,11 +96,11 @@
 
 ## 0.4.0 (2026-09-10)
 
-First tagged release of Musimo. This release provides search, library indexing, download workers, queue controls, album batches, Navidrome library playback and playlist management.
+First tagged release of Musimo. This release provides search, library indexing, download workers, queue controls, album batches, library playback and playlist management.
 
 ### Library and playback
 
-- Add Navidrome library player and playlist tools (#13)
+- Add library player and playlist tools (#13)
 - Add artist songs subpage and track view mode (#18)
 - Add playlist queue actions and liked playlist support (#19)
 - Clean up library navigation and playback (#16)
@@ -180,4 +181,4 @@ From docs/measurements.md:
 
 ## 0.3.0 and earlier
 
-Early development work integrated the FastAPI backend, React frontend, SQLite state, Docker composition, Deezer catalog search, library indexing, download workers with yt-dlp, Navidrome integration, queue controls and settings persistence. The brief and initial planning covered ambitions for the eventual feature set.
+Early development work integrated the FastAPI backend, React frontend, SQLite state, Docker composition, Deezer catalog search, library indexing, download workers with yt-dlp, the library integration, queue controls and settings persistence. The brief and initial planning covered ambitions for the eventual feature set.

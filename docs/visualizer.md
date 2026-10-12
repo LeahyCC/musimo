@@ -5,17 +5,19 @@ The visualizer is [butterchurn](https://github.com/jberg/butterchurn), the WebGL
 ## How it is wired in
 
 ```
-frontend/package.json        butterchurn 3.0.0-beta.5, butterchurn-presets 3.0.0-beta.4 (exact pins)
-visualizer-presets.ts        the base pack's preset names, and stepping through them
-audio-graph.ts               the one AudioContext, and the bus the library elements feed
-milkdrop-stage.tsx           butterchurn and the presets themselves, loaded lazily
-now-playing-popout.tsx       mounts the stage, keeps the chosen preset
-player.tsx                   routeToAnalyser: each library element into the bus
+frontend/package.json                        butterchurn 3.0.0-beta.5, butterchurn-presets 3.0.0-beta.4 (exact pins)
+features/visualizer/visualizer-presets.ts    the base pack's preset names, and stepping through them
+features/player/audio-graph.ts               the one AudioContext, and the bus the library elements feed
+features/visualizer/milkdrop-stage.tsx       butterchurn and the presets themselves, loaded lazily
+features/now-playing/now-playing-popout.tsx  mounts the stage, keeps the chosen preset
+features/player/player.tsx                   routeToAnalyser: each library element into the bus
 ```
+
+Paths under `features/` are relative to `frontend/src/`. Everything else the visualizer owns (scenes, music moments, the butterchurn types) is in `features/visualizer/`.
 
 butterchurn 3 compiles each preset's equations to WebAssembly, so the backend's Content-Security-Policy carries `script-src 'self' 'wasm-unsafe-eval'` (`backend/main.py`, checked in `tests/test_foundation.py`). Without it every preset fails to load and butterchurn draws its blank default whatever is chosen. The Vite dev server sends no such policy, so only a built app shows that failure; `e2e/visualizer.spec.ts` catches it because `data-preset` is written only once a preset has loaded.
 
-Both packages are 3.0 betas, pinned exactly. 2.6.7 is the latest stable release; the beta was chosen as the newest MilkDrop code. `src/butterchurn.d.ts` types the parts Musimo calls, since neither package ships types.
+Both packages are 3.0 betas, pinned exactly. 2.6.7 is the latest stable release; the beta was chosen as the newest MilkDrop code. `src/features/visualizer/butterchurn.d.ts` types the parts Musimo calls, since neither package ships types.
 
 Which import lands where matters. `visualizer-presets.ts` imports only `getBasePresetKeys` from `butterchurn-presets/presetPackMeta.js`, so the main chunk carries the base pack's 107 names and nothing else (the other packs' names are shaken out). `milkdrop-stage.tsx` imports butterchurn and the presets themselves, about 1.1 MB (230 KB gzipped), and is only loaded when a stage mounts the visualizer. An import of the presets anywhere else pulls that into the main bundle, and nothing will fail, so watch the build output.
 

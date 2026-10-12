@@ -7,14 +7,14 @@ from unittest.mock import patch
 import httpx
 from fastapi import FastAPI
 
-from backend.catalog import Catalog
-from backend.downloads import Downloads
-from backend.job_models import Job, Metadata
-from backend.library import Library
-from backend.naming import Naming
-from backend.podcast_api import install_podcast_routes
-from backend.store import Store
-from backend.worker import main
+from backend.api.podcast_api import install_podcast_routes
+from backend.core.job_models import Job, Metadata
+from backend.core.naming import Naming
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog
+from backend.jobs.downloads import Downloads
+from backend.jobs.worker import main
+from backend.library.index import Library
 
 ART = "https://is1-ssl.mzstatic.com/image/thumb/show/600x600bb.jpg"
 SHOW = {
@@ -157,9 +157,9 @@ class PodcastWorkerTests(unittest.TestCase):
                 patch("sys.argv", ["worker", directory]),
                 patch("yt_dlp.YoutubeDL") as downloader,
                 # Much longer than the directory said: stitched-in ads must not fail the episode.
-                patch("backend.worker.probe", return_value={"duration": 900}),
-                patch("backend.worker.Tagger") as tagger,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.probe", return_value={"duration": 900}),
+                patch("backend.jobs.worker.Tagger") as tagger,
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 downloader.return_value.extract_info.return_value = {}
                 tagger.return_value.prepare.return_value = folder / "source.mp3"
@@ -183,7 +183,7 @@ class PodcastWorkerTests(unittest.TestCase):
             with (
                 patch("sys.argv", ["worker", directory]),
                 patch("yt_dlp.YoutubeDL") as downloader,
-                patch("backend.worker.emit", side_effect=record),
+                patch("backend.jobs.worker.emit", side_effect=record),
             ):
                 downloader.return_value.extract_info.side_effect = RuntimeError("HTTP Error 403")
                 main()

@@ -348,7 +348,7 @@ test('settings headings wait for a delayed settings query, and the save bar stay
 test('the settings index does not move when the slower diagnostics query lands', async ({
   page,
 }) => {
-  // Settings answers at once; diagnostics is held back, the way its disk and Navidrome probes hold
+  // Settings answers at once; diagnostics is held back, the way its disk and player probes hold
   // it back for real. The banner it feeds sits above the form, so its room is kept in advance.
   let release = () => {}
   const held = new Promise<void>((resolve) => {
@@ -425,7 +425,7 @@ test('activity clear persists and diagnostics export is valid JSON', async ({ pa
     library: expect.any(Object),
     queue: expect.any(Object),
     capabilities: expect.any(Object),
-    navidrome: expect.any(Object),
+    player: expect.any(Object),
   })
 })
 
@@ -503,7 +503,7 @@ for (const [scan, ready] of [
       },
       queue: { paused: false, source_paused: false },
       capabilities: { settings: true, events: true, search: true, downloads: true },
-      navidrome: null,
+      player: null,
       last_download: null,
     }
     await page.route('**/api/diagnostics', (route) => route.fulfill({ json: healthy }))
@@ -1183,7 +1183,7 @@ test('youtube source panel has no test button', async ({ page }) => {
         },
         queue: { paused: false, source_paused: false },
         capabilities: { settings: true, events: true, search: true, downloads: true },
-        navidrome: null,
+        player: null,
         last_download: null,
       },
     }),
@@ -1218,7 +1218,7 @@ test('a finished library scan counts as ready', async ({ page }) => {
         },
         queue: { paused: false, source_paused: false },
         capabilities: { settings: true, events: true, search: true, downloads: true },
-        navidrome: null,
+        player: null,
         last_download: null,
       },
     }),
@@ -1255,7 +1255,7 @@ test('read-only destination option is disabled', async ({ page }) => {
         },
         queue: { paused: false, source_paused: false },
         capabilities: { settings: true, events: true, search: true, downloads: true },
-        navidrome: null,
+        player: null,
         last_download: null,
       },
     }),
@@ -1345,7 +1345,7 @@ test('diagnostics shows not ready when components need attention', async ({ page
         },
         queue: { paused: false, source_paused: false },
         capabilities: { settings: true, events: true, search: true, downloads: true },
-        navidrome: null,
+        player: null,
         last_download: null,
       },
     }),
@@ -1366,9 +1366,6 @@ test('diagnostics shows not ready when components need attention', async ({ page
           origin: 'default',
           locked: false,
         },
-        navidrome_url: { value: '', origin: 'default', locked: false },
-        navidrome_mode: { value: 'off', origin: 'default', locked: false },
-        navidrome_library_id: { value: 1, origin: 'default', locked: false },
       },
     }),
   )

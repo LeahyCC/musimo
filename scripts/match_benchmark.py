@@ -5,8 +5,8 @@ import json
 from collections import Counter
 from pathlib import Path
 
-from backend.job_models import Candidate, Metadata
-from backend.matching import MIN_SCORE, Matcher
+from backend.core.job_models import Candidate, Metadata
+from backend.jobs.matching import MIN_SCORE, Matcher
 
 
 def main() -> None:

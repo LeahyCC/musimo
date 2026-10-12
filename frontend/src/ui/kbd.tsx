@@ -1,7 +1,7 @@
 import { forwardRef } from 'react'
 import type { HTMLAttributes } from 'react'
 
-import { cx } from '../cx'
+import { cx } from '../lib/cx'
 
 /** A keyboard-shortcut hint. Hidden on a phone, where there is no keyboard to show it for. */
 export const Kbd = forwardRef<HTMLElement, HTMLAttributes<HTMLElement>>(function Kbd(

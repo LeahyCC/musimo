@@ -20,6 +20,6 @@ The Windows 95 themes use the W95FA typeface by Alina Sava, licensed under the S
 
 ## Providers and media
 
-Deezer, YouTube, Apple/iTunes, MusicBrainz, LRCLIB and Navidrome names identify integrations or external services. They do not imply affiliation or endorsement. Their APIs, data, trademarks and media have their own terms and rights.
+Deezer, YouTube, Apple/iTunes, MusicBrainz, LRCLIB and the library names identify integrations or external services. They do not imply affiliation or endorsement. Their APIs, data, trademarks and media have their own terms and rights.
 
 Fixtures and screenshots contributed to the repository must be generated or used with permission, with provenance recorded where needed. Do not include an audio recording simply because its title appears in a test. See [Terms](TERMS.md) for responsible use.

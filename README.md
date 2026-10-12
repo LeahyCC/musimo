@@ -4,7 +4,7 @@
 
 ### Your music, at home.
 
-A self-hosted music library companion for Navidrome.
+A self-hosted music library.
 
 Search tracks, albums, and artists. Hear previews, check your local collection, and queue permitted downloads into your music folders.
 
@@ -17,7 +17,7 @@ Search tracks, albums, and artists. Hear previews, check your local collection, 
 Musimo keeps discovery close to the library you already own. React provides the interface, FastAPI runs the backend, and SQLite stores settings, the library index, and jobs. Docker Compose builds the app from this repository. No Musimo account or hosted Musimo service is required.
 
 > [!NOTE]
-> Version 0.4.0 is Musimo's first tagged release. Search, library indexing, download workers, queue controls, album batches, Navidrome library playback and playlist management are working. The release is tested but still early. Known limitations are in the [changelog](CHANGELOG.md) and [measurements](docs/measurements.md). Read [download verification](docs/downloads.md) before use. The original [brief](docs/brief.md) describes future ambitions beyond shipped features.
+> Version 0.4.0 is Musimo's first tagged release. Search, library indexing, download workers, queue controls, album batches, library playback and playlist management are working. The release is tested but still early. Known limitations are in the [changelog](CHANGELOG.md) and [measurements](docs/measurements.md). Read [download verification](docs/downloads.md) before use. The original [brief](docs/brief.md) describes future ambitions beyond shipped features.
 
 ## Contents
 
@@ -27,7 +27,7 @@ Musimo keeps discovery close to the library you already own. React provides the 
 - [Music folders and permissions](#music-folders-and-permissions)
 - [Using Musimo](#using-musimo)
 - [Audio quality and metadata](#audio-quality-and-metadata)
-- [Navidrome](#navidrome)
+- [Playback](#playback)
 - [Configuration](#configuration)
 - [Backups and updates](#backups-and-updates)
 - [Network access and privacy](#network-access-and-privacy)
@@ -49,17 +49,17 @@ Search and library features:
 - Album pages and artist discographies grouped by catalog release type.
 - Automatic album coverage checks, with a count and progress bar.
 - A persistent index of audio tags. Search does not reopen music files to check coverage.
-- One player across navigation for catalog previews and full Navidrome tracks.
-- Navidrome library browsing for albums, artists, tracks and playlists, with playlist CRUD, a saved queue, media controls, lyrics, scrobbling, shuffle and repeat.
+- One player across navigation for catalog previews and full the library tracks.
+- library browsing for albums, artists, tracks and playlists, with playlist CRUD, a saved queue, media controls, lyrics, scrobbling, shuffle and repeat.
 - A linked liked playlist, thumbs up button, add to playlist picker with inline creation and the artist All songs subpage with a popularity chart.
 - Server side Tracks view filters by search, genre, year and sort order.
-- LRCLIB lyric fallback when Navidrome has no imported lyrics.
+- LRCLIB lyric fallback when the library has no imported lyrics.
 - Now Playing full screen and popout stage for library tracks.
 - Background scans, scan cancellation, native or polling watchers and diagnostics.
 - A bounded activity feed in Settings and Diagnostics, with persistent clearing.
 - Personal settings with a theme picker and editor, stored in your browser and movable between browsers as a file.
 
-The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card clear and bulk Retry errors, Clear errors and Clear no match, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Download verification requires testing with your chosen provider and Navidrome setup.
+The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card clear and bulk Retry errors, Clear errors and Clear no match, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Download verification requires testing with your chosen provider and the library setup.
 
 These are **not finished features**: personalized Discover, automatic release-edition filters, Spotify and Apple Music link imports, paid audio sources other than a Deezer account, notifications, cookie management beyond pasting a YouTube cookies file or a Deezer cookie, built-in login, multiple users and complete release benchmarks (cold search latency, match accuracy labeling, permitted-music throughput, representative 50k library, native arm64 performance). See [Discover planning](docs/discover.md), [the roadmap](docs/roadmap.md) and [known limitations](CHANGELOG.md#known-limitations).
 
@@ -69,13 +69,13 @@ The supported deployment uses Docker Engine with the Compose plugin, or Docker D
 
 Catalog queries, artwork, previews and enabled sources require internet access. Keep application state on local disk. The music destination needs room for temporary and final files, and the runtime user needs permission to read indexed folders and write to the selected destination.
 
-Navidrome is a separate application. It is optional for search, previews and indexing, and is not included in Compose. No minimum CPU/RAM or maximum library-size guarantee has been established by the full release benchmarks.
+Playback uses the files in the music folders. No separate playback server is included in Compose. No minimum CPU/RAM or maximum library-size guarantee has been established by the full release benchmarks.
 
 The main image includes Python, FFmpeg, Deno, Chromaprint tools and Python dependencies. Host installations of these tools are unnecessary when using Docker. An optional YouTube helper runs as a second container.
 
 ## Quick start
 
-Want help with the whole installation? Copy the [setup handoff prompt](docs/setup-handoff.md) into an LLM with access to your computer. It covers music folders, verification, optional Navidrome and private remote access.
+Want help with the whole installation? Copy the [setup handoff prompt](docs/setup-handoff.md) into an LLM with access to your computer. It covers music folders, verification and private remote access.
 
 ```sh
 git clone https://github.com/LeahyCC/musimo.git
@@ -114,7 +114,7 @@ docker compose logs --tail 100 musimo
 curl http://127.0.0.1:8765/api/health
 ```
 
-Health means the app and database respond. It does not mean every provider works or a file is visible in Navidrome.
+Health means the app and database respond. It does not mean every provider works or a file is visible in the library.
 
 ## Music folders and permissions
 
@@ -146,7 +146,7 @@ docker compose up -d --wait
 
 The merged output may contain environment values. Redact it before sharing.
 
-Add further mounts and list their Linux paths in `MUSIMO_LIBRARY_ROOTS`, separated by colons. Only configured roots can receive downloads. Give Navidrome access to the same host folder if it should play these files.
+Add further mounts and list their Linux paths in `MUSIMO_LIBRARY_ROOTS`, separated by colons. Only configured roots can receive downloads. Give the library access to the same host folder if it should play these files.
 
 ### Windows and network mounts
 
@@ -193,7 +193,7 @@ An artist's **Download all albums** button opens a selection sheet with album/so
 
 Library has Home, Albums, Artists, Tracks and Playlists views. Grid and list layouts are available for collection views and the choice is remembered in the browser under `musimo.library-layout`. The Tracks view offers server side search, genre, year and sort filters that describe the whole library rather than only loaded pages. Its Play all button plays the first 500 songs in the current sort order. Shuffle plays every matching song once, in a random order. Past 500 songs the queue refills as it plays.
 
-Artist pages include an All songs subpage at `/library/artists/{id}/songs` and a popularity chart plotted from Navidrome play counts when enough data exists. Playlists show song count and can be filtered by public or private status. Inline rename is available for all playlists.
+Artist pages include an All songs subpage at `/library/artists/{id}/songs` and a popularity chart plotted from the library play counts when enough data exists. Playlists show song count and can be filtered by public or private status. Inline rename is available for all playlists.
 
 The linked liked playlist is always listed, sorts first, cannot be deleted, and is required for the thumbs up button to work. Its identity is stored in the SQLite table `linked_playlists`. An existing playlist named Liked is adopted when none is stored.
 
@@ -227,7 +227,7 @@ The floating queue button appears only while a download is active. History and q
 
 Pause/resume and restart recovery depend on the stage and surviving partial files. Cancelling does not remove an already published library file. Clearing finished jobs from the queue is separate from download history.
 
-Validate a new setup by inspecting a permitted test file, its tags and its appearance in Navidrome. A queue acknowledgement confirms submission, not successful publication. Download controls show the destination and format before queueing so you know where files will land. [Measurements](docs/measurements.md) records which acceptance checks have actually passed.
+Validate a new setup by inspecting a permitted test file, its tags and its appearance in the library. A queue acknowledgement confirms submission, not successful publication. Download controls show the destination and format before queueing so you know where files will land. [Measurements](docs/measurements.md) records which acceptance checks have actually passed.
 
 ### Recent activity
 
@@ -245,21 +245,9 @@ Album size figures are estimates from duration and an assumed bitrate. Check the
 
 Tagging uses catalog metadata, artwork and optional MusicBrainz/LRCLIB enrichment. Available fields include titles, artists, album, date, track/disc numbers, genre, label, identifiers and lyrics. Missing or ambiguous data can stay empty; warnings should explain failed optional enrichment. Artwork and lyrics have their own rights and provider conditions.
 
-## Navidrome
+## Playback
 
-Mount the same host music folder into both applications, select it as Musimo's destination, and configure it as a Navidrome library.
-
-The backend supports three modes:
-
-- `off`: no scan integration.
-- `watcher`: rely on Navidrome's watcher, which you configure separately.
-- `api`: request a Subsonic scan after file publication.
-
-Navidrome must be reachable **from inside the container**. There, `localhost` means Musimo, not the host or another container.
-
-API mode and the player foundation read a mounted JSON credentials file identified by `MUSIMO_NAVIDROME_CREDENTIALS_FILE`. It contains `username` and `password`. Store it outside the checkout, restrict permissions, mount it read-only and prefer a dedicated account. Configure `navidrome_url` and `navidrome_library_id` for the actual server. Never paste credentials into issues or screenshots. See [library player](docs/player.md).
-
-A file can save successfully while a scan request fails. Read its warning and scan Navidrome separately. Watcher-mode visibility has been verified locally with a public-domain fixture. API mode has fixture coverage but still needs a live credentialed check against the chosen server.
+Musimo plays the files in its music folders. Mount the host folder, select it as the download destination, and list it in `MUSIMO_LIBRARY_ROOTS`. A finished download is indexed and can be played without another server. See [library player](docs/player.md).
 
 ## Configuration
 
@@ -271,9 +259,8 @@ Copy `.env.example` to `.env` for Compose deployment values. Both `.env` and `co
 - `MUSIMO_LIBRARY_ROOTS`: container paths, default `/music` in base Compose.
 - `MUSIMO_WATCH_MODE`: `native` or `poll`.
 - `MUSIMO_POLL_INTERVAL_SECONDS`: polling interval, default `300`.
-- `MUSIMO_NAVIDROME_CREDENTIALS_FILE`: optional mounted file for API mode.
 
-Editable settings cover the label, destination, output format, naming template, concurrency, retry limits and Navidrome integration. See [Settings](docs/settings.md) and `backend/models.py` for the current contract.
+Editable settings cover the label, destination, output format, naming template, concurrency and retry limits. See [Settings](docs/settings.md) and `backend/core/models.py` for the current contract.
 
 Setting environment variables are **first-run bootstrap values**. Pass a value such as `MUSIMO_CONCURRENCY=3` through the container's `environment:` block to seed and lock it. Merely adding an arbitrary key to `.env` does not pass it into the container.
 
@@ -298,7 +285,7 @@ docker compose up -d --build --wait
 
 Use the same Compose overrides and optional profiles as installation. Back up before schema changes. `git pull --ff-only` refuses divergence instead of silently merging local edits. A newer database schema may require a matching backup to roll back.
 
-Version 0.4.0 has no schema change from earlier development versions (user_version remains 3). Upgrades from any 0.3.x installation to 0.4.0 preserve existing data.
+This upgrade sets `user_version` to 6. Version 5 is the pause between groups of downloads. This application opens version 6. An older build refuses a version 6 database, so rolling back after the upgrade needs the backup taken before it.
 
 Rebuilds retain named volumes. **Do not add `--volumes` or `-v` to `docker compose down` during an update.** Removing the data volume loses application state. To stop without removal, use `docker compose stop`. Music folders remain your files, not disposable application state.
 
@@ -312,7 +299,7 @@ Self-hosted does not mean offline. Catalog/enrichment providers receive requests
 
 ## Troubleshooting
 
-Visit the Diagnostics page to check system readiness. It shows library roots (mounted, writable, free space), the selected destination with write testing, the last library scan, Navidrome status, YouTube helper availability and the most recent download outcome. Settings displays a summary with a link to Diagnostics.
+Visit the Diagnostics page to check system readiness. It shows library roots (mounted, writable, free space), the selected destination with write testing, the last library scan, the player, YouTube helper availability and the most recent download outcome. Settings displays a summary with a link to Diagnostics.
 
 ### The page does not open
 
@@ -328,7 +315,7 @@ Check mounted roots, scan status and tags. Rescan after mount changes. Matches u
 
 ### New files are absent
 
-Confirm both apps see the same host folder. Switch to polling if filesystem events do not cross the mount. Musimo indexing and Navidrome scanning are separate. Wait for scans to finish before comparing counts.
+Confirm the folder is mounted and listed in `MUSIMO_LIBRARY_ROOTS`. Switch to polling if filesystem events do not cross the mount. Wait for the scan to finish. A finished download is indexed as soon as the file is published.
 
 ### Settings are locked
 
@@ -430,7 +417,7 @@ Browser
 FastAPI
   |-- catalog cache -> metadata and preview providers
   |-- library index -> music folders
-  |-- scheduler -> worker -> staging -> music -> Navidrome
+  |-- scheduler -> worker -> staging -> music folders
   `-- SQLite -> settings, cache, index, jobs and events
 ```
 
@@ -441,7 +428,7 @@ API groups:
 - Health/settings: `/api/health`, `/api/settings` GET and PATCH, `/api/youtube-cookies` PUT and DELETE, `/api/snapshot`.
 - Search: `/api/search`, `/api/album-years`, `/api/albums/{id}`, `/api/artists/{id}`, `/api/artists/{id}/top`, `/api/preview/{id}`.
 - Index: `/api/library` GET, `/api/library/scan` POST, `/api/library/cancel` POST.
-- Player foundation: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/stream/{id}`, `/api/player/art/{id}`. Navidrome-backed library routes at `/api/library/{albums,artists,tracks,playlists}` for browsing; local index routes at `/api/library` GET, `/api/library/scan`, `/api/library/cancel` remain separate.
+- Player: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/stream/{id}`, `/api/player/art/{id}`. Album, artist, track and playlist browsing is `/api/library/{albums,artists,tracks,playlists}`. Scan routes stay at `/api/library` GET, `/api/library/scan` and `/api/library/cancel`.
 - Jobs/batches: `/api/naming-preview`, `/api/jobs` GET and POST, `/api/history`, `/api/batches` POST, `/api/batches/{id}/{pause,resume,cancel,retry}`, `/api/jobs/{id}/pick`, `/api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`, `/api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,clear-unmatched,resume-source}`.
 - Artist downloads: `/api/artists/{id}/download-plan`, `/api/artist-batches`.
 - Podcasts and pasted links: `/api/podcasts`, `/api/podcasts/{id}`, `/api/podcast-episodes` POST, `/api/links/resolve` POST, `/api/links` POST.
@@ -453,12 +440,29 @@ Contracts can change before a stable release. The live schema is at `/openapi.js
 Repository layout:
 
 ```text
-backend/       API, state, catalog, indexing and download services
-frontend/src/  React screens, player, queue and shared UI
-scripts/       smoke tests and benchmarks
-tests/         regression tests
-docs/          setup, behavior, evidence and proposals
-.github/       checks, contribution templates and ownership
+backend/          API, state, catalog, indexing and download services
+  main.py         app setup, middleware and serving the built frontend
+  api/            every route module, one per area
+  core/           SQLite store, settings and job models, errors, file naming, the site
+                  allowlist, text normalizing, secret files
+  jobs/           the download pipeline: queue, worker, yt-dlp options, matching, tagging,
+                  publishing files, pasted links
+  library/        local file index, the player, browse filters and seek bar waveforms
+  integrations/   Deezer catalog and audio, MusicBrainz, podcast directory, saved cookies
+frontend/src/     React screens, player, queue and shared UI
+  main.tsx        mounts the app
+  api.ts          every backend call and the zod schema it is read with
+  app/            shell, routes, live events, command palette
+  features/       one folder per screen or engine: search, library, downloads, links,
+                  podcasts, player, now-playing, visualizer, settings, diagnostics
+  components/     pieces more than one screen uses
+  ui/             primitives: Button, Panel, Field and the rest
+  theme/          color tokens, built-in themes, the theme store
+  lib/            small helpers and hooks
+scripts/          smoke tests and benchmarks
+tests/            regression tests
+docs/             setup, behavior, evidence and proposals
+.github/          checks, contribution templates and ownership
 ```
 
 ## Contributing and support
@@ -473,4 +477,4 @@ Musimo's original source uses the [MIT licence](LICENSE). Dependencies and execu
 
 Use Musimo where you have the rights or permission required for the intended copying, downloading, processing and sharing. Possessing a copy or paying for a subscription does not by itself establish those permissions. Read [Terms and responsible use](TERMS.md), [Privacy](PRIVACY.md) and each configured provider's terms.
 
-Musimo is independent of the providers and Navidrome. Names describe integrations, not endorsement. MIT includes warranty and liability provisions; no notice waives rights or liabilities that applicable law does not allow to be waived.
+Musimo is independent of the providers and the library. Names describe integrations, not endorsement. MIT includes warranty and liability provisions; no notice waives rights or liabilities that applicable law does not allow to be waived.

@@ -58,7 +58,7 @@ Small (default)                            Large
 
 ## Lyrics
 
-The Lyrics tab is `LyricsPanel` in `frontend/src/lyrics.tsx`, keyed by track so each track starts fresh. The lines come from `GET /api/player/lyrics/{id}`; each line's `start` is in milliseconds and the item's `synced` flag says whether they are timed.
+The Lyrics tab is `LyricsPanel` in `frontend/src/features/now-playing/lyrics.tsx`, keyed by track so each track starts fresh. The lines come from `GET /api/player/lyrics/{id}`; each line's `start` is in milliseconds and the item's `synced` flag says whether they are timed.
 
 ```
 +-------------------------------------------+
@@ -116,7 +116,7 @@ Everything the panel does still works: the current line follows and scrolls, a c
 
 **The footer player** is hidden while a library track is on this page, at every width, because the page has every control the footer has: like, Add to playlist, seek, previous, play or pause, next, shuffle, repeat, mute, volume and close. If a control is ever added to the footer, it has to be added here in the same change, or the footer has to stay. On a phone the mini player steps aside too. Where a catalog preview is playing the page says so, and that Now Playing and its visuals play with library tracks, and the footer stays, because its controls are the only ones the preview has. Leaving the page brings the footer back. See [the player note](player.md) for how `--player-height` follows it.
 
-**Status lines.** The footer's status line is repeated on the page, under the control row, only for errors and confirmations: a track that will not play, a playlist just created. "Your Navidrome library" and "Queue restored. Press play to continue." say what the title, the Playing from line and the play button already say, so the page leaves them in the footer (`isPassiveNotice` in `player.tsx`). The WebGL 2 notice keeps its once-per-browser rule (see below), so a returning visitor sees no line under the stage.
+**Status lines.** The footer's status line is repeated on the page, under the control row, only for errors and confirmations: a track that will not play, a playlist just created. "Your music library" and "Queue restored. Press play to continue." say what the title, the Playing from line and the play button already say, so the page leaves them in the footer (`isPassiveNotice` in `player.tsx`). The WebGL 2 notice keeps its once-per-browser rule (see below), so a returning visitor sees no line under the stage.
 
 ## Now Playing
 
@@ -148,7 +148,7 @@ The colour is again a runtime value, handed over as the custom property `--now-g
 
 **Cross-fade.** When the track changes, the artwork, the wash and the glow each cross-fade over about 300 ms (`FADE_MS` in `use-leaving.ts`). The new one is drawn at once and the old one stays on top with the `.leaving` class and fades out (`@keyframes leave` in `style.css`), then is removed. Under `prefers-reduced-motion` the old layer is never drawn, so the change is a cut. The visualizer is not cross-faded.
 
-**Right-click menu.** Right-clicking the docked stage (not the popout, which has no page to go to, and not the stage's own buttons and selects) opens a small menu at the pointer: Go to album, Go to artist, Add to playlist and Full screen (Exit full screen while it is on). Go to album and Go to artist are disabled for a track Navidrome sent no id for. Add to playlist leaves full screen first, since the playlist sheet is a dialog of the page and would not be on screen. The menu is `role="menu"`, closes on Escape, a click elsewhere, a resize or choosing an item, moves with the arrow keys, Home and End, and keeps those keys from the stage's own shortcuts. The Menu key and Shift+F10 open it in the middle of the stage. It is drawn in the body, and inside the stage in full screen, where nothing else is on screen (`artwork-menu.tsx`).
+**Right-click menu.** Right-clicking the docked stage (not the popout, which has no page to go to, and not the stage's own buttons and selects) opens a small menu at the pointer: Go to album, Go to artist, Add to playlist and Full screen (Exit full screen while it is on). Go to album and Go to artist are disabled for a track the library sent no id for. Add to playlist leaves full screen first, since the playlist sheet is a dialog of the page and would not be on screen. The menu is `role="menu"`, closes on Escape, a click elsewhere, a resize or choosing an item, moves with the arrow keys, Home and End, and keeps those keys from the stage's own shortcuts. The Menu key and Shift+F10 open it in the middle of the stage. It is drawn in the body, and inside the stage in full screen, where nothing else is on screen (`artwork-menu.tsx`).
 
 ## Full screen
 
@@ -206,14 +206,14 @@ L, Q and S are bound to the page, not the stage, so they work without the stage 
 
 ## Code
 
-- `frontend/src/artwork-menu.tsx`: the right-click menu on the stage.
-- `frontend/src/lyrics.tsx`: `LyricsPanel`, the synced list that follows the player, the lyrics view (`LyricsView` and the strip's `StripTransport` and `StripSeek`), the timing offset and its storage. `frontend/src/lyrics.test.ts` covers the current-line lookup and the offset map.
-- `frontend/src/now-playing-controls.tsx`: the title, byline and control row under the stage.
+- `frontend/src/features/now-playing/artwork-menu.tsx`: the right-click menu on the stage.
+- `frontend/src/features/now-playing/lyrics.tsx`: `LyricsPanel`, the synced list that follows the player, the lyrics view (`LyricsView` and the strip's `StripTransport` and `StripSeek`), the timing offset and its storage. `frontend/src/features/now-playing/lyrics.test.ts` covers the current-line lookup and the offset map.
+- `frontend/src/features/now-playing/now-playing-controls.tsx`: the title, byline and control row under the stage.
 - `frontend/src/ui/tabs.tsx`: `TabList`, the tab row and its arrow keys.
-- `frontend/src/now-playing-popout.tsx`: the provider at the app root (the popout window, the request that carries full screen back to the tab) and the stage itself. The docked stage's size is a container query: its slot is a size container, and the stage is `min(100cqw, 100cqh)` wide and square in Small, or `100cqw` by `100cqh` in Large (`dockedStageClassName`). The choice (`size`, `setSize`, `toggleSize`, kept as `musimo.now-playing-size`) and `phone`, whether the window is under the breakpoint, live in the provider beside the view and the preset. `useStageVisible` also carries the 10 second pause rest.
-- `frontend/src/now-playing-overlay.tsx`: the top bar, the transport drawn over the picture in full screen and the popout (`StageControls`, switched by the `controls` prop), the always-visible Visualizer control (toggle and preset picker), the small or large stage button (docked only, and not on a phone), the idle fade and the shortcuts. The idle fade is on the two bars, not on `.stage-overlay`, which is what lets the Visualizer control outlast it.
-- `frontend/src/milkdrop-stage.tsx`: the butterchurn (MilkDrop) stage, loaded on demand; see [the visualizer note](visualizer.md).
-- `frontend/src/player.tsx` exposes the transport (`seek`, `cycleRepeat`, `toggleShuffle`, `toggleMute`, `setVolume`, `audio()`, `liked`, `stop`) the page's control row and the overlay need to duplicate the footer's controls, the overlay in a separate document.
+- `frontend/src/features/now-playing/now-playing-popout.tsx`: the provider at the app root (the popout window, the request that carries full screen back to the tab) and the stage itself. The docked stage's size is a container query: its slot is a size container, and the stage is `min(100cqw, 100cqh)` wide and square in Small, or `100cqw` by `100cqh` in Large (`dockedStageClassName`). The choice (`size`, `setSize`, `toggleSize`, kept as `musimo.now-playing-size`) and `phone`, whether the window is under the breakpoint, live in the provider beside the view and the preset. `useStageVisible` also carries the 10 second pause rest.
+- `frontend/src/features/now-playing/now-playing-overlay.tsx`: the top bar, the transport drawn over the picture in full screen and the popout (`StageControls`, switched by the `controls` prop), the always-visible Visualizer control (toggle and preset picker), the small or large stage button (docked only, and not on a phone), the idle fade and the shortcuts. The idle fade is on the two bars, not on `.stage-overlay`, which is what lets the Visualizer control outlast it.
+- `frontend/src/features/visualizer/milkdrop-stage.tsx`: the butterchurn (MilkDrop) stage, loaded on demand; see [the visualizer note](visualizer.md).
+- `frontend/src/features/player/player.tsx` exposes the transport (`seek`, `cycleRepeat`, `toggleShuffle`, `toggleMute`, `setVolume`, `audio()`, `liked`, `stop`) the page's control row and the overlay need to duplicate the footer's controls, the overlay in a separate document.
 
 ## Checks
 

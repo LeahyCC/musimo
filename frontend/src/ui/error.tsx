@@ -1,7 +1,7 @@
 import type { HTMLAttributes } from 'react'
 
-import { cx } from '../cx'
-import type { ClassName } from '../cx'
+import { cx } from '../lib/cx'
+import type { ClassName } from '../lib/cx'
 
 /** The `.error` look as a class string, for an element the component can't wrap (e.g. `<section>`). */
 export function errorBannerClassName(layout: 'block' | 'list' = 'block', className?: ClassName) {

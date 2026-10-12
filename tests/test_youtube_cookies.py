@@ -9,10 +9,10 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
-from backend.downloads import stop_tree
+from backend.integrations.youtube_cookies import clean, drop_copies, remove, saved, write
+from backend.jobs.processes import stop_tree
+from backend.jobs.ytdlp import base_options, cookie_options
 from backend.main import create_app
-from backend.worker import base_options, cookie_options
-from backend.youtube_cookies import clean, drop_copies, remove, saved, write
 
 YOUTUBE = ".youtube.com\tTRUE\t/\tTRUE\t0\tLOGIN_INFO\tabc"
 GOOGLE = ".google.com\tTRUE\t/\tFALSE\t0\tSID\tdef"
@@ -108,7 +108,7 @@ class YoutubeCookieTests(unittest.TestCase):
                         sys.executable,
                         "-c",
                         "import time\n"
-                        "from backend.youtube_cookies import private_copy\n"
+                        "from backend.integrations.youtube_cookies import private_copy\n"
                         "print(private_copy(), flush=True)\n"
                         "time.sleep(60)\n",
                         stdout=asyncio.subprocess.PIPE,

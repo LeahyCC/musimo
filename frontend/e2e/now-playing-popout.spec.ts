@@ -68,7 +68,7 @@ test('now playing shows the stage bar and the idle fade, and the transport besid
   await expect(page.getByText('Playing from album Clear Water')).toBeVisible()
   await expect(page.getByText('1 TRACK', { exact: true })).toBeVisible()
   // The footer's own status lines stay in the footer, which is hidden here.
-  await expect(page.locator('main').getByText('Your Navidrome library')).toHaveCount(0)
+  await expect(page.locator('main').getByText('Your music library')).toHaveCount(0)
 
   // The popout is offered only where the browser has Document Picture-in-Picture.
   const hasPictureInPicture = await page.evaluate(() => 'documentPictureInPicture' in window)

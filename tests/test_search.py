@@ -3,16 +3,17 @@ import json
 import tempfile
 import time
 import unittest
+import wave
 from pathlib import Path
 from unittest.mock import patch
 
 import httpx
 from fastapi import FastAPI
 
-from backend.catalog import Catalog, CatalogError, Result, Track, safe_media
-from backend.library import Library
-from backend.search_api import install_search_routes
-from backend.store import Store
+from backend.api.search_api import install_search_routes
+from backend.core.store import Store
+from backend.integrations.catalog import Catalog, CatalogError, Result, Track, safe_media
+from backend.library.index import Library
 
 TRACK = {
     "id": 1,
@@ -46,7 +47,10 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
     ) -> str:
         path = str(self.root / name)
         self.store.db.execute(
-            "INSERT INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO library_files ("
+            "path, root, mtime_ns, size, generation, title, artist, album, "
+            "title_key, artist_key, album_key, duration, isrc, mbid"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 path,
                 str(self.root),
@@ -186,9 +190,22 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.library.status()["total_files"], 4)
         self.assertEqual(self.library.state["status"], "cancelled")
         self.library.cancelled.clear()
+        # A folder that walks empty keeps its rows. An unmounted disk looks the same.
         self.library.scan()
-        self.assertEqual(self.library.status()["total_files"], 0)
-        self.assertEqual(self.store.db.execute("SELECT count(*) FROM library_fts").fetchone()[0], 0)
+        self.assertEqual(self.library.status()["total_files"], 4)
+        self.assertIn("empty music folder", str(self.library.state["detail"]))
+        kept = self.root / "still-here.wav"
+        with wave.open(str(kept), "wb") as stream:
+            stream.setparams((1, 2, 8000, 0, "NONE", "not compressed"))
+            stream.writeframes(b"\0\0" * 800)
+        self.library.scan()
+        self.assertEqual(
+            [
+                row[0]
+                for row in self.store.db.execute("SELECT path FROM library_files ORDER BY path")
+            ],
+            [str(kept)],
+        )
 
     async def test_preview_fallback_rejects_wrong_artist_and_duration(self) -> None:
         matching = {
@@ -241,7 +258,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
             album=["Discovery"],
             isrc=["GBDUW0000053"],
         )
-        with patch("backend.library.mutagen.File", return_value=audio) as reader:
+        with patch("backend.library.index.mutagen.File", return_value=audio) as reader:
             self.library.scan()
             self.library.scan()
             self.assertEqual(reader.call_count, 1)
@@ -254,7 +271,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         )
         path.write_bytes(b"changed fixture")
         audio["title"] = ["Replacement title"]
-        with patch("backend.library.mutagen.File", return_value=audio):
+        with patch("backend.library.index.mutagen.File", return_value=audio):
             self.library.refresh({str(path)})
         self.assertEqual(self.store.db.execute("SELECT count(*) FROM library_fts").fetchone()[0], 1)
         self.assertEqual(
@@ -329,7 +346,10 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         # Tags match with only different album (edition) - use a completely different track
         # so it doesn't match the Discovery files
         self.store.db.execute(
-            "INSERT INTO library_files VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "INSERT INTO library_files ("
+            "path, root, mtime_ns, size, generation, title, artist, album, "
+            "title_key, artist_key, album_key, duration, isrc, mbid"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 str(self.root / "edition_track.flac"),
                 str(self.root),

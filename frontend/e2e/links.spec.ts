@@ -832,7 +832,7 @@ test.describe('site names', () => {
       },
       queue,
       capabilities: { settings: true, events: true, search: true, downloads: true },
-      navidrome: null,
+      player: null,
       last_download: null,
     })
     let queue: object = {
