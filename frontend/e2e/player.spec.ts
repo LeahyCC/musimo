@@ -230,7 +230,8 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
   expect(
     await grid.evaluate((element) => element.getBoundingClientRect().top + scrollY),
   ).toBeCloseTo(gridTop)
-  await expect(page).toHaveURL(/\/library$/)
+  // Play stays on this list. The search and sort stay in the address.
+  await expect(page).toHaveURL(/\/library\?q=clear\+water&sort=title$/)
   await page.getByRole('button', { name: 'Open Clear Water' }).click()
   await expect(page).toHaveURL(/\/library\/albums\/album-1$/)
   // This album already owns the queue, so its control is marked active and toggles that queue
