@@ -342,6 +342,7 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   const names = () => page.locator('.library-card-copy strong').allInnerTexts()
   expect(await names()).toEqual(['Clear Water', 'Stone Lines'])
   await page.getByLabel('Sort albums').selectOption('oldest')
+  await expect(page).toHaveURL(/sort=oldest/)
   await expect.poll(names).toEqual(['Stone Lines', 'Clear Water'])
 
   await expect(page.getByRole('img', { name: /Clear Water leads with 30 plays/ })).toBeVisible()
@@ -351,7 +352,93 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await expect(header.getByRole('heading', { level: 1, name: 'Harbor Static' })).toBeVisible()
   await expect(header.getByRole('button', { name: 'Albums' })).toBeVisible()
   await page.getByLabel('Sort songs').selectOption('plays')
+  await expect(page).toHaveURL(/sort=plays/)
   await expect(page.locator('.library-track-play strong').first()).toHaveText('Cinder')
+  await header.getByRole('button', { name: 'Albums' }).click()
+  await expect(page).toHaveURL(/sort=oldest/)
+  await expect.poll(names).toEqual(['Stone Lines', 'Clear Water'])
+})
+
+test('a tracks sort stays in the address and comes back with the tab', async ({
+  page,
+  isMobile,
+}) => {
+  await libraryFixtures(page)
+  await page.route(
+    (url) => url.pathname === '/api/library/artists',
+    (route) =>
+      route.fulfill({
+        json: { items: [], next_offset: null, total: 0, genres: [], years: [] },
+      }),
+  )
+  await page.goto('/library/tracks')
+  await openLibraryFilters(page, isMobile)
+  await page.getByLabel('Sort tracks').selectOption('duration')
+  await closeLibraryFilters(page, isMobile)
+  await expect(page).toHaveURL(/\/library\/tracks\?sort=duration/)
+
+  const views = page.getByRole('navigation', { name: 'Library views' })
+  await views.getByRole('button', { name: /^artists$/i }).click()
+  await expect(page).toHaveURL(/\/library\/artists$/)
+  await views.getByRole('button', { name: /^tracks$/i }).click()
+  await expect(page).toHaveURL(/\/library\/tracks\?sort=duration/)
+  await openLibraryFilters(page, isMobile)
+  await expect(page.getByLabel('Sort tracks')).toHaveValue('duration')
+})
+
+test('an album sort stays after opening the album and going back', async ({ page, isMobile }) => {
+  await playerFixtures(page)
+  await page.route(
+    (url) => url.pathname === '/api/library/albums',
+    (route) =>
+      route.fulfill({
+        json: {
+          items: [
+            {
+              id: 'album-1',
+              name: 'Clear Water',
+              artist: 'Harbor Static',
+              year: 2018,
+              songCount: 2,
+            },
+          ],
+          next_offset: null,
+          total: 1,
+          genres: ['Ambient'],
+          years: [2018],
+        },
+      }),
+  )
+
+  await page.route(
+    (url) => url.pathname === '/api/library/albums/album-1',
+    (route) =>
+      route.fulfill({
+        json: {
+          id: 'album-1',
+          name: 'Clear Water',
+          artist: 'Harbor Static',
+          year: 2018,
+          song: [librarySong('s1', { title: 'First Light' })],
+        },
+      }),
+  )
+  await page.goto('/library/albums')
+  await openLibraryFilters(page, isMobile)
+  await page.getByLabel('Sort albums').selectOption('title')
+  await closeLibraryFilters(page, isMobile)
+  await expect(page).toHaveURL(/sort=title/)
+
+  await page.getByRole('button', { name: 'Open Clear Water' }).click()
+  await expect(page.getByRole('heading', { level: 1, name: 'Clear Water' })).toBeVisible()
+  await page.goBack()
+  await expect(page).toHaveURL(/\/library\/albums\?sort=title/)
+
+  await page.getByRole('button', { name: 'Open Clear Water' }).click()
+  await page.getByRole('button', { name: 'Back to albums' }).click()
+  await expect(page).toHaveURL(/\/library\/albums\?sort=title/)
+  await openLibraryFilters(page, isMobile)
+  await expect(page.getByLabel('Sort albums')).toHaveValue('title')
 })
 
 test('an artist page folds the editions of one album into a single card', async ({ page }) => {
