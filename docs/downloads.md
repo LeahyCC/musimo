@@ -175,7 +175,7 @@ Mixcloud, HearThisAt, NTS, BBC Sounds, a SoundCloud track over 20 minutes
 
 ## Storage and safety
 
-Select a writable configured music root in Settings. Staging lives at `<root>/.musimo/<job id>` on the destination filesystem. Only a probed, tagged audio file is published. Existing audio, artwork and lyric sidecars are never overwritten.
+Select a writable configured music root in Settings. Staging lives at `<root>/.musimo/<job id>` on the destination filesystem. Leftover staging for a finished or cancelled job is removed after the server is listening: that pass lists `.musimo` and checks those folder names, and does not read every past job before the app can answer. A failed job's folder stays, so a retry can resume. Only a probed, tagged audio file is published. Existing audio, artwork and lyric sidecars are never overwritten.
 
 Linux uses `renameat2(RENAME_NOREPLACE)`. Docker Desktop Windows rejects that flag on its bind mount, so publication falls back to an atomic hard link followed by unlinking the staged name. A stored SHA-256 and final path reconcile a crash between publication and completion. No fallback copies into a visible half-written destination.
 

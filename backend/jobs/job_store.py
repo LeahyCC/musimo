@@ -231,6 +231,23 @@ class Jobs:
         self.notify()
         return job
 
+    def ids_in_stages(self, ids: builtins.list[str], stages: tuple[str, ...]) -> set[str]:
+        """Job ids from this batch whose payload stage is one of `stages`.
+
+        Callers pass the folder names they already listed, so a long history is not parsed.
+        """
+        if not ids or not stages:
+            return set()
+        stage_marks = ",".join("?" * len(stages))
+        id_marks = ",".join("?" * len(ids))
+        with self.store.lock:
+            rows = self.store.db.execute(
+                f"SELECT id FROM jobs WHERE id IN ({id_marks}) "
+                f"AND json_extract(payload,'$.stage') IN ({stage_marks})",
+                (*ids, *stages),
+            ).fetchall()
+        return {str(row[0]) for row in rows}
+
     def recover(self) -> None:
         for job in self.list(active=True):
             if job.stage in RUNNING:
