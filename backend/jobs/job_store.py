@@ -231,7 +231,7 @@ class Jobs:
         self.notify()
         return job
 
-    def ids_in_stages(self, ids: list[str], stages: tuple[str, ...]) -> set[str]:
+    def ids_in_stages(self, ids: builtins.list[str], stages: tuple[str, ...]) -> set[str]:
         """Job ids from this batch whose payload stage is one of `stages`.
 
         Callers pass the folder names they already listed, so a long history is not parsed.

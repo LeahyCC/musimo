@@ -6,7 +6,7 @@ import threading
 import time
 import unittest
 import wave
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import cast
@@ -45,7 +45,10 @@ from backend.library.player import (
     SHUFFLE_ID_LIMIT,
     SHUFFLE_ORDER_SECONDS,
     UNMOUNTED,
+    FolderCover,
+    LibraryView,
     Player,
+    StoredSong,
 )
 from backend.version import VERSION
 
@@ -175,12 +178,18 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
         calls = 0
         real = self.player._build
 
-        def counting(*args: object, **kwargs: object) -> object:
+        def counting(
+            songs: list[StoredSong],
+            covers: dict[str, FolderCover],
+            favourites: Mapping[str, str],
+            revision: int,
+            token: int,
+        ) -> LibraryView:
             nonlocal calls
             calls += 1
             started.set()
             self.assertTrue(release.wait(2))
-            return real(*args, **kwargs)
+            return real(songs, covers, favourites, revision, token)
 
         with patch.object(self.player, "_build", counting):
             first = asyncio.create_task(asyncio.to_thread(self.player.view))

@@ -1939,10 +1939,9 @@ class StagingSweepTests(unittest.IsolatedAsyncioTestCase):
                     calls: list[bool] = []
                     real = service.jobs.list
 
-                    def spy(*args: object, **kwargs: object) -> object:
-                        active = kwargs.get("active", args[0] if args else False)
-                        calls.append(bool(active))
-                        return real(*args, **kwargs)
+                    def spy(active: bool = False) -> list[Job]:
+                        calls.append(active)
+                        return real(active)
 
                     with patch.object(service.jobs, "list", spy):
                         service.start()

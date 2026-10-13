@@ -870,13 +870,13 @@ class Store:
                         "SELECT path, size, mtime_ns FROM library_covers WHERE folder=?",
                         (folder,),
                     ).fetchone()
-                    current = None if row is None else (str(row[0]), int(row[1]), int(row[2]))
-                    if current == new:
+                    stored = None if row is None else (str(row[0]), int(row[1]), int(row[2]))
+                    if stored == new:
                         continue
                     if (
                         baseline is not None
-                        and current is not None
-                        and baseline.get(folder) != current
+                        and stored is not None
+                        and baseline.get(folder) != stored
                     ):
                         continue
                     self.db.execute(

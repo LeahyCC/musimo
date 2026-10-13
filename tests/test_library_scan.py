@@ -7,6 +7,7 @@ import threading
 import time
 import unittest
 import wave
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest.mock import patch
 
@@ -34,10 +35,17 @@ class LibraryScanTests(unittest.IsolatedAsyncioTestCase):
         from watchdog.utils.dirsnapshot import DirectorySnapshot
 
         class SlowSnapshot(DirectorySnapshot):
-            def __init__(self, *args: object, **kwargs: object) -> None:
+            def __init__(
+                self,
+                path: str,
+                *,
+                recursive: bool = True,
+                stat: Callable[[str], os.stat_result] = os.stat,
+                listdir: Callable[[str | None], Iterator[os.DirEntry[str]]] = os.scandir,
+            ) -> None:
                 gate.set()
                 time.sleep(0.4)
-                super().__init__(*args, **kwargs)
+                super().__init__(path, recursive=recursive, stat=stat, listdir=listdir)
 
         library = Library(self.store, [self.root], asyncio.Event())
         try:
