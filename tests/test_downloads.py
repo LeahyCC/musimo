@@ -1894,3 +1894,60 @@ class PaceTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(service.jobs.get(job.id).tool_tail, "")
             finally:
                 store.close()
+
+
+class StagingSweepTests(unittest.IsolatedAsyncioTestCase):
+    async def test_startup_clears_finished_staging_and_keeps_the_rest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            store.update({"destination": str(root)})
+            try:
+                async with httpx.AsyncClient() as client:
+                    library = Library(store, [root], asyncio.Event())
+                    service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                    done = service.jobs.enqueue(1, "original", str(root))
+                    cancelled = service.jobs.enqueue(2, "original", str(root))
+                    failed = service.jobs.enqueue(3, "original", str(root))
+                    service.jobs.update(done.id, stage="done")
+                    service.jobs.update(cancelled.id, stage="cancelled")
+                    service.jobs.update(failed.id, stage="failed", error="No match")
+                    for job in (done, cancelled, failed):
+                        folder = root / ".musimo" / job.id
+                        folder.mkdir(parents=True)
+                        (folder / "partial.bin").write_bytes(b"x")
+                    (root / ".musimo" / "notes").mkdir()
+                    service.sweep_staging()
+                    self.assertFalse((root / ".musimo" / done.id).exists())
+                    self.assertFalse((root / ".musimo" / cancelled.id).exists())
+                    self.assertTrue((root / ".musimo" / failed.id / "partial.bin").is_file())
+                    self.assertTrue((root / ".musimo" / "notes").is_dir())
+            finally:
+                store.close()
+
+    async def test_start_does_not_read_the_whole_history(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            store.update({"destination": str(root)})
+            try:
+                async with httpx.AsyncClient() as client:
+                    library = Library(store, [root], asyncio.Event())
+                    service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                    finished = service.jobs.enqueue(1, "original", str(root))
+                    service.jobs.update(finished.id, stage="done")
+                    calls: list[bool] = []
+                    real = service.jobs.list
+
+                    def spy(*args: object, **kwargs: object) -> object:
+                        active = kwargs.get("active", args[0] if args else False)
+                        calls.append(bool(active))
+                        return real(*args, **kwargs)
+
+                    with patch.object(service.jobs, "list", spy):
+                        service.start()
+                        await service.close()
+                    self.assertTrue(calls)
+                    self.assertTrue(all(calls))
+            finally:
+                store.close()

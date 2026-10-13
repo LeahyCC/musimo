@@ -17,7 +17,7 @@ import threading
 import time
 from collections import OrderedDict
 from collections.abc import Mapping
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import httpx
@@ -79,6 +79,21 @@ def is_cover_image(path: Path) -> bool:
         return False
     stem = path.stem.casefold()
     return any(stem == name or stem.startswith(name + ".") for name in IMAGE_NAMES)
+
+
+def ranked_cover_names(names: list[str]) -> list[str]:
+    """Cover filenames, preferred first. `cover.jpg` comes before `cover.1.jpg`."""
+    ranked: list[tuple[tuple[int, int, str], str]] = []
+    for name in names:
+        if not is_cover_image(Path(name)):
+            continue
+        stem = Path(name).stem.casefold()
+        for index, image_name in enumerate(IMAGE_NAMES):
+            if stem == image_name or stem.startswith(image_name + "."):
+                ranked.append(((index, 0 if stem == image_name else 1, stem), name))
+                break
+    ranked.sort(key=lambda item: item[0])
+    return [name for _rank, name in ranked]
 
 
 class PlayerError(RuntimeError):
@@ -149,6 +164,13 @@ class CoverBytes:
     etag: str
 
 
+@dataclass(frozen=True)
+class FolderCover:
+    path: str
+    size: int
+    mtime_ns: int
+
+
 @dataclass
 class LibraryView:
     revision: int
@@ -162,6 +184,11 @@ class LibraryView:
     stored: dict[str, StoredSong]
     album_songs: dict[str, list[StoredSong]]
     artist_albums: dict[str, list[dict[str, object]]]
+    covers: dict[str, FolderCover]
+    # Filled on first use. The dicts inside are the track rows, so a play count still shows.
+    track_orders: dict[str, list[dict[str, object]]]
+    track_facets: dict[str, object] | None
+    album_orders: dict[str, list[dict[str, object]]] = field(default_factory=dict)
 
 
 def frozen_id(kind: str, *parts: str) -> str:
@@ -236,6 +263,17 @@ def cover_version(size: int, mtime_ns: int) -> str:
 
 def cover_etag(size: int, mtime_ns: int) -> str:
     return f'"{hashlib.sha256(f"{size}:{mtime_ns}".encode()).hexdigest()[:16]}"'
+
+
+def cover_beside(covers: Mapping[str, FolderCover], folder: Path) -> FolderCover | None:
+    """The image in this folder, or in the parent of a disc folder (`CD1`, `Disc 2`)."""
+    found = covers.get(str(folder))
+    if found is not None or not DISC_FOLDER.fullmatch(folder.name):
+        return found
+    parent = folder.parent
+    if parent == folder:
+        return None
+    return covers.get(str(parent))
 
 
 def unique_names(names: list[str]) -> list[str]:
@@ -489,6 +527,8 @@ class Player:
         self.roots = list(roots)
         self.client = client
         self._lock = threading.Lock()
+        # One build at a time. A page opened while the background warm is running waits for it.
+        self._build_lock = threading.Lock()
         self._token = 0
         self._cached: LibraryView | None = None
         # Absolute play and star values applied onto a catalog built from an older read.
@@ -502,7 +542,7 @@ class Player:
             self._cached = None
 
     async def _catalog(self) -> LibraryView:
-        """Browse data. Building it lists cover folders, so that work stays off the event loop."""
+        """Browse data from the index. Cover rows come from the scan, so folders are not listed."""
         return await asyncio.to_thread(self.view)
 
     def view(self) -> LibraryView:
@@ -512,18 +552,54 @@ class Player:
             cached = self._cached
             if cached is not None and cached.revision == revision and cached.token == token:
                 return cached
-        # The directory walk that finds covers stays outside the cache lock.
-        built = self._build(self._load_rows(), self.store.artist_favourites(), revision, token)
-        with self._lock:
-            if self._token != token:
+        with self._build_lock:
+            with self._lock:
+                token = self._token
+                cached = self._cached
+                if cached is not None and cached.revision == revision and cached.token == token:
+                    return cached
+            built = self._build(
+                self._load_rows(),
+                self._load_covers(),
+                self.store.artist_favourites(),
+                revision,
+                token,
+            )
+            with self._lock:
+                if self._token != token:
+                    self._overlay(built)
+                    return built
+                current = self._cached
+                if current is not None and current.revision == revision and current.token == token:
+                    return current
                 self._overlay(built)
+                self._cached = built
                 return built
-            current = self._cached
-            if current is not None and current.revision == revision and current.token == token:
-                return current
-            self._overlay(built)
-            self._cached = built
-            return built
+
+    async def warm(self) -> None:
+        """Build the browse snapshot, and the sorts the home page and Tracks open with."""
+        snapshot = await asyncio.to_thread(self.view)
+        await asyncio.to_thread(self._ordered, snapshot, "title")
+        await asyncio.to_thread(self._ordered_albums, snapshot, "newest")
+        await asyncio.to_thread(self._facets, snapshot)
+
+    async def keep_ready(self) -> None:
+        """Rebuild after the index changes, so the next page is already in memory."""
+        seen: int | None = None
+        while True:
+            try:
+                revision = await asyncio.to_thread(self.store.library_revision)
+                cached = self._cached
+                if cached is None or cached.revision != revision or seen != revision:
+                    await self.warm()
+                    cached = self._cached
+                    seen = cached.revision if cached is not None else None
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                # A failed warm leaves the next request to build the page itself.
+                seen = None
+            await asyncio.sleep(2)
 
     def _overlay(self, snapshot: LibraryView) -> None:
         """Play counts and stars that landed while this catalog was being built."""
@@ -601,9 +677,47 @@ class Player:
             ).fetchall()
         return [song_row(row) for row in rows]
 
+    def _load_covers(self) -> dict[str, FolderCover]:
+        with self.store.lock:
+            rows = self.store.db.execute(
+                "SELECT folder, path, size, mtime_ns FROM library_covers"
+            ).fetchall()
+        return {str(row[0]): FolderCover(str(row[1]), int(row[2]), int(row[3])) for row in rows}
+
+    def _ordered(self, snapshot: LibraryView, sort: str) -> list[dict[str, object]]:
+        """One sort of the whole library, reused by later pages. A filter sorts its own rows."""
+        with self._lock:
+            found = snapshot.track_orders.get(sort)
+        if found is not None:
+            return found
+        ordered = sort_tracks(snapshot.tracks, sort)
+        with self._lock:
+            return snapshot.track_orders.setdefault(sort, ordered)
+
+    def _ordered_albums(self, snapshot: LibraryView, sort: str) -> list[dict[str, object]]:
+        """One sort of every album. A search or a filter sorts its own rows."""
+        with self._lock:
+            found = snapshot.album_orders.get(sort)
+        if found is not None:
+            return found
+        ordered = sort_albums(snapshot.albums, sort)
+        with self._lock:
+            return snapshot.album_orders.setdefault(sort, ordered)
+
+    def _facets(self, snapshot: LibraryView) -> dict[str, object]:
+        with self._lock:
+            if snapshot.track_facets is not None:
+                return snapshot.track_facets
+        facets = track_facets(snapshot.tracks)
+        with self._lock:
+            if snapshot.track_facets is None:
+                snapshot.track_facets = facets
+            return snapshot.track_facets
+
     def _build(
         self,
         songs: list[StoredSong],
+        covers: dict[str, FolderCover],
         favourites: Mapping[str, str],
         revision: int,
         token: int,
@@ -616,7 +730,6 @@ class Player:
             grouped.setdefault(key, []).append(song)
             names[key] = name
         album_artists = {artist for artist, _identity in grouped}
-        images: dict[str, Path | None] = {}
         albums: list[dict[str, object]] = []
         tracks: list[dict[str, object]] = []
         by_song: dict[str, dict[str, object]] = {}
@@ -631,7 +744,7 @@ class Player:
             )
             album_id = frozen_id("al", artist, identity)
             album_songs[album_id] = ordered
-            source = self._album_art(ordered, images)
+            source = self._album_art(ordered, covers)
             cover = f"{album_id}_{cover_version(source.size, source.mtime_ns)}" if source else ""
             genre_names = [
                 name
@@ -662,7 +775,7 @@ class Player:
                 album["recordLabels"] = [{"name": name} for name in labels]
             for song in ordered:
                 chosen = linked_artist(song.artist, artist, album_artists)
-                song_cover = self._song_cover_id(song, images)
+                song_cover = self._song_cover_id(song, covers)
                 item = track_dict(song, names[key], album_id, frozen_id("ar", chosen), song_cover)
                 by_song[song.song_id] = item
                 tracks.append(item)
@@ -703,104 +816,39 @@ class Player:
             stored,
             album_songs,
             artist_albums,
+            covers,
+            {},
+            None,
         )
 
-    def _song_art(self, song: StoredSong, images: dict[str, Path | None]) -> ArtSource | None:
-        """Embedded picture, otherwise an image beside the file."""
-        path = Path(song.path)
-        if song.has_art and path.is_file() and not path.is_symlink():
-            return ArtSource(path, True, song.size, song.mtime_ns)
-        image = self._beside(path, images)
-        if image is None:
+    def _song_art(self, song: StoredSong, covers: Mapping[str, FolderCover]) -> ArtSource | None:
+        """Embedded picture, otherwise the cover image the scan recorded for the folder."""
+        if song.has_art:
+            return ArtSource(Path(song.path), True, song.size, song.mtime_ns)
+        found = cover_beside(covers, Path(song.path).parent)
+        if found is None:
             return None
-        try:
-            stat = image.stat()
-        except OSError:
-            return None
-        return ArtSource(image, False, stat.st_size, stat.st_mtime_ns)
+        return ArtSource(Path(found.path), False, found.size, found.mtime_ns)
 
-    def _song_cover_id(self, song: StoredSong, images: dict[str, Path | None]) -> str:
-        source = self._song_art(song, images)
+    def _song_cover_id(self, song: StoredSong, covers: Mapping[str, FolderCover]) -> str:
+        source = self._song_art(song, covers)
         if source is None:
             return ""
         return f"{song.song_id}_{cover_version(source.size, source.mtime_ns)}"
 
     def _album_art(
-        self, songs: list[StoredSong], images: dict[str, Path | None]
+        self, songs: list[StoredSong], covers: Mapping[str, FolderCover]
     ) -> ArtSource | None:
-        """An image beside the first track, otherwise the first track that has a picture."""
+        """The folder image beside the first track, otherwise the first track that has a picture."""
         if not songs:
             return None
-        image = self._beside(Path(songs[0].path), images)
-        if image is not None:
-            try:
-                stat = image.stat()
-            except OSError:
-                stat = None
-            if stat is not None:
-                return ArtSource(image, False, stat.st_size, stat.st_mtime_ns)
+        found = cover_beside(covers, Path(songs[0].path).parent)
+        if found is not None:
+            return ArtSource(Path(found.path), False, found.size, found.mtime_ns)
         for song in songs:
             if song.has_art:
-                path = Path(song.path)
-                if path.is_file() and not path.is_symlink():
-                    return ArtSource(path, True, song.size, song.mtime_ns)
+                return ArtSource(Path(song.path), True, song.size, song.mtime_ns)
         return None
-
-    def _beside(self, audio: Path, images: dict[str, Path | None]) -> Path | None:
-        folder = audio.parent
-        found = self._best_image(folder, images)
-        if found is not None or not DISC_FOLDER.fullmatch(folder.name):
-            return found
-        parent = folder.parent
-        if parent == folder or not self._inside(parent):
-            return found
-        return self._best_image(parent, images)
-
-    def _best_image(self, folder: Path, images: dict[str, Path | None]) -> Path | None:
-        key = str(folder)
-        if key in images:
-            return images[key]
-        found = self._rank_images(folder)
-        images[key] = found
-        return found
-
-    def _rank_images(self, folder: Path) -> Path | None:
-        if folder.is_symlink() or not self._inside(folder):
-            return None
-        try:
-            entries = list(folder.iterdir())
-        except OSError:
-            return None
-        ranked: list[tuple[tuple[int, int, str], Path]] = []
-        for path in entries:
-            if not is_cover_image(path):
-                continue
-            stem = path.stem.casefold()
-            for index, name in enumerate(IMAGE_NAMES):
-                if stem == name or stem.startswith(name + "."):
-                    ranked.append(((index, 0 if stem == name else 1, stem), path))
-                    break
-        ranked.sort(key=lambda item: item[0])
-        for _rank, path in ranked:
-            safe = self._safe_file(path)
-            if safe is not None:
-                return safe
-        return None
-
-    def _inside(self, folder: Path) -> bool:
-        try:
-            if folder.is_symlink():
-                return False
-            resolved = folder.resolve()
-        except OSError:
-            return False
-        for root in self.roots:
-            try:
-                if resolved.is_relative_to(root.resolve()):
-                    return True
-            except OSError:
-                continue
-        return False
 
     def _safe_file(self, path: Path) -> Path | None:
         """A regular file inside a configured root. A symlink is refused, even after a scan."""
@@ -913,7 +961,12 @@ class Player:
         size: int,
     ) -> dict[str, object]:
         snapshot = await self._catalog()
-        ordered = sort_albums(filter_albums(snapshot.albums, query, genres, years), sort)
+        if not query and not genres and not years:
+            ordered = snapshot.album_orders.get(sort)
+            if ordered is None:
+                ordered = await asyncio.to_thread(self._ordered_albums, snapshot, sort)
+        else:
+            ordered = sort_albums(filter_albums(snapshot.albums, query, genres, years), sort)
         end = offset + size
         return {
             "items": ordered[offset:end],
@@ -964,14 +1017,30 @@ class Player:
         offset: int,
         size: int,
     ) -> dict[str, object]:
-        rows = self._narrow((await self._catalog()).tracks, query)
-        ordered = sort_tracks(filter_tracks(rows, genres, years), sort)
+        snapshot = await self._catalog()
+        # A plain page reuses the first sort. Search and filters sort their own rows.
+        if not query and not genres and not years:
+            ordered = snapshot.track_orders.get(sort)
+            if ordered is None:
+                ordered = await asyncio.to_thread(self._ordered, snapshot, sort)
+            facets = snapshot.track_facets
+            if facets is None:
+                facets = await asyncio.to_thread(self._facets, snapshot)
+        else:
+            rows = self._narrow(snapshot.tracks, query)
+            ordered = sort_tracks(filter_tracks(rows, genres, years), sort)
+            if query:
+                facets = track_facets(rows)
+            elif snapshot.track_facets is not None:
+                facets = snapshot.track_facets
+            else:
+                facets = await asyncio.to_thread(self._facets, snapshot)
         end = offset + size
         return {
             "items": ordered[offset:end],
             "next_offset": end if end < len(ordered) else None,
             "total": len(ordered),
-            **track_facets(rows),
+            **facets,
         }
 
     async def tracks(self, query: str, offset: int, size: int) -> list[dict[str, object]]:
@@ -986,10 +1055,18 @@ class Player:
         shuffle: bool,
         limit: int,
     ) -> dict[str, object]:
-        rows = self._narrow((await self._catalog()).tracks, query)
-        matched = filter_tracks(rows, genres, years)
+        snapshot = await self._catalog()
+        if not query and not genres and not years:
+            matched = snapshot.tracks
+        else:
+            matched = filter_tracks(self._narrow(snapshot.tracks, query), genres, years)
         if not shuffle:
-            order = sort_tracks(matched, sort)
+            if matched is snapshot.tracks:
+                order = snapshot.track_orders.get(sort)
+                if order is None:
+                    order = await asyncio.to_thread(self._ordered, snapshot, sort)
+            else:
+                order = sort_tracks(matched, sort)
             return {
                 "items": order[:limit],
                 "rest": [],
@@ -1433,16 +1510,18 @@ class Player:
         return None
 
     def _cover_song(self, song_id: str) -> CoverBytes | None:
-        song = self.view().stored.get(song_id)
+        snapshot = self.view()
+        song = snapshot.stored.get(song_id)
         if song is None:
             return None
-        return self._read_art(self._song_art(song, {}))
+        return self._read_art(self._song_art(song, snapshot.covers))
 
     def _cover_album(self, album_id: str) -> CoverBytes | None:
-        songs = self.view().album_songs.get(album_id)
+        snapshot = self.view()
+        songs = snapshot.album_songs.get(album_id)
         if not songs:
             return None
-        return self._read_art(self._album_art(songs, {}))
+        return self._read_art(self._album_art(songs, snapshot.covers))
 
     def _cover_artist(self, artist_id: str) -> CoverBytes | None:
         snapshot = self.view()

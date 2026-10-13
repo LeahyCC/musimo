@@ -1,10 +1,14 @@
 """The scan reads player columns once, and an empty root does not wipe them."""
 
 import asyncio
+import os
 import tempfile
+import threading
+import time
 import unittest
 import wave
 from pathlib import Path
+from unittest.mock import patch
 
 from mutagen.id3 import ID3, TALB, TCMP, TCON, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK, TXXX
 from mutagen.wave import WAVE
@@ -21,6 +25,40 @@ def wav(path: Path) -> None:
 
 
 class LibraryScanTests(unittest.IsolatedAsyncioTestCase):
+    async def test_a_polled_folder_does_not_hold_startup(self) -> None:
+        previous_mode = os.environ.get("MUSIMO_WATCH_MODE")
+        previous_interval = os.environ.get("MUSIMO_POLL_INTERVAL_SECONDS")
+        os.environ["MUSIMO_WATCH_MODE"] = "poll"
+        os.environ["MUSIMO_POLL_INTERVAL_SECONDS"] = "300"
+        gate = threading.Event()
+        from watchdog.utils.dirsnapshot import DirectorySnapshot
+
+        class SlowSnapshot(DirectorySnapshot):
+            def __init__(self, *args: object, **kwargs: object) -> None:
+                gate.set()
+                time.sleep(0.4)
+                super().__init__(*args, **kwargs)
+
+        library = Library(self.store, [self.root], asyncio.Event())
+        try:
+            self.assertEqual(library.watch_mode, "poll")
+            with patch("watchdog.observers.polling.DirectorySnapshot", SlowSnapshot):
+                started = time.perf_counter()
+                library.start()
+                elapsed = time.perf_counter() - started
+            self.assertLess(elapsed, 0.2)
+            self.assertTrue(gate.wait(1))
+        finally:
+            await library.close()
+            if previous_mode is None:
+                os.environ.pop("MUSIMO_WATCH_MODE", None)
+            else:
+                os.environ["MUSIMO_WATCH_MODE"] = previous_mode
+            if previous_interval is None:
+                os.environ.pop("MUSIMO_POLL_INTERVAL_SECONDS", None)
+            else:
+                os.environ["MUSIMO_POLL_INTERVAL_SECONDS"] = previous_interval
+
     async def asyncSetUp(self) -> None:
         self.folder = tempfile.TemporaryDirectory()
         self.root = Path(self.folder.name)
