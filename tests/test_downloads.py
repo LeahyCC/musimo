@@ -37,6 +37,7 @@ from backend.jobs.downloads import (
 )
 from backend.jobs.job_store import JobConflict, Jobs
 from backend.jobs.matching import Matcher
+from backend.jobs.staging import sweep_finished_staging
 from backend.jobs.tagging import Tagger, probe
 from backend.library.index import Library
 
@@ -1892,5 +1893,82 @@ class PaceTests(unittest.IsolatedAsyncioTestCase):
                     with patch("backend.jobs.downloads.asyncio.create_subprocess_exec", fake_exec):
                         _path, _info = await service.worker(job, folder)
                     self.assertEqual(service.jobs.get(job.id).tool_tail, "")
+            finally:
+                store.close()
+
+
+class StagingSweepTests(unittest.IsolatedAsyncioTestCase):
+    async def test_startup_clears_finished_staging_and_keeps_the_rest(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            store.update({"destination": str(root)})
+            try:
+                async with httpx.AsyncClient() as client:
+                    library = Library(store, [root], asyncio.Event())
+                    service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                    done = service.jobs.enqueue(1, "original", str(root))
+                    cancelled = service.jobs.enqueue(2, "original", str(root))
+                    failed = service.jobs.enqueue(3, "original", str(root))
+                    service.jobs.update(done.id, stage="done")
+                    service.jobs.update(cancelled.id, stage="cancelled")
+                    service.jobs.update(failed.id, stage="failed", error="No match")
+                    for job in (done, cancelled, failed):
+                        folder = root / ".musimo" / job.id
+                        folder.mkdir(parents=True)
+                        (folder / "partial.bin").write_bytes(b"x")
+                    (root / ".musimo" / "notes").mkdir()
+                    sweep_finished_staging(library.roots, service.jobs.ids_in_stages, lambda: False)
+                    self.assertFalse((root / ".musimo" / done.id).exists())
+                    self.assertFalse((root / ".musimo" / cancelled.id).exists())
+                    self.assertTrue((root / ".musimo" / failed.id / "partial.bin").is_file())
+                    self.assertTrue((root / ".musimo" / "notes").is_dir())
+            finally:
+                store.close()
+
+    async def test_every_lookup_finishes_before_a_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            roots: list[Path] = []
+            for mark in ("a", "b"):
+                root = base / mark
+                (root / ".musimo" / (mark * 32)).mkdir(parents=True)
+                roots.append(root)
+            events: list[str] = []
+
+            def lookup(ids: list[str], stages: tuple[str, ...]) -> set[str]:
+                events.append("lookup")
+                return set(ids)
+
+            def remove(path: Path) -> None:
+                events.append("delete")
+
+            with patch("backend.jobs.staging.shutil.rmtree", remove):
+                sweep_finished_staging(roots, lookup, lambda: False)
+            self.assertEqual(events, ["lookup", "lookup", "delete", "delete"])
+
+    async def test_start_does_not_read_the_whole_history(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory).resolve()
+            store = Store(root / "db.sqlite3")
+            store.update({"destination": str(root)})
+            try:
+                async with httpx.AsyncClient() as client:
+                    library = Library(store, [root], asyncio.Event())
+                    service = Downloads(store, Catalog(store, client), library, asyncio.Event())
+                    finished = service.jobs.enqueue(1, "original", str(root))
+                    service.jobs.update(finished.id, stage="done")
+                    calls: list[bool] = []
+                    real = service.jobs.list
+
+                    def spy(active: bool = False) -> list[Job]:
+                        calls.append(active)
+                        return real(active)
+
+                    with patch.object(service.jobs, "list", spy):
+                        service.start()
+                        await service.close()
+                    self.assertTrue(calls)
+                    self.assertTrue(all(calls))
             finally:
                 store.close()

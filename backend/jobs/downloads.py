@@ -33,6 +33,7 @@ from backend.jobs.processes import stop_tree
 # Re-exported: tests/test_downloads.py still imports these two from here.
 from backend.jobs.publish import digest as digest
 from backend.jobs.publish import publish_file as publish_file
+from backend.jobs.staging import sweep_finished_staging
 from backend.library.index import Library
 
 # YouTube lists its largest thumbnail without checking that it exists, and an older video has
@@ -213,6 +214,7 @@ class Downloads:
         self.noted_blocks: dict[str, set[str]] = {}
         self.stopping = False
         self.task: asyncio.Task[None] | None = None
+        self.sweep_task: asyncio.Task[None] | None = None
         # Tests move this so a pause between groups does not wait on the wall clock.
         self.now: Callable[[], float] = time.time
 
@@ -381,13 +383,15 @@ class Downloads:
                 if path.is_file() and digest(path) == job.artifact_hash:
                     self.jobs.update(job.id, stage="queued", desired="run")
         self.jobs.recover()
-        for job in self.jobs.list():
-            if job.stage in {"done", "cancelled"}:
-                try:
-                    self.cleanup(job)
-                except (OSError, ValueError, DownloadError):
-                    pass
         self.task = asyncio.create_task(self.schedule())
+        self.sweep_task = asyncio.create_task(
+            asyncio.to_thread(
+                sweep_finished_staging,
+                list(self.library.roots),
+                self.jobs.ids_in_stages,
+                lambda: self.stopping,
+            )
+        )
 
     async def close(self) -> None:
         self.stopping = True
@@ -398,6 +402,10 @@ class Downloads:
         await asyncio.gather(*list(self.running.values()), return_exceptions=True)
         if self.task:
             await self.task
+        if self.sweep_task:
+            done, _pending = await asyncio.wait({self.sweep_task}, timeout=2)
+            if done:
+                await self.sweep_task
 
     def pace_room(self, settings: Settings, slots: int) -> tuple[int, float | None]:
         """Slots left in this group, and the seconds left in a pause between groups.
