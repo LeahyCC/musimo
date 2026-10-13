@@ -33,6 +33,7 @@ from backend.jobs.processes import stop_tree
 # Re-exported: tests/test_downloads.py still imports these two from here.
 from backend.jobs.publish import digest as digest
 from backend.jobs.publish import publish_file as publish_file
+from backend.jobs.staging import sweep_finished_staging
 from backend.library.index import Library
 
 # YouTube lists its largest thumbnail without checking that it exists, and an older video has
@@ -177,11 +178,6 @@ def health_source(source: str) -> str:
     and the source list still pauses that account as deezer.
     """
     return "deezer_audio" if source == "deezer" else source
-
-
-def _staging_name(name: str) -> bool:
-    """A job id is 32 hex characters. Anything else under `.musimo` is left alone."""
-    return len(name) == 32 and all(character in "0123456789abcdef" for character in name)
 
 
 def art_candidates(url: str) -> list[str]:
@@ -388,47 +384,14 @@ class Downloads:
                     self.jobs.update(job.id, stage="queued", desired="run")
         self.jobs.recover()
         self.task = asyncio.create_task(self.schedule())
-        # Listing `.musimo` is one directory read. Reading every finished job, then
-        # stating a folder that is already gone, held startup for minutes.
-        self.sweep_task = asyncio.create_task(asyncio.to_thread(self.sweep_staging))
-
-    def sweep_staging(self) -> None:
-        """Remove leftover staging for finished jobs. A failed job's folder stays for retry."""
-        for root in self.library.roots:
-            if self.stopping:
-                return
-            staging = root / ".musimo"
-            try:
-                if staging.is_symlink() or not staging.is_dir():
-                    continue
-                names = [
-                    entry.name
-                    for entry in staging.iterdir()
-                    if not entry.is_symlink() and entry.is_dir() and _staging_name(entry.name)
-                ]
-            except OSError:
-                continue
-            finished: set[str] = set()
-            for start in range(0, len(names), 400):
-                if self.stopping:
-                    return
-                finished.update(
-                    self.jobs.ids_in_stages(names[start : start + 400], ("done", "cancelled"))
-                )
-            for name in names:
-                if self.stopping or name not in finished:
-                    continue
-                folder = staging / name
-                try:
-                    if folder.is_symlink():
-                        continue
-                    # resolve() is the escape check. Remove the listed folder, not a path
-                    # looked up again, so a swap in between cannot point this at the library.
-                    if not folder.resolve().is_relative_to(root):
-                        continue
-                    shutil.rmtree(folder)
-                except OSError:
-                    continue
+        self.sweep_task = asyncio.create_task(
+            asyncio.to_thread(
+                sweep_finished_staging,
+                list(self.library.roots),
+                self.jobs.ids_in_stages,
+                lambda: self.stopping,
+            )
+        )
 
     async def close(self) -> None:
         self.stopping = True
@@ -440,11 +403,9 @@ class Downloads:
         if self.task:
             await self.task
         if self.sweep_task:
-            try:
-                async with asyncio.timeout(2):
-                    await self.sweep_task
-            except TimeoutError:
-                pass
+            done, _pending = await asyncio.wait({self.sweep_task}, timeout=2)
+            if done:
+                await self.sweep_task
 
     def pace_room(self, settings: Settings, slots: int) -> tuple[int, float | None]:
         """Slots left in this group, and the seconds left in a pause between groups.

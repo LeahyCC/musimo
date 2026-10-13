@@ -16,7 +16,7 @@ import sqlite3
 import threading
 import time
 from collections import OrderedDict
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
@@ -578,10 +578,13 @@ class Player:
 
     async def warm(self) -> None:
         """Build the browse snapshot, and the sorts the home page and Tracks open with."""
-        snapshot = await asyncio.to_thread(self.view)
-        await asyncio.to_thread(self._ordered, snapshot, "title")
-        await asyncio.to_thread(self._ordered_albums, snapshot, "newest")
-        await asyncio.to_thread(self._facets, snapshot)
+        await asyncio.to_thread(self._warm_catalog)
+
+    def _warm_catalog(self) -> None:
+        snapshot = self.view()
+        self._cached_order(snapshot.track_orders, "title", snapshot.tracks, sort_tracks)
+        self._cached_order(snapshot.album_orders, "newest", snapshot.albums, sort_albums)
+        self._facets(snapshot)
 
     async def keep_ready(self) -> None:
         """Rebuild after the index changes, so the next page is already in memory."""
@@ -678,31 +681,43 @@ class Player:
         return [song_row(row) for row in rows]
 
     def _load_covers(self) -> dict[str, FolderCover]:
-        with self.store.lock:
-            rows = self.store.db.execute(
-                "SELECT folder, path, size, mtime_ns FROM library_covers"
-            ).fetchall()
-        return {str(row[0]): FolderCover(str(row[1]), int(row[2]), int(row[3])) for row in rows}
+        return {
+            folder: FolderCover(path, size, mtime_ns)
+            for folder, (path, size, mtime_ns) in self.store.folder_covers().items()
+        }
 
-    def _ordered(self, snapshot: LibraryView, sort: str) -> list[dict[str, object]]:
-        """One sort of the whole library, reused by later pages. A filter sorts its own rows."""
+    def _cached_order(
+        self,
+        orders: dict[str, list[dict[str, object]]],
+        sort: str,
+        rows: list[dict[str, object]],
+        order_fn: Callable[[list[dict[str, object]], str], list[dict[str, object]]],
+    ) -> list[dict[str, object]]:
+        """One sort of these rows, reused by later pages. A filter sorts its own rows."""
         with self._lock:
-            found = snapshot.track_orders.get(sort)
+            found = orders.get(sort)
         if found is not None:
             return found
-        ordered = sort_tracks(snapshot.tracks, sort)
+        ordered = order_fn(rows, sort)
         with self._lock:
-            return snapshot.track_orders.setdefault(sort, ordered)
+            return orders.setdefault(sort, ordered)
 
-    def _ordered_albums(self, snapshot: LibraryView, sort: str) -> list[dict[str, object]]:
-        """One sort of every album. A search or a filter sorts its own rows."""
-        with self._lock:
-            found = snapshot.album_orders.get(sort)
-        if found is not None:
-            return found
-        ordered = sort_albums(snapshot.albums, sort)
-        with self._lock:
-            return snapshot.album_orders.setdefault(sort, ordered)
+    async def _page_order(
+        self,
+        plain: bool,
+        orders: dict[str, list[dict[str, object]]],
+        sort: str,
+        everything: list[dict[str, object]],
+        chosen: list[dict[str, object]],
+        order_fn: Callable[[list[dict[str, object]], str], list[dict[str, object]]],
+    ) -> list[dict[str, object]]:
+        """The cached whole-library order, or a sort of the filtered rows."""
+        if not plain:
+            return order_fn(chosen, sort)
+        found = orders.get(sort)
+        if found is None:
+            found = await asyncio.to_thread(self._cached_order, orders, sort, everything, order_fn)
+        return found
 
     def _facets(self, snapshot: LibraryView) -> dict[str, object]:
         with self._lock:
@@ -961,12 +976,11 @@ class Player:
         size: int,
     ) -> dict[str, object]:
         snapshot = await self._catalog()
-        if not query and not genres and not years:
-            ordered = snapshot.album_orders.get(sort)
-            if ordered is None:
-                ordered = await asyncio.to_thread(self._ordered_albums, snapshot, sort)
-        else:
-            ordered = sort_albums(filter_albums(snapshot.albums, query, genres, years), sort)
+        plain = not query and not genres and not years
+        chosen = snapshot.albums if plain else filter_albums(snapshot.albums, query, genres, years)
+        ordered = await self._page_order(
+            plain, snapshot.album_orders, sort, snapshot.albums, chosen, sort_albums
+        )
         end = offset + size
         return {
             "items": ordered[offset:end],
@@ -1018,23 +1032,18 @@ class Player:
         size: int,
     ) -> dict[str, object]:
         snapshot = await self._catalog()
-        # A plain page reuses the first sort. Search and filters sort their own rows.
-        if not query and not genres and not years:
-            ordered = snapshot.track_orders.get(sort)
-            if ordered is None:
-                ordered = await asyncio.to_thread(self._ordered, snapshot, sort)
-            facets = snapshot.track_facets
-            if facets is None:
-                facets = await asyncio.to_thread(self._facets, snapshot)
+        plain = not query and not genres and not years
+        rows = snapshot.tracks if plain else self._narrow(snapshot.tracks, query)
+        chosen = rows if plain else filter_tracks(rows, genres, years)
+        ordered = await self._page_order(
+            plain, snapshot.track_orders, sort, snapshot.tracks, chosen, sort_tracks
+        )
+        if query:
+            facets = track_facets(rows)
+        elif snapshot.track_facets is None:
+            facets = await asyncio.to_thread(self._facets, snapshot)
         else:
-            rows = self._narrow(snapshot.tracks, query)
-            ordered = sort_tracks(filter_tracks(rows, genres, years), sort)
-            if query:
-                facets = track_facets(rows)
-            elif snapshot.track_facets is not None:
-                facets = snapshot.track_facets
-            else:
-                facets = await asyncio.to_thread(self._facets, snapshot)
+            facets = snapshot.track_facets
         end = offset + size
         return {
             "items": ordered[offset:end],
@@ -1056,17 +1065,16 @@ class Player:
         limit: int,
     ) -> dict[str, object]:
         snapshot = await self._catalog()
-        if not query and not genres and not years:
-            matched = snapshot.tracks
-        else:
-            matched = filter_tracks(self._narrow(snapshot.tracks, query), genres, years)
+        plain = not query and not genres and not years
+        matched = (
+            snapshot.tracks
+            if plain
+            else filter_tracks(self._narrow(snapshot.tracks, query), genres, years)
+        )
         if not shuffle:
-            if matched is snapshot.tracks:
-                order = snapshot.track_orders.get(sort)
-                if order is None:
-                    order = await asyncio.to_thread(self._ordered, snapshot, sort)
-            else:
-                order = sort_tracks(matched, sort)
+            order = await self._page_order(
+                plain, snapshot.track_orders, sort, snapshot.tracks, matched, sort_tracks
+            )
             return {
                 "items": order[:limit],
                 "rest": [],

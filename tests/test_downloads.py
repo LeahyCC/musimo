@@ -37,6 +37,7 @@ from backend.jobs.downloads import (
 )
 from backend.jobs.job_store import JobConflict, Jobs
 from backend.jobs.matching import Matcher
+from backend.jobs.staging import sweep_finished_staging
 from backend.jobs.tagging import Tagger, probe
 from backend.library.index import Library
 
@@ -1917,13 +1918,34 @@ class StagingSweepTests(unittest.IsolatedAsyncioTestCase):
                         folder.mkdir(parents=True)
                         (folder / "partial.bin").write_bytes(b"x")
                     (root / ".musimo" / "notes").mkdir()
-                    service.sweep_staging()
+                    sweep_finished_staging(library.roots, service.jobs.ids_in_stages, lambda: False)
                     self.assertFalse((root / ".musimo" / done.id).exists())
                     self.assertFalse((root / ".musimo" / cancelled.id).exists())
                     self.assertTrue((root / ".musimo" / failed.id / "partial.bin").is_file())
                     self.assertTrue((root / ".musimo" / "notes").is_dir())
             finally:
                 store.close()
+
+    async def test_every_lookup_finishes_before_a_delete(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory)
+            roots: list[Path] = []
+            for mark in ("a", "b"):
+                root = base / mark
+                (root / ".musimo" / (mark * 32)).mkdir(parents=True)
+                roots.append(root)
+            events: list[str] = []
+
+            def lookup(ids: list[str], stages: tuple[str, ...]) -> set[str]:
+                events.append("lookup")
+                return set(ids)
+
+            def remove(path: Path) -> None:
+                events.append("delete")
+
+            with patch("backend.jobs.staging.shutil.rmtree", remove):
+                sweep_finished_staging(roots, lookup, lambda: False)
+            self.assertEqual(events, ["lookup", "lookup", "delete", "delete"])
 
     async def test_start_does_not_read_the_whole_history(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
