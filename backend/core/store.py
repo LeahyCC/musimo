@@ -177,6 +177,8 @@ class Store:
         self.db.execute("PRAGMA foreign_keys=ON")
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
         if version > 6:
+            # Close first. Windows keeps the file until this connection goes.
+            self.db.close()
             raise RuntimeError("Database is newer than this application; do not downgrade in place")
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS settings (
