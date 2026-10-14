@@ -30,6 +30,8 @@ Every screen is Tailwind 4 utilities in its own TSX file. `frontend/src/style.cs
 
 ## Storage
 
+Opening a database newer than this build supports closes the SQLite connection before refusing startup. This lets Windows release the file for recovery instead of retaining a handle on the rejected database.
+
 The database has `settings` and `job_events`. Schema versions use SQLite user_version. One writer connection is protected by a lock; write transactions use BEGIN IMMEDIATE. Snapshot data and event cursor are read under the same lock. Settings and source-health mutations commit with their corresponding events. Library scan status also commits with its event; file-index writes are grouped into throttled progress notifications. This prevents missing state between a snapshot and SSE subscription.
 
 The database also has `library_roots`, `library_files`, `library_state`, FTS5 and `search_cache`. Preserve multiple paths for the same recording. Cache by Deezer request path, query, result kind and page; L1 LRU with TTL, L2 SQLite. Catalog filters and sort operate on loaded provider results, so they do not create separate upstream cache entries. Library track browsing is the exception: see [library player](player.md) for the bounded whole-library snapshot its filters, sort and totals read from. No market selection is implemented. Use lightweight batched ownership joins, never file reads from result rendering.

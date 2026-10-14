@@ -37,6 +37,10 @@ Coverage includes branches and every backend module, including unexecuted module
 
 ## Browser and container checks
 
+`e2e/local-player.spec.ts` exercises the real scanner, player API, SQLite and streamed audio without route mocks. Global setup writes two generated, tagged WAV files into the isolated `/music/e2e-local-player` directory. The test scans them, opens their album, plays, seeks by keyboard, skips, restores the saved queue after reload, and creates, fills and empties a playlist through the UI. It removes its playlist after a successful run; a failed run may leave its timestamped fixture playlist in the test volume. It runs on all four browser projects. Existing mocked specs still cover the broader UI edge cases.
+
+`scripts/player_benchmark.py` builds its own temporary music tree and database, checks the indexed counts, then measures cold and warm player reads. It never opens the live database. The benchmark asserts queue length, album totals and track totals so a fast but incomplete result fails. See [the measured baseline](measurements.md#local-player-baseline-13-october-2026).
+
 ```sh
 npx --prefix frontend playwright install --with-deps chromium firefox webkit
 docker compose -f compose.ci.yaml -p musimo-ci up -d --build --wait --wait-timeout 120

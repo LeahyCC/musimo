@@ -5,6 +5,7 @@ import sqlite3
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 from backend.core.store import REMOVED_SETTING_KEYS, Store, drop_song_references
 
@@ -164,8 +165,15 @@ class PlayerStoreTests(unittest.TestCase):
         db = sqlite3.connect(path)
         db.execute("PRAGMA user_version=7")
         db.close()
-        with self.assertRaises(RuntimeError):
-            Store(path)
+        rejected = sqlite3.connect(path, isolation_level=None)
+        try:
+            with patch("backend.core.store.sqlite3.connect", return_value=rejected):
+                with self.assertRaises(RuntimeError):
+                    Store(path)
+            with self.assertRaises(sqlite3.ProgrammingError):
+                rejected.execute("SELECT 1")
+        finally:
+            rejected.close()
 
     def test_playlists_favourites_plays_and_queue(self) -> None:
         store = Store(self.root / "db.sqlite3")
