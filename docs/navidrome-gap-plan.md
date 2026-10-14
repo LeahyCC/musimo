@@ -1,6 +1,72 @@
 # Plan: close the gaps left by removing Navidrome
 
-Status: planned only. This follows [the replacement review](navidrome-replacement-review.md). Nothing here is implemented by this document.
+Status: implementation underway. This follows [the replacement review](navidrome-replacement-review.md). The progress note distinguishes completed work from the remaining plan.
+
+Progress, 13 October 2026: the unmocked player test and synthetic browsing benchmark are implemented. The real-file test passes on Chromium, Firefox, WebKit and the phone project. All 400 existing backend tests pass after fixing a connection leak when refusing a newer database; 367 frontend unit tests pass. The older mocked WebKit player specs still fail on this Windows run, while the unmocked test passes; that baseline issue remains open. The importer is implemented with a dry run against the actual Navidrome schema and a successful write/repeat rehearsal on backup copies. Live import awaits the source-account choice. Live listening, deployment and the remaining features are not complete.
+
+## Implementation sequence, reviewed 13 October 2026
+
+Reviewed against `38470ef` on `feature/local-player`, including the player, scanner, tag reader, store, conversion helper and browser history. The steps below turn the phases into separate reviewable changes. They take precedence where the older phase descriptions differ. This review did not run tests or change the live installation.
+
+```text
+Baseline and restore check
+  -> Import listening state
+  -> Detect format problems -> Convert explicitly
+  -> Shared history -> Four smart lists
+  -> Live-library acceptance
+
+Measure browsing early -> SQL changes only if needed
+External scrobbling and library-specific extras stay optional
+```
+
+### 1. Establish the baseline
+
+- [ ] Run the required checks in `CONTRIBUTING.md` and the isolated player browser specs. Recheck the recorded Firefox launch failure and formatting failures rather than treating old results as current.
+- [ ] Add an unmocked player browser test using generated tagged audio: scan, browse, play, seek, save queue, reload, and edit a playlist. Keep the existing mocked specs for UI edge cases.
+- [ ] Measure cold and warm queue restore, album and Tracks requests, and peak memory before changing queries. Record the fixture size and environment in `docs/measurements.md`.
+- [ ] Discover the actual installation and roots before live checks. The Colima details below describe the earlier Mac installation; this checkout is on Windows. Use `docs/windows.md` and the machine notes for deployment work. Make a consistent SQLite backup through the backup API or with the service stopped, then restore it into scratch storage. Keep personal paths outside Git.
+
+Implementation can proceed with fixtures while access to the old database or live listening checks is outstanding. A release still needs the live acceptance pass below.
+
+### 2. Import listening state
+
+- [ ] Add the dry-run CLI in `backend/library/import_navidrome.py`. Inspect the supplied database schema read-only, select the source user explicitly when several exist, and require mappings from source music roots to enabled Musimo roots.
+- [ ] Apply the phase 1 match rules. Report ambiguous and missing files, existing playlist names, unavailable queue data and unmatched artist favourites. Preserve playlist order and duplicate entries; report any capacity limit before writing.
+- [ ] Write through the store in one transaction, revalidate matches, and invalidate player caches after commit. Keep larger play counts and later dates. Repeated imports must not duplicate likes or playlists, and must preserve an existing queue.
+- [ ] Test dry-run immutability, rollback on failure, path mappings across operating systems, ambiguity, source-user isolation and a repeated import. Verify a playlist, like and count through the real API.
+
+The real import remains pending until a source database is available. Absence of that file is not evidence that starting fresh is acceptable.
+
+### 3. Detect format problems, then add conversion
+
+- [ ] Persist codec and the facts needed to flag compatibility problems. Bump both the schema and `TAGS_VERSION` so unchanged files receive the new facts. Test upgrades from schema 6 and repeat scans.
+- [ ] Reconcile `AUDIO_EXTENSIONS`, `CONTENT_TYPES` and supported tag readers first. Several formats listed in phase 2, including `.aac`, `.mp4` and `.ape`, are not currently indexed. Do not promise badges for invisible files.
+- [ ] Add the song response fields and badges to album and track rows. Use cautious copy for uncertain browser support. Verify the supported-format policy before making a warning exclude a song from Play all or Shuffle. Cover individual play, saved queues, an entirely unsupported album, and visible skipped counts.
+- [ ] Fix `Tagger.prepare` before reusing it: its same-extension shortcut copies ALAC `.m4a` unchanged when asked for AAC `.m4a`. Test the output codec with ffprobe, not its filename.
+- [ ] Implement the full conversion flow: choose a supported output, confirm the new copy and unchanged old listening state, show progress, cancel or retry, then play the indexed result. Use temporary output and collision-safe publishing; retain tags and artwork. Refuse read-only destinations and recheck source paths. Keep conversion out of the stream request.
+
+### 4. Put history on the server
+
+- [ ] Choose one local listening rule and use it for both counts and history: proposed rule is ten seconds heard, or completion of a shorter track. This changes current behavior. Today `recordPlay` writes browser history at the threshold, while `finishTrack` sends the count at track end. Playback position alone must not count a seek as time heard.
+- [ ] Add bounded `recent_plays` storage and read/clear routes. Save the count and history event in one transaction. Give each listen an id so a retry, repeat, crossfade or duplicate ended event cannot count it twice. Repeat listens get separate events.
+- [ ] Import validated browser history once without increasing play counts. Record that migration separately from whether history is empty, so clearing history cannot resurrect it. Remove the local copy only after success.
+- [ ] Test two browsers, refresh, request failure/retry, repeat, crossfade, a short song, seeking, and clear-history persistence. Clearing history leaves lifetime counts intact.
+
+### 5. Add the four smart lists
+
+- [ ] Add read-only list queries for Recently added, Never played, Most played and the saved genre. Reuse the existing library routes and queue machinery where practical; keep manual playlists unchanged.
+- [ ] Add Playlists cards and detail states, including an unset or missing genre. Apply the same query to displayed rows, totals, Play all and Shuffle. Preserve the 500-song cap and shuffle continuation.
+- [ ] Test date boundaries, stable ordering, fresh play counts, genre changes, empty results and more than 500 matches. Imported counts are useful but are not a prerequisite for implementing these lists.
+
+### 6. Measure again and complete acceptance
+
+If browsing needs improvement, first replace `tracks_by_ids` with a bounded SQL lookup and use it for queue restore. The current method calls `_catalog()` and builds the whole view; calling it alone saves nothing. Then move browsing to paginated SQL in separate changes, preserving grouping, search fallback, facets and shuffle. Compare the same measurements before and after.
+
+Each change updates `docs/player.md` and the relevant architecture, settings or testing notes, and passes the repository checks. Visible changes also need the desktop and phone journey, keyboard access, error/retry, refresh and the theme checks.
+
+Before release, verify a restored backup, the real library counts, a finished download appearing in the library, seek and queue restore. Record listening checks across track boundaries in the browsers actually used, including a hidden tab and a phone. Automated handover checks do not establish an audible gapless result.
+
+Optional work stays separate: external scrobbling needs the chosen service's authentication and listening rules checked first; a generic token and the local ten-second rule are not a sufficient contract. Move repair needs retained old rows or a backup because pruning already deletes their listening state. Extra sidecars, artwork sizes and featured-artist browsing wait for a demonstrated need.
 
 The local player is already the better player for listening in this browser. The switch is still a downgrade on the day an existing Navidrome library is opened, and it is still behind on files the browser cannot decode, on saved rules for "what should I play", and on opening a large library without building it all in memory. This plan closes those gaps in that order.
 

@@ -6,6 +6,16 @@ The player reads the music folders Musimo already indexes. Those files supply pl
 
 Point `MUSIMO_LIBRARY_ROOTS` at the folders that hold the music. The capability endpoint reports an unavailable state when none of those folders is mounted and readable, instead of failing the request.
 
+### Import listening state from Navidrome
+
+`python -m backend.library.import_navidrome SOURCE TARGET --user USER --root "SOURCE_ROOT=TARGET_ROOT" --report report.json` reads both SQLite files without changing them. The source root is Navidrome's library path; the target root must already be enabled and scanned in Musimo. Repeat `--root` for multiple libraries. Windows source paths can map to Linux container paths. Use consistent database backups for the first run, and keep the report outside Git because it lists unmatched personal library paths.
+
+The importer targets the Navidrome 0.63.2 schema. It matches existing source tracks by path, then by artist, album, title and duration within one second only when exactly one target fits. It imports the selected user's manual playlists, song likes, artist favourites, larger play counts and later last-played dates. Other users and smart-playlist rules stay out. Playlist order and repeated songs survive. Existing playlist names are skipped and reported, including an existing playlist named Liked; song stars still go into Musimo's linked liked playlist. A playlist or queue over 500 matched entries is reported and skipped rather than truncated. An existing Musimo queue is preserved.
+
+Review the dry-run report, back up Musimo, stop its service, then repeat with `--write`. Run the command where the target database is accessible and restart Musimo afterward. Writes and an import summary commit in one transaction; failures roll back. Repeating the import does not duplicate likes or playlists. Missing artist names are reported rather than creating favourites that cannot be browsed. The importer does not copy audio or change song ids.
+
+The queue decoder follows Navidrome's [stored comma-separated ids and current index](https://github.com/navidrome/navidrome/blob/v0.63.2/persistence/playqueue_repository.go). Playlist ordering follows its [playlist_tracks.id](https://github.com/navidrome/navidrome/blob/v0.63.2/persistence/playlist_repository.go). A source without a playqueue table is reported as having no source queue.
+
 ## Ids
 
 A song id is `tr-` plus 16 hex characters, stored on the file's row. The same path keeps that id across rescans and tag edits. A moved or renamed file is a new song: the old path is gone, so the playlist entries, play counts and queue rows that used its id go with it.
