@@ -8,7 +8,7 @@ dependencies = [
   "uvicorn==0.54.0",
   "httpx==0.28.1",
   "yt-dlp[default,curl-cffi]==2026.8.19",
-  "bgutil-ytdlp-pot-provider==2.0.0",
+  "bgutil-ytdlp-pot-provider==2.0.2",
   "mutagen==1.48.1",
   "pycryptodomex==3.24.0",
   "watchdog==6.0.0",
