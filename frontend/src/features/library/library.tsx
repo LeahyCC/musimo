@@ -75,6 +75,8 @@ import {
   LayoutToggle,
   PlaylistRow,
 } from './collection-items'
+import { artistPageLocation, useArtistSort, useLibraryBrowse } from './library-browse'
+import { artistAlbumSorts, artistSongSorts, librarySortValues } from './library-params'
 import { PopularityChart } from './popularity-chart'
 import { TrackList } from './track-list'
 
@@ -95,53 +97,67 @@ type LibraryPageProps = {
   highlightTrackId?: string
 }
 
-const SORTS: Record<Tab, { value: string; label: string }[]> = {
-  home: [
-    { value: 'newest', label: 'Recently added' },
-    { value: 'title', label: 'Album A to Z' },
-    { value: 'artist', label: 'Artist A to Z' },
-    { value: 'year', label: 'Newest release' },
-  ],
-  albums: [
-    { value: 'newest', label: 'Recently added' },
-    { value: 'title', label: 'Album A to Z' },
-    { value: 'artist', label: 'Artist A to Z' },
-    { value: 'year', label: 'Newest release' },
-  ],
-  artists: [
-    { value: 'name', label: 'Artist A to Z' },
-    { value: 'albums', label: 'Most albums' },
-    { value: 'recent', label: 'Recently added' },
-  ],
-  // These values are the sort names the tracks endpoint accepts.
-  tracks: [
-    { value: 'title', label: 'Track A to Z' },
-    { value: 'artist', label: 'Artist A to Z' },
-    { value: 'album', label: 'Album A to Z' },
-    { value: 'year', label: 'Newest release' },
-    { value: 'duration', label: 'Longest first' },
-    { value: 'newest', label: 'Recently added' },
-  ],
-  playlists: [
-    { value: 'name', label: 'Playlist A to Z' },
-    { value: 'tracks', label: 'Most tracks' },
-    { value: 'duration', label: 'Longest first' },
-    { value: 'changed', label: 'Recently updated' },
-  ],
+// Labels for librarySortValues. The value list lives in one place, so a sort the address
+// accepts is one the menu can show.
+const sortLabels = {
+  home: {
+    newest: 'Recently added',
+    title: 'Album A to Z',
+    artist: 'Artist A to Z',
+    year: 'Newest release',
+  },
+  albums: {
+    newest: 'Recently added',
+    title: 'Album A to Z',
+    artist: 'Artist A to Z',
+    year: 'Newest release',
+  },
+  artists: {
+    name: 'Artist A to Z',
+    albums: 'Most albums',
+    recent: 'Recently added',
+  },
+  tracks: {
+    title: 'Track A to Z',
+    artist: 'Artist A to Z',
+    album: 'Album A to Z',
+    year: 'Newest release',
+    duration: 'Longest first',
+    newest: 'Recently added',
+  },
+  playlists: {
+    name: 'Playlist A to Z',
+    tracks: 'Most tracks',
+    duration: 'Longest first',
+    changed: 'Recently updated',
+  },
+} as const satisfies {
+  [K in Tab]: Record<(typeof librarySortValues)[K][number], string>
 }
-const ARTIST_ALBUM_SORTS = [
-  { value: 'year', label: 'Newest release' },
-  { value: 'oldest', label: 'Oldest release' },
-  { value: 'title', label: 'Album A to Z' },
-  { value: 'plays', label: 'Most played' },
-]
-const ARTIST_SONG_SORTS = [
-  { value: 'album', label: 'Album order' },
-  { value: 'title', label: 'Track A to Z' },
-  { value: 'plays', label: 'Most played' },
-  { value: 'duration', label: 'Longest first' },
-  { value: 'year', label: 'Newest release' },
-]
+const artistAlbumLabels = {
+  year: 'Newest release',
+  oldest: 'Oldest release',
+  title: 'Album A to Z',
+  plays: 'Most played',
+} as const satisfies Record<(typeof artistAlbumSorts)[number], string>
+const artistSongLabels = {
+  album: 'Album order',
+  title: 'Track A to Z',
+  plays: 'Most played',
+  duration: 'Longest first',
+  year: 'Newest release',
+} as const satisfies Record<(typeof artistSongSorts)[number], string>
+
+const viewSorts = {
+  home: librarySortValues.home.map((value) => ({ value, label: sortLabels.home[value] })),
+  albums: librarySortValues.albums.map((value) => ({ value, label: sortLabels.albums[value] })),
+  artists: librarySortValues.artists.map((value) => ({ value, label: sortLabels.artists[value] })),
+  tracks: librarySortValues.tracks.map((value) => ({ value, label: sortLabels.tracks[value] })),
+  playlists: librarySortValues.playlists.map((value) => ({
+    value,
+    label: sortLabels.playlists[value],
+  })),
+}
 
 /** A whole collection's length for a page header: "42 min", or "1 hr 4 min" from an hour up. */
 const totalLength = (seconds: number) => {
@@ -217,29 +233,25 @@ export function LibraryPage({
   const [layout, setLayout] = useState<Layout>(() =>
     stored('musimo.library-layout', 'grid') === 'list' ? 'list' : 'grid',
   )
-  const [query, setQuery] = useState('')
-  const deferredQuery = useDeferredValue(query.trim())
-  const [sorts, setSorts] = useState<Record<Tab, string>>({
-    home: 'newest',
-    albums: 'newest',
-    artists: 'name',
-    tracks: 'title',
-    playlists: 'name',
-  })
-  const [selectedGenres, setSelectedGenres] = useState<string[]>([])
-  const [selectedYears, setSelectedYears] = useState<string[]>([])
-  const [visibility, setVisibility] = useState('all')
-  const [artistShow, setArtistShow] = useState('')
-  const [artistAlbumSort, setArtistAlbumSort] = useState('year')
-  const [artistSongSort, setArtistSongSort] = useState('album')
+  const showBrowser = !albumId && !artistId && !playlistId
+  const artistSongsMode = artistSection === 'songs'
+  const browse = useLibraryBrowse(tab, showBrowser)
+  const artistOrdering = useArtistSort(
+    artistId && !albumId ? (artistSongsMode ? 'songs' : 'albums') : null,
+    artistId,
+  )
+  const { deferredQuery, query } = browse
+  const sort = browse.sort
+  const selectedGenres = browse.genres
+  const selectedYears = browse.years
+  const visibility = browse.visibility
+  const artistShow = browse.show
   const [newName, setNewName] = useState('')
   const [showPlaylistForm, setShowPlaylistForm] = useState(false)
   const [renaming, setRenaming] = useState(false)
   const [renameValue, setRenameValue] = useState('')
   const [playlistTrackQuery, setPlaylistTrackQuery] = useState('')
   const deferredPlaylistQuery = useDeferredValue(playlistTrackQuery.trim())
-  const artistSongsMode = artistSection === 'songs'
-  const sort = sorts[tab]
   const capabilities = useQuery({
     queryKey: ['player-capabilities'],
     queryFn: ({ signal }) => api('player/capabilities', playerCapabilitiesSchema, { signal }),
@@ -249,11 +261,11 @@ export function LibraryPage({
   // Albums, artists and tracks are all filtered and sorted by the server, so a filter covers
   // the whole library rather than the pages this browser has scrolled through.
   const albumSearch = useMemo(() => {
-    const params = new URLSearchParams({ q: deferredQuery, sort: sorts[tab] })
+    const params = new URLSearchParams({ q: deferredQuery, sort })
     for (const genre of selectedGenres) params.append('genre', genre)
     for (const year of selectedYears) params.append('year', year)
     return params.toString()
-  }, [deferredQuery, selectedGenres, selectedYears, sorts, tab])
+  }, [deferredQuery, selectedGenres, selectedYears, sort])
   const albums = useInfiniteQuery({
     queryKey: ['library-albums', albumSearch],
     queryFn: ({ pageParam, signal }) =>
@@ -265,12 +277,12 @@ export function LibraryPage({
     enabled: ready && (tab === 'home' || tab === 'albums'),
   })
   const artistSearch = useMemo(() => {
-    const params = new URLSearchParams({ q: deferredQuery, sort: sorts.artists })
+    const params = new URLSearchParams({ q: deferredQuery, sort })
     for (const genre of selectedGenres) params.append('genre', genre)
     for (const year of selectedYears) params.append('year', year)
     if (artistShow) params.set('show', artistShow)
     return params.toString()
-  }, [artistShow, deferredQuery, selectedGenres, selectedYears, sorts])
+  }, [artistShow, deferredQuery, selectedGenres, selectedYears, sort])
   const artists = useInfiniteQuery({
     queryKey: ['library-artists', artistSearch],
     queryFn: ({ pageParam, signal }) =>
@@ -284,11 +296,11 @@ export function LibraryPage({
   // Search, filter, sort, totals and shuffle are the server's job so they cover the whole
   // library rather than the pages this browser happens to have scrolled through.
   const trackSearch = useMemo(() => {
-    const params = new URLSearchParams({ q: deferredQuery, sort: sorts.tracks })
+    const params = new URLSearchParams({ q: deferredQuery, sort })
     for (const genre of selectedGenres) params.append('genre', genre)
     for (const year of selectedYears) params.append('year', year)
     return params.toString()
-  }, [deferredQuery, selectedGenres, selectedYears, sorts])
+  }, [deferredQuery, selectedGenres, selectedYears, sort])
   const tracks = useInfiniteQuery({
     queryKey: ['library-tracks', trackSearch],
     queryFn: ({ pageParam, signal }) =>
@@ -385,7 +397,7 @@ export function LibraryPage({
     mutationFn: (id: string) =>
       api(`library/playlists/${encodeURIComponent(id)}`, emptySchema, { method: 'DELETE' }),
     onSuccess: () => {
-      void navigate({ to: '/library/playlists' })
+      browse.open('playlists')
       void client.invalidateQueries({ queryKey: ['library-playlists'] })
     },
   })
@@ -472,8 +484,8 @@ export function LibraryPage({
   }, [deferredQuery, likedId, playlists.data, sort, visibility])
   // Editions of one album show as a single card, so these are groups, not raw albums.
   const artistAlbums = useMemo(
-    () => sortArtistAlbums(groupAlbumEditions(artistDetail.data?.album ?? []), artistAlbumSort),
-    [artistDetail.data, artistAlbumSort],
+    () => sortArtistAlbums(groupAlbumEditions(artistDetail.data?.album ?? []), artistOrdering.sort),
+    [artistDetail.data, artistOrdering.sort],
   )
   const openEditions = artistAlbums.find(
     (group) => group.key === openGroupKey && group.editions.length > 1,
@@ -483,8 +495,8 @@ export function LibraryPage({
     if (openEditions && sheet && !sheet.open) sheet.showModal()
   }, [openEditions])
   const artistSongs = useMemo(
-    () => sortArtistSongs(artistTracks.data?.items ?? [], artistSongSort),
-    [artistTracks.data, artistSongSort],
+    () => sortArtistSongs(artistTracks.data?.items ?? [], artistOrdering.sort),
+    [artistTracks.data, artistOrdering.sort],
   )
 
   // Each tab's first page carries the whole library's filter choices.
@@ -528,7 +540,6 @@ export function LibraryPage({
         : tab === 'playlists'
           ? false
           : albums.isFetchingNextPage
-  const showBrowser = !albumId && !artistId && !playlistId
   const facetsShown = tab === 'home' || tab === 'albums' || tab === 'artists' || tab === 'tracks'
   // The phone's Filter button wears this number, so a filter chosen in the sheet is not invisible
   // once the sheet closes.
@@ -579,30 +590,10 @@ export function LibraryPage({
   }, [playlistId])
 
   function changeTab(next: Tab) {
-    setSelectedGenres([])
-    setSelectedYears([])
-    setVisibility('all')
-    setArtistShow('')
+    if (next === tab && showBrowser) return
     setShowPlaylistForm(false)
-    const paths = {
-      home: '/library',
-      albums: '/library/albums',
-      artists: '/library/artists',
-      tracks: '/library/tracks',
-      playlists: '/library/playlists',
-    } as const
-    void navigate({ to: paths[next] })
+    browse.open(next)
   }
-
-  function clearFilters() {
-    setSelectedGenres([])
-    setSelectedYears([])
-    setArtistShow('')
-    setVisibility('all')
-  }
-
-  const toggleIn = (value: string) => (current: string[]) =>
-    current.includes(value) ? current.filter((item) => item !== value) : [...current, value]
 
   function loadMore() {
     if (tab === 'artists') void artists.fetchNextPage()
@@ -658,14 +649,14 @@ export function LibraryPage({
         className="w-full min-w-0 border-0 bg-transparent p-[11px] text-inherit outline-0 coarse:text-base"
         aria-label={`Search ${browsing}`}
         value={query}
-        onChange={(event) => setQuery(event.target.value)}
+        onChange={(event) => browse.setQuery(event.target.value)}
         placeholder={`Search ${browsing}`}
       />
       {query && (
         <button
           className="grid place-items-center border-0 bg-none p-[7px] text-muted coarse:min-h-11 coarse:min-w-11"
           aria-label="Clear search"
-          onClick={() => setQuery('')}
+          onClick={() => browse.setQuery('')}
         >
           <X size={15} />
         </button>
@@ -683,9 +674,9 @@ export function LibraryPage({
           tone="sunken"
           aria-label={`Sort ${tab}`}
           value={sort}
-          onChange={(event) => setSorts({ ...sorts, [tab]: event.target.value })}
+          onChange={(event) => browse.setSort(event.target.value)}
         >
-          {SORTS[tab].map((option) => (
+          {viewSorts[tab].map((option) => (
             <option value={option.value} key={option.value}>
               {option.label}
             </option>
@@ -699,7 +690,7 @@ export function LibraryPage({
             tone="sunken"
             aria-label="Filter playlists"
             value={visibility}
-            onChange={(event) => setVisibility(event.target.value)}
+            onChange={(event) => browse.setVisibility(event.target.value)}
           >
             <option value="all">All playlists</option>
             <option value="public">Public</option>
@@ -714,7 +705,7 @@ export function LibraryPage({
             tone="sunken"
             aria-label="Show artists"
             value={artistShow}
-            onChange={(event) => setArtistShow(event.target.value)}
+            onChange={(event) => browse.setShow(event.target.value)}
           >
             <option value="">All artists</option>
             <option value="favourites">Favourites</option>
@@ -730,14 +721,14 @@ export function LibraryPage({
             label="Genres"
             options={genres}
             selected={selectedGenres}
-            onToggle={(value) => setSelectedGenres(toggleIn(value))}
+            onToggle={(value) => browse.toggleGenre(value)}
           />
           <FilterMenu
             inline
             label="Years"
             options={years}
             selected={selectedYears}
-            onToggle={(value) => setSelectedYears(toggleIn(value))}
+            onToggle={(value) => browse.toggleYear(value)}
           />
         </>
       )}
@@ -752,7 +743,7 @@ export function LibraryPage({
           type="button"
           data-ui="text-link"
           className={textLinkClassName('self-start')}
-          onClick={clearFilters}
+          onClick={browse.clearFilters}
         >
           Clear filters
         </button>
@@ -788,11 +779,7 @@ export function LibraryPage({
             data-ui="text-link"
             className={textLinkClassName()}
             onClick={() => {
-              if (albumParent)
-                void navigate({
-                  to: '/library/artists/$artistId',
-                  params: { artistId: albumParent.id },
-                })
+              if (albumParent) void navigate(artistPageLocation('albums', albumParent.id))
               else changeTab(playlistId ? 'playlists' : albumId ? 'albums' : 'artists')
             }}
           >
@@ -875,9 +862,9 @@ export function LibraryPage({
               className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
               aria-label={`Sort ${tab}`}
               value={sort}
-              onChange={(event) => setSorts({ ...sorts, [tab]: event.target.value })}
+              onChange={(event) => browse.setSort(event.target.value)}
             >
-              {SORTS[tab].map((option) => (
+              {viewSorts[tab].map((option) => (
                 <option value={option.value} key={option.value}>
                   {option.label}
                 </option>
@@ -890,7 +877,7 @@ export function LibraryPage({
                 className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
                 aria-label="Filter playlists"
                 value={visibility}
-                onChange={(event) => setVisibility(event.target.value)}
+                onChange={(event) => browse.setVisibility(event.target.value)}
               >
                 <option value="all">All playlists</option>
                 <option value="public">Public</option>
@@ -904,7 +891,7 @@ export function LibraryPage({
                 className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
                 aria-label="Show artists"
                 value={artistShow}
-                onChange={(event) => setArtistShow(event.target.value)}
+                onChange={(event) => browse.setShow(event.target.value)}
               >
                 <option value="">All artists</option>
                 <option value="favourites">Favourites</option>
@@ -919,20 +906,20 @@ export function LibraryPage({
                 label="Genres"
                 options={genres}
                 selected={selectedGenres}
-                onToggle={(value) => setSelectedGenres(toggleIn(value))}
+                onToggle={(value) => browse.toggleGenre(value)}
               />
               <FilterMenu
                 label="Years"
                 options={years}
                 selected={selectedYears}
-                onToggle={(value) => setSelectedYears(toggleIn(value))}
+                onToggle={(value) => browse.toggleYear(value)}
               />
               {(selectedGenres.length > 0 || selectedYears.length > 0 || artistShow) && (
                 <button
                   type="button"
                   data-ui="text-link"
                   className={textLinkClassName('px-[5px] py-[9px]')}
-                  onClick={clearFilters}
+                  onClick={browse.clearFilters}
                 >
                   Clear filters
                 </button>
@@ -1269,12 +1256,7 @@ export function LibraryPage({
             </Button>
             <Button
               onClick={() =>
-                void navigate({
-                  to: artistSongsMode
-                    ? '/library/artists/$artistId'
-                    : '/library/artists/$artistId/songs',
-                  params: { artistId },
-                })
+                void navigate(artistPageLocation(artistSongsMode ? 'albums' : 'songs', artistId))
               }
               disabled={!artistSongsMode && (artistTracks.isLoading || !artistSongs.length)}
             >
@@ -1287,18 +1269,20 @@ export function LibraryPage({
               <select
                 className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
                 aria-label={artistSongsMode ? 'Sort songs' : 'Sort albums'}
-                value={artistSongsMode ? artistSongSort : artistAlbumSort}
-                onChange={(event) =>
-                  artistSongsMode
-                    ? setArtistSongSort(event.target.value)
-                    : setArtistAlbumSort(event.target.value)
-                }
+                value={artistOrdering.sort}
+                onChange={(event) => artistOrdering.setSort(event.target.value)}
               >
-                {(artistSongsMode ? ARTIST_SONG_SORTS : ARTIST_ALBUM_SORTS).map((option) => (
-                  <option value={option.value} key={option.value}>
-                    {option.label}
-                  </option>
-                ))}
+                {artistSongsMode
+                  ? artistSongSorts.map((value) => (
+                      <option value={value} key={value}>
+                        {artistSongLabels[value]}
+                      </option>
+                    ))
+                  : artistAlbumSorts.map((value) => (
+                      <option value={value} key={value}>
+                        {artistAlbumLabels[value]}
+                      </option>
+                    ))}
               </select>
             </label>
             {!artistSongsMode && <LayoutToggle layout={layout} onChange={setLayout} />}

@@ -177,6 +177,8 @@ class Store:
         self.db.execute("PRAGMA foreign_keys=ON")
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
         if version > 6:
+            # Close first. Windows keeps the file until this connection goes.
+            self.db.close()
             raise RuntimeError("Database is newer than this application; do not downgrade in place")
         self.db.executescript("""
             CREATE TABLE IF NOT EXISTS settings (
@@ -280,6 +282,13 @@ class Store:
             CREATE TABLE IF NOT EXISTS source_control (
                 source TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0,
                 blocking_failures INTEGER NOT NULL DEFAULT 0
+            );
+            -- Cover images the scan already saw. Browsing reads this instead of listing folders.
+            CREATE TABLE IF NOT EXISTS library_covers (
+                folder TEXT PRIMARY KEY,
+                path TEXT NOT NULL,
+                size INTEGER NOT NULL,
+                mtime_ns INTEGER NOT NULL
             );
             COMMIT;
         """)
@@ -808,6 +817,101 @@ class Store:
         with self.lock:
             row = self.db.execute("SELECT value FROM library_revision WHERE id=1").fetchone()
             return int(row[0])
+
+    def folder_covers(self) -> dict[str, tuple[str, int, int]]:
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT folder, path, size, mtime_ns FROM library_covers"
+            ).fetchall()
+        return {str(row[0]): (str(row[1]), int(row[2]), int(row[3])) for row in rows}
+
+    def folder_cover(self, folder: str) -> tuple[str, int, int] | None:
+        with self.lock:
+            row = self.db.execute(
+                "SELECT path, size, mtime_ns FROM library_covers WHERE folder=?",
+                (folder,),
+            ).fetchone()
+        if row is None:
+            return None
+        return (str(row[0]), int(row[1]), int(row[2]))
+
+    def apply_folder_covers(
+        self,
+        updates: list[tuple[str, str, int, int]],
+        drops: list[str],
+        baseline: dict[str, tuple[str, int, int]] | None = None,
+    ) -> None:
+        """Write cover rows that changed, and forget folders that no longer have one.
+
+        `baseline` is the snapshot the caller diffed against. A row written since then,
+        such as a download landing while a scan walks, is left alone. An empty change
+        does not bump the library revision, so an unchanged scan leaves the browse cache.
+        """
+        if not updates and not drops:
+            return
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                changed = False
+                for folder in drops:
+                    row = self.db.execute(
+                        "SELECT path, size, mtime_ns FROM library_covers WHERE folder=?",
+                        (folder,),
+                    ).fetchone()
+                    if row is None:
+                        continue
+                    current = (str(row[0]), int(row[1]), int(row[2]))
+                    if baseline is not None and baseline.get(folder) != current:
+                        continue
+                    self.db.execute("DELETE FROM library_covers WHERE folder=?", (folder,))
+                    changed = True
+                for folder, path, size, mtime_ns in updates:
+                    new = (path, size, mtime_ns)
+                    row = self.db.execute(
+                        "SELECT path, size, mtime_ns FROM library_covers WHERE folder=?",
+                        (folder,),
+                    ).fetchone()
+                    stored = None if row is None else (str(row[0]), int(row[1]), int(row[2]))
+                    if stored == new:
+                        continue
+                    if (
+                        baseline is not None
+                        and stored is not None
+                        and baseline.get(folder) != stored
+                    ):
+                        continue
+                    self.db.execute(
+                        """
+                        INSERT INTO library_covers(folder, path, size, mtime_ns)
+                        VALUES (?,?,?,?)
+                        ON CONFLICT(folder) DO UPDATE SET
+                            path=excluded.path, size=excluded.size, mtime_ns=excluded.mtime_ns
+                        """,
+                        (folder, path, size, mtime_ns),
+                    )
+                    changed = True
+                if changed:
+                    note_library_change(self.db)
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def delete_covers_under(self, folder: str) -> None:
+        child = folder + os.sep
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                cursor = self.db.execute(
+                    "DELETE FROM library_covers WHERE folder=? OR substr(folder, 1, ?)=?",
+                    (folder, len(child), child),
+                )
+                if cursor.rowcount:
+                    note_library_change(self.db)
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
 
     def bump_library_revision(self) -> int:
         with self.lock:
