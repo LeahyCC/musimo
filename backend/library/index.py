@@ -1,6 +1,7 @@
 import asyncio
 import json
 import os
+import stat as filemode
 import threading
 import time
 import uuid
@@ -12,12 +13,13 @@ import mutagen
 from mutagen.easymp4 import EasyMP4Tags
 from watchdog.events import FileSystemEvent, FileSystemEventHandler
 from watchdog.observers import Observer
-from watchdog.observers.polling import PollingObserver
+from watchdog.observers.api import BaseObserver
+from watchdog.observers.polling import PollingEmitter
 
 from backend.core.store import Store, drop_song_references, new_song_id, note_library_change
 from backend.core.text import normalize
 from backend.integrations.catalog import Result
-from backend.library.player import is_cover_image
+from backend.library.player import is_cover_image, ranked_cover_names
 from backend.library.tags import TAGS_VERSION, facts_for
 
 AUDIO_EXTENSIONS = {".mp3", ".m4a", ".flac", ".opus", ".ogg", ".wav", ".aiff", ".wma", ".webm"}
@@ -27,6 +29,30 @@ JUNK_FOLDERS = {"@eadir", "#snapshot", "#recycle", "$recycle.bin"}
 STAMP_BATCH = 500
 # Easy MP4 has no ISRC key until something registers it. The tag round-trip reads it that way.
 EasyMP4Tags.RegisterFreeformKey("isrc", "ISRC")
+
+
+class DeferredSnapshotEmitter(PollingEmitter):
+    """Take the first snapshot on the watcher thread.
+
+    `BaseThread.start` runs `on_thread_start` on the caller. For a polled mount that
+    snapshot is a walk of every file, and it used to finish before the server could answer.
+    """
+
+    def on_thread_start(self) -> None:
+        return
+
+    def run(self) -> None:
+        try:
+            self._snapshot = self._take_snapshot()
+        except OSError:
+            self.stop()
+            return
+        super().run()
+
+
+class DeferredPollingObserver(BaseObserver):
+    def __init__(self, timeout: float) -> None:
+        super().__init__(emitter_class=DeferredSnapshotEmitter, timeout=timeout)
 
 
 def _folder_gone(path: Path) -> bool:
@@ -41,6 +67,33 @@ def _folder_gone(path: Path) -> bool:
 
 def skipped_folder(name: str) -> bool:
     return name.startswith(".") or name.casefold() in JUNK_FOLDERS
+
+
+def cover_file(folder: Path, names: list[str]) -> tuple[str, int, int] | None:
+    """The cover to remember for this folder.
+
+    None means the folder has no cover. OSError means a candidate could not be read,
+    and the caller should leave the stored row alone.
+    """
+    ranked = ranked_cover_names(names)
+    if not ranked:
+        return None
+    last_error: OSError | None = None
+    for name in ranked:
+        path = folder / name
+        try:
+            if path.is_symlink():
+                continue
+            info = path.stat()
+        except OSError as exc:
+            last_error = exc
+            continue
+        if not filemode.S_ISREG(info.st_mode):
+            continue
+        return str(path), info.st_size, info.st_mtime_ns
+    if last_error is not None:
+        raise last_error
+    return None
 
 
 def tags_still_match(
@@ -99,7 +152,7 @@ class Library:
         # for a large mount. The half-hour reconcile still catches moves and deletions.
         self.poll_interval = max(1, float(os.getenv("MUSIMO_POLL_INTERVAL_SECONDS", "300")))
         self.observer = (
-            PollingObserver(timeout=self.poll_interval) if self.watch_mode == "poll" else Observer()
+            DeferredPollingObserver(self.poll_interval) if self.watch_mode == "poll" else Observer()
         )
         self.pending: set[str] = set()
         self.state: dict[str, object] = {
@@ -236,17 +289,37 @@ class Library:
         # pruning, which does hold it, keeps a file the walk has already passed.
         with self.work_lock:
             self.index(path, root, self.generation)
+        # The cover may have landed beside the new file. One folder, not the whole library.
+        self.record_folder_cover(path.parent)
         self.publish()
+
+    def record_folder_cover(self, folder: Path) -> None:
+        """Remember this folder's cover image. Listing one folder is the point of a change event."""
+        if folder.is_symlink() or self.visible_root(folder) is None:
+            return
+        try:
+            names = [entry.name for entry in folder.iterdir()]
+            chosen = cover_file(folder, names)
+        except OSError:
+            return
+        key = str(folder)
+        current = self.store.folder_cover(key)
+        if chosen is None:
+            if current is not None:
+                self.store.apply_folder_covers([], [key])
+            return
+        if current != chosen:
+            self.store.apply_folder_covers([(key, *chosen)], [])
 
     def _refresh(self, paths: set[str]) -> None:
         generation = self.generation
         for raw in paths:
             path = Path(raw)
             if is_cover_image(path):
-                # The cover id is fixed until the catalog is rebuilt. A new revision
-                # gives the image a new URL, so the immutable art cache can stay.
+                # The cover id is fixed until the catalog is rebuilt. A changed row
+                # bumps the revision, so the immutable art cache can stay.
                 if self.visible_root(path) is not None:
-                    self.store.bump_library_revision()
+                    self.record_folder_cover(path.parent)
                 continue
             if path.suffix.lower() not in AUDIO_EXTENSIONS:
                 self._drop_removed_folder(path)
@@ -256,7 +329,10 @@ class Library:
                 continue
             try:
                 if path.exists():
-                    self.index(path, root, generation)
+                    # An unchanged file must not list its folder. A new or retagged one
+                    # may have brought a cover.jpg with it.
+                    if self.index(path, root, generation):
+                        self.record_folder_cover(path.parent)
                 elif root.is_dir():
                     self.remove(str(path))
             except (OSError, ValueError, mutagen.MutagenError):
@@ -285,6 +361,7 @@ class Library:
             ]
         for item in stale:
             self.remove(str(item))
+        self.store.delete_covers_under(prefix)
 
     def _known(self, root: Path) -> dict[str, tuple[int, int, str, str, str, int]]:
         with self.store.lock:
@@ -391,12 +468,30 @@ class Library:
                     root_errors += 1
 
                 known = self._known(root)
+                # Names os.walk already listed. Remembering them here is what keeps
+                # opening Tracks off this disk.
+                covers = self.store.folder_covers()
+                cover_updates: list[tuple[str, str, int, int]] = []
+                cover_drops: list[str] = []
                 for directory, dirs, files in os.walk(root, followlinks=False, onerror=walk_error):
                     dirs[:] = [
                         d
                         for d in dirs
                         if not skipped_folder(d) and not (Path(directory) / d).is_symlink()
                     ]
+                    folder = Path(directory)
+                    key = str(folder)
+                    try:
+                        chosen = cover_file(folder, files)
+                    except OSError:
+                        # A failed stat is not proof the cover is gone. Leave the stored row.
+                        chosen = covers.get(key)
+                    current = covers.get(key)
+                    if chosen is None:
+                        if key in covers:
+                            cover_drops.append(key)
+                    elif current != chosen:
+                        cover_updates.append((key, *chosen))
                     for name in files:
                         if self.cancelled.is_set():
                             break
@@ -443,6 +538,7 @@ class Library:
                     if self.cancelled.is_set():
                         break
                 self._stamp(generation, batch)
+                self.store.apply_folder_covers(cover_updates, cover_drops, covers)
                 # Cancelled or unreadable scans must not erase files they never visited.
                 # An empty folder is the same shape as a music disk that has not mounted yet.
                 # Pruning it would drop every playlist, play count and the queue for that root.
@@ -480,6 +576,10 @@ class Library:
         self.publish()
 
     def index(self, path: Path, root: Path, generation: str) -> bool:
+        """Store tags for one file.
+
+        False when the stored row still matches, so the file was not opened.
+        """
         if not path.resolve().is_relative_to(root.resolve()):
             raise ValueError("File escaped library root")
         stat = path.stat()
@@ -503,7 +603,7 @@ class Library:
                 self.store.db.execute(
                     "UPDATE library_files SET generation=? WHERE path=?", (generation, str(path))
                 )
-                return True
+                return False
         # One open. Easy mode would drop ReplayGain, compilation and pictures.
         audio = mutagen.File(path)
         if audio is None:
