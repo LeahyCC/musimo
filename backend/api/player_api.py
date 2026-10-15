@@ -67,6 +67,8 @@ class QueueUpdate(BaseModel):
     ids: list[str] = Field(max_length=QUEUE_LIMIT)
     current: str = ""
     position: int = Field(default=0, ge=0)
+    epoch: int | None = Field(default=None, ge=1, le=9007199254740991)
+    sequence: int | None = Field(default=None, ge=1, le=9007199254740991)
 
     @field_validator("ids")
     @classmethod
@@ -80,6 +82,8 @@ class QueueUpdate(BaseModel):
 
     @model_validator(mode="after")
     def current_is_queued(self) -> "QueueUpdate":
+        if (self.epoch is None) != (self.sequence is None):
+            raise ValueError("Queue writer epoch and sequence must be supplied together")
         if self.current and self.current not in self.ids:
             raise ValueError("Current track must be in the queue")
         return self
@@ -299,7 +303,14 @@ def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:
 
     @app.put("/api/player/queue", status_code=204)
     async def save_play_queue(update: QueueUpdate) -> None:
-        await get().save_play_queue(update.ids, update.current, update.position)
+        if not await get().save_play_queue(
+            update.ids, update.current, update.position, update.epoch, update.sequence
+        ):
+            raise HTTPException(409, "A newer queue save or another browser replaced this writer.")
+
+    @app.post("/api/player/queue/writer")
+    async def begin_queue_writer() -> dict[str, int]:
+        return {"epoch": get().store.begin_queue_writer()}
 
     @app.post("/api/player/scrobble", status_code=204)
     async def scrobble(update: ScrobbleUpdate) -> None:

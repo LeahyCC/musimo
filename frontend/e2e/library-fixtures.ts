@@ -5,6 +5,29 @@ import { ORIGIN } from './env'
 
 export { ORIGIN }
 
+/** WebKit media can bypass page routing. Opt in only for mocked, successful stream tests. */
+export async function generatedPlayerAudio(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const source = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'src')
+    const requested = new WeakMap<HTMLMediaElement, string>()
+    Object.defineProperty(HTMLMediaElement.prototype, 'src', {
+      configurable: true,
+      get(this: HTMLMediaElement) {
+        return this.hasAttribute('src')
+          ? (requested.get(this) ?? String(source?.get?.call(this) ?? ''))
+          : ''
+      },
+      set(this: HTMLMediaElement, value: string) {
+        requested.set(this, new URL(value, location.href).href)
+        source?.set?.call(
+          this,
+          value.includes('/api/player/stream/') ? '/assets/e2e-silence.wav' : value,
+        )
+      },
+    })
+  })
+}
+
 export const librarySong = (id: string, over: Partial<LibraryTrack> = {}): LibraryTrack => ({
   id,
   title: `Song ${id}`,
@@ -77,6 +100,7 @@ export async function playerFixtures(page: Page): Promise<void> {
         : { status: 204 },
     ),
   )
+  await page.route('**/api/player/queue/writer', (route) => route.fulfill({ json: { epoch: 1 } }))
   await page.route('**/api/player/scrobble', (route) => route.fulfill({ status: 204 }))
   // No waveform unless a spec brings one, so Now Playing draws its plain seek bar everywhere else.
   await page.route('**/api/player/waveform/**', (route) =>

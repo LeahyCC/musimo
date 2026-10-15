@@ -7,7 +7,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from backend.core.store import REMOVED_SETTING_KEYS, Store, drop_song_references
+from backend.core.store import REMOVED_SETTING_KEYS, SCHEMA_VERSION, Store, drop_song_references
 
 SONG_ID = re.compile(r"^tr-[0-9a-f]{16}$")
 
@@ -19,6 +19,55 @@ class PlayerStoreTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         self.folder.cleanup()
+
+    def test_v6_upgrade_preserves_playback_and_ordering_survives_reopen(self) -> None:
+        path = self.root / "v6.sqlite3"
+        store = Store(path)
+        self.addCleanup(store.close)
+        # Build a populated v6 database, including the state later migrations must not rewrite.
+        store.db.execute("INSERT INTO library_roots VALUES ('/music', 1)")
+        store.db.execute(
+            "INSERT INTO library_files(path,root,mtime_ns,size,generation,title,artist,album,"
+            "title_key,artist_key,album_key,duration,isrc,mbid,song_id,play_count,last_played) "
+            "VALUES ('kept.wav','/music',1,2,'g','Kept','Artist','Album','','','',42,'','',"
+            "'tr-aaaaaaaaaaaaaaaa',7,'2026-01-01T00:00:00Z')"
+        )
+        store.db.commit()
+        playlist = store.create_playlist("Kept", ["tr-aaaaaaaaaaaaaaaa"])
+        store.write_play_queue(["tr-aaaaaaaaaaaaaaaa"], "tr-aaaaaaaaaaaaaaaa", 1200)
+        store.db.executescript("""
+            ALTER TABLE library_files DROP COLUMN codec;
+            ALTER TABLE library_files DROP COLUMN flac_id3;
+            ALTER TABLE play_queue DROP COLUMN writer_epoch;
+            ALTER TABLE play_queue DROP COLUMN write_sequence;
+            PRAGMA user_version=6;
+        """)
+        store.close()
+        for _ in range(2):
+            store = Store(path)
+            self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
+            row = store.db.execute(
+                "SELECT song_id,play_count,last_played,codec,flac_id3 FROM library_files"
+            ).fetchone()
+            self.assertEqual(tuple(row), ("tr-aaaaaaaaaaaaaaaa", 7, "2026-01-01T00:00:00Z", "", 0))
+            playlist_id = playlist["id"]
+            assert isinstance(playlist_id, int)
+            saved = store.playlist(playlist_id)
+            assert saved is not None
+            self.assertEqual(saved["song_ids"], [row[0]])
+            self.assertEqual(store.read_play_queue()["position"], 1200)
+            epoch = store.begin_queue_writer()
+            self.assertTrue(store.write_play_queue([row[0]], row[0], 1200, epoch, 3))
+            store.close()
+            store = Store(path)
+            # An abandoned save cannot replace Undo, even after restart.
+            self.assertFalse(store.write_play_queue([], "", 0, epoch, 1))
+            self.assertFalse(store.write_play_queue([], "", 0, epoch, 3))
+            self.assertEqual(store.read_play_queue()["current"], row[0])
+            newer = store.begin_queue_writer()
+            self.assertFalse(store.write_play_queue([], "", 0, epoch, 99))
+            self.assertTrue(store.write_play_queue([row[0]], row[0], 1200, newer, 1))
+            store.close()
 
     def test_version_5_database_opens_without_navidrome_settings(self) -> None:
         path = self.root / "v5.sqlite3"
@@ -80,7 +129,9 @@ class PlayerStoreTests(unittest.TestCase):
         for _ in range(2):
             store = Store(path)
             try:
-                self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], 6)
+                self.assertEqual(
+                    store.db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION
+                )
                 keys = {row[0] for row in store.db.execute("SELECT key FROM settings")}
                 self.assertTrue(set(REMOVED_SETTING_KEYS).isdisjoint(keys))
                 self.assertEqual(store.current().library_label, "Shelf")
@@ -140,7 +191,9 @@ class PlayerStoreTests(unittest.TestCase):
         for _ in range(2):
             store = Store(path)
             try:
-                self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], 6)
+                self.assertEqual(
+                    store.db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION
+                )
                 keys = {row[0] for row in store.db.execute("SELECT key FROM settings")}
                 self.assertTrue(set(REMOVED_SETTING_KEYS).isdisjoint(keys))
                 self.assertEqual(store.current().library_label, "Shelf")
@@ -163,7 +216,7 @@ class PlayerStoreTests(unittest.TestCase):
     def test_newer_database_is_refused(self) -> None:
         path = self.root / "newer.sqlite3"
         db = sqlite3.connect(path)
-        db.execute("PRAGMA user_version=7")
+        db.execute(f"PRAGMA user_version={SCHEMA_VERSION + 1}")
         db.close()
         rejected = sqlite3.connect(path, isolation_level=None)
         try:

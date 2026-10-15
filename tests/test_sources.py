@@ -13,7 +13,7 @@ from fastapi import FastAPI
 from backend.api.download_api import install_download_routes
 from backend.core.errors import error_guidance, site_label
 from backend.core.job_models import Candidate, Job, Metadata, valid_candidate_id
-from backend.core.store import Store
+from backend.core.store import SCHEMA_VERSION, Store
 from backend.integrations.catalog import Catalog
 from backend.jobs.downloads import DownloadError, Downloads
 from backend.library.index import Library
@@ -129,7 +129,12 @@ class SourceTests(unittest.IsolatedAsyncioTestCase):
                     [tuple(row) for row in store.db.execute("SELECT * FROM source_control")],
                     [("youtube", 1, 2)],
                 )
-                self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], 6)
+                self.assertEqual(
+                    store.db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION
+                )
+                columns = {row[1] for row in store.db.execute("PRAGMA table_info(library_files)")}
+                self.assertTrue({"codec", "flac_id3", "song_id"}.issubset(columns))
+                self.assertEqual(store.read_play_queue()["song_ids"], [])
             finally:
                 store.close()
 

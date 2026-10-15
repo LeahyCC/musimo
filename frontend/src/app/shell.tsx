@@ -17,6 +17,8 @@ import {
 import { activeCount, useJobs } from '../features/downloads/jobs'
 import { QueueDock } from '../features/downloads/queue-dock'
 import { isLinkText, useLinkSheet } from '../features/links/links'
+import { PetFace, usePerchShown } from '../features/music-bot/pet-host'
+import { usePetSettings } from '../features/music-bot/pet-settings'
 import { artUrl, usePlayer } from '../features/player/player'
 import { validateSearch } from '../features/search/search-params'
 import { cx } from '../lib/cx'
@@ -85,6 +87,8 @@ export function Shell() {
   // The phone bottom bar carries the active download count that the dock shows elsewhere.
   // Selecting the count keeps progress ticks from re-rendering the whole shell.
   const activeDownloads = useJobs(activeCount).data ?? 0
+  const petHidden = usePetSettings().hidden
+  const perched = usePerchShown()
 
   useEffect(() => {
     clearTimeout(debounce.current)
@@ -163,6 +167,16 @@ export function Shell() {
             </Link>
           ))}
           <NowPlayingNavItem />
+          <Link
+            to="/music-bot"
+            className={cx(navLinkClassName, 'max-phone:hidden')}
+            activeProps={navLinkActiveProps}
+            inactiveProps={navLinkInactiveProps}
+          >
+            {/* A hidden pet hands its face, and its new-reply dot, to this row. */}
+            {petHidden ? <PetFace size={19} /> : <Radio size={19} />}
+            <span>Music bot</span>
+          </Link>
         </nav>
         <footer className="mx-[7px] mt-auto text-small text-muted max-phone:hidden">
           <div className="flex items-center gap-[10px]">
@@ -252,6 +266,20 @@ export function Shell() {
             />
             <Kbd>/</Kbd>
           </form>
+          <Link
+            to="/music-bot"
+            className="inline-flex shrink-0 items-center justify-center gap-[6px] text-small underline coarse:min-h-11 coarse:min-w-11"
+          >
+            {/* On a phone with nothing playing there is no mini player to perch on, so the pet
+                tucks into this link. A wide window always has the footer. Under 380px the bar
+                has no room for both, so the face stands for the words, which stay for readers. */}
+            {!perched && (
+              <span className="hidden max-phone:inline-flex">
+                <PetFace size={22} />
+              </span>
+            )}
+            <span className={cx(!perched && 'max-[380px]:sr-only')}>Music bot</span>
+          </Link>
           <span
             className="flex items-center gap-[7px] text-tiny whitespace-nowrap text-muted"
             role="status"
@@ -279,9 +307,16 @@ export function Shell() {
         )}
         {/* The bottom padding follows the player and nav on a phone so the last row is never under
             them. */}
+        {/* On a phone the pet stands about 44px above the mini player, so the page keeps that
+            much more room while it is there. */}
         <main
           id="main"
-          className="m-auto max-w-[1360px] px-[43px] pt-[36px] pb-[130px] wide:pt-[48px] max-tablet:px-[27px] max-phone:pt-[24px] max-phone:pr-[calc(20px+var(--safe-right))] max-phone:pb-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+32px)] max-phone:pl-[calc(20px+var(--safe-left))]"
+          className={cx(
+            'm-auto max-w-[1360px] px-[43px] pt-[36px] pb-[130px] wide:pt-[48px] max-tablet:px-[27px] max-phone:pt-[24px] max-phone:pr-[calc(20px+var(--safe-right))] max-phone:pl-[calc(20px+var(--safe-left))]',
+            perched
+              ? 'max-phone:pb-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+76px)]'
+              : 'max-phone:pb-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+32px)]',
+          )}
         >
           <Outlet />
         </main>

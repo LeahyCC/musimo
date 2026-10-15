@@ -75,6 +75,9 @@ export function TrackList({
               <span className="grid min-w-0 gap-[3px]">
                 <strong>{track.title}</strong>
                 <small className="text-small text-muted">{track.artist}</small>
+                {track.playbackWarning && (
+                  <small className="text-small text-muted">{track.playbackWarning}</small>
+                )}
               </span>
               {/* A long album name wraps to two lines and then stops, so it cannot stretch the row. */}
               <small

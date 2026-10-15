@@ -15,6 +15,7 @@ import {
 
 import type { LibraryTrack } from '../../api'
 import { Button, IconButton } from '../../ui'
+import { PetSpot } from '../music-bot/pet-host'
 import { durationText, isPassiveNotice, usePlayer } from '../player/player'
 import { TrackFormatLine } from './about-track'
 import { SleepTimerControl } from './sleep-timer-control'
@@ -72,7 +73,9 @@ export function NowPlayingControls({ track }: { track: LibraryTrack }) {
           </p>
           <TrackFormatLine trackId={track.id} />
         </div>
-        <div className="flex shrink-0 items-center gap-[8px]">
+        <div className="flex shrink-0 items-end gap-[8px]">
+          {/* The footer, and the pet on it, stand down on this page, so the pet sits here. */}
+          <PetSpot />
           <IconButton
             active={player.liked.isLiked}
             // The label already says which way the press goes, so a pressed state on top of it

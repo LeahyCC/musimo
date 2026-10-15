@@ -2,6 +2,8 @@
 
 This is a priority list, not a release promise. The [brief](brief.md) preserves the original scope; [measurements](measurements.md) records completed checks. [Discover](discover.md) is planned separately.
 
+The [music bot and audio indexing plan](ai-music-plan.md) covers selectable local Ollama models and resource-limited analysis on the Musimo server. It starts with the existing tag index and gates audio analysis on a measured trial.
+
 ## Shipped in 0.4.0
 
 Version 0.4.0 (10 September 2026) completed the core search, download and playback journey:

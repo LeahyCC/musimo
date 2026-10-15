@@ -8,6 +8,16 @@ A status summary at the top of the Settings page shows overall system readiness 
 
 ## Editable settings
 
+Music bot settings are under Music bot on the Server page:
+
+- `ollama_url`: default `http://127.0.0.1:11434`, reachable from the Musimo server. In Docker, use the host's reachable address, such as `http://host.docker.internal:11434` on Docker Desktop. HTTP and HTTPS are accepted; credentials, paths, queries and redirects are not. Save the address, then Test Ollama connection to list installed models and measure the connection time.
+- `ollama_model`: chosen in the chat, from Pick a model when none is set or from the chat's own settings (the gear in its header), and remembered here. No default is selected and no model is downloaded. Missing models and models that fail structured-output validation show an error. Refresh models after installing or removing a model in Ollama.
+- `music_timezone`: IANA time-zone name, default `UTC`. Set it to your local zone, for example `Pacific/Honolulu`, before using "played today". Day boundaries include daylight-saving changes where applicable. The `tzdata` package supplies time-zone data on Windows.
+
+These use the existing SQLite settings table and environment seeding/locking rules. No bot-specific database migration is required. The model receives bounded chat and tag context, never the full library, audio files or lyrics. Chat history stays in the current browser tab's session storage and can be cleared.
+
+The music bot pet (character, name, colour, size, position, chattiness, animation, sounds, hidden) is not a server setting. It lives in this browser under Settings › Yours › Music bot pet, in `musimo.pet`, like themes; see [the player notes](player.md#the-pet).
+
 - `library_label`: Music by default, 1–60 characters.
 - `output_format`: original, m4a, opus or mp3. Default original. M4A/Opus conversion depends on the actual source; the application must not promise lossless transcoding.
 - `concurrency`: 1–3, default 2. Parallel download workers. Concurrency can also be changed from the Downloads page Parallel select and honours the lock.

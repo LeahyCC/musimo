@@ -2,7 +2,7 @@
 
 Status: implementation underway. This follows [the replacement review](navidrome-replacement-review.md). The progress note distinguishes completed work from the remaining plan.
 
-Progress, 13 October 2026: the unmocked player test and synthetic browsing benchmark are implemented. The real-file test passes on Chromium, Firefox, WebKit and the phone project. All 400 existing backend tests pass after fixing a connection leak when refusing a newer database; 367 frontend unit tests pass. The older mocked WebKit player specs still fail on this Windows run, while the unmocked test passes; that baseline issue remains open. The importer is implemented with a dry run against the actual Navidrome schema and a successful write/repeat rehearsal on backup copies. Live import awaits the source-account choice. Live listening, deployment and the remaining features are not complete.
+Progress, 13 October 2026: the unmocked player test and synthetic browsing benchmark are implemented. The real-file test passes on Chromium, Firefox, WebKit and the phone project. All 400 existing backend tests pass after fixing a connection leak when refusing a newer database; 367 frontend unit tests pass. The older mocked WebKit player specs still fail on this Windows run, while the unmocked test passes; that baseline issue remains open. The importer is implemented with a dry run against the actual Navidrome schema and a successful write/repeat rehearsal on backup copies. The selected account has now been imported into the backed-up live database: 244 track count/date updates, four song likes, 32 artist favourites and six playlists. The existing Liked playlist and queue were preserved. One unmatched artist favourite remains in the report. The restarted service is healthy, and its API returns the imported playlists, likes and play counts. Live listening, deployment and the remaining features are not complete.
 
 ## Implementation sequence, reviewed 13 October 2026
 
@@ -35,7 +35,7 @@ Implementation can proceed with fixtures while access to the old database or liv
 - [ ] Write through the store in one transaction, revalidate matches, and invalidate player caches after commit. Keep larger play counts and later dates. Repeated imports must not duplicate likes or playlists, and must preserve an existing queue.
 - [ ] Test dry-run immutability, rollback on failure, path mappings across operating systems, ambiguity, source-user isolation and a repeated import. Verify a playlist, like and count through the real API.
 
-The real import remains pending until a source database is available. Absence of that file is not evidence that starting fresh is acceptable.
+The real import is complete. Source and pre-import target backups and the detailed report are retained outside Git. The unmatched artist favourite needs review; no replacement artist was guessed.
 
 ### 3. Detect format problems, then add conversion
 

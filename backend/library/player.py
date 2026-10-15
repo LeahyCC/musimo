@@ -6,6 +6,8 @@ artist name is a new id, and a favourite on the old name is left behind.
 """
 
 import asyncio
+import base64
+import binascii
 import hashlib
 import json
 import os
@@ -22,6 +24,7 @@ from pathlib import Path
 
 import httpx
 import mutagen
+from mutagen.flac import Picture
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4Cover
 
@@ -130,6 +133,18 @@ class StoredSong:
     play_count: int
     last_played: str | None
     added_at: str
+    codec: str
+    flac_id3: bool
+
+    @property
+    def playback_warning(self) -> str:
+        if self.codec == "alac":
+            return "ALAC may not play in this browser"
+        if self.suffix in {"wma", "aiff"}:
+            return f"{self.suffix.upper()} may not play in this browser"
+        if self.flac_id3:
+            return "FLAC with ID3 tags may not play in this browser"
+        return ""
 
 
 @dataclass(frozen=True)
@@ -307,6 +322,8 @@ def song_row(row: sqlite3.Row) -> StoredSong:
         play_count=int(row["play_count"]),
         last_played=str(played) if isinstance(played, str) and played else None,
         added_at=str(row["added_at"]),
+        codec=str(row["codec"]),
+        flac_id3=bool(row["flac_id3"]),
     )
 
 
@@ -359,6 +376,8 @@ def track_dict(
         "duration": song.duration,
         "created": song.added_at,
         "playCount": song.play_count,
+        "codec": song.codec,
+        "playbackWarning": song.playback_warning,
     }
     if song.track:
         item["track"] = song.track
@@ -401,6 +420,18 @@ def pictures_in(path: Path) -> list[tuple[int, str, bytes]]:
                 kind = getattr(picture, "type", 0)
                 found.append((kind if isinstance(kind, int) else 0, mime, data))
     if tags is not None and hasattr(tags, "get"):
+        # Opus and Vorbis store FLAC picture blocks inside base64-encoded comments.
+        blocks = tags.get("metadata_block_picture", [])
+        if isinstance(blocks, list):
+            for block in blocks:
+                if not isinstance(block, str):
+                    continue
+                try:
+                    picture = Picture(base64.b64decode(block, validate=True))
+                except (ValueError, binascii.Error, mutagen.MutagenError):
+                    continue
+                if picture.data:
+                    found.append((picture.type, picture.mime, picture.data))
         covers = tags.get("covr")
         if isinstance(covers, list):
             for cover in covers:
@@ -593,7 +624,7 @@ class Player:
                     f.compilation, f.replaygain_track_gain, f.replaygain_album_gain,
                     f.replaygain_track_peak, f.replaygain_album_peak, f.suffix, f.content_type,
                     f.bitrate, f.sample_rate, f.bit_depth, f.channels, f.has_art,
-                    f.record_labels, f.play_count, f.last_played, f.added_at
+                    f.record_labels, f.play_count, f.last_played, f.added_at, f.codec, f.flac_id3
                 FROM library_files f
                 JOIN library_roots r ON r.path = f.root AND r.enabled = 1
                 WHERE f.song_id != ''
@@ -1260,6 +1291,8 @@ class Player:
         if stored is None:
             raise SongMissing("Track not found")
         item: dict[str, object] = {"id": song_id, "path": relative_path(stored)}
+        item["codec"] = stored.codec
+        item["playbackWarning"] = stored.playback_warning
         if stored.suffix:
             item["suffix"] = stored.suffix
         if stored.content_type:
@@ -1321,8 +1354,15 @@ class Player:
             "entry": [snapshot.by_song[text] for text in ids if text in snapshot.by_song],
         }
 
-    async def save_play_queue(self, ids: list[str], current: str, position: int) -> None:
-        self.store.write_play_queue(ids, current, position)
+    async def save_play_queue(
+        self,
+        ids: list[str],
+        current: str,
+        position: int,
+        epoch: int | None = None,
+        sequence: int | None = None,
+    ) -> bool:
+        return self.store.write_play_queue(ids, current, position, epoch, sequence)
 
     async def scrobble(self, song_id: str, submission: bool) -> None:
         if not submission:

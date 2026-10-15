@@ -23,6 +23,7 @@ import {
 import { DEFAULT_THEME_ID } from '../../theme/themes'
 import type { Theme } from '../../theme/themes'
 import { Button, Field, FieldSelect, InlineError, Panel, textLinkClassName } from '../../ui'
+import { PetSettingsSection } from '../music-bot/pet-settings-section'
 import { useNowPlayingPopout } from '../now-playing/now-playing-popout'
 import { CROSSFADE_OPTIONS, parseCrossfade } from '../player/crossfade'
 import { setCrossfadeSeconds, useCrossfadeSeconds } from '../player/crossfade-settings'
@@ -533,6 +534,9 @@ export function UserSettingsPage() {
           </div>
           <div className="mt-[32px]">
             <VisualizerSettings />
+          </div>
+          <div className="mt-[32px]">
+            <PetSettingsSection />
           </div>
         </>
       )}

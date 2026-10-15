@@ -42,6 +42,20 @@ Events have an increasing ID, type, payload and timestamp. Retain a bounded repl
 
 ## APIs
 
+Music bot (api/music_bot_api.py, library/music_bot.py):
+
+- `GET /api/music-bot/models`: connection test and installed model names from the configured Ollama server.
+- `POST /api/music-bot/chat`: one schema-constrained Ollama call, followed by service-side validation and resolution against the existing SQLite-backed player view. It returns a search plan and real track cards, or a clarification, unsupported request or transport command. It never changes playback or writes the queue. An optional `scope` (`library`, `proposal` or `queue`) is where the person chose to look; when set it replaces the model's own reading of the words for that request. A clarification or unsupported reply can carry up to three `suggestions`, short follow-ups the chat offers as one-tap replies; the server empties them on every other action, and the audio-analysis refusal supplies its own tag-based ones.
+- `POST /api/music-bot/validate`: rechecks the proposal's filters, play history, likes and safe file availability before a browser action.
+
+The service uses the existing `httpx` client, with no redirect following or retries. Model discovery and capability lookup each have an eight-second wall-clock deadline; inference has 90 seconds. Each response is capped at 128 KiB. Before inference, `/api/show` determines whether `thinking.values` supports boolean `false`. Only then does the request include `think: false`; missing metadata or named levels retain the model default. Every chat includes `keep_alive: "60s"` and `num_ctx: 8192`. These are per-request controls, independent of server restart settings. One chat request runs at a time and disconnect cancels its HTTP request, including capability lookup. Prompts are capped at 2,000 characters, history at eight messages, tag context at twelve songs per group, candidates at 5,000 and selections at 500. The model cannot submit SQL, paths or song ids in its plan. Library tags are data, never instructions. Model output is untrusted even when it matches the schema: reference-artist removal and known unsupported comparative audio requests have service guards.
+
+Follow-up plans name explicit filter changes, artist exclusions to withdraw, scope and a count of songs to add. The service inherits unchanged filters, accumulates artist exclusions and requires withdrawal language before relaxing exclusions. Adding songs retains eligible proposal entries in order and appends distinct matches. Clarification text cannot become a playable search merely because a model supplied the wrong action.
+
+The browser uses `PlayerProvider` for every playback action. A generation guard discards cancelled or superseded responses, and a queue stamp rejects stale proposals. The conditional Undo snapshot includes the shuffle continuation and edited-source state. Queue saves have eight-second request deadlines and coalesce to one active request plus one pending snapshot. `POST /api/player/queue/writer` allocates an epoch; `PUT /api/player/queue` supplies that epoch and a monotonically increasing sequence. SQLite rejects stale writes with HTTP 409 inside the same transaction as the queue replacement. A replaced browser writer requires refresh. Legacy unversioned writes remain supported and invalidate tokened writers.
+
+Schema 8 adds `writer_epoch` and `write_sequence` to the single `play_queue` row, without rewriting songs, listening history, playlists or queue entries. The counters survive restart. Tests upgrade populated schema 6 and reopen twice, alongside the earlier migration tests. Older binaries refuse the newer schema; downgrades need a pre-upgrade database backup. Settings and existing play counts/last-played timestamps stay in SQLite; no audio index or worker is added. See [player behavior](player.md#music-bot) and [review fixes](music-bot-review-fixes.md).
+
 Implemented routes (module paths are under `backend/`). `main.py` creates the app, installs each module's routes, adds the same-origin and security-header middleware, and serves the built frontend.
 
 Settings (api/settings_api.py):

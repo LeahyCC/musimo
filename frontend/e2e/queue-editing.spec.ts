@@ -2,7 +2,13 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
-import { bodyText, librarySong, playerFixtures, requestBody } from './library-fixtures'
+import {
+  bodyText,
+  generatedPlayerAudio,
+  librarySong,
+  playerFixtures,
+  requestBody,
+} from './library-fixtures'
 
 const alpha = librarySong('song-a', { title: 'Alpha' })
 const bravo = librarySong('song-b', { title: 'Bravo' })
@@ -26,6 +32,7 @@ async function restoreQueue(page: Page, queue: LibraryTrack[]) {
   // Pinned so the stage does not depend on the machine's graphics.
   await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
   await playerFixtures(page)
+  await generatedPlayerAudio(page)
   await page.route('**/api/player/queue', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({ json: { ...restored, position: 0 } })

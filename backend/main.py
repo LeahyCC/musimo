@@ -23,6 +23,7 @@ from backend.api.diagnostics_api import install_diagnostics_routes
 from backend.api.download_api import install_download_routes
 from backend.api.events_api import install_event_routes
 from backend.api.link_api import install_link_routes
+from backend.api.music_bot_api import install_music_bot_routes
 from backend.api.player_api import install_player_routes
 from backend.api.podcast_api import install_podcast_routes
 from backend.api.search_api import install_search_routes
@@ -36,6 +37,7 @@ from backend.integrations.youtube_cookies import publish as publish_youtube_cook
 from backend.jobs.downloads import Downloads
 from backend.jobs.links import Links
 from backend.library.index import Library
+from backend.library.music_bot import MusicBot
 from backend.library.player import Player
 from backend.library.waveform import WaveformService
 from backend.version import VERSION
@@ -82,10 +84,11 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     links: Links
     player: Player
     waveforms: WaveformService
+    music_bot: MusicBot
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        nonlocal store, versions, catalog, library, downloads, links, player, waveforms
+        nonlocal store, versions, catalog, library, downloads, links, player, waveforms, music_bot
         # Later tracks reuse the YouTube player script instead of fetching it again.
         os.environ["MUSIMO_YTDLP_CACHE"] = str(data / "ytdlp-cache")
         store = Store(data / "musimo.sqlite3")
@@ -106,6 +109,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 if root
             ]
             player = Player(store, roots, client)
+            music_bot = MusicBot(store, player, client)
             waveforms = WaveformService(store, player)
             library = Library(store, roots, changed)
             library.start()
@@ -125,6 +129,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_download_routes(app, lambda: downloads)
     install_artist_download_routes(app, lambda: downloads)
     install_player_routes(app, lambda: player)
+    install_music_bot_routes(app, lambda: music_bot)
     install_waveform_routes(app, lambda: waveforms)
     install_podcast_routes(app, lambda: downloads)
     install_link_routes(app, lambda: links)
@@ -206,6 +211,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 "search",
                 "library",
                 "now-playing",
+                "music-bot",
                 "downloads",
                 "settings",
                 "settings/user",

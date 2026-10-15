@@ -1,5 +1,7 @@
 import re
 from typing import Literal
+from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -44,6 +46,37 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     library_label: str = Field(default="Music", min_length=1, max_length=60)
+    ollama_url: str = "http://127.0.0.1:11434"
+    ollama_model: str = Field(default="", max_length=200)
+    music_timezone: str = "UTC"
+
+    @field_validator("ollama_url")
+    @classmethod
+    def ollama_address(cls, value: str) -> str:
+        parsed = urlsplit(value)
+        if (
+            len(value) > 500
+            or parsed.scheme not in {"http", "https"}
+            or not parsed.hostname
+            or parsed.username is not None
+            or parsed.password is not None
+            or parsed.path not in {"", "/"}
+            or parsed.query
+            or parsed.fragment
+        ):
+            raise ValueError("Use an Ollama http(s) server address without credentials or a path.")
+        _ = parsed.port
+        return value.rstrip("/")
+
+    @field_validator("music_timezone")
+    @classmethod
+    def timezone_name(cls, value: str) -> str:
+        try:
+            ZoneInfo(value)
+        except (ZoneInfoNotFoundError, ValueError) as exc:
+            raise ValueError("Use a time zone such as Pacific/Honolulu or Europe/London.") from exc
+        return value
+
     output_format: Literal["original", "m4a", "opus", "mp3"] = "original"
     concurrency: int = Field(default=2, ge=1, le=3)
     max_attempts: int = Field(default=4, ge=1, le=4)
@@ -87,6 +120,9 @@ class SettingsPatch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
     library_label: str | None = Field(default=None, min_length=1, max_length=60)
+    ollama_url: str | None = Field(default=None, max_length=500)
+    ollama_model: str | None = Field(default=None, max_length=200)
+    music_timezone: str | None = Field(default=None, max_length=100)
     output_format: Literal["original", "m4a", "opus", "mp3"] | None = None
     concurrency: int | None = Field(default=None, ge=1, le=3)
     max_attempts: int | None = Field(default=None, ge=1, le=4)

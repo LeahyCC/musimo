@@ -9,7 +9,7 @@ from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path, PurePosixPath, PureWindowsPath
 
-from backend.core.store import Store
+from backend.core.store import SCHEMA_VERSION, Store
 from backend.core.text import normalize
 from backend.library.player import frozen_id
 
@@ -67,8 +67,8 @@ class NavidromeImport:
     def plan(self, target: sqlite3.Connection) -> ImportPlan:
         """Match against one target snapshot; apply rebuilds this plan under the writer lock."""
         target.row_factory = sqlite3.Row
-        if target.execute("PRAGMA user_version").fetchone()[0] != 6:
-            raise ValueError("Import requires an already-scanned schema 6 Musimo database")
+        if not 6 <= target.execute("PRAGMA user_version").fetchone()[0] <= SCHEMA_VERSION:
+            raise ValueError("Import requires an already-scanned compatible Musimo database")
         enabled = {
             portable_path(row[0])
             for row in target.execute("SELECT path FROM library_roots WHERE enabled=1")
