@@ -9,6 +9,7 @@ from backend.core.models import CATALOG_ORDER, Settings, clean_arl
 from backend.core.sources import source_label
 
 RETAIN_EVENTS = 5000
+SCHEMA_VERSION = 8
 # Rows that stay in the settings table but are not settings. Each is stripped before validation,
 # because Settings refuses keys it does not know.
 # deezer_arl held the Deezer cookie. The cookie is a file now and the row stays empty, so a
@@ -176,7 +177,7 @@ class Store:
         self.db.execute("PRAGMA busy_timeout=5000")
         self.db.execute("PRAGMA foreign_keys=ON")
         version = self.db.execute("PRAGMA user_version").fetchone()[0]
-        if version > 6:
+        if version > SCHEMA_VERSION:
             # Close first. Windows keeps the file until this connection goes.
             self.db.close()
             raise RuntimeError("Database is newer than this application; do not downgrade in place")
@@ -398,6 +399,22 @@ class Store:
                     'navidrome_url', 'navidrome_mode', 'navidrome_library_id'
                 );
                 PRAGMA user_version=6;
+                COMMIT;
+            """)
+        if version < 7:
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                ALTER TABLE library_files ADD COLUMN codec TEXT NOT NULL DEFAULT '';
+                ALTER TABLE library_files ADD COLUMN flac_id3 INTEGER NOT NULL DEFAULT 0;
+                PRAGMA user_version=7;
+                COMMIT;
+            """)
+        if version < 8:
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                ALTER TABLE play_queue ADD COLUMN writer_epoch INTEGER NOT NULL DEFAULT 0;
+                ALTER TABLE play_queue ADD COLUMN write_sequence INTEGER NOT NULL DEFAULT 0;
+                PRAGMA user_version=8;
                 COMMIT;
             """)
         self.seed()
@@ -1148,10 +1165,41 @@ class Store:
                 self.db.rollback()
                 raise
 
-    def write_play_queue(self, song_ids: list[str], current: str, position_ms: int) -> None:
+    def begin_queue_writer(self) -> int:
+        """A new browser writer invalidates delayed saves from a previous writer."""
+        with self.lock, self.db:
+            row = self.db.execute(
+                "UPDATE play_queue SET writer_epoch=writer_epoch+1, write_sequence=0 "
+                "WHERE id=1 RETURNING writer_epoch"
+            ).fetchone()
+            return int(row[0])
+
+    def write_play_queue(
+        self,
+        song_ids: list[str],
+        current: str,
+        position_ms: int,
+        epoch: int | None = None,
+        sequence: int | None = None,
+    ) -> bool:
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
+                if epoch is not None:
+                    changed = self.db.execute(
+                        "UPDATE play_queue SET write_sequence=? WHERE id=1 "
+                        "AND writer_epoch=? AND write_sequence<?",
+                        (sequence, epoch, sequence),
+                    ).rowcount
+                    if not changed:
+                        self.db.rollback()
+                        return False
+                else:
+                    # Older clients/imports still work, but invalidate outstanding tokened saves.
+                    self.db.execute(
+                        "UPDATE play_queue SET writer_epoch=writer_epoch+1, "
+                        "write_sequence=0 WHERE id=1"
+                    )
                 self.db.execute("DELETE FROM play_queue_songs")
                 self.db.executemany(
                     "INSERT INTO play_queue_songs VALUES (?,?)",
@@ -1162,6 +1210,7 @@ class Store:
                     (current, position_ms, self._timestamp()),
                 )
                 self.db.commit()
+                return True
             except Exception:
                 self.db.rollback()
                 raise

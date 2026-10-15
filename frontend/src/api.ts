@@ -200,6 +200,8 @@ export const replayGainSchema = z.object({
 export type ReplayGain = z.infer<typeof replayGainSchema>
 
 export const libraryTrackSchema = z.object({
+  codec: z.string().optional(),
+  playbackWarning: z.string().optional(),
   id: z.string(),
   title: z.string().default('Unknown track'),
   artist: z.string().default('Unknown artist'),
@@ -220,6 +222,8 @@ export type LibraryTrack = z.infer<typeof libraryTrackSchema>
 // One song as `GET /api/player/song/{id}` returns it: the file's own facts and the listening
 // record. Each is present only when the file has it.
 export const songDetailSchema = z.object({
+  codec: z.string().optional(),
+  playbackWarning: z.string().optional(),
   id: z.string(),
   suffix: z.string().optional(),
   contentType: z.string().optional(),
@@ -367,6 +371,13 @@ const field = <T extends z.ZodType>(value: T) =>
 export const youtubeCookiesSchema = z.object({ saved: z.boolean() })
 
 export const settingsSchema = z.object({
+  ollama_url: field(z.string()).default({
+    value: 'http://127.0.0.1:11434',
+    origin: 'default',
+    locked: false,
+  }),
+  ollama_model: field(z.string()).default({ value: '', origin: 'default', locked: false }),
+  music_timezone: field(z.string()).default({ value: 'UTC', origin: 'default', locked: false }),
   library_label: field(z.string()),
   output_format: field(z.enum(['original', 'm4a', 'opus', 'mp3'])),
   concurrency: field(z.number()),
@@ -399,6 +410,42 @@ export const settingsSchema = z.object({
 })
 export type Settings = z.infer<typeof settingsSchema>
 export type SettingKey = keyof Settings
+
+export const botModelsSchema = z.object({ models: z.array(z.string()), elapsed_ms: z.number() })
+export const botPlanSchema = z.object({
+  change_filters: z.array(z.string()).default([]),
+  allow_artists: z.array(z.string()).default([]),
+  add_count: z.number().int().min(0).max(500).default(0),
+  action: z.enum(['search', 'pause', 'resume', 'skip', 'unsupported', 'clarify']),
+  scope: z.enum(['library', 'proposal', 'queue']),
+  artists: z.array(z.string()),
+  exclude_artists: z.array(z.string()),
+  genres: z.array(z.string()),
+  year_from: z.number().nullable(),
+  year_to: z.number().nullable(),
+  favourites: z.boolean(),
+  history: z.enum(['any', 'played', 'unplayed', 'familiar']),
+  exclude_played_days: z.number(),
+  min_seconds: z.number(),
+  max_seconds: z.number().nullable(),
+  target_seconds: z.number(),
+  limit: z.number(),
+  similar_to_current: z.boolean(),
+  explanation: z.string(),
+  // Short follow-ups the person can send with one tap, only on a question or a refusal.
+  suggestions: z.array(z.string().max(60)).max(3).default([]),
+})
+export type BotScope = z.infer<typeof botPlanSchema>['scope']
+export const botReplySchema = z.object({
+  plan: botPlanSchema,
+  tracks: z.array(libraryTrackSchema).max(500),
+  total_seconds: z.number(),
+  shortfall_seconds: z.number(),
+  summary: z.string(),
+  elapsed_ms: z.number(),
+})
+export const botSelectionSchema = z.object({ tracks: z.array(libraryTrackSchema).max(500) })
+export type BotReply = z.infer<typeof botReplySchema>
 
 const healthSchema = z.object({
   status: z.string(),

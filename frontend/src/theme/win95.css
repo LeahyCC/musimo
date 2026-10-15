@@ -468,3 +468,134 @@
 :root[data-skin='win95'] .live-player .playback-controls input[type='range']::-moz-range-thumb {
   border-radius: 0;
 }
+
+/* The music bot. The pet itself switches to pixel art in `pet.tsx`; this makes the chat a window:
+   a title bar in the highlight colour, bevelled buttons, the conversation in a sunken field, each
+   result in a group box with a list view, and a status bar along the bottom. */
+:root[data-skin='win95'] :is([data-bot='popover'] > div:last-child, [data-bot='sheet']) {
+  border: 0;
+  padding: 3px;
+  background: var(--color-raised);
+  box-shadow:
+    var(--bevel-window),
+    4px 4px 0 color-mix(in oklab, var(--color-shadow) 40%, transparent);
+}
+:root[data-skin='win95'] [data-bot='arrow'] {
+  display: none;
+}
+:root[data-skin='win95'] [data-bot='title-bar'] {
+  gap: 4px;
+  border: 0;
+  padding: 2px 2px 2px 3px;
+  background: var(--highlight);
+  color: var(--highlight-ink);
+}
+:root[data-skin='win95'] [data-bot='title-bar'] h2 {
+  font-weight: 700;
+  font-synthesis: weight;
+}
+:root[data-skin='win95'] [data-bot='title-pet'] {
+  width: 16px;
+  height: 16px;
+}
+/* The status bar says what the header's status line says, so the line stays for screen readers. */
+:root[data-skin='win95'] [data-bot='title-bar'] [data-bot='status'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+:root[data-skin='win95'] [data-bot='title-bar'] button {
+  min-width: 18px;
+  min-height: 16px;
+  padding: 1px 2px;
+  background: var(--color-raised);
+  color: var(--color-text);
+  box-shadow: var(--bevel-raised);
+}
+:root[data-skin='win95'] [data-bot='title-bar'] button:active {
+  box-shadow: var(--bevel-pressed);
+}
+:root[data-skin='win95'] [data-bot='scope'] {
+  border: 0;
+}
+:root[data-skin='win95'] [data-bot='log'] {
+  margin: 0 4px;
+  gap: 8px;
+  padding: 8px;
+  background: var(--color-sunken);
+  box-shadow: var(--bevel-field);
+}
+:root[data-skin='win95'] [data-bot='settings'] {
+  margin: 4px;
+}
+:root[data-skin='win95'] [data-bot='card'] {
+  margin-top: 6px;
+  border: 1px solid var(--bevel-shadow);
+  padding: 12px 8px 8px;
+  background: var(--color-raised);
+  box-shadow: var(--bevel-etched);
+}
+/* The card's "Preview" line becomes the group box's legend, sitting on its top line. */
+:root[data-skin='win95'] [data-bot='eyebrow'] {
+  position: absolute;
+  top: -7px;
+  left: 6px;
+  padding: 0 3px;
+  background: var(--color-raised);
+  color: var(--color-text);
+  font-weight: 400;
+}
+:root[data-skin='win95'] [data-bot='list-view'] {
+  padding: 2px;
+  background: var(--color-sunken);
+  box-shadow: var(--bevel-field);
+}
+:root[data-skin='win95'] [data-bot='column'] {
+  padding: 2px 5px;
+  background: var(--color-raised);
+  box-shadow: var(--bevel-raised);
+}
+:root[data-skin='win95'] [data-bot='list-row']:is([aria-selected='true'], :focus-visible) {
+  outline: 0;
+  background: var(--highlight);
+  color: var(--highlight-ink);
+}
+:root[data-skin='win95'] [data-bot='composer'] {
+  border: 0;
+  padding: 6px 4px 4px;
+}
+:root[data-skin='win95'] [data-bot='field'] {
+  border: 0;
+  padding: 4px 5px;
+  background: var(--color-sunken);
+  box-shadow: var(--bevel-field);
+}
+:root[data-skin='win95'] [data-bot='status-bar'] > span {
+  padding: 2px 4px;
+  box-shadow: var(--bevel-well);
+}
+:root[data-skin='win95'] :is([data-bot='quick-reply'], [data-bot='note']) {
+  border: 0;
+  background: var(--color-raised);
+  color: var(--color-text);
+  box-shadow: var(--bevel-raised);
+}
+/* The pet's bubble is a tooltip: the Standard scheme's pale yellow, a one pixel black line. */
+:root[data-skin='win95'] [data-pet='bubble'] {
+  border: 1px solid var(--color-line-strong);
+  background: var(--color-warn-bg);
+  color: var(--color-text);
+}
+:root[data-skin='win95'] [data-pet='menu'] {
+  border: 0;
+  padding: 3px;
+  background: var(--color-raised);
+  box-shadow: var(--bevel-window);
+}
+:root[data-skin='win95'] [data-pet='menu'] [role^='menuitem']:is(:hover, :focus-visible) {
+  outline: 0;
+  background: var(--highlight);
+  color: var(--highlight-ink);
+}

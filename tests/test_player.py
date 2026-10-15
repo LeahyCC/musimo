@@ -149,6 +149,42 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
         ) as client:
             yield client
 
+    async def test_queue_writer_rejects_delayed_and_previous_browser_saves(self) -> None:
+        path = self.music / "kept.wav"
+        write_wav(path)
+        tag(path, title="Kept", artist="Fixture")
+        self.library.scan()
+        sid = self.titles()["Kept"]
+        async with self.api() as client:
+            epoch = (await client.post("/api/player/queue/writer")).json()["epoch"]
+            undo = {"ids": [sid], "current": sid, "position": 4200, "epoch": epoch, "sequence": 3}
+            self.assertEqual((await client.put("/api/player/queue", json=undo)).status_code, 204)
+            for sequence in [1, 2, 3]:
+                response = await client.put(
+                    "/api/player/queue",
+                    json={
+                        "ids": [],
+                        "epoch": epoch,
+                        "sequence": sequence,
+                    },
+                )
+                self.assertEqual(response.status_code, 409)
+            saved = (await client.get("/api/player/queue")).json()
+            self.assertEqual(saved["position"], 4200)
+            self.assertEqual(saved["current"], sid)
+            self.assertEqual([song["id"] for song in saved["entry"]], [sid])
+            await client.post("/api/player/queue/writer")
+            self.assertEqual(
+                (await client.put("/api/player/queue", json=undo | {"sequence": 100})).status_code,
+                409,
+            )
+            self.assertEqual(
+                (
+                    await client.put("/api/player/queue", json={"ids": [], "sequence": 5})
+                ).status_code,
+                422,
+            )
+
     async def test_capabilities_follow_the_music_folder(self) -> None:
         async with self.api() as client:
             ready = (await client.get("/api/player/capabilities")).json()

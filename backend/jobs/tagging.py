@@ -122,7 +122,11 @@ class Tagger:
         )
         target = directory / ("ready." + extension)
         target.unlink(missing_ok=True)
-        if source.suffix.lower() == "." + extension:
+        # The container alone cannot tell AAC from ALAC inside an .m4a file.
+        expected_codec = {"m4a": "aac", "mp3": "mp3", "opus": "opus"}.get(extension)
+        if source.suffix.lower() == "." + extension and (
+            format == "original" or codec == expected_codec
+        ):
             shutil.copyfile(source, target)
             return target
         options = ["-c:a", "copy"]

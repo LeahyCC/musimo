@@ -609,6 +609,11 @@ class Library:
         if audio is None:
             raise ValueError("Unsupported or invalid audio")
         facts = facts_for(audio, path.suffix.lower(), stat.st_size)
+        flac_id3 = False
+        if path.suffix.lower() == ".flac":
+            # Mutagen accepts an ID3 prefix but does not expose it in the FLAC tag object.
+            with path.open("rb") as header:
+                flac_id3 = header.read(3) == b"ID3"
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
@@ -627,13 +632,13 @@ class Library:
                         replaygain_track_gain, replaygain_album_gain,
                         replaygain_track_peak, replaygain_album_peak,
                         suffix, content_type, bitrate, sample_rate, bit_depth, channels,
-                        has_art, tags_version, record_labels
+                        has_art, tags_version, record_labels, codec, flac_id3
                     ) VALUES (
                         ?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,
                         ?,?,?,?,?,?,?,
                         ?,?,?,?,
                         ?,?,?,?,?,?,
-                        ?,?,?
+                        ?,?,?,?,?
                     )
                     ON CONFLICT(path) DO UPDATE SET
                         root=excluded.root,
@@ -669,6 +674,8 @@ class Library:
                         has_art=excluded.has_art,
                         tags_version=excluded.tags_version,
                         record_labels=excluded.record_labels,
+                        codec=excluded.codec,
+                        flac_id3=excluded.flac_id3,
                         song_id=CASE
                             WHEN library_files.song_id='' THEN excluded.song_id
                             ELSE library_files.song_id
@@ -715,6 +722,8 @@ class Library:
                         facts.has_art,
                         TAGS_VERSION,
                         facts.record_labels,
+                        facts.codec,
+                        int(flac_id3),
                     ),
                 )
                 note_library_change(self.store.db)

@@ -23,6 +23,9 @@ const seed = ([active, custom, vars]: readonly [string, string, string]) => {
   localStorage.setItem('musimo.theme-vars', vars)
 }
 
+/** The theme cards. The page has other radio groups, such as the pet's. */
+const themePicker = (page: Page) => page.locator('section[aria-labelledby="appearance"]')
+
 const painted = (page: Page) =>
   page.evaluate(() => {
     const root = document.documentElement
@@ -260,7 +263,7 @@ test('a saved theme can be edited in place', async ({ page }) => {
   await page.getByRole('button', { name: 'Save' }).click()
 
   await expect(page.getByRole('radio', { name: 'Plum' })).toBeChecked()
-  await expect(page.getByRole('radio')).toHaveCount(BUILT_IN_THEMES.length + 1)
+  await expect(themePicker(page).getByRole('radio')).toHaveCount(BUILT_IN_THEMES.length + 1)
   await page.reload()
   // The boot script's copy was rewritten along with the theme, so the new accent is there on
   // the first frame.
@@ -344,7 +347,7 @@ test('a file that is not a theme is refused and changes nothing', async ({ page 
   })
 
   await expect(page.getByRole('alert')).toContainText('not a Musimo theme')
-  await expect(page.getByRole('radio')).toHaveCount(BUILT_IN_THEMES.length)
+  await expect(themePicker(page).getByRole('radio')).toHaveCount(BUILT_IN_THEMES.length)
   await backdropIs(page, DEFAULT_THEME.colors['--color-canvas'])
   expect(await page.evaluate(() => localStorage.getItem('musimo.custom-themes'))).toBeNull()
 })

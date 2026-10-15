@@ -6,6 +6,7 @@ import { AlertCircle, ArrowRight, Check, Folder, LockKeyhole } from 'lucide-reac
 
 import {
   api,
+  botModelsSchema,
   diagnosticsSchema,
   namingSchema,
   settingsSchema,
@@ -37,6 +38,18 @@ const controls: {
   max?: number
   section: string
 }[] = [
+  {
+    key: 'ollama_url',
+    label: 'Ollama server address',
+    help: 'Address reachable from the Musimo server, for example http://127.0.0.1:11434.',
+    section: 'music-bot',
+  },
+  {
+    key: 'music_timezone',
+    label: 'Music time zone',
+    help: 'Used for played today. For example Pacific/Honolulu or Europe/London.',
+    section: 'music-bot',
+  },
   {
     key: 'destination',
     label: 'Download to',
@@ -138,6 +151,7 @@ function NamingPreview({ template }: { template: string }) {
 }
 
 export function SettingsPage() {
+  const connection = useMutation({ mutationFn: () => api('music-bot/models', botModelsSchema) })
   const client = useQueryClient()
   const settings = useQuery({
     queryKey: ['settings'],
@@ -377,15 +391,44 @@ export function SettingsPage() {
               save.mutate()
             }}
           >
-            {['library', 'audio', 'queue'].map((section) => (
+            {['library', 'audio', 'queue', 'music-bot'].map((section) => (
               <section id={section} className={settingsSectionClassName} key={section}>
                 <h2 className={settingsSectionHeadingClassName}>
                   {section === 'library'
                     ? 'Your library'
                     : section === 'audio'
                       ? 'Audio quality'
-                      : 'Queue & retries'}
+                      : section === 'music-bot'
+                        ? 'Music bot'
+                        : 'Queue & retries'}
                 </h2>
+                {section === 'music-bot' && (
+                  <div className="mt-4 flex flex-wrap items-center gap-3">
+                    <Button
+                      disabled={connection.isPending || 'ollama_url' in draft}
+                      onClick={() => connection.mutate()}
+                    >
+                      Test Ollama connection
+                    </Button>
+                    <Link
+                      to="/music-bot"
+                      className="underline coarse:min-h-11 coarse:content-center"
+                    >
+                      Open music bot
+                    </Link>
+                    <p role="status">
+                      {'ollama_url' in draft
+                        ? 'Save the address before testing.'
+                        : connection.isPending
+                          ? 'Connecting…'
+                          : connection.isError
+                            ? connection.error.message
+                            : connection.data
+                              ? `Connected. ${connection.data.models.length} installed models (${connection.data.elapsed_ms} ms).`
+                              : ''}
+                    </p>
+                  </div>
+                )}
                 {section === 'queue' && (
                   <p className="mt-[14px] max-w-[520px] text-small text-muted">
                     How many times a song walks the source list is under Sources.

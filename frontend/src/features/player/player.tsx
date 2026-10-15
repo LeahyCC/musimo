@@ -56,6 +56,7 @@ import {
   readHistory,
   writeHistory,
 } from './play-history'
+import { QueueWriter } from './queue-writer'
 import {
   playsAlbumInOrder,
   replayGainHasPeak,
@@ -69,6 +70,7 @@ import { SLEEP_FADE_SECONDS, sleepChoiceLabel } from './sleep-timer'
 import type { SleepChoice, SleepStatus } from './sleep-timer'
 
 export type RepeatMode = 'off' | 'all' | 'one'
+export type BotQueueAction = 'play' | 'next' | 'append' | 'replace'
 type ExtendResult = 'added' | 'skipped' | 'idle' | 'failed'
 export type PreviewState = 'finding' | 'none' | 'ready'
 export type LikedControl = {
@@ -120,6 +122,10 @@ type Playback = {
   moveInQueue: (from: number, to: number) => void
   /** Empties the queue but for the track that is playing. */
   clearQueue: () => void
+  botStamp: () => string
+  applyBotQueue: (tracks: LibraryTrack[], action: BotQueueAction, expected: string) => void
+  undoBotQueue: () => void
+  canUndoBotQueue: boolean
   /** Library tracks that played, newest first. Kept in this browser only. */
   history: readonly HistoryEntry[]
   clearHistory: () => void
@@ -171,6 +177,10 @@ const PlayerContext = createContext<Playback>({
   removeFromQueue: () => undefined,
   moveInQueue: () => undefined,
   clearQueue: () => undefined,
+  botStamp: () => '',
+  applyBotQueue: () => undefined,
+  undoBotQueue: () => undefined,
+  canUndoBotQueue: false,
   history: [],
   clearHistory: () => undefined,
   toggle: () => undefined,
@@ -683,12 +693,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Bumped on every library load, so a wait for more shuffle songs can tell the listener moved on.
   const libraryLoads = useRef(0)
   const queueRef = useRef<LibraryTrack[]>([])
+  // Bumped when the queue or the loaded track changes. Pause and play leave it alone,
+  // so a music-bot undo can survive those.
+  const queueGeneration = useRef(0)
+  const botUndo = useRef<{
+    stamp: string
+    tracks: LibraryTrack[]
+    index: number
+    position: number
+    chosen: Set<LibraryTrack>
+    source: string
+    deck: Deck | null
+    edited: boolean
+  } | null>(null)
+  const [canUndoBotQueue, setCanUndoBotQueue] = useState(false)
   const indexRef = useRef(-1)
   // A library shuffle bigger than the saved queue. Null for an album, a playlist, or a short list.
   const deck = useRef<Deck | null>(null)
   const extendJob = useRef<Promise<ExtendResult> | null>(null)
   // Bumped on every queue save so an older response cannot count as the latest one.
   const queueSave = useRef(0)
+  const queueWriter = useRef<QueueWriter | null>(null)
   // The collection that filled the queue. Edits leave it alone; `queueSource` says what it counts as.
   const sourceRef = useRef('')
   const editedRef = useRef(false)
@@ -937,24 +962,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // `announce` is for an edit the listener just made: it is the one save whose failure they need
   // to hear about, since the queue on screen would then differ from the one that restores.
+  function persistQueue(body: string): Promise<Response | null> {
+    queueWriter.current ??= new QueueWriter((replaced) =>
+      setNotice(
+        replaced
+          ? 'Another browser saved the queue. Refresh to restore it before saving more changes.'
+          : QUEUE_SAVE_FAILED,
+      ),
+    )
+
+    return queueWriter.current.save(body)
+  }
+
   function saveQueue(announce = false): Promise<boolean> {
     if (mode.current !== 'library' || !libraryCurrent.current) return Promise.resolve(false)
     const generation = ++queueSave.current
     const ids = queueRef.current.map((item) => item.id)
     const deckAtSave = deck.current
-    return fetch('/api/player/queue', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    return persistQueue(
+      JSON.stringify({
         ids,
         current: libraryCurrent.current.id,
         position: Math.round((library()?.currentTime ?? 0) * 1000),
       }),
-    })
+    )
       .then((response) => {
+        if (!response) return false
         if (generation !== queueSave.current) return false
         if (!response.ok) {
-          if (announce) setNotice(QUEUE_SAVE_FAILED)
+          if (announce && response.status !== 409) setNotice(QUEUE_SAVE_FAILED)
           return false
         }
         // The deck fingerprint has to match the queue that was actually stored.
@@ -1297,6 +1333,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function loadLibrary(index: number, autoplay = true, seek = 0) {
     const item = queueRef.current[index]
     if (!item) return
+    queueGeneration.current += 1
+    setCanUndoBotQueue(false)
     request.current?.abort()
     cancelHandover()
     // The standby element already holds this song: hand over to it instead of loading it again.
@@ -1509,6 +1547,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // keeps the collection it began as, marked edited, for as long as the playing track is one of
   // that collection's own.
   function editQueue(items: LibraryTrack[], index: number) {
+    queueGeneration.current += 1
+    setCanUndoBotQueue(false)
     // A hand edit ends a library shuffle. The queue on screen is the whole queue again.
     clearDeck()
     queueRef.current = items
@@ -1552,6 +1592,96 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const playNext = (tracks: LibraryTrack[]) => enqueue(tracks, true)
   const addToQueue = (tracks: LibraryTrack[]) => enqueue(tracks, false)
+
+  function botStamp() {
+    return `${queueGeneration.current}:${libraryLoads.current}:${indexRef.current}:${queueRef.current.map((item) => item.id).join(',')}`
+  }
+
+  function applyBotQueue(tracks: LibraryTrack[], action: BotQueueAction, expected: string) {
+    // Check refs synchronously after validation, not the render that started the request.
+    if (botStamp() !== expected) throw new Error('The queue changed. Ask again before applying.')
+    if (!tracks.length) throw new Error('There are no songs to apply.')
+    if (mode.current === 'preview' && previewCurrent.current)
+      throw new Error('Close the catalog preview before applying a music bot selection.')
+    const old = libraryCurrent.current ? queueRef.current : []
+    const count =
+      action === 'play' || !libraryCurrent.current
+        ? 0
+        : action === 'replace'
+          ? indexRef.current + 1
+          : old.length
+    const refusal = queueOverflow(Math.max(0, count), tracks.length)
+    if (refusal) throw new Error(refusal)
+    const before = {
+      tracks: [...old],
+      index: indexRef.current,
+      position: library()?.currentTime ?? 0,
+      chosen: new Set(chosen.current),
+      source: sourceRef.current,
+      // Clone: an in-flight window fetch may still hold the former object after the edit.
+      deck: deck.current ? { ...deck.current } : null,
+      edited: editedRef.current,
+    }
+    if (action === 'play')
+      playLibrary(
+        tracks.map((item) => ({ ...item })),
+        0,
+        'music-bot',
+      )
+    else if (action === 'replace' && libraryCurrent.current) {
+      chosen.current.clear()
+      const entries = tracks.map((item) => ({ ...item }))
+      for (const entry of entries) {
+        chosen.current.add(entry)
+        added.current.add(entry)
+      }
+      editQueue([...old.slice(0, indexRef.current + 1), ...entries], indexRef.current)
+    } else enqueue(tracks, action === 'next')
+    botUndo.current = { ...before, stamp: botStamp() }
+    setCanUndoBotQueue(true)
+    void saveQueue(true)
+  }
+
+  function undoBotQueue() {
+    const before = botUndo.current
+    if (!before || before.stamp !== botStamp()) {
+      setCanUndoBotQueue(false)
+      throw new Error('The queue changed after that edit. Undo will not overwrite it.')
+    }
+    botUndo.current = null
+    setCanUndoBotQueue(false)
+    const sameSong =
+      before.tracks.length > 0 && before.tracks[before.index] === libraryCurrent.current
+    chosen.current = before.chosen
+    sourceRef.current = before.source
+    editedRef.current = before.edited
+    queueRef.current = before.tracks
+    indexRef.current = before.index
+    discardPreload()
+    setQueue(before.tracks)
+    setCurrentIndex(before.index)
+    setEdited(before.edited)
+    saveChosen()
+    publishSource()
+    if (!before.tracks.length) {
+      libraryCurrent.current = null
+      stop()
+      queueSave.current += 1
+      void persistQueue(JSON.stringify({ ids: [], current: '', position: 0 }))
+        .then((response) => {
+          if (response && !response.ok && response.status !== 409) setNotice(QUEUE_SAVE_FAILED)
+        })
+        .catch(() => setNotice(QUEUE_SAVE_FAILED))
+    } else {
+      // Upcoming edits leave the playing element and its clock untouched. Undoing Play restores
+      // the former song paused, so a delayed Undo never promises a browser autoplay success.
+      // The deck is restored after the load, so that load does not fetch another shuffle window.
+      if (!sameSong) loadLibrary(before.index, false, before.position)
+      deck.current = before.deck
+      void saveQueue(true)
+    }
+    setNotice('Queue edit undone.')
+  }
 
   function removeFromQueue(index: number) {
     const queue = queueRef.current
@@ -2076,6 +2206,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         removeFromQueue,
         moveInQueue,
         clearQueue,
+        botStamp,
+        applyBotQueue,
+        undoBotQueue,
+        canUndoBotQueue,
         history,
         clearHistory,
         toggle,

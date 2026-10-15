@@ -12,7 +12,7 @@ from mutagen.id3 import ID3
 from mutagen.mp4 import MP4Tags
 
 # Rows indexed before this version keep empty player columns until the file is read again.
-TAGS_VERSION = 1
+TAGS_VERSION = 2
 
 CONTENT_TYPES = {
     ".mp3": "audio/mpeg",
@@ -54,6 +54,7 @@ class AudioFacts:
     channels: int
     has_art: int
     record_labels: str
+    codec: str
 
 
 def text_list(value: object) -> list[str]:
@@ -349,4 +350,5 @@ def facts_for(audio: object, suffix: str, size: int) -> AudioFacts:
         channels=info_number(info, "channels"),
         has_art=int(found.has_art),
         record_labels=json.dumps(labels),
+        codec=codec,
     )

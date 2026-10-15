@@ -16,6 +16,9 @@ import {
   validateArtistSongSearch,
   validateLibrarySearch,
 } from '../features/library/library-params'
+import { MusicBotProvider } from '../features/music-bot/bot-chat'
+import { MusicBotPage } from '../features/music-bot/music-bot'
+import { PetHostProvider } from '../features/music-bot/pet-host'
 import { PopoutProvider } from '../features/now-playing/now-playing-popout'
 import { PlayerProvider } from '../features/player/player'
 import { PodcastPage } from '../features/podcasts/podcasts'
@@ -40,9 +43,13 @@ const NowPlayingPage = lazy(() =>
 const rootRoute = createRootRoute({
   component: () => (
     <PlayerProvider>
-      <PopoutProvider>
-        <Shell />
-      </PopoutProvider>
+      <MusicBotProvider>
+        <PopoutProvider>
+          <PetHostProvider>
+            <Shell />
+          </PetHostProvider>
+        </PopoutProvider>
+      </MusicBotProvider>
     </PlayerProvider>
   ),
   notFoundComponent: () => (
@@ -219,6 +226,11 @@ const settingsRoute = createRoute({
   path: '/settings',
   component: SettingsPage,
 })
+const musicBotRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/music-bot',
+  component: MusicBotPage,
+})
 const userSettingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/user',
@@ -249,6 +261,7 @@ export const router = createRouter({
     nowPlayingRoute,
     downloadsRoute,
     settingsRoute,
+    musicBotRoute,
     userSettingsRoute,
     diagnosticsRoute,
   ]),

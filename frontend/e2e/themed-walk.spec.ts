@@ -267,6 +267,11 @@ const ROUTES: Walk[] = [
     ready: (page) => page.getByRole('heading', { name: 'Your library', level: 2 }),
   },
   {
+    name: 'music-bot',
+    path: '/music-bot',
+    ready: (page) => page.getByRole('heading', { name: 'Music bot', level: 1 }),
+  },
+  {
     name: 'settings-user',
     path: '/settings/user',
     ready: (page) => page.getByRole('heading', { name: 'Your settings', level: 1 }),
@@ -308,6 +313,9 @@ test.beforeEach(async ({ page }) => {
   await emptyQueue(page)
   await searchFixtures(page)
   await libraryFixtures(page)
+  await page.route('**/api/music-bot/models', (route) =>
+    route.fulfill({ json: { models: [], elapsed_ms: 1 } }),
+  )
 })
 
 for (const route of ROUTES) {

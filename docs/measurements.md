@@ -2,6 +2,21 @@
 
 Run date: 6 September 2026 HST. Host: Windows desktop, Docker Desktop Linux/amd64. Experimental raw data initially lives in `.research`; final summaries are copied to `docs/evidence`.
 
+## Local player baseline, 13 October 2026
+
+`scripts/player_benchmark.py` ran in a disposable Linux container on Docker Desktop/WSL2, Python 3.14.8, against the player at `38470ef`. Generated tagged WAV files form 50-track albums and ten albums per artist. Each operation gets a fresh Player instance for its cold read, followed by one warm read. These are single samples of service calls, not HTTP latency or percentiles. Cold means an empty player cache; the filesystem cache is already warm from scanning.
+
+| Operation              | 2,000 files, cold / warm | 50,000 files, cold / warm |
+| ---------------------- | ------------------------ | ------------------------- |
+| Build view             | 57.21 / 0.28 ms          | 1,937.79 / 0.36 ms        |
+| Restore 500-song queue | 144.49 / 0.91 ms         | 1,824.08 / 1.99 ms        |
+| First 50 albums        | 72.58 / 0.27 ms          | 1,613.65 / 2.24 ms        |
+| First 100 tracks       | 63.06 / 0.80 ms          | 1,842.29 / 47.31 ms       |
+
+Process peak RSS was 65.30 MB and 371.39 MB respectively. This includes fixture creation, scan and successive player instances, not just one view's retained memory. Files have no artwork, so this does not measure large image transfers or a mixed personal library. The real library remains unmeasured.
+
+The 50,000-file result justifies a bounded queue lookup before a wider browsing rewrite. Preserve these fixtures for the before/after comparison. Run `uv run python -m scripts.player_benchmark --files 2000 --output runtime/player-benchmark.json`; use `--files 50000` for the larger sample. Peak RSS is reported on Linux and macOS, and explicitly unavailable on Windows.
+
 ## Completed research checks
 
 - the library ping: 0.63.2, 82 ms in an unauthenticated request. This confirms version/reachability only.
