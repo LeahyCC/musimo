@@ -8,9 +8,9 @@ dependencies = [
   "uvicorn==0.54.0",
   "httpx==0.28.1",
   "yt-dlp[default,curl-cffi]==2026.8.19",
-  "bgutil-ytdlp-pot-provider==2.0.0",
+  "bgutil-ytdlp-pot-provider==2.0.2",
   "mutagen==1.48.1",
-  "pycryptodomex==3.23.0",
+  "pycryptodomex==3.24.0",
   "watchdog==6.0.0",
   "tzdata==2026.5",
 ]
@@ -20,7 +20,7 @@ dev = [
     "coverage==7.16.2",
     "mypy==2.4.0",
     "pip-audit==2.10.1",
-    "ruff==0.16.10",
+    "ruff==0.17.0",
 ]
 
 [tool.mypy]

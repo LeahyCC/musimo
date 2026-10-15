@@ -2,10 +2,11 @@
 
 import asyncio
 import tempfile
+import threading
 import time
 import unittest
 import wave
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import cast
@@ -44,7 +45,10 @@ from backend.library.player import (
     SHUFFLE_ID_LIMIT,
     SHUFFLE_ORDER_SECONDS,
     UNMOUNTED,
+    FolderCover,
+    LibraryView,
     Player,
+    StoredSong,
 )
 from backend.version import VERSION
 
@@ -203,6 +207,60 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(absent["available"], False)
         self.assertEqual(absent["detail"], UNMOUNTED)
         self.assertNotIn("playback server", str(ready["detail"]) + str(unmounted["detail"]))
+
+    async def test_two_callers_share_one_catalog_build(self) -> None:
+        started = threading.Event()
+        release = threading.Event()
+        calls = 0
+        real = self.player._build
+
+        def counting(
+            songs: list[StoredSong],
+            covers: dict[str, FolderCover],
+            favourites: Mapping[str, str],
+            revision: int,
+            token: int,
+        ) -> LibraryView:
+            nonlocal calls
+            calls += 1
+            started.set()
+            self.assertTrue(release.wait(2))
+            return real(songs, covers, favourites, revision, token)
+
+        with patch.object(self.player, "_build", counting):
+            first = asyncio.create_task(asyncio.to_thread(self.player.view))
+            await asyncio.to_thread(started.wait, 2)
+            second = asyncio.create_task(asyncio.to_thread(self.player.view))
+            await asyncio.sleep(0.05)
+            release.set()
+            await first
+            await second
+        self.assertEqual(calls, 1)
+
+    async def test_a_warm_catalog_serves_the_first_page(self) -> None:
+        path = self.music / "Warm" / "Song.wav"
+        write_wav(path)
+        tag(path, title="Song", artist="Warm", album="Ready", album_artist="Warm")
+        self.library.scan()
+        self.assertIsNone(self.player._cached)
+        await self.player.warm()
+        self.assertIsNotNone(self.player._cached)
+        with (
+            patch.object(self.player, "_build", side_effect=AssertionError),
+            patch("backend.library.player.sort_albums", side_effect=AssertionError),
+            patch("backend.library.player.sort_tracks", side_effect=AssertionError),
+        ):
+            async with self.api() as client:
+                albums = (
+                    await client.get("/api/library/albums?sort=newest&offset=0&size=6")
+                ).json()
+                tracks = (
+                    await client.get("/api/library/tracks?sort=title&offset=0&size=10")
+                ).json()
+        self.assertEqual(albums["total"], 1)
+        self.assertEqual(albums["items"][0]["name"], "Ready")
+        self.assertEqual(tracks["total"], 1)
+        self.assertEqual(tracks["items"][0]["title"], "Song")
 
     async def test_albums_filter_and_sort_across_the_library(self) -> None:
         for album, artist, title, year, genres in (
@@ -932,6 +990,25 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(art.status_code, 200)
             self.assertEqual(art.content, b"second-image")
             self.assertIn("immutable", art.headers["cache-control"])
+
+    async def test_browsing_does_not_list_music_folders(self) -> None:
+        folder = self.music / "Band" / "Album"
+        path = folder / "song.wav"
+        write_wav(path)
+        tag(path, title="Song", artist="Band", album="Album", album_artist="Band")
+        (folder / "cover.jpg").write_bytes(b"jpeg-bytes")
+        self.library.scan()
+        with patch.object(Path, "iterdir", side_effect=AssertionError("listed a music folder")):
+            async with self.api() as client:
+                listing = (await client.get("/api/library/tracks?size=10")).json()
+                self.assertEqual(listing["total"], 1)
+                cover_id = listing["items"][0]["coverArt"]
+                art = await client.get(f"/api/player/art/{cover_id}")
+                self.assertEqual(art.status_code, 200)
+                self.assertEqual(art.content, b"jpeg-bytes")
+                albums = (await client.get("/api/library/albums")).json()
+                album_art = await client.get(f"/api/player/art/{albums['items'][0]['coverArt']}")
+                self.assertEqual(album_art.content, b"jpeg-bytes")
 
     async def test_a_finished_download_is_browsable_and_streamable(self) -> None:
         def refuse(request: httpx.Request) -> httpx.Response:

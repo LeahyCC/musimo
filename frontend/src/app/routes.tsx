@@ -11,6 +11,11 @@ import {
 
 import { DiagnosticsPage } from '../features/diagnostics/diagnostics'
 import { DownloadsPage } from '../features/downloads/downloads'
+import {
+  validateArtistAlbumSearch,
+  validateArtistSongSearch,
+  validateLibrarySearch,
+} from '../features/library/library-params'
 import { MusicBotProvider } from '../features/music-bot/bot-chat'
 import { MusicBotPage } from '../features/music-bot/music-bot'
 import { PetHostProvider } from '../features/music-bot/pet-host'
@@ -128,11 +133,13 @@ function LibraryScreen({
 const libraryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library',
+  validateSearch: (search: Record<string, unknown>) => validateLibrarySearch('home', search),
   component: () => <LibraryScreen />,
 })
 const libraryAlbumsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library/albums',
+  validateSearch: (search: Record<string, unknown>) => validateLibrarySearch('albums', search),
   component: () => <LibraryScreen view="albums" />,
 })
 const libraryAlbumRoute = createRoute({
@@ -154,11 +161,13 @@ const libraryAlbumRoute = createRoute({
 const libraryArtistsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library/artists',
+  validateSearch: (search: Record<string, unknown>) => validateLibrarySearch('artists', search),
   component: () => <LibraryScreen view="artists" />,
 })
 const libraryArtistRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library/artists/$artistId',
+  validateSearch: validateArtistAlbumSearch,
   component: function LibraryArtistRoute() {
     const { artistId } = useParams({ from: '/library/artists/$artistId' })
     return <LibraryScreen view="artists" artistId={artistId} />
@@ -167,6 +176,7 @@ const libraryArtistRoute = createRoute({
 const libraryArtistSongsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library/artists/$artistId/songs',
+  validateSearch: validateArtistSongSearch,
   component: function LibraryArtistSongsRoute() {
     const { artistId } = useParams({ from: '/library/artists/$artistId/songs' })
     return <LibraryScreen view="artists" artistId={artistId} artistSection="songs" />
@@ -185,11 +195,13 @@ const libraryArtistAlbumRoute = createRoute({
 const libraryTracksRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library/tracks',
+  validateSearch: (search: Record<string, unknown>) => validateLibrarySearch('tracks', search),
   component: () => <LibraryScreen view="tracks" />,
 })
 const libraryPlaylistsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library/playlists',
+  validateSearch: (search: Record<string, unknown>) => validateLibrarySearch('playlists', search),
   component: () => <LibraryScreen view="playlists" />,
 })
 const libraryPlaylistRoute = createRoute({

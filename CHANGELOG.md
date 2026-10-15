@@ -33,6 +33,9 @@
 
 ### Library and playback
 
+- Keep each library view's search, filters and sort in the address, and bring that view's last choice back from a tab or a back link
+- Answer as soon as the process starts. The folder check takes its first look in the background, leftover download folders are cleared after that, and the library list is built before the first page asks for it, then again after the index changes
+- Open Tracks from the index. Cover images are remembered when the library is scanned, so the list does not walk the music folders
 - Play from the music folders. Playback no longer uses a separate server. Playlists, favourites, play counts, and the saved queue from that server do not carry over. Rolling back after the version 6 upgrade needs the backup taken before it
 - Change the MilkDrop preset on the beat. A drop gets a harder picture and a quiet stretch a calmer one, and the changes come closer together as the song goes on
 - Check a polled music folder every five minutes instead of every minute

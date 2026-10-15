@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import importlib.metadata
 import os
 import platform
@@ -115,10 +116,15 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             library.start()
             downloads = Downloads(store, catalog, library, changed)
             downloads.start()
+            # The first page would otherwise wait while this build reads the index.
+            ready = asyncio.create_task(player.keep_ready())
             links = Links(downloads)
             try:
                 yield
             finally:
+                ready.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await ready
                 await downloads.close()
                 await library.close()
                 store.close()
