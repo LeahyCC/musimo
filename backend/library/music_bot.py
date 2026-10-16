@@ -891,15 +891,19 @@ class MusicBot:
     ) -> tuple[list[dict[str, object]], float]:
         """Walk the ranked songs in order and keep the ones that can play.
 
-        The seed of "more like this" is never its own match, nor is another copy of it; the
-        same title by the same artist is kept once; and an artist fills at most two places
-        unless the plan names it. Retained proposal songs were checked already; they still
-        count towards both rules.
+        The seed of "more like this" is never its own match, nor is another copy of it. A
+        library search, or any search that adds songs to a proposal, keeps the same title by the
+        same artist once and lets an artist fill at most two places unless the plan names it.
+        Refining a proposal or the queue only filters that selection, so neither rule applies
+        there. A song with no artist tag has no artist to cap or to share a title with.
+        Retained proposal songs were checked already; they still count towards both rules.
         """
-        named = {normalize(name) for name in plan.artists}
+        capped = plan.scope == "library" or bool(plan.add_count)
+        named = {_artist_key(name) for name in plan.artists}
         kept: set[tuple[str, str]] = set()
-        if seed is not None and normalize(seed.title):
-            kept.add((normalize(seed.title), normalize(seed.artist)))
+        seed_key = (
+            (normalize(seed.title), _artist_key(seed.artist)) if seed is not None else ("", "")
+        )
         per_artist: dict[str, int] = {}
         tracks: list[dict[str, object]] = []
         total = 0.0
@@ -907,15 +911,23 @@ class MusicBot:
             *((song, True) for song in retained),
             *((s, False) for s in candidates),
         ]:
-            artist_key = normalize(song.artist)
+            artist_key = _artist_key(song.artist)
             title_key = normalize(song.title)
             if not checked:
                 if seed is not None and song.song_id == seed.song_id:
                     continue
-                # An untitled song is not "the same title" as another untitled one.
-                if title_key and (title_key, artist_key) in kept:
+                if seed_key[0] and (title_key, artist_key) == seed_key:
                     continue
-                if artist_key not in named and per_artist.get(artist_key, 0) >= ARTIST_CAP:
+                # An untitled song is not "the same title" as another untitled one, and an
+                # untagged artist is not the same artist as another untagged one.
+                if capped and title_key and artist_key and (title_key, artist_key) in kept:
+                    continue
+                if (
+                    capped
+                    and artist_key
+                    and artist_key not in named
+                    and per_artist.get(artist_key, 0) >= ARTIST_CAP
+                ):
                     continue
                 if self.player.local_file(song.song_id) is None:
                     continue
@@ -960,6 +972,13 @@ class MusicBot:
             ):
                 raise changed
         return {"tracks": [view.by_song[sid] for sid in selection.ids]}
+
+
+def _artist_key(artist: str) -> str:
+    """The artist the cap and the title rule count by. A name made only of punctuation, such
+    as "!!!", normalizes to nothing, so it keeps its own spelling, spaced as `_same_artist`
+    compares it. "" means no artist tag."""
+    return normalize(artist) or " ".join(artist.casefold().split())
 
 
 def _reply(

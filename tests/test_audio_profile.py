@@ -340,6 +340,44 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
         song = self.player.view().stored[str(job["song_id"])]
         self.assertIsNone(self.profiles.profiles(SCALAR).fresh(song))
 
+    def test_a_limited_enqueue_reaches_untried_songs_before_retrying_a_skip_or_failure(
+        self,
+    ) -> None:
+        # Chatter (a podcast, always skipped) is the newest file, then Beta, then Alpha.
+        with self.store.lock:
+            for title, added in (("Chatter", 3), ("Beta", 2), ("Alpha", 1)):
+                self.store.db.execute(
+                    "UPDATE library_files SET added_at=? WHERE song_id=?",
+                    (f"2026-10-0{added}T00:00:00Z", self.ids[title]),
+                )
+            self.store.db.commit()
+        enqueue(self.store, SCALAR_RECIPE, 1)
+        job = self.lease()
+        self.assertEqual(job["song_id"], self.ids["Chatter"])
+        self.profiles.complete(
+            result(job, status="skipped", tempo_bpm=None, energy=None, detail="spoken-word genre"),
+            T0,
+        )
+        # The skipped song still lacks a done row, but a song never tried comes first.
+        enqueue(self.store, SCALAR_RECIPE, 1)
+        self.assertEqual(self.queue_rows(), [(self.ids["Beta"], "queued", 0)])
+        for attempt in range(1, MAX_ATTEMPTS + 1):
+            job = self.lease(T0 + timedelta(minutes=attempt))
+            self.profiles.complete(
+                result(job, status="failed", tempo_bpm=None, energy=None, detail="no tempo"),
+                T0 + timedelta(minutes=attempt, seconds=1),
+            )
+        self.assertEqual(self.queue_rows(), [])
+        enqueue(self.store, SCALAR_RECIPE, 1)
+        self.assertEqual(self.queue_rows(), [(self.ids["Alpha"], "queued", 0)])
+        job = self.lease(T0 + timedelta(hours=1))
+        self.profiles.complete(result(job), T0 + timedelta(hours=1, seconds=1))
+        # With nothing left untried, the skip and the failure are tried again, newest first.
+        self.assertEqual(enqueue(self.store, SCALAR_RECIPE, 5), 2)
+        self.assertEqual(
+            [row[0] for row in self.queue_rows()], [self.ids["Chatter"], self.ids["Beta"]]
+        )
+
     def test_a_lease_that_lapses_three_times_marks_the_song_failed(self) -> None:
         enqueue(self.store, SCALAR_RECIPE, 1)
         first = self.lease(T0)

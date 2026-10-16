@@ -453,8 +453,10 @@ class AudioProfiles:
     def enqueue(self, recipe_id: str, limit: int | None) -> int:
         """Queue songs without a fresh done row for this recipe, newest files first.
 
-        `limit` None queues every one. Songs already queued are left as they are. Returns how
-        many rows were added.
+        Songs never tried on the file as it is now come before songs whose fresh row is failed or
+        skipped, so a limited run reaches new songs before it retries ones that will likely fail
+        or skip again. `limit` None queues every one. Songs already queued are left as they are.
+        Returns how many rows were added.
         """
         if recipe_for(recipe_id) is None:
             raise LeaseError("Unknown recipe", 422)
@@ -467,10 +469,20 @@ class AudioProfiles:
                     INSERT INTO audio_job (song_id, recipe, status)
                     SELECT f.song_id, ?, 'queued' FROM library_files f
                     {_LACKING_SQL}
-                    ORDER BY f.added_at DESC, f.path
+                    ORDER BY EXISTS (
+                        SELECT 1 FROM audio_profile p
+                        WHERE p.song_id = f.song_id AND p.recipe = ?
+                          AND p.size = f.size AND p.mtime_ns = f.mtime_ns
+                    ), f.added_at DESC, f.path
                     LIMIT ?
                     """,
-                    (recipe_id, recipe_id, recipe_id, -1 if limit is None else max(0, limit)),
+                    (
+                        recipe_id,
+                        recipe_id,
+                        recipe_id,
+                        recipe_id,
+                        -1 if limit is None else max(0, limit),
+                    ),
                 )
                 db.commit()
                 return int(cursor.rowcount)

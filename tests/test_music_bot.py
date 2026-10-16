@@ -448,6 +448,80 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(ids), 3)
         self.assertIn("Similarity uses artist or genre tags", str(result["summary"]))
 
+    def retag(self, **artists_and_titles: tuple[str, str]) -> None:
+        with self.store.lock:
+            for key, (artist, title) in artists_and_titles.items():
+                self.store.db.execute(
+                    "UPDATE library_files SET artist=?, title=? WHERE song_id=?",
+                    (artist, title, self.ids[key.replace("_", " ")]),
+                )
+            self.store.db.commit()
+        self.store.bump_library_revision()
+
+    def test_untagged_artists_are_not_capped_or_merged_by_title(self) -> None:
+        # Five songs with no artist tag, two of them both called Intro, are five songs.
+        self.retag(
+            A_yesterday=("", "A yesterday"),
+            B_today=("", "Intro"),
+            C_unliked=("", "Intro"),
+            D_eighties=("", "D eighties"),
+            F_unknown=(" ", "F unknown"),
+        )
+        self.assertEqual(len(result_ids(self.resolve(plan()))), 6)
+        # A name made only of punctuation is still an artist of its own, and still capped.
+        self.retag(
+            A_yesterday=("!!!", "A yesterday"),
+            B_today=("!!!", "B today"),
+            C_unliked=("!!!", "C unliked"),
+            D_eighties=("???", "D eighties"),
+            F_unknown=("???", "F unknown"),
+        )
+        self.assertEqual(len(result_ids(self.resolve(plan()))), 5)
+        # A named punctuation-only artist is uncapped, however its spaces are written.
+        self.retag(D_eighties=("!!!", "D eighties"), F_unknown=("!!!", "F unknown"))
+        self.assertEqual(len(result_ids(self.resolve(plan(artists=["  !!!"])))), 5)
+
+    def test_refining_the_queue_or_a_proposal_keeps_every_match(self) -> None:
+        # B today's copy shares its title and artist; a library search keeps it once.
+        self.retag(C_unliked=("Harbor", "B today"))
+        everything = list(self.ids.values())
+        self.assertEqual(len(result_ids(self.resolve(plan(max_seconds=1200)))), 3)
+        # The person's own queue is filtered, never thinned to two songs an artist.
+        for scope, request in (
+            ("queue", BotRequest(prompt="under 20 minutes", queue_ids=everything)),
+            ("proposal", BotRequest(prompt="under 20 minutes", proposal_ids=everything)),
+        ):
+            with self.subTest(scope=scope):
+                result = self.resolve(plan(scope=scope, max_seconds=1200), request)
+                self.assertEqual(sorted(result_ids(result)), sorted(everything))
+        # The seed of "more like this" and a copy of it stay out in every scope.
+        self.retag(D_eighties=("Harbor", "A yesterday"))
+        request = BotRequest(
+            prompt="more like this", queue_ids=everything, reference_id=self.ids["A yesterday"]
+        )
+        ids = result_ids(self.resolve(plan(scope="queue", similar_to_current=True), request))
+        self.assertNotIn(self.ids["A yesterday"], ids)
+        self.assertNotIn(self.ids["D eighties"], ids)
+        self.assertEqual(len(ids), 4)
+        # A seed with no artist tag still has a copy: the same title, also untagged.
+        self.retag(A_yesterday=("", "A yesterday"), D_eighties=("", "A yesterday"))
+        ids = result_ids(self.resolve(plan(scope="queue", similar_to_current=True), request))
+        self.assertNotIn(self.ids["D eighties"], ids)
+        # Adding songs from the queue to a proposal builds a selection, so both rules apply,
+        # counted from the songs already kept.
+        self.retag(A_yesterday=("Harbor", "A yesterday"), D_eighties=("Harbor", "A yesterday"))
+        request = BotRequest(
+            prompt="add more",
+            queue_ids=everything,
+            proposal_ids=[self.ids["A yesterday"], self.ids["E other"]],
+        )
+        ids = result_ids(self.resolve(plan(scope="queue", add_count=4), request))
+        self.assertEqual(ids[:2], [self.ids["A yesterday"], self.ids["E other"]])
+        self.assertNotIn(self.ids["D eighties"], ids)
+        self.assertEqual(
+            sum(sid in ids for title, sid in self.ids.items() if title != "E other"), 2
+        )
+
     def test_full_duration_and_zero_matches(self) -> None:
         result = self.resolve(plan(target_seconds=3600))
         self.assertEqual(result["total_seconds"], 3600)

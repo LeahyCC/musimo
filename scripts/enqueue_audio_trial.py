@@ -5,7 +5,8 @@
 Inside the container: docker compose exec musimo python -m scripts.enqueue_audio_trial ...
 
 Songs without a done row measured from the file as it is now are queued, newest files first.
-Failed and skipped songs count as lacking one, so they are tried again. `--all` is the
+Failed and skipped songs count as lacking one, so they are tried again, but only after every
+song not yet tried on its current file, so a limited run keeps reaching new songs. `--all` is the
 full-library scan: it prints how many songs that is and stops unless `--yes` is given too.
 Nothing here starts the worker.
 """
