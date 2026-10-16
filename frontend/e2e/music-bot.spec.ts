@@ -280,6 +280,10 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
   await expect(page.getByText('First Light \u00b7 Harbor Static')).toBeVisible()
   await page.route('**/api/music-bot/chat', async (route) => {
     expect(requestBody(route).reference_id).toBe(first.id)
+    // The songs of the last library answer go back so asking again prefers others. The browser
+    // never sends a generation seed, so every request draws a fresh one.
+    expect(requestBody(route).shown_ids).toEqual([first.id, second.id])
+    expect(requestBody(route)).not.toHaveProperty('generation_seed')
     // The plan goes back as the server sent it, with its (empty) suggestions and the song
     // characteristic fields the browser fills in when an older build's reply leaves them out.
     expect(requestBody(route).previous).toEqual({
@@ -337,6 +341,9 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
   })
   await page.getByRole('button', { name: 'Clear chat' }).click()
   await expect(page.getByRole('list', { name: 'Proposed songs' })).toHaveCount(0)
+  await expect
+    .poll(() => page.evaluate(() => sessionStorage.getItem('musimo.music-bot.shown')))
+    .toBe('[]')
   await page.reload()
   // A cleared chat stays cleared, and opens on the greeting.
   await expect(page.getByRole('heading', { name: /^Hi, I.m Octive\.$/ })).toBeVisible()

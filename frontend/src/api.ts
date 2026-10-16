@@ -462,6 +462,9 @@ export const botReplySchema = z.object({
   // back with the selection check, since the player may have moved on. Older servers send none.
   reference_id: z.string().nullable().default(null),
   current_id: z.string().nullable().default(null),
+  // Repeats a library selection on the same library state, for debugging. Set only when the
+  // server drew one; older servers send none.
+  generation_seed: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable().default(null),
 })
 export const botSelectionSchema = z.object({ tracks: z.array(libraryTrackSchema).max(500) })
 export type BotReply = z.infer<typeof botReplySchema>

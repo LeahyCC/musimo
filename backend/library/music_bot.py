@@ -2,8 +2,9 @@
 
 import asyncio
 import json
+import math
 import time
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, get_args
@@ -36,6 +37,15 @@ from backend.library.audio_profile import (
 )
 from backend.library.genres import is_genre_word, matches_genres
 from backend.library.player import LibraryView, Player, StoredSong, playlist_number, song_list
+from backend.library.selection import (
+    SEED_LIMIT,
+    SHOWN_LIMIT,
+    Drawn,
+    broad_order,
+    need_for,
+    new_seed,
+    refine_order,
+)
 
 # How many places one artist may fill in a result, unless the plan names that artist.
 ARTIST_CAP = 2
@@ -184,6 +194,11 @@ class BotRequest(BaseModel):
     reference_id: SongId | None = None
     # Where the person chose to look. When set it wins over the model's own reading of the words.
     scope: Scope | None = None
+    # Repeats a library selection against the same library state. None draws a fresh one.
+    generation_seed: int | None = Field(default=None, ge=0, lt=SEED_LIMIT)
+    # Songs this chat showed lately (kept by the browser tab only). A library search puts them
+    # after the other songs that fit as well; it never excludes them.
+    shown_ids: list[SongId] = Field(default_factory=list, max_length=SHOWN_LIMIT)
 
 
 class ValidateSelection(BaseModel):
@@ -233,7 +248,7 @@ Excluding recent plays does NOT mean never played: history stays any unless neve
 familiar music is explicitly requested. favourites is a boolean, NEVER an artist name.
 target_seconds is the whole playlist length; max_seconds only limits EACH song when requested.
 For a new request with no previous plan, scope MUST be library (unless explicitly about the queue).
-More familiar means history familiar. Unplayed means history unplayed.
+More familiar or most played means history familiar. Unplayed means history unplayed.
 For follow-ups keep previous filters unless explicitly changed or withdrawn in the latest request.
 change_filters lists ONLY fields explicitly changed/cleared by the latest request; supply their
 new values. To change decades list BOTH year_from and year_to. To change artists list artists.
@@ -254,6 +269,9 @@ scope proposal refines that selection, queue searches upcoming queue, library se
 Honour explicit scope switches: "use my upcoming queue instead" means scope queue, not proposal.
 Changing artist/year/genre to find different songs means scope library, not the old proposal.
 "add another song" means scope library, add_count 1, change_filters []; keep all old filters.
+"Another set", "different songs", "something else" or "again" repeats the search: action search,
+scope library, add_count 0, change_filters []; keep all old filters. The server prefers songs it
+has not shown yet.
 add_count is the number of NEW songs to add to the existing proposal, otherwise 0. Do not repeat
 existing proposal songs. The server retains the existing matching songs when adding.
 Remove that artist uses reference first, current second, or the sole artist in the proposal.
@@ -429,17 +447,6 @@ def _same_artist(song_artist: str, name: str) -> bool:
     return " ".join(song_artist.casefold().split()) == " ".join(name.casefold().split())
 
 
-def listening_order(songs: Iterable[StoredSong]) -> list[StoredSong]:
-    """Most played first, then most recently played, then the id. Title is not a key.
-
-    A song never played sorts after every played one at the same count. Timestamps are
-    compared as the stored UTC text, which orders the same as the instants they name.
-    """
-    ordered = sorted(songs, key=lambda song: song.song_id)
-    ordered.sort(key=lambda song: (song.play_count, song.last_played or ""), reverse=True)
-    return ordered
-
-
 def merge_plan(previous: SearchPlan | None, plan: SearchPlan) -> SearchPlan:
     """Follow-ups keep any filter the latest plan does not name in change_filters.
 
@@ -478,11 +485,14 @@ class MusicBot:
         player: Player,
         client: httpx.AsyncClient,
         profiles: AudioProfiles | None = None,
+        new_seed: Callable[[], int] = new_seed,
     ):
         self.store = store
         self.player = player
         self.client = client
         self.profiles = profiles or AudioProfiles(store)
+        # Where a library search gets its generation seed when the request names none.
+        self.new_seed = new_seed
         self.busy = False
 
     def active_recipes(self) -> tuple[Recipe | None, Recipe | None]:
@@ -699,8 +709,10 @@ class MusicBot:
             return _reply(plan, [], 0.0, 0.0, plan.explanation, request)
         plan = widen_single_bpm(plan)
         view = self.player.view()
-        scope = set(request.queue_ids if plan.scope == "queue" else request.proposal_ids)
-        if plan.scope != "library" and not scope:
+        order = list(
+            dict.fromkeys(request.queue_ids if plan.scope == "queue" else request.proposal_ids)
+        )
+        if plan.scope != "library" and not order:
             raise BotError("There is no selection to refine. Ask for a library search first.", 422)
         reference = view.stored.get(request.reference_id or request.current_id or "")
         if plan.similar_to_current and embedding is None:
@@ -715,20 +727,24 @@ class MusicBot:
                 plan = plan.model_copy(update={"artists": [reference.artist]})
         elif plan.sound and embedding is not None and negation_only(plan.sound):
             plan = plan.model_copy(update={"sound": ""})
-        gates, miss, seed = self._gates(plan, scalar, embedding, reference, view)
-        if seed is None and miss is None and plan.sound and embedding is not None:
-            seed = encode_phrase(embedding, plan.sound)
-            if seed is None:
+        gates, miss, seed_vector = self._gates(plan, scalar, embedding, reference, view)
+        if seed_vector is None and miss is None and plan.sound and embedding is not None:
+            seed_vector = encode_phrase(embedding, plan.sound)
+            if seed_vector is None:
                 raise BotError("That description could not be read. Try other words.", 422)
         now = datetime.now(ZoneInfo(self.store.current().music_timezone))
         liked = self._liked()
-        # Every in-scope match is gated, then ranked. No song metadata is sent to Ollama here,
-        # and files are only checked while the list is being filled.
+        # Every in-scope match is gated, then ordered. No song metadata is sent to Ollama here,
+        # and files are only checked while the list is being filled. A refinement walks the
+        # person's own order.
+        songs: Iterable[StoredSong] = (
+            view.stored.values()
+            if plan.scope == "library"
+            else (view.stored[sid] for sid in order if sid in view.stored)
+        )
         matched: list[StoredSong] = []
         missing = {"missing_scalar": 0, "missing_vector": 0}
-        for song in view.stored.values():
-            if plan.scope != "library" and song.song_id not in scope:
-                continue
+        for song in songs:
             if miss is not None or not self._matches(song, plan, liked, now):
                 continue
             verdict = gates.verdict(plan, song)
@@ -736,14 +752,27 @@ class MusicBot:
                 matched.append(song)
             elif verdict != "out":
                 missing[verdict] += 1
-        if seed is not None and gates.vectors is not None:
-            # One rank key: cosine to the seed, most alike first. Ties keep the id order.
-            scores = gates.vectors.cosine(seed)
-            matched.sort(key=lambda song: song.song_id)
-            matched.sort(key=lambda song: scores.get(song.song_id, -2.0), reverse=True)
-            candidates = matched
-        else:
-            candidates = listening_order(matched)
+        seed_song = reference if plan.similar_to_current else None
+        if seed_song is not None:
+            # The seed of "more like this" is never its own match, so it must not set the scale
+            # of fit either. _fill keeps the same rule as a safety net.
+            seed_key = (normalize(seed_song.title), _artist_key(seed_song.artist))
+            matched = [
+                song
+                for song in matched
+                if song.song_id != seed_song.song_id
+                and not (
+                    seed_key[0] and (normalize(song.title), _artist_key(song.artist)) == seed_key
+                )
+            ]
+        # One rank key, never blended: cosine to the seed vector, or play count only when the
+        # person asked for familiar music. Otherwise every match fits equally.
+        relevance: dict[str, float] | None = None
+        if seed_vector is not None and gates.vectors is not None:
+            scores = gates.vectors.cosine(seed_vector)
+            relevance = {s.song_id: round(scores.get(s.song_id, -2.0), 6) for s in matched}
+        elif plan.history == "familiar":
+            relevance = {s.song_id: round(math.log1p(s.play_count), 6) for s in matched}
         retained: list[StoredSong] = []
         if plan.add_count:
             # Keep the old order, rechecking every retained song against the new filters/files.
@@ -756,12 +785,36 @@ class MusicBot:
                 and self.player.local_file(sid) is not None
             ]
             retained_ids = {song.song_id for song in retained}
-            candidates = [song for song in candidates if song.song_id not in retained_ids]
+            matched = [song for song in matched if song.song_id not in retained_ids]
             if len(retained) + plan.add_count > 500:
                 raise BotError("Adding those songs would exceed the 500-song selection limit.", 422)
             plan = plan.model_copy(update={"limit": len(retained) + plan.add_count})
-        seed_song = reference if plan.similar_to_current else None
+        shown = frozenset(request.shown_ids)
+        generation_seed: int | None = None
+        drawn: Drawn | None = None
+        if plan.scope == "library":
+            generation_seed = (
+                request.generation_seed if request.generation_seed is not None else self.new_seed()
+            )
+            need = need_for(
+                plan.limit, plan.add_count, plan.target_seconds, [s.duration for s in matched]
+            )
+            drawn = broad_order(
+                [s.song_id for s in matched], generation_seed, need, relevance, shown
+            )
+            walk = drawn.ids
+        else:
+            walk = refine_order([s.song_id for s in matched])
+        candidates = [view.stored[sid] for sid in walk]
         tracks, total = self._fill(view, plan, retained, candidates, seed_song)
+        added = tracks[len(retained) :]
+        added_ids = {str(t["id"]) for t in added}
+        position = {sid: index for index, sid in enumerate(walk)}
+        if drawn is not None and relevance is not None:
+            # A ranked draw is shown best fit first; the set and its length do not change.
+            added.sort(key=lambda t: (-relevance[str(t["id"])], position[str(t["id"])]))
+            tracks = tracks[: len(retained)] + added
+        reused = [sid for sid in added_ids if sid in shown] if drawn is not None else []
         shortfall = max(0, plan.target_seconds - total)
         noun = "song" if len(tracks) == 1 else "songs"
         summary = (
@@ -778,6 +831,38 @@ class MusicBot:
                 f" Could only add {max(0, len(tracks) - len(retained))} "
                 f"of {plan.add_count} requested songs."
             )
+        # Said only for a fresh selection that chose among more matches than it used. Adding to a
+        # proposal is about the new songs alone, so it says nothing here.
+        if (
+            drawn is not None
+            and drawn.sampled
+            and added
+            and len(added) < len(matched)
+            and not plan.add_count
+        ):
+            fits = set(relevance.values()) if relevance is not None else set()
+            if len(fits) <= 1:
+                summary += f" Picked at random from {len(matched):,} matches."
+            elif seed_vector is not None:
+                summary += f" Picked from the closest of {len(matched):,} matches."
+            else:
+                summary += f" Picked from your most played of {len(matched):,} matches."
+        if reused:
+            repeats = (
+                "1 song repeats from an earlier answer"
+                if len(reused) == 1
+                else f"{len(reused)} songs repeat from earlier answers"
+            )
+            # The walk puts unshown songs ahead of shown ones that fit as well. When no unshown,
+            # unused match comes after a repeat, every unshown one was used or ruled out first, so
+            # nothing else could be used. Otherwise a ranked draw reached the repeat before songs
+            # that fit less, and whether those could have played is not known here: no reason.
+            seen = shown | added_ids
+            last_unshown = max(
+                (position[s.song_id] for s in matched if s.song_id not in seen), default=-1
+            )
+            exhausted = all(position[sid] > last_unshown for sid in reused)
+            summary += f" {repeats}; no other match could be used." if exhausted else f" {repeats}."
         if miss is not None:
             summary += f" {miss}"
         library = list(view.stored.values())
@@ -791,7 +876,9 @@ class MusicBot:
             summary += f" Similarity uses the {embedding.id} sound profile:" + _coverage(
                 gates.vectors, library, missing["missing_vector"]
             )
-        return _reply(plan, tracks, total, shortfall, summary, request)
+        return _reply(
+            plan, tracks, total, shortfall, summary, request, generation_seed=generation_seed
+        )
 
     def _refuse_unmeasured(
         self, plan: SearchPlan, scalar: Recipe | None, embedding: Recipe | None
@@ -889,7 +976,9 @@ class MusicBot:
         candidates: list[StoredSong],
         seed: StoredSong | None,
     ) -> tuple[list[dict[str, object]], float]:
-        """Walk the ranked songs in order and keep the ones that can play.
+        """Walk the songs in the order resolve built and keep the ones that can play. That order
+        is drawn for a library search and is the person's own for a refinement; it never reads
+        song length, so a length target does not lean to short or long songs.
 
         The seed of "more like this" is never its own match, nor is another copy of it. A
         library search, or any search that adds songs to a proposal, keeps the same title by the
@@ -942,7 +1031,10 @@ class MusicBot:
         return tracks, total
 
     def validate(self, selection: ValidateSelection) -> dict[str, object]:
-        """Recheck a proposal before Play: tags, files, and the audio gates it was built on."""
+        """Recheck a proposal before Play: tags, files, and the audio gates it was built on.
+
+        The order, the generation seed and the shown songs are not rechecked, as the artist cap,
+        the title rule and the length target never were."""
         changed = BotError(
             "The selection changed or a file is unavailable. Ask again before applying.", 409
         )
@@ -988,9 +1080,13 @@ def _reply(
     shortfall: float,
     summary: str,
     request: BotRequest,
+    *,
+    generation_seed: int | None = None,
 ) -> dict[str, object]:
     """The chat reply. It carries the songs the plan was measured against, so Play can send
-    them back to `validate` even after the player has moved on."""
+    them back to `validate` even after the player has moved on. generation_seed is set only
+    when a library selection was drawn; sent back as BotRequest.generation_seed with the same
+    plan, shown songs and library state, it repeats that selection."""
     return {
         "plan": plan.model_dump(),
         "tracks": tracks,
@@ -999,6 +1095,7 @@ def _reply(
         "summary": summary,
         "reference_id": request.reference_id,
         "current_id": request.current_id,
+        "generation_seed": generation_seed,
     }
 
 

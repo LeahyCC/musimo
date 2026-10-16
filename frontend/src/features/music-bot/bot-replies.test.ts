@@ -10,8 +10,10 @@ import {
   isDirectCommand,
   lengthText,
   loosenChips,
+  rememberShown,
   resultLine,
   shortMinutes,
+  shownIds,
   withoutSong,
 } from './bot-replies'
 
@@ -74,6 +76,37 @@ describe('botReplySchema', () => {
     const measured = reply({}, 3, { reference_id: 'tr-0000000000000009', current_id: null })
     expect(measured.reference_id).toBe('tr-0000000000000009')
     expect(withoutSong(measured, 'tr-1').reference_id).toBe('tr-0000000000000009')
+  })
+})
+
+describe('remembered songs', () => {
+  it('defaults the generation seed for an older server and keeps a drawn one', () => {
+    expect(reply().generation_seed).toBeNull()
+    expect(reply({}, 1, { generation_seed: 2 ** 53 - 1 }).generation_seed).toBe(2 ** 53 - 1)
+    expect(() => reply({}, 1, { generation_seed: 2 ** 53 })).toThrow()
+  })
+
+  it('records library answers newest first, three at most, and nothing else', () => {
+    let generations: string[][] = []
+    for (let count = 1; count <= 4; count += 1) {
+      generations = rememberShown(generations, reply({}, count))
+    }
+    expect(generations.map((ids) => ids.length)).toEqual([4, 3, 2])
+    const before = generations
+    expect(rememberShown(before, reply({ scope: 'proposal' }, 2))).toBe(before)
+    expect(rememberShown(before, reply({ action: 'clarify' }, 2))).toBe(before)
+    expect(rememberShown(before, reply({}, 0))).toBe(before)
+  })
+
+  it('sends each remembered song once, newest first, capped at 500', () => {
+    expect(
+      shownIds([
+        ['a', 'b'],
+        ['b', 'c'],
+      ]),
+    ).toEqual(['a', 'b', 'c'])
+    const many = Array.from({ length: 300 }, (_, index) => `id-${index}`)
+    expect(shownIds([many, many.map((id) => `${id}x`)])).toHaveLength(500)
   })
 })
 
@@ -217,6 +250,22 @@ describe('explainFailure', () => {
       text: 'Cannot reach Ollama. Check its address in Settings.',
       next: 'retry',
     })
+  })
+})
+
+describe('withoutSong and repeats', () => {
+  it('drops the repeat sentence, which it cannot recount', () => {
+    for (const sentence of [
+      ' 1 song repeats from an earlier answer; no other match could be used.',
+      ' 2 songs repeat from earlier answers.',
+    ]) {
+      const repeated = reply({}, 3, {
+        summary: `3 songs, 12.0 minutes. Based on saved library tags.${sentence} Picked at random from 9 matches.`,
+      })
+      expect(withoutSong(repeated, 'tr-1').summary).toBe(
+        '2 songs, 8.0 minutes. Based on saved library tags. Picked at random from 9 matches.',
+      )
+    }
   })
 })
 

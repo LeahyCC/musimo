@@ -4,7 +4,7 @@
 
 ### Music bot
 
-- Rank the bot's library matches by play count, then last played, then id, keep one copy of a repeated title by the same artist, and give an artist at most two places unless the request names it. Broad requests used to be an alphabetical slice of the first 5,000 matches in scan order
+- Pick among equally fitting songs at random for a broad library request, under a seed the reply returns, so asking again gives a different set. Play count ranks only a "more familiar" request. Refining a proposal or the queue keeps your order. Asking again prefers songs the chat has not just shown, remembered for its last three library answers in this tab only (refinements and questions are not recorded). The bot keeps one copy of a repeated title by the same artist and gives an artist at most two places unless the request names it. Broad requests used to be an alphabetical slice of the first 5,000 matches in scan order
 - Add song characteristics behind empty settings: schema 9 stores measured tempo and energy per song, an optional analysis worker container (`docker compose --profile analysis`, 2 GB, one core, read-only music) leases one queued song at a time through an internal token-protected route, and the bot can gate on tempo, energy and sound once a recipe is named under Music bot in Settings. Both settings ship empty, nothing is queued or analysed by default, and the bot still refuses mood, energy and tempo requests until then
 
 ### Search and downloads

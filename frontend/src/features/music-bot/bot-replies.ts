@@ -198,10 +198,32 @@ export const ACTION_LABELS: Record<BotQueueAction, string> = {
   replace: 'Replace upcoming',
 }
 
+/** How many recent answers' songs the chat remembers, and the most it sends. */
+export const SHOWN_GENERATIONS = 3
+export const SHOWN_LIMIT = 500
+
+/**
+ * The songs of the last few library answers, newest first. Asking again sends them so the server
+ * prefers others; it never excludes them and nothing is stored beyond this tab. A refinement only
+ * narrows songs already shown, and a question shows none, so neither counts.
+ */
+export function rememberShown(generations: string[][], reply: BotReply): string[][] {
+  if (reply.plan.action !== 'search' || reply.plan.scope !== 'library' || !reply.tracks.length)
+    return generations
+  return [reply.tracks.map((track) => track.id), ...generations].slice(0, SHOWN_GENERATIONS)
+}
+
+/** The remembered songs as one list, newest first, each once, at most SHOWN_LIMIT. */
+export function shownIds(generations: string[][]): string[] {
+  return [...new Set(generations.flat())].slice(0, SHOWN_LIMIT)
+}
+
 /**
  * The preview with one song taken out, as Remove from this list leaves it. The count, the minutes
  * and the shortfall are worked out again and written into the server's own sentences, so the
- * card's summary and its list never disagree. Nothing else in the summary changes.
+ * card's summary and its list never disagree. A sentence about songs repeating from earlier
+ * answers is dropped, since the card cannot tell whether the removed song was one of them.
+ * Nothing else in the summary changes.
  */
 export function withoutSong(reply: BotReply, id: string): BotReply {
   const tracks = reply.tracks.filter((track) => track.id !== id)
@@ -212,10 +234,12 @@ export function withoutSong(reply: BotReply, id: string): BotReply {
   const short = shortfall
     ? ` ${minutesText(shortfall)} minutes short; no exclusions were relaxed.`
     : ''
-  const counted = reply.summary.replace(
-    /^\d+ songs?, [\d.]+ minutes\./,
-    `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'}, ${minutesText(total)} minutes.`,
-  )
+  const counted = reply.summary
+    .replace(/ \d+ songs? repeats? from (?:an )?earlier answers?(?:; [^.]*)?\./, '')
+    .replace(
+      /^\d+ songs?, [\d.]+ minutes\./,
+      `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'}, ${minutesText(total)} minutes.`,
+    )
   const summary = /minutes short; no exclusions were relaxed\./.test(counted)
     ? counted.replace(/ [\d.]+ minutes short; no exclusions were relaxed\./, short)
     : // The shortfall sentence follows the favourites and recent-play ones, before the rest.

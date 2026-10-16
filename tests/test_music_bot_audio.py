@@ -34,6 +34,7 @@ from backend.library.music_bot import (
     widen_single_bpm,
 )
 from backend.library.player import Player
+from backend.library.selection import broad_order
 
 SCALAR = RECIPES[SCALAR_RECIPE]
 EMBED = Recipe("embed-test", "embedding", dim=3, text_aligned=True)
@@ -89,7 +90,7 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.client = httpx.AsyncClient(transport=httpx.MockTransport(transport))
-        self.bot = MusicBot(self.store, self.player, self.client)
+        self.bot = MusicBot(self.store, self.player, self.client, new_seed=lambda: 0)
 
     async def asyncTearDown(self) -> None:
         await self.client.aclose()
@@ -131,8 +132,14 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
         query: SearchPlan,
         reference_id: str | None = None,
         current_id: str | None = None,
+        generation_seed: int | None = None,
     ) -> dict[str, object]:
-        request = BotRequest(prompt="fixture", reference_id=reference_id, current_id=current_id)
+        request = BotRequest(
+            prompt="fixture",
+            reference_id=reference_id,
+            current_id=current_id,
+            generation_seed=generation_seed,
+        )
         return self.bot.resolve(query, request)
 
     def titles(self, result: dict[str, object]) -> list[str]:
@@ -200,14 +207,16 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
             set(self.titles(self.resolve(plan(tempo="fast", tempo_max=150)))),
             {"Breaker", "Ember", "Fathom"},
         )
-        # The one rank key inside the gate is still listening, not "faster".
+        # Inside the gate nothing is ranked, neither "faster" nor listening: one seed draws the
+        # same songs whatever the play counts say.
+        before = self.titles(self.resolve(plan(tempo="fast")))
         with self.store.lock:
             self.store.db.execute(
                 "UPDATE library_files SET play_count=9 WHERE song_id=?", (self.ids["Fathom"],)
             )
             self.store.db.commit()
         self.store.bump_library_revision()
-        self.assertEqual(self.titles(self.resolve(plan(tempo="fast")))[0], "Fathom")
+        self.assertEqual(self.titles(self.resolve(plan(tempo="fast"))), before)
 
     def test_compared_gates_use_the_reference_songs_own_measurement(self) -> None:
         self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
@@ -283,6 +292,26 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
                 "1 match was skipped without a measurement.",
                 str(result["summary"]),
             )
+            # Asked for three of seven, it draws among the closest only: Anchor, Breaker and
+            # Current (Drift, at 0.9701, is further below the third than the third is below the
+            # first). Harbor still fills two places, and the closest are shown first.
+            pairs, thirds = set(), set()
+            for seed in range(30):
+                drawn = self.resolve(
+                    plan(similar_to_current=True, limit=3),
+                    reference_id=self.ids["Gale"],
+                    generation_seed=seed,
+                )
+                titles = self.titles(drawn)
+                self.assertEqual(len(titles), 3)
+                self.assertTrue(set(titles[:2]) <= {"Anchor", "Breaker", "Current"})
+                self.assertIn(titles[2], {"Ember", "Fathom", "Harbour"})
+                self.assertNotIn("Drift", titles)
+                pairs.add(tuple(titles[:2]))
+                thirds.add(titles[2])
+                self.assertIn("Picked from the closest of 7 matches.", str(drawn["summary"]))
+            self.assertGreaterEqual(len(pairs), 2)
+            self.assertGreaterEqual(len(thirds), 2)
             # A named artist is uncapped.
             named = self.resolve(
                 plan(similar_to_current=True, artists=["Harbor"]), reference_id=self.ids["Gale"]
@@ -316,7 +345,9 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.titles(dreamy)[0], "Harbour")
             self.assertEqual(SearchPlan.model_validate(dreamy["plan"]).sound, "dreamy guitar")
             self.assertIn("Similarity uses the embed-test sound profile", str(dreamy["summary"]))
-            # Negation alone adds no rank: the plan loses the phrase and listening order stands.
+            # Negation alone adds no rank: the plan loses the phrase and the plain draw stands,
+            # whatever the play counts say.
+            plain = self.titles(self.resolve(plan()))
             with self.store.lock:
                 self.store.db.execute(
                     "UPDATE library_files SET play_count=9 WHERE song_id=?", (self.ids["Isle"],)
@@ -325,7 +356,7 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
             self.store.bump_library_revision()
             negated = self.resolve(plan(sound="No vocals."))
             self.assertEqual(SearchPlan.model_validate(negated["plan"]).sound, "")
-            self.assertEqual(self.titles(negated)[0], "Isle")
+            self.assertEqual(self.titles(negated), plain)
             self.assertNotIn("Similarity", str(negated["summary"]))
             # Genre words are not a sound, and more like this keeps one rank key.
             together = self.resolve(
@@ -480,6 +511,9 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
         plain = system_prompt(SCALAR, PLAIN)
         self.assertIn('sound stays ""', plain)
         self.assertIn("measured sound similarity", plain)
+        # Asking again is a repeat of the search, whatever analysis is on.
+        for prompt in (off, scalar, text, plain):
+            self.assertIn('"Another set", "different songs", "something else" or "again"', prompt)
 
     async def test_chat_sends_the_prompt_for_the_settings(self) -> None:
         await self.bot.chat(BotRequest(prompt="rock"))
@@ -566,7 +600,8 @@ class BudgetTests(unittest.TestCase):
         started = time.perf_counter()
         scores = vectors.cosine(seed)
         kept = [song for song in songs if gates.verdict(query, song) == "in"]
-        kept.sort(key=lambda song: scores.get(song.song_id, -2.0), reverse=True)
+        relevance = {song.song_id: round(scores.get(song.song_id, -2.0), 6) for song in kept}
+        broad_order(relevance, 7, 100, relevance, frozenset(ids[:500]))
         elapsed = time.perf_counter() - started
         self.assertGreater(len(kept), 1000)
         self.assertLess(elapsed, 0.5, f"{elapsed:.3f} s for {count} songs")

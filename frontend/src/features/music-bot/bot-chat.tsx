@@ -21,7 +21,11 @@ import {
   COMMAND_HELP,
   explainFailure,
   isDirectCommand,
+  rememberShown,
   resultLine,
+  SHOWN_GENERATIONS,
+  SHOWN_LIMIT,
+  shownIds,
   withoutSong,
 } from './bot-replies'
 import type { BotFailure } from './bot-replies'
@@ -38,6 +42,10 @@ import { usePetSettings } from './pet-settings'
 const HISTORY_KEY = 'musimo.music-bot.history'
 const PROPOSAL_KEY = 'musimo.music-bot.proposal'
 const LOG_KEY = 'musimo.music-bot.log'
+const SHOWN_KEY = 'musimo.music-bot.shown'
+const shownSchema = z
+  .array(z.array(z.string().regex(/^tr-[0-9a-f]{16}$/)).max(SHOWN_LIMIT))
+  .max(SHOWN_GENERATIONS)
 /** The model is told about this many recent messages. */
 export const HISTORY_LIMIT = 8
 /** What the chat shows. Older entries scroll away. */
@@ -206,6 +214,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
   const [reply, setReply] = useState<BotReply | null>(() =>
     readSession(PROPOSAL_KEY, botReplySchema.nullable(), null),
   )
+  const [shown, setShown] = useState<string[][]>(() => readSession(SHOWN_KEY, shownSchema, []))
   const [stamp, setStamp] = useState('')
   const [applied, setApplied] = useState<Applied | null>(null)
   const [reference, setReference] = useState<Reference | null>(null)
@@ -289,10 +298,11 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       sessionStorage.setItem(HISTORY_KEY, JSON.stringify(history))
       sessionStorage.setItem(PROPOSAL_KEY, JSON.stringify(reply))
       sessionStorage.setItem(LOG_KEY, JSON.stringify({ entries: log, cardId }))
+      sessionStorage.setItem(SHOWN_KEY, JSON.stringify(shown))
     } catch {
       /* Chat still works without storage. */
     }
-  }, [history, reply, log, cardId])
+  }, [history, reply, log, cardId, shown])
 
   const chooseModel = useMutation({
     mutationFn: (choice: string) =>
@@ -354,6 +364,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
           queue_ids: live.queue.slice(live.currentIndex + 1).map((track) => track.id),
           current_id: live.libraryTrack?.id ?? null,
           reference_id: reference?.id ?? null,
+          shown_ids: shownIds(shown),
           ...(scope ? { scope } : {}),
         }),
       })
@@ -393,6 +404,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         }
       } else if (action === 'search') {
         setReply(answer)
+        setShown((old) => rememberShown(old, answer))
         setStamp(before)
         setApplied(null)
         const entry = push({
@@ -554,6 +566,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     lastPrompt.current = undefined
     setLog([])
     setReply(null)
+    setShown([])
     setCardId(null)
     setApplied(null)
     setReference(null)
