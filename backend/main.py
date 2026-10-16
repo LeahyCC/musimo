@@ -117,7 +117,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             ]
             player = Player(store, roots, client)
             profiles = AudioProfiles(store)
-            music_bot = MusicBot(store, player, client)
+            music_bot = MusicBot(store, player, client, profiles)
             waveforms = WaveformService(store, player)
             library = Library(store, roots, changed)
             library.start()

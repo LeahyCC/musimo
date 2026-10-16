@@ -53,6 +53,21 @@ function reply(
   })
 }
 
+describe('botReplySchema', () => {
+  it('fills the song characteristic fields an older server leaves out', () => {
+    const parsed = reply().plan
+    expect(parsed.tempo).toBe('')
+    expect(parsed.tempo_min).toBeNull()
+    expect(parsed.energy_compared).toBe('')
+    expect(parsed.sound).toBe('')
+    expect(reply({ energy: 'low', tempo_max: 100, sound: 'dreamy guitar' }).plan).toMatchObject({
+      energy: 'low',
+      tempo_max: 100,
+      sound: 'dreamy guitar',
+    })
+  })
+})
+
 describe('filterChips', () => {
   it('shows nothing for an open search', () => {
     expect(filterChips(reply().plan)).toEqual([])

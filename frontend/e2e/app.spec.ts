@@ -210,6 +210,30 @@ test('saved settings survive reload and update a second browser tab through SSE'
   await peer.close()
 })
 
+test('the audio recipe fields load empty, save empty and survive reload', async ({ page }) => {
+  await page.goto('/settings')
+  const scalar = page.getByRole('textbox', { name: 'Tempo and energy recipe' })
+  const embedding = page.getByRole('textbox', { name: 'Sound similarity recipe' })
+  await expect(scalar).toHaveValue('')
+  await expect(embedding).toHaveValue('')
+  await expect(page.getByText('Empty means audio analysis is off').first()).toBeVisible()
+  // Typing and clearing again saves the empty value; the form does not refuse an empty field.
+  await scalar.fill('tempo-energy-v1')
+  await scalar.fill('')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText('Saved. You can safely refresh.')).toBeVisible()
+  await page.reload()
+  await expect(scalar).toHaveValue('')
+  await expect(embedding).toHaveValue('')
+  // An id that is not a registered recipe is refused by the server, and the draft stays.
+  await scalar.fill('nobody-v9')
+  await page.getByRole('button', { name: 'Save changes' }).click()
+  await expect(page.getByText(/Unknown scalar recipe/)).toBeVisible()
+  await expect(scalar).toHaveValue('nobody-v9')
+  await page.reload()
+  await expect(scalar).toHaveValue('')
+})
+
 test('a failed save keeps the draft and allows a successful retry', async ({ page }) => {
   let fail = true
   await page.route('**/api/settings', async (route) => {

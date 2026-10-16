@@ -378,6 +378,13 @@ export const settingsSchema = z.object({
   }),
   ollama_model: field(z.string()).default({ value: '', origin: 'default', locked: false }),
   music_timezone: field(z.string()).default({ value: 'UTC', origin: 'default', locked: false }),
+  // Song characteristic recipes the bot may read. Empty is off. Older servers send neither.
+  audio_scalar_recipe: field(z.string()).default({ value: '', origin: 'default', locked: false }),
+  audio_embedding_recipe: field(z.string()).default({
+    value: '',
+    origin: 'default',
+    locked: false,
+  }),
   library_label: field(z.string()),
   output_format: field(z.enum(['original', 'm4a', 'opus', 'mp3'])),
   concurrency: field(z.number()),
@@ -434,6 +441,14 @@ export const botPlanSchema = z.object({
   explanation: z.string(),
   // Short follow-ups the person can send with one tap, only on a question or a refusal.
   suggestions: z.array(z.string().max(60)).max(3).default([]),
+  // Song characteristics. Empty until a recipe is on, and absent from an older server's reply.
+  tempo: z.enum(['', 'slow', 'medium', 'fast']).default(''),
+  tempo_min: z.number().nullable().default(null),
+  tempo_max: z.number().nullable().default(null),
+  energy: z.enum(['', 'low', 'medium', 'high']).default(''),
+  energy_compared: z.enum(['', 'calmer', 'more_intense']).default(''),
+  tempo_compared: z.enum(['', 'slower', 'faster']).default(''),
+  sound: z.string().default(''),
 })
 export type BotScope = z.infer<typeof botPlanSchema>['scope']
 export const botReplySchema = z.object({
