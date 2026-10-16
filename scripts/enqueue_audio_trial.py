@@ -50,8 +50,10 @@ def main(argv: list[str] | None = None) -> int:
     # Store() creates a database that is not there. This script must only ever find one.
     if not path.is_file():
         parser.error(f"{path} does not exist; pass --data or set MUSIMO_DATA_DIR")
-    store = Store(path)
+    store: Store | None = None
     try:
+        # Opening runs the schema scripts, so a busy database shows here as well as below.
+        store = Store(path)
         profiles = AudioProfiles(store)
         if args.all:
             lacking = profiles.lacking(args.recipe)
@@ -69,7 +71,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"The database is busy ({exc}). Try again in a moment.", file=sys.stderr)
         return 1
     finally:
-        store.close()
+        if store is not None:
+            store.close()
     return 0
 
 
