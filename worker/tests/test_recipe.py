@@ -133,12 +133,15 @@ class RuleTests(unittest.TestCase):
             parent = analyse(job(escaped), [self.root], never_decode, never_measure)
         self.assertEqual(parent.status, "failed")
         self.assertIn("music mount", parent.detail)
-        link: Path | None = self.root / "link.wav"
+        link = self.root / "link.wav"
+        linked_path = False
         try:
             link.symlink_to(self.song)
         except OSError:
-            link = None
-        if link is not None:
+            pass
+        else:
+            linked_path = True
+        if linked_path:
             with patch.object(Path, "stat", guarded_stat):
                 linked = analyse(job(link), [self.root], never_decode, never_measure)
             self.assertEqual(linked.status, "failed")
