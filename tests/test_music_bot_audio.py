@@ -487,6 +487,8 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
             # Genre words belong in genres, so these name nothing to look for.
             "no rock",
             "No hip hop, no vocals",
+            "no drum and bass",
+            "no rhythm and blues",
         ):
             self.assertTrue(negation_only(phrase), phrase)
         for phrase in ("dreamy guitar", "vocals and piano", "rock", "no dreamy guitar", ""):

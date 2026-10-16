@@ -8,6 +8,7 @@ docs/audio-profile-spec.md for the contract.
 import base64
 import binascii
 import json
+import math
 import secrets
 import sqlite3
 import threading
@@ -66,9 +67,11 @@ class WorkerResult(BaseModel):
         measured = self.tempo_bpm is not None or self.energy is not None or self.dim or self.vector
         if self.status != "done" and measured:
             raise ValueError("A failed or skipped result carries no measurements")
-        if self.tempo_bpm is not None and not 0 < self.tempo_bpm < 1000:
+        if self.tempo_bpm is not None and not (
+            math.isfinite(self.tempo_bpm) and 0 < self.tempo_bpm < 1000
+        ):
             raise ValueError("tempo_bpm is outside the range a song can have")
-        if self.energy is not None and not self.energy >= 0:
+        if self.energy is not None and not (math.isfinite(self.energy) and self.energy >= 0):
             raise ValueError("energy is a linear amplitude, never negative")
         if (self.vector is None) != (self.dim == 0):
             raise ValueError("dim and vector go together")

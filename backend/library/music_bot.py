@@ -364,11 +364,14 @@ def negation_only(phrase: str) -> bool:
     remaining: list[str] = []
     index = 0
     while index < len(words):
-        pair = " ".join(words[index : index + 2])
-        if index + 1 < len(words) and is_genre_word(pair):
-            index += 2
-        elif is_genre_word(words[index]):
-            index += 1
+        # Longest genre first, so "drum and bass" is one word and not "bass".
+        matched = 0
+        for size in range(len(words) - index, 0, -1):
+            if is_genre_word(" ".join(words[index : index + size])):
+                matched = size
+                break
+        if matched:
+            index += matched
         else:
             remaining.append(words[index])
             index += 1

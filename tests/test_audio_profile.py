@@ -296,7 +296,9 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
             {"vector": floats(1.0)},
             {"dim": 1},
             {"tempo_bpm": -1.0},
+            {"tempo_bpm": float("inf")},
             {"energy": float("nan")},
+            {"energy": float("inf")},
         ]
         for changes in shapes:
             with self.subTest(changes=changes), self.assertRaises(ValidationError):

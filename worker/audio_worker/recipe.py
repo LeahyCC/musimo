@@ -170,6 +170,8 @@ def measure_section(samples: Samples) -> tuple[float | None, float]:
     from librosa.feature.rhythm import tempo
 
     rms = float(np.mean(librosa.feature.rms(y=samples)))
+    if not math.isfinite(rms) or rms < 0:
+        raise ValueError("section RMS is not a finite amplitude")
     onsets = librosa.onset.onset_strength(y=samples, sr=SAMPLE_RATE)
     if not np.any(onsets > 0):
         return None, rms
@@ -177,17 +179,6 @@ def measure_section(samples: Samples) -> tuple[float | None, float]:
     if not math.isfinite(estimate) or estimate <= 0:
         return None, rms
     return estimate, rms
-
-
-def inside(path: Path, roots: Sequence[Path]) -> bool:
-    """Whether the path the app named is under a music mount, without following links."""
-    try:
-        if path.is_symlink():
-            return False
-        resolved = path.resolve(strict=True)
-    except OSError:
-        return False
-    return any(resolved.is_relative_to(root.resolve()) for root in roots)
 
 
 def analyse(
@@ -211,16 +202,22 @@ def analyse(
             detail=reason,
         )
     path = Path(job.path)
-    # The mount check comes before the path is touched at all; the resolved check after the
-    # stat catches a link that points out of the mount.
-    if not any(path.is_relative_to(root) for root in roots):
+    # `..` is lexically inside the mount, and stat would follow it out. A symlink is
+    # the same kind of escape. Both are refused before either is followed.
+    if ".." in path.parts or not any(path.is_relative_to(root) for root in roots):
+        return _failed(job, "the path is not under the music mount")
+    if path.is_symlink():
         return _failed(job, "the path is not under the music mount")
     try:
-        stat = path.stat()
+        resolved = path.resolve(strict=True)
     except OSError as exc:
         return _failed(job, f"cannot read the file: {exc.strerror or exc}")
-    if not inside(path, roots):
+    if not any(resolved.is_relative_to(root.resolve()) for root in roots):
         return _failed(job, "the path is not under the music mount")
+    try:
+        stat = resolved.stat()
+    except OSError as exc:
+        return _failed(job, f"cannot read the file: {exc.strerror or exc}")
     size, mtime_ns = stat.st_size, stat.st_mtime_ns
     starts = section_starts(job.duration)
     if starts is None:
@@ -243,8 +240,14 @@ def analyse(
                 problems.append(f"measure failed at {start:.1f} s: {type(exc).__name__}: {exc}")
                 continue
         bpm, rms = measured[start]
+        if not math.isfinite(rms) or rms < 0:
+            problems.append(
+                f"measure failed at {start:.1f} s: ValueError: "
+                "section RMS is not a finite amplitude"
+            )
+            continue
         energies.append(rms)
-        if bpm is not None:
+        if bpm is not None and math.isfinite(bpm) and bpm > 0:
             tempos.append(bpm)
     if not energies:
         return _failed(job, f"no section decoded: {problems[0]}", size, mtime_ns)

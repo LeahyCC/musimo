@@ -120,6 +120,29 @@ class RuleTests(unittest.TestCase):
         missing = analyse(job(self.root / "gone.wav"), [self.root], never_decode, never_measure)
         self.assertEqual(missing.status, "failed")
         self.assertIn("cannot read", missing.detail)
+        escaped = self.root / ".." / "outside.wav"
+        real_stat = Path.stat
+
+        def guarded_stat(self: Path, *, follow_symlinks: bool = True):
+            untrusted = ".." in self.parts or self.name == "link.wav"
+            if follow_symlinks and untrusted:
+                raise AssertionError("stat followed an untrusted path")
+            return real_stat(self, follow_symlinks=follow_symlinks)
+
+        with patch.object(Path, "stat", guarded_stat):
+            parent = analyse(job(escaped), [self.root], never_decode, never_measure)
+        self.assertEqual(parent.status, "failed")
+        self.assertIn("music mount", parent.detail)
+        link = self.root / "link.wav"
+        try:
+            link.symlink_to(self.song)
+        except OSError:
+            link = None
+        if link is not None:
+            with patch.object(Path, "stat", guarded_stat):
+                linked = analyse(job(link), [self.root], never_decode, never_measure)
+            self.assertEqual(linked.status, "failed")
+            self.assertIn("music mount", linked.detail)
         other = analyse(job(self.song, recipe="other-v1"), [self.root], never_decode, never_measure)
         self.assertEqual(other.status, "failed")
 
@@ -159,6 +182,25 @@ class RuleTests(unittest.TestCase):
         result = analyse(job(self.song), [self.root], broken, measure)
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.detail, "no section decoded: decoder exceeded 30 s")
+
+        def infinite(samples: np.ndarray) -> tuple[float | None, float]:
+            if float(samples[0]) == 12.0:
+                return 100.0, math.inf
+            return 100.0, 0.2
+
+        result = analyse(job(self.song), [self.root], decode, infinite)
+        self.assertEqual(result.status, "done")
+        self.assertEqual(result.tempo_bpm, 100.0)
+        self.assertAlmostEqual(result.energy or 0, 0.2)
+        self.assertIn("not a finite amplitude", result.detail)
+
+        def all_infinite(samples: np.ndarray) -> tuple[float | None, float]:
+            return 100.0, math.inf
+
+        result = analyse(job(self.song), [self.root], decode, all_infinite)
+        self.assertEqual(result.status, "failed")
+        self.assertIsNone(result.energy)
+        self.assertIn("not a finite amplitude", result.detail)
 
     def test_a_measurement_error_is_a_failed_section_not_a_crash(self) -> None:
         def decode(path: Path, start: float) -> np.ndarray:
