@@ -6,18 +6,39 @@
 
 A self-hosted music library.
 
-Search tracks, albums, and artists. Hear previews, check your local collection, and queue permitted downloads into your music folders.
+Search tracks, albums, artists and podcasts. Hear a preview, see what you already own, and queue a download you have the right to keep. Play the files in your own folders.
 
 [Quick start](#quick-start) · [Features and limits](#features-and-limits) · [Architecture](#architecture-and-api) · [Contributing](#contributing-and-support)
 
-<img src="docs/assets/musimo.png" alt="Musimo search screen with library-aware search and the preview player" width="100%" />
-
 </div>
+
+<img src="docs/assets/now-playing.png" alt="Now Playing with the MilkDrop visualizer on, playing Singularity by Culprate. The title, format, waveform seek bar and transport sit under the stage." width="100%" />
+
+<p align="center"><b>Now Playing.</b> The file you are hearing, as artwork or a MilkDrop visualizer.</p>
+
+<table>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/assets/search.png" alt="The search home. Find it. Make room for it. Starter searches for Daft Punk, Khruangbin, Nina Simone and Radiohead." width="100%" />
+</td>
+<td width="50%" valign="top">
+<img src="docs/assets/downloads.png" alt="The downloads page with an empty queue. Parallel is 2. The tabs are Queue, Done, No match, Errors and History." width="100%" />
+</td>
+</tr>
+<tr>
+<td align="center"><b>Search.</b> The catalog, checked against your library.</td>
+<td align="center"><b>Downloads.</b> A queue, with a tab for every outcome.</td>
+</tr>
+</table>
+
+<img src="docs/assets/diagnostics.png" alt="Diagnostics. A banner says Ready to download, all systems ready, version 0.4.0. Library root, download destination, library scan and the player are ready. Last download has not been tested." width="100%" />
+
+<p align="center"><b>Diagnostics.</b> Ready means the folders, the scan and the player.</p>
 
 Musimo keeps discovery close to the library you already own. React provides the interface, FastAPI runs the backend, and SQLite stores settings, the library index, and jobs. Docker Compose builds the app from this repository. No Musimo account or hosted Musimo service is required.
 
 > [!NOTE]
-> Version 0.4.0 is Musimo's first tagged release. Search, library indexing, download workers, queue controls, album batches, library playback and playlist management are working. The release is tested but still early. Known limitations are in the [changelog](CHANGELOG.md) and [measurements](docs/measurements.md). Read [download verification](docs/downloads.md) before use. The original [brief](docs/brief.md) describes future ambitions beyond shipped features.
+> Version 0.4.0 is Musimo's first tagged release, and the version the app reports. That tag has search, library indexing, download workers, queue controls, album batches, library playback and playlist management. Current main also plays from the music folders with no separate server, draws a MilkDrop visualizer on Now Playing, and builds queues from the library with the music bot. The database on main is version 8. The release is tested but still early. Known limitations are in the [changelog](CHANGELOG.md) and [measurements](docs/measurements.md). Read [download verification](docs/downloads.md) before use. The original [brief](docs/brief.md) describes future ambitions beyond shipped features.
 
 ## Contents
 
@@ -49,23 +70,24 @@ Search and library features:
 - Album pages and artist discographies grouped by catalog release type.
 - Automatic album coverage checks, with a count and progress bar.
 - A persistent index of audio tags. Search does not reopen music files to check coverage.
-- One player across navigation for catalog previews and full the library tracks.
-- library browsing for albums, artists, tracks and playlists, with playlist CRUD, a saved queue, media controls, lyrics, scrobbling, shuffle and repeat.
+- One player across navigation. Catalog previews and library tracks use separate audio elements, and only one plays at a time. Library tracks hand over without a gap. Consecutive tracks from one album do not crossfade. Other joins can, from 1 to 12 seconds, off by default. A sleep timer can stop at the end of the track, the end of the queue, or after 15, 30, 45 or 60 minutes.
+- Library browsing for albums, artists, tracks and playlists, with playlist CRUD, a saved queue, media controls, lyrics, scrobbling, shuffle and repeat. Albums, Artists and Tracks filter and sort on the server, and each view keeps its search, filters and sort in the address.
 - A linked liked playlist, thumbs up button, add to playlist picker with inline creation and the artist All songs subpage with a popularity chart.
-- Server side Tracks view filters by search, genre, year and sort order.
-- LRCLIB lyric fallback when the library has no imported lyrics.
-- Now Playing full screen and popout stage for library tracks.
+- LRCLIB lyric fallback when the library has no imported lyrics. On Now Playing, synced lines follow playback, and choosing a line seeks there.
+- Now Playing for a library track: a sidebar entry while one is loaded, a waveform on the seek bar, and a stage that shows the artwork or a MilkDrop visualizer. The visualizer needs WebGL 2 and draws presets from the butterchurn base pack. It can change preset with the music, or stay on the one you picked. The stage goes full screen in the tab or pops out into its own window. Up next can be reordered. Lyrics, About and History sit with it.
+- A music bot that builds a queue from the library you already have. A pet on the player opens the chat, and the same chat is a page. It needs a local Ollama model. A result stays a preview until you play it, queue it or save it as a playlist. It matches tags, play history and the liked playlist. It does not analyse how a recording sounds.
+- An importer for listening state from a Navidrome 0.63.2 database: manual playlists, likes, artist favourites, play counts and last played. See [the importer](docs/player.md#import-listening-state-from-navidrome).
 - Background scans, scan cancellation, native or polling watchers and diagnostics.
 - A bounded activity feed in Settings and Diagnostics, with persistent clearing.
 - Personal settings with a theme picker and editor, stored in your browser and movable between browsers as a file.
 
-The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card clear and bulk Retry errors, Clear errors and Clear no match, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Download verification requires testing with your chosen provider and the library setup.
+The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card clear and bulk Retry errors, Clear errors and Clear no match, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Settings lists each source with its own switch, order and retry count. A block pauses that source and leaves the others running. After a set number of finished tracks, the queue can wait before the next group. With a Deezer cookie, a catalog track is saved from that account first, and a miss continues with the other sources. Download verification requires testing with your chosen provider and the library setup.
 
 These are **not finished features**: personalized Discover, automatic release-edition filters, Spotify and Apple Music link imports, paid audio sources other than a Deezer account, notifications, cookie management beyond pasting a YouTube cookies file or a Deezer cookie, built-in login, multiple users and complete release benchmarks (cold search latency, match accuracy labeling, permitted-music throughput, representative 50k library, native arm64 performance). See [Discover planning](docs/discover.md), [the roadmap](docs/roadmap.md) and [known limitations](CHANGELOG.md#known-limitations).
 
 ## Requirements
 
-The supported deployment uses Docker Engine with the Compose plugin, or Docker Desktop running Linux containers. You need a recent browser with JavaScript, HTML audio and Server-Sent Events support. The Now Playing popout requires Document Picture in Picture API support, available in desktop Chrome and Edge.
+The supported deployment uses Docker Engine with the Compose plugin, or Docker Desktop running Linux containers. You need a recent browser with JavaScript, HTML audio and Server-Sent Events support. The Now Playing popout requires Document Picture-in-Picture, available in desktop Chrome and Edge. The visualizer needs WebGL 2, which current desktop and phone browsers have. Without it the stage stays on the artwork. The music bot needs [Ollama](https://ollama.com) reachable from the Musimo server, and a model chosen in the chat. Search, the library and downloads do not.
 
 Catalog queries, artwork, previews and enabled sources require internet access. Keep application state on local disk. The music destination needs room for temporary and final files, and the runtime user needs permission to read indexed folders and write to the selected destination.
 
@@ -171,7 +193,9 @@ Read-only mounts contribute to coverage but cannot receive downloads. Diagnostic
 
 ### Search and album coverage
 
-Enter at least two characters. Search waits about 200 ms after typing and cancels superseded browser requests. Top requests tracks, albums and artists independently.
+The home page is an empty search. It reads "Find it. Make room for it." With no recent searches it offers Daft Punk, Khruangbin, Nina Simone and Radiohead. This browser keeps up to eight recent searches, and clearing them brings those four back. Newest library albums appear under that row once the library has some.
+
+Enter at least two characters in the search box at the top of every page. Search waits about 200 ms after typing and cancels superseded browser requests. Top requests tracks, albums and artists independently. Pasting or submitting a link there opens a review sheet and does not search. A link placed in the search page's address is not searched either.
 
 Filters and sorting apply to **loaded results**, not the entire provider catalog. More results load as you scroll. Unknown years cannot satisfy a year filter. Duration and preview filters apply only to tracks. Long track lists are virtualized; album and artist card grids scroll with the page.
 
@@ -191,7 +215,7 @@ An artist's **Download all albums** button opens a selection sheet with album/so
 
 ### Library and playback
 
-Library has Home, Albums, Artists, Tracks and Playlists views. Grid and list layouts are available for collection views and the choice is remembered in the browser under `musimo.library-layout`. The Tracks view offers server side search, genre, year and sort filters that describe the whole library rather than only loaded pages. Its Play all button plays the first 500 songs in the current sort order. Shuffle plays every matching song once, in a random order. Past 500 songs the queue refills as it plays.
+Library has Home, Albums, Artists, Tracks and Playlists views. Grid and list layouts are available for collection views and the choice is remembered in the browser under `musimo.library-layout`. Albums, Artists and Tracks run search, genre, year and sort on the server, so they describe the whole library rather than the pages already loaded. Each view keeps that choice in its address, and a tab or the back link opens the last choice again. On Tracks, Play all plays the first 500 songs in the current sort order. Shuffle plays every matching song once, in a random order, and past 500 songs the queue refills as it plays.
 
 Artist pages include an All songs subpage at `/library/artists/{id}/songs` and a popularity chart plotted from the library play counts when enough data exists. Playlists show song count and can be filtered by public or private status. Inline rename is available for all playlists.
 
@@ -199,7 +223,7 @@ The linked liked playlist is always listed, sorts first, cannot be deleted, and 
 
 The add to playlist picker opens from the footer player, or from Now Playing, where the footer steps aside, and shows 25 rows with a filter box. The liked playlist is excluded from the picker. Inline New playlist is available with the current song. The Add button toggles to Remove when that song is already in the playlist.
 
-The Now Playing stage offers full screen in the tab and a popout floating window. Both are available for library tracks only; catalog previews show "Nothing playing yet."
+Now Playing is in the sidebar while a library track is loaded, and it leaves when the player is empty. The stage shows the artwork or a MilkDrop visualizer, and it can go full screen in the tab or pop out into a floating window. The seek bar draws the file's waveform. Up next, Lyrics, About and History sit beside the stage on a wide window, and under the controls on a phone. Catalog previews have no Now Playing page. With nothing loaded, that page says "Nothing playing yet."
 
 ### Player controls
 
@@ -215,7 +239,17 @@ Previews are provider clips, not full library playback. Failed Deezer clips refr
 
 Library playback adds previous (restarts the current track after 4 seconds of playback), next, shuffle, repeat including repeat one, thumbs up to add or remove from the liked playlist, add to playlist picker, and expand to Now Playing. The queue autosaves every 10 seconds of playback and on pause or close. Now playing scrobbles on play and submits on track end. MediaSession handlers provide play, pause, next and previous for system media controls.
 
-Keyboard controls: `/` focuses search; Ctrl/Cmd+K opens the command palette; Escape closes it or filter menus. ArrowUp, ArrowDown, Home and End move focus through track lists and the download job list. Space toggles playback outside editing fields and interactive controls. Native sliders support keyboard adjustment. Browser autoplay rules can require another press of Play. On the Now Playing stage, F enters full screen, Esc leaves full screen or closes the popout, left and right seek by five seconds, up and down adjust volume, M mutes, N and P skip tracks, V switches between artwork and the visualizer, and H shows the visualizer's debug overlay. See [Now Playing popout](docs/now-playing-popout.md) for full keyboard reference.
+Keyboard controls: `/` focuses search; Ctrl/Cmd+K opens the command palette; Escape closes it or filter menus. ArrowUp, ArrowDown, Home and End move focus through track lists and the download job list. Space toggles playback outside editing fields and interactive controls. Native sliders support keyboard adjustment. Browser autoplay rules can require another press of Play. On Now Playing, Left and Right seek by five seconds, Shift with either goes to the previous or next track, Up and Down adjust volume, M mutes, L opens the large lyrics view and closes it, Q opens Up next, S switches the stage between small and large, and `?` lists the keys. On the stage itself, F enters full screen, Esc leaves full screen or closes the popout, N and P skip tracks, V switches between artwork and the visualizer, and `[` and `]` change the preset. See [Now Playing](docs/now-playing-popout.md) and [the visualizer](docs/visualizer.md).
+
+### Music bot
+
+The music bot builds a queue from songs already in the library. A pet sits on the player. Its name is Octive until you change it. Tapping the pet opens the chat. The Music bot row in the sidebar, and the link in the top bar, open the same conversation as a page at `/music-bot`. The character, name, colour, size and perch are saved in this browser, under Settings, Yours.
+
+It needs Ollama reachable from the Musimo server. In Docker that address is often `http://host.docker.internal:11434`. No model is downloaded for you. Pick one in the chat. Until the server answers and a model is chosen, the chat says why and waits.
+
+Ask for an artist, a genre, a year, a length, songs you have liked, or songs you have not played lately. Genre words match the tags in the files and the broad genres in [genre mapping](docs/genre-mapping.md). The card stays a preview until you play it, play it next, add it, replace what is coming up, or save it as a playlist. Each of those checks the files again before it changes the queue. Undo restores the last of those edits, and refuses once the queue has moved on.
+
+The bot does not listen to the audio. A request about mood, energy or tempo is refused, because that analysis is switched off. "More like this" uses saved genre and artist tags. See [the music bot](docs/player.md#music-bot).
 
 ### Downloads and history
 
@@ -247,7 +281,11 @@ Tagging uses catalog metadata, artwork and optional MusicBrainz/LRCLIB enrichmen
 
 ## Playback
 
-Musimo plays the files in its music folders. Mount the host folder, select it as the download destination, and list it in `MUSIMO_LIBRARY_ROOTS`. A finished download is indexed and can be played without another server. See [library player](docs/player.md).
+Musimo plays the files in its music folders. Mount the host folder, select it as the download destination, and list it in `MUSIMO_LIBRARY_ROOTS`. A finished download is indexed and can be played without another server.
+
+Library tracks hand over without a gap. Crossfade and the sleep timer are part of that player. The Now Playing seek bar draws a waveform of the file, worked out once and kept in SQLite. Cover art, lyrics, playlists and the saved queue come from the same index. See [library player](docs/player.md), [the visualizer](docs/visualizer.md) and [Now Playing](docs/now-playing-popout.md).
+
+Listening state from a Navidrome 0.63.2 database can move across with the importer in the library player document. It matches files you have already scanned, then copies manual playlists, likes, artist favourites, play counts and last played. It does not copy audio, and it leaves an existing Musimo queue alone.
 
 ## Configuration
 
@@ -285,7 +323,7 @@ docker compose up -d --build --wait
 
 Use the same Compose overrides and optional profiles as installation. Back up before schema changes. `git pull --ff-only` refuses divergence instead of silently merging local edits. A newer database schema may require a matching backup to roll back.
 
-This upgrade sets `user_version` to 6. Version 5 is the pause between groups of downloads. This application opens version 6. An older build refuses a version 6 database, so rolling back after the upgrade needs the backup taken before it.
+This application opens database version 8. Version 5 stores the pause between groups of downloads. Version 6 is the library player: playlists, favourites, play counts and the saved queue live in Musimo, and the settings for a separate player are removed. Version 7 records each file's codec, and whether a FLAC file also carries ID3 tags. Version 8 numbers queue saves, so an older save cannot overwrite a newer one. An older build refuses a newer database, so rolling back after an upgrade needs the backup taken before it.
 
 Rebuilds retain named volumes. **Do not add `--volumes` or `-v` to `docker compose down` during an update.** Removing the data volume loses application state. To stop without removal, use `docker compose stop`. Music folders remain your files, not disposable application state.
 
@@ -428,7 +466,8 @@ API groups:
 - Health/settings: `/api/health`, `/api/settings` GET and PATCH, `/api/youtube-cookies` PUT and DELETE, `/api/snapshot`.
 - Search: `/api/search`, `/api/album-years`, `/api/albums/{id}`, `/api/artists/{id}`, `/api/artists/{id}/top`, `/api/preview/{id}`.
 - Index: `/api/library` GET, `/api/library/scan` POST, `/api/library/cancel` POST.
-- Player: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/stream/{id}`, `/api/player/art/{id}`. Album, artist, track and playlist browsing is `/api/library/{albums,artists,tracks,playlists}`. Scan routes stay at `/api/library` GET, `/api/library/scan` and `/api/library/cancel`.
+- Player: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/stream/{id}`, `/api/player/art/{id}`, `/api/player/waveform/{id}`. Album, artist, track and playlist browsing is `/api/library/{albums,artists,tracks,playlists}`. Scan routes stay at `/api/library` GET, `/api/library/scan` and `/api/library/cancel`.
+- Music bot: `/api/music-bot/models` GET, `/api/music-bot/chat` POST, `/api/music-bot/validate` POST.
 - Jobs/batches: `/api/naming-preview`, `/api/jobs` GET and POST, `/api/history`, `/api/batches` POST, `/api/batches/{id}/{pause,resume,cancel,retry}`, `/api/jobs/{id}/pick`, `/api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`, `/api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,clear-unmatched,resume-source}`.
 - Artist downloads: `/api/artists/{id}/download-plan`, `/api/artist-batches`.
 - Podcasts and pasted links: `/api/podcasts`, `/api/podcasts/{id}`, `/api/podcast-episodes` POST, `/api/links/resolve` POST, `/api/links` POST.
@@ -447,14 +486,16 @@ backend/          API, state, catalog, indexing and download services
                   allowlist, text normalizing, secret files
   jobs/           the download pipeline: queue, worker, yt-dlp options, matching, tagging,
                   publishing files, pasted links
-  library/        local file index, the player, browse filters and seek bar waveforms
+  library/        local file index, the player, browse filters, the Navidrome importer
+                  and seek bar waveforms
   integrations/   Deezer catalog and audio, MusicBrainz, podcast directory, saved cookies
 frontend/src/     React screens, player, queue and shared UI
   main.tsx        mounts the app
   api.ts          every backend call and the zod schema it is read with
   app/            shell, routes, live events, command palette
   features/       one folder per screen or engine: search, library, downloads, links,
-                  podcasts, player, now-playing, visualizer, settings, diagnostics
+                  podcasts, player, now-playing, visualizer, music-bot, settings,
+                  diagnostics
   components/     pieces more than one screen uses
   ui/             primitives: Button, Panel, Field and the rest
   theme/          color tokens, built-in themes, the theme store
