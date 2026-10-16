@@ -34,7 +34,7 @@ from backend.library.audio_profile import (
     percentile_bands,
     tempo_band,
 )
-from backend.library.genres import matches_genres
+from backend.library.genres import is_genre_word, matches_genres
 from backend.library.player import LibraryView, Player, StoredSong, playlist_number, song_list
 
 # How many places one artist may fill in a result, unless the plan names that artist.
@@ -336,10 +336,25 @@ def system_prompt(scalar: Recipe | None, embedding: Recipe | None) -> str:
 
 
 def negation_only(phrase: str) -> bool:
-    """Whether every word of a sound phrase is a negation or the thing negated."""
+    """Whether a sound phrase, with its genre words set aside, is only negation.
+
+    Genre words belong in `genres`, so "no rock" leaves "no", which names nothing to look
+    for. This drops the phrase; it does not build a genre exclusion.
+    """
     words = [word.strip('.,;:!?"()[]') for word in phrase.casefold().split()]
     words = [word for word in words if word]
-    return bool(words) and all(word in NEGATION_WORDS for word in words)
+    remaining: list[str] = []
+    index = 0
+    while index < len(words):
+        pair = " ".join(words[index : index + 2])
+        if index + 1 < len(words) and is_genre_word(pair):
+            index += 2
+        elif is_genre_word(words[index]):
+            index += 1
+        else:
+            remaining.append(words[index])
+            index += 1
+    return bool(remaining) and all(word in NEGATION_WORDS for word in remaining)
 
 
 def widen_single_bpm(plan: "SearchPlan") -> "SearchPlan":
@@ -452,7 +467,7 @@ def merge_plan(previous: SearchPlan | None, plan: SearchPlan) -> SearchPlan:
         return SearchPlan.model_validate(plan.model_dump() | kept)
     except ValidationError as exc:
         raise BotError(
-            "Those filters conflict. Specify the year or duration range you want.", 422
+            "Those filters conflict. Specify the year, duration or tempo range you want.", 422
         ) from exc
 
 
@@ -698,9 +713,6 @@ class MusicBot:
                 )
             else:
                 plan = plan.model_copy(update={"artists": [reference.artist]})
-        elif plan.similar_to_current:
-            # One rank key: the reference song's own sound, not a phrase as well.
-            plan = plan.model_copy(update={"sound": ""})
         elif plan.sound and embedding is not None and negation_only(plan.sound):
             plan = plan.model_copy(update={"sound": ""})
         gates, miss, seed = self._gates(plan, scalar, embedding, reference, view)
@@ -748,8 +760,8 @@ class MusicBot:
             if len(retained) + plan.add_count > 500:
                 raise BotError("Adding those songs would exceed the 500-song selection limit.", 422)
             plan = plan.model_copy(update={"limit": len(retained) + plan.add_count})
-        seed_id = (request.reference_id or request.current_id) if plan.similar_to_current else None
-        tracks, total = self._fill(view, plan, retained, candidates, seed_id)
+        seed_song = reference if plan.similar_to_current else None
+        tracks, total = self._fill(view, plan, retained, candidates, seed_song)
         shortfall = max(0, plan.target_seconds - total)
         noun = "song" if len(tracks) == 1 else "songs"
         summary = (
@@ -796,19 +808,24 @@ class MusicBot:
                 tempo_min=None,
                 tempo_max=None,
             )
-        if plan.sound and (embedding is None or not embedding.text_aligned):
+        # "More like this" keeps one rank key, the reference song, so a phrase beside it is
+        # dropped rather than refused.
+        phrase = plan.sound if not plan.similar_to_current else ""
+        if plan.sound and (
+            plan.similar_to_current or embedding is None or not embedding.text_aligned
+        ):
             cleared["sound"] = ""
         if plan.action != "search":
             return plan.model_copy(update=cleared) if cleared else plan
         refusal = ""
         if scalar is None and plan.uses_scalar():
             refusal = "Tempo and energy need audio analysis, which is not enabled."
-        elif plan.sound and embedding is None:
+        elif phrase and embedding is None:
             refusal = "Describing how music sounds needs audio analysis, which is not enabled."
-        elif plan.sound and embedding is not None and not embedding.text_aligned:
+        elif phrase and embedding is not None and not embedding.text_aligned:
             refusal = f"The {embedding.id} analysis cannot read a description of a sound."
         if not refusal:
-            return plan
+            return plan.model_copy(update=cleared) if cleared else plan
         return plan.model_copy(
             update={
                 **cleared,
@@ -870,16 +887,19 @@ class MusicBot:
         plan: SearchPlan,
         retained: list[StoredSong],
         candidates: list[StoredSong],
-        seed_id: str | None,
+        seed: StoredSong | None,
     ) -> tuple[list[dict[str, object]], float]:
         """Walk the ranked songs in order and keep the ones that can play.
 
-        The seed of "more like this" is never its own match, the same title by the same artist
-        is kept once, and an artist fills at most two places unless the plan names it. Retained
-        proposal songs were checked already; they still count towards both rules.
+        The seed of "more like this" is never its own match, nor is another copy of it; the
+        same title by the same artist is kept once; and an artist fills at most two places
+        unless the plan names it. Retained proposal songs were checked already; they still
+        count towards both rules.
         """
         named = {normalize(name) for name in plan.artists}
         kept: set[tuple[str, str]] = set()
+        if seed is not None and normalize(seed.title):
+            kept.add((normalize(seed.title), normalize(seed.artist)))
         per_artist: dict[str, int] = {}
         tracks: list[dict[str, object]] = []
         total = 0.0
@@ -890,7 +910,7 @@ class MusicBot:
             artist_key = normalize(song.artist)
             title_key = normalize(song.title)
             if not checked:
-                if song.song_id == seed_id:
+                if seed is not None and song.song_id == seed.song_id:
                     continue
                 # An untitled song is not "the same title" as another untitled one.
                 if title_key and (title_key, artist_key) in kept:

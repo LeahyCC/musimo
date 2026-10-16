@@ -224,15 +224,21 @@ def analyse(
     energies: list[float] = []
     tempos: list[float] = []
     problems: list[str] = []
-    decoded: dict[float, Samples] = {}
+    # Coinciding starts (a 10-second file) decode and measure once.
+    measured: dict[float, tuple[float | None, float]] = {}
     for start in starts:
-        try:
-            if start not in decoded:
-                decoded[start] = decode(path, start)
-        except DecodeError as exc:
-            problems.append(str(exc))
-            continue
-        bpm, rms = measure(decoded[start])
+        if start not in measured:
+            try:
+                samples = decode(path, start)
+            except DecodeError as exc:
+                problems.append(str(exc))
+                continue
+            try:
+                measured[start] = measure(samples)
+            except Exception as exc:  # noqa: BLE001 - a bad buffer is a failed row, not a crash
+                problems.append(f"measure failed at {start:.1f} s: {type(exc).__name__}: {exc}")
+                continue
+        bpm, rms = measured[start]
         energies.append(rms)
         if bpm is not None:
             tempos.append(bpm)

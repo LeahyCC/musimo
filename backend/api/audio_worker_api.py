@@ -1,8 +1,8 @@
 """The lease the audio worker works through. Not a browser route.
 
 Both routes need the bearer token the app and the worker share. With no token configured they
-do not exist. A request a browser made (it carries an Origin or Sec-Fetch-Site header) does not
-find them either, whatever token it sends.
+answer 404 before reading the body. A request a browser made (it carries an Origin or
+Sec-Fetch-Site header) gets the same 404, whatever token it sends.
 """
 
 import asyncio

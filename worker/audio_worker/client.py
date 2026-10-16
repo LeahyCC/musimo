@@ -17,6 +17,8 @@ class Client:
         self.base_url = base_url.rstrip("/")
         self._token = token
         self.timeout = timeout
+        # The app is on the Compose network. A proxy from the environment must not see the token.
+        self.opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
     def post(self, path: str, body: dict[str, object]) -> object:
         request = urllib.request.Request(
@@ -30,7 +32,7 @@ class Client:
             method="POST",
         )
         try:
-            with urllib.request.urlopen(request, timeout=self.timeout) as response:  # noqa: S310
+            with self.opener.open(request, timeout=self.timeout) as response:
                 return json.loads(response.read())
         except urllib.error.HTTPError as exc:
             # The body is the app's own wording for what was wrong. The token is never in it.

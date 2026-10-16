@@ -288,6 +288,33 @@ class Store:
                 fingerprint TEXT NOT NULL,
                 peaks BLOB NOT NULL
             );
+            -- Song characteristics (docs/audio-profile-spec.md): one measured row per song and
+            -- recipe, and the queue the analysis worker leases from. Created here, like the
+            -- waveform cache, so dropping either is a safe reset the worker refills.
+            CREATE TABLE IF NOT EXISTS audio_profile (
+                song_id TEXT NOT NULL,
+                recipe TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('done', 'failed', 'skipped')),
+                size INTEGER NOT NULL,
+                mtime_ns INTEGER NOT NULL,
+                tempo_bpm REAL,
+                energy REAL,
+                dim INTEGER NOT NULL DEFAULT 0,
+                vector BLOB,
+                detail TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (song_id, recipe)
+            );
+            CREATE INDEX IF NOT EXISTS audio_profile_recipe ON audio_profile(recipe, status);
+            CREATE TABLE IF NOT EXISTS audio_job (
+                song_id TEXT NOT NULL,
+                recipe TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('queued', 'leased')),
+                lease_token TEXT NOT NULL DEFAULT '',
+                leased_until TEXT NOT NULL DEFAULT '',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (song_id, recipe)
+            );
             CREATE TABLE IF NOT EXISTS source_control (
                 source TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0,
                 blocking_failures INTEGER NOT NULL DEFAULT 0
@@ -426,35 +453,11 @@ class Store:
                 COMMIT;
             """)
         if version < 9:
-            # Song characteristics (docs/audio-profile-spec.md): one measured row per song and
-            # recipe, and the queue the analysis worker leases from. Both are safe to drop; the
-            # worker refills them. library_files is unchanged.
+            # Schema 9 is the two song characteristic tables above. They are created on every
+            # start, so this only records that a version 9 build has opened the file; an older
+            # build then refuses it. library_files is unchanged.
             self.db.executescript("""
                 BEGIN IMMEDIATE;
-                CREATE TABLE IF NOT EXISTS audio_profile (
-                    song_id TEXT NOT NULL,
-                    recipe TEXT NOT NULL,
-                    status TEXT NOT NULL CHECK (status IN ('done', 'failed', 'skipped')),
-                    size INTEGER NOT NULL,
-                    mtime_ns INTEGER NOT NULL,
-                    tempo_bpm REAL,
-                    energy REAL,
-                    dim INTEGER NOT NULL DEFAULT 0,
-                    vector BLOB,
-                    detail TEXT NOT NULL DEFAULT '',
-                    updated_at TEXT NOT NULL,
-                    PRIMARY KEY (song_id, recipe)
-                );
-                CREATE INDEX IF NOT EXISTS audio_profile_recipe ON audio_profile(recipe, status);
-                CREATE TABLE IF NOT EXISTS audio_job (
-                    song_id TEXT NOT NULL,
-                    recipe TEXT NOT NULL,
-                    status TEXT NOT NULL CHECK (status IN ('queued', 'leased')),
-                    lease_token TEXT NOT NULL DEFAULT '',
-                    leased_until TEXT NOT NULL DEFAULT '',
-                    attempts INTEGER NOT NULL DEFAULT 0,
-                    PRIMARY KEY (song_id, recipe)
-                );
                 PRAGMA user_version=9;
                 COMMIT;
             """)

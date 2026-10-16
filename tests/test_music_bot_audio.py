@@ -421,10 +421,44 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(set(self.titles(result)), {"Anchor", "Breaker", "Ember", "Fathom"})
 
+    def test_a_copy_of_the_seed_is_absent_and_a_phrase_beside_the_seed_is_dropped(self) -> None:
+        with self.embedding_on(EMBED, encode):
+            self.measure(EMBED.id)
+            with self.store.lock:
+                self.store.db.execute(
+                    "UPDATE library_files SET title='Gale', artist='Meadow' WHERE song_id=?",
+                    (self.ids["Breaker"],),
+                )
+                self.store.db.commit()
+            self.store.bump_library_revision()
+            alike = self.resolve(plan(similar_to_current=True), reference_id=self.ids["Gale"])
+            self.assertNotIn("Breaker", self.titles(alike))
+            self.assertNotIn("Gale", self.titles(alike))
+            self.assertEqual(self.titles(alike)[0], "Anchor")
+        with self.embedding_on(PLAIN):
+            self.measure(PLAIN.id)
+            # Not a refusal: the reference song is the one rank key, the phrase is dropped.
+            together = self.resolve(
+                plan(similar_to_current=True, sound="dreamy guitar"),
+                reference_id=self.ids["Gale"],
+            )
+            query = SearchPlan.model_validate(together["plan"])
+            self.assertEqual((query.action, query.sound), ("search", ""))
+            self.assertEqual(self.titles(together)[0], "Anchor")
+
     def test_negation_only_phrases(self) -> None:
-        for phrase in ("no vocals", "No vocals.", "nothing explicit", "don't", "without vocal"):
+        for phrase in (
+            "no vocals",
+            "No vocals.",
+            "nothing explicit",
+            "don't",
+            "without vocal",
+            # Genre words belong in genres, so these name nothing to look for.
+            "no rock",
+            "No hip hop, no vocals",
+        ):
             self.assertTrue(negation_only(phrase), phrase)
-        for phrase in ("no rock", "dreamy guitar", "vocals and piano", ""):
+        for phrase in ("dreamy guitar", "vocals and piano", "rock", "no dreamy guitar", ""):
             self.assertFalse(negation_only(phrase), phrase)
 
     def test_the_prompt_follows_the_active_recipes(self) -> None:

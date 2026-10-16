@@ -16,7 +16,7 @@ Music bot settings are under Music bot on the Server page:
 - `audio_scalar_recipe`: default empty, up to 80 characters. The id of the tempo and energy recipe whose measured rows the bot may read; the only one in the code is `tempo-energy-v1`, and it is not set until its listening check passes. Empty means audio analysis is off: the bot refuses tempo and energy requests and ignores any rows. Anything but empty or a registered recipe id is rejected.
 - `audio_embedding_recipe`: default empty, up to 80 characters. The id of the sound similarity recipe. No recipe is registered for it yet, so only empty is accepted. See [song characteristics](audio-profile-spec.md) for both.
 
-These use the existing SQLite settings table and environment seeding/locking rules. No bot-specific database migration is required. The model receives bounded chat and tag context, never the full library, audio files or lyrics. Chat history stays in the current browser tab's session storage and can be cleared.
+These use the existing SQLite settings table and environment seeding/locking rules. The Ollama settings needed no migration; the two recipe rows are seeded on first start like any new setting, and the measurement tables they point at arrive with schema 9 (see [song characteristics](audio-profile-spec.md)). The model receives bounded chat and tag context, never the full library, audio files or lyrics. Chat history stays in the current browser tab's session storage and can be cleared.
 
 The music bot pet (character, name, colour, size, position, chattiness, animation, sounds, hidden) is not a server setting. It lives in this browser under Settings › Yours › Music bot pet, in `musimo.pet`, like themes; see [the player notes](player.md#the-pet).
 

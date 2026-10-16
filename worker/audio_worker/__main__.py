@@ -36,13 +36,21 @@ def work_once(post: Callable[[str, dict[str, object]], object], roots: list[Path
 
 
 def main() -> int:
-    token = os.environ.get("MUSIMO_ANALYSIS_TOKEN", "")
-    if not token:
-        print("MUSIMO_ANALYSIS_TOKEN is empty. Nothing to do.", file=sys.stderr)
-        return 2
+    stop = threading.Event()
+    for sig in (signal.SIGTERM, signal.SIGINT):
+        signal.signal(sig, lambda *_: stop.set())
+    token = os.environ.get("MUSIMO_ANALYSIS_TOKEN", "").strip()
     recipe = os.environ.get("MUSIMO_AUDIO_RECIPE", RECIPE)
-    if recipe != RECIPE:
-        print(f"This worker measures {RECIPE}, not {recipe}.", file=sys.stderr)
+    problem = ""
+    if not token:
+        problem = "MUSIMO_ANALYSIS_TOKEN is empty. Set the same secret for musimo and this worker."
+    elif recipe != RECIPE:
+        problem = f"This worker measures {RECIPE}, not {recipe}."
+    if problem:
+        # Compose restarts an exited container, so a misconfiguration would loop. Say it once
+        # and wait to be stopped instead.
+        print(problem + " Nothing to do until the container is restarted.", file=sys.stderr)
+        stop.wait()
         return 2
     roots = [
         Path(root)
@@ -51,9 +59,6 @@ def main() -> int:
     ]
     idle = float(os.environ.get("MUSIMO_WORKER_IDLE_SECONDS", str(IDLE_SECONDS)))
     client = Client(os.environ.get("MUSIMO_APP_URL", "http://musimo:8765"), token)
-    stop = threading.Event()
-    for sig in (signal.SIGTERM, signal.SIGINT):
-        signal.signal(sig, lambda *_: stop.set())
     log(f"measuring {RECIPE} from {client.base_url}, music under {[str(r) for r in roots]}")
     while not stop.is_set():
         try:

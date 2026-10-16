@@ -133,6 +133,9 @@ class ProfileSet:
             return None
         if self.recipe.kind == "embedding" and song.song_id not in self.index:
             return None
+        # A scalar row carries no vector. One with bytes anyway is malformed, like a wrong length.
+        if self.recipe.kind == "scalar" and (row.dim or row.vector_length):
+            return None
         return row
 
     def vector(self, song_id: str) -> Vector | None:

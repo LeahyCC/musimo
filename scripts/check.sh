@@ -39,6 +39,7 @@ full() {
   step npm run --silent build --prefix frontend
   step npm run --silent test:e2e:types --prefix frontend
   step uv run pip-audit --disable-pip --no-deps -r requirements.lock
+  step uv run pip-audit --disable-pip --no-deps -r worker/requirements.lock
   step npm audit --prefix frontend --audit-level=high
 }
 

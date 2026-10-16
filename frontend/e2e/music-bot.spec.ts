@@ -280,8 +280,20 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
   await expect(page.getByText('First Light \u00b7 Harbor Static')).toBeVisible()
   await page.route('**/api/music-bot/chat', async (route) => {
     expect(requestBody(route).reference_id).toBe(first.id)
-    // The plan goes back as the server sent it, with its (empty) suggestions.
-    expect(requestBody(route).previous).toEqual({ ...plan, suggestions: [] })
+    // The plan goes back as the server sent it, with its (empty) suggestions and the song
+    // characteristic fields the browser fills in when an older build's reply leaves them out.
+    expect(requestBody(route).previous).toEqual({
+      ...plan,
+      suggestions: [],
+      tempo: '',
+      tempo_min: null,
+      tempo_max: null,
+      energy: '',
+      energy_compared: '',
+      tempo_compared: '',
+      sound: '',
+    })
+
     await route.fulfill({
       json: {
         ...answer,

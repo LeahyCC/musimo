@@ -89,8 +89,9 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     waveforms: WaveformService
     music_bot: MusicBot
     profiles: AudioProfiles
-    # Shared with the optional audio worker. Empty keeps its lease routes off.
-    analysis_token = os.environ.get("MUSIMO_ANALYSIS_TOKEN", "")
+    # Shared with the optional audio worker. Empty keeps its lease routes off. Out of the
+    # environment, the download, link and ffmpeg children cannot inherit it.
+    analysis_token = os.environ.pop("MUSIMO_ANALYSIS_TOKEN", "").strip()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:

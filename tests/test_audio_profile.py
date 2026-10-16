@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from test_player import tag, write_wav
 
 from backend.core.audio_recipes import RECIPES, SCALAR_RECIPE, Recipe, recipe_for, registered
-from backend.core.store import SCHEMA_VERSION, Store
+from backend.core.store import SCHEMA_VERSION, Store, drop_song_references
 from backend.library.audio_profile import (
     LEASE_SECONDS,
     MAX_ATTEMPTS,
@@ -135,6 +135,37 @@ class SchemaTests(unittest.TestCase):
                     )
             finally:
                 store.close()
+
+    def test_dropping_the_two_tables_is_a_safe_reset(self) -> None:
+        path = self.root / "reset.sqlite3"
+        store = Store(path)
+        store.db.execute("INSERT INTO library_roots VALUES ('/music', 1)")
+        store.db.execute(
+            "INSERT INTO library_files(path,root,mtime_ns,size,generation,title,artist,album,"
+            "title_key,artist_key,album_key,duration,isrc,mbid,song_id) "
+            "VALUES ('kept.wav','/music',1,2,'g','Kept','Artist','Album','','','',42,'','',"
+            "'tr-aaaaaaaaaaaaaaaa')"
+        )
+        store.db.executescript("DROP TABLE audio_profile; DROP TABLE audio_job;")
+        store.close()
+        store = Store(path)
+        try:
+            self.assertEqual(store.db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION)
+            tables = {
+                row[0]
+                for row in store.db.execute(
+                    "SELECT name FROM sqlite_master WHERE type IN ('table','index')"
+                )
+            }
+            self.assertTrue({"audio_profile", "audio_job", "audio_profile_recipe"} <= tables)
+            # The tables are usable again at once, and a removed song still drops its rows.
+            self.assertEqual(AudioProfiles(store).enqueue(SCALAR_RECIPE, 5), 1)
+            store.db.execute("BEGIN IMMEDIATE")
+            drop_song_references(store.db, ["tr-aaaaaaaaaaaaaaaa"])
+            store.db.commit()
+            self.assertEqual(store.db.execute("SELECT count(*) FROM audio_job").fetchone()[0], 0)
+        finally:
+            store.close()
 
 
 class ProfileTests(unittest.IsolatedAsyncioTestCase):
@@ -404,6 +435,32 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
             enqueue_main(["--data", str(self.root), "--recipe", "nobody-v9"])
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             enqueue_main(["--data", str(self.root), "--limit", "0"])
+
+    def test_a_scalar_row_with_stray_vector_bytes_is_not_fresh(self) -> None:
+        song = self.player.view().stored[self.ids["Alpha"]]
+        with self.store.lock:
+            self.store.db.execute("BEGIN IMMEDIATE")
+            self.store.db.execute(
+                "INSERT INTO audio_profile VALUES (?,?,'done',?,?,120.0,0.1,0,?,'','t')",
+                (song.song_id, SCALAR_RECIPE, song.size, song.mtime_ns, b"\x00\x00\x80\x3f"),
+            )
+            self.store.db.commit()
+        self.assertIsNone(self.profiles.profiles(SCALAR).fresh(song))
+
+    def test_the_enqueue_script_refuses_a_missing_database_and_odd_flags(self) -> None:
+        missing = self.root / "elsewhere"
+        with contextlib.redirect_stderr(io.StringIO()):
+            for argv in (
+                ["--data", str(missing)],
+                ["--data", str(self.root), "--yes"],
+                ["--data", str(self.root), "--all", "--limit", "2"],
+            ):
+                with self.subTest(argv=argv), self.assertRaises(SystemExit) as refused:
+                    enqueue_main(argv)
+                self.assertEqual(refused.exception.code, 2)
+        # Nothing was created where the database was not.
+        self.assertFalse(missing.exists())
+        self.assertEqual(self.profiles.queued(SCALAR_RECIPE), 0)
 
 
 class BandTests(unittest.TestCase):

@@ -2,16 +2,19 @@
 
 import importlib.util
 import math
+import os
 import shutil
 import tempfile
 import unittest
+import urllib.request
 import wave
 from pathlib import Path
+from unittest.mock import patch
 
 import numpy as np
 
 from audio_worker.__main__ import work_once
-from audio_worker.client import ClientError, lease
+from audio_worker.client import Client, ClientError, lease
 from audio_worker.recipe import (
     RECIPE,
     SAMPLE_RATE,
@@ -157,6 +160,30 @@ class RuleTests(unittest.TestCase):
         self.assertEqual(result.status, "failed")
         self.assertEqual(result.detail, "no section decoded: decoder exceeded 30 s")
 
+    def test_a_measurement_error_is_a_failed_section_not_a_crash(self) -> None:
+        def decode(path: Path, start: float) -> np.ndarray:
+            return np.full(2, start, dtype=np.float32)
+
+        def flaky(samples: np.ndarray) -> tuple[float | None, float]:
+            if float(samples[0]) == 60.0:
+                raise ValueError("Audio buffer is not finite everywhere")
+            return 100.0, 0.2
+
+        result = analyse(job(self.song), [self.root], decode, flaky)
+        self.assertEqual((result.status, result.tempo_bpm), ("done", 100.0))
+        self.assertEqual(
+            result.detail,
+            "2 of 3 sections, 2 tempo estimates; measure failed at 60.0 s: ValueError: "
+            "Audio buffer is not finite everywhere",
+        )
+
+        def broken(samples: np.ndarray) -> tuple[float | None, float]:
+            raise RuntimeError("no")
+
+        result = analyse(job(self.song), [self.root], decode, broken)
+        self.assertEqual(result.status, "failed")
+        self.assertTrue(result.detail.startswith("no section decoded: measure failed at 12.0 s"))
+
     def test_coinciding_starts_decode_once(self) -> None:
         count = 0
 
@@ -165,8 +192,15 @@ class RuleTests(unittest.TestCase):
             count += 1
             return np.zeros(4, dtype=np.float32)
 
-        result = analyse(job(self.song, duration=10.0), [self.root], decode, lambda _: (90.0, 0.4))
-        self.assertEqual(count, 1)
+        measured = 0
+
+        def measure(samples: np.ndarray) -> tuple[float | None, float]:
+            nonlocal measured
+            measured += 1
+            return 90.0, 0.4
+
+        result = analyse(job(self.song, duration=10.0), [self.root], decode, measure)
+        self.assertEqual((count, measured), (1, 1))
         self.assertEqual((result.status, result.tempo_bpm), ("done", 90.0))
         self.assertAlmostEqual(result.energy or 0, 0.4)
 
@@ -272,6 +306,15 @@ class LoopTests(unittest.TestCase):
         self.assertEqual(posted[0][1], {"recipe": RECIPE})
         self.assertEqual(posted[1][1]["status"], "skipped")
         self.assertEqual(posted[1][1]["lease_token"], "token")
+
+    def test_the_client_ignores_proxies_from_the_environment(self) -> None:
+        def has_proxy(opener: urllib.request.OpenerDirector) -> bool:
+            handlers: list[object] = vars(opener)["handlers"]
+            return any(isinstance(h, urllib.request.ProxyHandler) for h in handlers)
+
+        with patch.dict(os.environ, {"HTTP_PROXY": "http://proxy.example:3128"}):
+            self.assertTrue(has_proxy(urllib.request.build_opener()))
+            self.assertFalse(has_proxy(Client("http://musimo:8765", "token").opener))
 
     def test_an_empty_lease_means_nothing_to_do(self) -> None:
         self.assertFalse(work_once(lambda path, body: {"job": None}, [self.root]))

@@ -19,9 +19,11 @@ The full check runs:
 ```sh
 uv sync --locked
 npm ci --prefix frontend
-uv run ruff check backend tests scripts
-uv run ruff format --check backend tests scripts
+uv run ruff check backend tests scripts worker
+uv run ruff format --check backend tests scripts worker
 uv run mypy
+uv export --locked --no-header --no-dev --no-emit-project --format requirements-txt   # diffed against requirements.lock
+uv export --locked --project worker --no-header --no-emit-project --format requirements-txt   # diffed against worker/requirements.lock
 uv run coverage run -m unittest discover -s tests -v
 uv run coverage report
 npm run lint --prefix frontend
@@ -30,6 +32,7 @@ npm run test --prefix frontend
 npm run build --prefix frontend
 npm run test:e2e:types --prefix frontend
 uv run pip-audit --disable-pip --no-deps -r requirements.lock
+uv run pip-audit --disable-pip --no-deps -r worker/requirements.lock
 npm audit --prefix frontend --audit-level=high
 ```
 
