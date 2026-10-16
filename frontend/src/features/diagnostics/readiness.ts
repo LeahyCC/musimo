@@ -62,13 +62,12 @@ export function lastDownloadMark(stage: string, code: string): LastDownloadMark 
 
 /** The one answer to "is the system ready", shared by Settings and Diagnostics so the two can
  *  never disagree. An absent player does not count. One that reports itself unavailable does.
- *  Every reported source counts, not only YouTube. A song with no match does not. */
+ *  Every reported source counts. One that has never been probed does not. A song with no match
+ *  does not. */
 export function systemIsReady(data: Diagnostics) {
   const rootsReady = data.library.roots.every((root) => rootIsReady(data.disks, root))
   const playerDown = data.player !== null && !data.player.available
-  const youtube = data.sources.find((s) => s.source === 'youtube')
-  const sourcesReady =
-    youtube?.status === 'healthy' && data.sources.every((source) => source.status === 'healthy')
+  const sourcesReady = data.sources.every((source) => source.status === 'healthy')
   const last = data.last_download
   const lastDownloadOk = !last || !lastDownloadConcernsSystem(last.stage, last.error_code)
   return (
