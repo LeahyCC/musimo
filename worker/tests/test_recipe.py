@@ -133,21 +133,28 @@ class RuleTests(unittest.TestCase):
             parent = analyse(job(escaped), [self.root], never_decode, never_measure)
         self.assertEqual(parent.status, "failed")
         self.assertIn("music mount", parent.detail)
-        link = self.root / "link.wav"
-        linked_path = False
-        try:
-            link.symlink_to(self.song)
-        except OSError:
-            pass
-        else:
-            linked_path = True
-        if linked_path:
-            with patch.object(Path, "stat", guarded_stat):
-                linked = analyse(job(link), [self.root], never_decode, never_measure)
-            self.assertEqual(linked.status, "failed")
-            self.assertIn("music mount", linked.detail)
         other = analyse(job(self.song, recipe="other-v1"), [self.root], never_decode, never_measure)
         self.assertEqual(other.status, "failed")
+
+    def test_a_symlink_is_failed_without_following_or_decoding_it(self) -> None:
+        link = self.root / "link.wav"
+        try:
+            link.symlink_to(self.song)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows account lacks permission to create symlinks (WinError 1314)")
+            raise
+        real_stat = Path.stat
+
+        def guarded_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+            if follow_symlinks and self == link:
+                raise AssertionError("stat followed a symlink")
+            return real_stat(self, follow_symlinks=follow_symlinks)
+
+        with patch.object(Path, "stat", guarded_stat):
+            linked = analyse(job(link), [self.root], never_decode, never_measure)
+        self.assertEqual(linked.status, "failed")
+        self.assertIn("music mount", linked.detail)
 
     def test_done_needs_a_tempo_and_takes_the_median_and_mean(self) -> None:
         measured = {12.0: (100.0, 0.3), 60.0: (None, 0.2), 108.0: (140.0, 0.1)}

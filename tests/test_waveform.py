@@ -159,7 +159,7 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(len(decoder.calls), 3)
                 self.assertEqual(opened.cached(), 1)
 
-    async def test_a_path_outside_the_roots_or_a_symlink_is_not_decoded(self) -> None:
+    async def test_a_path_outside_the_roots_is_not_decoded(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             base = Path(directory).resolve()
             decoder = FakeDecoder()
@@ -170,18 +170,6 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual((await opened.peaks("inside.wav")).status_code, 200)
 
                 inside = base / "music" / "inside.wav"
-                inside.unlink()
-                try:
-                    inside.symlink_to(outside)
-                except OSError as exc:
-                    # This Windows account cannot create a symlink. The path checks below still run.
-                    if getattr(exc, "winerror", None) != 1314:
-                        raise
-                else:
-                    self.assertEqual((await opened.peaks("inside.wav")).status_code, 404)
-                    inside.unlink()
-
-                write_wav(inside)
                 opened.store.db.execute(
                     "UPDATE library_files SET path=? WHERE song_id=?", (str(outside), song_id)
                 )
@@ -194,6 +182,26 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
                 )
                 self.assertEqual((await opened.peaks("inside.wav")).status_code, 404)
                 self.assertEqual(len(decoder.calls), 1)
+
+    async def test_a_symlink_outside_the_roots_is_not_decoded(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            base = Path(directory).resolve()
+            decoder = FakeDecoder()
+            async with serving(base, ["inside.wav"], decoder) as opened:
+                outside = base / "elsewhere.wav"
+                write_wav(outside)
+                inside = base / "music" / "inside.wav"
+                inside.unlink()
+                try:
+                    inside.symlink_to(outside)
+                except OSError as exc:
+                    if getattr(exc, "winerror", None) == 1314:
+                        self.skipTest(
+                            "Windows account lacks permission to create symlinks (WinError 1314)"
+                        )
+                    raise
+                self.assertEqual((await opened.peaks("inside.wav")).status_code, 404)
+                self.assertEqual(decoder.calls, [])
 
     async def test_a_decode_that_takes_too_long_is_404_and_is_not_retried(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

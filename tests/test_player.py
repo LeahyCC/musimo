@@ -953,19 +953,6 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
         song_id = self.titles()["Inside"]
         async with self.api() as client:
             self.assertEqual((await client.get(f"/api/player/stream/{song_id}")).status_code, 200)
-            inside.unlink()
-            try:
-                inside.symlink_to(outside)
-            except OSError as exc:
-                # This Windows account cannot create a symlink. The path checks below still run.
-                if getattr(exc, "winerror", None) != 1314:
-                    raise
-            else:
-                self.assertEqual(
-                    (await client.get(f"/api/player/stream/{song_id}")).status_code, 404
-                )
-                inside.unlink()
-            write_wav(inside)
             self.store.db.execute(
                 "UPDATE library_files SET path=? WHERE song_id=?", (str(outside), song_id)
             )
@@ -977,6 +964,24 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
             self.store.bump_library_revision()
             self.assertEqual((await client.get(f"/api/player/stream/{song_id}")).status_code, 404)
             self.assertEqual((await client.get("/api/library/tracks")).json()["total"], 0)
+
+    async def test_a_song_symlink_outside_a_root_is_not_streamed(self) -> None:
+        inside = self.music / "inside.wav"
+        outside = self.base / "outside.wav"
+        write_wav(inside)
+        write_wav(outside)
+        tag(inside, title="Inside", artist="A", album="A", album_artist="A")
+        self.library.scan()
+        song_id = self.titles()["Inside"]
+        inside.unlink()
+        try:
+            inside.symlink_to(outside)
+        except OSError as exc:
+            if getattr(exc, "winerror", None) == 1314:
+                self.skipTest("Windows account lacks permission to create symlinks (WinError 1314)")
+            raise
+        async with self.api() as client:
+            self.assertEqual((await client.get(f"/api/player/stream/{song_id}")).status_code, 404)
 
     async def test_replacing_a_cover_changes_its_url(self) -> None:
         folder = self.music / "Band" / "Album"

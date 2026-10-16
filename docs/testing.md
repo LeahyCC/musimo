@@ -38,6 +38,8 @@ npm audit --prefix frontend --audit-level=high
 
 The unittest suite covers persistence, input validation, origin checks, catalog caching, ownership refresh, job idempotency, queue controls, clearing failed downloads, whole-library track browsing, liked-playlist protection, crash recovery, audio tagging, metadata identification, the genre tag mapping and worker failures. Provider requests use mock HTTP transports. FFmpeg generates audio fixtures. No ordinary test needs a provider account or downloads a recording.
 
+Player, waveform and audio-worker symlink checks are separate tests from direct outside-root and parent-traversal checks. If Windows refuses symlink creation with WinError 1314, only the symlink test is explicitly skipped; unexpected filesystem errors still fail. Run the symlink tests on Linux as well and report their actual outcomes. A Windows pass with these skips does not establish symlink protection.
+
 `npm run test` runs the frontend unit tests with Vitest. They live next to the module they cover as `frontend/src/**/*.test.ts`, run in Node without a browser, and are for pure TypeScript: maths, formatting and transforms. Anything that needs the DOM, audio or a real browser belongs in the Playwright suite below.
 
 Coverage includes branches and every backend module, including unexecuted modules. The current floor is 70%. Raise it as coverage grows; do not lower it to make a PR pass. Docker smoke and browser checks are additional behavioral checks outside this percentage. Coverage does not establish music-match accuracy or successful provider downloads.

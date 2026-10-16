@@ -1,16 +1,18 @@
 # Handoff: song characteristics
 
-15 October 2026. Paste everything below the line into a new session.
+Updated 16 October 2026. This records the implemented PR #178 contract. The original implementation steps below are historical context, not instructions to rebuild completed work. Finish outstanding validation on the current head; follow-on work belongs to issue #179.
 
 ---
 
-Implement [song characteristics](../docs/audio-profile-spec.md), review the branch, and open one pull request. The spec is the contract. Where this handoff and the spec disagree, stop and ask Colin. Do not quietly pick one.
+Current finishing scope: report symlink cases as passed/failed/explicitly skipped, keep direct path checks unconditional, reconcile the PR description with the seeded selection contract, and refresh required checks on the integrated head. The original branch/commit instructions below describe how the implementation was built. They do not authorize scans, downloads or activation. Current owner instructions govern merging. Real-library listening/resource gates remain pending independently of merging the disabled foundation.
+
+PR #178 implements [song characteristics](../docs/audio-profile-spec.md). The spec is the active contract. The owner-approved seeded selection rules below replace the original play-count ordering. Read the current PR review and validation evidence before continuing.
 
 Repository: `H:\Git\musimo`. PowerShell. Branch from current `main`. Snapshot `git status` and `git diff` before editing. If the tree has changes that are not the spec and its two doc pointers (`docs/audio-profile-spec.md`, the 15 October paragraph in `docs/ai-music-plan.md`, the schema sentence in `docs/architecture.md`), stop and ask. Do not reset, clean, or overwrite unrelated work. Do not deploy. Do not point the worker at a real music library. Do not merge the pull request.
 
 ## What "finished" means
 
-The pull request ships the machinery with both recipe settings empty. Empty means the bot still refuses mood, energy, tempo, instruments, and vocals, and "more like this" still uses tags. Superseded (owner decision 15 Oct 2026, see [the spec's Broad selection](../docs/audio-profile-spec.md#broad-selection)): library searches are now drawn under a seed, not ordered by play count. The ranker change is live: library matches are ordered by play count and last played, the artist cap applies, and the 5,000-candidate ceiling is gone.
+The pull request ships the machinery with both recipe settings empty. Empty means the bot still refuses mood, energy, tempo, instruments, and vocals, and "more like this" still uses tags. Library searches draw under a seed: equal-fit songs are sampled uniformly, ranked requests sample within a bounded relevance window, and play count ranks only explicit `history: familiar` requests. The artist cap applies and the 5,000-candidate ceiling is gone. The browser remembers the last three library results (at most 500 IDs) in this tab only; refinements preserve the existing order. See [Broad selection](../docs/audio-profile-spec.md#broad-selection).
 
 Colin still has to do these later, and this pull request must not pretend they happened:
 
@@ -53,7 +55,7 @@ Do not squash them into a drive-by of unrelated files.
 In `MusicBot.resolve`:
 
 - Walk every in-scope song in the player view. Delete the `len(candidates) == 5000` break and the summary sentence "Search checked the first 5,000 matching candidates."
-- Superseded (owner decision 15 Oct 2026, see [the spec's Broad selection](../docs/audio-profile-spec.md#broad-selection)): play count now ranks only `history: familiar`, and other requests are drawn under a seed. Order a request that is not "more like this" and has no sound phrase by `play_count` descending, then `last_played` descending (missing last-played sorts last), then `song_id`. Title is not a sort key. `history: familiar` stays a filter (`play_count > 0`). It is not the only time play count matters.
+- Draw equal-fit library matches uniformly under a seed. Use play count only for explicit `history: familiar` ranking (`play_count > 0`); sound/reference similarity uses cosine when supported. Ranked sampling stays within the relevance window defined in the spec. Neither skips nor last-played timestamps supply a default taste score. Proposal/queue refinements keep their order.
 - While filling the returned list, skip a missing file, skip the seed song when `similar_to_current` is set, and skip a song whose `normalize(title)` and `normalize(artist)` were already kept. Take at most two songs per `normalize(artist)`, unless that artist is named in `plan.artists`. Named artists are uncapped. As built, the title rule and the cap apply to library searches and to songs added to a proposal, not to a proposal or queue refinement, and a song with no artist tag is subject to neither. Stop at `limit` or `target_seconds`, as today.
 - A shortfall is still reported in minutes. No gate is relaxed to fill it.
 - File checks run only while filling the list, not for every match.
@@ -61,7 +63,7 @@ In `MusicBot.resolve`:
 
 `StoredSong` has no `artist_key`. Use `normalize` from `backend/core/text.py`. That is the same function the scanner stores.
 
-Update `tests/test_music_bot.py` and `bot-replies.test.ts` for the new order, the cap, and the removed ceiling sentence. A fixture full of one artist must return two songs unless the plan names that artist. Superseded (owner decision 15 Oct 2026, see [the spec's Broad selection](../docs/audio-profile-spec.md#broad-selection)): the order no longer follows play count. Add a case with two artists and uneven play counts so the order is play count, not title, and the third song by the busier artist is held back.
+Update `tests/test_music_bot.py` and `bot-replies.test.ts` for the new order, the cap, and the removed ceiling sentence. A fixture full of one artist must return two songs unless the plan names that artist. Check that changing play counts does not change an ordinary selection with the same seed/state, explicit familiar requests do rank by count, and unnamed artists remain capped. Use fixed seed collections to check varied sets and small-pool overlap.
 
 ## 2. Schema 9
 
@@ -139,7 +141,7 @@ Lease:
 - Three failed attempts write `audio_profile.status = failed` and delete the job. The song stays out of gates.
 - The worker never opens SQLite.
 
-`tempo-energy-v1` sections, matching the trial that already passed the resource gate:
+`tempo-energy-v1` sections follow the earlier bounded experiment. That experiment does not establish production-worker resource use or listening quality on the current host; those gates remain pending:
 
 - Span is `duration - 10` seconds. Starts at 10, 50, and 90 percent of that span. Three 10-second mono sections.
 - Duration under 10 seconds, or a span that cannot hold the starts, is `failed` with a short `detail`. No invented BPM.
@@ -174,7 +176,7 @@ Percentiles use fresh done energies for the active scalar recipe only, sorted as
 - Embedding recipe active and text-aligned: `sound` is a phrase. Genre words stay in `genres`. A phrase that is only negation is cleared and adds no rank. Treat it as negation-only when every remaining token is in this closed list: `no`, `not`, `nothing`, `without`, `minus`, `dont`, `don't`, `never`, `vocals`, `vocal`, `explicit`. "No rock" is dropped from `sound`. Do not build genre exclusion in this change. That is a separate item in `todo/genre-and-bot-handoff.md`.
 - A `sound` phrase while the active embedding recipe is missing or not text-aligned is `unsupported`.
 
-One rank key. Do not blend play count with cosine, and do not break ties inside a tempo or energy band by being "faster" or "calmer." Songs inside the gate tie on that axis. Superseded (owner decision 15 Oct 2026, see [the spec's Broad selection](../docs/audio-profile-spec.md#broad-selection)): play count is the rank key only for `history: familiar`, and with no rank key the songs are drawn at random. Order them by the one rank key: play count, or cosine when the request is similar-to or a sound phrase.
+One rank key: cosine for supported similarity/sound, otherwise play count only for `history: familiar`. Do not blend these keys or break ties inside a tempo/energy band by being faster or calmer. With no rank key use a uniform seeded draw; with a rank key use the spec's bounded relevance sampling. Recent shown IDs only demote equally fitting songs, and refinements preserve order.
 
 The summary names the recipe and coverage whenever an audio gate was used: how many library songs have a fresh done row for that recipe, out of how many are in the library, and how many matches were skipped for a missing profile. A shortfall still says no exclusions were relaxed.
 
@@ -199,7 +201,7 @@ Acceptance from the spec, all of them that do not need Colin's ears. Use generat
 - "Calmer than this" uses the seed's stored energy. A song in the low band but louder than the seed is out.
 - With a test embedding recipe registered, "more like this" does not copy the seed's genres. The seed and a second copy of the same title and artist are absent. A third song by one unnamed artist is absent. A named artist is uncapped.
 - The sound phrase "no vocals" adds no rank. A sound phrase with a recipe that is not text-aligned is `unsupported`.
-- Superseded (owner decision 15 Oct 2026, see [the spec's Broad selection](../docs/audio-profile-spec.md#broad-selection)): such a request is now drawn at random under a seed. A library request with no audio fields is ordered by play count and last played. The summary does not mention 5,000.
+- An ordinary library request draws equal-fit songs under a seed, independently of play counts. Explicit familiar ranking is separate. The summary does not mention a 5,000 ceiling.
 - Coverage is in the summary when an audio gate was used.
 - `validate` returns 409 when the profile goes stale.
 - The lease rejects a changed file and a wrong vector length. A late token does not overwrite. A second result for the same lease is rejected. While `MusicBot.busy` is set, lease returns no work.

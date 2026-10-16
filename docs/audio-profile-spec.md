@@ -12,7 +12,7 @@ AudioMuse keeps one `score` row per recording: raw-ish tempo, energy, key, and s
 
 Musimo keeps that contract, narrowed:
 
-- Tempo in BPM and energy as a measured loudness, on a versioned row keyed by `song_id`.
+- Tempo in BPM and energy as measured RMS amplitude, on a versioned row keyed by `song_id`; RMS is not a validated perceived-intensity label.
 - One float32 vector per song, for one recipe at a time. Neighbour rank uses cosine to the seed. A sound phrase uses cosine to the text encoding of that phrase, and only when the recipe was trained in a shared text space.
 - Hard gates. A song outside a requested tempo, energy, artist, genre, year, duration, or exclusion is out. The reply reports the shortfall. AudioMuse's relax loop, which drops tempo and energy when the pool is short, is not copied. The current bot already refuses to relax exclusions.
 - Artist cap of two while the result list is filled from the library or songs are added to a proposal. Artists the user named are uncapped, and a song with no artist tag is not counted against anyone. Refining a proposal or the queue only filters it.
@@ -70,9 +70,9 @@ Active recipe ids live in settings. Both default to empty. An empty id means the
 
 ### `tempo-energy-v1`
 
-Librosa, ISC, the same family as the trial baseline. No neural net and no downloaded weights. Three 10-second mono sections, at 10, 50, and 90 percent of `duration - 10` seconds. That is the short recipe that already passed the 2 GB, one-core, no-swap gate in the [trial report](audio-analysis-trial.md). Decoder rules from that trial stay: FFmpeg seeks, a section more than 100 ms short is rejected, M4A uses `-seek_streams_individually 0`, the decoder deadline is 30 seconds, and native threads are pinned to one.
+Librosa, ISC, the same family as the trial baseline. No neural net and no downloaded weights. Three 10-second mono sections, at 10, 50, and 90 percent of `duration - 10` seconds. The [earlier experiment](audio-analysis-trial.md) informed this recipe; its resource results are not a production-worker measurement on the current host. Real-host peak memory, throughput and listening acceptance remain pending. Decoder rules from that trial stay: FFmpeg seeks, a section more than 100 ms short is rejected, M4A uses `-seek_streams_individually 0`, the decoder deadline is 30 seconds, and native threads are pinned to one.
 
-Tempo is the median of the section estimates that succeeded. Energy is the mean RMS of the accepted sections. A done row requires both numbers. A file that yields neither is `failed`, with the reason in `detail`. No BPM is invented.
+Tempo is the median of the section estimates that succeeded. Energy is the mean RMS of the accepted sections: signal amplitude, not validated perceived intensity or mood. Loud mastering can confound calmer/more-intense comparisons. A done row requires both numbers. A file that yields neither is `failed`, with the reason in `detail`. No BPM is invented.
 
 `dim` is 0. The vector is null.
 
@@ -90,7 +90,7 @@ The row stores one L2-normalised float32 vector. Tempo and energy stay on `tempo
 
 ## Analysis worker
 
-The worker contract in [the music-bot plan](ai-music-plan.md) stands. One optional Linux container, read-only music, one song at a time, 2 GB RAM, one CPU, no swap. FastAPI owns SQLite. The worker leases through the internal API and never opens the database. Expired leases are dropped. A late or duplicate result cannot replace a newer row. File size and modification time are rechecked before commit. Analysis pauses during a bot request. Playback stays usable.
+The worker contract in [the music-bot plan](ai-music-plan.md) stands. One optional Linux container, read-only music, one song at a time, 2 GB RAM, one CPU, no swap. FastAPI owns SQLite. The worker leases through the internal API and never opens the database. Expired leases are dropped. A late or duplicate result cannot replace a newer row. File size and modification time are rechecked before commit. A busy bot request prevents new leases; it does not pause or cancel a job already running. Playback stays usable.
 
 The result body this spec adds is: `song_id`, `recipe`, `lease_token`, `size`, `mtime_ns`, `status`, `tempo_bpm`, `energy`, `dim`, `vector` (the little-endian float32 bytes, base64 in the JSON), `detail`. FastAPI rejects a result whose recipe, identity, lease, or vector length disagrees with the lease.
 
@@ -153,6 +153,8 @@ Every library search has a generation seed, an integer from 0 to `2**53 - 1`, so
 Left as they are, by the same decision: there is no exact "my N most played" mode and no "less played" mode; songs in the queue or playing now are not demoted; a request that names several artists samples their songs uniformly and does not balance the artists. Duration words are unchanged for now. A later pass settles "about", "under" and "at least". Colin has decided that "about N minutes" will mean the whole-track total closest to N, never more than 5 minutes off, and otherwise a shortfall. That is a decision, not built.
 
 ## Listen gate
+
+Implementation, automated validation, real-library listening/resource measurements, recipe activation and full-library scanning are separate milestones. Passing generated-audio tests does not establish recommendation quality or authorize activation. Production embeddings are absent. Tempo and energy share one scalar activation setting: if tempo passes but perceived-intensity checks fail, keep it off or separately implement and validate capability gating. Strict approximate/maximum/minimum duration modes, richer musical evidence and the V2 engine remain follow-on work in [issue #179](https://github.com/LeahyCC/musimo/issues/179).
 
 `tempo-energy-v1` is activated after a scripted listen, not after a full scan. The operator hears pairs that the gate claims are faster, slower, calmer, and more intense than a seed, on the order of a few dozen songs, including one long recording and one spoken-word file. Activation is a settings change. A bad listen mints no second recipe and starts no scan.
 
