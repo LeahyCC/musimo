@@ -37,6 +37,8 @@ const controls: {
   min?: number
   max?: number
   section: string
+  /** The field may be saved empty. */
+  optional?: boolean
 }[] = [
   {
     key: 'ollama_url',
@@ -49,6 +51,20 @@ const controls: {
     label: 'Music time zone',
     help: 'Used for played today. For example Pacific/Honolulu or Europe/London.',
     section: 'music-bot',
+  },
+  {
+    key: 'audio_scalar_recipe',
+    label: 'Tempo and energy recipe',
+    help: 'Empty means audio analysis is off and the bot answers from tags alone. After the listening check, the analysis recipe id goes here.',
+    section: 'music-bot',
+    optional: true,
+  },
+  {
+    key: 'audio_embedding_recipe',
+    label: 'Sound similarity recipe',
+    help: 'Empty means audio analysis is off. No sound similarity recipe has passed its listening check yet.',
+    section: 'music-bot',
+    optional: true,
   },
   {
     key: 'destination',
@@ -436,7 +452,7 @@ export function SettingsPage() {
                 )}
                 {controls
                   .filter((control) => control.section === section)
-                  .map(({ key, label, help, min, max }) => {
+                  .map(({ key, label, help, min, max, optional }) => {
                     const setting = settings.data?.[key]
                     if (!setting) return null
                     const value = draft[key] ?? setting.value
@@ -521,7 +537,7 @@ export function SettingsPage() {
                               min={min}
                               max={max}
                               maxLength={min === undefined ? 400 : undefined}
-                              required
+                              required={!optional}
                               disabled={setting.locked || save.isPending}
                               value={entered}
                               onChange={(e) => {

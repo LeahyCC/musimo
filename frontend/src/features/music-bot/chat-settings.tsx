@@ -125,7 +125,8 @@ export function ChatSettings({ petState }: { petState: PetState }) {
       <section className="grid shrink-0 gap-[8px] border-t border-line pt-[14px]">
         <h3 className="m-0 text-small font-[550]">Conversation</h3>
         <p className="m-0 text-small leading-[1.6] text-muted">
-          I keep the last 8 messages in this tab, and forget them when it closes.
+          I keep the last 8 messages and the songs from my last three answers in this tab, so asking
+          again finds different ones, and forget them when it closes.
         </p>
         <Button
           variant="danger"

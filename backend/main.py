@@ -20,6 +20,7 @@ from starlette.responses import Response
 
 from backend.api.activity_api import install_activity_routes
 from backend.api.artist_download_api import install_artist_download_routes
+from backend.api.audio_worker_api import install_audio_worker_routes
 from backend.api.diagnostics_api import install_diagnostics_routes
 from backend.api.download_api import install_download_routes
 from backend.api.events_api import install_event_routes
@@ -37,6 +38,7 @@ from backend.integrations.youtube_cookies import drop_copies as drop_youtube_coo
 from backend.integrations.youtube_cookies import publish as publish_youtube_cookies
 from backend.jobs.downloads import Downloads
 from backend.jobs.links import Links
+from backend.library.audio_profile import AudioProfiles
 from backend.library.index import Library
 from backend.library.music_bot import MusicBot
 from backend.library.player import Player
@@ -86,10 +88,15 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     player: Player
     waveforms: WaveformService
     music_bot: MusicBot
+    profiles: AudioProfiles
+    # Shared with the optional audio worker. Empty keeps its lease routes off. Out of the
+    # environment, the download, link and ffmpeg children cannot inherit it.
+    analysis_token = os.environ.pop("MUSIMO_ANALYSIS_TOKEN", "").strip()
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
-        nonlocal store, versions, catalog, library, downloads, links, player, waveforms, music_bot
+        nonlocal store, versions, catalog, library, downloads, links, player, waveforms
+        nonlocal music_bot, profiles
         # Later tracks reuse the YouTube player script instead of fetching it again.
         os.environ["MUSIMO_YTDLP_CACHE"] = str(data / "ytdlp-cache")
         store = Store(data / "musimo.sqlite3")
@@ -110,7 +117,8 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 if root
             ]
             player = Player(store, roots, client)
-            music_bot = MusicBot(store, player, client)
+            profiles = AudioProfiles(store)
+            music_bot = MusicBot(store, player, client, profiles)
             waveforms = WaveformService(store, player)
             library = Library(store, roots, changed)
             library.start()
@@ -136,6 +144,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_artist_download_routes(app, lambda: downloads)
     install_player_routes(app, lambda: player)
     install_music_bot_routes(app, lambda: music_bot)
+    install_audio_worker_routes(app, lambda: profiles, lambda: music_bot.busy, analysis_token)
     install_waveform_routes(app, lambda: waveforms)
     install_podcast_routes(app, lambda: downloads)
     install_link_routes(app, lambda: links)

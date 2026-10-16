@@ -118,7 +118,7 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
             )
 
         self.client = httpx.AsyncClient(transport=httpx.MockTransport(transport))
-        self.bot = MusicBot(self.store, self.player, self.client)
+        self.bot = MusicBot(self.store, self.player, self.client, new_seed=lambda: 0)
         self.now = datetime(2026, 10, 14, 12, tzinfo=ZoneInfo("Pacific/Honolulu"))
 
     async def asyncTearDown(self) -> None:
@@ -180,8 +180,9 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.resolve(plan(history="unplayed"))["tracks"], [])
 
     def test_genre_words_match_broad_genres_and_raw_tags(self) -> None:
-        self.assertEqual(len(result_ids(self.resolve(plan(genres=["rock music"])))), 6)
-        self.assertEqual(len(result_ids(self.resolve(plan(genres=["Rock/Metal"])))), 6)
+        # Six rock songs match; two of Harbor's five and the one Orchard song are kept.
+        self.assertEqual(len(result_ids(self.resolve(plan(genres=["rock music"])))), 3)
+        self.assertEqual(len(result_ids(self.resolve(plan(genres=["Rock/Metal"])))), 3)
         self.assertEqual(self.resolve(plan(genres=["metal"]))["tracks"], [])
         self.assertEqual(self.resolve(plan(genres=["hip hop"]))["tracks"], [])
 
@@ -276,7 +277,7 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
             BotRequest(prompt="allow Harbor again", previous=old),
         )
         self.assertEqual(SearchPlan.model_validate(result["plan"]).exclude_artists, ["Nobody"])
-        self.assertEqual(len(result_ids(result)), 6)
+        self.assertEqual(len(result_ids(result)), 3)
         # A scope switch that does not name the exclusions leaves them in place.
         result = self.resolve(
             plan(scope="queue"),
@@ -329,8 +330,20 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
                 query = SearchPlan.model_validate(result["plan"])
                 self.assertEqual(query.exclude_artists, ["Orchard"])
                 self.assertEqual(query.exclude_played_days, 0)
-                self.assertIn(self.ids["B today"], result_ids(result))
                 self.assertNotIn(self.ids["E other"], result_ids(result))
+                # Harbor fills its two places by draw, so B today is back in the pool rather
+                # than in every answer.
+                drawn = set()
+                for seed in range(20):
+                    ids = result_ids(
+                        self.resolve(
+                            plan(change_filters=["exclude_played_days"]),
+                            BotRequest(prompt=prompt, previous=old, generation_seed=seed),
+                        )
+                    )
+                    self.assertEqual(len(ids), 2)
+                    drawn.update(ids)
+                self.assertIn(self.ids["B today"], drawn)
 
     def test_search_plans_are_used_as_given(self) -> None:
         result = self.resolve(
@@ -384,10 +397,348 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result_ids(result), proposal)
         # Without a choice the model's reading stands.
         result = self.resolve(plan(scope="library"), BotRequest(prompt="fixture"))
-        self.assertEqual(len(result_ids(result)), 6)
+        self.assertEqual(len(result_ids(result)), 3)
         # Choosing a selection that does not exist is refused, never widened to the library.
         with self.assertRaises(BotError):
             self.resolve(plan(), BotRequest(prompt="fixture", scope="queue"))
+
+    def uneven_plays(self) -> None:
+        with self.store.lock:
+            for title, count in {
+                "C unliked": 9,
+                "D eighties": 7,
+                "F unknown": 5,
+                "E other": 4,
+                "A yesterday": 0,
+            }.items():
+                self.store.db.execute(
+                    "UPDATE library_files SET play_count=? WHERE song_id=?",
+                    (count, self.ids[title]),
+                )
+            self.store.db.commit()
+        self.store.bump_library_revision()
+
+    def seeded(self, query: SearchPlan, seed: int, **request: object) -> dict[str, object]:
+        return self.resolve(
+            query,
+            BotRequest.model_validate({"prompt": "fixture", "generation_seed": seed} | request),
+        )
+
+    def test_play_history_does_not_rank_broad_requests(self) -> None:
+        queries = (plan(), plan(genres=["rock"]), plan(favourites=True))
+        before = [result_ids(self.seeded(query, 5)) for query in queries]
+        result = self.seeded(plan(), 5)
+        self.assertNotIn("5,000", str(result["summary"]))
+        self.assertNotIn("candidates", str(result["summary"]))
+        # Counts and a fresh play change nothing about which songs one seed draws.
+        self.uneven_plays()
+        self.store.record_play(self.ids["B today"])
+        self.store.bump_library_revision()
+        self.assertEqual([result_ids(self.seeded(query, 5)) for query in queries], before)
+        # Harbor fills two places by draw, Orchard's only song always gets in, and asking again
+        # reaches different Harbor pairs rather than the most played ones every time.
+        harbor = {sid for title, sid in self.ids.items() if title != "E other"}
+        pairs = set()
+        for seed in range(40):
+            ids = result_ids(self.seeded(plan(), seed))
+            self.assertEqual(len(ids), 3)
+            self.assertIn(self.ids["E other"], ids)
+            pairs.add(frozenset(set(ids) & harbor))
+        self.assertGreaterEqual(len(pairs), 5)
+        # Naming the artist lifts the cap; excluding the other artist leaves two of five.
+        self.assertEqual(len(result_ids(self.resolve(plan(artists=["Harbor"])))), 5)
+        self.assertEqual(len(result_ids(self.resolve(plan(exclude_artists=["Orchard"])))), 2)
+        self.assertIn(self.ids["A yesterday"], result_ids(self.resolve(plan(artists=["Harbor"]))))
+
+    def test_familiar_ranks_by_plays_and_played_does_not(self) -> None:
+        self.uneven_plays()
+        # Five played songs fit in the answer, so nothing is drawn: the most played lead, the cap
+        # holds back Harbor's third, and the never-played song is not familiar at all.
+        for seed in range(10):
+            result = self.seeded(plan(history="familiar"), seed)
+            self.assertEqual(
+                result_ids(result),
+                [self.ids["C unliked"], self.ids["D eighties"], self.ids["E other"]],
+            )
+            self.assertNotIn("Picked", str(result["summary"]))
+        # Asked for two, it draws only from the most played and says so. F, two plays behind,
+        # sits further below D than D sits below C, so the window stops at two.
+        result = self.seeded(plan(history="familiar", limit=2), 0)
+        self.assertEqual(result_ids(result), [self.ids["C unliked"], self.ids["D eighties"]])
+        self.assertIn("Picked from your most played of 5 matches.", str(result["summary"]))
+        # Played is only a filter: its order is drawn, not counted.
+        orders = {tuple(result_ids(self.seeded(plan(history="played"), s))) for s in range(20)}
+        self.assertGreaterEqual(len(orders), 2)
+        self.assertTrue(all(self.ids["A yesterday"] not in order for order in orders))
+
+    def test_a_seed_is_returned_and_repeats_the_selection(self) -> None:
+        first = self.seeded(plan(limit=2), 12345)
+        self.assertEqual(first["generation_seed"], 12345)
+        self.assertEqual(result_ids(self.seeded(plan(limit=2), 12345)), result_ids(first))
+        self.assertIn("Picked at random from 6 matches.", str(first["summary"]))
+        self.assertNotIn("Picked", str(self.seeded(plan(), 1)["summary"]))
+        # Without one, each search draws a fresh seed and says which.
+        seeds = iter([7, 8])
+        self.bot.new_seed = lambda: next(seeds)
+        self.assertEqual(self.resolve(plan())["generation_seed"], 7)
+        self.assertEqual(self.resolve(plan())["generation_seed"], 8)
+        # Questions and refinements draw nothing.
+        self.assertIsNone(self.resolve(plan(action="clarify"))["generation_seed"])
+        refined = self.resolve(
+            plan(scope="proposal"), BotRequest(prompt="x", proposal_ids=list(self.ids.values()))
+        )
+        self.assertIsNone(refined["generation_seed"])
+        self.assertEqual(self.seeded(plan(), 2**53 - 1)["generation_seed"], 2**53 - 1)
+        for bad in (2**53, -1, "5", 1.5, True):
+            with self.subTest(seed=bad), self.assertRaises(ValidationError):
+                BotRequest.model_validate({"prompt": "x", "generation_seed": bad})
+
+    def test_refining_keeps_the_given_order(self) -> None:
+        given = list(reversed(list(self.ids.values())))
+        for scope, field in (("queue", "queue_ids"), ("proposal", "proposal_ids")):
+            for seed in (0, 1):
+                with self.subTest(scope=scope, seed=seed):
+                    result = self.seeded(
+                        plan(scope=scope, max_seconds=1200), seed, **{field: given}
+                    )
+                    self.assertEqual(result_ids(result), given)
+        # Familiar, even carried over from an earlier request, only filters the person's songs;
+        # it never re-sorts them by plays.
+        self.uneven_plays()
+        previous = plan(history="familiar")
+        ids = result_ids(
+            self.seeded(plan(scope="queue"), 0, queue_ids=given, previous=previous.model_dump())
+        )
+        self.assertEqual(ids, [sid for sid in given if sid != self.ids["A yesterday"]])
+
+    def test_another_set_prefers_unshown_songs_and_reuses_when_it_must(self) -> None:
+        harbor = plan(artists=["Harbor"], limit=2)
+        first = result_ids(self.seeded(harbor, 1))
+        second = result_ids(self.seeded(harbor, 2, shown_ids=first))
+        self.assertFalse(set(first) & set(second))
+        third = self.seeded(harbor, 3, shown_ids=first + second)
+        unseen = {sid for t, sid in self.ids.items() if t != "E other"} - set(first) - set(second)
+        self.assertEqual(len(result_ids(third)), 2)
+        self.assertTrue(unseen <= set(result_ids(third)))
+        self.assertIn(
+            "1 song repeats from an earlier answer; no other match", str(third["summary"])
+        )
+        # Shown songs stay eligible: a length target is still met from them, and nothing about
+        # them is stored.
+        everything = list(self.ids.values())
+        full = self.seeded(plan(artists=["Harbor"], target_seconds=6000), 4, shown_ids=everything)
+        self.assertEqual(full["total_seconds"], 6000)
+        self.assertEqual(full["shortfall_seconds"], 0)
+        self.assertIn("5 songs repeat from earlier answers", str(full["summary"]))
+        counts = {
+            row.song_id: (row.play_count, row.last_played)
+            for row in self.player.view().stored.values()
+        }
+        self.assertTrue(all(count == 3 for count, _ in counts.values()))
+
+    def test_add_another_prefers_unshown_songs(self) -> None:
+        query = plan(year_to=1994, add_count=1)
+        proposal = [self.ids["A yesterday"]]
+        ids = result_ids(
+            self.seeded(
+                query,
+                0,
+                proposal_ids=proposal,
+                shown_ids=[self.ids["A yesterday"], self.ids["E other"]],
+            )
+        )
+        self.assertEqual(ids, [self.ids["A yesterday"], self.ids["D eighties"]])
+        # The retained song was shown too, but it is the person's own; only new songs count.
+        everything = list(self.ids.values())
+        result = self.seeded(query, 0, proposal_ids=proposal, shown_ids=everything)
+        self.assertIn(" 1 song repeats from an earlier answer;", str(result["summary"]))
+        ids = result_ids(self.seeded(query, 0, proposal_ids=proposal, shown_ids=everything))
+        self.assertEqual(len(ids), 2)
+        self.assertEqual(ids[0], self.ids["A yesterday"])
+
+    def test_ranked_answers_say_how_far_they_reached_and_why_songs_repeat(self) -> None:
+        # Harbor's three most played songs top the list, but the cap takes only two, so the
+        # third place comes from below them. The summary names the depth it really reached.
+        with self.store.lock:
+            for title, count in {"C unliked": 100, "D eighties": 99, "F unknown": 98}.items():
+                self.store.db.execute(
+                    "UPDATE library_files SET play_count=? WHERE song_id=?",
+                    (count, self.ids[title]),
+                )
+            self.store.db.commit()
+        self.store.bump_library_revision()
+        for seed in range(10):
+            result = self.seeded(plan(history="familiar", limit=3), seed)
+            self.assertIn(self.ids["E other"], result_ids(result))
+            self.assertNotIn("your 3 most played", str(result["summary"]))
+        # A song the cap rules out inside the window was tried before the repeat, so it did not
+        # lose on fit: the honest reason is that nothing else could be used, on every seed.
+        with self.store.lock:
+            for title, count in {
+                "C unliked": 9,
+                "D eighties": 7,
+                "F unknown": 6,
+                "E other": 8,
+                "A yesterday": 0,
+                "B today": 0,
+            }.items():
+                self.store.db.execute(
+                    "UPDATE library_files SET play_count=? WHERE song_id=?",
+                    (count, self.ids[title]),
+                )
+            self.store.db.commit()
+        self.store.bump_library_revision()
+        for seed in range(12):
+            result = self.seeded(
+                plan(history="familiar", limit=3), seed, shown_ids=[self.ids["E other"]]
+            )
+            self.assertIn(
+                "1 song repeats from an earlier answer; no other match", str(result["summary"])
+            )
+        # Equal plays everywhere: nothing fits less, so the honest reason is that nothing else
+        # could be used, and a draw among equals is called random.
+        with self.store.lock:
+            self.store.db.execute("UPDATE library_files SET play_count=3")
+            self.store.db.commit()
+        self.store.bump_library_revision()
+        everything = list(self.ids.values())
+        result = self.seeded(plan(history="familiar"), 0, shown_ids=everything)
+        self.assertIn("3 songs repeat from earlier answers; no other match", str(result["summary"]))
+        result = self.seeded(plan(history="familiar", limit=2), 0)
+        self.assertIn("Picked at random from 6 matches.", str(result["summary"]))
+        self.assertNotIn("most played", str(result["summary"]))
+        # Uneven plays with the two most played already shown: they come back ahead of unshown
+        # songs that fit less. Whether those could have played is not known, so no reason is given.
+        self.uneven_plays()
+        shown = [self.ids["C unliked"], self.ids["D eighties"]]
+        result = self.seeded(plan(history="familiar", limit=2), 0, shown_ids=shown)
+        self.assertEqual(set(result_ids(result)), set(shown))
+        self.assertTrue(str(result["summary"]).endswith(" 2 songs repeat from earlier answers."))
+
+    def test_no_picked_sentence_without_a_fresh_choice(self) -> None:
+        # Adding to a proposal speaks only of the new songs.
+        result = self.seeded(plan(add_count=1, limit=1), 0, proposal_ids=[self.ids["E other"]])
+        self.assertNotIn("Picked", str(result["summary"]))
+        # Nothing could be played, so nothing was picked.
+        for sid in self.ids.values():
+            path = self.player.local_file(sid)
+            assert path is not None
+            path.unlink()
+        result = self.seeded(plan(limit=2), 0)
+        self.assertEqual(result["tracks"], [])
+        self.assertNotIn("Picked", str(result["summary"]))
+
+    def test_a_named_artist_is_never_starved(self) -> None:
+        harbor = [sid for t, sid in self.ids.items() if t != "E other"]
+        for seed in range(20):
+            self.assertEqual(len(result_ids(self.seeded(plan(artists=["Harbor"]), seed))), 5)
+            self.assertEqual(
+                len(result_ids(self.seeded(plan(artists=["Harbor"]), seed, shown_ids=harbor))), 5
+            )
+
+    def test_similar_to_current_skips_the_seed_and_a_repeated_title(self) -> None:
+        with self.store.lock:
+            self.store.db.execute(
+                "UPDATE library_files SET title='B today' WHERE song_id=?",
+                (self.ids["C unliked"],),
+            )
+            self.store.db.commit()
+        self.store.bump_library_revision()
+        request = BotRequest(prompt="more like this", reference_id=self.ids["A yesterday"])
+        result = self.resolve(plan(similar_to_current=True), request)
+        ids = result_ids(result)
+        self.assertNotIn(self.ids["A yesterday"], ids)
+        # B today and its copy share a title and artist, so at most one of them gets in. Harbor's
+        # two places are drawn from its other songs.
+        self.assertFalse({self.ids["B today"], self.ids["C unliked"]} <= set(ids))
+        self.assertIn(self.ids["E other"], ids)
+        self.assertEqual(len(ids), 3)
+        self.assertIn("Similarity uses artist or genre tags", str(result["summary"]))
+        # Naming Harbor lifts the cap, so the pair always competes: exactly one of them stays.
+        for seed in range(10):
+            ids = result_ids(
+                self.seeded(
+                    plan(similar_to_current=True, artists=["Harbor"]),
+                    seed,
+                    reference_id=self.ids["A yesterday"],
+                )
+            )
+            self.assertEqual(len(ids), 3)
+            self.assertEqual(len({self.ids["B today"], self.ids["C unliked"]} & set(ids)), 1)
+
+    def retag(self, **artists_and_titles: tuple[str, str]) -> None:
+        with self.store.lock:
+            for key, (artist, title) in artists_and_titles.items():
+                self.store.db.execute(
+                    "UPDATE library_files SET artist=?, title=? WHERE song_id=?",
+                    (artist, title, self.ids[key.replace("_", " ")]),
+                )
+            self.store.db.commit()
+        self.store.bump_library_revision()
+
+    def test_untagged_artists_are_not_capped_or_merged_by_title(self) -> None:
+        # Five songs with no artist tag, two of them both called Intro, are five songs.
+        self.retag(
+            A_yesterday=("", "A yesterday"),
+            B_today=("", "Intro"),
+            C_unliked=("", "Intro"),
+            D_eighties=("", "D eighties"),
+            F_unknown=(" ", "F unknown"),
+        )
+        self.assertEqual(len(result_ids(self.resolve(plan()))), 6)
+        # A name made only of punctuation is still an artist of its own, and still capped.
+        self.retag(
+            A_yesterday=("!!!", "A yesterday"),
+            B_today=("!!!", "B today"),
+            C_unliked=("!!!", "C unliked"),
+            D_eighties=("???", "D eighties"),
+            F_unknown=("???", "F unknown"),
+        )
+        self.assertEqual(len(result_ids(self.resolve(plan()))), 5)
+        # A named punctuation-only artist is uncapped, however its spaces are written.
+        self.retag(D_eighties=("!!!", "D eighties"), F_unknown=("!!!", "F unknown"))
+        self.assertEqual(len(result_ids(self.resolve(plan(artists=["  !!!"])))), 5)
+
+    def test_refining_the_queue_or_a_proposal_keeps_every_match(self) -> None:
+        # B today's copy shares its title and artist; a library search keeps it once.
+        self.retag(C_unliked=("Harbor", "B today"))
+        everything = list(self.ids.values())
+        self.assertEqual(len(result_ids(self.resolve(plan(max_seconds=1200)))), 3)
+        # The person's own queue is filtered, never thinned to two songs an artist.
+        for scope, request in (
+            ("queue", BotRequest(prompt="under 20 minutes", queue_ids=everything)),
+            ("proposal", BotRequest(prompt="under 20 minutes", proposal_ids=everything)),
+        ):
+            with self.subTest(scope=scope):
+                result = self.resolve(plan(scope=scope, max_seconds=1200), request)
+                self.assertEqual(sorted(result_ids(result)), sorted(everything))
+        # The seed of "more like this" and a copy of it stay out in every scope.
+        self.retag(D_eighties=("Harbor", "A yesterday"))
+        request = BotRequest(
+            prompt="more like this", queue_ids=everything, reference_id=self.ids["A yesterday"]
+        )
+        ids = result_ids(self.resolve(plan(scope="queue", similar_to_current=True), request))
+        self.assertNotIn(self.ids["A yesterday"], ids)
+        self.assertNotIn(self.ids["D eighties"], ids)
+        self.assertEqual(len(ids), 4)
+        # A seed with no artist tag still has a copy: the same title, also untagged.
+        self.retag(A_yesterday=("", "A yesterday"), D_eighties=("", "A yesterday"))
+        ids = result_ids(self.resolve(plan(scope="queue", similar_to_current=True), request))
+        self.assertNotIn(self.ids["D eighties"], ids)
+        # Adding songs from the queue to a proposal builds a selection, so both rules apply,
+        # counted from the songs already kept.
+        self.retag(A_yesterday=("Harbor", "A yesterday"), D_eighties=("Harbor", "A yesterday"))
+        request = BotRequest(
+            prompt="add more",
+            queue_ids=everything,
+            proposal_ids=[self.ids["A yesterday"], self.ids["E other"]],
+        )
+        ids = result_ids(self.resolve(plan(scope="queue", add_count=4), request))
+        self.assertEqual(ids[:2], [self.ids["A yesterday"], self.ids["E other"]])
+        self.assertNotIn(self.ids["D eighties"], ids)
+        self.assertEqual(
+            sum(sid in ids for title, sid in self.ids.items() if title != "E other"), 2
+        )
 
     def test_full_duration_and_zero_matches(self) -> None:
         result = self.resolve(plan(target_seconds=3600))
@@ -516,11 +867,46 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(response.status_code, 422)
             response = await client.post("/api/music-bot/chat", json={"prompt": "rock"})
             self.assertEqual(response.status_code, 200)
+            for bad in (
+                {"generation_seed": 2**53},
+                {"generation_seed": -1},
+                {"generation_seed": "5"},
+                {"generation_seed": 1.5},
+                {"generation_seed": True},
+                {"shown_ids": ["invented"]},
+                {"shown_ids": [self.ids["E other"]] * 501},
+            ):
+                with self.subTest(body=bad):
+                    response = await client.post(
+                        "/api/music-bot/chat", json={"prompt": "rock"} | bad
+                    )
+                    self.assertEqual(response.status_code, 422)
+            response = await client.post(
+                "/api/music-bot/chat",
+                json={
+                    "prompt": "rock",
+                    "generation_seed": 2**53 - 1,
+                    "shown_ids": [self.ids["E other"]],
+                },
+            )
+            self.assertEqual(response.status_code, 200)
+            self.assertEqual(response.json()["generation_seed"], 2**53 - 1)
             response = await client.post(
                 "/api/music-bot/validate",
                 json={"ids": [self.ids["E other"]], "plan": plan().model_dump()},
             )
             self.assertEqual(response.status_code, 200)
+            # The selection check takes no seed, and nothing here touched the play queue.
+            response = await client.post(
+                "/api/music-bot/validate",
+                json={
+                    "ids": [self.ids["E other"]],
+                    "plan": plan().model_dump(),
+                    "generation_seed": 1,
+                },
+            )
+            self.assertEqual(response.status_code, 422)
+            self.assertEqual(self.store.read_play_queue()["song_ids"], [])
 
     def test_settings_validate_address_timezone_and_ranges(self) -> None:
         for values in [

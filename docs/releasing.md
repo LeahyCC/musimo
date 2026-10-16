@@ -77,4 +77,4 @@ On a clean machine, verify:
 - [ ] Publish source/tag and any reviewed container artifacts only after the above checks. Restrict publishing credentials and use reproducible build inputs; record digests.
 - [ ] Verify the published installation instructions on a clean machine, and monitor reported regressions.
 
-Dependency update PRs require review. Python changes must regenerate `requirements.lock` as well as `uv.lock`; helper/plugin versions must remain compatible. There is no automatic merge or release policy.
+Dependency update PRs require review. Python changes must regenerate `requirements.lock` as well as `uv.lock`; helper/plugin versions must remain compatible. The audio worker has its own pair, `worker/uv.lock` and `worker/requirements.lock`, exported the same way with `--project worker`. There is no automatic merge or release policy.

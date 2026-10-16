@@ -5,6 +5,7 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from backend.core.audio_recipes import check_recipe_setting
 from backend.core.naming import Naming
 from backend.core.sources import toggle_ids
 
@@ -49,6 +50,20 @@ class Settings(BaseModel):
     ollama_url: str = "http://127.0.0.1:11434"
     ollama_model: str = Field(default="", max_length=200)
     music_timezone: str = "UTC"
+    # Which song characteristic rows the bot may read (docs/audio-profile-spec.md). Empty is
+    # off: the bot refuses tempo, energy and sound requests and ignores any rows.
+    audio_scalar_recipe: str = Field(default="", max_length=80)
+    audio_embedding_recipe: str = Field(default="", max_length=80)
+
+    @field_validator("audio_scalar_recipe")
+    @classmethod
+    def scalar_recipe(cls, value: str) -> str:
+        return check_recipe_setting(value, "scalar")
+
+    @field_validator("audio_embedding_recipe")
+    @classmethod
+    def embedding_recipe(cls, value: str) -> str:
+        return check_recipe_setting(value, "embedding")
 
     @field_validator("ollama_url")
     @classmethod
@@ -123,6 +138,8 @@ class SettingsPatch(BaseModel):
     ollama_url: str | None = Field(default=None, max_length=500)
     ollama_model: str | None = Field(default=None, max_length=200)
     music_timezone: str | None = Field(default=None, max_length=100)
+    audio_scalar_recipe: str | None = Field(default=None, max_length=80)
+    audio_embedding_recipe: str | None = Field(default=None, max_length=80)
     output_format: Literal["original", "m4a", "opus", "mp3"] | None = None
     concurrency: int | None = Field(default=None, ge=1, le=3)
     max_attempts: int | None = Field(default=None, ge=1, le=4)
@@ -139,6 +156,16 @@ class SettingsPatch(BaseModel):
     disabled_sources: list[str] | None = None
     source_order: list[str] | None = None
     tries_per_source: int | None = Field(default=None, ge=1, le=4)
+
+    @field_validator("audio_scalar_recipe")
+    @classmethod
+    def scalar_recipe(cls, value: str | None) -> str | None:
+        return None if value is None else check_recipe_setting(value, "scalar")
+
+    @field_validator("audio_embedding_recipe")
+    @classmethod
+    def embedding_recipe(cls, value: str | None) -> str | None:
+        return None if value is None else check_recipe_setting(value, "embedding")
 
     @field_validator("deezer_arl")
     @classmethod

@@ -87,6 +87,9 @@ async function fixtures(page: Page, restore = true) {
   await page.route('**/api/music-bot/chat', (route) => route.fulfill({ json: answer }))
   await page.route('**/api/music-bot/validate', (route) => {
     const body = requestBody(route)
+    // The songs the plan was measured against travel with every selection check.
+    expect(body).toHaveProperty('reference_id')
+    expect(body).toHaveProperty('current_id')
     const ids = Array.isArray(body.ids) ? body.ids : []
     return route.fulfill({
       json: { tracks: [first, second].filter((song) => ids.includes(song.id)) },
@@ -277,8 +280,24 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
   await expect(page.getByText('First Light \u00b7 Harbor Static')).toBeVisible()
   await page.route('**/api/music-bot/chat', async (route) => {
     expect(requestBody(route).reference_id).toBe(first.id)
-    // The plan goes back as the server sent it, with its (empty) suggestions.
-    expect(requestBody(route).previous).toEqual({ ...plan, suggestions: [] })
+    // The songs of the last library answer go back so asking again prefers others. The browser
+    // never sends a generation seed, so every request draws a fresh one.
+    expect(requestBody(route).shown_ids).toEqual([first.id, second.id])
+    expect(requestBody(route)).not.toHaveProperty('generation_seed')
+    // The plan goes back as the server sent it, with its (empty) suggestions and the song
+    // characteristic fields the browser fills in when an older build's reply leaves them out.
+    expect(requestBody(route).previous).toEqual({
+      ...plan,
+      suggestions: [],
+      tempo: '',
+      tempo_min: null,
+      tempo_max: null,
+      energy: '',
+      energy_compared: '',
+      tempo_compared: '',
+      sound: '',
+    })
+
     await route.fulfill({
       json: {
         ...answer,
@@ -322,6 +341,9 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
   })
   await page.getByRole('button', { name: 'Clear chat' }).click()
   await expect(page.getByRole('list', { name: 'Proposed songs' })).toHaveCount(0)
+  await expect
+    .poll(() => page.evaluate(() => sessionStorage.getItem('musimo.music-bot.shown')))
+    .toBe('[]')
   await page.reload()
   // A cleared chat stays cleared, and opens on the greeting.
   await expect(page.getByRole('heading', { name: /^Hi, I.m Octive\.$/ })).toBeVisible()

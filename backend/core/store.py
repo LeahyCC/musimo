@@ -9,7 +9,7 @@ from backend.core.models import CATALOG_ORDER, Settings, clean_arl
 from backend.core.sources import source_label
 
 RETAIN_EVENTS = 5000
-SCHEMA_VERSION = 8
+SCHEMA_VERSION = 9
 # Rows that stay in the settings table but are not settings. Each is stripped before validation,
 # because Settings refuses keys it does not know.
 # deezer_arl held the Deezer cookie. The cookie is a file now and the row stays empty, so a
@@ -34,7 +34,7 @@ def note_library_change(db: sqlite3.Connection) -> None:
 
 
 def drop_song_references(db: sqlite3.Connection, song_ids: list[str]) -> None:
-    """Drop playlist, queue and waveform rows for songs that just left the index.
+    """Drop playlist, queue, waveform and audio profile rows for songs that just left the index.
 
     The caller holds the store lock and a write transaction. Positions are packed
     again so a playlist index still matches the row the browser asked to remove.
@@ -63,6 +63,14 @@ def drop_song_references(db: sqlite3.Connection, song_ids: list[str]) -> None:
     )
     db.execute(
         "DELETE FROM waveforms WHERE song_id IN (SELECT value FROM json_each(?))",
+        (payload,),
+    )
+    db.execute(
+        "DELETE FROM audio_profile WHERE song_id IN (SELECT value FROM json_each(?))",
+        (payload,),
+    )
+    db.execute(
+        "DELETE FROM audio_job WHERE song_id IN (SELECT value FROM json_each(?))",
         (payload,),
     )
     _repack_queue(db)
@@ -280,6 +288,33 @@ class Store:
                 fingerprint TEXT NOT NULL,
                 peaks BLOB NOT NULL
             );
+            -- Song characteristics (docs/audio-profile-spec.md): one measured row per song and
+            -- recipe, and the queue the analysis worker leases from. Created here, like the
+            -- waveform cache, so dropping either is a safe reset the worker refills.
+            CREATE TABLE IF NOT EXISTS audio_profile (
+                song_id TEXT NOT NULL,
+                recipe TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('done', 'failed', 'skipped')),
+                size INTEGER NOT NULL,
+                mtime_ns INTEGER NOT NULL,
+                tempo_bpm REAL,
+                energy REAL,
+                dim INTEGER NOT NULL DEFAULT 0,
+                vector BLOB,
+                detail TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (song_id, recipe)
+            );
+            CREATE INDEX IF NOT EXISTS audio_profile_recipe ON audio_profile(recipe, status);
+            CREATE TABLE IF NOT EXISTS audio_job (
+                song_id TEXT NOT NULL,
+                recipe TEXT NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('queued', 'leased')),
+                lease_token TEXT NOT NULL DEFAULT '',
+                leased_until TEXT NOT NULL DEFAULT '',
+                attempts INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (song_id, recipe)
+            );
             CREATE TABLE IF NOT EXISTS source_control (
                 source TEXT PRIMARY KEY, paused INTEGER NOT NULL DEFAULT 0,
                 blocking_failures INTEGER NOT NULL DEFAULT 0
@@ -415,6 +450,15 @@ class Store:
                 ALTER TABLE play_queue ADD COLUMN writer_epoch INTEGER NOT NULL DEFAULT 0;
                 ALTER TABLE play_queue ADD COLUMN write_sequence INTEGER NOT NULL DEFAULT 0;
                 PRAGMA user_version=8;
+                COMMIT;
+            """)
+        if version < 9:
+            # Schema 9 is the two song characteristic tables above. They are created on every
+            # start, so this only records that a version 9 build has opened the file; an older
+            # build then refuses it. library_files is unchanged.
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                PRAGMA user_version=9;
                 COMMIT;
             """)
         self.seed()
