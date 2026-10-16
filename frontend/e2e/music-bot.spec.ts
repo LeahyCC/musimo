@@ -87,6 +87,9 @@ async function fixtures(page: Page, restore = true) {
   await page.route('**/api/music-bot/chat', (route) => route.fulfill({ json: answer }))
   await page.route('**/api/music-bot/validate', (route) => {
     const body = requestBody(route)
+    // The songs the plan was measured against travel with every selection check.
+    expect(body).toHaveProperty('reference_id')
+    expect(body).toHaveProperty('current_id')
     const ids = Array.isArray(body.ids) ? body.ids : []
     return route.fulfill({
       json: { tracks: [first, second].filter((song) => ids.includes(song.id)) },

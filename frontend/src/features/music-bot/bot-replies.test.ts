@@ -66,6 +66,15 @@ describe('botReplySchema', () => {
       sound: 'dreamy guitar',
     })
   })
+
+  it('keeps the songs a plan was measured against, and defaults them for an older server', () => {
+    const older = reply()
+    expect(older.reference_id).toBeNull()
+    expect(older.current_id).toBeNull()
+    const measured = reply({}, 3, { reference_id: 'tr-0000000000000009', current_id: null })
+    expect(measured.reference_id).toBe('tr-0000000000000009')
+    expect(withoutSong(measured, 'tr-1').reference_id).toBe('tr-0000000000000009')
+  })
 })
 
 describe('filterChips', () => {

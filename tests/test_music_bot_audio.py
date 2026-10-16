@@ -31,6 +31,7 @@ from backend.library.music_bot import (
     ValidateSelection,
     negation_only,
     system_prompt,
+    widen_single_bpm,
 )
 from backend.library.player import Player
 
@@ -341,6 +342,84 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
             # Similarity itself still works without text alignment.
             alike = self.resolve(plan(similar_to_current=True), reference_id=self.ids["Gale"])
             self.assertEqual(self.titles(alike)[:2], ["Anchor", "Breaker"])
+
+    def test_the_reply_carries_the_songs_it_was_measured_against(self) -> None:
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.measure()
+        calmer = self.resolve(plan(energy_compared="calmer"), reference_id=self.ids["Fathom"])
+        self.assertEqual(calmer["reference_id"], self.ids["Fathom"])
+        self.assertIsNone(calmer["current_id"])
+        current = self.resolve(plan(tempo_compared="faster"), current_id=self.ids["Breaker"])
+        self.assertEqual(current["current_id"], self.ids["Breaker"])
+        refused = self.resolve(plan(action="unsupported", explanation="No."))
+        self.assertIn("reference_id", refused)
+
+    def test_a_stale_seed_is_an_honest_miss_and_validate_refuses_it(self) -> None:
+        with self.embedding_on(EMBED, encode):
+            self.measure(EMBED.id)
+            alike = plan(similar_to_current=True)
+            self.assertEqual(
+                self.titles(self.resolve(alike, reference_id=self.ids["Gale"]))[:2],
+                ["Anchor", "Breaker"],
+            )
+            selection = ValidateSelection(
+                ids=[self.ids["Anchor"]], plan=alike, reference_id=self.ids["Gale"]
+            )
+            self.bot.validate(selection)
+            with self.store.lock:
+                self.store.db.execute(
+                    "UPDATE library_files SET size=size+1 WHERE song_id=?", (self.ids["Gale"],)
+                )
+                self.store.db.commit()
+            self.store.bump_library_revision()
+            miss = self.resolve(alike, reference_id=self.ids["Gale"])
+            self.assertEqual(miss["tracks"], [])
+            self.assertIn("no embed-test sound profile yet", str(miss["summary"]))
+            with self.assertRaises(BotError) as refused:
+                self.bot.validate(selection)
+            self.assertEqual(refused.exception.status, 409)
+
+    def test_audio_fields_are_cleared_on_a_question_while_the_recipes_are_off(self) -> None:
+        asked = self.resolve(
+            plan(action="clarify", explanation="Which decade?", tempo="fast", sound="dreamy")
+        )
+        query = SearchPlan.model_validate(asked["plan"])
+        self.assertEqual((query.action, query.tempo, query.sound), ("clarify", "", ""))
+        # Carried into the next search through merge_plan, the field is gone, so a tag
+        # search is not refused for a tempo nobody asked for.
+        result = self.bot.resolve(plan(), BotRequest(prompt="fixture", previous=query))
+        self.assertEqual(SearchPlan.model_validate(result["plan"]).action, "search")
+        self.assertTrue(result["tracks"])
+
+    def test_a_single_bpm_widens_inside_the_field_bounds(self) -> None:
+        widened = widen_single_bpm(plan(tempo_min=995, tempo_max=995))
+        self.assertEqual((widened.tempo_min, widened.tempo_max), (985, 999))
+        SearchPlan.model_validate(widened.model_dump())
+        low = widen_single_bpm(plan(tempo_min=4, tempo_max=4))
+        self.assertEqual((low.tempo_min, low.tempo_max), (1, 14))
+        unchanged = widen_single_bpm(plan(tempo_min=100, tempo_max=120))
+        self.assertEqual((unchanged.tempo_min, unchanged.tempo_max), (100, 120))
+
+    def test_each_recipe_counts_its_own_unmeasured_matches(self) -> None:
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.measure()
+        with self.embedding_on(EMBED, encode):
+            self.measure(EMBED.id, titles=tuple(t for t, *_ in SONGS if t != "Harbour"))
+            result = self.resolve(
+                plan(similar_to_current=True, tempo="fast"), reference_id=self.ids["Gale"]
+            )
+            summary = str(result["summary"])
+            self.assertIn(
+                f"Tempo and energy from {SCALAR_RECIPE}: 8 of 9 songs are measured; "
+                "1 match was skipped without a measurement.",
+                summary,
+            )
+            self.assertIn(
+                f"Similarity uses the {EMBED.id} sound profile: 7 of 9 songs are measured; "
+                "0 matches were skipped without a measurement.",
+                summary,
+            )
+            self.assertEqual(set(self.titles(result)), {"Anchor", "Breaker", "Ember", "Fathom"})
 
     def test_negation_only_phrases(self) -> None:
         for phrase in ("no vocals", "No vocals.", "nothing explicit", "don't", "without vocal"):

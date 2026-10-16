@@ -452,7 +452,12 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids, plan: reply.plan }),
+        body: JSON.stringify({
+          ids,
+          plan: reply.plan,
+          reference_id: reply.reference_id,
+          current_id: reply.current_id,
+        }),
       })
       if (id !== serial.current) return
       latestPlayer.current.applyBotQueue(checked.tracks, action, stamp)
@@ -486,7 +491,12 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         signal: controller.signal,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ids: reply.tracks.map((track) => track.id), plan: reply.plan }),
+        body: JSON.stringify({
+          ids: reply.tracks.map((track) => track.id),
+          plan: reply.plan,
+          reference_id: reply.reference_id,
+          current_id: reply.current_id,
+        }),
       })
       await api('library/playlists', libraryPlaylistDetailSchema, {
         method: 'POST',

@@ -234,6 +234,7 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
         job = self.lease()
         cases: list[tuple[dict[str, object], int]] = [
             ({"lease_token": "0" * 32}, 409),
+            ({"lease_token": "ñ" * 8}, 409),
             ({"recipe": "nobody-v9"}, 422),
             ({"tempo_bpm": None}, 422),
             ({"dim": 4, "vector": floats(1, 0, 0, 0)}, 422),

@@ -458,6 +458,10 @@ export const botReplySchema = z.object({
   shortfall_seconds: z.number(),
   summary: z.string(),
   elapsed_ms: z.number(),
+  // The songs the plan was measured against ("calmer than this", "more like this"). They go
+  // back with the selection check, since the player may have moved on. Older servers send none.
+  reference_id: z.string().nullable().default(null),
+  current_id: z.string().nullable().default(null),
 })
 export const botSelectionSchema = z.object({ tracks: z.array(libraryTrackSchema).max(500) })
 export type BotReply = z.infer<typeof botReplySchema>

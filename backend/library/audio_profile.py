@@ -396,7 +396,9 @@ class AudioProfiles:
                 if (
                     job is None
                     or job["status"] != "leased"
-                    or not secrets.compare_digest(str(job["lease_token"]), result.lease_token)
+                    or not secrets.compare_digest(
+                        str(job["lease_token"]).encode(), result.lease_token.encode()
+                    )
                     or str(job["leased_until"]) < stamp
                 ):
                     raise LeaseError("That lease is not current. Nothing was stored.", 409)

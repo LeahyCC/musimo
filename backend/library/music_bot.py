@@ -309,14 +309,15 @@ def system_prompt(scalar: Recipe | None, embedding: Recipe | None) -> str:
     parts = [_PROMPT_HEAD]
     if scalar is not None:
         parts.append(_TEMPO_ENERGY_ON)
-    unmeasured = []
+    unmeasured: list[str] = []
     if scalar is None:
-        unmeasured.append("energy and tempo")
+        unmeasured += ["energy", "tempo"]
     if embedding is None or not embedding.text_aligned:
-        unmeasured.append("mood, instruments and vocals")
+        unmeasured += ["mood", "instruments", "vocals"]
     if unmeasured:
+        listed = ", ".join(unmeasured[:-1]) + " and " + unmeasured[-1]
         parts.append(
-            f"{' and '.join(unmeasured).capitalize()} need audio analysis that is not enabled: "
+            f"{listed[0].upper()}{listed[1:]} need audio analysis that is not enabled: "
             "use unsupported, do not\napproximate them with genres.\n"
         )
     if embedding is None:
@@ -347,21 +348,21 @@ def widen_single_bpm(plan: "SearchPlan") -> "SearchPlan":
         return plan.model_copy(
             update={
                 "tempo_min": max(1, int(plan.tempo_min - BPM_WINDOW)),
-                "tempo_max": int(plan.tempo_max + BPM_WINDOW),
+                "tempo_max": min(999, int(plan.tempo_max + BPM_WINDOW)),
             }
         )
     return plan
 
 
-Verdict = Literal["in", "out", "missing"]
+Verdict = Literal["in", "out", "missing_scalar", "missing_vector"]
 
 
 @dataclass(frozen=True)
 class AudioGates:
     """What the audio fields of one plan need from the measured rows, worked out once.
 
-    `missing` is a song without a fresh row for a recipe the plan needs; the summary counts
-    those. `out` is a measured song outside the gate.
+    A `missing` verdict is a song without a fresh row for a recipe the plan needs, named so
+    the summary can count each recipe's own; `out` is a measured song outside the gate.
     """
 
     scalar: ProfileSet | None = None
@@ -377,7 +378,7 @@ class AudioGates:
                 return "out"
             row = self.scalar.fresh(song)
             if row is None:
-                return "missing"
+                return "missing_scalar"
             if row.tempo_bpm is None or row.energy is None:
                 return "out"
             bpm, energy = row.tempo_bpm, row.energy
@@ -404,7 +405,7 @@ class AudioGates:
                 if (bpm < against) != (plan.tempo_compared == "slower") or bpm == against:
                     return "out"
         if self.needs_vector and (self.vectors is None or self.vectors.fresh(song) is None):
-            return "missing"
+            return "missing_vector"
         return "in"
 
 
@@ -677,31 +678,16 @@ class MusicBot:
         # The person's Look in choice wins over the model's scope for this one request.
         if request.scope is not None:
             plan = plan.model_copy(update={"scope": request.scope})
-        if plan.action != "search":
-            return {
-                "plan": plan.model_dump(),
-                "tracks": [],
-                "total_seconds": 0,
-                "shortfall_seconds": 0,
-                "summary": plan.explanation,
-            }
         scalar, embedding = self.active_recipes()
         plan = self._refuse_unmeasured(plan, scalar, embedding)
         if plan.action != "search":
-            return {
-                "plan": plan.model_dump(),
-                "tracks": [],
-                "total_seconds": 0,
-                "shortfall_seconds": 0,
-                "summary": plan.explanation,
-            }
+            return _reply(plan, [], 0.0, 0.0, plan.explanation, request)
         plan = widen_single_bpm(plan)
         view = self.player.view()
         scope = set(request.queue_ids if plan.scope == "queue" else request.proposal_ids)
         if plan.scope != "library" and not scope:
             raise BotError("There is no selection to refine. Ask for a library search first.", 422)
         reference = view.stored.get(request.reference_id or request.current_id or "")
-        seed: Vector | None = None
         if plan.similar_to_current and embedding is None:
             if reference is None or not (reference.artist or reference.genre or reference.genres):
                 raise BotError("Choose a reference song with artist or genre tags first.", 422)
@@ -713,31 +699,21 @@ class MusicBot:
             else:
                 plan = plan.model_copy(update={"artists": [reference.artist]})
         elif plan.similar_to_current:
-            if reference is None:
-                raise BotError("Choose a reference song first.", 422)
             # One rank key: the reference song's own sound, not a phrase as well.
             plan = plan.model_copy(update={"sound": ""})
-        elif plan.sound and embedding is not None:
-            if negation_only(plan.sound):
-                plan = plan.model_copy(update={"sound": ""})
-            else:
-                seed = encode_phrase(embedding, plan.sound)
-                if seed is None:
-                    raise BotError("That description could not be read. Try other words.", 422)
-        gates, miss = self._gates(plan, scalar, embedding, reference, view)
-        if plan.similar_to_current and embedding is not None and gates.vectors is not None:
-            seed = gates.vectors.vector(reference.song_id) if reference is not None else None
+        elif plan.sound and embedding is not None and negation_only(plan.sound):
+            plan = plan.model_copy(update={"sound": ""})
+        gates, miss, seed = self._gates(plan, scalar, embedding, reference, view)
+        if seed is None and miss is None and plan.sound and embedding is not None:
+            seed = encode_phrase(embedding, plan.sound)
             if seed is None:
-                miss = (
-                    f"The reference song has no {embedding.id} sound profile yet, "
-                    "so there is nothing to compare it with."
-                )
+                raise BotError("That description could not be read. Try other words.", 422)
         now = datetime.now(ZoneInfo(self.store.current().music_timezone))
         liked = self._liked()
         # Every in-scope match is gated, then ranked. No song metadata is sent to Ollama here,
         # and files are only checked while the list is being filled.
         matched: list[StoredSong] = []
-        unmeasured = 0
+        missing = {"missing_scalar": 0, "missing_vector": 0}
         for song in view.stored.values():
             if plan.scope != "library" and song.song_id not in scope:
                 continue
@@ -746,8 +722,8 @@ class MusicBot:
             verdict = gates.verdict(plan, song)
             if verdict == "in":
                 matched.append(song)
-            elif verdict == "missing":
-                unmeasured += 1
+            elif verdict != "out":
+                missing[verdict] += 1
         if seed is not None and gates.vectors is not None:
             # One rank key: cosine to the seed, most alike first. Ties keep the id order.
             scores = gates.vectors.cosine(seed)
@@ -795,33 +771,35 @@ class MusicBot:
         library = list(view.stored.values())
         if plan.uses_scalar() and scalar is not None and gates.scalar is not None:
             summary += f" Tempo and energy from {scalar.id}:" + _coverage(
-                gates.scalar, library, unmeasured
+                gates.scalar, library, missing["missing_scalar"]
             )
         if plan.similar_to_current and embedding is None:
             summary += " Similarity uses artist or genre tags, not audio analysis."
         elif (plan.similar_to_current or plan.sound) and embedding is not None:
             summary += f" Similarity uses the {embedding.id} sound profile:" + _coverage(
-                gates.vectors, library, unmeasured
+                gates.vectors, library, missing["missing_vector"]
             )
-        return {
-            "plan": plan.model_dump(),
-            "tracks": tracks,
-            "total_seconds": total,
-            "shortfall_seconds": shortfall,
-            "summary": summary,
-        }
+        return _reply(plan, tracks, total, shortfall, summary, request)
 
     def _refuse_unmeasured(
         self, plan: SearchPlan, scalar: Recipe | None, embedding: Recipe | None
     ) -> SearchPlan:
-        """The service's own refusal when a search needs analysis that is not turned on.
+        """Clear audio fields a recipe that is off cannot answer, and refuse a search on them.
 
-        The fields are cleared either way, so a model that filled them anyway cannot make a
-        tag search mean something it does not.
+        The fields are cleared on every action, so a model that filled them on a question
+        cannot carry them into the next search through merge_plan.
         """
+        cleared: dict[str, object] = {}
+        if scalar is None and plan.uses_scalar():
+            cleared.update(
+                {name: "" for name in ("tempo", "energy", "energy_compared", "tempo_compared")},
+                tempo_min=None,
+                tempo_max=None,
+            )
+        if plan.sound and (embedding is None or not embedding.text_aligned):
+            cleared["sound"] = ""
         if plan.action != "search":
-            return plan
-        cleared = {name: "" for name in ("tempo", "energy", "energy_compared", "tempo_compared")}
+            return plan.model_copy(update=cleared) if cleared else plan
         refusal = ""
         if scalar is None and plan.uses_scalar():
             refusal = "Tempo and energy need audio analysis, which is not enabled."
@@ -834,9 +812,6 @@ class MusicBot:
         return plan.model_copy(
             update={
                 **cleared,
-                "tempo_min": None,
-                "tempo_max": None,
-                "sound": "",
                 "action": "unsupported",
                 "explanation": refusal,
                 "suggestions": [],
@@ -850,13 +825,15 @@ class MusicBot:
         embedding: Recipe | None,
         reference: StoredSong | None,
         view: LibraryView,
-    ) -> tuple[AudioGates, str | None]:
-        """The gates for this plan, and why nothing can match when a reference is unmeasured."""
+    ) -> tuple[AudioGates, str | None, Vector | None]:
+        """The gates for this plan, why nothing can match when the reference song is not
+        measured, and the reference song's vector when "more like this" has one to rank by."""
         rows = self.profiles.profiles(scalar) if scalar is not None else None
         vectors = self.profiles.profiles(embedding) if embedding is not None else None
         bands = None
         reference_row = None
         miss = None
+        seed: Vector | None = None
         if plan.uses_scalar() and rows is not None:
             energies = [
                 row.energy
@@ -873,8 +850,19 @@ class MusicBot:
                         f"The reference song has no {rows.recipe.id} measurement yet, "
                         "so there is nothing to compare it with."
                     )
+        if plan.similar_to_current and vectors is not None:
+            if reference is None:
+                raise BotError("Choose a reference song first.", 422)
+            # The seed must be measured from the file as it is now, like any gated song.
+            if vectors.fresh(reference) is None:
+                miss = (
+                    f"The reference song has no {vectors.recipe.id} sound profile yet, "
+                    "so there is nothing to compare it with."
+                )
+            else:
+                seed = vectors.vector(reference.song_id)
         needs_vector = embedding is not None and bool(plan.similar_to_current or plan.sound)
-        return AudioGates(rows, bands, reference_row, vectors, needs_vector), miss
+        return AudioGates(rows, bands, reference_row, vectors, needs_vector), miss, seed
 
     def _fill(
         self,
@@ -937,7 +925,7 @@ class MusicBot:
         plan = widen_single_bpm(plan)
         reference = view.stored.get(selection.reference_id or selection.current_id or "")
         try:
-            gates, miss = self._gates(plan, scalar, embedding, reference, view)
+            gates, miss, _ = self._gates(plan, scalar, embedding, reference, view)
         except BotError as exc:
             raise changed from exc
         if miss is not None:
@@ -952,6 +940,27 @@ class MusicBot:
             ):
                 raise changed
         return {"tracks": [view.by_song[sid] for sid in selection.ids]}
+
+
+def _reply(
+    plan: SearchPlan,
+    tracks: list[dict[str, object]],
+    total: float,
+    shortfall: float,
+    summary: str,
+    request: BotRequest,
+) -> dict[str, object]:
+    """The chat reply. It carries the songs the plan was measured against, so Play can send
+    them back to `validate` even after the player has moved on."""
+    return {
+        "plan": plan.model_dump(),
+        "tracks": tracks,
+        "total_seconds": total,
+        "shortfall_seconds": shortfall,
+        "summary": summary,
+        "reference_id": request.reference_id,
+        "current_id": request.current_id,
+    }
 
 
 def _coverage(rows: ProfileSet | None, library: list[StoredSong], unmeasured: int) -> str:
