@@ -123,7 +123,7 @@ class RuleTests(unittest.TestCase):
         escaped = self.root / ".." / "outside.wav"
         real_stat = Path.stat
 
-        def guarded_stat(self: Path, *, follow_symlinks: bool = True):
+        def guarded_stat(self: Path, *, follow_symlinks: bool = True) -> os.stat_result:
             untrusted = ".." in self.parts or self.name == "link.wav"
             if follow_symlinks and untrusted:
                 raise AssertionError("stat followed an untrusted path")
@@ -133,7 +133,7 @@ class RuleTests(unittest.TestCase):
             parent = analyse(job(escaped), [self.root], never_decode, never_measure)
         self.assertEqual(parent.status, "failed")
         self.assertIn("music mount", parent.detail)
-        link = self.root / "link.wav"
+        link: Path | None = self.root / "link.wav"
         try:
             link.symlink_to(self.song)
         except OSError:
