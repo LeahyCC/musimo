@@ -1,0 +1,13 @@
+[project]
+name = "musimo-audio-worker"
+version = "0.4.0"
+description = "Measures tempo and energy for Musimo's music bot, one song at a time, in its own container"
+# The interpreter the bounded trial measured librosa on. The web image stays on 3.14.
+requires-python = "==3.12.*"
+dependencies = [
+  "librosa==0.11.0",
+  "numpy==2.5.4",
+]
+
+[tool.ruff]
+extend = "../pyproject.toml"

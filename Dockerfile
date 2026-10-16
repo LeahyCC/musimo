@@ -15,6 +15,8 @@ WORKDIR /app
 COPY requirements.lock ./
 RUN pip install --no-cache-dir --require-hashes -r requirements.lock
 COPY backend/ ./backend/
+# scripts/enqueue_audio_trial.py queues songs for the audio worker from inside the container.
+COPY scripts/ ./scripts/
 COPY --from=frontend /build/dist ./frontend/dist/
 COPY docker-entrypoint.sh /usr/local/bin/musimo-entrypoint
 RUN chmod +x /usr/local/bin/musimo-entrypoint && mkdir -p /data /music

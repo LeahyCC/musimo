@@ -14,6 +14,8 @@ services:
       # Deezer cookie from .env, for the first start only. Musimo moves it into
       # /data/deezer-arl.txt, and Settings replaces or removes it after that.
       MUSIMO_DEEZER_ARL: '${MUSIMO_DEEZER_ARL:-}'
+      # Shared with the audio worker below. Empty keeps the worker's lease routes off.
+      MUSIMO_ANALYSIS_TOKEN: '${MUSIMO_ANALYSIS_TOKEN:-}'
     volumes:
       - musimo-data:/data
       - ./runtime/music:/music
@@ -26,6 +28,32 @@ services:
     profiles: [youtube]
     init: true
     restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+  # Measures tempo and energy for the music bot, one song at a time, only for songs queued by
+  # scripts/enqueue_audio_trial.py. Off unless started with --profile analysis. It reads music
+  # read-only, never opens the database, and keeps to two GB, one core and no swap.
+  audio-worker:
+    build: ./worker
+    image: musimo-audio-worker:0.4.0
+    profiles: [analysis]
+    init: true
+    user: '${PUID:-1000}:${PGID:-1000}'
+    mem_limit: 2g
+    memswap_limit: 2g
+    cpus: '1'
+    environment:
+      MUSIMO_ANALYSIS_TOKEN: '${MUSIMO_ANALYSIS_TOKEN:-}'
+      MUSIMO_APP_URL: http://musimo:8765
+      MUSIMO_AUDIO_RECIPE: tempo-energy-v1
+      MUSIMO_LIBRARY_ROOTS: /music
+    volumes:
+      - ./runtime/music:/music:ro
+    depends_on:
+      musimo:
+        condition: service_healthy
+    restart: unless-stopped
+    stop_grace_period: 40s
     security_opt:
       - no-new-privileges:true
 volumes:

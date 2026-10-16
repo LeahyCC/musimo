@@ -4,6 +4,7 @@
 #   scripts/check.sh fast     lint, format and dependency locks (pre-commit hook)
 #   scripts/check.sh full     fast + types, tests, build and audits (pre-push hook)
 #   scripts/check.sh browser  Docker smoke and Playwright suite (run by hand)
+#   scripts/check.sh worker   the audio worker's own environment and tests (run by hand)
 # Skip a hook once with `git commit --no-verify` or `git push --no-verify`.
 set -eu
 
@@ -17,8 +18,8 @@ step() {
 
 fast() {
   step uv sync --locked
-  step uv run ruff check backend tests scripts
-  step uv run ruff format --check backend tests scripts
+  step uv run ruff check backend tests scripts worker
+  step uv run ruff format --check backend tests scripts worker
   step npm run --silent lint --prefix frontend
   step npm run --silent format:check --prefix frontend
 }
@@ -29,6 +30,8 @@ full() {
   exported="$(mktemp)"
   uv export --locked --no-header --no-dev --no-emit-project --format requirements-txt --output-file "$exported" > /dev/null
   step diff -u requirements.lock "$exported"
+  uv export --locked --project worker --no-header --no-emit-project --format requirements-txt --output-file "$exported" > /dev/null
+  step diff -u worker/requirements.lock "$exported"
   rm -f "$exported"
   step uv run coverage run -m unittest discover -s tests
   step uv run coverage report
@@ -48,12 +51,19 @@ browser() {
   step npm run --silent test:e2e --prefix frontend
 }
 
+# The worker has its own lock, with librosa, which the web environment never installs.
+worker() {
+  step uv sync --locked --project worker
+  step uv run --project worker python -m unittest discover -s worker/tests -t worker
+}
+
 case "$mode" in
   fast) fast ;;
   full) full ;;
   browser) browser ;;
+  worker) worker ;;
   *)
-    echo "usage: scripts/check.sh [fast|full|browser]" >&2
+    echo "usage: scripts/check.sh [fast|full|browser|worker]" >&2
     exit 2
     ;;
 esac

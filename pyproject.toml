@@ -13,6 +13,7 @@ dependencies = [
   "pycryptodomex==3.24.0",
   "watchdog==6.0.0",
   "tzdata==2026.5",
+  "numpy==2.5.4",
 ]
 
 [dependency-groups]
@@ -27,7 +28,12 @@ dev = [
 python_version = "3.12"
 strict = true
 untyped_calls_exclude = ["mutagen"]
-files = ["backend", "tests", "scripts"]
+files = ["backend", "tests", "scripts", "worker"]
+
+# The worker image's own dependency. It ships no types, and the web environment does not have it.
+[[tool.mypy.overrides]]
+module = ["librosa", "librosa.*"]
+ignore_missing_imports = true
 
 [tool.coverage.run]
 branch = true
