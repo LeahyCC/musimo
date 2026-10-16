@@ -211,6 +211,10 @@ def analyse(
             detail=reason,
         )
     path = Path(job.path)
+    # The mount check comes before the path is touched at all; the resolved check after the
+    # stat catches a link that points out of the mount.
+    if not any(path.is_relative_to(root) for root in roots):
+        return _failed(job, "the path is not under the music mount")
     try:
         stat = path.stat()
     except OSError as exc:
