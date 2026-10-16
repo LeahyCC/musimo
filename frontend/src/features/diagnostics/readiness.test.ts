@@ -90,6 +90,12 @@ describe('systemIsReady', () => {
     expect(systemIsReady(diagnostics({ sources: [{ ...youtube, status: 'down' }] }))).toBe(false)
   })
 
+  it('stays ready when YouTube has never been probed', () => {
+    expect(systemIsReady(diagnostics({ sources: [] }))).toBe(true)
+    const deezer = { ...youtube, source: 'deezer', detail: 'Keyless catalog responded' }
+    expect(systemIsReady(diagnostics({ sources: [deezer] }))).toBe(true)
+  })
+
   it('is not ready when another source is failing', () => {
     const soundcloud = { ...youtube, source: 'soundcloud', status: 'error', detail: 'dropped' }
     expect(systemIsReady(diagnostics({ sources: [youtube, soundcloud] }))).toBe(false)

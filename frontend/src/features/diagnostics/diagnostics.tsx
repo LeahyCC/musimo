@@ -401,7 +401,7 @@ export function DiagnosticsPage() {
             </div>
           </Panel>
           <div
-            className="grid grid-cols-2 gap-[22px] max-tablet:gap-[15px] max-phone:grid-cols-1"
+            className="mt-[28px] grid grid-cols-2 gap-[22px] max-tablet:gap-[15px] max-phone:grid-cols-1"
             id="sources"
           >
             {data.sources.map((source) => (
@@ -448,13 +448,13 @@ export function DiagnosticsPage() {
                 {probe.isError && <ErrorBanner role="alert">{probe.error.message}</ErrorBanner>}
               </Panel>
             ))}
-            <Panel id="disk">
+            <Panel id="disk" className="col-span-full">
               <div className={sectionHeadingClassName}>
                 <h2 className={sectionTitleClassName}>Persistent storage</h2>
                 <Folder size={18} />
               </div>
               {data.disks.map((disk) => (
-                <div className="mt-[18px] first:mt-0" key={disk.path}>
+                <div className="mt-[26px] first:mt-0" key={disk.path}>
                   <div className="mb-[7px] flex justify-between gap-[12px] text-tiny">
                     <code>{disk.path}</code>
                     <span className="text-muted">
