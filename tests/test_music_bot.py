@@ -180,8 +180,9 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.resolve(plan(history="unplayed"))["tracks"], [])
 
     def test_genre_words_match_broad_genres_and_raw_tags(self) -> None:
-        self.assertEqual(len(result_ids(self.resolve(plan(genres=["rock music"])))), 6)
-        self.assertEqual(len(result_ids(self.resolve(plan(genres=["Rock/Metal"])))), 6)
+        # Six rock songs match; two of Harbor's five and the one Orchard song are kept.
+        self.assertEqual(len(result_ids(self.resolve(plan(genres=["rock music"])))), 3)
+        self.assertEqual(len(result_ids(self.resolve(plan(genres=["Rock/Metal"])))), 3)
         self.assertEqual(self.resolve(plan(genres=["metal"]))["tracks"], [])
         self.assertEqual(self.resolve(plan(genres=["hip hop"]))["tracks"], [])
 
@@ -276,7 +277,7 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
             BotRequest(prompt="allow Harbor again", previous=old),
         )
         self.assertEqual(SearchPlan.model_validate(result["plan"]).exclude_artists, ["Nobody"])
-        self.assertEqual(len(result_ids(result)), 6)
+        self.assertEqual(len(result_ids(result)), 3)
         # A scope switch that does not name the exclusions leaves them in place.
         result = self.resolve(
             plan(scope="queue"),
@@ -384,10 +385,68 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result_ids(result), proposal)
         # Without a choice the model's reading stands.
         result = self.resolve(plan(scope="library"), BotRequest(prompt="fixture"))
-        self.assertEqual(len(result_ids(result)), 6)
+        self.assertEqual(len(result_ids(result)), 3)
         # Choosing a selection that does not exist is refused, never widened to the library.
         with self.assertRaises(BotError):
             self.resolve(plan(), BotRequest(prompt="fixture", scope="queue"))
+
+    def test_matches_are_ranked_by_listening_and_capped_per_artist(self) -> None:
+        # Equal play counts: the most recent play leads, then the id. Harbor fills two places.
+        result = self.resolve(plan())
+        self.assertEqual(
+            result_ids(result),
+            [self.ids["B today"], self.ids["A yesterday"], self.ids["E other"]],
+        )
+        self.assertNotIn("5,000", str(result["summary"]))
+        self.assertNotIn("candidates", str(result["summary"]))
+        # Uneven play counts: the order is the count, not the title, and Harbor's third most
+        # played song is held back while Orchard's only song gets in.
+        with self.store.lock:
+            for title, count in {
+                "C unliked": 9,
+                "D eighties": 7,
+                "F unknown": 5,
+                "E other": 4,
+                "A yesterday": 0,
+            }.items():
+                self.store.db.execute(
+                    "UPDATE library_files SET play_count=? WHERE song_id=?",
+                    (count, self.ids[title]),
+                )
+            self.store.db.commit()
+        self.store.bump_library_revision()
+        self.assertEqual(
+            result_ids(self.resolve(plan())),
+            [self.ids["C unliked"], self.ids["D eighties"], self.ids["E other"]],
+        )
+        # Naming the artist lifts the cap; excluding the other artist leaves two of five.
+        self.assertEqual(len(result_ids(self.resolve(plan(artists=["Harbor"])))), 5)
+        self.assertEqual(len(result_ids(self.resolve(plan(exclude_artists=["Orchard"])))), 2)
+        # Familiar is still a filter, and never-played songs stay out of it.
+        self.assertNotIn(
+            self.ids["A yesterday"], result_ids(self.resolve(plan(history="familiar")))
+        )
+        self.assertIn(self.ids["A yesterday"], result_ids(self.resolve(plan(artists=["Harbor"]))))
+
+    def test_similar_to_current_skips_the_seed_and_a_repeated_title(self) -> None:
+        with self.store.lock:
+            self.store.db.execute(
+                "UPDATE library_files SET title='B today' WHERE song_id=?",
+                (self.ids["C unliked"],),
+            )
+            self.store.db.commit()
+        self.store.bump_library_revision()
+        request = BotRequest(prompt="more like this", reference_id=self.ids["A yesterday"])
+        result = self.resolve(plan(similar_to_current=True), request)
+        ids = result_ids(result)
+        self.assertNotIn(self.ids["A yesterday"], ids)
+        # B today and its copy share a title and artist, so the copy is dropped. Harbor's second
+        # place goes to whichever of its other songs sorts next, a tie the id breaks.
+        self.assertEqual(ids[0], self.ids["B today"])
+        self.assertNotIn(self.ids["C unliked"], ids)
+        self.assertIn(self.ids["E other"], ids)
+        self.assertEqual(len(ids), 3)
+        self.assertIn("Similarity uses artist or genre tags", str(result["summary"]))
 
     def test_full_duration_and_zero_matches(self) -> None:
         result = self.resolve(plan(target_seconds=3600))

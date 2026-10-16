@@ -3,6 +3,7 @@
 import asyncio
 import json
 import time
+from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, get_args
 from zoneinfo import ZoneInfo
@@ -18,9 +19,12 @@ from pydantic import (
 )
 
 from backend.core.store import Store
+from backend.core.text import normalize
 from backend.library.genres import matches_genres
-from backend.library.player import Player, StoredSong, playlist_number, song_list
+from backend.library.player import LibraryView, Player, StoredSong, playlist_number, song_list
 
+# How many places one artist may fill in a result, unless the plan names that artist.
+ARTIST_CAP = 2
 ShortText = Annotated[str, StringConstraints(min_length=1, max_length=120)]
 Suggestion = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
 Scope = Literal["library", "proposal", "queue"]
@@ -188,6 +192,17 @@ holds up to three requests built from tags that could work instead. Otherwise su
 def _same_artist(song_artist: str, name: str) -> bool:
     """Whole names only. "Air" must not match every artist that contains those letters."""
     return " ".join(song_artist.casefold().split()) == " ".join(name.casefold().split())
+
+
+def listening_order(songs: Iterable[StoredSong]) -> list[StoredSong]:
+    """Most played first, then most recently played, then the id. Title is not a key.
+
+    A song never played sorts after every played one at the same count. Timestamps are
+    compared as the stored UTC text, which orders the same as the instants they name.
+    """
+    ordered = sorted(songs, key=lambda song: song.song_id)
+    ordered.sort(key=lambda song: (song.play_count, song.last_played or ""), reverse=True)
+    return ordered
 
 
 def merge_plan(previous: SearchPlan | None, plan: SearchPlan) -> SearchPlan:
@@ -447,27 +462,15 @@ class MusicBot:
                 plan = plan.model_copy(update={"artists": [reference.artist]})
         now = datetime.now(ZoneInfo(self.store.current().music_timezone))
         liked = self._liked()
-        matches = (
+        # Every in-scope match is ranked. No song metadata is sent to Ollama here, and files are
+        # only checked while the list is being filled.
+        candidates = listening_order(
             song
             for song in view.stored.values()
             if (plan.scope == "library" or song.song_id in scope)
             and self._matches(song, plan, liked, now)
         )
-        # Bound candidates before file checks. If the ceiling is reached, say so rather than
-        # calling a capped selection the entire library. No song metadata is sent to Ollama here.
-        candidates = []
-        for song in matches:
-            candidates.append(song)
-            if len(candidates) == 5000:
-                break
-        candidates.sort(
-            key=lambda song: (
-                -song.play_count if plan.history == "familiar" else 0,
-                song.title.casefold(),
-                song.song_id,
-            )
-        )
-        retained = []
+        retained: list[StoredSong] = []
         if plan.add_count:
             # Keep the old order, rechecking every retained song against the new filters/files.
             retained = [
@@ -478,23 +481,12 @@ class MusicBot:
                 and self.player.local_file(sid) is not None
             ]
             retained_ids = {song.song_id for song in retained}
-            candidates = retained + [
-                song for song in candidates if song.song_id not in retained_ids
-            ]
+            candidates = [song for song in candidates if song.song_id not in retained_ids]
             if len(retained) + plan.add_count > 500:
                 raise BotError("Adding those songs would exceed the 500-song selection limit.", 422)
             plan = plan.model_copy(update={"limit": len(retained) + plan.add_count})
-        tracks: list[dict[str, object]] = []
-        total = 0.0
-        for song in candidates:
-            if self.player.local_file(song.song_id) is None:
-                continue
-            tracks.append(view.by_song[song.song_id])
-            total += song.duration
-            if len(tracks) >= plan.limit or (
-                not plan.add_count and plan.target_seconds and total >= plan.target_seconds
-            ):
-                break
+        seed_id = (request.reference_id or request.current_id) if plan.similar_to_current else None
+        tracks, total = self._fill(view, plan, retained, candidates, seed_id)
         shortfall = max(0, plan.target_seconds - total)
         noun = "song" if len(tracks) == 1 else "songs"
         summary = (
@@ -511,8 +503,6 @@ class MusicBot:
                 f" Could only add {max(0, len(tracks) - len(retained))} "
                 f"of {plan.add_count} requested songs."
             )
-        if len(candidates) == 5000:
-            summary += " Search checked the first 5,000 matching candidates."
         if plan.similar_to_current:
             summary += " Similarity uses artist or genre tags, not audio analysis."
         return {
@@ -522,6 +512,51 @@ class MusicBot:
             "shortfall_seconds": shortfall,
             "summary": summary,
         }
+
+    def _fill(
+        self,
+        view: LibraryView,
+        plan: SearchPlan,
+        retained: list[StoredSong],
+        candidates: list[StoredSong],
+        seed_id: str | None,
+    ) -> tuple[list[dict[str, object]], float]:
+        """Walk the ranked songs in order and keep the ones that can play.
+
+        The seed of "more like this" is never its own match, the same title by the same artist
+        is kept once, and an artist fills at most two places unless the plan names it. Retained
+        proposal songs were checked already; they still count towards both rules.
+        """
+        named = {normalize(name) for name in plan.artists}
+        kept: set[tuple[str, str]] = set()
+        per_artist: dict[str, int] = {}
+        tracks: list[dict[str, object]] = []
+        total = 0.0
+        for song, checked in [
+            *((song, True) for song in retained),
+            *((s, False) for s in candidates),
+        ]:
+            artist_key = normalize(song.artist)
+            title_key = normalize(song.title)
+            if not checked:
+                if song.song_id == seed_id:
+                    continue
+                # An untitled song is not "the same title" as another untitled one.
+                if title_key and (title_key, artist_key) in kept:
+                    continue
+                if artist_key not in named and per_artist.get(artist_key, 0) >= ARTIST_CAP:
+                    continue
+                if self.player.local_file(song.song_id) is None:
+                    continue
+            tracks.append(view.by_song[song.song_id])
+            total += song.duration
+            kept.add((title_key, artist_key))
+            per_artist[artist_key] = per_artist.get(artist_key, 0) + 1
+            if len(tracks) >= plan.limit or (
+                not plan.add_count and plan.target_seconds and total >= plan.target_seconds
+            ):
+                break
+        return tracks, total
 
     def validate(self, selection: ValidateSelection) -> dict[str, object]:
         view = self.player.view()

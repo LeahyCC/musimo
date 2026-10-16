@@ -216,10 +216,10 @@ describe('withoutSong', () => {
   it('adds a shortfall where removing a song opens one, and keeps the rest of the summary', () => {
     const before = reply({ target_seconds: 700 }, 3, {
       summary:
-        '3 songs, 12.0 minutes. Based on saved library tags. Search checked the first 5,000 matching candidates.',
+        '3 songs, 12.0 minutes. Based on saved library tags. Similarity uses artist or genre tags, not audio analysis.',
     })
     expect(withoutSong(before, 'tr-0').summary).toBe(
-      '2 songs, 8.0 minutes. Based on saved library tags. 3.7 minutes short; no exclusions were relaxed. Search checked the first 5,000 matching candidates.',
+      '2 songs, 8.0 minutes. Based on saved library tags. 3.7 minutes short; no exclusions were relaxed. Similarity uses artist or genre tags, not audio analysis.',
     )
   })
 
