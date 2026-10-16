@@ -2,7 +2,9 @@
 
 Status: milestone 1 implemented for review, 13 October 2026. See [the review fixes](music-bot-review-fixes.md) for current checks, live Ollama results and remaining issues, and [the original handoff](music-bot-review.md) for the initial implementation. Audio indexing has not started.
 
-14 October follow-up: milestone 2 passed its resource gate, but musical quality remains unaccepted. Colin labelled all 28 recordings in the [genre trial](genre-analysis-trial.md). Exact genre-set matches on thirteen held-out clips were existing tags 7/13, Discogs-EffNet 5/13 and CLAP 2/13. The [label review](genre-label-review.md) records per-genre precision/recall and errors. Neither frozen model is recommended for production. Review the next approach before further mood/similarity work, permanent indexing or another trial; these held-out labels must not become tuning data for a claimed independent validation.
+14 October follow-up: milestone 2 passed its resource gate, but musical quality remains unaccepted. Colin labelled all 28 recordings in the [genre trial](genre-analysis-trial.md). Exact genre-set matches on thirteen held-out clips were existing tags 7/13, Discogs-EffNet 5/13 and CLAP 2/13. The [label review](genre-label-review.md) records per-genre precision/recall and errors. Neither frozen model is recommended for production genre indexing. These held-out labels must not become tuning data for a claimed independent validation.
+
+15 October: the next approach is specified and implemented in [song characteristics](audio-profile-spec.md). It stores tempo, energy, and one sound vector in the existing SQLite file (schema 9), leases work to an optional worker container, and ranks with those measurements once a recipe is named in Settings. Both recipe settings ship empty: the scripted tempo listen, the embedding listen and the full scan have not happened, no scan was started, and the held-out genre labels were not used.
 
 Two features: a local Ollama music bot, and background audio indexing that improves its recommendations. Analysis runs on the Musimo server with strict resource limits. Both use the existing library and player.
 
@@ -88,7 +90,7 @@ Return the diff or PR to the planning chat for review before starting milestone 
 ## Decisions still to settle
 
 - Milestone 2 measurements are complete: [bounded trial report](audio-analysis-trial.md). The actual server is pancakes, with 44,070 indexed candidates. Both models completed 100 tracks under 2 GB, one CPU and no swap; CLAP peaked at 1.41 GB and warm text encoding plus synthetic full-size scoring took 34 ms median.
-- Musical quality is not accepted. Broad-genre evaluation is the immediate priority; model choice, sampling, text-encoder residency and playback startup remain open. Do not begin milestone 3 or a full scan until review.
+- Musical quality is not accepted. The next approach is built: [song characteristics](audio-profile-spec.md) ships schema 9, the lease, the `tempo-energy-v1` worker and the bot's gates behind empty settings. Still open, in this order: the scripted tempo listen (then `audio_scalar_recipe` may be set to `tempo-energy-v1`), the embedding checkpoint and its 100-song neighbour listen (text-encoder residency with it), the measured worker rate, and only then a full scan. Do not start a full scan until a recipe's listen has passed.
 - The actual Ollama endpoint, discovered or configured during setup; both local deployment locations are supported.
 
 Voice chat, automatic DJ narration, lyric transcription, permanent taste memory and continuously replenished radio queues are later features.

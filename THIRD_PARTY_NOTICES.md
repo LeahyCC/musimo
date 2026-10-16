@@ -6,7 +6,11 @@ The [MIT licence](LICENSE) covers Musimo's original source. It does not relicens
 
 The exact dependency versions are recorded in `uv.lock`, `requirements.lock`, `frontend/package-lock.json` and `Dockerfile`. The visualizer is butterchurn with the butterchurn-presets base pack, both MIT; the presets are MilkDrop community presets whose authors are named in each preset's full name, shown when hovering the preset picker. The container also installs Debian packages and copies a Deno binary. The optional helper image is specified in `compose.yaml`.
 
-Major components include React, TanStack Query/Router/Virtual, Vite, TypeScript, Zod, Lucide, Tailwind CSS, butterchurn, FastAPI, uvicorn, httpx, SQLite, Mutagen, watchdog, yt-dlp, the bgutil provider/plugin, FFmpeg, Chromaprint, Deno, Python and the base operating system. This list is an orientation, not a complete dependency licence audit or SBOM.
+Major components include React, TanStack Query/Router/Virtual, Vite, TypeScript, Zod, Lucide, Tailwind CSS, butterchurn, FastAPI, uvicorn, httpx, SQLite, Mutagen, watchdog, yt-dlp, the bgutil provider/plugin, NumPy (BSD-3-Clause, used to score song characteristics), FFmpeg, Chromaprint, Deno, Python and the base operating system. This list is an orientation, not a complete dependency licence audit or SBOM.
+
+## Audio worker image
+
+The optional analysis worker (`worker/`, Compose profile `analysis`) is a separate image with its own lock, `worker/uv.lock` and `worker/requirements.lock`. It installs librosa (ISC) for the `tempo-energy-v1` recipe, and with it librosa's dependencies as pinned there, among them NumPy, SciPy, scikit-learn, joblib and soundfile (BSD-3-Clause), numba and llvmlite (BSD-2-Clause), audioread (MIT) and python-soxr (LGPL-2.1-or-later, used as a shared library). It also installs Debian's FFmpeg package, to which the FFmpeg note above applies. No model weights are downloaded or shipped. AudioMuse-AI (AGPL-3.0) is the source of the behaviour described in [song characteristics](docs/audio-profile-spec.md); none of its code, exports or weights is included.
 
 Keep upstream copyright and licence files when redistributing packages. Python distributions contain their metadata/licence files; npm packages contain their own licence metadata; Debian packages generally place copyright information under `/usr/share/doc/<package>/copyright`. Inspect the exact build you ship, including transitive dependencies and executables.
 
