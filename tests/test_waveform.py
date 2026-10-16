@@ -171,10 +171,16 @@ class WaveformRouteTests(unittest.IsolatedAsyncioTestCase):
 
                 inside = base / "music" / "inside.wav"
                 inside.unlink()
-                inside.symlink_to(outside)
-                self.assertEqual((await opened.peaks("inside.wav")).status_code, 404)
+                try:
+                    inside.symlink_to(outside)
+                except OSError as exc:
+                    # This Windows account cannot create a symlink. The path checks below still run.
+                    if getattr(exc, "winerror", None) != 1314:
+                        raise
+                else:
+                    self.assertEqual((await opened.peaks("inside.wav")).status_code, 404)
+                    inside.unlink()
 
-                inside.unlink()
                 write_wav(inside)
                 opened.store.db.execute(
                     "UPDATE library_files SET path=? WHERE song_id=?", (str(outside), song_id)
