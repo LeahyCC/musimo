@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 from pydantic import ValidationError
 
 from backend.core.audio_recipes import Recipe
-from backend.library.audio_profile import ProfileSet
+from backend.library.audio_profile import BPM_WINDOW, ProfileSet
 from backend.library.engine_contract import (
     CONTRACT_VERSION,
     ENGINE_VERSION,
@@ -77,6 +77,11 @@ def parse_intent(raw: object) -> Intent:
         ) from exc
 
 
+def _row(*fields: object) -> str:
+    """One row as JSON, so free text holding the separator cannot make two rows look alike."""
+    return json.dumps(fields, ensure_ascii=False)
+
+
 def _digest(parts: Iterable[str]) -> str:
     hasher = hashlib.blake2b(digest_size=16)
     for part in parts:
@@ -90,14 +95,21 @@ def _catalogue(view: LibraryView) -> tuple[str, str]:
     it was measured from) and of its play history, both independent of the order read."""
     songs = sorted(view.stored.values(), key=lambda song: song.song_id)
     what = _digest(
-        f"{s.song_id}|{s.size}|{s.mtime_ns}|{s.title}|{s.artist}|{s.genre}|"
-        f"{'/'.join(s.genres)}|{s.year}|{s.duration!r}"
+        _row(
+            s.song_id,
+            s.size,
+            s.mtime_ns,
+            s.title,
+            s.artist,
+            s.genre,
+            list(s.genres),
+            s.year,
+            repr(s.duration),
+        )
         for s in songs
     )
     played = _digest(
-        f"{s.song_id}|{s.play_count}|{s.last_played}"
-        for s in songs
-        if s.play_count or s.last_played
+        _row(s.song_id, s.play_count, s.last_played) for s in songs if s.play_count or s.last_played
     )
     return what, played
 
@@ -110,8 +122,16 @@ def _profiles(recipe: Recipe | None, rows: ProfileSet | None) -> dict[str, objec
     return {
         "recipe": recipe.id,
         "digest": _digest(
-            f"{p.song_id}|{p.status}|{p.size}|{p.mtime_ns}|{p.tempo_bpm!r}|{p.energy!r}|"
-            f"{p.dim}|{p.vector_length}"
+            _row(
+                p.song_id,
+                p.status,
+                p.size,
+                p.mtime_ns,
+                repr(p.tempo_bpm),
+                repr(p.energy),
+                p.dim,
+                p.vector_length,
+            )
             for p in sorted(rows.rows.values(), key=lambda p: p.song_id)
         ),
     }
@@ -124,6 +144,7 @@ class Engine:
     def capabilities(self) -> dict[str, object]:
         return {
             "contract_version": CONTRACT_VERSION,
+            "supported_versions": list(SUPPORTED_VERSIONS),
             "engine_version": ENGINE_VERSION,
             "capabilities": [item.public() for item in registry(*self.bot.active_recipes())],
         }
@@ -134,7 +155,9 @@ class Engine:
         plan = self._plan(intent)
         scalar, embedding = self.bot.active_recipes()
         self._check_capabilities(intent, scalar, embedding)
-        self._check_songs(intent, self.bot.player.view())
+        view = self.bot.player.view()
+        self._check_songs(intent, view)
+        self._check_reference(intent, view, scalar, embedding)
         request = BotRequest(
             prompt=_PROMPT,
             proposal_ids=intent.context.proposal_ids,
@@ -188,6 +211,27 @@ class Engine:
                 422,
                 [ErrorField(field="filters.sound", message="Conflicts with similar_to_current")],
             )
+        if filters.tempo_min is not None and filters.tempo_min == filters.tempo_max:
+            # resolve reads one BPM as a window either side of it, which is looser than asked.
+            raise EngineError(
+                "unsupported_constraint",
+                f"An exact BPM would be widened by {BPM_WINDOW:g} either side. Send a range.",
+                422,
+                [ErrorField(field="filters.tempo_max", message="Equal to tempo_min")],
+            )
+        if filters.similar_to_current and embedding is None and (filters.artists or filters.genres):
+            # Without a sound profile, resolve replaces artists or genres with the reference's.
+            raise EngineError(
+                "unsupported_constraint",
+                "Without sound profiles, similar_to_current replaces the artist and genre "
+                "filters. Send one or the other.",
+                422,
+                [
+                    ErrorField(field=f"filters.{name}", message="Conflicts with similar_to_current")
+                    for name in ("artists", "genres")
+                    if getattr(filters, name)
+                ],
+            )
         if intent.action != "search":
             blank = (
                 filters.model_dump() == type(filters)().model_dump()
@@ -227,6 +271,23 @@ class Engine:
                 422,
                 [ErrorField(field="context.queue_ids", message="Wrong scope")],
             )
+        if intent.scope != "library":
+            # resolve draws and reads these only for a library search.
+            ignored = [
+                ErrorField(field=name, message="Library scope only")
+                for name, given in (
+                    ("seed", intent.seed is not None),
+                    ("context.shown_ids", bool(context.shown_ids)),
+                )
+                if given
+            ]
+            if ignored:
+                raise EngineError(
+                    "invalid_intent",
+                    "A seed and shown_ids apply to a library search.",
+                    422,
+                    ignored,
+                )
         unknown = [
             ErrorField(field=f"context.{name}", message="Not in the library")
             for name, ids in (
@@ -257,6 +318,37 @@ class Engine:
                 "Choose a current or reference song to compare with.",
                 422,
                 [ErrorField(field="context.reference_id", message="Required")],
+            )
+
+    def _check_reference(
+        self, intent: Intent, view: LibraryView, scalar: Recipe | None, embedding: Recipe | None
+    ) -> None:
+        """A comparison with a reference that has no fresh measurement cannot be evaluated.
+        resolve says so only in words beside an empty list, which reads like no match."""
+        filters = intent.filters
+        if intent.action != "search":
+            return
+        reference = view.stored.get(intent.context.reference_id or intent.context.current_id or "")
+        if reference is None:
+            return
+        needs: list[tuple[str, Recipe]] = []
+        if scalar is not None and (filters.energy_compared or filters.tempo_compared):
+            needs.append(
+                ("energy_compared" if filters.energy_compared else "tempo_compared", scalar)
+            )
+        if embedding is not None and filters.similar_to_current:
+            needs.append(("similar_to_current", embedding))
+        missing = [
+            ErrorField(field=f"filters.{name}", message=f"No fresh {recipe.id} measurement")
+            for name, recipe in needs
+            if self.bot.profiles.profiles(recipe).fresh(reference) is None
+        ]
+        if missing:
+            raise EngineError(
+                "reference_unmeasured",
+                "The reference song has not been measured, so there is nothing to compare with.",
+                422,
+                missing,
             )
 
     def _plan(self, intent: Intent) -> SearchPlan:
@@ -315,6 +407,8 @@ class Engine:
             "current_id": intent.context.current_id,
             "local_day": now.date().isoformat(),
             "timezone": bot.store.current().music_timezone,
+            # A disabled folder hides its files from the fill without changing the catalogue.
+            "roots": {"digest": _digest(_row(*root) for root in self._roots())},
             "shown": {
                 "count": len(shown),
                 "unknown": sum(1 for sid in shown if sid not in view.stored),
@@ -322,6 +416,14 @@ class Engine:
             },
         }
         return body
+
+    def _roots(self) -> list[tuple[str, int]]:
+        store = self.bot.store
+        with store.lock:
+            found = store.db.execute(
+                "SELECT path, enabled FROM library_roots ORDER BY path"
+            ).fetchall()
+        return [(str(row["path"]), int(row["enabled"])) for row in found]
 
     def _result(
         self, intent: Intent, reply: dict[str, object], snapshot: dict[str, object]

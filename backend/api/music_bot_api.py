@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from collections.abc import Callable
 
 from fastapi import FastAPI, HTTPException, Request
@@ -54,12 +55,15 @@ def install_music_bot_routes(app: FastAPI, get: Callable[[], MusicBot]) -> None:
         """The structured entry point. No model, and no write of any kind: a search is a
         preview, and an error or a cancel leaves nothing behind."""
         try:
+            declared = http.headers.get("content-length", "")
+            if declared.isdigit() and int(declared) > INTENT_BYTES:
+                raise EngineError("malformed_request", "The body is too large.", 413)
             body = await http.body()
             if len(body) > INTENT_BYTES:
                 raise EngineError("malformed_request", "The body is too large.", 413)
             try:
                 raw = json.loads(body)
-            except ValueError as exc:
+            except (ValueError, RecursionError) as exc:
                 raise EngineError("malformed_request", "The body is not valid JSON.", 400) from exc
             parsed = parse_intent(raw)
             task = asyncio.create_task(asyncio.to_thread(Engine(get()).run, parsed))
@@ -75,3 +79,10 @@ def install_music_bot_routes(app: FastAPI, get: Callable[[], MusicBot]) -> None:
                 await asyncio.gather(task, disconnected, return_exceptions=True)
         except EngineError as exc:
             return JSONResponse(exc.public(), status_code=exc.status)
+        except HTTPException:
+            raise
+        except Exception:
+            # Still the contract's envelope, so a client never has to parse two error shapes.
+            logging.getLogger("uvicorn.error").exception("music-bot intent failed")
+            failed = EngineError("internal_error", "The engine failed. Nothing changed.", 500)
+            return JSONResponse(failed.public(), status_code=500)
