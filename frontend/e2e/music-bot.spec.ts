@@ -485,6 +485,10 @@ test('a full queue refuses additions and a failed save is reported', async ({ pa
   await ask(page)
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
   await expect(page.getByRole('alert')).toContainText('500')
+  // The server has the confirmation, and the message says the queue was not changed.
+  await expect(page.getByRole('alert')).toContainText(
+    'The server recorded this confirmation, but your queue was not changed.',
+  )
   await expect(page.getByText('No room on the shelf!')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Replace upcoming instead' })).toBeVisible()
   await page.getByRole('main').getByRole('button', { name: 'Play', exact: true }).click()
@@ -940,4 +944,87 @@ test('every request names a contract version the server takes, for create, refin
   expect(proposals.creates[0]?.contract_version).toBe(3)
   expect(proposals.refines[0]?.body.intent).toMatchObject({ contract_version: 3 })
   expect(proposals.commits[0]?.contract_version).toBe(3)
+})
+
+test('a recorded queue confirmation the card cannot match says so, leaves the queue alone and offers a refresh', async ({
+  page,
+}) => {
+  const saves = await fixtures(page)
+  // The server's receipt names a song this card does not hold.
+  proposals.receiptExtra = ['tr-00000000000000ff']
+  await page.goto('/music-bot')
+  await ask(page)
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('Your queue was not changed.')
+  await expect(problem).toContainText('The server recorded this confirmation')
+  expect(proposals.commits).toHaveLength(1)
+  expect(saves).toHaveLength(0)
+  await expect(card(page)).not.toContainText('IN YOUR QUEUE')
+  // No second confirmation is offered until the card is refreshed.
+  await expect(card(page).getByRole('button', { name: 'Add to queue', exact: true })).toHaveCount(0)
+  proposals.receiptExtra = []
+  await problem.getByRole('button', { name: 'Refresh preview' }).click()
+  await expect(card(page)).toContainText('REVISION 2')
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, first.id, second.id])
+  expect(proposals.commits.at(-1)?.revision).toBe(2)
+})
+
+test('Remove from this list and Refresh preview wait while a chat request runs, and the chat is not left locked', async ({
+  page,
+}) => {
+  await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  let release: (() => void) | undefined
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route('**/api/music-bot/chat', async (route) => {
+    await gate
+    await route.fulfill({ json: answer }).catch(() => undefined)
+  })
+  await say(page, 'something else')
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+  await card(page).getByRole('button', { name: 'More actions for First Light' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Remove from this list' })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  // Nothing was stored by the press that could not happen.
+  expect(proposals.creates).toHaveLength(1)
+  release?.()
+  await expect(card(page)).toContainText('REVISION 2')
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible()
+  await expect(box(page)).toBeEnabled()
+  // And the chat takes the next request.
+  await ask(page, 'one more')
+  await expect(card(page)).toContainText('REVISION 3')
+})
+
+test('a stale or unsettled preview cannot have a song taken off it, and Refresh waits for a running request', async ({
+  page,
+}) => {
+  await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  proposals.fault = () => 'stale'
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('This preview is out of date.')
+  await card(page).getByRole('button', { name: 'More actions for First Light' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Remove from this list' })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  let release: (() => void) | undefined
+  const gate = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.route('**/api/music-bot/chat', async (route) => {
+    await gate
+    await route.fulfill({ json: answer }).catch(() => undefined)
+  })
+  await say(page, 'something else')
+  await expect(page.getByRole('button', { name: 'Cancel', exact: true })).toBeVisible()
+  await expect(problem.getByRole('button', { name: 'Refresh preview' })).toBeDisabled()
+  release?.()
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible()
 })

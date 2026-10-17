@@ -308,6 +308,30 @@ describe('the proposal routes', () => {
     await expect(commitProposal(proposal.id, request)).rejects.toBeInstanceOf(UnknownOutcome)
   })
 
+  it('calls a commit reply it cannot read unknown, since the write may have happened', async () => {
+    const request = {
+      revision: 1,
+      operationId: 'op-12345678',
+      target: { kind: 'queue' },
+      repeat: false,
+    } as const
+    // A 200 whose body is not a receipt, and a 200 that is not JSON at all.
+    answer(200, { receipt: { operation_id: 'op-12345678' } })
+    await expect(commitProposal(proposal.id, request)).rejects.toBeInstanceOf(UnknownOutcome)
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(() => Promise.resolve(new Response('<html>', { status: 200 }))),
+    )
+    await expect(commitProposal(proposal.id, request)).rejects.toBeInstanceOf(UnknownOutcome)
+  })
+
+  it('still calls an unreadable create reply a plain failure: it only writes a preview', async () => {
+    answer(200, { proposal: {} })
+    await expect(createProposal(intentFromReply(reply(), context))).rejects.toMatchObject({
+      code: 'invalid_response',
+    })
+  })
+
   it('does not call a typed refusal unknown: nothing was written', async () => {
     answer(409, { status: 'error', error: { code: 'already_committed', message: 'Again?' } })
     await expect(

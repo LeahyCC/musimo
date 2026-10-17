@@ -51,7 +51,23 @@ export function ProblemPanel() {
   const chat = useBotChat()
   const { problem } = chat
   if (!problem) return null
-  const busy = chat.applying || chat.confirming
+  const busy = chat.applying || chat.confirming || chat.thinking
+  if (problem.kind === 'recorded')
+    return (
+      <div role="alert" data-bot="problem" className={panelClass}>
+        <span>
+          <strong className="font-semibold">Your queue was not changed.</strong> The server recorded
+          this confirmation, but a song in the approved list is not on this card, so I did not queue
+          a different list. Refresh the preview to see the current one.
+        </span>
+        <div>
+          <Button disabled={busy} onClick={chat.resolveProblem}>
+            <RefreshCw size={14} aria-hidden="true" />
+            Refresh preview
+          </Button>
+        </div>
+      </div>
+    )
   if (problem.kind === 'stale')
     return (
       <div role="alert" data-bot="problem" className={panelClass}>
@@ -127,7 +143,10 @@ export function MissingPanel({ preview }: { preview: Preview }) {
         the preview first.
       </span>
       <div>
-        <Button disabled={chat.applying || chat.confirming} onClick={chat.refreshPreview}>
+        <Button
+          disabled={chat.applying || chat.confirming || chat.thinking}
+          onClick={chat.refreshPreview}
+        >
           <RefreshCw size={14} aria-hidden="true" />
           Refresh preview
         </Button>

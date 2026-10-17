@@ -33,6 +33,8 @@ export type ProposalMock = {
   ghosts: string[]
   /** Seconds the songs now add up to less than the total stored with the revision. */
   drift: number
+  /** Ids a commit's receipt lists beyond the revision's own, as a receipt the card cannot match. */
+  receiptExtra: string[]
 }
 
 type Stored = { revisions: Map<number, string[]>; latest: number }
@@ -77,6 +79,7 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     pick: undefined,
     ghosts: [],
     drift: 0,
+    receiptExtra: [],
   }
   const proposals = new Map<string, Stored>()
   const receipts = new Map<string, Record<string, unknown>>()
@@ -267,20 +270,21 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
         })
       went.add(key)
       const playlist = target.kind === 'playlist'
+      const receiptIds = [...ids, ...mock.receiptExtra]
       receipt = {
         operation_id: operation,
         proposal_id: id,
         revision,
         target: text(target.kind),
-        ids,
+        ids: receiptIds,
         status: playlist ? 'saved' : 'ready_for_player',
         playlist_id: playlist ? `pl-${mock.saved.length + 1}` : null,
         playlist_name: playlist ? text(target.name) : null,
         created: '2026-10-17T00:00:00Z',
       }
       receipts.set(operation, receipt)
-      if (playlist) mock.saved.push({ name: text(target.name), ids })
-      else mock.handed.push(ids)
+      if (playlist) mock.saved.push({ name: text(target.name), ids: receiptIds })
+      else mock.handed.push(receiptIds)
     }
     if (fault === 'drop-after') return route.abort('failed')
     return route.fulfill({

@@ -81,6 +81,8 @@ export type Problem =
   | { kind: 'stale'; changes: string[] }
   | { kind: 'unknown'; what: 'save' | 'queue' }
   | { kind: 'repeat'; what: 'save' | 'queue' }
+  /** The server recorded a queue confirmation, but the card cannot apply it as recorded. */
+  | { kind: 'recorded' }
 
 type Command = { kind: 'playlist'; name: string } | { kind: 'queue'; action: BotQueueAction }
 /** A confirmation sent but not yet answered. Its operation id is sent again, never replaced. */
@@ -90,6 +92,8 @@ type Attempt = { command: Command; preview: Preview; operationId: string; repeat
 export const RECONCILE_DELAY = 800
 const COMMIT_TIMEOUT = 20_000
 const QUEUE_MOVED = 'The queue changed. Ask again before applying.'
+/** Said whenever something fails after the server accepted a confirmation. */
+const RECORDED = 'The server recorded this confirmation, but your queue was not changed.'
 
 /** The model is told about this many recent messages. */
 export const HISTORY_LIMIT = 8
@@ -596,12 +600,22 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     return createProposal(intent, signal)
   }
 
-  /** Runs one server step that ends in a card, under the same cancel and supersede rules as a
-   *  chat request. Null when it was cancelled or superseded, or failed (and said so). */
-  async function working<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T | null> {
+  /** Starts a request that supersedes any other. The one before is aborted and its waiting state
+   *  cleared here, since its own cleanup is skipped once it is superseded. */
+  function begin() {
+    request.current?.abort()
+    setThinking(false)
+    setStartedAt(null)
     const id = ++serial.current
     const controller = new AbortController()
     request.current = controller
+    return { id, controller }
+  }
+
+  /** Runs one server step that ends in a card, under the same cancel and supersede rules as a
+   *  chat request. Null when it was cancelled or superseded, or failed (and said so). */
+  async function working<T>(run: (signal: AbortSignal) => Promise<T>): Promise<T | null> {
+    const { id, controller } = begin()
     setApplying(true)
     try {
       const done = await run(controller.signal)
@@ -673,6 +687,8 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     const epoch = cleared.current
     const what = command.kind === 'playlist' ? 'save' : 'queue'
     const key = `${at.id}:${at.revision}:${command.kind}`
+    // True once the server has the confirmation, so nothing after it may say "nothing happened".
+    let recorded = false
     try {
       if (command.kind === 'queue' && latestPlayer.current.botStamp() !== stamp)
         throw new Error(QUEUE_MOVED)
@@ -687,6 +703,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       const done = await confirmOnce(sending, repeat || sent.current.has(key))
       attempt.current = null
       sent.current.add(key)
+      recorded = true
       if (command.kind === 'playlist') {
         void client.invalidateQueries({ queryKey: ['library-playlists'] })
         const name = done.receipt.playlist_name ?? command.name
@@ -699,8 +716,15 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       const exact: LibraryTrack[] = []
       for (const id of done.receipt.ids) {
         const song = byId.get(id)
-        if (!song) throw new Error('A song in the approved list is no longer on the card.')
-        exact.push(song)
+        if (song) exact.push(song)
+      }
+
+      if (exact.length !== done.receipt.ids.length) {
+        // The receipt names a song the card does not hold. The queue is left alone rather than
+        // given a different list, and the card says the confirmation is on record.
+        setProblem({ kind: 'recorded' })
+        landed('sorry')
+        return false
       }
       latestPlayer.current.applyBotQueue(exact, command.action, stamp)
       setStamp(latestPlayer.current.botStamp())
@@ -730,8 +754,9 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       const message = problem instanceof Error ? problem.message : 'Could not apply selection.'
       if (command.kind === 'queue')
         push({ kind: 'note', text: `You pressed ${ACTION_NOTE[command.action]}` })
+      const failure = explainFailure(message, 'apply')
       fail(
-        explainFailure(message, 'apply'),
+        recorded ? { ...failure, text: `${RECORDED} ${failure.text}` } : failure,
         command.kind === 'queue' ? lastPrompt.current : undefined,
       )
 
@@ -775,9 +800,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     }
     // One song, played at once from its menu. It is not a generated list, so there is no preview
     // to confirm; the server rechecks that one id the way it always has.
-    const id = ++serial.current
-    const controller = new AbortController()
-    request.current = controller
+    const { id, controller } = begin()
     setApplying(true)
     try {
       const checked = await api('music-bot/validate', botSelectionSchema, {
@@ -817,7 +840,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
   /** What the problem on the card offers: a refreshed preview, or the same confirmation again. */
   function resolveProblem() {
     if (!problem) return
-    if (problem.kind === 'stale') void refresh()
+    if (problem.kind === 'stale' || problem.kind === 'recorded') void refresh()
     else if (problem.kind === 'unknown') {
       const open = attempt.current
       if (open) void confirm(open.command, open.repeat)
@@ -866,7 +889,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
   /** Takes a song off the card. The shorter list is stored as its own preview, so what is
    *  confirmed is what the card shows. */
   async function removeSong(id: string) {
-    if (!reply || committing.current) return
+    if (!reply || committing.current || thinking || applying || problem) return
     const rest = reply.tracks.filter((track) => track.id !== id)
     if (rest.length === reply.tracks.length) return
     if (reference?.id === id) setReference(null)

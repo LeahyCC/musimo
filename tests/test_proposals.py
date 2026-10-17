@@ -424,6 +424,53 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.count("bot_receipts"), 0)
         self.assertEqual(len(self.playlists()), 1)  # Liked only
 
+    async def test_a_song_deleted_from_the_library_is_stale_for_every_target(self) -> None:
+        created = await self.create(filters={"artists": ["Orchard"]}, seed=1)
+        proposal_id = part(created, "proposal")["id"]
+        dawn = self.ids["Dawn"]
+        (self.music / "4.wav").unlink()
+        self.library.scan()
+        read = payload(await self.http.get(f"/api/music-bot/proposals/{proposal_id}"))
+        # The list still names the song; the cards no longer have it.
+        self.assertIn(dawn, self.song_ids(read))
+        self.assertEqual(read["missing_ids"], [dawn])
+        self.assertNotIn(dawn, [str(t["id"]) for t in read["tracks"]])  # type: ignore[attr-defined]
+        for number, target in enumerate(({"kind": "queue"}, {"kind": "playlist", "name": "Gone"})):
+            with self.subTest(target=target["kind"]):
+                gone = await self.commit(
+                    proposal_id, operation_id=f"op-gone-{number}", target=target
+                )
+                self.assertEqual((gone.status_code, code(gone)), (409, "proposal_stale"))
+                fields = part(payload(gone), "error")["fields"]
+                self.assertEqual(
+                    fields, [{"field": f"songs.{dawn}", "message": "Not in the library"}]
+                )
+        self.assertEqual(self.count("bot_receipts"), 0)
+        self.assertEqual(len(self.playlists()), 1)  # Liked only
+
+    async def test_a_song_already_unplayable_when_stored_is_still_refused(self) -> None:
+        created = await self.create(filters={"artists": ["Orchard"]}, seed=1)
+        proposal_id = part(created, "proposal")["id"]
+        dawn = self.ids["Dawn"]
+        # A stored check that already says "unplayable" matches what the commit now sees. It
+        # still must not be approved, or the receipt would name a song nothing can play.
+        with self.store.lock:
+            row = self.store.db.execute(
+                "SELECT checks FROM bot_proposal_revisions WHERE proposal_id=? AND revision=1",
+                (proposal_id,),
+            ).fetchone()
+            checks = json.loads(str(row["checks"]))
+            checks[f"songs.{dawn}"] = "unplayable"
+            self.store.db.execute(
+                "UPDATE bot_proposal_revisions SET checks=? WHERE proposal_id=? AND revision=1",
+                (json.dumps(checks), proposal_id),
+            )
+            self.store.db.commit()
+        (self.music / "4.wav").unlink()
+        refused = await self.commit(proposal_id, target={"kind": "queue"})
+        self.assertEqual((refused.status_code, code(refused)), (409, "proposal_stale"))
+        self.assertEqual(self.count("bot_receipts"), 0)
+
     async def test_only_what_the_songs_depend_on_is_checked(self) -> None:
         liked = await self.create(filters={"favourites": True}, seed=1)
         plain = await self.create(filters={"artists": ["Meadow"]}, seed=1)

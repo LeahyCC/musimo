@@ -325,7 +325,9 @@ class Proposals:
         changed: list[ErrorField] = []
         for key, before in stored.items():
             after = now.get(key)
-            if after == before:
+            # A song that is gone or unplayable now is never approved, even if the stored check
+            # says the same, so a commit cannot hand back an id the library no longer plays.
+            if after == before and after not in (_MISSING, _UNPLAYABLE):
                 continue
             if after == _MISSING:
                 message = "Not in the library"

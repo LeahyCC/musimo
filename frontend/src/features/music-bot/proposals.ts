@@ -242,7 +242,14 @@ export async function commitProposal(
       },
     })
   } catch (problem) {
-    if (problem instanceof ProposalError && problem.status < 500) throw problem
+    // A reply that cannot be read may be the receipt of a write that happened, so it is not a
+    // refusal: the same operation id is asked again.
+    if (
+      problem instanceof ProposalError &&
+      problem.status < 500 &&
+      problem.code !== 'invalid_response'
+    )
+      throw problem
     throw new UnknownOutcome(problem instanceof Error ? problem.message : 'No answer.')
   }
 }

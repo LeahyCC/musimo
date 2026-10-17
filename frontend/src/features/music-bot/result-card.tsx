@@ -53,6 +53,9 @@ export function ResultCard({ reply }: { reply: BotReply }) {
   // rather than after a press that cannot work.
   const refused = applied !== null && (applied.undo === 'refused' || !player.canUndoBotQueue)
   const busy = chat.thinking || chat.applying || chat.confirming || chat.locked !== null
+  // Taking a song off stores a new preview, so it waits while anything else is in flight and
+  // while a confirmation's outcome is unsettled.
+  const changing = chat.thinking || chat.applying || chat.confirming || chat.problem !== null
   const chips = filterChips(reply.plan)
   const short = shortMinutes(reply)
   const excluded = reply.plan.exclude_artists
@@ -134,7 +137,7 @@ export function ResultCard({ reply }: { reply: BotReply }) {
       {reply.tracks.length > 0 ? (
         <>
           {win95 ? (
-            <SongTable reply={reply} songs={songs} />
+            <SongTable reply={reply} songs={songs} locked={changing} />
           ) : (
             <ol aria-label="Proposed songs" className="m-0 grid list-none border-t border-line p-0">
               {songs.map((track) => (
@@ -155,6 +158,7 @@ export function ResultCard({ reply }: { reply: BotReply }) {
                     onOpenChange={(value) => setMenuFor(value ? track.id : null)}
                     reference={chat.reference?.id === track.id}
                     disabled={busy}
+                    removeDisabled={changing}
                     onReference={() =>
                       chat.setReference({ id: track.id, label: `${track.title} · ${track.artist}` })
                     }
@@ -330,7 +334,16 @@ function defaultPlaylistName(filters: string[]): string {
 }
 
 /** The Windows 95 list view: a table with column headers, as the skin's design draws it. */
-function SongTable({ reply, songs }: { reply: BotReply; songs: BotReply['tracks'] }) {
+function SongTable({
+  reply,
+  songs,
+  locked,
+}: {
+  reply: BotReply
+  songs: BotReply['tracks']
+  /** Delete takes a song off the list, which waits while something else is in flight. */
+  locked: boolean
+}) {
   const chat = useBotChat()
   return (
     <div role="table" aria-label="Proposed songs" data-bot="list-view" className="grid">
@@ -358,7 +371,7 @@ function SongTable({ reply, songs }: { reply: BotReply; songs: BotReply['tracks'
             onKeyDown={(event) => {
               if (event.key === 'Enter')
                 chat.setReference({ id: track.id, label: `${track.title} · ${track.artist}` })
-              if (event.key === 'Delete') void chat.removeSong(track.id)
+              if (event.key === 'Delete' && !locked) void chat.removeSong(track.id)
             }}
             onClick={() =>
               chat.setReference({ id: track.id, label: `${track.title} · ${track.artist}` })
@@ -388,6 +401,7 @@ type SongMenuProps = {
   onOpenChange: (open: boolean) => void
   reference: boolean
   disabled: boolean
+  removeDisabled: boolean
   onReference: () => void
   onPlay: () => void
   onRemove: () => void
@@ -400,6 +414,7 @@ function SongMenu({
   onOpenChange,
   reference,
   disabled,
+  removeDisabled,
   onReference,
   onPlay,
   onRemove,
@@ -484,7 +499,13 @@ function SongMenu({
           >
             Play this song
           </button>
-          <button type="button" role="menuitem" className={item} onClick={() => choose(onRemove)}>
+          <button
+            type="button"
+            role="menuitem"
+            className={item}
+            disabled={removeDisabled}
+            onClick={() => choose(onRemove)}
+          >
             Remove from this list
           </button>
         </div>
