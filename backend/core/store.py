@@ -9,7 +9,11 @@ from backend.core.models import CATALOG_ORDER, Settings, clean_arl
 from backend.core.sources import source_label
 
 RETAIN_EVENTS = 5000
-SCHEMA_VERSION = 9
+SCHEMA_VERSION = 10
+# Music bot proposals kept, newest first by last use, and revisions kept per proposal. They are
+# suggestion state, not history: a dropped one is only a preview the client has to ask for again.
+PROPOSAL_LIMIT = 20
+REVISION_LIMIT = 20
 # Rows that stay in the settings table but are not settings. Each is stripped before validation,
 # because Settings refuses keys it does not know.
 # deezer_arl held the Deezer cookie. The cookie is a file now and the row stays empty, so a
@@ -459,6 +463,42 @@ class Store:
             self.db.executescript("""
                 BEGIN IMMEDIATE;
                 PRAGMA user_version=9;
+                COMMIT;
+            """)
+        if version < 10:
+            # Music bot proposals: each revision's intent, seed, ordered ids, snapshot and the
+            # per-song checks a commit repeats, and the receipt of each commit. Receipts go
+            # with their proposal, so dropping bot_proposals is a full reset.
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS bot_proposals (
+                    id TEXT PRIMARY KEY,
+                    latest INTEGER NOT NULL,
+                    touched INTEGER NOT NULL,
+                    created TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS bot_proposal_revisions (
+                    proposal_id TEXT NOT NULL REFERENCES bot_proposals(id) ON DELETE CASCADE,
+                    revision INTEGER NOT NULL,
+                    intent TEXT NOT NULL,
+                    seed INTEGER,
+                    song_ids TEXT NOT NULL,
+                    snapshot TEXT NOT NULL,
+                    checks TEXT NOT NULL,
+                    totals TEXT NOT NULL,
+                    created TEXT NOT NULL,
+                    PRIMARY KEY (proposal_id, revision)
+                );
+                CREATE TABLE IF NOT EXISTS bot_receipts (
+                    operation_id TEXT PRIMARY KEY,
+                    proposal_id TEXT NOT NULL REFERENCES bot_proposals(id) ON DELETE CASCADE,
+                    revision INTEGER NOT NULL,
+                    target TEXT NOT NULL,
+                    receipt TEXT NOT NULL
+                );
+                CREATE INDEX IF NOT EXISTS bot_receipts_revision
+                    ON bot_receipts(proposal_id, revision, target);
+                PRAGMA user_version=10;
                 COMMIT;
             """)
         self.seed()
@@ -1205,6 +1245,167 @@ class Store:
                 )
                 self.db.commit()
                 return cur.rowcount > 0
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def _touch(self) -> int:
+        """The next use number. The newest PROPOSAL_LIMIT proposals by it are kept."""
+        return int(
+            self.db.execute("SELECT coalesce(max(touched), 0) + 1 FROM bot_proposals").fetchone()[0]
+        )
+
+    def save_proposal(
+        self, proposal_id: str | None, base: int, row: dict[str, object]
+    ) -> tuple[str, int] | None:
+        """Store revision 1 of a new proposal when `proposal_id` is None, otherwise the
+        revision after `base`. None when `base` is no longer the latest, so two refinements of
+        one revision cannot both land. Proposals and revisions past the limits go in the same
+        transaction."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                now = self._timestamp()
+                revision = base + 1
+                if proposal_id is None:
+                    proposal_id = "pr-" + secrets.token_hex(8)
+                    self.db.execute(
+                        "INSERT INTO bot_proposals VALUES (?,?,?,?)",
+                        (proposal_id, revision, self._touch(), now),
+                    )
+                elif not self.db.execute(
+                    "UPDATE bot_proposals SET latest=?, touched=? WHERE id=? AND latest=?",
+                    (revision, self._touch(), proposal_id, base),
+                ).rowcount:
+                    self.db.rollback()
+                    return None
+                self.db.execute(
+                    "INSERT INTO bot_proposal_revisions VALUES (?,?,?,?,?,?,?,?,?)",
+                    (
+                        proposal_id,
+                        revision,
+                        json.dumps(row["intent"]),
+                        row["seed"],
+                        json.dumps(row["ids"]),
+                        json.dumps(row["snapshot"]),
+                        json.dumps(row["checks"]),
+                        json.dumps(row["totals"]),
+                        now,
+                    ),
+                )
+                self.db.execute(
+                    "DELETE FROM bot_proposal_revisions WHERE proposal_id=? AND revision<=?",
+                    (proposal_id, revision - REVISION_LIMIT),
+                )
+                self.db.execute(
+                    "DELETE FROM bot_proposals WHERE id NOT IN "
+                    "(SELECT id FROM bot_proposals ORDER BY touched DESC LIMIT ?)",
+                    (PROPOSAL_LIMIT,),
+                )
+                self.db.commit()
+                return proposal_id, revision
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def proposal_revision(self, proposal_id: str, revision: int | None) -> dict[str, object] | None:
+        """One stored revision, the latest when `revision` is None. None for an unknown
+        proposal; `revision` None in the result for a revision it does not hold."""
+        with self.lock:
+            head = self.db.execute(
+                "SELECT latest FROM bot_proposals WHERE id=?", (proposal_id,)
+            ).fetchone()
+            if head is None:
+                return None
+            latest = int(head["latest"])
+            row = self.db.execute(
+                "SELECT * FROM bot_proposal_revisions WHERE proposal_id=? AND revision=?",
+                (proposal_id, latest if revision is None else revision),
+            ).fetchone()
+        if row is None:
+            return {"id": proposal_id, "latest": latest, "revision": None}
+        return {
+            "id": proposal_id,
+            "latest": latest,
+            "revision": int(row["revision"]),
+            "intent": json.loads(row["intent"]),
+            "seed": row["seed"],
+            "ids": json.loads(row["song_ids"]),
+            "snapshot": json.loads(row["snapshot"]),
+            "checks": json.loads(row["checks"]),
+            "totals": json.loads(row["totals"]),
+            "created": str(row["created"]),
+        }
+
+    def proposal_receipt(self, operation_id: str) -> dict[str, object] | None:
+        with self.lock:
+            row = self.db.execute(
+                "SELECT receipt FROM bot_receipts WHERE operation_id=?", (operation_id,)
+            ).fetchone()
+        found: dict[str, object] | None = json.loads(row[0]) if row is not None else None
+        return found
+
+    def proposal_receipts(self, proposal_id: str, revision: int, target: str) -> list[str]:
+        """The operation ids that already committed this revision to this kind of target."""
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT operation_id FROM bot_receipts "
+                "WHERE proposal_id=? AND revision=? AND target=? ORDER BY rowid",
+                (proposal_id, revision, target),
+            ).fetchall()
+        return [str(row[0]) for row in rows]
+
+    def record_receipt(
+        self, receipt: dict[str, object], playlist_name: str | None
+    ) -> tuple[dict[str, object], bool]:
+        """Write a commit's receipt once, and for a playlist commit the playlist in the same
+        transaction. An operation id that already has a receipt gets that receipt back with
+        True and nothing is written, so a retry after a lost reply never saves twice."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                found = self.db.execute(
+                    "SELECT receipt FROM bot_receipts WHERE operation_id=?",
+                    (receipt["operation_id"],),
+                ).fetchone()
+                if found is not None:
+                    self.db.rollback()
+                    first: dict[str, object] = json.loads(found[0])
+                    return first, True
+                now = self._timestamp()
+                if playlist_name is not None:
+                    cur = self.db.execute(
+                        "INSERT INTO playlists (name, public, created, changed) VALUES (?,?,?,?)",
+                        (playlist_name, 0, now, now),
+                    )
+                    playlist_id = int(cur.lastrowid or 0)
+                    ids = receipt["ids"]
+                    assert isinstance(ids, list)
+                    self.db.executemany(
+                        "INSERT INTO playlist_songs VALUES (?,?,?)",
+                        [(playlist_id, index, str(sid)) for index, sid in enumerate(ids)],
+                    )
+                    receipt = receipt | {
+                        "playlist_id": f"pl-{playlist_id}",
+                        "playlist_name": playlist_name,
+                    }
+                receipt = receipt | {"created": now}
+                self.db.execute(
+                    "INSERT INTO bot_receipts VALUES (?,?,?,?,?)",
+                    (
+                        receipt["operation_id"],
+                        receipt["proposal_id"],
+                        receipt["revision"],
+                        receipt["target"],
+                        json.dumps(receipt),
+                    ),
+                )
+                self.db.execute(
+                    "UPDATE bot_proposals SET touched=? WHERE id=?",
+                    (self._touch(), receipt["proposal_id"]),
+                )
+                self.db.commit()
+                return receipt, False
             except Exception:
                 self.db.rollback()
                 raise

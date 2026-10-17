@@ -135,7 +135,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             ([], "malformed_request"),
             ("search", "malformed_request"),
             ({"action": "search"}, "malformed_request"),
-            ({"contract_version": 2, "action": "search"}, "unsupported_version"),
+            ({"contract_version": 3, "action": "search"}, "unsupported_version"),
             ({"contract_version": "1", "action": "search"}, "unsupported_version"),
             ({"contract_version": True, "action": "search"}, "unsupported_version"),
             (PLAIN | {"duration_mode": "about"}, "unknown_field"),
@@ -314,7 +314,6 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             {item.id for item in NOT_BUILT},
             {
                 "duration_comparators",
-                "proposal_commit",
                 "audio_certainty",
                 "persona",
                 "external_catalogue",
@@ -344,7 +343,8 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             body = (await client.get("/api/music-bot/capabilities")).json()
         self.assertEqual(body["contract_version"], CONTRACT_VERSION)
         self.assertEqual(body["engine_version"], ENGINE_VERSION)
-        self.assertEqual(body["supported_versions"], [CONTRACT_VERSION])
+        self.assertEqual(body["supported_versions"], [1, CONTRACT_VERSION])
+        self.assertEqual(CONTRACT_VERSION, 2)
         found = {item["id"]: item["available"] for item in body["capabilities"]}
         self.assertFalse(found["duration_comparators"])
         self.assertFalse(found["tempo"])
