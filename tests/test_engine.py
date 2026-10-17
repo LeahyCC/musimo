@@ -146,6 +146,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             (PLAIN | {"filters": {"favourites": "yes"}}, "invalid_intent"),
             (PLAIN | {"seed": SEED_LIMIT}, "invalid_intent"),
             (PLAIN | {"context": {"reference_id": "/music/a.wav"}}, "invalid_intent"),
+            (PLAIN | {"filters": {"artists": ["  "]}}, "invalid_intent"),
         ]:
             with self.subTest(body=body):
                 with self.assertRaises(EngineError) as caught:
@@ -167,6 +168,53 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         ]:
             with self.subTest(filters=filters):
                 self.assertEqual(self.refused(PLAIN | {"filters": filters}).code, "invalid_intent")
+
+    def test_resolve_rewrites_are_refused_rather_than_loosened(self) -> None:
+        # One BPM becomes a window, and tag similarity replaces the artist and genre filters.
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        exact = self.refused(PLAIN | {"filters": {"tempo_min": 120, "tempo_max": 120}})
+        self.assertEqual(exact.code, "unsupported_constraint")
+        self.store.update({"audio_scalar_recipe": ""})
+        for filters in [{"genres": ["jazz"]}, {"artists": ["Meadow"]}]:
+            with self.subTest(filters=filters):
+                error = self.refused(
+                    PLAIN
+                    | {
+                        "filters": {"similar_to_current": True, **filters},
+                        "context": {"reference_id": self.ids["Dawn"]},
+                    }
+                )
+                self.assertEqual(error.code, "unsupported_constraint")
+
+    def test_seed_and_shown_ids_belong_to_a_library_search(self) -> None:
+        known = self.ids["Dawn"]
+        extras: list[dict[str, object]] = [
+            {"seed": 0},
+            {"context": {"proposal_ids": [known], "shown_ids": [known]}},
+        ]
+        for extra in extras:
+            with self.subTest(extra=extra):
+                body = PLAIN | {"scope": "proposal", "context": {"proposal_ids": [known]}} | extra
+                self.assertEqual(self.refused(body).code, "invalid_intent")
+
+    def test_an_unmeasured_reference_is_an_error_not_an_empty_match(self) -> None:
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        error = self.refused(
+            PLAIN
+            | {
+                "filters": {"energy_compared": "calmer"},
+                "context": {"reference_id": self.ids["Dawn"]},
+            }
+        )
+        self.assertEqual(error.code, "reference_unmeasured")
+        self.assertEqual([item.field for item in error.fields], ["filters.energy_compared"])
+
+    def test_a_disabled_folder_changes_the_snapshot(self) -> None:
+        before = self.part(self.run_at(intent(seed=1)), "roots")
+        with self.store.lock:
+            self.store.db.execute("UPDATE library_roots SET enabled=0")
+            self.store.db.commit()
+        self.assertNotEqual(self.part(self.run_at(intent(seed=1)), "roots"), before)
 
     def test_fabricated_and_misplaced_songs_are_refused(self) -> None:
         invented = "tr-0123456789abcdef"
@@ -253,7 +301,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
 
     def test_registry_lists_every_field_and_nothing_unbuilt(self) -> None:
         listed = {item.id: item for item in registry(None, None)}
-        for name in Filters.model_fields:
+        for name in [*Filters.model_fields, *Context.model_fields]:
             self.assertIn(name, listed, f"{name} is accepted by an intent but not registered")
         for name in ("search", "pause", "resume", "skip", "clarify", "unsupported"):
             self.assertTrue(listed[name].available)
@@ -296,6 +344,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             body = (await client.get("/api/music-bot/capabilities")).json()
         self.assertEqual(body["contract_version"], CONTRACT_VERSION)
         self.assertEqual(body["engine_version"], ENGINE_VERSION)
+        self.assertEqual(body["supported_versions"], [CONTRACT_VERSION])
         found = {item["id"]: item["available"] for item in body["capabilities"]}
         self.assertFalse(found["duration_comparators"])
         self.assertFalse(found["tempo"])
@@ -545,6 +594,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
                 (b"{not json", 400, "malformed_request"),
                 (b"[]", 400, "malformed_request"),
                 (b"x" * 262145, 413, "malformed_request"),
+                (b"[" * 100000, 400, "malformed_request"),
                 (
                     json.dumps({"contract_version": 9, "action": "search"}).encode(),
                     422,
@@ -563,6 +613,14 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(response.status_code, status)
                     self.assertEqual(response.json()["status"], "error")
                     self.assertEqual(response.json()["error"]["code"], code)
+            with (
+                patch.object(Engine, "run", side_effect=RuntimeError("boom")),
+                self.assertLogs("uvicorn.error", "ERROR"),
+            ):
+                failed = await client.post("/api/music-bot/intent", json=PLAIN)
+            self.assertEqual(failed.status_code, 500)
+            self.assertEqual(failed.json()["error"]["code"], "internal_error")
+            self.assertNotIn("boom", failed.text)
             # The legacy routes beside it still answer.
             legacy = await client.post(
                 "/api/music-bot/validate",

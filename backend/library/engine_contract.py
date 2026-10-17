@@ -23,7 +23,8 @@ SUPPORTED_VERSIONS = (1,)
 # for a replay of the same engine. tests/test_engine.py pins the constants that feed it.
 ENGINE_VERSION = 1
 
-Text = Annotated[str, StringConstraints(min_length=1, max_length=120)]
+# Stripped first, so a blank name cannot match every untagged song.
+Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 Action = Literal["search", "pause", "resume", "skip", "clarify", "unsupported"]
 Scope = Literal["library", "proposal", "queue"]
 
@@ -176,8 +177,14 @@ def registry(scalar: Recipe | None, embedding: Recipe | None) -> list[Capability
             text,
             "Needs a text-aligned embedding recipe, and a phrase that is not only a negation.",
         ),
-        Capability("seed", "context", True, "Repeats a library selection."),
-        Capability("shown_ids", "context", True, "Shown songs go last. Never excluded."),
+        Capability("seed", "context", True, "Repeats a library selection. Library scope only."),
+        Capability("current_id", "context", True, "The playing song, for comparisons."),
+        Capability("reference_id", "context", True, "The song to compare with."),
+        Capability("proposal_ids", "context", True, "The selection a proposal scope refines."),
+        Capability("queue_ids", "context", True, "The queue a queue scope refines."),
+        Capability(
+            "shown_ids", "context", True, "Shown songs go last. Never excluded. Library scope only."
+        ),
         *NOT_BUILT,
     ]
 
