@@ -41,6 +41,10 @@ export type ProposalMock = {
   forgets: number
   /** What the shown-song memory holds, kept for the life of the page as the server keeps it. */
   memory: () => { revision: number; results: number; songs: string[] }
+  /** Held before a presentation is recorded, to keep one in flight. */
+  holdPresent: Promise<void> | undefined
+  /** Another device presses Forget: the same change the DELETE route makes. */
+  forgetElsewhere: () => void
 }
 
 type Stored = { revisions: Map<number, string[]>; latest: number }
@@ -60,7 +64,7 @@ function envelope(
   message: string,
   fields: { field: string; message: string }[] = [],
 ) {
-  return { contract_version: 3, status: 'error', error: { code, message, fields } }
+  return { contract_version: 4, status: 'error', error: { code, message, fields } }
 }
 
 const accepted = (version: unknown, allowed: number[]) =>
@@ -89,22 +93,37 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     presented: [],
     forgets: 0,
     memory: () => ({ revision, results: kept.length, songs: remembered() }),
+    holdPresent: undefined,
+    forgetElsewhere: () => forget(),
   }
   const proposals = new Map<string, Stored>()
   // The shown-song memory as the server keeps it: the last three presented library results, each
-  // presentation once, the songs read newest first and capped at 500.
+  // presentation once, the songs read newest first and capped at 500. A forget always moves the
+  // revision and is remembered, so a result made before it is not recorded after it.
   const kept: { key: string; ids: string[] }[] = []
   let revision = 0
+  let forgotten = 0
   const libraryRevisions = new Set<string>()
+  // The memory revision each stored revision was made against, as its snapshot says.
+  const builtAt = new Map<string, number>()
   const remembered = () => [...new Set(kept.flatMap((entry) => entry.ids))].slice(0, 500)
-  const memoryReply = (recorded: boolean) => ({
+  const memoryReply = (recorded: boolean, reason = '') => ({
     status: 'ok',
     profile: 'default',
     revision,
     results: kept.length,
     songs: remembered().length,
     recorded,
+    reason,
   })
+
+  function forget() {
+    mock.forgets += 1
+    revision += 1
+    forgotten = revision
+    kept.length = 0
+  }
+
   const receipts = new Map<string, Record<string, unknown>>()
   const went = new Set<string>()
   let made = 0
@@ -144,7 +163,7 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     const step = Math.max(1, Math.floor(ids.length / 6))
     const complete = ids.length <= 12
     return {
-      contract_version: 3,
+      contract_version: 4,
       engine_version: 3,
       status: 'ok',
       proposal: {
@@ -186,7 +205,10 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
           ids: complete ? ids : ids.filter((_, index) => index % step === 0).slice(0, 6),
           complete,
         },
-        snapshot: { id: `snap-${revision}` },
+        snapshot: {
+          id: `snap-${revision}`,
+          shown: { memory_revision: builtAt.get(`${id}:${revision}`) ?? null },
+        },
       },
       tracks,
       missing_ids: ids.filter((item) => !byId.has(item)),
@@ -198,22 +220,21 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     if (route.request().method() !== 'POST') return route.fallback()
     const intent = requestBody(route)
     mock.creates.push(intent)
-    if (!accepted(intent.contract_version, [1, 2, 3])) return refuseVersion(route)
+    if (!accepted(intent.contract_version, [1, 2, 3, 4])) return refuseVersion(route)
     const ids = [...choose(intent, []).map((song) => song.id), ...mock.ghosts]
     made += 1
     const id = `pr-${made.toString(16).padStart(16, '0')}`
     proposals.set(id, { revisions: new Map([[1, ids]]), latest: 1 })
-    if (intent.scope === 'library') libraryRevisions.add(`${id}:1`)
+    if (intent.scope === 'library') {
+      libraryRevisions.add(`${id}:1`)
+      builtAt.set(`${id}:1`, revision)
+    }
     return route.fulfill({ json: reply(id, 1, { ...intent, seed: intent.seed ?? 7 }, ids) })
   })
 
   await page.route('**/api/music-bot/memory', async (route) => {
     const method = route.request().method()
-    if (method === 'DELETE') {
-      mock.forgets += 1
-      if (kept.length) revision += 1
-      kept.length = 0
-    }
+    if (method === 'DELETE') forget()
     return route.fulfill({ json: memoryReply(false) })
   })
 
@@ -222,6 +243,7 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     const id = text(body.proposal_id)
     const number = Number(body.revision)
     mock.presented.push(`${id}:${number}`)
+    if (mock.holdPresent) await mock.holdPresent
     const ids = proposals.get(id)?.revisions.get(number)
     if (!ids)
       return route.fulfill({
@@ -230,6 +252,10 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
       })
     // Only a library result counts, and each presentation once.
     const key = `${id}:${number}`
+    // Made against a memory that was forgotten since: an answer, not an error, and not recorded.
+    const against = body.memory_revision
+    if (typeof against === 'number' && forgotten > against)
+      return route.fulfill({ json: memoryReply(false, 'forgotten') })
     const fresh = libraryRevisions.has(key) && ids.length > 0 && !kept.some((e) => e.key === key)
     if (fresh) {
       kept.unshift({ key, ids })
@@ -264,11 +290,14 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
           { field: 'intent.context.proposal_ids', message: 'Not allowed' },
         ]),
       })
-    if (!accepted(intent.contract_version, [1, 2, 3])) return refuseVersion(route)
+    if (!accepted(intent.contract_version, [1, 2, 3, 4])) return refuseVersion(route)
     const ids = [...choose(intent, base).map((song) => song.id), ...mock.ghosts]
     stored.latest += 1
     stored.revisions.set(stored.latest, ids)
-    if (intent.scope === 'library') libraryRevisions.add(`${id}:${stored.latest}`)
+    if (intent.scope === 'library') {
+      libraryRevisions.add(`${id}:${stored.latest}`)
+      builtAt.set(`${id}:${stored.latest}`, revision)
+    }
     const echoed =
       intent.scope === 'proposal'
         ? { ...intent, context: { ...object(intent.context), proposal_ids: base } }
@@ -282,8 +311,8 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     const id = /(pr-[0-9a-f]{16})/.exec(route.request().url())?.[1] ?? ''
     const body = requestBody(route)
     mock.commits.push({ ...body, proposal_id: id })
-    // A commit body has been version 2 or 3 since proposals arrived.
-    if (!accepted(body.contract_version, [2, 3])) return refuseVersion(route)
+    // A commit body has been version 2 to 4 since proposals arrived.
+    if (!accepted(body.contract_version, [2, 3, 4])) return refuseVersion(route)
     if (mock.hold) await mock.hold
     const fault = mock.fault?.(body, mock.commits.length)
     if (fault === 'drop-before') return route.abort('failed')
@@ -345,7 +374,7 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     }
     if (fault === 'drop-after') return route.abort('failed')
     return route.fulfill({
-      json: { contract_version: 3, status: 'ok', receipt, replayed },
+      json: { contract_version: 4, status: 'ok', receipt, replayed },
     })
   }
 

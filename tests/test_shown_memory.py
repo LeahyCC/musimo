@@ -19,7 +19,7 @@ from backend.library.engine_contract import Intent
 from backend.library.music_bot import MusicBot
 from backend.library.proposals import Cancelled, Proposals
 
-PLAIN = {"contract_version": 3, "action": "search"}
+PLAIN = {"contract_version": 4, "action": "search"}
 JsonObject = dict[str, object]
 
 
@@ -207,7 +207,9 @@ class ShownMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.store.shown_memory()[1][:6], fake_ids(7, 3) + fake_ids(8, 3))
         # A late duplicate of a result that has aged out is still the same presentation.
         before = self.store.shown_memory()
-        self.assertEqual(self.store.record_shown("pr-a:0", fake_ids(0, 4)), (before[0], False))
+        self.assertEqual(
+            self.store.record_shown("pr-a:0", fake_ids(0, 4)), (before[0], "duplicate")
+        )
         self.assertEqual(self.store.shown_memory(), before)
 
     def test_overlapping_writes_each_land_whole(self) -> None:
@@ -264,9 +266,70 @@ class ShownMemoryTests(unittest.IsolatedAsyncioTestCase):
         kept = self.store.playlist(int(str(saved["id"])))
         assert kept is not None
         self.assertEqual(kept["song_ids"], [self.ids["Dawn"]])
-        # Forgetting an empty memory changes nothing, not even the revision.
+        # Forgetting an empty memory still moves the revision, so a result made before it is
+        # told apart from one made after (see the in-flight tests below).
         again = payload(await self.http.delete("/api/music-bot/memory"))
-        self.assertEqual(again["revision"], cleared["revision"])
+        self.assertEqual(int(str(again["revision"])), int(str(cleared["revision"])) + 1)
+
+    # A result that was on its way when the memory was forgotten
+
+    async def test_a_result_built_before_a_forget_is_not_recorded_after_it(self) -> None:
+        proposal = await self.library_result(seed=1, filters={"limit": 4})
+        built = int(str(part(part(proposal, "snapshot"), "shown")["memory_revision"]))
+        # Another device presses Forget while this card is still on its way.
+        await self.http.delete("/api/music-bot/memory")
+        before = self.store.shown_memory()
+        response = await self.http.post(
+            "/api/music-bot/memory/shown",
+            json={
+                "proposal_id": proposal["id"],
+                "revision": proposal["revision"],
+                "memory_revision": built,
+            },
+        )
+        # An answer, not an error: the result was just not recorded, and the reason says why.
+        self.assertEqual(response.status_code, 200, response.text)
+        refused = payload(response)
+        self.assertEqual((refused["recorded"], refused["reason"]), (False, "forgotten"))
+        self.assertEqual((refused["results"], refused["songs"]), (0, 0))
+        self.assertEqual(self.store.shown_memory(), before)
+
+    async def test_a_result_built_after_a_forget_is_recorded(self) -> None:
+        await self.http.delete("/api/music-bot/memory")
+        proposal = await self.library_result(seed=1, filters={"limit": 4})
+        built = part(part(proposal, "snapshot"), "shown")["memory_revision"]
+        self.assertEqual(built, 1)
+        recorded = await self.http.post(
+            "/api/music-bot/memory/shown",
+            json={
+                "proposal_id": proposal["id"],
+                "revision": proposal["revision"],
+                "memory_revision": built,
+            },
+        )
+        self.assertEqual((payload(recorded)["recorded"], payload(recorded)["reason"]), (True, ""))
+
+    async def test_only_the_last_forget_counts_and_a_result_with_no_revision_is_recorded(
+        self,
+    ) -> None:
+        first = await self.library_result(seed=1, filters={"limit": 4})
+        await self.present(first)  # revision 1
+        self.assertEqual(self.store.forget_shown(), 2)
+        # Made against the revision the forget produced, so it is after the forget.
+        self.assertEqual(self.store.record_shown("pr-new:1", ["tr-a"], 2), (3, "recorded"))
+        # Made against the revision before it, so it was in flight.
+        self.assertEqual(self.store.record_shown("pr-old:1", ["tr-b"], 1), (3, "forgotten"))
+        # A later forget moves the line again, past a result that was fine a moment ago.
+        self.assertEqual(self.store.forget_shown(), 4)
+        self.assertEqual(self.store.record_shown("pr-new:2", ["tr-c"], 3)[1], "forgotten")
+        # A result made without the memory (its own list) has no revision to compare.
+        self.assertEqual(self.store.record_shown("pr-own:1", ["tr-d"], None)[1], "recorded")
+
+    async def test_a_duplicate_is_still_a_duplicate_not_a_forgotten_result(self) -> None:
+        proposal = await self.library_result(seed=1, filters={"limit": 4})
+        await self.present(proposal)
+        again = await self.present(proposal)
+        self.assertEqual((again["recorded"], again["reason"]), (False, ""))
 
     # What a search reads
 
@@ -283,6 +346,28 @@ class ShownMemoryTests(unittest.IsolatedAsyncioTestCase):
         # A list the request names, even an empty one, is used as given.
         empty = self.engine.run(parse_intent(body | {"context": {"shown_ids": []}}))
         self.assertEqual(empty["ids"], plain["ids"])
+
+    async def test_an_omitted_list_reads_memory_only_from_version_four(self) -> None:
+        body = {"action": "search", "seed": 5, "filters": {"limit": 6}}
+        plain = self.engine.run(parse_intent(body | {"contract_version": 4}))
+        self.store.record_shown("pr-seen:1", self.ids_of(plain))
+        for version in (1, 2, 3):
+            with self.subTest(version=version):
+                old = self.engine.run(parse_intent(body | {"contract_version": version}))
+                # The same as an explicit empty list, whatever the memory holds.
+                empty = self.engine.run(
+                    parse_intent(body | {"contract_version": version, "context": {"shown_ids": []}})
+                )
+                self.assertEqual(old["ids"], empty["ids"])
+                self.assertEqual(old["ids"], plain["ids"])
+                self.assertIsNone(part(part(old, "snapshot"), "shown")["memory_revision"])
+                self.assertEqual(part(part(old, "snapshot"), "shown")["count"], 0)
+        new = self.engine.run(parse_intent(body | {"contract_version": 4}))
+        self.assertNotEqual(set(self.ids_of(new)), set(self.ids_of(plain)))
+        self.assertEqual(part(part(new, "snapshot"), "shown")["memory_revision"], 1)
+        # And the capabilities say which versions are accepted.
+        found = await self.http.get("/api/music-bot/capabilities")
+        self.assertEqual(payload(found)["supported_versions"], [1, 2, 3, 4])
 
     async def test_a_different_memory_revision_is_a_different_snapshot(self) -> None:
         body = PLAIN | {"seed": 5, "filters": {"limit": 6}}
@@ -326,7 +411,7 @@ class ShownMemoryTests(unittest.IsolatedAsyncioTestCase):
         commit = await self.http.post(
             f"/api/music-bot/proposals/{proposal['id']}/commit",
             json={
-                "contract_version": 3,
+                "contract_version": 4,
                 "revision": 1,
                 "operation_id": "op-memory-0001",
                 "target": {"kind": "playlist", "name": "Memory test"},
@@ -388,9 +473,9 @@ class ShownMemoryTests(unittest.IsolatedAsyncioTestCase):
             self.store.db.execute("DELETE FROM bot_memory")
             self.store.db.commit()
         self.assertEqual(self.store.shown_memory(), (0, []))
-        self.assertEqual(self.store.forget_shown(), 0)
-        self.assertEqual(self.store.record_shown("pr-a:2", [self.ids["Dusk"]]), (1, True))
-        self.assertEqual(self.store.shown_memory(), (1, [self.ids["Dusk"]]))
+        self.assertEqual(self.store.forget_shown(), 1)
+        self.assertEqual(self.store.record_shown("pr-a:2", [self.ids["Dusk"]]), (2, "recorded"))
+        self.assertEqual(self.store.shown_memory(), (2, [self.ids["Dusk"]]))
 
     def test_an_older_build_refuses_a_newer_file(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

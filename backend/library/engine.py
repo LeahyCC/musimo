@@ -18,6 +18,7 @@ from backend.library.audio_profile import BPM_WINDOW, ProfileSet
 from backend.library.engine_contract import (
     CONTRACT_VERSION,
     ENGINE_VERSION,
+    MEMORY_VERSION,
     SELECTION_LIMIT,
     SUPPORTED_VERSIONS,
     TOTAL_LENGTH_VERSION,
@@ -503,6 +504,9 @@ class Engine:
             return None, []
         if given is not None:
             return None, given
+        if intent.contract_version < MEMORY_VERSION:
+            # Before version 4 an omitted list meant none, so an older request is unchanged.
+            return None, []
         return self.bot.store.shown_memory()
 
     def _roots(self) -> list[tuple[str, int]]:

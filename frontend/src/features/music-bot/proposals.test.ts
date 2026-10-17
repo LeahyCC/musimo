@@ -13,6 +13,7 @@ import {
   newOperationId,
   presentResult,
   ProposalError,
+  proposalReplySchema,
   readMemory,
   refineProposal,
   refreshIntent,
@@ -63,7 +64,7 @@ describe('intentFromReply', () => {
   it('repeats a library draw: the plan’s filters, its seed and the songs it was made against', () => {
     const intent = intentFromReply(reply(), context)
     expect(intent).toMatchObject({
-      contract_version: 3,
+      contract_version: 4,
       action: 'search',
       scope: 'library',
       seed: 77,
@@ -115,10 +116,20 @@ describe('intentFromReply', () => {
 })
 
 describe('contract version', () => {
-  it('is one the server accepts for an intent (1 to 3) and for a commit (2 or 3)', () => {
+  it('is one the server accepts for an intent (1 to 4) and for a commit (2 to 4)', () => {
     expect(CONTRACT_VERSION).toBeGreaterThanOrEqual(2)
-    expect(CONTRACT_VERSION).toBeLessThanOrEqual(3)
+    expect(CONTRACT_VERSION).toBeLessThanOrEqual(4)
     expect(intentFromReply(reply(), context).contract_version).toBe(CONTRACT_VERSION)
+  })
+
+  it('is 4 or more, the first version where an omitted shown list reads the server memory', () => {
+    expect(CONTRACT_VERSION).toBeGreaterThanOrEqual(4)
+  })
+
+  it('upgrades an intent an older build stored, so a refresh still reads the memory', () => {
+    const older = { ...intentFromReply(reply(), context), contract_version: 3 }
+    expect(refreshIntent(older).contract_version).toBe(CONTRACT_VERSION)
+    expect(refreshIntent({ ...older, scope: 'proposal' }).contract_version).toBe(CONTRACT_VERSION)
   })
 
   it('asks for no total length, since the chat has only the old fill target', () => {
@@ -212,6 +223,7 @@ const proposal = {
     },
   },
   sample: { ids: [song(1)], complete: true },
+  snapshot: { id: 'snap-1', shown: { memory_revision: 5 } },
 }
 const receipt = {
   operation_id: 'op-12345678',
@@ -268,7 +280,7 @@ describe('the proposal routes', () => {
     })
     expect(done.receipt.status).toBe('ready_for_player')
     expect(sentBody(fetcher)).toEqual({
-      contract_version: 3,
+      contract_version: 4,
       revision: 1,
       operation_id: 'op-12345678',
       target: { kind: 'queue' },
@@ -359,15 +371,42 @@ describe('the shown-song memory routes', () => {
 
   it('reads what the server holds', async () => {
     const fetcher = answer(200, { ...memory, recorded: false })
-    expect(await readMemory()).toEqual({ revision: 2, results: 1, songs: 3, recorded: false })
+    expect(await readMemory()).toEqual({
+      revision: 2,
+      results: 1,
+      songs: 3,
+      recorded: false,
+      reason: '',
+    })
     expect(fetcher.mock.calls[0]?.[0]).toBe('/api/music-bot/memory')
   })
 
   it('reports a presentation by proposal and revision, never by song', async () => {
     const fetcher = answer(200, { ...memory, recorded: true })
-    expect((await presentResult(proposal.id, 4)).recorded).toBe(true)
+    expect((await presentResult(proposal.id, 4, 5)).recorded).toBe(true)
     expect(fetcher.mock.calls[0]?.[0]).toBe('/api/music-bot/memory/shown')
-    expect(sentBody(fetcher)).toEqual({ proposal_id: proposal.id, revision: 4 })
+    expect(sentBody(fetcher)).toEqual({ proposal_id: proposal.id, revision: 4, memory_revision: 5 })
+  })
+
+  it('says which memory revision the result was built against, or none', async () => {
+    const fetcher = answer(200, { ...memory, recorded: true })
+    await presentResult(proposal.id, 1, null)
+    expect(sentBody(fetcher)).toMatchObject({ memory_revision: null })
+  })
+
+  it('reads a result that was not recorded after a forget as an answer, not an error', async () => {
+    answer(200, { ...memory, results: 0, songs: 0, recorded: false, reason: 'forgotten' })
+    await expect(presentResult(proposal.id, 1, 5)).resolves.toMatchObject({
+      recorded: false,
+      reason: 'forgotten',
+      songs: 0,
+    })
+  })
+
+  it('reads the memory revision a stored proposal was built against', () => {
+    expect(
+      proposalReplySchema.parse({ proposal, tracks: [], missing_ids: [] }).proposal.snapshot,
+    ).toEqual({ shown: { memory_revision: 5 } })
   })
 
   it('forgets with a DELETE and no body', async () => {
@@ -386,7 +425,7 @@ describe('the shown-song memory routes', () => {
       error: { code: 'proposal_not_found', message: 'No such proposal.' },
     })
 
-    await expect(presentResult(proposal.id, 1)).rejects.toMatchObject({
+    await expect(presentResult(proposal.id, 1, null)).rejects.toMatchObject({
       code: 'proposal_not_found',
       status: 404,
     })

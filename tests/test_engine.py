@@ -147,7 +147,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             ([], "malformed_request"),
             ("search", "malformed_request"),
             ({"action": "search"}, "malformed_request"),
-            ({"contract_version": 4, "action": "search"}, "unsupported_version"),
+            ({"contract_version": 5, "action": "search"}, "unsupported_version"),
             ({"contract_version": "1", "action": "search"}, "unsupported_version"),
             ({"contract_version": True, "action": "search"}, "unsupported_version"),
             (PLAIN | {"duration_mode": "about"}, "unknown_field"),
@@ -354,8 +354,8 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             body = (await client.get("/api/music-bot/capabilities")).json()
         self.assertEqual(body["contract_version"], CONTRACT_VERSION)
         self.assertEqual(body["engine_version"], ENGINE_VERSION)
-        self.assertEqual(body["supported_versions"], [1, 2, CONTRACT_VERSION])
-        self.assertEqual(CONTRACT_VERSION, 3)
+        self.assertEqual(body["supported_versions"], [1, 2, 3, CONTRACT_VERSION])
+        self.assertEqual(CONTRACT_VERSION, 4)
         found = {item["id"]: item["available"] for item in body["capabilities"]}
         self.assertTrue(found["total_length"])
         self.assertNotIn("duration_comparators", found)
@@ -805,7 +805,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.report(first)["met"])
 
     def test_a_bare_target_keeps_todays_fill(self) -> None:
-        for version in (1, 2, 3):
+        for version in (1, 2, 3, 4):
             with self.subTest(version=version):
                 result = self.run_at(
                     parse_intent(

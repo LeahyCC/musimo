@@ -109,16 +109,20 @@ class Proposals:
             return self.memory(False)
         if cancelled():
             raise Cancelled
-        _, recorded = self.bot.store.record_shown(f"{body.proposal_id}:{body.revision}", ids)
-        return self.memory(recorded)
+        _, outcome = self.bot.store.record_shown(
+            f"{body.proposal_id}:{body.revision}", ids, body.memory_revision
+        )
+        return self.memory(outcome == "recorded", "forgotten" if outcome == "forgotten" else "")
 
     def forget(self) -> dict[str, object]:
         """Clear the shown-song memory for every device, and nothing else."""
         self.bot.store.forget_shown()
         return self.memory(False)
 
-    def memory(self, recorded: bool = False) -> dict[str, object]:
-        """What the memory holds. `recorded` is whether this call added a result to it."""
+    def memory(self, recorded: bool = False, reason: str = "") -> dict[str, object]:
+        """What the memory holds. `recorded` is whether this call added a result to it. `reason`
+        is "forgotten" when the result was not recorded because the memory was forgotten after
+        it was made, which is an answer and not an error, and empty otherwise."""
         revision, results, ids = self.bot.store.shown_state()
         return {
             "status": "ok",
@@ -127,6 +131,7 @@ class Proposals:
             "results": results,
             "songs": len(ids),
             "recorded": recorded,
+            "reason": reason,
         }
 
     def commit(

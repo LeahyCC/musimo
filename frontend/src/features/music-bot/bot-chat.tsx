@@ -596,7 +596,11 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
    *  server records a revision once, so a repeat is harmless, and a failure only means these songs
    *  are not remembered. */
   function presented(made: ProposalReply) {
-    presentResult(made.proposal.id, made.proposal.revision)
+    presentResult(
+      made.proposal.id,
+      made.proposal.revision,
+      made.proposal.snapshot.shown?.memory_revision ?? null,
+    )
       .then((data) => client.setQueryData(MEMORY_KEY, data))
       .catch(() => void client.invalidateQueries({ queryKey: MEMORY_KEY }))
   }

@@ -388,6 +388,33 @@ test('shown songs are remembered across a reload, Clear chat keeps them, and For
   )
 })
 
+test('a result still on its way when another device forgets is not remembered', async ({
+  page,
+}) => {
+  await fixtures(page)
+  let release: (() => void) | undefined
+  proposals.holdPresent = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.goto('/music-bot')
+  await ask(page)
+  // The card is up and its report is in flight. Another device presses Forget now.
+  await expect.poll(() => proposals.presented).toHaveLength(1)
+  proposals.forgetElsewhere()
+  const answered = page.waitForResponse((response) => response.url().endsWith('/memory/shown'))
+  release?.()
+  // Not an error: the report is answered, and the result simply is not recorded.
+  expect(await (await answered).json()).toMatchObject({ recorded: false, reason: 'forgotten' })
+  expect(proposals.memory().songs).toEqual([])
+  expect(proposals.memory().results).toBe(0)
+
+  // An answer made after the forget is remembered as usual.
+  proposals.holdPresent = undefined
+  await ask(page)
+  await expect.poll(() => proposals.presented).toHaveLength(2)
+  await expect.poll(() => proposals.memory().songs).toEqual([first.id, second.id])
+})
+
 test('a refinement and a cancelled answer are not reported as shown', async ({ page }) => {
   await fixtures(page)
   await page.goto('/music-bot')
@@ -727,7 +754,7 @@ test('Save and Add to queue confirm the shown revision and never search again', 
   expect(proposals.refines).toHaveLength(0)
   const [playlist, queue] = proposals.commits
   expect(playlist).toMatchObject({
-    contract_version: 3,
+    contract_version: 4,
     revision: 1,
     target: { kind: 'playlist', name: 'Road trip' },
     repeat: false,
@@ -1013,9 +1040,9 @@ test('every request names a contract version the server takes, for create, refin
   await expect(card(page)).toContainText('REVISION 2')
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
   await expect.poll(() => proposals.commits.length).toBe(1)
-  expect(proposals.creates[0]?.contract_version).toBe(3)
-  expect(proposals.refines[0]?.body.intent).toMatchObject({ contract_version: 3 })
-  expect(proposals.commits[0]?.contract_version).toBe(3)
+  expect(proposals.creates[0]?.contract_version).toBe(4)
+  expect(proposals.refines[0]?.body.intent).toMatchObject({ contract_version: 4 })
+  expect(proposals.commits[0]?.contract_version).toBe(4)
 })
 
 test('a recorded queue confirmation the card cannot match says so, leaves the queue alone and offers a refresh', async ({
