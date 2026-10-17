@@ -15,6 +15,7 @@ from fastapi import FastAPI
 from test_player import tag, write_wav
 
 from backend.api.music_bot_api import install_music_bot_routes
+from backend.core.audio_recipes import SCALAR_RECIPE
 from backend.core.store import SCHEMA_VERSION, Store
 from backend.library.index import Library
 from backend.library.music_bot import MusicBot
@@ -113,6 +114,96 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         found = part(body, "proposal")["ids"]
         assert isinstance(found, list)
         return [str(sid) for sid in found]
+
+    # Overview and sample
+
+    def widen(self, extra: int) -> None:
+        """More songs, three artists apiece, so a proposal can pass the short-list limit."""
+        for index in range(extra):
+            path = self.music / f"extra-{index}.wav"
+            write_wav(path)
+            tag(
+                path,
+                title=f"Extra {index}",
+                artist=f"Added {index % 4}",
+                album="Fixture",
+                year=2000 + index,
+                genres=["Folk" if index % 2 else "Blues"],
+            )
+        self.library.scan()
+        with self.store.lock:
+            self.store.db.execute("UPDATE library_files SET duration=200 WHERE duration=0")
+            self.store.db.commit()
+        self.store.bump_library_revision()
+
+    async def test_a_short_proposal_returns_its_whole_list_with_an_overview_from_its_songs(
+        self,
+    ) -> None:
+        created = await self.create(seed=3, filters={"genres": ["Rock"], "limit": 8})
+        proposal = part(created, "proposal")
+        ids = self.song_ids(created)
+        self.assertEqual(part(proposal, "sample"), {"ids": ids, "complete": True})
+        overview = part(proposal, "overview")
+        measured = part(overview, "measured")
+        stored = self.player.view().stored
+        self.assertEqual(measured["track_count"], 8)
+        self.assertEqual(measured["total_seconds"], sum(stored[sid].duration for sid in ids))
+        self.assertEqual(measured["artist_count"], len({stored[sid].artist for sid in ids}))
+        self.assertEqual(measured["genres"], [{"name": "Rock", "count": 8}])
+        self.assertEqual(part(overview, "requested")["filters"], {"genres": ["Rock"], "limit": 8})
+        # No recipe is on, so tempo and energy are absent rather than guessed from "Rock".
+        self.assertIsNone(measured["audio"])
+        # The same read as the stored revision, so the overview is on read as well.
+        read = payload(await self.http.get(f"/api/music-bot/proposals/{proposal['id']}"))
+        self.assertEqual(part(read, "proposal")["overview"], overview)
+
+    async def test_a_large_proposal_gets_a_stable_spread_sample_beside_the_full_list(self) -> None:
+        self.widen(10)
+        created = await self.create(seed=3, filters={"limit": 20})
+        proposal = part(created, "proposal")
+        ids = self.song_ids(created)
+        self.assertGreater(len(ids), 12)
+        sample = part(proposal, "sample")
+        picked = sample["ids"]
+        assert isinstance(picked, list)
+        self.assertFalse(sample["complete"])
+        self.assertEqual(len(picked), 6)
+        self.assertTrue(set(picked) <= set(ids))
+        stored = self.player.view().stored
+        self.assertGreater(len({stored[str(sid)].artist for sid in picked}), 1)
+        read = payload(await self.http.get(f"/api/music-bot/proposals/{proposal['id']}"))
+        self.assertEqual(part(read, "proposal")["sample"], sample)
+        self.assertEqual(self.song_ids(read), ids)
+
+    async def test_coverage_is_honest_when_some_songs_are_unmeasured_or_have_no_length(
+        self,
+    ) -> None:
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        stored = self.player.view().stored
+        measured_titles = ("Dawn", "Dusk")
+        with self.store.lock:
+            for title, bpm in zip(measured_titles, (100.0, 140.0), strict=True):
+                song = stored[self.ids[title]]
+                self.store.db.execute(
+                    "INSERT INTO audio_profile VALUES (?,?,'done',?,?,?,?,0,NULL,'','t')",
+                    (song.song_id, SCALAR_RECIPE, song.size, song.mtime_ns, bpm, 0.5),
+                )
+            self.store.db.execute(
+                "UPDATE library_files SET duration=0 WHERE song_id=?", (self.ids["Fog"],)
+            )
+            self.store.db.commit()
+        self.store.bump_library_revision()
+        self.bot.profiles.generation += 1
+        created = await self.create(seed=3)
+        overview = part(part(created, "proposal"), "overview")
+        total = len(self.song_ids(created))
+        audio = part(part(overview, "measured"), "audio")
+        self.assertEqual(audio["tempo"], {"min": 100.0, "max": 140.0})
+        self.assertEqual(audio["tempo_coverage"], {"measured": 2, "total": total})
+        unknown = part(overview, "unknown")
+        self.assertEqual(unknown["tempo_tracks"], total - 2)
+        self.assertEqual(unknown["duration_tracks"], 1)
+        self.assertEqual(part(overview, "measured")["total_seconds"], 200.0 * (total - 1))
 
     # Preview and refine
 
