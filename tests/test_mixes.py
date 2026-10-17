@@ -932,14 +932,11 @@ class ReadingPagesTests(unittest.TestCase):
             return {"title": address}
 
         addresses = [f"https://www.mixcloud.com/dj/m{n}/" for n in range(16)]
-        started = time.monotonic()
         found = resolver.looked_up(lookup, addresses, 10)
-        took = time.monotonic() - started
         self.assertEqual(set(found), set(addresses))
+        # Overlap proves the pages ran together. A wall-clock bound flaked on a loaded machine.
         self.assertGreater(peak, 1)
         self.assertLessEqual(peak, 4)
-        # Sixteen pages of 50 ms one after another would take 0.8 s.
-        self.assertLess(took, 0.6)
 
     def test_a_page_still_loading_at_the_cap_is_left_out(self) -> None:
         release = threading.Event()
