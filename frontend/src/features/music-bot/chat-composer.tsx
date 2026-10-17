@@ -12,7 +12,8 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
   const [text, setText] = useState('')
   const field = useRef<HTMLTextAreaElement>(null)
   const locked = chat.locked !== null
-  const waiting = chat.thinking || chat.applying
+  const cancellable = chat.thinking || chat.applying
+  const waiting = cancellable || chat.confirming
   const latest = chat.log.at(-1)
   const offersReplies = latest?.kind === 'reply' && latest.suggestions.length > 0
 
@@ -90,7 +91,7 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
           data-bot="field"
           className="min-h-[39px] min-w-0 flex-1 resize-none overflow-y-auto rounded-[8px] border border-line-strong bg-sunken px-[11px] py-[10px] text-small leading-[1.35] text-text placeholder:text-faint disabled:opacity-55"
         />
-        {waiting ? (
+        {cancellable ? (
           <Button className="shrink-0" onClick={chat.cancel}>
             Cancel
           </Button>
@@ -100,7 +101,7 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
             variant="primary"
             aria-label="Send"
             className="min-w-11 shrink-0 px-[12px]"
-            disabled={locked || !text.trim()}
+            disabled={locked || chat.confirming || !text.trim()}
           >
             {win95 ? 'Send' : <SendHorizontal size={16} aria-hidden="true" />}
           </Button>

@@ -4,6 +4,8 @@ import type { Page } from '@playwright/test'
 
 import { settingsSchema } from '../src/api'
 import { generatedPlayerAudio, librarySong, playerFixtures, requestBody } from './library-fixtures'
+import { proposalFixtures } from './proposal-fixtures'
+import type { ProposalMock } from './proposal-fixtures'
 
 const first = librarySong('tr-0000000000000001', { title: 'First Light', year: 1992 })
 const second = librarySong('tr-0000000000000002', {
@@ -41,6 +43,9 @@ const answer = {
   summary: '2 songs, 7.1 minutes. 52.9 minutes short; no exclusions were relaxed.',
   elapsed_ms: 123,
 }
+
+/** The proposal routes' stand-in for the test in progress. Set by fixtures(); one worker runs a file. */
+let proposals: ProposalMock
 
 test.afterEach(async ({ page }) => {
   // Reloads can leave snapshot handlers reading responses when the context closes.
@@ -85,6 +90,8 @@ async function fixtures(page: Page, restore = true) {
     route.fulfill({ json: { models: ['fixture'], elapsed_ms: 2 } }),
   )
   await page.route('**/api/music-bot/chat', (route) => route.fulfill({ json: answer }))
+  proposals = await proposalFixtures(page, [first, second])
+  // Only the one-song Play from a song's menu still goes through this check.
   await page.route('**/api/music-bot/validate', (route) => {
     const body = requestBody(route)
     // The songs the plan was measured against travel with every selection check.
@@ -313,25 +320,15 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
   ).toHaveCount(1)
   await expect(page.getByText('Replaced')).toBeVisible()
 
-  await page.route('**/api/library/playlists', async (route) => {
-    if (route.request().method() !== 'POST') return route.fallback()
-    expect(requestBody(route).song_ids).toEqual([second.id])
-    await route.fulfill({
-      json: {
-        id: 'pl-42',
-        name: 'Music bot selection',
-        songCount: 1,
-        duration: second.duration,
-        song: [second],
-      },
-    })
-  })
   await card(page).getByRole('button', { name: 'Save as playlist' }).click()
   await card(page).getByLabel('Playlist name').fill('Music bot selection')
   await card(page).getByRole('button', { name: 'Save', exact: true }).click()
   await expect(
     page.getByText('Saved as the playlist \u201cMusic bot selection\u201d.'),
   ).toBeVisible()
+  await expect(card(page).getByRole('status')).toContainText('Music bot selection')
+  // The playlist holds the revision the card showed: the refined list, saved once.
+  expect(proposals.saved).toEqual([{ name: 'Music bot selection', ids: [second.id] }])
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
   await page.evaluate(() => window.scrollTo(0, 0))
@@ -400,9 +397,7 @@ test('unavailable Ollama, invalid output and missing tracks leave queue alone', 
   await expect(page.getByRole('button', { name: 'Try again' })).toBeVisible()
   await page.route('**/api/music-bot/chat', (route) => route.fulfill({ json: answer }))
   await ask(page)
-  await page.route('**/api/music-bot/validate', (route) =>
-    route.fulfill({ status: 409, json: { detail: 'A file is unavailable. Ask again.' } }),
-  )
+  proposals.fault = () => 'stale'
   await page.getByRole('button', { name: 'Play next', exact: true }).click()
   await expect(page.getByRole('alert').last()).toContainText('unavailable')
   expect(saves).toHaveLength(0)
@@ -420,6 +415,7 @@ test('autoplay refusal is honest and Undo restores an empty queue', async ({ pag
   await expect(page.getByText('Press play when you are ready.').first()).toBeVisible()
   // Loaded, not claimed as playing: the browser refused to start it.
   await expect(card(page).getByRole('status')).toContainText('These 2 songs replaced your queue.')
+  await expect(card(page).getByRole('status')).toContainText('Loaded, not playing yet.')
   await expect(card(page).getByRole('status')).not.toContainText('Playing now')
   await undo(page).click()
   await expect.poll(() => saves.at(-1)?.ids).toEqual([])
@@ -497,25 +493,6 @@ test('a full queue refuses additions and a failed save is reported', async ({ pa
   ).toBeVisible()
 })
 
-test('cancelling validation cannot apply a selection', async ({ page }) => {
-  const saves = await fixtures(page)
-  let release: (() => void) | undefined
-  await page.route('**/api/music-bot/validate', async (route) => {
-    await new Promise<void>((resolve) => {
-      release = resolve
-    })
-    await route.fulfill({ json: { tracks: [first, second] } }).catch(() => undefined)
-  })
-  await page.goto('/music-bot')
-  await ask(page)
-  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
-  await expect.poll(() => Boolean(release)).toBe(true)
-  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
-  release?.()
-  await expect(page.getByText('Cancelled. Nothing changed.')).toBeVisible()
-  expect(saves).toHaveLength(0)
-})
-
 test('connection settings and model selection persist through reload', async ({
   page,
   request,
@@ -591,4 +568,305 @@ test('direct pause, resume and skip act through the browser player', async ({ pa
         .toBe(action === 'pause')
     else await expect.poll(() => saves.at(-1)?.current).toBe(first.id)
   }
+})
+
+const wide = (count: number) =>
+  Array.from({ length: count }, (_, index) =>
+    librarySong(`tr-${(index + 0x100).toString(16).padStart(16, '0')}`, {
+      title: `Long ${index}`,
+      artist: `Artist ${index % 5}`,
+      genre: index % 2 ? 'Rock' : 'Pop',
+      year: 1990 + (index % 10),
+      duration: 200 + index,
+    }),
+  )
+
+test('a long proposal opens on a sample of itself, with the whole list one press away', async ({
+  page,
+}, info) => {
+  await fixtures(page)
+  const songs = wide(20)
+  proposals = await proposalFixtures(page, songs)
+  await page.route('**/api/music-bot/chat', (route) =>
+    route.fulfill({ json: { ...answer, tracks: songs, shortfall_seconds: 0 } }),
+  )
+  await page.goto('/music-bot')
+  await ask(page)
+  const list = card(page).getByRole('list', { name: 'Proposed songs' })
+  // About six songs spread across the list, not its first few.
+  await expect(list.locator('strong')).toHaveText([0, 3, 6, 9, 12, 15].map((n) => `Long ${n}`))
+  const facts = card(page).getByLabel('About this preview')
+  await expect(facts).toContainText('5 artists')
+  await expect(facts).toContainText('Pop (10), Rock (10)')
+  await expect(facts).toContainText('1990–1999')
+  // No tempo or energy is claimed while no recipe measured any.
+  await expect(facts).not.toContainText(/BPM|tempo/i)
+  const all = card(page).getByRole('button', { name: /^(See all 20 songs|Show the sample)$/ })
+  await expect(all).toHaveText('See all 20 songs')
+  await card(page).evaluate((element) => element.scrollIntoView({ block: 'start' }))
+  await page.screenshot({ path: `../runtime/bot-preview/sample-${info.project.name}.png` })
+  await all.focus()
+  await page.keyboard.press('Enter')
+  await expect(list.getByRole('listitem')).toHaveCount(20)
+  await expect(all).toHaveAttribute('aria-expanded', 'true')
+  await expect(all).toHaveText('Show the sample')
+  await page.keyboard.press('Enter')
+  await expect(list.getByRole('listitem')).toHaveCount(6)
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
+})
+
+test('a short proposal is shown whole, with nothing to unfold', async ({ page }) => {
+  await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  await expect(
+    card(page).getByRole('list', { name: 'Proposed songs' }).getByRole('listitem'),
+  ).toHaveCount(2)
+  await expect(card(page).getByRole('button', { name: /^See all/ })).toHaveCount(0)
+})
+
+test('Save and Add to queue confirm the shown revision and never search again', async ({
+  page,
+}) => {
+  const saves = await fixtures(page)
+  let chats = 0
+  await page.route('**/api/music-bot/chat', (route) => {
+    chats += 1
+    return route.fulfill({ json: answer })
+  })
+  await page.goto('/music-bot')
+  await ask(page)
+  expect(proposals.creates).toHaveLength(1)
+  await card(page).getByRole('button', { name: 'Save as playlist' }).click()
+  await card(page).getByLabel('Playlist name').fill('Road trip')
+  await card(page).getByRole('button', { name: 'Save', exact: true }).click()
+  await expect
+    .poll(() => proposals.saved)
+    .toEqual([{ name: 'Road trip', ids: [first.id, second.id] }])
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, first.id, second.id])
+  // The chat ran once, the search once. Both confirmations name the revision, not a search.
+  expect(chats).toBe(1)
+  expect(proposals.creates).toHaveLength(1)
+  expect(proposals.refines).toHaveLength(0)
+  const [playlist, queue] = proposals.commits
+  expect(playlist).toMatchObject({
+    contract_version: 2,
+    revision: 1,
+    target: { kind: 'playlist', name: 'Road trip' },
+    repeat: false,
+  })
+  expect(queue).toMatchObject({ revision: 1, target: { kind: 'queue' }, repeat: false })
+  expect(queue?.proposal_id).toBe(playlist?.proposal_id)
+  // One operation id for each press, made by the browser.
+  expect(playlist?.operation_id).toMatch(/^op-[0-9a-f]{32}$/)
+  expect(queue?.operation_id).toMatch(/^op-[0-9a-f]{32}$/)
+  expect(queue?.operation_id).not.toBe(playlist?.operation_id)
+  expect(proposals.handed).toEqual([[first.id, second.id]])
+})
+
+test('a refinement is the next revision of the same proposal, and the card says which', async ({
+  page,
+}) => {
+  await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  await expect(card(page)).not.toContainText('REVISION')
+  await ask(page, 'something else')
+  await expect(card(page)).toContainText('REVISION 2')
+  expect(proposals.creates).toHaveLength(1)
+  expect(proposals.refines).toHaveLength(1)
+  expect(proposals.refines[0]?.body.revision).toBe(1)
+  await card(page).getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect.poll(() => proposals.commits[0]?.revision).toBe(2)
+})
+
+test('a stale proposal says what changed, swaps nothing, and refreshes only when asked', async ({
+  page,
+}) => {
+  const saves = await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  proposals.fault = () => 'stale'
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('This preview is out of date.')
+  await expect(problem).toContainText('First Light: the file is unavailable')
+  await expect(problem).toContainText('no song was swapped')
+  // Nothing moved, and the confirmations wait for the refresh.
+  expect(saves).toHaveLength(0)
+  await expect(card(page).getByRole('button', { name: 'Add to queue', exact: true })).toHaveCount(0)
+  const items = card(page).getByRole('list', { name: 'Proposed songs' }).getByRole('listitem')
+  await expect(items).toHaveCount(2)
+  proposals.fault = undefined
+  proposals.pick = () => [second]
+  await problem.getByRole('button', { name: 'Refresh preview' }).click()
+  // The same request again: the same filters and the seed the first run drew.
+  await expect(problem).toHaveCount(0)
+  expect(proposals.refines).toHaveLength(1)
+  expect(proposals.refines[0]?.body).toMatchObject({ revision: 1, intent: { seed: 7 } })
+  await expect(
+    page.getByText('Refreshed the preview: 1 song left. Check it before you confirm.'),
+  ).toBeVisible()
+  await expect(items).toHaveCount(1)
+  await expect(card(page)).toContainText('REVISION 2')
+  expect(saves).toHaveLength(0)
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, second.id])
+  expect(proposals.commits.at(-1)?.revision).toBe(2)
+})
+
+test('a double click on Add to queue sends one confirmation and adds the songs once', async ({
+  page,
+}) => {
+  const saves = await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  let release: (() => void) | undefined
+  proposals.hold = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).dblclick()
+  await expect.poll(() => proposals.commits.length).toBe(1)
+  release?.()
+  await expect(card(page)).toContainText('IN YOUR QUEUE')
+  expect(proposals.commits).toHaveLength(1)
+  expect(proposals.handed).toHaveLength(1)
+  await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, first.id, second.id])
+})
+
+test('a double submit of Save as playlist saves one playlist', async ({ page }) => {
+  await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  let release: (() => void) | undefined
+  proposals.hold = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await card(page).getByRole('button', { name: 'Save as playlist' }).click()
+  await card(page).getByLabel('Playlist name').fill('Once')
+  await card(page).getByRole('button', { name: 'Save', exact: true }).dblclick()
+  await expect.poll(() => proposals.commits.length).toBe(1)
+  release?.()
+  await expect(page.getByText('Saved as the playlist “Once”.')).toBeVisible()
+  expect(proposals.commits).toHaveLength(1)
+  expect(proposals.saved).toEqual([{ name: 'Once', ids: [first.id, second.id] }])
+})
+
+test('a confirmation whose answer was lost is asked again with the same id and lands once', async ({
+  page,
+}) => {
+  const saves = await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  // The server records it, then the reply never arrives.
+  proposals.fault = (_, count) => (count === 1 ? 'drop-after' : undefined)
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect(card(page)).toContainText('IN YOUR QUEUE')
+  expect(proposals.commits).toHaveLength(2)
+  expect(proposals.commits[1]?.operation_id).toBe(proposals.commits[0]?.operation_id)
+  expect(proposals.handed).toHaveLength(1)
+  await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, first.id, second.id])
+})
+
+test('while the outcome is unknown no new attempt is offered, and checking again reconciles it', async ({
+  page,
+}) => {
+  const saves = await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  proposals.fault = (_, count) => (count <= 2 ? 'drop-before' : undefined)
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('I can’t tell if that went through.')
+  await expect(problem).toContainText('Nothing has been added to your queue yet.')
+  await expect(card(page).getByRole('button', { name: 'Add to queue', exact: true })).toHaveCount(0)
+  await expect(card(page).getByRole('button', { name: 'Save as playlist' })).toHaveCount(0)
+  expect(saves).toHaveLength(0)
+  await problem.getByRole('button', { name: 'Check again' }).click()
+  await expect(card(page)).toContainText('IN YOUR QUEUE')
+  expect(new Set(proposals.commits.map((commit) => commit.operation_id)).size).toBe(1)
+  expect(proposals.commits).toHaveLength(3)
+  expect(proposals.handed).toHaveLength(1)
+  await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, first.id, second.id])
+})
+
+test('a second Add to queue after Undo is sent as a repeat under a new id', async ({ page }) => {
+  const saves = await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await undo(page).click()
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect.poll(() => proposals.commits.length).toBe(2)
+  expect(proposals.commits[1]).toMatchObject({ repeat: true })
+  expect(proposals.commits[1]?.operation_id).not.toBe(proposals.commits[0]?.operation_id)
+  await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, first.id, second.id])
+})
+
+test('Save as playlist on a restored card makes a preview first and saves on a second press', async ({
+  page,
+}) => {
+  await fixtures(page)
+  await page.addInitScript(
+    ([reply, log]) => {
+      sessionStorage.setItem('musimo.music-bot.proposal', reply ?? '')
+      sessionStorage.setItem('musimo.music-bot.log', log ?? '')
+    },
+    [
+      JSON.stringify(answer),
+      JSON.stringify({
+        entries: [
+          {
+            id: 1,
+            kind: 'reply',
+            text: 'Here it is.',
+            mood: 'talking',
+            suggestions: [],
+            card: '2 songs',
+          },
+        ],
+        cardId: 1,
+      }),
+    ],
+  )
+  await page.goto('/music-bot')
+  await expect(card(page)).toBeVisible()
+  await card(page).getByRole('button', { name: 'Save as playlist' }).click()
+  await card(page).getByLabel('Playlist name').fill('Restored')
+  await card(page).getByRole('button', { name: 'Save', exact: true }).click()
+  await expect(page.getByText('I made a preview of this list first.')).toBeVisible()
+  expect(proposals.creates).toHaveLength(1)
+  expect(proposals.creates[0]).toMatchObject({
+    scope: 'proposal',
+    context: { proposal_ids: [first.id, second.id] },
+  })
+  expect(proposals.commits).toHaveLength(0)
+  expect(proposals.saved).toHaveLength(0)
+  await expect(card(page).getByLabel('About this preview')).toBeVisible()
+  await card(page).getByRole('button', { name: 'Save', exact: true }).click()
+  await expect
+    .poll(() => proposals.saved)
+    .toEqual([{ name: 'Restored', ids: [first.id, second.id] }])
+})
+
+test('taking a song off the card stores the shorter list, and that is what is confirmed', async ({
+  page,
+}) => {
+  const saves = await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  await card(page).getByRole('button', { name: 'More actions for First Light' }).click()
+  await page.getByRole('menuitem', { name: 'Remove from this list' }).click()
+  await expect(
+    card(page).getByRole('list', { name: 'Proposed songs' }).getByRole('listitem'),
+  ).toHaveCount(1)
+  expect(proposals.creates).toHaveLength(2)
+  expect(proposals.creates[1]).toMatchObject({
+    scope: 'proposal',
+    context: { proposal_ids: [second.id] },
+  })
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, second.id])
+  expect(proposals.handed).toEqual([[second.id]])
 })

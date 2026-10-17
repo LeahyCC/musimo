@@ -467,7 +467,7 @@ API groups:
 - Search: `/api/search`, `/api/album-years`, `/api/albums/{id}`, `/api/artists/{id}`, `/api/artists/{id}/top`, `/api/preview/{id}`.
 - Index: `/api/library` GET, `/api/library/scan` POST, `/api/library/cancel` POST.
 - Player: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/stream/{id}`, `/api/player/art/{id}`, `/api/player/waveform/{id}`. Album, artist, track and playlist browsing is `/api/library/{albums,artists,tracks,playlists}`. Scan routes stay at `/api/library` GET, `/api/library/scan` and `/api/library/cancel`.
-- Music bot: `/api/music-bot/models` GET, `/api/music-bot/chat` POST, `/api/music-bot/validate` POST.
+- Music bot: `/api/music-bot/models` GET, `/api/music-bot/chat` POST, `/api/music-bot/validate` POST, `/api/music-bot/capabilities` GET, `/api/music-bot/intent` POST, and the proposal routes `/api/music-bot/proposals` POST, `/api/music-bot/proposals/{id}` GET, `/api/music-bot/proposals/{id}/revisions` POST and `/api/music-bot/proposals/{id}/commit` POST.
 - Jobs/batches: `/api/naming-preview`, `/api/jobs` GET and POST, `/api/history`, `/api/batches` POST, `/api/batches/{id}/{pause,resume,cancel,retry}`, `/api/jobs/{id}/pick`, `/api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`, `/api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,clear-unmatched,resume-source}`.
 - Artist downloads: `/api/artists/{id}/download-plan`, `/api/artist-batches`.
 - Podcasts and pasted links: `/api/podcasts`, `/api/podcasts/{id}`, `/api/podcast-episodes` POST, `/api/links/resolve` POST, `/api/links` POST.

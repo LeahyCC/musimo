@@ -179,12 +179,12 @@ export function explainFailure(message: string, during: 'request' | 'apply'): Bo
 
 /**
  * What the card says once an action has gone through. "Playing now" only when the player says it
- * is: a browser that blocks autoplay loads the songs without starting them.
+ * is: a browser that blocks autoplay loads the songs without starting them, and says so.
  */
 export function appliedText(action: BotQueueAction, count: number, playing: boolean): string {
   const songs = `${count} ${count === 1 ? 'song' : 'songs'}`
   return {
-    play: `${playing ? 'Playing now. ' : ''}These ${songs} replaced your queue.`,
+    play: `${playing ? 'Playing now.' : 'Loaded, not playing yet.'} These ${songs} replaced your queue.`,
     next: `Queued next: ${songs}, after the song that is playing.`,
     append: `Added ${songs} to the end of your queue.`,
     replace: `Up next is now these ${songs}. The current song keeps playing.`,
@@ -216,36 +216,4 @@ export function rememberShown(generations: string[][], reply: BotReply): string[
 /** The remembered songs as one list, newest first, each once, at most SHOWN_LIMIT. */
 export function shownIds(generations: string[][]): string[] {
   return [...new Set(generations.flat())].slice(0, SHOWN_LIMIT)
-}
-
-/**
- * The preview with one song taken out, as Remove from this list leaves it. The count, the minutes
- * and the shortfall are worked out again and written into the server's own sentences, so the
- * card's summary and its list never disagree. A sentence about songs repeating from earlier
- * answers is dropped, since the card cannot tell whether the removed song was one of them.
- * Nothing else in the summary changes.
- */
-export function withoutSong(reply: BotReply, id: string): BotReply {
-  const tracks = reply.tracks.filter((track) => track.id !== id)
-  if (tracks.length === reply.tracks.length) return reply
-  const total = tracks.reduce((sum, track) => sum + track.duration, 0)
-  const shortfall = Math.max(0, reply.plan.target_seconds - total)
-  const minutesText = (seconds: number) => (seconds / 60).toFixed(1)
-  const short = shortfall
-    ? ` ${minutesText(shortfall)} minutes short; no exclusions were relaxed.`
-    : ''
-  const counted = reply.summary
-    .replace(/ \d+ songs? repeats? from (?:an )?earlier answers?(?:; [^.]*)?\./, '')
-    .replace(
-      /^\d+ songs?, [\d.]+ minutes\./,
-      `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'}, ${minutesText(total)} minutes.`,
-    )
-  const summary = /minutes short; no exclusions were relaxed\./.test(counted)
-    ? counted.replace(/ [\d.]+ minutes short; no exclusions were relaxed\./, short)
-    : // The shortfall sentence follows the favourites and recent-play ones, before the rest.
-      counted.replace(
-        /^(.*?(?:Liked playlist\.|excluded using [^.]+\.|library tags\.))/,
-        (lead: string) => lead + short,
-      )
-  return { ...reply, tracks, total_seconds: total, shortfall_seconds: shortfall, summary }
 }
