@@ -699,7 +699,10 @@ class MusicBot:
                 return False  # Unknown history cannot establish an explicit exclusion.
         return True
 
-    def resolve(self, plan: SearchPlan, request: BotRequest) -> dict[str, object]:
+    def resolve(
+        self, plan: SearchPlan, request: BotRequest, now: datetime | None = None
+    ) -> dict[str, object]:
+        """`now` pins the local clock for a caller that records it; None reads it here."""
         plan = merge_plan(request.previous, plan)
         if plan.action not in {"clarify", "unsupported"}:
             plan = plan.model_copy(update={"suggestions": []})
@@ -735,7 +738,8 @@ class MusicBot:
             seed_vector = encode_phrase(embedding, plan.sound)
             if seed_vector is None:
                 raise BotError("That description could not be read. Try other words.", 422)
-        now = datetime.now(ZoneInfo(self.store.current().music_timezone))
+        if now is None:
+            now = datetime.now(ZoneInfo(self.store.current().music_timezone))
         liked = self._liked()
         # Every in-scope match is gated, then ordered. No song metadata is sent to Ollama here,
         # and files are only checked while the list is being filled. A refinement walks the

@@ -39,6 +39,10 @@ Use one schema-constrained Ollama request to produce a small search/action plan.
 
 A cancelled, timed-out or superseded request cannot change playback. Recheck track availability and queue state before applying a proposal. Apply through the existing browser player, since updating the saved server queue alone does not control live audio. Respect its 500-entry queue limit and browser autoplay restrictions. Retry notices must not claim playback began when the browser refused it.
 
+### Engine boundary (V2 package 1A)
+
+A client that is not the chat can ask the engine directly. `POST /api/music-bot/intent` takes a versioned canonical intent (action, hard filters, scope, seed and the songs the request is about), adapts it onto the existing search plan and resolver, and returns real song ids with the snapshot they came from. It calls no model and changes no playback, queue, playlist or history. `GET /api/music-bot/capabilities` lists what the resolver supports now; duration comparators, proposal commit, audio certainty, a persona and an outside catalogue are listed as not available. A constraint the engine cannot honour is refused with a typed error, not dropped: that includes an unknown field, an unsupported version, audio fields with their recipe off and a negated description. The chat route and the frontend are unchanged. Persisted proposals, shared recent-result memory, a duration solver, an interpreter and a persona are later packages. See [the architecture](architecture.md) for the fields, the snapshot and the error codes.
+
 ## 2. Music indexing for the bot
 
 Reuse the existing tag scanner, song IDs and SQLite database. Add a durable analysis queue and versioned track profiles. Read files directly from configured music mounts; store predictions separately from original tags and leave music files untouched.
