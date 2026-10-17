@@ -7,17 +7,18 @@ honour is refused with a typed error, never loosened until it succeeds.
 
 import hashlib
 import json
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from backend.core.audio_recipes import Recipe
 from backend.library.audio_profile import BPM_WINDOW, ProfileSet
 from backend.library.engine_contract import (
     CONTRACT_VERSION,
     ENGINE_VERSION,
+    SELECTION_LIMIT,
     SUPPORTED_VERSIONS,
     EngineError,
     ErrorField,
@@ -34,47 +35,83 @@ ATTEMPTS = 3
 _SCALAR_FIELDS = ("tempo", "tempo_min", "tempo_max", "energy", "energy_compared", "tempo_compared")
 
 
-def parse_intent(raw: object) -> Intent:
-    """A decoded JSON body as an Intent, or the typed error that says why not."""
+def parse_intent(raw: object, prefix: str = "") -> Intent:
+    """A decoded JSON body as an Intent, or the typed error that says why not. `prefix` names
+    where the intent sits in a larger body, for the error fields."""
+    return parse_body(Intent, raw, SUPPORTED_VERSIONS, "invalid_intent", prefix)
+
+
+def parse_body[Body: BaseModel](
+    model: type[Body], raw: object, versions: tuple[int, ...], invalid: str, prefix: str = ""
+) -> Body:
+    """A decoded JSON body as `model`, refused with the contract's codes. A body with no
+    contract_version field (a refine) has its version checked inside its intent."""
     if not isinstance(raw, dict):
         raise EngineError("malformed_request", "The body must be a JSON object.", 400)
-    version = raw.get("contract_version")
-    if version is None:
-        raise EngineError(
-            "malformed_request",
-            "contract_version is required.",
-            400,
-            [ErrorField(field="contract_version", message="Field required")],
-        )
-    if type(version) is not int or version not in SUPPORTED_VERSIONS:
-        raise EngineError(
-            "unsupported_version",
-            f"Contract version is not supported. Supported: {list(SUPPORTED_VERSIONS)}.",
-            422,
-            [ErrorField(field="contract_version", message="Unsupported")],
-        )
-    try:
-        return Intent.model_validate(raw)
-    except ValidationError as exc:
-        found = exc.errors(include_input=False, include_url=False)
-        unknown = [
-            ErrorField(field=".".join(str(part) for part in item["loc"]), message="Unknown field")
-            for item in found
-            if item["type"] == "extra_forbidden"
-        ]
-        if unknown:
+    if "contract_version" in model.model_fields:
+        version = raw.get("contract_version")
+        if version is None:
             raise EngineError(
-                "unknown_field", "The intent has fields this engine does not know.", 422, unknown
-            ) from exc
-        raise EngineError(
-            "invalid_intent",
-            "The intent is not valid.",
+                "malformed_request",
+                "contract_version is required.",
+                400,
+                [ErrorField(field=prefix + "contract_version", message="Field required")],
+            )
+        if type(version) is not int or version not in versions:
+            raise EngineError(
+                "unsupported_version",
+                f"Contract version is not supported. Supported: {list(versions)}.",
+                422,
+                [ErrorField(field=prefix + "contract_version", message="Unsupported")],
+            )
+    try:
+        return model.model_validate(raw)
+    except ValidationError as exc:
+        raise refusal(exc, invalid, prefix) from exc
+
+
+def refusal(exc: ValidationError, invalid: str, prefix: str = "") -> EngineError:
+    """The typed error for a body that did not validate: an unknown field, a selection over
+    the limit, or anything else as `invalid`."""
+    found = exc.errors(include_input=False, include_url=False)
+
+    def field(item: Mapping[str, object]) -> str:
+        loc = item["loc"]
+        assert isinstance(loc, tuple)
+        return prefix + ".".join(str(part) for part in loc)
+
+    unknown = [
+        ErrorField(field=field(item), message="Unknown field")
+        for item in found
+        if item["type"] == "extra_forbidden"
+    ]
+    if unknown:
+        return EngineError(
+            "unknown_field", "The body has fields this engine does not know.", 422, unknown
+        )
+    oversized = [
+        ErrorField(field=field(item), message=f"At most {SELECTION_LIMIT}")
+        for item in found
+        if (item["loc"], item["type"]) == (("filters", "limit"), "less_than_equal")
+        or (
+            item["type"] == "too_long"
+            and item["loc"] in {("context", "proposal_ids"), ("context", "queue_ids")}
+        )
+    ]
+    if oversized:
+        return EngineError(
+            "selection_too_large",
+            f"A selection holds at most {SELECTION_LIMIT} songs. Ask for {SELECTION_LIMIT} or "
+            "fewer; nothing was cut.",
             422,
-            [
-                ErrorField(field=".".join(str(part) for part in item["loc"]), message=item["msg"])
-                for item in found[:10]
-            ],
-        ) from exc
+            oversized,
+        )
+    return EngineError(
+        invalid,
+        "The intent is not valid." if invalid == "invalid_intent" else "The request is not valid.",
+        422,
+        [ErrorField(field=field(item), message=str(item["msg"])) for item in found[:10]],
+    )
 
 
 def _row(*fields: object) -> str:
@@ -179,6 +216,17 @@ class Engine:
         raise EngineError(
             "snapshot_changed", "The library changed while the request ran. Try again.", 409
         )
+
+    def today(self) -> str:
+        """The local day in the music timezone, as the snapshot records it."""
+        return datetime.now(ZoneInfo(self.bot.store.current().music_timezone)).date().isoformat()
+
+    def unchanged(self, intent: Intent, snapshot: dict[str, object]) -> bool:
+        """Whether the inputs a result was read from are still as they were, so something
+        read after `run` belongs to the same state."""
+        now = datetime.now(ZoneInfo(self.bot.store.current().music_timezone))
+        stored = {key: value for key, value in snapshot.items() if key not in ("seed", "id")}
+        return self._snapshot(intent, now) == stored
 
     def _check_capabilities(
         self, intent: Intent, scalar: Recipe | None, embedding: Recipe | None
@@ -450,7 +498,8 @@ class Engine:
             "summary": reply["summary"],
             "seed": reply["generation_seed"],
             "snapshot": full | {"id": _digest([json.dumps(full, sort_keys=True)])},
-            "intent": intent.model_dump(),
+            # With the seed it drew, so posting it back repeats this selection as it stands.
+            "intent": intent.model_copy(update={"seed": reply["generation_seed"]}).model_dump(),
             "plan": reply["plan"],
             # Nothing was played, queued, saved or recorded.
             "state_changed": False,

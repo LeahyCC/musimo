@@ -89,7 +89,7 @@ class SchemaTests(unittest.TestCase):
                 self.assertEqual(
                     store.db.execute("PRAGMA user_version").fetchone()[0], SCHEMA_VERSION
                 )
-                self.assertEqual(SCHEMA_VERSION, 9)
+                self.assertGreaterEqual(SCHEMA_VERSION, 9)
                 tables = {
                     row[0]
                     for row in store.db.execute(

@@ -3,7 +3,8 @@
 An intent is the canonical, already-merged form of a request `MusicBot.resolve` supports: no
 follow-up merging, no model wording. Anything the intent cannot say is an unknown field and is
 refused, never dropped. The registry lists only what resolve does now; the unavailable entries
-exist so a client can tell "not built yet" from "mistyped".
+exist so a client can tell "not built yet" from "mistyped". A proposal is a stored result a
+client can refine and then commit; the commit body and its receipt are defined here too.
 """
 
 from dataclasses import dataclass
@@ -16,8 +17,10 @@ from backend.library.music_bot import SongId
 from backend.library.selection import SEED_LIMIT, SHOWN_LIMIT
 
 # The shape of the intent and the result. Bump on any change a client could notice.
-CONTRACT_VERSION = 1
-SUPPORTED_VERSIONS = (1,)
+# Version 2 added proposals, commit receipts, selection_too_large and the drawn seed in the
+# echoed intent. The intent itself is unchanged, so an intent may still say 1.
+CONTRACT_VERSION = 2
+SUPPORTED_VERSIONS = (1, 2)
 # The rules that order and choose songs: the gates in resolve, the artist cap and the draw in
 # selection.py. Bump when any of them changes, so a replay across versions is not mistaken
 # for a replay of the same engine. tests/test_engine.py pins the constants that feed it.
@@ -25,6 +28,9 @@ ENGINE_VERSION = 1
 
 # Stripped first, so a blank name cannot match every untagged song.
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+# The most songs a selection, a proposal or a queue holds. More is refused, never cut.
+SELECTION_LIMIT = 500
+
 Action = Literal["search", "pause", "resume", "skip", "clarify", "unsupported"]
 Scope = Literal["library", "proposal", "queue"]
 
@@ -47,7 +53,7 @@ class Filters(BaseModel):
     max_seconds: int | None = Field(default=None, ge=1, le=86400)
     # The length to fill to: the walk stops once the total reaches it. Not a comparator.
     target_seconds: int = Field(default=0, ge=0, le=86400)
-    limit: int = Field(default=500, ge=1, le=500)
+    limit: int = Field(default=SELECTION_LIMIT, ge=1, le=SELECTION_LIMIT)
     similar_to_current: bool = False
     tempo: Literal["", "slow", "medium", "fast"] = ""
     tempo_min: int | None = Field(default=None, ge=1, le=999)
@@ -66,8 +72,8 @@ class Context(BaseModel):
     current_id: SongId | None = None
     reference_id: SongId | None = None
     # The selection a proposal-scope request refines, and the queue a queue-scope one does.
-    proposal_ids: list[SongId] = Field(default_factory=list, max_length=500)
-    queue_ids: list[SongId] = Field(default_factory=list, max_length=500)
+    proposal_ids: list[SongId] = Field(default_factory=list, max_length=SELECTION_LIMIT)
+    queue_ids: list[SongId] = Field(default_factory=list, max_length=SELECTION_LIMIT)
     # Songs shown lately. Memory, not a reference: a song since removed is counted, not refused.
     shown_ids: list[SongId] = Field(default_factory=list, max_length=SHOWN_LIMIT)
 
@@ -84,6 +90,63 @@ class Intent(BaseModel):
     context: Context = Field(default_factory=Context)
     # Only for clarify and unsupported: the question or the refusal, in words.
     explanation: str = Field(default="", max_length=400)
+
+
+# Made by the client, so a retry after a lost reply can say "the same one as before".
+OperationId = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9._:-]{8,80}$")]
+
+
+class Refine(BaseModel):
+    """A new intent against the latest revision. A proposal scope refines that revision's
+    songs, which the server supplies; any other scope searches again under the same id."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    revision: int = Field(ge=1)
+    # Parsed by parse_intent, so it is refused with the intent's own error codes.
+    intent: dict[str, object]
+
+
+class PlaylistTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    kind: Literal["playlist"]
+    # The rule the playlist routes use.
+    name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+
+
+class QueueTarget(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    kind: Literal["queue"]
+
+
+class Commit(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    contract_version: int
+    revision: int = Field(ge=1)
+    operation_id: OperationId
+    target: Annotated[PlaylistTarget | QueueTarget, Field(discriminator="kind")]
+    # Each says yes to something a client should not do by accident: commit a revision that is
+    # no longer the latest, or commit a revision again to a target it already went to.
+    older_revision: bool = False
+    repeat: bool = False
+
+
+class Receipt(BaseModel):
+    """What a commit did. A queue receipt means the ids are ready for the browser's player,
+    which owns the live queue; the server never knows whether audio started."""
+
+    operation_id: OperationId
+    proposal_id: str
+    revision: int
+    target: Literal["playlist", "queue"]
+    ids: list[SongId]
+    status: Literal["saved", "ready_for_player"]
+    playlist_id: str | None = None
+    playlist_name: str | None = None
+    created: str
 
 
 @dataclass(frozen=True)
@@ -111,7 +174,6 @@ NOT_BUILT = (
         "Under, at most, at least and about a total length are not built. target_seconds only "
         "fills until the total reaches it.",
     ),
-    Capability("proposal_commit", "action", False, "Nothing is saved, queued or played."),
     Capability(
         "audio_certainty",
         "filter",
@@ -153,6 +215,13 @@ def registry(scalar: Recipe | None, embedding: Recipe | None) -> list[Capability
         Capability("library", "scope", True, "All library songs."),
         Capability("proposal", "scope", True, "Refines the given proposal in its order."),
         Capability("queue", "scope", True, "Refines the given queue in its order."),
+        Capability(
+            "proposal_commit",
+            "action",
+            True,
+            "Saves a stored proposal revision as a new playlist, or hands its exact ids back for "
+            "the browser's player. Nothing plays from the server.",
+        ),
         *(Capability(name, "filter", True, "Saved library tags.") for name in _TAGS),
         Capability(
             "similar_to_current",
