@@ -26,6 +26,7 @@ from backend.library.engine_contract import (
 )
 from backend.library.music_bot import MusicBot
 from backend.library.player import LibraryView
+from backend.library.proposal_summary import pick_sample, summarize
 
 PROPOSAL_ID = re.compile(r"^pr-[0-9a-f]{16}$")
 # A stale refusal names at most this many changes, and says how many there were.
@@ -374,6 +375,11 @@ class Proposals:
         ids = found["ids"]
         totals = found["totals"]
         assert isinstance(ids, list) and isinstance(totals, dict)
+        scalar, _ = self.bot.active_recipes()
+        # Read from the songs and rows as they are now, so a song since changed or measured is
+        # described as it is. The sample reads tags and lengths only, with the proposal id as
+        # its salt, and is the same for one revision for as long as those songs are.
+        sample = pick_sample(ids, view.stored, str(found["id"]))
         return {
             "contract_version": CONTRACT_VERSION,
             "engine_version": ENGINE_VERSION,
@@ -389,6 +395,15 @@ class Proposals:
                 "seed": found["seed"],
                 "ids": ids,
                 **totals,
+                # What the revision holds, from its songs: requested, measured and unknown.
+                "overview": summarize(
+                    Intent.model_validate(found["intent"]),
+                    ids,
+                    view.stored,
+                    self.bot.profiles.profiles(scalar) if scalar is not None else None,
+                ),
+                # About six songs standing for the list, or all of it when it is short.
+                "sample": {"ids": sample.ids, "complete": sample.complete},
                 "snapshot": found["snapshot"],
             },
             "tracks": [view.by_song[sid] for sid in ids if sid in view.by_song],
