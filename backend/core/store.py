@@ -9,11 +9,14 @@ from backend.core.models import CATALOG_ORDER, Settings, clean_arl
 from backend.core.sources import source_label
 
 RETAIN_EVENTS = 5000
-SCHEMA_VERSION = 10
+SCHEMA_VERSION = 11
 # Music bot proposals kept, newest first by last use, and revisions kept per proposal. They are
 # suggestion state, not history: a dropped one is only a preview the client has to ask for again.
 PROPOSAL_LIMIT = 20
 REVISION_LIMIT = 20
+# Commit receipts kept, newest first. They outlive their proposal, so a retry after the
+# proposal was dropped still gets its first receipt instead of saving again.
+RECEIPT_LIMIT = 200
 # Rows that stay in the settings table but are not settings. Each is stripped before validation,
 # because Settings refuses keys it does not know.
 # deezer_arl held the Deezer cookie. The cookie is a file now and the row stays empty, so a
@@ -173,6 +176,10 @@ def seeded(default: object, raw: str) -> object:
         # An empty value means the default, as it would if it were unset.
         return [part.strip() for part in raw.split(",") if part.strip()] or default
     return raw
+
+
+class ProposalGone(LookupError):
+    """The proposal revision a commit was about to record is no longer stored."""
 
 
 class LockedSetting(ValueError):
@@ -467,8 +474,8 @@ class Store:
             """)
         if version < 10:
             # Music bot proposals: each revision's intent, seed, ordered ids, snapshot and the
-            # per-song checks a commit repeats, and the receipt of each commit. Receipts go
-            # with their proposal, so dropping bot_proposals is a full reset.
+            # per-song checks a commit repeats, and the receipt of each commit. Version 11
+            # takes the receipts off the proposal's cascade.
             self.db.executescript("""
                 BEGIN IMMEDIATE;
                 CREATE TABLE IF NOT EXISTS bot_proposals (
@@ -499,6 +506,30 @@ class Store:
                 CREATE INDEX IF NOT EXISTS bot_receipts_revision
                     ON bot_receipts(proposal_id, revision, target);
                 PRAGMA user_version=10;
+                COMMIT;
+            """)
+        if version < 11:
+            # Receipts in version 10 went with their proposal, so a retry after the proposal
+            # was pruned could save twice. Rebuilt without the foreign key, rows and their
+            # order (the rowid the receipt limit prunes by) kept.
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                CREATE TABLE bot_receipts_v11 (
+                    operation_id TEXT PRIMARY KEY,
+                    proposal_id TEXT NOT NULL,
+                    revision INTEGER NOT NULL,
+                    target TEXT NOT NULL,
+                    receipt TEXT NOT NULL
+                );
+                INSERT INTO bot_receipts_v11 (rowid, operation_id, proposal_id, revision, target,
+                    receipt)
+                    SELECT rowid, operation_id, proposal_id, revision, target, receipt
+                    FROM bot_receipts ORDER BY rowid;
+                DROP TABLE bot_receipts;
+                ALTER TABLE bot_receipts_v11 RENAME TO bot_receipts;
+                CREATE INDEX IF NOT EXISTS bot_receipts_revision
+                    ON bot_receipts(proposal_id, revision, target);
+                PRAGMA user_version=11;
                 COMMIT;
             """)
         self.seed()
@@ -1360,7 +1391,8 @@ class Store:
     ) -> tuple[dict[str, object], bool]:
         """Write a commit's receipt once, and for a playlist commit the playlist in the same
         transaction. An operation id that already has a receipt gets that receipt back with
-        True and nothing is written, so a retry after a lost reply never saves twice."""
+        True and nothing is written, so a retry after a lost reply never saves twice. A
+        revision pruned since it was checked raises ProposalGone and writes nothing."""
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
@@ -1372,6 +1404,15 @@ class Store:
                     self.db.rollback()
                     first: dict[str, object] = json.loads(found[0])
                     return first, True
+                if (
+                    self.db.execute(
+                        "SELECT 1 FROM bot_proposal_revisions WHERE proposal_id=? AND revision=?",
+                        (receipt["proposal_id"], receipt["revision"]),
+                    ).fetchone()
+                    is None
+                ):
+                    self.db.rollback()
+                    raise ProposalGone
                 now = self._timestamp()
                 if playlist_name is not None:
                     cur = self.db.execute(
@@ -1404,8 +1445,15 @@ class Store:
                     "UPDATE bot_proposals SET touched=? WHERE id=?",
                     (self._touch(), receipt["proposal_id"]),
                 )
+                self.db.execute(
+                    "DELETE FROM bot_receipts WHERE rowid NOT IN "
+                    "(SELECT rowid FROM bot_receipts ORDER BY rowid DESC LIMIT ?)",
+                    (RECEIPT_LIMIT,),
+                )
                 self.db.commit()
                 return receipt, False
+            except ProposalGone:
+                raise
             except Exception:
                 self.db.rollback()
                 raise

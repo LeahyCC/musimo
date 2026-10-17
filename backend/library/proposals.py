@@ -8,8 +8,10 @@ back with a receipt; nothing here plays, queues or records a play.
 """
 
 import re
+import sqlite3
 from collections.abc import Callable
 
+from backend.core.store import ProposalGone
 from backend.library.engine import ATTEMPTS, Engine, _digest, _row, parse_body, parse_intent
 from backend.library.engine_contract import (
     CONTRACT_VERSION,
@@ -94,12 +96,21 @@ class Proposals:
         self, proposal_id: str, raw: object, cancelled: Callable[[], bool]
     ) -> dict[str, object]:
         """Save or hand back exactly the approved revision. The order of the refusals matters:
-        a retried operation id answers first, so a retry is never refused for staleness after
-        its first attempt went through."""
+        a retried operation id answers first, here and again under the lock, so a retry is
+        never refused after its first attempt went through, even one running at the same
+        time."""
         body = parse_body(Commit, raw, (CONTRACT_VERSION,), "invalid_request")
         target = body.target.kind
-        wanted = {"proposal_id": proposal_id, "revision": body.revision, "target": target}
-        first = self.bot.store.proposal_receipt(body.operation_id)
+        name = body.target.name if isinstance(body.target, PlaylistTarget) else None
+        # Everything a retry has to repeat. The same id with any of these changed is a conflict.
+        wanted: dict[str, object] = {
+            "proposal_id": proposal_id,
+            "revision": body.revision,
+            "target": target,
+            "playlist_name": name,
+        }
+        store = self.bot.store
+        first = store.proposal_receipt(body.operation_id)
         if first is not None:
             return self._replayed(first, wanted)
         stored = self._revision(proposal_id, body.revision)
@@ -124,7 +135,6 @@ class Proposals:
                 409,
                 changed[:STALE_FIELDS],
             )
-        name = body.target.name if isinstance(body.target, PlaylistTarget) else None
         status = "saved" if name is not None else "ready_for_player"
         receipt = {
             "operation_id": body.operation_id,
@@ -132,10 +142,13 @@ class Proposals:
             "ids": ids,
             "status": status,
         }
-        store = self.bot.store
         # Held from the last checks to the write, so a second commit cannot slip between. The
         # library view is never built under it.
         with store.lock:
+            # A retry of this operation may have written its receipt while this one checked.
+            first = store.proposal_receipt(body.operation_id)
+            if first is not None:
+                return self._replayed(first, wanted)
             if store.library_revision() != revision:
                 raise EngineError(
                     "snapshot_changed", "The library changed during the commit. Try again.", 409
@@ -150,7 +163,11 @@ class Proposals:
                 )
             if cancelled():
                 raise Cancelled
-            saved, replayed = store.record_receipt(receipt, name)
+            try:
+                saved, replayed = store.record_receipt(receipt, name)
+            except (ProposalGone, sqlite3.IntegrityError) as exc:
+                # Pruned between the checks and the write. Nothing was written.
+                raise _not_found(proposal_id) from exc
         if replayed:
             return self._replayed(saved, wanted)
         return self._receipt(saved, False)
@@ -333,7 +350,7 @@ class Proposals:
     def _replayed(self, first: dict[str, object], wanted: dict[str, object]) -> dict[str, object]:
         """The first receipt of a retried operation, or a refusal when the id was used for
         something else."""
-        if {key: first[key] for key in wanted} != wanted:
+        if {key: first.get(key) for key in wanted} != wanted:
             raise EngineError(
                 "operation_conflict",
                 "That operation id already committed something else. Use a new one.",

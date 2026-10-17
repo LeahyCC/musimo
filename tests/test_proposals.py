@@ -262,6 +262,9 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         # The same id for anything else is a conflict, not a second save.
         other = await self.commit(proposal_id, target={"kind": "queue"})
         self.assertEqual(code(other), "operation_conflict")
+        renamed = await self.commit(proposal_id, target={"kind": "playlist", "name": "Morning"})
+        self.assertEqual((renamed.status_code, code(renamed)), (409, "operation_conflict"))
+        self.assertEqual(len(self.playlists()), playlists + 1)
         # A second save of this revision needs a new id and an explicit repeat.
         again = await self.commit(proposal_id, operation_id="op-00000002", target=target)
         self.assertEqual(again.status_code, 409)
@@ -414,6 +417,108 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         retried = payload(await self.commit(proposal_id, target={"kind": "queue"}))
         self.assertEqual((retried["receipt"], retried["replayed"]), (first, True))
 
+    async def test_a_concurrent_retry_gets_the_first_receipt(self) -> None:
+        created = await self.create(seed=5, filters={"limit": 4})
+        proposal_id = part(created, "proposal")["id"]
+        playlists = len(self.playlists())
+        slow_checks = Proposals._checks
+
+        def slow(*args: object) -> dict[str, str]:
+            # Both requests pass the first receipt lookup before either writes.
+            time.sleep(0.2)
+            return slow_checks(*args)  # type: ignore[arg-type]
+
+        target = {"kind": "playlist", "name": "Twice"}
+        with patch.object(Proposals, "_checks", slow):
+            first, second = await asyncio.gather(
+                self.commit(proposal_id, target=target), self.commit(proposal_id, target=target)
+            )
+        self.assertEqual((first.status_code, second.status_code), (200, 200), second.text)
+        self.assertEqual(payload(first)["receipt"], payload(second)["receipt"])
+        self.assertEqual(sorted([payload(first)["replayed"], payload(second)["replayed"]]), [0, 1])
+        self.assertEqual(len(self.playlists()), playlists + 1)
+
+    async def test_a_receipt_outlives_its_pruned_proposal(self) -> None:
+        with patch("backend.core.store.PROPOSAL_LIMIT", 2):
+            created = await self.create(seed=1, filters={"limit": 4})
+            proposal_id = part(created, "proposal")["id"]
+            target = {"kind": "playlist", "name": "Kept"}
+            first = part(payload(await self.commit(proposal_id, target=target)), "receipt")
+            for seed in (2, 3):
+                await self.create(seed=seed)
+            gone = await self.http.get(f"/api/music-bot/proposals/{proposal_id}")
+            self.assertEqual(code(gone), "proposal_not_found")
+            retried = payload(await self.commit(proposal_id, target=target))
+        self.assertEqual((retried["receipt"], retried["replayed"]), (first, True))
+        self.assertEqual([p["name"] for p in self.playlists()].count("Kept"), 1)
+
+    async def test_a_proposal_pruned_during_a_commit_is_not_found(self) -> None:
+        created = await self.create(seed=1, filters={"limit": 4})
+        proposal_id = part(created, "proposal")["id"]
+        playlists = len(self.playlists())
+        real_checks = Proposals._checks
+
+        def pruned(*args: object) -> dict[str, str]:
+            found = real_checks(*args)  # type: ignore[arg-type]
+            with self.store.lock:
+                self.store.db.execute("DELETE FROM bot_proposals WHERE id=?", (proposal_id,))
+                self.store.db.commit()
+            return found
+
+        with patch.object(Proposals, "_checks", pruned):
+            response = await self.commit(proposal_id, target={"kind": "playlist", "name": "X"})
+        self.assertEqual((response.status_code, code(response)), (404, "proposal_not_found"))
+        self.assertEqual(self.count("bot_receipts"), 0)
+        self.assertEqual(len(self.playlists()), playlists)
+
+    async def test_receipts_are_bounded(self) -> None:
+        with patch("backend.core.store.RECEIPT_LIMIT", 2):
+            for seed in (1, 2, 3):
+                created = await self.create(seed=seed, filters={"limit": 2})
+                await self.commit(
+                    part(created, "proposal")["id"],
+                    operation_id=f"op-bounded-{seed}",
+                    target={"kind": "queue"},
+                )
+        with self.store.lock:
+            kept = [
+                str(r[0]) for r in self.store.db.execute("SELECT operation_id FROM bot_receipts")
+            ]
+        self.assertEqual(sorted(kept), ["op-bounded-2", "op-bounded-3"])
+
+    def test_schema_10_receipts_lose_the_cascade_and_keep_their_rows(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "v10.sqlite3"
+            store = Store(path)
+            receipt = {"operation_id": "op-v10-0001", "proposal_id": "pr-0123456789abcdef"}
+            # The version 10 receipts table, with the cascade.
+            store.db.executescript(f"""
+                DROP TABLE bot_receipts;
+                CREATE TABLE bot_receipts (
+                    operation_id TEXT PRIMARY KEY,
+                    proposal_id TEXT NOT NULL REFERENCES bot_proposals(id) ON DELETE CASCADE,
+                    revision INTEGER NOT NULL,
+                    target TEXT NOT NULL,
+                    receipt TEXT NOT NULL
+                );
+                INSERT INTO bot_proposals VALUES ('pr-0123456789abcdef', 1, 1, 'then');
+                INSERT INTO bot_receipts VALUES
+                    ('op-v10-0001', 'pr-0123456789abcdef', 1, 'queue', '{json.dumps(receipt)}');
+                PRAGMA user_version=10;
+            """)
+            store.close()
+            for _ in range(2):
+                store = Store(path)
+                try:
+                    version = store.db.execute("PRAGMA user_version").fetchone()[0]
+                    self.assertEqual((version, SCHEMA_VERSION), (11, 11))
+                    keys = store.db.execute("PRAGMA foreign_key_list(bot_receipts)").fetchall()
+                    self.assertEqual(keys, [])
+                    store.db.execute("DELETE FROM bot_proposals")
+                    self.assertEqual(store.proposal_receipt("op-v10-0001"), receipt)
+                finally:
+                    store.close()
+
     def test_schema_9_upgrades_and_keeps_its_rows(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "old.sqlite3"
@@ -430,7 +535,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
                 store = Store(path)
                 try:
                     version = store.db.execute("PRAGMA user_version").fetchone()[0]
-                    self.assertEqual((version, SCHEMA_VERSION), (10, 10))
+                    self.assertEqual((version, SCHEMA_VERSION), (11, 11))
                     tables = {
                         str(row[0]) for row in store.db.execute("SELECT name FROM sqlite_master")
                     }
