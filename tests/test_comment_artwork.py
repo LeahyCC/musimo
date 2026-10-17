@@ -13,12 +13,23 @@ from mutagen.flac import Picture
 from backend.library.player import pick_picture, pictures_in
 
 
+def vorbis_encoder() -> str | None:
+    """Prefer libvorbis, fall back to ffmpeg's native encoder, None when neither exists."""
+    listing = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-encoders"], check=True, capture_output=True, text=True
+    ).stdout
+    names = {line.split()[1] for line in listing.splitlines() if len(line.split()) > 1}
+    return next((name for name in ("libvorbis", "vorbis") if name in names), None)
+
+
 @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg is required")
 class CommentArtworkTests(unittest.TestCase):
     def test_real_comment_pictures_and_malformed_entries(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            for extension, codec in (("opus", "libopus"), ("ogg", "libvorbis")):
+            for extension, codec in (("opus", "libopus"), ("ogg", vorbis_encoder())):
                 with self.subTest(extension=extension):
+                    if codec is None:
+                        self.skipTest("ffmpeg has no Vorbis encoder")
                     path = Path(directory) / f"song.{extension}"
                     subprocess.run(
                         [
@@ -28,11 +39,14 @@ class CommentArtworkTests(unittest.TestCase):
                             "-f",
                             "lavfi",
                             "-i",
-                            "anullsrc=r=48000:cl=mono",
+                            "anullsrc=r=48000:cl=stereo",
                             "-t",
                             "0.1",
                             "-c:a",
                             codec,
+                            # The native vorbis encoder is flagged experimental.
+                            "-strict",
+                            "-2",
                             str(path),
                         ],
                         check=True,
