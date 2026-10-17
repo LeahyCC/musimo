@@ -35,6 +35,15 @@ from backend.library.audio_profile import (
     percentile_bands,
     tempo_band,
 )
+from backend.library.duration import (
+    ABOUT_WINDOW,
+    CANDIDATE_CAP,
+    WORK_LIMIT,
+    Item,
+    TotalLength,
+    fit,
+    length_ms,
+)
 from backend.library.genres import is_genre_word, matches_genres
 from backend.library.player import LibraryView, Player, StoredSong, playlist_number, song_list
 from backend.library.selection import (
@@ -700,9 +709,17 @@ class MusicBot:
         return True
 
     def resolve(
-        self, plan: SearchPlan, request: BotRequest, now: datetime | None = None
+        self,
+        plan: SearchPlan,
+        request: BotRequest,
+        now: datetime | None = None,
+        total_length: TotalLength | None = None,
     ) -> dict[str, object]:
-        """`now` pins the local clock for a caller that records it; None reads it here."""
+        """`now` pins the local clock for a caller that records it; None reads it here.
+        `total_length` is the structured intent's total-length comparator. The chat never sets
+        it, so its `target_seconds` fill is unchanged."""
+        if total_length is not None and (plan.target_seconds or plan.add_count):
+            raise BotError("A total length replaces target_seconds and add_count.", 422)
         plan = merge_plan(request.previous, plan)
         if plan.action not in {"clarify", "unsupported"}:
             plan = plan.model_copy(update={"suggestions": []})
@@ -772,6 +789,13 @@ class MusicBot:
                     seed_key[0] and (normalize(song.title), _artist_key(song.artist)) == seed_key
                 )
             ]
+        unknown_length = 0
+        if total_length is not None:
+            # A song with no usable length cannot count towards a total, so it is left out
+            # and counted. Without a total it stays eligible, as before.
+            known = [song for song in matched if length_ms(song.duration) is not None]
+            unknown_length = len(matched) - len(known)
+            matched = known
         # One rank key, never blended: cosine to the seed vector, or play count only when the
         # person asked for familiar music. Otherwise every match fits equally.
         relevance: dict[str, float] | None = None
@@ -804,7 +828,10 @@ class MusicBot:
                 request.generation_seed if request.generation_seed is not None else self.new_seed()
             )
             need = need_for(
-                plan.limit, plan.add_count, plan.target_seconds, [s.duration for s in matched]
+                plan.limit,
+                plan.add_count,
+                total_length.seconds if total_length is not None else plan.target_seconds,
+                [s.duration for s in matched],
             )
             drawn = broad_order(
                 [s.song_id for s in matched], generation_seed, need, relevance, shown
@@ -813,7 +840,13 @@ class MusicBot:
         else:
             walk = refine_order([s.song_id for s in matched])
         candidates = [view.stored[sid] for sid in walk]
-        tracks, total = self._fill(view, plan, retained, candidates, seed_song)
+        duration: dict[str, object] | None = None
+        if total_length is None:
+            tracks, total = self._fill(view, plan, retained, candidates, seed_song)
+        else:
+            tracks, total, duration = self._fill_total(
+                view, plan, candidates, seed_song, total_length, unknown_length
+            )
         added = tracks[len(retained) :]
         added_ids = {str(t["id"]) for t in added}
         position = {sid: index for index, sid in enumerate(walk)}
@@ -823,6 +856,10 @@ class MusicBot:
             tracks = tracks[: len(retained)] + added
         reused = [sid for sid in added_ids if sid in shown] if drawn is not None else []
         shortfall = max(0, plan.target_seconds - total)
+        if total_length is not None and duration is not None and not duration["met"]:
+            # Only a floor can be short. An unmet ceiling picked nothing shorter instead.
+            if total_length.mode not in ("under", "at_most"):
+                shortfall = max(0, total_length.seconds - total)
         noun = "song" if len(tracks) == 1 else "songs"
         summary = (
             f"{len(tracks)} {noun}, {round(total / 60, 1)} minutes. Based on saved library tags."
@@ -831,7 +868,9 @@ class MusicBot:
             summary += " Favourites are songs in your Liked playlist."
         if plan.exclude_played_days:
             summary += f" Recent plays excluded using {self.store.current().music_timezone}."
-        if shortfall:
+        if duration is not None:
+            summary += _duration_sentence(duration)
+        elif shortfall:
             summary += f" {round(shortfall / 60, 1)} minutes short; no exclusions were relaxed."
         if plan.add_count and len(tracks) < plan.limit:
             summary += (
@@ -884,7 +923,14 @@ class MusicBot:
                 gates.vectors, library, missing["missing_vector"]
             )
         return _reply(
-            plan, tracks, total, shortfall, summary, request, generation_seed=generation_seed
+            plan,
+            tracks,
+            total,
+            shortfall,
+            summary,
+            request,
+            generation_seed=generation_seed,
+            duration=duration,
         )
 
     def _refuse_unmeasured(
@@ -1037,6 +1083,96 @@ class MusicBot:
                 break
         return tracks, total
 
+    def _fill_total(
+        self,
+        view: LibraryView,
+        plan: SearchPlan,
+        candidates: list[StoredSong],
+        seed: StoredSong | None,
+        total_length: TotalLength,
+        unknown_length: int,
+    ) -> tuple[list[dict[str, object]], float, dict[str, object]]:
+        """Pick songs from the walk whose summed length meets `total_length`, and report how
+        close it came. The first CANDIDATE_CAP songs that can play are searched, in the walk's
+        order, so the front of the walk is preferred. The seed, the duplicate-title rule, the
+        artist cap and the named-artist exception are those of `_fill`; the cap and the title
+        rule are rules of the search here, not of the walk, so a song skipped for one total can
+        be picked for another.
+        """
+        capped = plan.scope == "library"
+        named = {_artist_key(name) for name in plan.artists}
+        seed_key = (
+            (normalize(seed.title), _artist_key(seed.artist)) if seed is not None else ("", "")
+        )
+
+        def item(song: StoredSong) -> Item:
+            artist = _artist_key(song.artist)
+            title = normalize(song.title)
+            ms = length_ms(song.duration)
+            assert ms is not None
+            return Item(
+                ms,
+                artist if capped and artist and artist not in named else None,
+                (title, artist) if capped and title and artist else None,
+            )
+
+        eligible = [
+            song
+            for song in candidates
+            if not (seed is not None and song.song_id == seed.song_id)
+            and not (seed_key[0] and (normalize(song.title), _artist_key(song.artist)) == seed_key)
+        ]
+        usable: list[StoredSong] = []
+        cut = False
+        for song in eligible:
+            if len(usable) == CANDIDATE_CAP:
+                cut = True
+                break
+            if self.player.local_file(song.song_id) is not None:
+                usable.append(song)
+        found = fit(
+            total_length.mode,
+            total_length.seconds,
+            [item(song) for song in usable],
+            [item(song) for song in eligible],
+            cut,
+            plan.limit,
+            ARTIST_CAP,
+        )
+        tracks = [view.by_song[usable[index].song_id] for index in found.picked]
+        total = sum((usable[index].duration for index in found.picked), 0.0)
+        alternative: dict[str, object] | None = None
+        if found.alternative is not None:
+            longer = [usable[index] for index in found.alternative]
+            seconds = sum((song.duration for song in longer), 0.0)
+            alternative = {
+                "ids": [song.song_id for song in longer],
+                "tracks": [view.by_song[song.song_id] for song in longer],
+                "total_seconds": seconds,
+                "deviation_seconds": round(seconds - total_length.seconds, 3),
+            }
+        return (
+            tracks,
+            total,
+            {
+                "mode": total_length.mode,
+                "target_seconds": total_length.seconds,
+                "window_seconds": ABOUT_WINDOW if total_length.mode == "about" else 0,
+                "total_seconds": total,
+                "deviation_seconds": round(total - total_length.seconds, 3),
+                "met": found.met,
+                "unmet_reason": found.unmet,
+                "unknown_length": unknown_length,
+                "candidates": len(usable),
+                "candidate_cap": CANDIDATE_CAP,
+                "candidates_capped": cut,
+                "work": found.work,
+                "work_limit": WORK_LIMIT,
+                "search_complete": found.complete,
+                "alternative": alternative,
+            },
+        )
+
     def validate(self, selection: ValidateSelection) -> dict[str, object]:
         """Recheck a proposal before Play: tags, files, and the audio gates it was built on.
 
@@ -1089,6 +1225,7 @@ def _reply(
     request: BotRequest,
     *,
     generation_seed: int | None = None,
+    duration: dict[str, object] | None = None,
 ) -> dict[str, object]:
     """The chat reply. It carries the songs the plan was measured against, so Play can send
     them back to `validate` even after the player has moved on. generation_seed is set only
@@ -1103,7 +1240,59 @@ def _reply(
         "reference_id": request.reference_id,
         "current_id": request.current_id,
         "generation_seed": generation_seed,
+        # Only with a total length, so the chat reply is as it was.
+        **({"duration": duration} if duration is not None else {}),
     }
+
+
+_MODE_WORDS = {
+    "under": "under",
+    "at_most": "at most",
+    "at_least": "at least",
+    "over": "over",
+    "about": "about",
+}
+
+
+def _span(seconds: float) -> str:
+    seconds = abs(seconds)
+    if seconds < 60:
+        count = round(seconds)
+        return f"{count} second{'' if count == 1 else 's'}"
+    return f"{round(seconds / 60, 1)} minutes"
+
+
+def _duration_sentence(report: dict[str, object]) -> str:
+    """The total-length outcome in words. The structured fields say the same."""
+    target = report["target_seconds"]
+    deviation = report["deviation_seconds"]
+    unknown = report["unknown_length"]
+    alternative = report["alternative"]
+    assert isinstance(target, int) and isinstance(deviation, float)
+    assert isinstance(unknown, int)
+    asked = f"{_MODE_WORDS[str(report['mode'])]} {round(target / 60, 1)} minutes"
+    if report["met"]:
+        off = f"{_span(deviation)} {'over' if deviation > 0 else 'under'}" if deviation else "exact"
+        sentence = f" Asked for {asked}: {off}."
+    elif report["unmet_reason"] == "proven":
+        sentence = f" No selection of whole songs here can be {asked}; no filters were relaxed."
+    else:
+        sentence = (
+            f" No selection that is {asked} was found within the search limit "
+            f"({report['candidate_cap']} songs, {report['work_limit']:,} steps); no filters "
+            "were relaxed."
+        )
+    if isinstance(alternative, dict):
+        ids = alternative["ids"]
+        seconds = alternative["total_seconds"]
+        assert isinstance(ids, list) and isinstance(seconds, float)
+        noun = "song" if len(ids) == 1 else "songs"
+        lead = " Nothing shorter fits; the" if not report["total_seconds"] else " The"
+        sentence += f"{lead} longer option is {len(ids)} {noun}, {round(seconds / 60, 1)} minutes."
+    if unknown:
+        noun = "song has" if unknown == 1 else "songs have"
+        sentence += f" {unknown} matching {noun} no known length and could not count."
+    return sentence
 
 
 def _coverage(rows: ProfileSet | None, library: list[StoredSong], unmeasured: int) -> str:

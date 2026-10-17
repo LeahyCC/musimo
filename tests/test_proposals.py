@@ -264,7 +264,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         cases: list[tuple[JsonObject, str]] = [
             ({"action": "pause"}, "invalid_intent"),
             ({"filters": {"limit": 501}}, "selection_too_large"),
-            ({"contract_version": 3}, "unsupported_version"),
+            ({"contract_version": 4}, "unsupported_version"),
             ({"extra": 1}, "unknown_field"),
         ]
         for body, expected in cases:
@@ -637,11 +637,37 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
                 finally:
                     store.close()
 
+    async def test_a_total_length_proposal_keeps_its_report_and_commits(self) -> None:
+        total = {"total_length": {"mode": "about", "seconds": 600}}
+        response = await self.http.post(
+            "/api/music-bot/proposals",
+            json={"contract_version": 3, "action": "search", "seed": 2, "filters": total},
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        proposal = part(payload(response), "proposal")
+        report = part(proposal, "duration")
+        self.assertEqual((report["mode"], report["met"]), ("about", True))
+        self.assertEqual(report["total_seconds"], proposal["total_seconds"])
+        read = await self.http.get(f"/api/music-bot/proposals/{proposal['id']}")
+        self.assertEqual(part(part(payload(read), "proposal"), "duration"), report)
+        # A commit body is unchanged since version 2, so both versions commit.
+        for version, operation in ((2, "op-00000002"), (3, "op-00000003")):
+            committed = await self.commit(
+                proposal["id"],
+                contract_version=version,
+                operation_id=operation,
+                target={"kind": "queue"},
+                repeat=True,
+            )
+            self.assertEqual(committed.status_code, 200, committed.text)
+        plain = await self.create(seed=2)
+        self.assertIsNone(part(plain, "proposal")["duration"])
+
     async def test_registry_marks_commit_available(self) -> None:
         body = payload(await self.http.get("/api/music-bot/capabilities"))
         found = {item["id"]: item["available"] for item in body["capabilities"]}  # type: ignore[attr-defined]
         self.assertTrue(found["proposal_commit"])
-        self.assertEqual(body["supported_versions"], [1, 2])
+        self.assertEqual(body["supported_versions"], [1, 2, 3])
 
 
 if __name__ == "__main__":
