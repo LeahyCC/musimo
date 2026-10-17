@@ -9,6 +9,7 @@ import {
   playerFixtures,
   requestBody,
 } from './library-fixtures'
+import { botModelFixtures, proposalFixtures } from './proposal-fixtures'
 
 const alpha = librarySong('song-a', { title: 'Alpha' })
 const bravo = librarySong('song-b', { title: 'Bravo' })
@@ -264,4 +265,64 @@ test('adding past the 500 songs the queue keeps is refused with a message', asyn
   await expect(page.locator('.live-player')).toContainText('The queue is full')
   await expect(page.locator('.live-player')).toContainText('Nothing was added')
   expect(saves).toHaveLength(before)
+})
+
+test('songs confirmed from a bot preview join Up next in the approved order and stay editable', async ({
+  page,
+}) => {
+  const saves = await restoreQueue(page, [alpha])
+  await botModelFixtures(page)
+  const proposals = await proposalFixtures(page, [bravo, charlie, delta])
+  const plan = {
+    change_filters: [],
+    allow_artists: [],
+    add_count: 0,
+    action: 'search',
+    scope: 'library',
+    artists: [],
+    exclude_artists: [],
+    genres: [],
+    year_from: null,
+    year_to: null,
+    favourites: false,
+    history: 'any',
+    exclude_played_days: 0,
+    min_seconds: 0,
+    max_seconds: null,
+    target_seconds: 0,
+    limit: 100,
+    similar_to_current: false,
+    explanation: '',
+  }
+  await page.route('**/api/music-bot/chat', (route) =>
+    route.fulfill({
+      json: {
+        plan,
+        tracks: [bravo, charlie, delta],
+        total_seconds: 642,
+        shortfall_seconds: 0,
+        summary: '3 songs, 10.7 minutes. Based on saved library tags.',
+        elapsed_ms: 5,
+      },
+    }),
+  )
+  await page.goto('/music-bot')
+  await page.getByRole('textbox', { name: /^Ask .+ for music$/ }).fill('three easy songs')
+  await page.getByRole('button', { name: 'Send', exact: true }).click()
+  await expect(page.getByRole('list', { name: 'Proposed songs' })).toBeVisible()
+  // A preview changes nothing: the queue is still the one song that was restored.
+  expect(saves).toHaveLength(0)
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect.poll(() => lastSave(saves)?.ids).toEqual(['song-a', 'song-b', 'song-c', 'song-d'])
+  expect(proposals.handed).toEqual([['song-b', 'song-c', 'song-d']])
+
+  await page.getByRole('link', { name: 'Open Now Playing' }).first().click()
+  const upNext = page.getByRole('tabpanel', { name: 'Up next' })
+  const titles = upNext.locator('[data-queue-index] strong')
+  await expect(titles).toHaveText(['Bravo', 'Charlie', 'Delta'])
+  await upNext.getByRole('button', { name: 'Move Delta up' }).click()
+  await expect(titles).toHaveText(['Bravo', 'Delta', 'Charlie'])
+  await expect.poll(() => lastSave(saves)?.ids).toEqual(['song-a', 'song-b', 'song-d', 'song-c'])
+  // The edit is the person's own: the confirmed preview did not queue anything again.
+  expect(proposals.commits).toHaveLength(1)
 })

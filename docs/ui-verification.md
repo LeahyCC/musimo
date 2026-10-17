@@ -139,6 +139,12 @@ Checks added or rewritten:
 
 Not yet verified in a browser: this change was written in an environment with no shell, so the type check, lint, the specs above and screenshots at 390 by 844 and 360 wide have still to be run. The layout numbers (45% and 50% of the screen, the 104px cover) are estimates from the code's own heights until then.
 
+## Music bot preview and confirm, 17 October 2026
+
+The chat's result card now shows a stored proposal revision: an overview of its songs, about six representative songs for a long list with the whole list behind See all, and a stale or unknown-outcome panel in place of the actions when a confirmation did not go through. Screenshots from the four generated files in the isolated stack: [the preview](assets/music-bot-preview.png) and [a stale one after a like was removed](assets/music-bot-preview-stale.png).
+
+Checked in Chromium, WebKit and the 390px mobile project, two runs each, in `e2e/music-bot.spec.ts`, `e2e/music-bot-pet.spec.ts`, `e2e/music-bot-proposals.spec.ts` and `e2e/queue-editing.spec.ts`: no page-level sideways scroll with a 20-song sample open; See all and Show the sample reached with the keyboard (Enter on the focused button) and `aria-expanded` set; the stale and unknown panels announced as alerts, with their only button a normal-height control (44px on a coarse pointer); axe clean on the card after a save; the card readable at 390px (screenshot inspected). Firefox could not launch on the machine that ran this, so it was not run. The Windows 95 list view only had the existing theme walk, which still passes in Chromium; the new panels have no Windows 95 specific check.
+
 ## Known limits
 
 Library albums, artists and tracks filter and sort on the server; playlist sorts still apply to the loaded list. Catalog search on the Search page is unchanged and says so in the help inside its Filters panel. the library's saved play queue holds 500 songs, so Play all over a larger library plays the first 500. Shuffle plays the whole filtered library, past the 50,000 song browse cap as well: the queue holds a window and the server fills the next one as it plays. Whole-library track browsing reads up to 50,000 songs from the library, so a library beyond that size describes the first 50,000 it returns.

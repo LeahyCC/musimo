@@ -5,6 +5,8 @@ import type { Locator, Page } from '@playwright/test'
 import { BUILT_IN_THEMES } from '../src/theme/themes'
 import type { Theme } from '../src/theme/themes'
 import { generatedPlayerAudio, librarySong, playerFixtures, requestBody } from './library-fixtures'
+import { proposalFixtures } from './proposal-fixtures'
+import type { ProposalMock } from './proposal-fixtures'
 
 /* The music bot's pet: where it perches, opening and closing its chat, every action on a result
    from the popover, its quick menu and settings, the phone sheet, the Windows 95 skin and reduced
@@ -51,6 +53,9 @@ const answer = {
   elapsed_ms: 123,
 }
 
+/** The proposal routes' stand-in for the test in progress. Set by fixtures(); one worker runs a file. */
+let proposals: ProposalMock
+
 test.afterEach(async ({ page }) => {
   await page.unrouteAll({ behavior: 'wait' })
 })
@@ -81,6 +86,7 @@ async function fixtures(page: Page, { restore = true, theme, pet }: Options = {}
     route.fulfill({ json: { models: ['fixture', 'llama3.2:3b'], elapsed_ms: 2 } }),
   )
   await page.route('**/api/music-bot/chat', (route) => route.fulfill({ json: answer }))
+  proposals = await proposalFixtures(page, [first, second])
   await page.route('**/api/music-bot/validate', (route) => {
     const ids = requestBody(route).ids
     const wanted = Array.isArray(ids) ? ids : []
@@ -212,20 +218,12 @@ test.describe('desktop', () => {
     await shot(page, 'desktop-dark-refused')
 
     await ask(page, 'save these')
-    let saved: unknown
-    await page.route('**/api/library/playlists', async (route) => {
-      if (route.request().method() !== 'POST') return route.fallback()
-      saved = requestBody(route)
-      await route.fulfill({
-        json: { id: 'pl-9', name: '80s', songCount: 2, duration: 428, song: [first, second] },
-      })
-    })
     await card(page).getByRole('button', { name: 'Save as playlist' }).click()
     await card(page).getByLabel('Playlist name').fill('80s favourites')
     await card(page).getByRole('button', { name: 'Save', exact: true }).click()
     await expect
-      .poll(() => saved)
-      .toEqual({ name: '80s favourites', song_ids: [first.id, second.id] })
+      .poll(() => proposals.saved)
+      .toEqual([{ name: '80s favourites', ids: [first.id, second.id] }])
   })
 
   test('a reply that lands with the chat closed wakes the pet, with a dot and a bubble', async ({

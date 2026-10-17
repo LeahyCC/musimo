@@ -14,7 +14,6 @@ import {
   resultLine,
   shortMinutes,
   shownIds,
-  withoutSong,
 } from './bot-replies'
 
 const plan: Record<string, unknown> = {
@@ -75,7 +74,6 @@ describe('botReplySchema', () => {
     expect(older.current_id).toBeNull()
     const measured = reply({}, 3, { reference_id: 'tr-0000000000000009', current_id: null })
     expect(measured.reference_id).toBe('tr-0000000000000009')
-    expect(withoutSong(measured, 'tr-1').reference_id).toBe('tr-0000000000000009')
   })
 })
 
@@ -201,7 +199,9 @@ describe('result wording', () => {
   it('says what each action did', () => {
     expect(appliedText('play', 15, true)).toBe('Playing now. These 15 songs replaced your queue.')
     // Loaded is not playing: a blocked autoplay must not read as music.
-    expect(appliedText('play', 15, false)).toBe('These 15 songs replaced your queue.')
+    expect(appliedText('play', 15, false)).toBe(
+      'Loaded, not playing yet. These 15 songs replaced your queue.',
+    )
     expect(appliedText('replace', 1, true)).toMatch(/current song keeps playing/)
   })
 })
@@ -250,57 +250,5 @@ describe('explainFailure', () => {
       text: 'Cannot reach Ollama. Check its address in Settings.',
       next: 'retry',
     })
-  })
-})
-
-describe('withoutSong and repeats', () => {
-  it('drops the repeat sentence, which it cannot recount', () => {
-    for (const sentence of [
-      ' 1 song repeats from an earlier answer; no other match could be used.',
-      ' 2 songs repeat from earlier answers.',
-    ]) {
-      const repeated = reply({}, 3, {
-        summary: `3 songs, 12.0 minutes. Based on saved library tags.${sentence} Picked at random from 9 matches.`,
-      })
-      expect(withoutSong(repeated, 'tr-1').summary).toBe(
-        '2 songs, 8.0 minutes. Based on saved library tags. Picked at random from 9 matches.',
-      )
-    }
-  })
-})
-
-describe('withoutSong', () => {
-  it('rewrites the count, the minutes and the shortfall in the server’s own words', () => {
-    const before = reply({ target_seconds: 3600, favourites: true }, 3, {
-      summary:
-        '3 songs, 12.0 minutes. Based on saved library tags. Favourites are songs in your Liked playlist. 48.0 minutes short; no exclusions were relaxed.',
-      shortfall_seconds: 2880,
-    })
-    const after = withoutSong(before, 'tr-1')
-    expect(after.tracks.map((track) => track.id)).toEqual(['tr-0', 'tr-2'])
-    expect(after.total_seconds).toBe(480)
-    expect(after.shortfall_seconds).toBe(3120)
-    expect(after.summary).toBe(
-      '2 songs, 8.0 minutes. Based on saved library tags. Favourites are songs in your Liked playlist. 52.0 minutes short; no exclusions were relaxed.',
-    )
-    expect(shortMinutes(after)).toBe(52)
-  })
-
-  it('adds a shortfall where removing a song opens one, and keeps the rest of the summary', () => {
-    const before = reply({ target_seconds: 700 }, 3, {
-      summary:
-        '3 songs, 12.0 minutes. Based on saved library tags. Similarity uses artist or genre tags, not audio analysis.',
-    })
-    expect(withoutSong(before, 'tr-0').summary).toBe(
-      '2 songs, 8.0 minutes. Based on saved library tags. 3.7 minutes short; no exclusions were relaxed. Similarity uses artist or genre tags, not audio analysis.',
-    )
-  })
-
-  it('reads one song in the singular and leaves an unknown id alone', () => {
-    const before = reply({}, 2, { summary: '2 songs, 8.0 minutes. Based on saved library tags.' })
-    expect(withoutSong(before, 'tr-0').summary).toBe(
-      '1 song, 4.0 minutes. Based on saved library tags.',
-    )
-    expect(withoutSong(before, 'tr-none')).toBe(before)
   })
 })

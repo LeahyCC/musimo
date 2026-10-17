@@ -189,6 +189,7 @@ function statusLine(
     return { text: 'No installed models', tone: 'danger' }
   if (chat.locked === 'nomodel') return { text: 'No model chosen', tone: 'danger' }
   if (chat.thinking) return { text: chat.cold ? 'Waking up the model…' : 'Thinking…', tone: 'warn' }
+  if (chat.confirming) return { text: 'Confirming…', tone: 'warn' }
   if (chat.applying) return { text: 'Checking the selection…', tone: 'warn' }
   return { text: `${settings ? 'Connected' : 'Ready'} · ${model}`, tone: 'accent' }
 }
@@ -203,7 +204,7 @@ function ScopeBar() {
     id === 'library' ||
     (id === 'proposal' && Boolean(chat.reply?.tracks.length)) ||
     (id === 'queue' && player.queue.length > player.currentIndex + 1)
-  const busy = chat.thinking || chat.applying
+  const busy = chat.thinking || chat.applying || chat.confirming
 
   if (win95)
     return (
@@ -399,7 +400,7 @@ function Entry({
 }) {
   const chat = useBotChat()
   const win95 = usePetLook().pixel
-  const busy = chat.thinking || chat.applying
+  const busy = chat.thinking || chat.applying || chat.confirming
 
   if (win95 && (entry.kind === 'user' || entry.kind === 'reply'))
     return (

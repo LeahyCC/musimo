@@ -21,13 +21,14 @@ import { Button, Field } from '../../ui'
 import { durationText, usePlayer } from '../player/player'
 import { useBotChat } from './bot-chat'
 import { appliedText, filterChips, lengthText, loosenChips, shortMinutes } from './bot-replies'
+import { MissingPanel, PreviewFacts, ProblemPanel, SavedLine } from './preview-panels'
 
 const SCOPE_LABELS = {
   library: 'WHOLE LIBRARY',
   proposal: 'THIS SELECTION',
   queue: 'UP NEXT',
 } as const
-/** The card opens on this many songs; Show all lists the rest. */
+/** A card with no stored revision opens on this many songs; Show all lists the rest. */
 const FIRST_SONGS = 5
 
 const chipClassName =
@@ -35,7 +36,9 @@ const chipClassName =
 
 /**
  * A result stays a preview until one of its actions is pressed. Every card says so, says what it
- * is based on, and shows the filters that made it; removing a filter sends a follow-up.
+ * is based on, and shows the filters that made it; removing a filter sends a follow-up. A stored
+ * revision shows what its songs add up to and about six that stand for a long list, with the
+ * whole list one press away. A short one is shown whole. Every action confirms that revision.
  */
 export function ResultCard({ reply }: { reply: BotReply }) {
   const chat = useBotChat()
@@ -49,11 +52,21 @@ export function ResultCard({ reply }: { reply: BotReply }) {
   // The player stops offering Undo once the queue moves on, so the refusal shows straight away
   // rather than after a press that cannot work.
   const refused = applied !== null && (applied.undo === 'refused' || !player.canUndoBotQueue)
-  const busy = chat.thinking || chat.applying || chat.locked !== null
+  const busy = chat.thinking || chat.applying || chat.confirming || chat.locked !== null
+  // Taking a song off stores a new preview, so it waits while anything else is in flight and
+  // while a confirmation's outcome is unsettled.
+  const changing = chat.thinking || chat.applying || chat.confirming || chat.problem !== null
   const chips = filterChips(reply.plan)
   const short = shortMinutes(reply)
-  const songs = showAll ? reply.tracks : reply.tracks.slice(0, FIRST_SONGS)
   const excluded = reply.plan.exclude_artists
+  const { preview, problem } = chat
+  // A short stored list is shown whole. A long one opens on the sample the server picked from it.
+  // With no stored revision (an empty answer), the card opens on its first few songs as before.
+  const sampleIds = preview && !preview.complete ? preview.sampleIds : []
+  const sample = reply.tracks.filter((track) => sampleIds.includes(track.id))
+  const opening = preview ? (sample.length ? sample : []) : reply.tracks.slice(0, FIRST_SONGS)
+  const foldable = opening.length > 0 && opening.length < reply.tracks.length
+  const songs = showAll || !foldable ? reply.tracks : opening
 
   return (
     <div
@@ -70,7 +83,10 @@ export function ResultCard({ reply }: { reply: BotReply }) {
               ? 'IN YOUR QUEUE'
               : 'PREVIEW, NOT APPLIED'}
         </span>
-        <span className="whitespace-nowrap">{SCOPE_LABELS[reply.plan.scope]}</span>
+        <span className="whitespace-nowrap">
+          {SCOPE_LABELS[reply.plan.scope]}
+          {preview && preview.revision > 1 ? ` · REVISION ${preview.revision}` : ''}
+        </span>
       </div>
       <p className="m-0 leading-[1.5] text-pretty">{reply.summary}</p>
       {chips.length > 0 && (
@@ -91,6 +107,10 @@ export function ResultCard({ reply }: { reply: BotReply }) {
             </li>
           ))}
         </ul>
+      )}
+      {preview && <MissingPanel preview={preview} />}
+      {preview && reply.tracks.length > 0 && (
+        <PreviewFacts preview={preview} approvedSeconds={reply.total_seconds} />
       )}
       {short > 0 && reply.tracks.length > 0 && (
         <p
@@ -117,7 +137,7 @@ export function ResultCard({ reply }: { reply: BotReply }) {
       {reply.tracks.length > 0 ? (
         <>
           {win95 ? (
-            <SongTable reply={reply} songs={songs} />
+            <SongTable reply={reply} songs={songs} locked={changing} />
           ) : (
             <ol aria-label="Proposed songs" className="m-0 grid list-none border-t border-line p-0">
               {songs.map((track) => (
@@ -138,25 +158,30 @@ export function ResultCard({ reply }: { reply: BotReply }) {
                     onOpenChange={(value) => setMenuFor(value ? track.id : null)}
                     reference={chat.reference?.id === track.id}
                     disabled={busy}
+                    removeDisabled={changing}
                     onReference={() =>
                       chat.setReference({ id: track.id, label: `${track.title} · ${track.artist}` })
                     }
                     onPlay={() => void chat.apply('play', track.id)}
-                    onRemove={() => chat.removeSong(track.id)}
+                    onRemove={() => void chat.removeSong(track.id)}
                   />
                 </li>
               ))}
             </ol>
           )}
           <div className="flex items-baseline justify-between gap-[10px] text-tiny text-muted">
-            {reply.tracks.length > FIRST_SONGS ? (
+            {foldable ? (
               <button
                 type="button"
                 className="border-0 bg-transparent p-0 text-small whitespace-nowrap text-accent underline-offset-2 hover:underline coarse:min-h-11"
                 aria-expanded={showAll}
                 onClick={() => setShowAll((value) => !value)}
               >
-                {showAll ? 'Show fewer' : `Show all ${reply.tracks.length} songs`}
+                {showAll
+                  ? preview
+                    ? 'Show the sample'
+                    : 'Show fewer'
+                  : `See all ${reply.tracks.length} songs`}
               </button>
             ) : (
               <span />
@@ -166,7 +191,7 @@ export function ResultCard({ reply }: { reply: BotReply }) {
             </span>
           </div>
         </>
-      ) : (
+      ) : preview?.missing ? null : (
         <div className="grid gap-[10px]">
           <p className="m-0 text-small leading-[1.5] text-muted">
             None of your library matches all of these filters.
@@ -190,7 +215,9 @@ export function ResultCard({ reply }: { reply: BotReply }) {
         </div>
       )}
 
-      {!applied && reply.tracks.length > 0 && (
+      <ProblemPanel />
+      <SavedLine />
+      {!applied && !problem && !preview?.missing && reply.tracks.length > 0 && (
         <div className="grid gap-[8px]">
           <div className="flex flex-wrap gap-[8px]">
             <Button variant="primary" disabled={busy} onClick={() => void chat.apply('play')}>
@@ -307,7 +334,16 @@ function defaultPlaylistName(filters: string[]): string {
 }
 
 /** The Windows 95 list view: a table with column headers, as the skin's design draws it. */
-function SongTable({ reply, songs }: { reply: BotReply; songs: BotReply['tracks'] }) {
+function SongTable({
+  reply,
+  songs,
+  locked,
+}: {
+  reply: BotReply
+  songs: BotReply['tracks']
+  /** Delete takes a song off the list, which waits while something else is in flight. */
+  locked: boolean
+}) {
   const chat = useBotChat()
   return (
     <div role="table" aria-label="Proposed songs" data-bot="list-view" className="grid">
@@ -335,7 +371,7 @@ function SongTable({ reply, songs }: { reply: BotReply; songs: BotReply['tracks'
             onKeyDown={(event) => {
               if (event.key === 'Enter')
                 chat.setReference({ id: track.id, label: `${track.title} · ${track.artist}` })
-              if (event.key === 'Delete') chat.removeSong(track.id)
+              if (event.key === 'Delete' && !locked) void chat.removeSong(track.id)
             }}
             onClick={() =>
               chat.setReference({ id: track.id, label: `${track.title} · ${track.artist}` })
@@ -365,6 +401,7 @@ type SongMenuProps = {
   onOpenChange: (open: boolean) => void
   reference: boolean
   disabled: boolean
+  removeDisabled: boolean
   onReference: () => void
   onPlay: () => void
   onRemove: () => void
@@ -377,6 +414,7 @@ function SongMenu({
   onOpenChange,
   reference,
   disabled,
+  removeDisabled,
   onReference,
   onPlay,
   onRemove,
@@ -461,7 +499,13 @@ function SongMenu({
           >
             Play this song
           </button>
-          <button type="button" role="menuitem" className={item} onClick={() => choose(onRemove)}>
+          <button
+            type="button"
+            role="menuitem"
+            className={item}
+            disabled={removeDisabled}
+            onClick={() => choose(onRemove)}
+          >
             Remove from this list
           </button>
         </div>
