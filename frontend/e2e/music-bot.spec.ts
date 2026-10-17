@@ -651,7 +651,7 @@ test('Save and Add to queue confirm the shown revision and never search again', 
   expect(proposals.refines).toHaveLength(0)
   const [playlist, queue] = proposals.commits
   expect(playlist).toMatchObject({
-    contract_version: 2,
+    contract_version: 3,
     revision: 1,
     target: { kind: 'playlist', name: 'Road trip' },
     repeat: false,
@@ -869,4 +869,75 @@ test('taking a song off the card stores the shorter list, and that is what is co
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
   await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, second.id])
   expect(proposals.handed).toEqual([[second.id]])
+})
+
+test('a song the library no longer has is named, left off the list, and refreshed before confirming', async ({
+  page,
+}) => {
+  const saves = await fixtures(page)
+  proposals.ghosts = ['tr-00000000000000ff']
+  await page.goto('/music-bot')
+  await ask(page)
+  const items = card(page).getByRole('list', { name: 'Proposed songs' }).getByRole('listitem')
+  // The two songs that exist are drawn. The one that does not is not, and nothing crashes.
+  await expect(items).toHaveCount(2)
+  const missing = card(page).locator('[data-bot="missing"]')
+  await expect(missing).toContainText('1 song in this preview is no longer in your library.')
+  await expect(card(page).getByLabel('About this preview')).toContainText(
+    '1 song no longer in the library',
+  )
+  // Confirming would only be refused as stale, so it waits for the refresh.
+  await expect(card(page).getByRole('button', { name: 'Add to queue', exact: true })).toHaveCount(0)
+  expect(proposals.commits).toHaveLength(0)
+  proposals.ghosts = []
+  await missing.getByRole('button', { name: 'Refresh preview' }).click()
+  await expect(missing).toHaveCount(0)
+  await expect(card(page)).toContainText('REVISION 2')
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, first.id, second.id])
+})
+
+test('a preview whose songs have all left the library says so instead of showing an empty card', async ({
+  page,
+}) => {
+  await fixtures(page)
+  proposals.pick = () => []
+  proposals.ghosts = ['tr-00000000000000fe', 'tr-00000000000000ff']
+  await page.goto('/music-bot')
+  await say(page, 'anything')
+  await expect(card(page).locator('[data-bot="missing"]')).toContainText(
+    '2 songs in this preview are no longer in your library.',
+  )
+  await expect(card(page)).not.toContainText('None of your library matches')
+  await expect(card(page).getByRole('list', { name: 'Proposed songs' })).toHaveCount(0)
+  await expect(card(page).getByRole('button', { name: 'Refresh preview' })).toBeVisible()
+})
+
+test('the approved total stays the card’s total, and the length the songs add up to now is labelled', async ({
+  page,
+}) => {
+  await fixtures(page)
+  // The revision was approved at 7 min 8 s. The songs now add up to a minute less.
+  proposals.drift = 60
+  await page.goto('/music-bot')
+  await ask(page)
+  await expect(card(page)).toContainText('Total 7 min')
+  await expect(card(page).getByLabel('About this preview')).toContainText(
+    'Length now 6 min, approved at 7 min',
+  )
+})
+
+test('every request names a contract version the server takes, for create, refine and commit', async ({
+  page,
+}) => {
+  await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  await ask(page, 'something else')
+  await expect(card(page)).toContainText('REVISION 2')
+  await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect.poll(() => proposals.commits.length).toBe(1)
+  expect(proposals.creates[0]?.contract_version).toBe(3)
+  expect(proposals.refines[0]?.body.intent).toMatchObject({ contract_version: 3 })
+  expect(proposals.commits[0]?.contract_version).toBe(3)
 })

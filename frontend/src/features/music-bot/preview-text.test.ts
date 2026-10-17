@@ -33,21 +33,26 @@ function overview(
   }
 }
 
+/** The facts for a revision whose approved total is the one its songs add up to now, unless
+ *  a test says otherwise. */
+const readFacts = (value: Overview, approved = value.measured.total_seconds) =>
+  overviewFacts(value, approved)
+
 describe('overviewFacts', () => {
   it('reads length, artists, genres and years from the songs, and lists nothing as unknown', () => {
-    expect(overviewFacts(overview())).toEqual({
-      measured: ['2 h 40 min in all', '12 artists', 'Rock (30), Pop (6)', '1990–1999'],
+    expect(readFacts(overview())).toEqual({
+      measured: ['12 artists', 'Rock (30), Pop (6)', '1990–1999'],
       unknown: [],
     })
   })
 
   it('says nothing about tempo or loudness while no recipe is on', () => {
-    const text = overviewFacts(overview()).measured.join(' ')
+    const text = readFacts(overview()).measured.join(' ')
     expect(text).not.toMatch(/tempo|bpm|loudness/i)
   })
 
   it('reports a measured tempo only with how many songs it covers', () => {
-    const facts = overviewFacts(
+    const facts = readFacts(
       overview({
         audio: {
           tempo: { min: 168.2, max: 176.4 },
@@ -65,7 +70,7 @@ describe('overviewFacts', () => {
   })
 
   it('says so when a recipe is on and no song has a fresh measurement', () => {
-    const facts = overviewFacts(
+    const facts = readFacts(
       overview({
         audio: {
           tempo: null,
@@ -83,7 +88,7 @@ describe('overviewFacts', () => {
   })
 
   it('counts a missing length once, apart from a song since removed', () => {
-    const facts = overviewFacts(
+    const facts = readFacts(
       overview(
         { total_seconds: 5400 },
         { duration_tracks: 5, missing_tracks: 3, year_tracks: 1, genre_tracks: 2 },
@@ -98,16 +103,31 @@ describe('overviewFacts', () => {
     ])
   })
 
+  it('names both lengths when the songs no longer add up to the approved total', () => {
+    // Approved at 2 h 40 min; one song has since changed length and the songs now sum to 2 h 35.
+    const facts = readFacts(overview({ total_seconds: 9300 }), 9600)
+    expect(facts.measured[0]).toBe('Length now 2 h 35 min, approved at 2 h 40 min')
+    // A difference under a second is rounding, not a change.
+    expect(readFacts(overview({ total_seconds: 9600.4 }), 9600).measured.join(' ')).not.toMatch(
+      /approved/,
+    )
+  })
+
+  it('leaves the total to the card unless some songs have no length', () => {
+    expect(readFacts(overview()).measured.join(' ')).not.toMatch(/in all|min from/)
+    expect(readFacts(overview({ track_count: 10 }, { duration_tracks: 2 })).measured[0]).toBe(
+      '2 h 40 min from 8 songs with a length',
+    )
+  })
+
   it('shows the three biggest genres and counts the rest', () => {
     const genres = ['A', 'B', 'C', 'D', 'E'].map((name, count) => ({ name, count: 9 - count }))
-    expect(overviewFacts(overview({ genres })).measured).toContain('A (9), B (8), C (7) and 2 more')
+    expect(readFacts(overview({ genres })).measured).toContain('A (9), B (8), C (7) and 2 more')
   })
 
   it('leaves a single year as one year and omits a range that is not known', () => {
-    expect(overviewFacts(overview({ year_range: { min: 1992, max: 1992 } })).measured).toContain(
-      '1992',
-    )
-    expect(overviewFacts(overview({ year_range: null })).measured.join(' ')).not.toMatch(/19/)
+    expect(readFacts(overview({ year_range: { min: 1992, max: 1992 } })).measured).toContain('1992')
+    expect(readFacts(overview({ year_range: null })).measured.join(' ')).not.toMatch(/19/)
   })
 })
 

@@ -71,6 +71,8 @@ const previewSchema = z.object({
   /** About six songs standing for a long list. All of it when `complete`. */
   sampleIds: z.array(z.string()),
   complete: z.boolean(),
+  /** Songs the revision lists that the library no longer has (the server's `missing_ids`). */
+  missing: z.number().int().default(0),
 })
 export type Preview = z.infer<typeof previewSchema>
 
@@ -181,6 +183,8 @@ type BotChat = {
   savedAs: readonly string[]
   /** Does what the problem offers: refresh the preview, or ask again with the same id. */
   resolveProblem: () => void
+  /** Runs the same request again as the next revision of the open proposal. */
+  refreshPreview: () => void
   dismissProblem: () => void
   applied: Applied | null
   /** The selection was restored after a reload, so the queue check needs a fresh request. */
@@ -259,6 +263,7 @@ const previewOf = (made: ProposalReply): Preview => ({
   overview: made.proposal.overview,
   sampleIds: made.proposal.sample.ids,
   complete: made.proposal.sample.complete,
+  missing: made.missing_ids.length,
 })
 
 /** What a refinement says when its proposal is gone or already refined elsewhere. */
@@ -942,6 +947,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     problem,
     savedAs,
     resolveProblem,
+    refreshPreview: () => void refresh(),
     dismissProblem: () => setProblem(null),
     applied,
     stale: Boolean(reply) && !stamp,

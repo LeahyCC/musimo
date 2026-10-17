@@ -10,8 +10,15 @@ import { overviewFacts } from './preview-text'
 
 /** What the songs show, and apart from it what could not be read. The filters the person asked
  *  for are the chips above; nothing here is guessed from a genre name. */
-export function PreviewFacts({ preview }: { preview: Preview }) {
-  const { measured, unknown } = overviewFacts(preview.overview)
+export function PreviewFacts({
+  preview,
+  approvedSeconds,
+}: {
+  preview: Preview
+  /** The total stored with this revision, which the card's own Total line shows. */
+  approvedSeconds: number
+}) {
+  const { measured, unknown } = overviewFacts(preview.overview, approvedSeconds)
   if (!measured.length && !unknown.length) return null
   return (
     <dl
@@ -97,6 +104,32 @@ export function ProblemPanel() {
         </Button>
         <Button disabled={busy} onClick={chat.dismissProblem}>
           Not now
+        </Button>
+      </div>
+    </div>
+  )
+}
+
+/** Songs the revision lists that the library no longer has. Their cards cannot be drawn, and a
+ *  commit would be refused as stale, so the card says so and offers the refresh up front. */
+export function MissingPanel({ preview }: { preview: Preview }) {
+  const chat = useBotChat()
+  if (!preview.missing) return null
+  return (
+    <div role="alert" data-bot="missing" className={panelClass}>
+      <span>
+        <strong className="font-semibold">
+          {preview.missing === 1
+            ? '1 song in this preview is no longer in your library.'
+            : `${preview.missing} songs in this preview are no longer in your library.`}
+        </strong>{' '}
+        They are left out of the list below. Confirming would be refused as out of date, so refresh
+        the preview first.
+      </span>
+      <div>
+        <Button disabled={chat.applying || chat.confirming} onClick={chat.refreshPreview}>
+          <RefreshCw size={14} aria-hidden="true" />
+          Refresh preview
         </Button>
       </div>
     </div>

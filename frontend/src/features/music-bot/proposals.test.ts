@@ -4,9 +4,11 @@ import { botReplySchema, libraryTrackSchema } from '../../api'
 import type { BotReply } from '../../api'
 import {
   commitProposal,
+  CONTRACT_VERSION,
   createProposal,
   idChanges,
   intentFromReply,
+  intentSchema,
   newOperationId,
   ProposalError,
   refineProposal,
@@ -58,7 +60,7 @@ describe('intentFromReply', () => {
   it('repeats a library draw: the plan’s filters, its seed and the songs it was made against', () => {
     const intent = intentFromReply(reply(), context)
     expect(intent).toMatchObject({
-      contract_version: 2,
+      contract_version: 3,
       action: 'search',
       scope: 'library',
       seed: 77,
@@ -100,6 +102,44 @@ describe('intentFromReply', () => {
     expect(intent.seed).toBeNull()
     expect(intent.context.proposal_ids).toEqual([song(1), song(5)])
     expect(intent.context.shown_ids).toEqual([])
+  })
+})
+
+describe('contract version', () => {
+  it('is one the server accepts for an intent (1 to 3) and for a commit (2 or 3)', () => {
+    expect(CONTRACT_VERSION).toBeGreaterThanOrEqual(2)
+    expect(CONTRACT_VERSION).toBeLessThanOrEqual(3)
+    expect(intentFromReply(reply(), context).contract_version).toBe(CONTRACT_VERSION)
+  })
+
+  it('asks for no total length, since the chat has only the old fill target', () => {
+    expect(intentFromReply(reply(), context).filters.total_length).toBeNull()
+  })
+
+  it('keeps a total length a stored intent carries, so a refresh asks for the same one', () => {
+    const stored = {
+      ...intentFromReply(reply(), context),
+      filters: {
+        ...intentFromReply(reply(), context).filters,
+        total_length: { mode: 'about', seconds: 3600 },
+      },
+    }
+    expect(intentSchema.parse(stored).filters.total_length).toEqual({
+      mode: 'about',
+      seconds: 3600,
+    })
+
+    expect(refreshIntent(intentSchema.parse(stored)).filters.total_length).toEqual({
+      mode: 'about',
+      seconds: 3600,
+    })
+  })
+
+  it('reads an older stored intent that has no total length as none', () => {
+    const { total_length: _, ...filters } = intentFromReply(reply(), context).filters
+    expect(
+      intentSchema.parse({ ...intentFromReply(reply(), context), filters }).filters.total_length,
+    ).toBeNull()
   })
 })
 
@@ -219,7 +259,7 @@ describe('the proposal routes', () => {
     })
     expect(done.receipt.status).toBe('ready_for_player')
     expect(sentBody(fetcher)).toEqual({
-      contract_version: 2,
+      contract_version: 3,
       revision: 1,
       operation_id: 'op-12345678',
       target: { kind: 'queue' },

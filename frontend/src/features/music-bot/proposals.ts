@@ -8,7 +8,10 @@ import type { BotReply } from '../../api'
    server picks and keeps the songs. Nothing here chooses, sorts or swaps one; it builds the
    request the chat's own plan describes and reads what comes back. */
 
-export const CONTRACT_VERSION = 2
+/** The engine's contract version. An intent may say 1 to 3 and a commit 2 or 3, so this one
+ *  number is accepted by create, refine and commit. Version 3 added `filters.total_length`, which
+ *  the chat never sets but a stored intent can carry, so it is kept when an intent is sent again. */
+export const CONTRACT_VERSION = 3
 
 const idList = z.array(z.string())
 const range = z.object({ min: z.number(), max: z.number() }).nullable()
@@ -26,6 +29,8 @@ const filtersSchema = z.object({
   min_seconds: z.number(),
   max_seconds: z.number().nullable(),
   target_seconds: z.number(),
+  // Version 3. Kept as the server sent it, so a refresh asks for the same total length.
+  total_length: z.record(z.string(), z.unknown()).nullable().default(null),
   limit: z.number(),
   similar_to_current: z.boolean(),
   tempo: z.enum(['', 'slow', 'medium', 'fast']),
@@ -286,6 +291,7 @@ export function intentFromReply(
       min_seconds: plan.min_seconds,
       max_seconds: plan.max_seconds,
       target_seconds: plan.target_seconds,
+      total_length: null,
       limit: plan.limit,
       similar_to_current: plan.similar_to_current,
       tempo: plan.tempo,

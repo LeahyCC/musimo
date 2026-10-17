@@ -23,17 +23,26 @@ function span(low: number, high: number, digits: number): string {
   return text(low) === text(high) ? text(low) : `${text(low)}–${text(high)}`
 }
 
-export function overviewFacts(overview: Overview): OverviewFacts {
+/**
+ * `approvedSeconds` is the total stored with the revision, which is what the card's Total line
+ * and what a commit approves. The overview's own total is added up from the songs as they are now,
+ * and the two can differ once a song changes or leaves. The card shows the approved one as its
+ * total and mentions the other only when it differs, or to say some songs have no length.
+ */
+export function overviewFacts(overview: Overview, approvedSeconds: number): OverviewFacts {
   const { measured, unknown } = overview
   const facts: string[] = []
   const gaps: string[] = []
   // The server counts a song since removed among those with no length. It is told apart below.
   const noLength = Math.max(0, unknown.duration_tracks - unknown.missing_tracks)
-  if (measured.total_seconds > 0)
+  const moved = Math.abs(measured.total_seconds - approvedSeconds) >= 1
+  if (moved)
     facts.push(
-      noLength > 0
-        ? `${lengthText(measured.total_seconds)} from ${plural(measured.track_count - unknown.duration_tracks, 'song')} with a length`
-        : `${lengthText(measured.total_seconds)} in all`,
+      `Length now ${lengthText(measured.total_seconds)}, approved at ${lengthText(approvedSeconds)}`,
+    )
+  else if (noLength > 0 && measured.total_seconds > 0)
+    facts.push(
+      `${lengthText(measured.total_seconds)} from ${plural(measured.track_count - unknown.duration_tracks, 'song')} with a length`,
     )
   if (measured.artist_count > 0) facts.push(plural(measured.artist_count, 'artist'))
   if (measured.genres.length > 0) {

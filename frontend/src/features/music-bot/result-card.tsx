@@ -21,7 +21,7 @@ import { Button, Field } from '../../ui'
 import { durationText, usePlayer } from '../player/player'
 import { useBotChat } from './bot-chat'
 import { appliedText, filterChips, lengthText, loosenChips, shortMinutes } from './bot-replies'
-import { PreviewFacts, ProblemPanel, SavedLine } from './preview-panels'
+import { MissingPanel, PreviewFacts, ProblemPanel, SavedLine } from './preview-panels'
 
 const SCOPE_LABELS = {
   library: 'WHOLE LIBRARY',
@@ -105,7 +105,10 @@ export function ResultCard({ reply }: { reply: BotReply }) {
           ))}
         </ul>
       )}
-      {preview && reply.tracks.length > 0 && <PreviewFacts preview={preview} />}
+      {preview && <MissingPanel preview={preview} />}
+      {preview && reply.tracks.length > 0 && (
+        <PreviewFacts preview={preview} approvedSeconds={reply.total_seconds} />
+      )}
       {short > 0 && reply.tracks.length > 0 && (
         <p
           role="note"
@@ -184,7 +187,7 @@ export function ResultCard({ reply }: { reply: BotReply }) {
             </span>
           </div>
         </>
-      ) : (
+      ) : preview?.missing ? null : (
         <div className="grid gap-[10px]">
           <p className="m-0 text-small leading-[1.5] text-muted">
             None of your library matches all of these filters.
@@ -210,7 +213,7 @@ export function ResultCard({ reply }: { reply: BotReply }) {
 
       <ProblemPanel />
       <SavedLine />
-      {!applied && !problem && reply.tracks.length > 0 && (
+      {!applied && !problem && !preview?.missing && reply.tracks.length > 0 && (
         <div className="grid gap-[8px]">
           <div className="flex flex-wrap gap-[8px]">
             <Button variant="primary" disabled={busy} onClick={() => void chat.apply('play')}>
