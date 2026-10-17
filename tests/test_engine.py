@@ -673,6 +673,38 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
                     if best is not None:
                         self.assertEqual(report["total_seconds"], float(best))
 
+    def test_reported_totals_are_the_milliseconds_the_search_compared(self) -> None:
+        # Three songs of 1200.0004 s are 3,600,000 ms: at most an hour, not under it. The float
+        # sum, 3600.0012, would read as over N, so it must not be what is reported.
+        self.lengths(
+            {
+                "Echo": 1200.0004,
+                "Echo (Live)": 1200.0004,
+                "Echo (Remix)": 1200.0004,
+                "Echo - 2011 Remaster": 9000,
+            }
+        )
+        three = {self.ids[t] for t in ("Echo", "Echo (Live)", "Echo (Remix)")}
+        at_most = self.timed("at_most", 3600, filters={"artists": ["Harbor"]})
+        report = self.report(at_most)
+        self.assertTrue(report["met"])
+        self.assertEqual(set(self.ids_of(at_most)), three)
+        self.assertEqual((report["total_seconds"], report["deviation_seconds"]), (3600.0, 0.0))
+        self.assertEqual(at_most["total_seconds"], 3600.0)
+        under = self.timed("under", 3600, filters={"artists": ["Harbor"]})
+        report = self.report(under)
+        self.assertTrue(report["met"])
+        self.assertEqual(len(self.ids_of(under)), 2)
+        self.assertEqual((report["total_seconds"], report["deviation_seconds"]), (2400.0, -1200.0))
+        # A single song of 3600.0004 s is not under an hour, and its alternative says 60:00.
+        self.lengths({"Hail": 3600.0004})
+        alone = self.timed("under", 3600, filters={"artists": ["Ridge"], "year_from": 1988})
+        report = self.report(alone)
+        self.assertFalse(report["met"])
+        longer = report["alternative"]
+        assert isinstance(longer, dict)
+        self.assertEqual((longer["total_seconds"], longer["deviation_seconds"]), (3600.0, 0.0))
+
     def test_an_unmet_about_target_keeps_the_shorter_strict_selection_and_offers_longer(
         self,
     ) -> None:

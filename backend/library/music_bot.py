@@ -1140,16 +1140,18 @@ class MusicBot:
             ARTIST_CAP,
         )
         tracks = [view.by_song[usable[index].song_id] for index in found.picked]
-        total = sum((usable[index].duration for index in found.picked), 0.0)
+        # Every total and deviation here comes from the whole milliseconds the search compared,
+        # so `met` and the numbers cannot disagree at a boundary.
+        target_ms = total_length.seconds * 1000
+        total = found.total_ms / 1000
         alternative: dict[str, object] | None = None
         if found.alternative is not None:
             longer = [usable[index] for index in found.alternative]
-            seconds = sum((song.duration for song in longer), 0.0)
             alternative = {
                 "ids": [song.song_id for song in longer],
                 "tracks": [view.by_song[song.song_id] for song in longer],
-                "total_seconds": seconds,
-                "deviation_seconds": round(seconds - total_length.seconds, 3),
+                "total_seconds": found.alternative_ms / 1000,
+                "deviation_seconds": (found.alternative_ms - target_ms) / 1000,
             }
         return (
             tracks,
@@ -1159,7 +1161,7 @@ class MusicBot:
                 "target_seconds": total_length.seconds,
                 "window_seconds": ABOUT_WINDOW if total_length.mode == "about" else 0,
                 "total_seconds": total,
-                "deviation_seconds": round(total - total_length.seconds, 3),
+                "deviation_seconds": (found.total_ms - target_ms) / 1000,
                 "met": found.met,
                 "unmet_reason": found.unmet,
                 "unknown_length": unknown_length,
