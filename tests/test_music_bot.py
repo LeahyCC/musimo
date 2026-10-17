@@ -770,6 +770,22 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
             await self.bot.chat(BotRequest(prompt="rock"))
         self.assertFalse(self.bot.busy)
 
+    async def test_chat_reads_the_servers_shown_songs_not_the_body(self) -> None:
+        remembered = [self.ids["E other"], self.ids["A yesterday"]]
+        self.store.record_shown("pr-0123456789abcdef:1", remembered)
+        asked: list[list[str]] = []
+        real = self.bot.resolve
+
+        def spy(
+            query: SearchPlan, request: BotRequest, *rest: object, **named: object
+        ) -> dict[str, object]:
+            asked.append(list(request.shown_ids))
+            return real(query, request, *rest, **named)  # type: ignore[arg-type]
+
+        with patch.object(self.bot, "resolve", spy):
+            await self.bot.chat(BotRequest(prompt="rock", shown_ids=[self.ids["B today"]]))
+        self.assertEqual(asked, [remembered])
+
     async def test_non_thinking_is_selected_only_when_reported_as_supported(self) -> None:
         for metadata, expected in [
             (

@@ -35,6 +35,12 @@ export type ProposalMock = {
   drift: number
   /** Ids a commit's receipt lists beyond the revision's own, as a receipt the card cannot match. */
   receiptExtra: string[]
+  /** Every presentation the browser reported, as `proposal:revision`, repeats included. */
+  presented: string[]
+  /** How many times the memory was forgotten. */
+  forgets: number
+  /** What the shown-song memory holds, kept for the life of the page as the server keeps it. */
+  memory: () => { revision: number; results: number; songs: string[] }
 }
 
 type Stored = { revisions: Map<number, string[]>; latest: number }
@@ -80,8 +86,25 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     ghosts: [],
     drift: 0,
     receiptExtra: [],
+    presented: [],
+    forgets: 0,
+    memory: () => ({ revision, results: kept.length, songs: remembered() }),
   }
   const proposals = new Map<string, Stored>()
+  // The shown-song memory as the server keeps it: the last three presented library results, each
+  // presentation once, the songs read newest first and capped at 500.
+  const kept: { key: string; ids: string[] }[] = []
+  let revision = 0
+  const libraryRevisions = new Set<string>()
+  const remembered = () => [...new Set(kept.flatMap((entry) => entry.ids))].slice(0, 500)
+  const memoryReply = (recorded: boolean) => ({
+    status: 'ok',
+    profile: 'default',
+    revision,
+    results: kept.length,
+    songs: remembered().length,
+    recorded,
+  })
   const receipts = new Map<string, Record<string, unknown>>()
   const went = new Set<string>()
   let made = 0
@@ -122,7 +145,7 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     const complete = ids.length <= 12
     return {
       contract_version: 3,
-      engine_version: 2,
+      engine_version: 3,
       status: 'ok',
       proposal: {
         id,
@@ -180,7 +203,40 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     made += 1
     const id = `pr-${made.toString(16).padStart(16, '0')}`
     proposals.set(id, { revisions: new Map([[1, ids]]), latest: 1 })
+    if (intent.scope === 'library') libraryRevisions.add(`${id}:1`)
     return route.fulfill({ json: reply(id, 1, { ...intent, seed: intent.seed ?? 7 }, ids) })
+  })
+
+  await page.route('**/api/music-bot/memory', async (route) => {
+    const method = route.request().method()
+    if (method === 'DELETE') {
+      mock.forgets += 1
+      if (kept.length) revision += 1
+      kept.length = 0
+    }
+    return route.fulfill({ json: memoryReply(false) })
+  })
+
+  await page.route('**/api/music-bot/memory/shown', async (route) => {
+    const body = requestBody(route)
+    const id = text(body.proposal_id)
+    const number = Number(body.revision)
+    mock.presented.push(`${id}:${number}`)
+    const ids = proposals.get(id)?.revisions.get(number)
+    if (!ids)
+      return route.fulfill({
+        status: 404,
+        json: envelope('proposal_not_found', 'No such proposal.'),
+      })
+    // Only a library result counts, and each presentation once.
+    const key = `${id}:${number}`
+    const fresh = libraryRevisions.has(key) && ids.length > 0 && !kept.some((e) => e.key === key)
+    if (fresh) {
+      kept.unshift({ key, ids })
+      kept.length = Math.min(kept.length, 3)
+      revision += 1
+    }
+    return route.fulfill({ json: memoryReply(fresh) })
   })
 
   await page.route(/\/api\/music-bot\/proposals\/pr-[0-9a-f]{16}\/revisions$/, async (route) => {
@@ -212,6 +268,7 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     const ids = [...choose(intent, base).map((song) => song.id), ...mock.ghosts]
     stored.latest += 1
     stored.revisions.set(stored.latest, ids)
+    if (intent.scope === 'library') libraryRevisions.add(`${id}:${stored.latest}`)
     const echoed =
       intent.scope === 'proposal'
         ? { ...intent, context: { ...object(intent.context), proposal_ids: base } }

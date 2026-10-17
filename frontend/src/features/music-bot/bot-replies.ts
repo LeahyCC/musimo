@@ -198,22 +198,12 @@ export const ACTION_LABELS: Record<BotQueueAction, string> = {
   replace: 'Replace upcoming',
 }
 
-/** How many recent answers' songs the chat remembers, and the most it sends. */
-export const SHOWN_GENERATIONS = 3
-export const SHOWN_LIMIT = 500
-
 /**
- * The songs of the last few library answers, newest first. Asking again sends them so the server
- * prefers others; it never excludes them and nothing is stored beyond this tab. A refinement only
- * narrows songs already shown, and a question shows none, so neither counts.
+ * Whether an answer is a library result worth telling the server was shown. The server keeps the
+ * memory (the last three such results, so asking again finds other songs) and reads the songs from
+ * its stored revision. A refinement only narrows songs already shown, and a question shows none,
+ * so neither counts; the server applies the same rule again.
  */
-export function rememberShown(generations: string[][], reply: BotReply): string[][] {
-  if (reply.plan.action !== 'search' || reply.plan.scope !== 'library' || !reply.tracks.length)
-    return generations
-  return [reply.tracks.map((track) => track.id), ...generations].slice(0, SHOWN_GENERATIONS)
-}
-
-/** The remembered songs as one list, newest first, each once, at most SHOWN_LIMIT. */
-export function shownIds(generations: string[][]): string[] {
-  return [...new Set(generations.flat())].slice(0, SHOWN_LIMIT)
+export function isLibraryResult(reply: BotReply): boolean {
+  return reply.plan.action === 'search' && reply.plan.scope === 'library' && reply.tracks.length > 0
 }

@@ -30,8 +30,9 @@ COMMIT_VERSIONS = (2, 3)
 # The rules that order and choose songs: the gates in resolve, the artist cap and the draw in
 # selection.py. Bump when any of them changes, so a replay across versions is not mistaken
 # for a replay of the same engine. tests/test_engine.py pins the constants that feed it.
-# Version 2 added the total-length search in duration.py.
-ENGINE_VERSION = 2
+# Version 2 added the total-length search in duration.py. Version 3: a library search with no
+# shown_ids reads the server's memory of presented results.
+ENGINE_VERSION = 3
 
 # Stripped first, so a blank name cannot match every untagged song.
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
@@ -84,7 +85,9 @@ class Context(BaseModel):
     proposal_ids: list[SongId] = Field(default_factory=list, max_length=SELECTION_LIMIT)
     queue_ids: list[SongId] = Field(default_factory=list, max_length=SELECTION_LIMIT)
     # Songs shown lately. Memory, not a reference: a song since removed is counted, not refused.
-    shown_ids: list[SongId] = Field(default_factory=list, max_length=SHOWN_LIMIT)
+    # Omitted, a library search reads the server's memory of what was presented. A list, even
+    # an empty one, is used as given and the memory is left unread.
+    shown_ids: list[SongId] | None = Field(default=None, max_length=SHOWN_LIMIT)
 
 
 class Intent(BaseModel):
@@ -114,6 +117,16 @@ class Refine(BaseModel):
     revision: int = Field(ge=1)
     # Parsed by parse_intent, so it is refused with the intent's own error codes.
     intent: dict[str, object]
+
+
+class Presented(BaseModel):
+    """The browser saying a stored revision was shown to the person. The songs come from the
+    stored revision, never from this body."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    proposal_id: str = Field(max_length=40)
+    revision: int = Field(ge=1)
 
 
 class PlaylistTarget(BaseModel):
@@ -263,7 +276,11 @@ def registry(scalar: Recipe | None, embedding: Recipe | None) -> list[Capability
         Capability("proposal_ids", "context", True, "The selection a proposal scope refines."),
         Capability("queue_ids", "context", True, "The queue a queue scope refines."),
         Capability(
-            "shown_ids", "context", True, "Shown songs go last. Never excluded. Library scope only."
+            "shown_ids",
+            "context",
+            True,
+            "Shown songs go last. Never excluded. Library scope only. Omitted, the server's "
+            "memory of presented results is used.",
         ),
         *NOT_BUILT,
     ]

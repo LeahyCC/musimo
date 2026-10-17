@@ -22,6 +22,7 @@ from backend.library.engine_contract import (
     ErrorField,
     Intent,
     PlaylistTarget,
+    Presented,
     Receipt,
     Refine,
 )
@@ -93,6 +94,40 @@ class Proposals:
 
     def read(self, proposal_id: str, revision: int | None) -> dict[str, object]:
         return self._public(self._revision(proposal_id, revision), self.bot.player.view())
+
+    def present(self, raw: object, cancelled: Callable[[], bool]) -> dict[str, object]:
+        """Remember that a library result was shown, once per proposal revision. Only a
+        library search counts: a refinement of a proposal or the queue only narrows songs
+        already shown, and a result nobody saw (cancelled, replaced, discarded) is never sent
+        here. The songs are the stored revision's, so a client cannot name others."""
+        body = parse_body(Presented, raw, (), "invalid_request")
+        stored = self._revision(body.proposal_id, body.revision)
+        intent = Intent.model_validate(stored["intent"])
+        ids = stored["ids"]
+        assert isinstance(ids, list)
+        if intent.action != "search" or intent.scope != "library" or not ids:
+            return self.memory(False)
+        if cancelled():
+            raise Cancelled
+        _, recorded = self.bot.store.record_shown(f"{body.proposal_id}:{body.revision}", ids)
+        return self.memory(recorded)
+
+    def forget(self) -> dict[str, object]:
+        """Clear the shown-song memory for every device, and nothing else."""
+        self.bot.store.forget_shown()
+        return self.memory(False)
+
+    def memory(self, recorded: bool = False) -> dict[str, object]:
+        """What the memory holds. `recorded` is whether this call added a result to it."""
+        revision, results, ids = self.bot.store.shown_state()
+        return {
+            "status": "ok",
+            "profile": "default",
+            "revision": revision,
+            "results": results,
+            "songs": len(ids),
+            "recorded": recorded,
+        }
 
     def commit(
         self, proposal_id: str, raw: object, cancelled: Callable[[], bool]

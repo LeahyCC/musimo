@@ -6,11 +6,14 @@ import {
   commitProposal,
   CONTRACT_VERSION,
   createProposal,
+  forgetMemory,
   idChanges,
   intentFromReply,
   intentSchema,
   newOperationId,
+  presentResult,
   ProposalError,
+  readMemory,
   refineProposal,
   refreshIntent,
   UnknownOutcome,
@@ -54,7 +57,7 @@ function reply(changes: Record<string, unknown> = {}, extra: Partial<BotReply> =
   })
 }
 
-const context = { proposalIds: [song(1), song(2)], queueIds: [song(3)], shownIds: [song(4)] }
+const context = { proposalIds: [song(1), song(2)], queueIds: [song(3)] }
 
 describe('intentFromReply', () => {
   it('repeats a library draw: the plan’s filters, its seed and the songs it was made against', () => {
@@ -75,7 +78,7 @@ describe('intentFromReply', () => {
       context: {
         current_id: song(8),
         reference_id: song(9),
-        shown_ids: [song(4)],
+        shown_ids: null,
         proposal_ids: [],
         queue_ids: [],
       },
@@ -86,14 +89,20 @@ describe('intentFromReply', () => {
     expect(intentFromReply(reply({ scope: 'proposal' }), context)).toMatchObject({
       scope: 'proposal',
       seed: null,
-      context: { proposal_ids: [song(1), song(2)], queue_ids: [], shown_ids: [] },
+      context: { proposal_ids: [song(1), song(2)], queue_ids: [], shown_ids: null },
     })
 
     expect(intentFromReply(reply({ scope: 'queue' }), context)).toMatchObject({
       scope: 'queue',
       seed: null,
-      context: { proposal_ids: [], queue_ids: [song(3)], shown_ids: [] },
+      context: { proposal_ids: [], queue_ids: [song(3)], shown_ids: null },
     })
+  })
+
+  it('never sends the shown songs: the server reads its own memory', () => {
+    for (const scope of ['library', 'proposal', 'queue']) {
+      expect(intentFromReply(reply({ scope }), context).context.shown_ids).toBeNull()
+    }
   })
 
   it('keeps an exact list as a selection to refine, with no seed to redraw it', () => {
@@ -101,7 +110,7 @@ describe('intentFromReply', () => {
     expect(intent.scope).toBe('proposal')
     expect(intent.seed).toBeNull()
     expect(intent.context.proposal_ids).toEqual([song(1), song(5)])
-    expect(intent.context.shown_ids).toEqual([])
+    expect(intent.context.shown_ids).toBeNull()
   })
 })
 
@@ -342,5 +351,44 @@ describe('the proposal routes', () => {
         repeat: false,
       }),
     ).rejects.toMatchObject({ code: 'already_committed' })
+  })
+})
+
+describe('the shown-song memory routes', () => {
+  const memory = { status: 'ok', profile: 'default', revision: 2, results: 1, songs: 3 }
+
+  it('reads what the server holds', async () => {
+    const fetcher = answer(200, { ...memory, recorded: false })
+    expect(await readMemory()).toEqual({ revision: 2, results: 1, songs: 3, recorded: false })
+    expect(fetcher.mock.calls[0]?.[0]).toBe('/api/music-bot/memory')
+  })
+
+  it('reports a presentation by proposal and revision, never by song', async () => {
+    const fetcher = answer(200, { ...memory, recorded: true })
+    expect((await presentResult(proposal.id, 4)).recorded).toBe(true)
+    expect(fetcher.mock.calls[0]?.[0]).toBe('/api/music-bot/memory/shown')
+    expect(sentBody(fetcher)).toEqual({ proposal_id: proposal.id, revision: 4 })
+  })
+
+  it('forgets with a DELETE and no body', async () => {
+    const fetcher = answer(200, { ...memory, revision: 3, results: 0, songs: 0, recorded: false })
+    expect((await forgetMemory()).songs).toBe(0)
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/music-bot/memory',
+      expect.objectContaining({ method: 'DELETE' }),
+    )
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBeUndefined()
+  })
+
+  it('reads a typed refusal', async () => {
+    answer(404, {
+      status: 'error',
+      error: { code: 'proposal_not_found', message: 'No such proposal.' },
+    })
+
+    await expect(presentResult(proposal.id, 1)).rejects.toMatchObject({
+      code: 'proposal_not_found',
+      status: 404,
+    })
   })
 })

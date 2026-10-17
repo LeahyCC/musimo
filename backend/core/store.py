@@ -9,7 +9,7 @@ from backend.core.models import CATALOG_ORDER, Settings, clean_arl
 from backend.core.sources import source_label
 
 RETAIN_EVENTS = 5000
-SCHEMA_VERSION = 11
+SCHEMA_VERSION = 12
 # Music bot proposals kept, newest first by last use, and revisions kept per proposal. They are
 # suggestion state, not history: a dropped one is only a preview the client has to ask for again.
 PROPOSAL_LIMIT = 20
@@ -17,6 +17,14 @@ REVISION_LIMIT = 20
 # Commit receipts kept, newest first. They outlive their proposal, so a retry after the
 # proposal was dropped still gets its first receipt instead of saving again.
 RECEIPT_LIMIT = 200
+# Recent shown-song memory: the last few presented library results, and the most ids a search
+# reads from them. The same bound the browser kept in its tab before the server held it.
+SHOWN_RESULTS = 3
+SHOWN_IDS = 500
+SHOWN_PROFILE = "default"
+# Presentation keys remembered so a late duplicate is still recognised after its result has aged
+# out of the last SHOWN_RESULTS. Opaque keys only, no songs.
+SHOWN_ACKS = 50
 # Rows that stay in the settings table but are not settings. Each is stripped before validation,
 # because Settings refuses keys it does not know.
 # deezer_arl held the Deezer cookie. The cookie is a file now and the row stays empty, so a
@@ -176,6 +184,16 @@ def seeded(default: object, raw: str) -> object:
         # An empty value means the default, as it would if it were unset.
         return [part.strip() for part in raw.split(",") if part.strip()] or default
     return raw
+
+
+def _shown_ids(kept: list[dict[str, object]]) -> list[str]:
+    """The songs of the kept results as one list, newest first, each once, at most SHOWN_IDS."""
+    ids: list[str] = []
+    for entry in kept:
+        found = entry["ids"]
+        assert isinstance(found, list)
+        ids += [str(sid) for sid in found]
+    return list(dict.fromkeys(ids))[:SHOWN_IDS]
 
 
 class ProposalGone(LookupError):
@@ -530,6 +548,25 @@ class Store:
                 CREATE INDEX IF NOT EXISTS bot_receipts_revision
                     ON bot_receipts(proposal_id, revision, target);
                 PRAGMA user_version=11;
+                COMMIT;
+            """)
+        if version < 12:
+            # Recent shown songs for the one default listener profile: suggestion memory, shared
+            # by every device, never a taste score. One row holds the last few presented library
+            # results and a revision that rises on every change. Created, not copied: the old
+            # copy lived in a browser tab and is not carried over.
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS bot_memory (
+                    profile TEXT PRIMARY KEY,
+                    revision INTEGER NOT NULL,
+                    generations TEXT NOT NULL,
+                    acked TEXT NOT NULL,
+                    changed TEXT NOT NULL
+                );
+                INSERT OR IGNORE INTO bot_memory VALUES ('default', 0, '[]', '[]',
+                    strftime('%Y-%m-%dT%H:%M:%fZ','now'));
+                PRAGMA user_version=12;
                 COMMIT;
             """)
         self.seed()
@@ -941,6 +978,78 @@ class Store:
             except Exception:
                 self.db.rollback()
                 raise
+
+    def shown_memory(self) -> tuple[int, list[str]]:
+        """The memory revision and the songs a library search reads: those of the last
+        SHOWN_RESULTS presented results, newest first, each once, at most SHOWN_IDS."""
+        revision, _, ids = self.shown_state()
+        return revision, ids
+
+    def shown_state(self) -> tuple[int, int, list[str]]:
+        """The memory revision, how many presented results are kept and the songs they give,
+        read together, for the forget control to say what it holds."""
+        with self.lock:
+            revision, kept, _ = self._memory_row()
+        return revision, len(kept), _shown_ids(kept)
+
+    def record_shown(self, key: str, ids: list[str]) -> tuple[int, bool]:
+        """Remember one presented library result, newest first. `key` names the presentation,
+        so recording it again changes nothing, even after its result has aged out. The read,
+        the change and the revision rise are one transaction, so overlapping writes each land
+        whole and the list stays within its bounds. Returns the revision and whether anything
+        was recorded."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                revision, kept, acked = self._memory_row()
+                if key in acked:
+                    self.db.rollback()
+                    return revision, False
+                newest: dict[str, object] = {"key": key, "ids": ids[:SHOWN_IDS]}
+                revision = self._save_memory(
+                    revision + 1, [newest, *kept][:SHOWN_RESULTS], [key, *acked][:SHOWN_ACKS]
+                )
+                self.db.commit()
+                return revision, True
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def forget_shown(self) -> int:
+        """Empty the memory for every device. Only this row changes: play counts, likes,
+        playlists and proposals are not touched. Nothing to forget leaves the revision alone.
+        The presentation keys stay, so a late duplicate cannot bring a forgotten result back."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                revision, kept, acked = self._memory_row()
+                if kept:
+                    revision = self._save_memory(revision + 1, [], acked)
+                self.db.commit()
+                return revision
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def _memory_row(self) -> tuple[int, list[dict[str, object]], list[str]]:
+        row = self.db.execute(
+            "SELECT revision, generations, acked FROM bot_memory WHERE profile=?",
+            (SHOWN_PROFILE,),
+        ).fetchone()
+        # A row someone deleted by hand reads as an empty memory and is written back on the next
+        # change, so a manual reset cannot leave the routes failing.
+        if row is None:
+            return 0, [], []
+        return int(row[0]), json.loads(row[1]), json.loads(row[2])
+
+    def _save_memory(self, revision: int, kept: list[dict[str, object]], acked: list[str]) -> int:
+        self.db.execute(
+            "INSERT INTO bot_memory (profile, revision, generations, acked, changed) "
+            "VALUES (?,?,?,?,?) ON CONFLICT(profile) DO UPDATE SET revision=excluded.revision, "
+            "generations=excluded.generations, acked=excluded.acked, changed=excluded.changed",
+            (SHOWN_PROFILE, revision, json.dumps(kept), json.dumps(acked), self._timestamp()),
+        )
+        return revision
 
     def _timestamp(self) -> str:
         return str(self.db.execute("SELECT strftime('%Y-%m-%dT%H:%M:%fZ','now')").fetchone()[0])

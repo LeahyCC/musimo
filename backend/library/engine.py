@@ -203,13 +203,20 @@ class Engine:
             current_id=intent.context.current_id,
             reference_id=intent.context.reference_id,
             generation_seed=intent.seed,
-            shown_ids=intent.context.shown_ids,
         )
         for _ in range(ATTEMPTS):
             now = datetime.now(ZoneInfo(self.bot.store.current().music_timezone))
             before = self._snapshot(intent, now)
+            # Read after `before`: the same memory revision on both sides of the call means this
+            # is the memory the snapshot names, since the revision only ever rises.
+            _, shown = self._shown(intent)
             try:
-                reply = self.bot.resolve(plan, request, now, intent.filters.total_length)
+                reply = self.bot.resolve(
+                    plan,
+                    request.model_copy(update={"shown_ids": shown}),
+                    now,
+                    intent.filters.total_length,
+                )
             except BotError as exc:
                 raise EngineError("engine_rejected", exc.detail, exc.status) from exc
             if before == self._snapshot(intent, now):
@@ -345,7 +352,7 @@ class Engine:
                 ErrorField(field=name, message="Library scope only")
                 for name, given in (
                     ("seed", intent.seed is not None),
-                    ("context.shown_ids", bool(context.shown_ids)),
+                    ("context.shown_ids", context.shown_ids is not None),
                 )
                 if given
             ]
@@ -456,7 +463,7 @@ class Engine:
         scalar, embedding = bot.active_recipes()
         what, played = _catalogue(view)
         liked = sorted(bot._liked())
-        shown = intent.context.shown_ids
+        memory, shown = self._shown(intent)
         body: dict[str, object] = {
             "engine_version": ENGINE_VERSION,
             "contract_version": CONTRACT_VERSION,
@@ -478,12 +485,25 @@ class Engine:
             # A disabled folder hides its files from the fill without changing the catalogue.
             "roots": {"digest": _digest(_row(*root) for root in self._roots())},
             "shown": {
+                # The memory revision the list was read at; null when the request named its own
+                # list or reads none. A changed memory is another snapshot.
+                "memory_revision": memory,
                 "count": len(shown),
                 "unknown": sum(1 for sid in shown if sid not in view.stored),
                 "digest": _digest(shown),
             },
         }
         return body
+
+    def _shown(self, intent: Intent) -> tuple[int | None, list[str]]:
+        """The songs a library search puts last, and the memory revision they were read at:
+        the intent's own list, or the server's memory. Other scopes read none."""
+        given = intent.context.shown_ids
+        if intent.scope != "library" or intent.action != "search":
+            return None, []
+        if given is not None:
+            return None, given
+        return self.bot.store.shown_memory()
 
     def _roots(self) -> list[tuple[str, int]]:
         store = self.bot.store

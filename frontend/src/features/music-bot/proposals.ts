@@ -47,7 +47,9 @@ const contextSchema = z.object({
   reference_id: z.string().nullable(),
   proposal_ids: idList,
   queue_ids: idList,
-  shown_ids: idList,
+  // Null asks the server to use its own memory of what was shown. A preview an older build stored
+  // holds a list instead.
+  shown_ids: idList.nullable(),
 })
 
 /** The canonical request a proposal is made from, as the server echoes it with its seed. */
@@ -174,7 +176,7 @@ function failure(status: number, data: unknown): ProposalError {
 async function send<T>(
   path: string,
   schema: z.ZodType<T>,
-  init: { method: 'POST' | 'GET'; body?: unknown; signal?: AbortSignal },
+  init: { method: 'POST' | 'GET' | 'DELETE'; body?: unknown; signal?: AbortSignal },
 ): Promise<T> {
   const response = await fetch(`/api/music-bot/${path}`, {
     method: init.method,
@@ -211,6 +213,34 @@ export const refineProposal = (
     body: { revision, intent: refinementOf(intent) },
     signal,
   })
+
+/** What the server remembers of the library results already shown, for every device. It is
+ *  suggestion memory: songs shown go after equally fitting ones, and are never a taste score. */
+const memorySchema = z.object({
+  revision: z.number().int(),
+  /** Presented results kept (at most three). */
+  results: z.number().int(),
+  /** Distinct songs those results give a search to put last (at most 500). */
+  songs: z.number().int(),
+  /** Whether this call added a result. False for a repeat of one already recorded. */
+  recorded: z.boolean(),
+})
+export type ShownMemory = z.infer<typeof memorySchema>
+
+export const readMemory = (signal?: AbortSignal) =>
+  send('memory', memorySchema, { method: 'GET', signal })
+
+/** Tells the server a stored library revision was shown. It reads the songs from the revision,
+ *  and the same revision sent twice counts once. */
+export const presentResult = (id: string, revision: number, signal?: AbortSignal) =>
+  send('memory/shown', memorySchema, {
+    method: 'POST',
+    body: { proposal_id: id, revision },
+    signal,
+  })
+
+/** Forgets the shown songs on every device. Play history, likes and playlists are not touched. */
+export const forgetMemory = () => send('memory', memorySchema, { method: 'DELETE' })
 
 export type CommitTarget = { kind: 'playlist'; name: string } | { kind: 'queue' }
 
@@ -261,16 +291,15 @@ export function newOperationId(): string {
   return `op-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
 }
 
-/** The songs and memory the chat's request was made against. */
+/** The songs the chat's request was made against. What was shown lately is the server's to read. */
 export type IntentContext = {
   proposalIds: readonly string[]
   queueIds: readonly string[]
-  shownIds: readonly string[]
 }
 
 /**
  * The intent that makes the chat's own selection again: its plan's filters, the seed it drew, and
- * the songs and memory it was made against. The server then stores what that intent resolves to,
+ * the songs it was made against. The server then stores what that intent resolves to,
  * so the preview is the server's result rather than a copy of the chat's. A refinement of the
  * chat's list (`add_count`) has no intent of its own, so `freeze` states the exact list as a
  * selection to keep, which a person can then commit as it is.
@@ -320,7 +349,8 @@ export function intentFromReply(
           ? [...context.proposalIds]
           : [],
       queue_ids: !frozen && plan.scope === 'queue' ? [...context.queueIds] : [],
-      shown_ids: !frozen && plan.scope === 'library' ? [...context.shownIds] : [],
+      // Never sent: the server reads its own memory for a library search, and none otherwise.
+      shown_ids: null,
     },
     explanation: '',
   }
@@ -328,9 +358,11 @@ export function intentFromReply(
 
 /** A refinement of a stored revision uses that revision's songs, so the server refuses ids. */
 function refinementOf(intent: Intent): Intent {
+  // A repeat reads the memory as it is now, not a list an older build stored with the intent.
+  const context = { ...intent.context, shown_ids: null }
   return intent.scope === 'proposal'
-    ? { ...intent, context: { ...intent.context, proposal_ids: [] } }
-    : intent
+    ? { ...intent, context: { ...context, proposal_ids: [] } }
+    : { ...intent, context }
 }
 
 /** The same request again, for a preview that went stale. It keeps the seed and the filters. */
