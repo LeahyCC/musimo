@@ -1,7 +1,7 @@
 import { useState } from 'react'
 
 import { Link } from '@tanstack/react-router'
-import { Check, Trash2 } from 'lucide-react'
+import { Check, EyeOff, Trash2 } from 'lucide-react'
 
 import { cx } from '../../lib/cx'
 import { Button } from '../../ui'
@@ -11,7 +11,8 @@ import { Pet } from './pet'
 import type { PetState } from './pet-mood'
 import { usePetLook } from './use-pet'
 
-/** Model, connection test, the rules the bot reads the library by, and Clear chat. */
+/** Model, connection test, the rules the bot reads the library by, Clear chat, and the forget
+ *  control for the songs it remembers showing, which the server keeps for every device. */
 export function ChatSettings({ petState }: { petState: PetState }) {
   const chat = useBotChat()
   const look = usePetLook()
@@ -125,8 +126,8 @@ export function ChatSettings({ petState }: { petState: PetState }) {
       <section className="grid shrink-0 gap-[8px] border-t border-line pt-[14px]">
         <h3 className="m-0 text-small font-[550]">Conversation</h3>
         <p className="m-0 text-small leading-[1.6] text-muted">
-          I keep the last 8 messages and the songs from my last three answers in this tab, so asking
-          again finds different ones, and forget them when it closes.
+          I keep the last 8 messages in this tab and forget them when it closes. Clear chat empties
+          them now. It does not touch the songs I remember showing you, below.
         </p>
         <Button
           variant="danger"
@@ -137,6 +138,44 @@ export function ChatSettings({ petState }: { petState: PetState }) {
           <Trash2 size={14} aria-hidden="true" />
           Clear chat
         </Button>
+      </section>
+      <section
+        aria-labelledby="bot-set-memory"
+        className="grid shrink-0 gap-[8px] border-t border-line pt-[14px]"
+        data-bot="memory"
+      >
+        <h3 id="bot-set-memory" className="m-0 text-small font-[550]">
+          Songs I have shown you
+        </h3>
+        <p className="m-0 text-small leading-[1.6] text-muted">
+          I remember the songs from my last three answers, on every device you use with this Musimo,
+          so asking again finds different ones. They go after songs that fit as well, and are never
+          left out. It is not a taste score: plays and skips are not counted.
+        </p>
+        <p role="status" className="m-0 text-small text-muted" data-bot="memory-status">
+          {chat.memory === undefined
+            ? 'Checking what I remember.'
+            : chat.memory.songs === 0
+              ? 'I am not remembering any songs.'
+              : `I am remembering ${chat.memory.songs} ${chat.memory.songs === 1 ? 'song' : 'songs'} from ${chat.memory.results} ${chat.memory.results === 1 ? 'answer' : 'answers'}.`}
+        </p>
+        <Button
+          variant="danger"
+          className="justify-self-start"
+          disabled={chat.forgetting || !chat.memory?.songs}
+          onClick={chat.forget}
+        >
+          <EyeOff size={14} aria-hidden="true" />
+          Forget shown songs
+        </Button>
+        <p className="m-0 text-small leading-[1.6] text-muted">
+          This applies to every device. Your play history, likes and playlists stay as they are.
+        </p>
+        {chat.forgetFailed && (
+          <p role="alert" className="m-0 text-small text-danger">
+            I could not forget them. Nothing changed.
+          </p>
+        )}
       </section>
       <section className="flex shrink-0 items-center gap-[10px] border-t border-line pt-[14px] text-small">
         <Pet

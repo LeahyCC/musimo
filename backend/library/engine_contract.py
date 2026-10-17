@@ -20,18 +20,23 @@ from backend.library.selection import SEED_LIMIT, SHOWN_LIMIT
 # The shape of the intent and the result. Bump on any change a client could notice.
 # Version 2 added proposals, commit receipts, selection_too_large and the drawn seed in the
 # echoed intent. Version 3 added filters.total_length and the result's duration report. An
-# intent without total_length is unchanged, so it may still say 1 or 2.
-CONTRACT_VERSION = 3
-SUPPORTED_VERSIONS = (1, 2, 3)
+# intent without total_length is unchanged, so it may still say 1 or 2. Version 4: an omitted
+# context.shown_ids means the server's memory of presented results, where it meant none
+# before. An intent that says 3 or lower keeps the old meaning.
+CONTRACT_VERSION = 4
+SUPPORTED_VERSIONS = (1, 2, 3, 4)
 # The first version with total_length.
 TOTAL_LENGTH_VERSION = 3
+# The first version where an omitted shown_ids reads the server's memory.
+MEMORY_VERSION = 4
 # A commit body has not changed since proposals arrived in version 2.
-COMMIT_VERSIONS = (2, 3)
+COMMIT_VERSIONS = (2, 3, 4)
 # The rules that order and choose songs: the gates in resolve, the artist cap and the draw in
 # selection.py. Bump when any of them changes, so a replay across versions is not mistaken
 # for a replay of the same engine. tests/test_engine.py pins the constants that feed it.
-# Version 2 added the total-length search in duration.py.
-ENGINE_VERSION = 2
+# Version 2 added the total-length search in duration.py. Version 3: a library search with no
+# shown_ids reads the server's memory of presented results.
+ENGINE_VERSION = 3
 
 # Stripped first, so a blank name cannot match every untagged song.
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
@@ -84,7 +89,10 @@ class Context(BaseModel):
     proposal_ids: list[SongId] = Field(default_factory=list, max_length=SELECTION_LIMIT)
     queue_ids: list[SongId] = Field(default_factory=list, max_length=SELECTION_LIMIT)
     # Songs shown lately. Memory, not a reference: a song since removed is counted, not refused.
-    shown_ids: list[SongId] = Field(default_factory=list, max_length=SHOWN_LIMIT)
+    # Omitted, a version 4 library search reads the server's memory of what was presented (a
+    # version 3 or lower one uses an empty list). A list, even an empty one, is used as given
+    # and the memory is left unread.
+    shown_ids: list[SongId] | None = Field(default=None, max_length=SHOWN_LIMIT)
 
 
 class Intent(BaseModel):
@@ -114,6 +122,20 @@ class Refine(BaseModel):
     revision: int = Field(ge=1)
     # Parsed by parse_intent, so it is refused with the intent's own error codes.
     intent: dict[str, object]
+
+
+class Presented(BaseModel):
+    """The browser saying a stored revision was shown to the person. The songs come from the
+    stored revision, never from this body."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    proposal_id: str = Field(max_length=40)
+    revision: int = Field(ge=1)
+    # The memory revision the card was built against (`snapshot.shown.memory_revision`). When the
+    # memory was forgotten after it, the result is not recorded. None for a result built without
+    # the memory, which has nothing to compare.
+    memory_revision: int | None = Field(default=None, ge=0)
 
 
 class PlaylistTarget(BaseModel):
@@ -263,7 +285,12 @@ def registry(scalar: Recipe | None, embedding: Recipe | None) -> list[Capability
         Capability("proposal_ids", "context", True, "The selection a proposal scope refines."),
         Capability("queue_ids", "context", True, "The queue a queue scope refines."),
         Capability(
-            "shown_ids", "context", True, "Shown songs go last. Never excluded. Library scope only."
+            "shown_ids",
+            "context",
+            True,
+            "Shown songs go last. Never excluded. Library scope only. Omitted, contract "
+            "version 4 uses the server's memory of presented results and version 3 or lower an "
+            "empty list.",
         ),
         *NOT_BUILT,
     ]

@@ -20,11 +20,8 @@ import {
   COMMAND_HELP,
   explainFailure,
   isDirectCommand,
-  rememberShown,
+  isLibraryResult,
   resultLine,
-  SHOWN_GENERATIONS,
-  SHOWN_LIMIT,
-  shownIds,
 } from './bot-replies'
 import type { BotFailure } from './bot-replies'
 import type { ChatOutcome } from './pet-mood'
@@ -33,17 +30,20 @@ import { refreshedNote, staleLines } from './preview-text'
 import {
   commitProposal,
   createProposal,
+  forgetMemory,
   idChanges,
   intentFromReply,
   intentSchema,
   newOperationId,
   overviewSchema,
+  presentResult,
   ProposalError,
+  readMemory,
   refineProposal,
   refreshIntent,
   UnknownOutcome,
 } from './proposals'
-import type { CommitReply, IntentContext, ProposalReply } from './proposals'
+import type { CommitReply, IntentContext, ProposalReply, ShownMemory } from './proposals'
 
 /* The music bot's conversation, shared by every place it opens: the pet's popover, the phone
    sheet and the /music-bot page. One provider means a chat started on the pet carries on in the
@@ -57,11 +57,11 @@ import type { CommitReply, IntentContext, ProposalReply } from './proposals'
 const HISTORY_KEY = 'musimo.music-bot.history'
 const PROPOSAL_KEY = 'musimo.music-bot.proposal'
 const LOG_KEY = 'musimo.music-bot.log'
-const SHOWN_KEY = 'musimo.music-bot.shown'
+/** Where an older build kept the shown songs in this tab. The server holds them now; the leftover
+ *  is removed so the two cannot disagree. */
+const LEGACY_SHOWN_KEY = 'musimo.music-bot.shown'
 const PREVIEW_KEY = 'musimo.music-bot.preview'
-const shownSchema = z
-  .array(z.array(z.string().regex(/^tr-[0-9a-f]{16}$/)).max(SHOWN_LIMIT))
-  .max(SHOWN_GENERATIONS)
+const MEMORY_KEY = ['bot-memory'] as const
 /** The stored revision the card shows. Its songs are `BotReply.tracks`; this is the rest. */
 const previewSchema = z.object({
   id: z.string(),
@@ -212,7 +212,14 @@ type BotChat = {
   save: (name: string) => Promise<boolean>
   undo: () => void
   removeSong: (id: string) => Promise<void>
+  /** Clears the conversation in this browser. The server's memory of shown songs is kept. */
   clear: () => void
+  /** What the server remembers of the results already shown, for every device. */
+  memory: ShownMemory | undefined
+  /** Forgets those songs on every device. Play history, likes and playlists stay. */
+  forget: () => void
+  forgetting: boolean
+  forgetFailed: boolean
   retry: (entry: Extract<LogEntry, { kind: 'error' }>) => void
   /** For the pet: the last result of a request, and when. */
   outcome: { mood: ChatOutcome; at: number } | null
@@ -303,7 +310,6 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
   )
   const [problem, setProblem] = useState<Problem | null>(null)
   const [savedAs, setSavedAs] = useState<string[]>([])
-  const [shown, setShown] = useState<string[][]>(() => readSession(SHOWN_KEY, shownSchema, []))
   const [stamp, setStamp] = useState('')
   const [applied, setApplied] = useState<Applied | null>(null)
   const [reference, setReference] = useState<Reference | null>(null)
@@ -409,12 +415,23 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       sessionStorage.setItem(HISTORY_KEY, JSON.stringify(history))
       sessionStorage.setItem(PROPOSAL_KEY, JSON.stringify(reply))
       sessionStorage.setItem(LOG_KEY, JSON.stringify({ entries: log, cardId }))
-      sessionStorage.setItem(SHOWN_KEY, JSON.stringify(shown))
       sessionStorage.setItem(PREVIEW_KEY, JSON.stringify(preview))
+      sessionStorage.removeItem(LEGACY_SHOWN_KEY)
     } catch {
       /* Chat still works without storage. */
     }
-  }, [history, reply, log, cardId, shown, preview])
+  }, [history, reply, log, cardId, preview])
+
+  const memory = useQuery({
+    queryKey: MEMORY_KEY,
+    queryFn: ({ signal }) => readMemory(signal),
+    // Another device may present or forget; a refetch on focus is enough to notice.
+    retry: false,
+  })
+  const forgetting = useMutation({
+    mutationFn: forgetMemory,
+    onSuccess: (data) => client.setQueryData(MEMORY_KEY, data),
+  })
 
   const chooseModel = useMutation({
     mutationFn: (choice: string) =>
@@ -463,7 +480,6 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     const context: IntentContext = {
       proposalIds: reply?.tracks.map((track) => track.id) ?? [],
       queueIds: live.queue.slice(live.currentIndex + 1).map((track) => track.id),
-      shownIds: shownIds(shown),
     }
     push({ kind: 'user', text, about: reference?.label })
     lastPrompt.current = text
@@ -483,7 +499,6 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
           queue_ids: context.queueIds,
           current_id: live.libraryTrack?.id ?? null,
           reference_id: reference?.id ?? null,
-          shown_ids: context.shownIds,
           ...(scope ? { scope } : {}),
         }),
       })
@@ -528,7 +543,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         const result = made ? shownReply(answer, made) : answer
         setReply(result)
         showPreview(made ? previewOf(made) : null)
-        setShown((old) => rememberShown(old, answer))
+        if (made && isLibraryResult(answer)) presented(made)
         setStamp(before)
         setApplied(null)
         const entry = push({
@@ -574,6 +589,20 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         request.current = null
       }
     }
+  }
+
+  /** Tells the server this library result is on screen, so asking again finds other songs. Called
+   *  only once the card is shown: a request that was cancelled or superseded never gets here. The
+   *  server records a revision once, so a repeat is harmless, and a failure only means these songs
+   *  are not remembered. */
+  function presented(made: ProposalReply) {
+    presentResult(
+      made.proposal.id,
+      made.proposal.revision,
+      made.proposal.snapshot.shown?.memory_revision ?? null,
+    )
+      .then((data) => client.setQueryData(MEMORY_KEY, data))
+      .catch(() => void client.invalidateQueries({ queryKey: MEMORY_KEY }))
   }
 
   /** The preview for a search answer: the next revision of the open proposal, or a new proposal.
@@ -644,7 +673,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       createProposal(
         intentFromReply(
           kept,
-          { proposalIds: [], queueIds: [], shownIds: [] },
+          { proposalIds: [], queueIds: [] },
           songs.map((song) => song.id),
         ),
         signal,
@@ -922,7 +951,6 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     sent.current.clear()
     repeatCommand.current = null
     showPreview(null)
-    setShown([])
     setCardId(null)
     setApplied(null)
     setReference(null)
@@ -991,6 +1019,10 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     undo,
     removeSong,
     clear,
+    memory: memory.data,
+    forget: () => forgetting.mutate(),
+    forgetting: forgetting.isPending,
+    forgetFailed: forgetting.isError,
     retry,
     outcome,
     unread,

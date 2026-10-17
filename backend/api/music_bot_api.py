@@ -161,6 +161,39 @@ def install_music_bot_routes(app: FastAPI, get: Callable[[], MusicBot]) -> None:
 
         return await _answer(run)
 
+    # Recent shown-song memory: one default listener profile, shared by every device. It is
+    # suggestion memory, not a taste score, and the profile key is not authentication.
+
+    @app.get("/api/music-bot/memory", response_model=None)
+    async def memory() -> JSONResponse | dict[str, object]:
+        async def run() -> dict[str, object]:
+            return await asyncio.to_thread(Proposals(get()).memory)
+
+        return await _answer(run)
+
+    @app.post("/api/music-bot/memory/shown", response_model=None)
+    async def present(http: Request) -> JSONResponse | dict[str, object]:
+        """Record that a stored library result was shown. The same presentation twice is one
+        entry; a cancel before the write records nothing."""
+
+        async def run() -> dict[str, object]:
+            raw = await _body(http)
+            return await _until_done(
+                http, lambda cancelled: Proposals(get()).present(raw, cancelled)
+            )
+
+        return await _answer(run)
+
+    @app.delete("/api/music-bot/memory", response_model=None)
+    async def forget() -> JSONResponse | dict[str, object]:
+        """Forget the shown songs on every device. Play history, likes, playlists and
+        proposals are left as they are."""
+
+        async def run() -> dict[str, object]:
+            return await asyncio.to_thread(Proposals(get()).forget)
+
+        return await _answer(run)
+
     @app.post("/api/music-bot/proposals/{proposal_id}/commit", response_model=None)
     async def commit_proposal(proposal_id: str, http: Request) -> JSONResponse | dict[str, object]:
         """Saves a playlist, or hands back the exact ids for the browser's player with a

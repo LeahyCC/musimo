@@ -8,12 +8,11 @@ import {
   explainFailure,
   filterChips,
   isDirectCommand,
+  isLibraryResult,
   lengthText,
   loosenChips,
-  rememberShown,
   resultLine,
   shortMinutes,
-  shownIds,
 } from './bot-replies'
 
 const plan: Record<string, unknown> = {
@@ -84,27 +83,12 @@ describe('remembered songs', () => {
     expect(() => reply({}, 1, { generation_seed: 2 ** 53 })).toThrow()
   })
 
-  it('records library answers newest first, three at most, and nothing else', () => {
-    let generations: string[][] = []
-    for (let count = 1; count <= 4; count += 1) {
-      generations = rememberShown(generations, reply({}, count))
-    }
-    expect(generations.map((ids) => ids.length)).toEqual([4, 3, 2])
-    const before = generations
-    expect(rememberShown(before, reply({ scope: 'proposal' }, 2))).toBe(before)
-    expect(rememberShown(before, reply({ action: 'clarify' }, 2))).toBe(before)
-    expect(rememberShown(before, reply({}, 0))).toBe(before)
-  })
-
-  it('sends each remembered song once, newest first, capped at 500', () => {
-    expect(
-      shownIds([
-        ['a', 'b'],
-        ['b', 'c'],
-      ]),
-    ).toEqual(['a', 'b', 'c'])
-    const many = Array.from({ length: 300 }, (_, index) => `id-${index}`)
-    expect(shownIds([many, many.map((id) => `${id}x`)])).toHaveLength(500)
+  it('reports only a library result with songs as shown', () => {
+    expect(isLibraryResult(reply({}, 2))).toBe(true)
+    expect(isLibraryResult(reply({ scope: 'proposal' }, 2))).toBe(false)
+    expect(isLibraryResult(reply({ scope: 'queue' }, 2))).toBe(false)
+    expect(isLibraryResult(reply({ action: 'clarify' }, 2))).toBe(false)
+    expect(isLibraryResult(reply({}, 0))).toBe(false)
   })
 })
 

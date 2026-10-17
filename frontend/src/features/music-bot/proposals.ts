@@ -8,10 +8,12 @@ import type { BotReply } from '../../api'
    server picks and keeps the songs. Nothing here chooses, sorts or swaps one; it builds the
    request the chat's own plan describes and reads what comes back. */
 
-/** The engine's contract version. An intent may say 1 to 3 and a commit 2 or 3, so this one
+/** The engine's contract version. An intent may say 1 to 4 and a commit 2 to 4, so this one
  *  number is accepted by create, refine and commit. Version 3 added `filters.total_length`, which
- *  the chat never sets but a stored intent can carry, so it is kept when an intent is sent again. */
-export const CONTRACT_VERSION = 3
+ *  the chat never sets but a stored intent can carry, so it is kept when an intent is sent again.
+ *  Version 4 is the first where an omitted `shown_ids` means the server's memory of shown songs,
+ *  which is what the chat relies on, so it never sends an older version. */
+export const CONTRACT_VERSION = 4
 
 const idList = z.array(z.string())
 const range = z.object({ min: z.number(), max: z.number() }).nullable()
@@ -47,7 +49,9 @@ const contextSchema = z.object({
   reference_id: z.string().nullable(),
   proposal_ids: idList,
   queue_ids: idList,
-  shown_ids: idList,
+  // Null asks the server to use its own memory of what was shown. A preview an older build stored
+  // holds a list instead.
+  shown_ids: idList.nullable(),
 })
 
 /** The canonical request a proposal is made from, as the server echoes it with its seed. */
@@ -102,6 +106,11 @@ const proposalSchema = z.object({
   summary: z.string(),
   overview: overviewSchema,
   sample: z.object({ ids: idList, complete: z.boolean() }),
+  snapshot: z.object({
+    // The memory revision the songs were chosen against. Null when the request named its own
+    // list or read none. A stand-in server may leave `shown` out.
+    shown: z.object({ memory_revision: z.number().int().nullable() }).optional(),
+  }),
 })
 
 export const proposalReplySchema = z.object({
@@ -174,7 +183,7 @@ function failure(status: number, data: unknown): ProposalError {
 async function send<T>(
   path: string,
   schema: z.ZodType<T>,
-  init: { method: 'POST' | 'GET'; body?: unknown; signal?: AbortSignal },
+  init: { method: 'POST' | 'GET' | 'DELETE'; body?: unknown; signal?: AbortSignal },
 ): Promise<T> {
   const response = await fetch(`/api/music-bot/${path}`, {
     method: init.method,
@@ -211,6 +220,44 @@ export const refineProposal = (
     body: { revision, intent: refinementOf(intent) },
     signal,
   })
+
+/** What the server remembers of the library results already shown, for every device. It is
+ *  suggestion memory: songs shown go after equally fitting ones, and are never a taste score. */
+const memorySchema = z.object({
+  revision: z.number().int(),
+  /** Presented results kept (at most three). */
+  results: z.number().int(),
+  /** Distinct songs those results give a search to put last (at most 500). */
+  songs: z.number().int(),
+  /** Whether this call added a result. False for a repeat of one already recorded. */
+  recorded: z.boolean(),
+  /** Why a result was not recorded when that is not a repeat: "forgotten" means the memory was
+   *  forgotten (perhaps on another device) after this result was made. Not an error. */
+  reason: z.string().default(''),
+})
+export type ShownMemory = z.infer<typeof memorySchema>
+
+export const readMemory = (signal?: AbortSignal) =>
+  send('memory', memorySchema, { method: 'GET', signal })
+
+/** Tells the server a stored library revision was shown. It reads the songs from the revision,
+ *  and the same revision sent twice counts once. `memoryRevision` is the memory the result was
+ *  built against, so a Forget pressed elsewhere while the card was on its way is respected: the
+ *  server then answers `recorded: false, reason: "forgotten"`. */
+export const presentResult = (
+  id: string,
+  revision: number,
+  memoryRevision: number | null,
+  signal?: AbortSignal,
+) =>
+  send('memory/shown', memorySchema, {
+    method: 'POST',
+    body: { proposal_id: id, revision, memory_revision: memoryRevision },
+    signal,
+  })
+
+/** Forgets the shown songs on every device. Play history, likes and playlists are not touched. */
+export const forgetMemory = () => send('memory', memorySchema, { method: 'DELETE' })
 
 export type CommitTarget = { kind: 'playlist'; name: string } | { kind: 'queue' }
 
@@ -261,16 +308,15 @@ export function newOperationId(): string {
   return `op-${Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')}`
 }
 
-/** The songs and memory the chat's request was made against. */
+/** The songs the chat's request was made against. What was shown lately is the server's to read. */
 export type IntentContext = {
   proposalIds: readonly string[]
   queueIds: readonly string[]
-  shownIds: readonly string[]
 }
 
 /**
  * The intent that makes the chat's own selection again: its plan's filters, the seed it drew, and
- * the songs and memory it was made against. The server then stores what that intent resolves to,
+ * the songs it was made against. The server then stores what that intent resolves to,
  * so the preview is the server's result rather than a copy of the chat's. A refinement of the
  * chat's list (`add_count`) has no intent of its own, so `freeze` states the exact list as a
  * selection to keep, which a person can then commit as it is.
@@ -320,7 +366,8 @@ export function intentFromReply(
           ? [...context.proposalIds]
           : [],
       queue_ids: !frozen && plan.scope === 'queue' ? [...context.queueIds] : [],
-      shown_ids: !frozen && plan.scope === 'library' ? [...context.shownIds] : [],
+      // Never sent: the server reads its own memory for a library search, and none otherwise.
+      shown_ids: null,
     },
     explanation: '',
   }
@@ -328,9 +375,14 @@ export function intentFromReply(
 
 /** A refinement of a stored revision uses that revision's songs, so the server refuses ids. */
 function refinementOf(intent: Intent): Intent {
+  // A repeat reads the memory as it is now, not a list an older build stored with the intent.
+  // It also says the current version, since an intent an older build stored says 3 or lower,
+  // which reads no memory.
+  const context = { ...intent.context, shown_ids: null }
+  const current = { ...intent, contract_version: CONTRACT_VERSION }
   return intent.scope === 'proposal'
-    ? { ...intent, context: { ...intent.context, proposal_ids: [] } }
-    : intent
+    ? { ...current, context: { ...context, proposal_ids: [] } }
+    : { ...current, context }
 }
 
 /** The same request again, for a preview that went stale. It keeps the seed and the filters. */

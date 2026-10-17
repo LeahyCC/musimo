@@ -287,9 +287,9 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
   await expect(page.getByText('First Light \u00b7 Harbor Static')).toBeVisible()
   await page.route('**/api/music-bot/chat', async (route) => {
     expect(requestBody(route).reference_id).toBe(first.id)
-    // The songs of the last library answer go back so asking again prefers others. The browser
-    // never sends a generation seed, so every request draws a fresh one.
-    expect(requestBody(route).shown_ids).toEqual([first.id, second.id])
+    // What was shown is the server's memory, so the browser sends neither the songs nor a
+    // generation seed, and every request draws a fresh one.
+    expect(requestBody(route)).not.toHaveProperty('shown_ids')
     expect(requestBody(route)).not.toHaveProperty('generation_seed')
     // The plan goes back as the server sent it, with its (empty) suggestions and the song
     // characteristic fields the browser fills in when an older build's reply leaves them out.
@@ -338,13 +338,112 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
   })
   await page.getByRole('button', { name: 'Clear chat' }).click()
   await expect(page.getByRole('list', { name: 'Proposed songs' })).toHaveCount(0)
-  await expect
-    .poll(() => page.evaluate(() => sessionStorage.getItem('musimo.music-bot.shown')))
-    .toBe('[]')
+  // Clear chat empties the conversation only. The shown songs are the server's, and the tab no
+  // longer keeps a copy that could disagree.
+  expect(proposals.memory().songs).toEqual([first.id, second.id])
+  expect(proposals.forgets).toBe(0)
+  expect(await page.evaluate(() => sessionStorage.getItem('musimo.music-bot.shown'))).toBeNull()
   await page.reload()
   // A cleared chat stays cleared, and opens on the greeting.
   await expect(page.getByRole('heading', { name: /^Hi, I.m Octive\.$/ })).toBeVisible()
   await expect(page.getByRole('list', { name: 'Proposed songs' })).toHaveCount(0)
+})
+
+test('shown songs are remembered across a reload, Clear chat keeps them, and Forget clears them', async ({
+  page,
+}) => {
+  await fixtures(page)
+  await page.goto('/music-bot')
+  await page.evaluate(() => sessionStorage.setItem('musimo.music-bot.shown', '[["stale"]]'))
+  await ask(page)
+  // The browser says a stored revision was shown. It sends no song ids and keeps no copy.
+  await expect.poll(() => proposals.presented).toHaveLength(1)
+  expect(proposals.presented[0]).toMatch(/^pr-[0-9a-f]{16}:1$/)
+  expect(proposals.memory().songs).toEqual([first.id, second.id])
+  expect(await page.evaluate(() => sessionStorage.getItem('musimo.music-bot.shown'))).toBeNull()
+
+  await page.reload()
+  await page.getByRole('button', { name: 'Chat settings' }).click()
+  const status = page.locator('[data-bot="memory-status"]')
+  await expect(status).toHaveText('I am remembering 2 songs from 1 answer.')
+  const forget = page.getByRole('button', { name: 'Forget shown songs' })
+  await expect(forget).toBeEnabled()
+  await expect(page.getByText(/This applies to every device\./)).toBeVisible()
+  await expect(page.getByText(/play history, likes and playlists stay/i)).toBeVisible()
+
+  // Clear chat leaves the memory alone.
+  await page.getByRole('button', { name: 'Clear chat' }).click()
+  await expect(status).toHaveText('I am remembering 2 songs from 1 answer.')
+  expect(proposals.forgets).toBe(0)
+
+  await forget.click()
+  await expect(status).toHaveText('I am not remembering any songs.')
+  await expect(forget).toBeDisabled()
+  expect(proposals.forgets).toBe(1)
+  expect(proposals.memory().songs).toEqual([])
+  await page.reload()
+  await page.getByRole('button', { name: 'Chat settings' }).click()
+  await expect(page.locator('[data-bot="memory-status"]')).toHaveText(
+    'I am not remembering any songs.',
+  )
+})
+
+test('a result still on its way when another device forgets is not remembered', async ({
+  page,
+}) => {
+  await fixtures(page)
+  let release: (() => void) | undefined
+  proposals.holdPresent = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await page.goto('/music-bot')
+  await ask(page)
+  // The card is up and its report is in flight. Another device presses Forget now.
+  await expect.poll(() => proposals.presented).toHaveLength(1)
+  proposals.forgetElsewhere()
+  const answered = page.waitForResponse((response) => response.url().endsWith('/memory/shown'))
+  release?.()
+  // Not an error: the report is answered, and the result simply is not recorded.
+  expect(await (await answered).json()).toMatchObject({ recorded: false, reason: 'forgotten' })
+  expect(proposals.memory().songs).toEqual([])
+  expect(proposals.memory().results).toBe(0)
+
+  // An answer made after the forget is remembered as usual.
+  proposals.holdPresent = undefined
+  await ask(page)
+  await expect.poll(() => proposals.presented).toHaveLength(2)
+  await expect.poll(() => proposals.memory().songs).toEqual([first.id, second.id])
+})
+
+test('a refinement and a cancelled answer are not reported as shown', async ({ page }) => {
+  await fixtures(page)
+  await page.goto('/music-bot')
+  await ask(page)
+  await expect.poll(() => proposals.presented).toHaveLength(1)
+  await page.route('**/api/music-bot/chat', (route) =>
+    route.fulfill({
+      json: { ...answer, tracks: [second], plan: { ...plan, scope: 'proposal' } },
+    }),
+  )
+  await ask(page, 'remove that artist')
+  // A refinement narrows what was shown, so the browser does not send it as a new result.
+  expect(proposals.presented).toHaveLength(1)
+  expect(proposals.memory().results).toBe(1)
+
+  let release: (() => void) | undefined
+  await page.route('**/api/music-bot/chat', async (route) => {
+    await new Promise<void>((resolve) => {
+      release = resolve
+    })
+    await route.fulfill({ json: answer }).catch(() => undefined)
+  })
+  await say(page, 'something else')
+  await expect.poll(() => Boolean(release)).toBe(true)
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  release?.()
+  await expect(page.getByText('Cancelled. Nothing changed.')).toBeVisible()
+  expect(proposals.presented).toHaveLength(1)
+  expect(proposals.memory().results).toBe(1)
 })
 
 test('cancellation and navigation suppress late playback commands', async ({ page }) => {
@@ -655,7 +754,7 @@ test('Save and Add to queue confirm the shown revision and never search again', 
   expect(proposals.refines).toHaveLength(0)
   const [playlist, queue] = proposals.commits
   expect(playlist).toMatchObject({
-    contract_version: 3,
+    contract_version: 4,
     revision: 1,
     target: { kind: 'playlist', name: 'Road trip' },
     repeat: false,
@@ -941,9 +1040,9 @@ test('every request names a contract version the server takes, for create, refin
   await expect(card(page)).toContainText('REVISION 2')
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
   await expect.poll(() => proposals.commits.length).toBe(1)
-  expect(proposals.creates[0]?.contract_version).toBe(3)
-  expect(proposals.refines[0]?.body.intent).toMatchObject({ contract_version: 3 })
-  expect(proposals.commits[0]?.contract_version).toBe(3)
+  expect(proposals.creates[0]?.contract_version).toBe(4)
+  expect(proposals.refines[0]?.body.intent).toMatchObject({ contract_version: 4 })
+  expect(proposals.commits[0]?.contract_version).toBe(4)
 })
 
 test('a recorded queue confirmation the card cannot match says so, leaves the queue alone and offers a refresh', async ({

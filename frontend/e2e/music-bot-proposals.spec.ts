@@ -1,5 +1,6 @@
 import { expect, test } from '@playwright/test'
 import type { APIRequestContext } from '@playwright/test'
+import { z } from 'zod'
 
 import {
   libraryPlaylistDetailSchema,
@@ -188,5 +189,77 @@ test('a preview from the real routes: summary, save, queue, a like removed, refr
       .items.filter((item) => item.name === playlistName))
       await request.delete(`/api/library/playlists/${entry.id}`)
     await request.put('/api/player/queue', { data: { ids: [], current: '', position: 0 } })
+  }
+})
+
+test('the real server keeps shown songs across a reload, and Forget clears only them', async ({
+  page,
+  request,
+}) => {
+  test.setTimeout(90_000)
+  await request.post('/api/library/scan')
+  await expect
+    .poll(
+      async () =>
+        libraryTracksSchema.parse(await (await request.get('/api/library/tracks?q=Bot')).json())
+          .items.length,
+    )
+    .toBe(4)
+  const songs = libraryTracksSchema.parse(
+    await (await request.get('/api/library/tracks?q=Bot')).json(),
+  ).items
+  const memory = async () =>
+    z
+      .object({ revision: z.number(), results: z.number(), songs: z.number() })
+      .parse(await (await request.get('/api/music-bot/memory')).json())
+  const playlistCount = async () =>
+    libraryPlaylistsSchema.parse(await (await request.get('/api/library/playlists')).json()).items
+      .length
+  const liked = (await likedPlaylist(request)).entry.length
+  const playlists = await playlistCount()
+  try {
+    await request.delete('/api/music-bot/memory')
+    await generatedPlayerAudio(page)
+    await botModelFixtures(page)
+    await page.route('**/api/music-bot/chat', (route) => {
+      // The server's memory decides what goes last, so the browser sends no list of its own.
+      expect(route.request().postDataJSON()).not.toHaveProperty('shown_ids')
+      return route.fulfill({
+        json: {
+          plan: { ...plan, favourites: false },
+          tracks: songs,
+          total_seconds: 120,
+          shortfall_seconds: 0,
+          summary: 'the chat’s own sentence',
+          elapsed_ms: 4,
+          generation_seed: 11,
+        },
+      })
+    })
+    await page.goto('/music-bot')
+    await page.getByRole('textbox', { name: /^Ask .+ for music$/ }).fill('some rock')
+    await page.getByRole('button', { name: 'Send', exact: true }).click()
+    await expect(page.getByRole('list', { name: 'Proposed songs' })).toBeVisible()
+    // The result was shown, so the server holds it: one answer, its four songs.
+    await expect.poll(async () => (await memory()).songs).toBe(4)
+    expect((await memory()).results).toBe(1)
+    expect(await page.evaluate(() => sessionStorage.getItem('musimo.music-bot.shown'))).toBeNull()
+
+    // Nothing is kept in the page, as on a second device, and it is still remembered.
+    await page.evaluate(() => sessionStorage.clear())
+    await page.reload()
+    await page.getByRole('button', { name: 'Chat settings' }).click()
+    const status = page.locator('[data-bot="memory-status"]')
+    await expect(status).toHaveText('I am remembering 4 songs from 1 answer.')
+    await expect(page.getByText(/This applies to every device\./)).toBeVisible()
+
+    await page.getByRole('button', { name: 'Forget shown songs' }).click()
+    await expect(status).toHaveText('I am not remembering any songs.')
+    expect((await memory()).songs).toBe(0)
+    // Likes and playlists are not touched.
+    expect((await likedPlaylist(request)).entry.length).toBe(liked)
+    expect(await playlistCount()).toBe(playlists)
+  } finally {
+    await request.delete('/api/music-bot/memory')
   }
 })

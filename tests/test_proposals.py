@@ -264,7 +264,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         cases: list[tuple[JsonObject, str]] = [
             ({"action": "pause"}, "invalid_intent"),
             ({"filters": {"limit": 501}}, "selection_too_large"),
-            ({"contract_version": 4}, "unsupported_version"),
+            ({"contract_version": 5}, "unsupported_version"),
             ({"extra": 1}, "unknown_field"),
         ]
         for body, expected in cases:
@@ -649,7 +649,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
                 store = Store(path)
                 try:
                     version = store.db.execute("PRAGMA user_version").fetchone()[0]
-                    self.assertEqual((version, SCHEMA_VERSION), (11, 11))
+                    self.assertEqual((version, SCHEMA_VERSION), (12, 12))
                     keys = store.db.execute("PRAGMA foreign_key_list(bot_receipts)").fetchall()
                     self.assertEqual(keys, [])
                     store.db.execute("DELETE FROM bot_proposals")
@@ -673,7 +673,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
                 store = Store(path)
                 try:
                     version = store.db.execute("PRAGMA user_version").fetchone()[0]
-                    self.assertEqual((version, SCHEMA_VERSION), (11, 11))
+                    self.assertEqual((version, SCHEMA_VERSION), (12, 12))
                     tables = {
                         str(row[0]) for row in store.db.execute("SELECT name FROM sqlite_master")
                     }
@@ -697,8 +697,8 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(report["total_seconds"], proposal["total_seconds"])
         read = await self.http.get(f"/api/music-bot/proposals/{proposal['id']}")
         self.assertEqual(part(part(payload(read), "proposal"), "duration"), report)
-        # A commit body is unchanged since version 2, so both versions commit.
-        for version, operation in ((2, "op-00000002"), (3, "op-00000003")):
+        # A commit body is unchanged since version 2, so every version from 2 commits.
+        for version, operation in ((2, "op-00000002"), (3, "op-00000003"), (4, "op-00000004")):
             committed = await self.commit(
                 proposal["id"],
                 contract_version=version,
@@ -714,7 +714,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         body = payload(await self.http.get("/api/music-bot/capabilities"))
         found = {item["id"]: item["available"] for item in body["capabilities"]}  # type: ignore[attr-defined]
         self.assertTrue(found["proposal_commit"])
-        self.assertEqual(body["supported_versions"], [1, 2, 3])
+        self.assertEqual(body["supported_versions"], [1, 2, 3, 4])
 
 
 if __name__ == "__main__":

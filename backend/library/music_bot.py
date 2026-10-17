@@ -205,8 +205,9 @@ class BotRequest(BaseModel):
     scope: Scope | None = None
     # Repeats a library selection against the same library state. None draws a fresh one.
     generation_seed: int | None = Field(default=None, ge=0, lt=SEED_LIMIT)
-    # Songs this chat showed lately (kept by the browser tab only). A library search puts them
-    # after the other songs that fit as well; it never excludes them.
+    # Songs shown lately. A library search puts them after the other songs that fit as well; it
+    # never excludes them. `chat` replaces this with the server's memory, so a body cannot
+    # disagree with it; the engine fills it from the intent or the same memory.
     shown_ids: list[SongId] = Field(default_factory=list, max_length=SHOWN_LIMIT)
 
 
@@ -658,7 +659,11 @@ class MusicBot:
                 raise BotError(
                     "The model returned an invalid plan. Nothing changed. Try another model."
                 ) from exc
-            result = await asyncio.to_thread(self.resolve, plan, request)
+            # The server's memory of presented results decides what goes last, never the body.
+            remembered = request.model_copy(
+                update={"shown_ids": (await asyncio.to_thread(self.store.shown_memory))[1]}
+            )
+            result = await asyncio.to_thread(self.resolve, plan, remembered)
             return result | {"elapsed_ms": round((time.monotonic() - started) * 1000)}
         finally:
             self.busy = False
