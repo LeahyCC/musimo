@@ -14,6 +14,7 @@ from collections.abc import Callable
 from backend.core.store import ProposalGone
 from backend.library.engine import ATTEMPTS, Engine, _digest, _row, parse_body, parse_intent
 from backend.library.engine_contract import (
+    COMMIT_VERSIONS,
     CONTRACT_VERSION,
     ENGINE_VERSION,
     Commit,
@@ -100,7 +101,7 @@ class Proposals:
         a retried operation id answers first, here and again under the lock, so a retry is
         never refused after its first attempt went through, even one running at the same
         time."""
-        body = parse_body(Commit, raw, (CONTRACT_VERSION,), "invalid_request")
+        body = parse_body(Commit, raw, COMMIT_VERSIONS, "invalid_request")
         target = body.target.kind
         name = body.target.name if isinstance(body.target, PlaylistTarget) else None
         # Everything a retry has to repeat. The same id with any of these changed is a conflict.
@@ -206,6 +207,7 @@ class Proposals:
             "totals": {
                 "total_seconds": result["total_seconds"],
                 "shortfall_seconds": result["shortfall_seconds"],
+                "duration": result["duration"],
                 "summary": result["summary"],
             },
         }
@@ -394,6 +396,8 @@ class Proposals:
                 "intent": found["intent"],
                 "seed": found["seed"],
                 "ids": ids,
+                # A revision stored before contract version 3 has no duration report.
+                "duration": None,
                 **totals,
                 # What the revision holds, from its songs: requested, measured and unknown.
                 "overview": summarize(

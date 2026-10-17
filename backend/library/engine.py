@@ -20,6 +20,7 @@ from backend.library.engine_contract import (
     ENGINE_VERSION,
     SELECTION_LIMIT,
     SUPPORTED_VERSIONS,
+    TOTAL_LENGTH_VERSION,
     EngineError,
     ErrorField,
     Intent,
@@ -208,7 +209,7 @@ class Engine:
             now = datetime.now(ZoneInfo(self.bot.store.current().music_timezone))
             before = self._snapshot(intent, now)
             try:
-                reply = self.bot.resolve(plan, request, now)
+                reply = self.bot.resolve(plan, request, now, intent.filters.total_length)
             except BotError as exc:
                 raise EngineError("engine_rejected", exc.detail, exc.status) from exc
             if before == self._snapshot(intent, now):
@@ -232,6 +233,25 @@ class Engine:
         self, intent: Intent, scalar: Recipe | None, embedding: Recipe | None
     ) -> None:
         filters = intent.filters
+        if filters.total_length is not None:
+            if intent.contract_version < TOTAL_LENGTH_VERSION:
+                raise EngineError(
+                    "unknown_field",
+                    f"total_length needs contract version {TOTAL_LENGTH_VERSION}.",
+                    422,
+                    [ErrorField(field="filters.total_length", message="Unknown field")],
+                )
+            if filters.target_seconds:
+                raise EngineError(
+                    "invalid_intent",
+                    "Send total_length or target_seconds, not both.",
+                    422,
+                    [
+                        ErrorField(
+                            field="filters.target_seconds", message="Conflicts with total_length"
+                        )
+                    ],
+                )
         off: list[str] = []
         if scalar is None:
             off += [name for name in _SCALAR_FIELDS if getattr(filters, name)]
@@ -409,7 +429,7 @@ class Engine:
                     "allow_artists": [],
                     "add_count": 0,
                     "explanation": intent.explanation,
-                    **intent.filters.model_dump(),
+                    **intent.filters.model_dump(exclude={"total_length"}),
                 }
             )
         except ValidationError as exc:
@@ -495,6 +515,8 @@ class Engine:
             "tracks": tracks,
             "total_seconds": reply["total_seconds"],
             "shortfall_seconds": reply["shortfall_seconds"],
+            # Set only with filters.total_length: the target, mode, total, deviation and limits.
+            "duration": reply.get("duration"),
             "summary": reply["summary"],
             "seed": reply["generation_seed"],
             "snapshot": full | {"id": _digest([json.dumps(full, sort_keys=True)])},

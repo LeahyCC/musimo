@@ -13,18 +13,25 @@ from typing import Annotated, Literal
 from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from backend.core.audio_recipes import Recipe
+from backend.library.duration import ABOUT_WINDOW, CANDIDATE_CAP, WORK_LIMIT, TotalLength
 from backend.library.music_bot import SongId
 from backend.library.selection import SEED_LIMIT, SHOWN_LIMIT
 
 # The shape of the intent and the result. Bump on any change a client could notice.
 # Version 2 added proposals, commit receipts, selection_too_large and the drawn seed in the
-# echoed intent. The intent itself is unchanged, so an intent may still say 1.
-CONTRACT_VERSION = 2
-SUPPORTED_VERSIONS = (1, 2)
+# echoed intent. Version 3 added filters.total_length and the result's duration report. An
+# intent without total_length is unchanged, so it may still say 1 or 2.
+CONTRACT_VERSION = 3
+SUPPORTED_VERSIONS = (1, 2, 3)
+# The first version with total_length.
+TOTAL_LENGTH_VERSION = 3
+# A commit body has not changed since proposals arrived in version 2.
+COMMIT_VERSIONS = (2, 3)
 # The rules that order and choose songs: the gates in resolve, the artist cap and the draw in
 # selection.py. Bump when any of them changes, so a replay across versions is not mistaken
 # for a replay of the same engine. tests/test_engine.py pins the constants that feed it.
-ENGINE_VERSION = 1
+# Version 2 added the total-length search in duration.py.
+ENGINE_VERSION = 2
 
 # Stripped first, so a blank name cannot match every untagged song.
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
@@ -53,6 +60,8 @@ class Filters(BaseModel):
     max_seconds: int | None = Field(default=None, ge=1, le=86400)
     # The length to fill to: the walk stops once the total reaches it. Not a comparator.
     target_seconds: int = Field(default=0, ge=0, le=86400)
+    # The whole selection's length as a comparator. Not with target_seconds. Version 3.
+    total_length: TotalLength | None = None
     limit: int = Field(default=SELECTION_LIMIT, ge=1, le=SELECTION_LIMIT)
     similar_to_current: bool = False
     tempo: Literal["", "slow", "medium", "fast"] = ""
@@ -168,13 +177,6 @@ class Capability:
 # What is built but not yet allowed in an intent. None of these is a field of `Intent`.
 NOT_BUILT = (
     Capability(
-        "duration_comparators",
-        "filter",
-        False,
-        "Under, at most, at least and about a total length are not built. target_seconds only "
-        "fills until the total reaches it.",
-    ),
-    Capability(
         "audio_certainty",
         "filter",
         False,
@@ -223,6 +225,15 @@ def registry(scalar: Recipe | None, embedding: Recipe | None) -> list[Capability
             "the browser's player. Nothing plays from the server.",
         ),
         *(Capability(name, "filter", True, "Saved library tags.") for name in _TAGS),
+        Capability(
+            "total_length",
+            "filter",
+            True,
+            "Under, at most, at least, over or about (within "
+            f"{ABOUT_WINDOW // 60} minutes) a total of stored whole-song lengths. A bounded "
+            f"search of {CANDIDATE_CAP} songs and {WORK_LIMIT:,} steps; not claimed to be the "
+            "best total. Contract version 3.",
+        ),
         Capability(
             "similar_to_current",
             "filter",
