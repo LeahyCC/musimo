@@ -1928,7 +1928,8 @@ class StagingSweepTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_every_lookup_finishes_before_a_delete(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
-            base = Path(directory)
+            # The sweep checks folders against resolved roots, as Library supplies them.
+            base = Path(directory).resolve()
             roots: list[Path] = []
             for mark in ("a", "b"):
                 root = base / mark
