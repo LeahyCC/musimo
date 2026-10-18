@@ -1,0 +1,1012 @@
+{
+  "suite": "interpreter",
+  "version": 1,
+  "split": "dev",
+  "cases": [
+    {
+      "id": "d001",
+      "covers": ["entity"],
+      "prompt": "play some Harbor Static",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "artists": ["Harbor Static"]
+        }
+      }
+    },
+    {
+      "id": "d002",
+      "covers": ["entity", "genre"],
+      "prompt": "The Blues Engine please",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "artists": ["The Blues Engine"]
+        },
+        "note": "An artist whose name holds a genre word. genres stays empty."
+      }
+    },
+    {
+      "id": "d003",
+      "covers": ["genre"],
+      "prompt": "some blues",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["blues"]
+        }
+      }
+    },
+    {
+      "id": "d004",
+      "covers": ["entity", "ambiguous"],
+      "prompt": "Night Bus",
+      "expect": {
+        "action": "clarify",
+        "ambiguous": true,
+        "note": "Two songs are called Night Bus, by Harbor Static and by Orchard."
+      }
+    },
+    {
+      "id": "d005",
+      "covers": ["entity", "similar"],
+      "prompt": "songs like Night Bus by Orchard",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "similar_to_current": true
+        },
+        "songs": ["s02"]
+      }
+    },
+    {
+      "id": "d006",
+      "covers": ["entity", "year"],
+      "prompt": "anything by velvet delta from the 90s",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "artists": ["Velvet Delta"],
+          "year_from": 1990,
+          "year_to": 1999
+        }
+      }
+    },
+    {
+      "id": "d007",
+      "covers": ["entity", "ambiguous"],
+      "prompt": "play Intro",
+      "expect": {
+        "action": "clarify",
+        "ambiguous": true,
+        "note": "Two songs are called Intro."
+      }
+    },
+    {
+      "id": "d008",
+      "covers": ["genre"],
+      "prompt": "liquid drum and bass",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["liquid drum and bass|liquid dnb|liquid"]
+        },
+        "note": "The fine genre. Broad drum and bass would be wrong."
+      }
+    },
+    {
+      "id": "d009",
+      "covers": ["genre"],
+      "prompt": "some drum and bass, any kind",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["drum and bass|dnb|drum & bass|drum n bass"]
+        }
+      }
+    },
+    {
+      "id": "d010",
+      "covers": ["genre"],
+      "prompt": "neurofunk only",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["neurofunk"]
+        }
+      }
+    },
+    {
+      "id": "d011",
+      "covers": ["genre", "negation"],
+      "prompt": "liquid dnb but nothing by Kestrel Run",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["liquid drum and bass|liquid dnb|liquid"],
+          "exclude_artists": ["Kestrel Run"]
+        }
+      }
+    },
+    {
+      "id": "d012",
+      "covers": ["genre"],
+      "prompt": "grime",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["grime"]
+        }
+      }
+    },
+    {
+      "id": "d013",
+      "covers": ["genre"],
+      "prompt": "jazz and soul",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["jazz", "soul|soul & funk|soul and funk"]
+        }
+      }
+    },
+    {
+      "id": "d014",
+      "covers": ["duration", "genre"],
+      "prompt": "an hour of liquid",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["liquid drum and bass|liquid dnb|liquid"],
+          "total_length": {
+            "mode": "about",
+            "seconds": 3600
+          }
+        }
+      }
+    },
+    {
+      "id": "d015",
+      "covers": ["duration", "boundary"],
+      "prompt": "under an hour of music",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "total_length": {
+            "mode": "under",
+            "seconds": 3600
+          }
+        },
+        "note": "Under excludes exactly 60:00."
+      }
+    },
+    {
+      "id": "d016",
+      "covers": ["duration", "boundary"],
+      "prompt": "at most 45 minutes",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "total_length": {
+            "mode": "at_most",
+            "seconds": 2700
+          }
+        }
+      }
+    },
+    {
+      "id": "d017",
+      "covers": ["duration", "genre"],
+      "prompt": "at least two hours of drum and bass",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["drum and bass|dnb|drum & bass|drum n bass"],
+          "total_length": {
+            "mode": "at_least",
+            "seconds": 7200
+          }
+        }
+      }
+    },
+    {
+      "id": "d018",
+      "covers": ["duration", "boundary"],
+      "prompt": "a playlist over 90 minutes long",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "total_length": {
+            "mode": "over",
+            "seconds": 5400
+          }
+        }
+      }
+    },
+    {
+      "id": "d019",
+      "covers": ["duration", "genre"],
+      "prompt": "roughly 40 minutes of jazz",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["jazz"],
+          "total_length": {
+            "mode": "about",
+            "seconds": 2400
+          }
+        }
+      }
+    },
+    {
+      "id": "d020",
+      "covers": ["duration", "boundary"],
+      "prompt": "no more than half an hour",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "total_length": {
+            "mode": "at_most",
+            "seconds": 1800
+          }
+        }
+      }
+    },
+    {
+      "id": "d021",
+      "covers": ["duration"],
+      "prompt": "a 60 minute playlist",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "total_length": {
+            "mode": "about",
+            "seconds": 3600
+          }
+        }
+      }
+    },
+    {
+      "id": "d022",
+      "covers": ["song-length", "boundary"],
+      "prompt": "songs under 4 minutes",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "max_seconds": 239
+        },
+        "note": "Each song strictly under 4:00. max_seconds is a whole number and inclusive, so 239 is the nearest the contract allows (a 239.5 s song is left out)."
+      }
+    },
+    {
+      "id": "d023",
+      "covers": ["song-length", "boundary"],
+      "prompt": "tracks that are 4 minutes or shorter",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "max_seconds": 240
+        }
+      }
+    },
+    {
+      "id": "d024",
+      "covers": ["song-length", "boundary"],
+      "prompt": "long tracks, over 6 minutes each",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "min_seconds": 361
+        },
+        "note": "min_seconds is inclusive, so over 6:00 starts at 6:01."
+      }
+    },
+    {
+      "id": "d025",
+      "covers": ["song-length", "duration"],
+      "prompt": "an hour of songs, each under 5 minutes",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "max_seconds": 299,
+          "total_length": {
+            "mode": "about",
+            "seconds": 3600
+          }
+        }
+      }
+    },
+    {
+      "id": "d026",
+      "covers": ["negation"],
+      "prompt": "no Orchard",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "exclude_artists": ["Orchard"]
+        }
+      }
+    },
+    {
+      "id": "d027",
+      "covers": ["negation", "genre"],
+      "prompt": "anything except rock",
+      "expect": {
+        "action": "unsupported",
+        "note": "There is no genre exclusion. Searching without it would drop the constraint, and rock must not land in genres."
+      }
+    },
+    {
+      "id": "d028",
+      "covers": ["negation", "genre"],
+      "prompt": "hip hop without Velvet Delta",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["hip hop|hip-hop|rap"],
+          "exclude_artists": ["Velvet Delta"]
+        }
+      }
+    },
+    {
+      "id": "d029",
+      "covers": ["negation", "recipes"],
+      "prompt": "no vocals please",
+      "expect": {
+        "action": "unsupported",
+        "note": "Vocals need audio analysis, which is off."
+      }
+    },
+    {
+      "id": "d030",
+      "covers": ["negation", "history"],
+      "prompt": "nothing I played today",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "exclude_played_days": 1
+        }
+      }
+    },
+    {
+      "id": "d031",
+      "covers": ["similar"],
+      "playing": "s05",
+      "prompt": "more like this",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "similar_to_current": true
+        }
+      }
+    },
+    {
+      "id": "d032",
+      "covers": ["similar", "ambiguous"],
+      "prompt": "more like this",
+      "expect": {
+        "action": "clarify",
+        "ambiguous": true,
+        "note": "Nothing is playing and no song was named."
+      }
+    },
+    {
+      "id": "d033",
+      "covers": ["similar", "negation"],
+      "playing": "s11",
+      "prompt": "similar stuff but not by Orchard",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "similar_to_current": true,
+          "exclude_artists": ["Orchard"]
+        }
+      }
+    },
+    {
+      "id": "d034",
+      "covers": ["similar", "recipes"],
+      "playing": "s05",
+      "recipes": ["tempo_energy"],
+      "prompt": "something calmer than this",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "energy_compared": "calmer"
+        }
+      }
+    },
+    {
+      "id": "d035",
+      "covers": ["similar", "recipes"],
+      "playing": "s05",
+      "prompt": "calmer than this",
+      "expect": {
+        "action": "unsupported",
+        "note": "Energy needs the tempo and energy recipe, which is off here."
+      }
+    },
+    {
+      "id": "d036",
+      "covers": ["transport"],
+      "playing": "s01",
+      "queue": ["s05", "s06", "s11", "s24"],
+      "prompt": "pause",
+      "expect": {
+        "action": "pause"
+      }
+    },
+    {
+      "id": "d037",
+      "covers": ["transport"],
+      "playing": "s01",
+      "queue": ["s05", "s06"],
+      "prompt": "skip this one",
+      "expect": {
+        "action": "skip"
+      }
+    },
+    {
+      "id": "d038",
+      "covers": ["transport"],
+      "playing": "s01",
+      "paused": true,
+      "prompt": "carry on",
+      "expect": {
+        "action": "resume"
+      }
+    },
+    {
+      "id": "d039",
+      "covers": ["queue", "genre"],
+      "playing": "s11",
+      "queue": ["s05", "s06", "s12", "s24", "s02"],
+      "prompt": "from my queue, just the drum and bass",
+      "expect": {
+        "action": "search",
+        "scope": "queue",
+        "filters": {
+          "genres": ["drum and bass|dnb|drum & bass|drum n bass"]
+        }
+      }
+    },
+    {
+      "id": "d040",
+      "covers": ["transport", "out-of-scope"],
+      "playing": "s01",
+      "prompt": "turn it up",
+      "expect": {
+        "action": "unsupported",
+        "note": "Volume is not something the bot controls."
+      }
+    },
+    {
+      "id": "d041",
+      "covers": ["transport"],
+      "playing": "s01",
+      "queue": ["s05", "s06", "s11", "s24"],
+      "prompt": "skip three songs",
+      "expect": {
+        "action": "unsupported",
+        "note": "Skip has no count. One skip would do less than asked."
+      }
+    },
+    {
+      "id": "d042",
+      "covers": ["transport"],
+      "playing": "s20",
+      "prompt": "stop the music",
+      "expect": {
+        "action": "pause",
+        "note": "There is no stop. Pause is what stop means here."
+      }
+    },
+    {
+      "id": "d043",
+      "covers": ["entity"],
+      "prompt": "play something",
+      "expect": {
+        "action": "search",
+        "note": "Vague but clear: a broad library search, not a question. Today's prompt would ask; the 2A prompt should not."
+      }
+    },
+    {
+      "id": "d044",
+      "covers": ["follow-up", "duration"],
+      "previous": {
+        "prompt": "90s hip hop",
+        "scope": "library",
+        "filters": {
+          "genres": ["hip hop"],
+          "year_from": 1990,
+          "year_to": 1999
+        },
+        "songs": ["s14"]
+      },
+      "prompt": "make it an hour",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["hip hop|hip-hop|rap"],
+          "year_from": 1990,
+          "year_to": 1999,
+          "total_length": {
+            "mode": "about",
+            "seconds": 3600
+          }
+        },
+        "keeps": ["genres", "year_from", "year_to"]
+      }
+    },
+    {
+      "id": "d045",
+      "covers": ["follow-up", "genre"],
+      "previous": {
+        "prompt": "liquid, no Kestrel Run",
+        "scope": "library",
+        "filters": {
+          "genres": ["liquid"],
+          "exclude_artists": ["Kestrel Run"]
+        },
+        "songs": ["s01", "s04", "s09"]
+      },
+      "prompt": "add some neurofunk too",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["liquid drum and bass|liquid dnb|liquid", "neurofunk"],
+          "exclude_artists": ["Kestrel Run"]
+        },
+        "keeps": ["exclude_artists"]
+      }
+    },
+    {
+      "id": "d046",
+      "covers": ["follow-up", "history"],
+      "previous": {
+        "prompt": "Orchard",
+        "scope": "library",
+        "filters": {
+          "artists": ["Orchard"]
+        },
+        "songs": ["s02", "s11", "s12"]
+      },
+      "prompt": "only the ones I haven't played",
+      "expect": {
+        "action": "search",
+        "scope": "proposal",
+        "filters": {
+          "artists": ["Orchard"],
+          "history": "unplayed"
+        },
+        "keeps": ["artists"]
+      }
+    },
+    {
+      "id": "d047",
+      "covers": ["follow-up", "negation"],
+      "previous": {
+        "prompt": "drum and bass without Kestrel Run",
+        "scope": "library",
+        "filters": {
+          "genres": ["drum and bass"],
+          "exclude_artists": ["Kestrel Run"]
+        },
+        "songs": ["s01", "s04"]
+      },
+      "prompt": "actually Kestrel Run is fine",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["drum and bass|dnb|drum & bass|drum n bass"]
+        },
+        "keeps": ["genres"],
+        "note": "The exclusion is withdrawn because the person said so.",
+        "drops": ["exclude_artists"]
+      }
+    },
+    {
+      "id": "d048",
+      "covers": ["follow-up", "year"],
+      "previous": {
+        "prompt": "jazz I didn't play today",
+        "scope": "library",
+        "filters": {
+          "genres": ["jazz"],
+          "exclude_played_days": 1
+        },
+        "songs": ["s20"]
+      },
+      "prompt": "from the 2010s instead",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["jazz"],
+          "exclude_played_days": 1,
+          "year_from": 2010,
+          "year_to": 2019
+        },
+        "keeps": ["genres", "exclude_played_days"]
+      }
+    },
+    {
+      "id": "d049",
+      "covers": ["follow-up", "duration"],
+      "previous": {
+        "prompt": "an hour of liquid",
+        "scope": "library",
+        "filters": {
+          "genres": ["liquid"],
+          "total_length": {
+            "mode": "about",
+            "seconds": 3600
+          }
+        },
+        "songs": ["s01", "s04", "s24"]
+      },
+      "prompt": "shorter, 30 minutes",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["liquid drum and bass|liquid dnb|liquid"],
+          "total_length": {
+            "mode": "about",
+            "seconds": 1800
+          }
+        },
+        "keeps": ["genres"]
+      }
+    },
+    {
+      "id": "d050",
+      "covers": ["follow-up", "song-length"],
+      "previous": {
+        "prompt": "Harbor Static",
+        "scope": "library",
+        "filters": {
+          "artists": ["Harbor Static"]
+        },
+        "songs": ["s01", "s04", "s09"]
+      },
+      "prompt": "and keep each song under 10 minutes",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "artists": ["Harbor Static"],
+          "max_seconds": 599
+        },
+        "keeps": ["artists"]
+      }
+    },
+    {
+      "id": "d051",
+      "covers": ["follow-up", "favourites"],
+      "previous": {
+        "prompt": "70s soul",
+        "scope": "library",
+        "filters": {
+          "genres": ["soul"],
+          "year_from": 1970,
+          "year_to": 1979
+        },
+        "songs": ["s16", "s17"]
+      },
+      "prompt": "favourites only, same as before otherwise",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["soul|soul & funk|soul and funk"],
+          "year_from": 1970,
+          "year_to": 1979,
+          "favourites": true
+        },
+        "keeps": ["genres", "year_from", "year_to"]
+      }
+    },
+    {
+      "id": "d052",
+      "covers": ["follow-up", "genre"],
+      "previous": {
+        "prompt": "rock but no Orchard",
+        "scope": "library",
+        "filters": {
+          "genres": ["rock"],
+          "exclude_artists": ["Orchard"]
+        },
+        "songs": ["s07"]
+      },
+      "prompt": "swap rock for pop",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["pop"],
+          "exclude_artists": ["Orchard"]
+        },
+        "keeps": ["exclude_artists"]
+      }
+    },
+    {
+      "id": "d053",
+      "covers": ["follow-up", "song-length"],
+      "previous": {
+        "prompt": "liquid",
+        "scope": "library",
+        "filters": {
+          "genres": ["liquid"]
+        },
+        "songs": ["s01", "s04", "s09", "s24"]
+      },
+      "prompt": "only the ones over 5 minutes",
+      "expect": {
+        "action": "search",
+        "scope": "proposal",
+        "filters": {
+          "genres": ["liquid drum and bass|liquid dnb|liquid"],
+          "min_seconds": 301
+        },
+        "keeps": ["genres"]
+      }
+    },
+    {
+      "id": "d054",
+      "covers": ["edit"],
+      "previous": {
+        "prompt": "liquid",
+        "scope": "library",
+        "filters": {
+          "genres": ["liquid"]
+        },
+        "songs": ["s01", "s24", "s04", "s09"]
+      },
+      "prompt": "give me another set",
+      "expect": {
+        "action": "edit",
+        "edit": {
+          "kind": "another"
+        }
+      }
+    },
+    {
+      "id": "d055",
+      "covers": ["edit"],
+      "previous": {
+        "prompt": "drum and bass",
+        "scope": "library",
+        "filters": {
+          "genres": ["drum and bass"]
+        },
+        "songs": ["s05", "s06", "s24", "s01"]
+      },
+      "prompt": "keep the first two, replace the rest",
+      "expect": {
+        "action": "edit",
+        "edit": {
+          "kind": "another",
+          "pinned": ["s05", "s06"]
+        }
+      }
+    },
+    {
+      "id": "d056",
+      "covers": ["edit"],
+      "previous": {
+        "prompt": "Ada Vance",
+        "scope": "library",
+        "filters": {
+          "artists": ["Ada Vance"]
+        },
+        "songs": ["s16", "s17"]
+      },
+      "prompt": "add three more",
+      "expect": {
+        "action": "edit",
+        "edit": {
+          "kind": "add",
+          "count": 3
+        }
+      }
+    },
+    {
+      "id": "d057",
+      "covers": ["edit", "entity"],
+      "previous": {
+        "prompt": "drum and bass favourites",
+        "scope": "library",
+        "filters": {
+          "genres": ["drum and bass"],
+          "favourites": true
+        },
+        "songs": ["s01", "s05", "s24"]
+      },
+      "prompt": "drop Tidal",
+      "expect": {
+        "action": "edit",
+        "edit": {
+          "kind": "remove",
+          "ids": ["s05"]
+        }
+      }
+    },
+    {
+      "id": "d058",
+      "covers": ["favourites", "year"],
+      "prompt": "my favourites from the 70s",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "favourites": true,
+          "year_from": 1970,
+          "year_to": 1979
+        }
+      }
+    },
+    {
+      "id": "d059",
+      "covers": ["history"],
+      "prompt": "stuff I've never played",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "history": "unplayed"
+        }
+      }
+    },
+    {
+      "id": "d060",
+      "covers": ["history"],
+      "prompt": "my most played",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "history": "familiar"
+        }
+      }
+    },
+    {
+      "id": "d061",
+      "covers": ["count", "year"],
+      "prompt": "20 songs from 2019",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "limit": 20,
+          "year_from": 2019,
+          "year_to": 2019
+        }
+      }
+    },
+    {
+      "id": "d062",
+      "covers": ["history", "year"],
+      "prompt": "something new to me from before 2000",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "history": "unplayed",
+          "year_to": 1999
+        }
+      }
+    },
+    {
+      "id": "d063",
+      "covers": ["mutation-guard"],
+      "previous": {
+        "prompt": "jazz",
+        "scope": "library",
+        "filters": {
+          "genres": ["jazz"]
+        },
+        "songs": ["s20"]
+      },
+      "prompt": "save this as Road Trip",
+      "expect": {
+        "action": "unsupported",
+        "note": "Saving is the card's Save button. Chat text never saves, so nothing is mutated."
+      }
+    },
+    {
+      "id": "d064",
+      "covers": ["out-of-scope"],
+      "prompt": "what's the weather tomorrow",
+      "expect": {
+        "action": "unsupported"
+      }
+    },
+    {
+      "id": "d065",
+      "covers": ["injection", "entity"],
+      "prompt": "play Prompt Kid",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "artists": ["Prompt Kid"]
+        },
+        "note": "The artist's only song title is an instruction. It is data, so nothing pauses."
+      }
+    },
+    {
+      "id": "d066",
+      "covers": ["out-of-scope", "mutation-guard"],
+      "prompt": "delete all my playlists",
+      "expect": {
+        "action": "unsupported"
+      }
+    },
+    {
+      "id": "d067",
+      "covers": ["outage"],
+      "fault": "timeout",
+      "prompt": "liquid for an hour",
+      "expect": {
+        "outcome": ["template", "retry"]
+      }
+    },
+    {
+      "id": "d068",
+      "covers": ["outage"],
+      "fault": "malformed",
+      "prompt": "90s hip hop favourites",
+      "expect": {
+        "outcome": ["template", "retry"]
+      }
+    },
+    {
+      "id": "d069",
+      "covers": ["outage", "entity"],
+      "fault": "invented_id",
+      "prompt": "songs like Night Bus by Orchard",
+      "expect": {
+        "outcome": ["template", "retry"],
+        "note": "The model names a song id the library does not have. It must not reach the engine."
+      }
+    },
+    {
+      "id": "d070",
+      "covers": ["outage", "transport"],
+      "fault": "offline",
+      "playing": "s01",
+      "prompt": "pause",
+      "expect": {
+        "outcome": ["control"],
+        "note": "A plain transport command still works with the model offline."
+      }
+    },
+    {
+      "id": "d071",
+      "covers": ["follow-up", "ambiguous", "duration"],
+      "previous": {
+        "prompt": "Orchard",
+        "scope": "library",
+        "filters": {
+          "artists": ["Orchard"]
+        },
+        "songs": ["s02", "s11", "s12"]
+      },
+      "prompt": "make it longer",
+      "expect": {
+        "action": "clarify",
+        "ambiguous": true,
+        "note": "No length was set, so longer has no amount."
+      }
+    },
+    {
+      "id": "d072",
+      "covers": ["follow-up", "ambiguous", "year"],
+      "previous": {
+        "prompt": "2000s grime",
+        "scope": "library",
+        "filters": {
+          "genres": ["grime"],
+          "year_from": 2000,
+          "year_to": 2009
+        },
+        "songs": ["s15"]
+      },
+      "prompt": "change the year",
+      "expect": {
+        "action": "clarify",
+        "ambiguous": true
+      }
+    }
+  ]
+}

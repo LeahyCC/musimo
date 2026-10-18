@@ -1,0 +1,7 @@
+{
+  "file": "heldout.json",
+  "sha256": "e1971b9011d7c298e3a7181f8b7515f588e99c5cc3f8c87608a87b5913f080d6",
+  "cases": 56,
+  "sealed": "2026-10-17",
+  "note": "Written and labelled before any candidate ran. The digest is of the parsed file (sorted keys, no spaces), so formatting cannot change it. Prompt work reads dev.json only. The evaluator opens heldout.json once per candidate, after that candidate's prompt is frozen, and checks this digest first."
+}
