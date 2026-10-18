@@ -557,7 +557,11 @@ function JobCard({
       <div className="col-start-2 col-end-4 min-w-0 empty:hidden max-phone:col-start-1 max-phone:col-end-3">
         {/* A phone has no room beside the reason, so the button drops under it. */}
         {variant === 'nomatch' && job.candidates.length > 0 && (
-          <PickButton details={details} className="mt-[6px] hidden max-phone:inline-flex" />
+          // The wrapper owns the display: `hidden` on the button itself loses to Button's own
+          // `inline-flex`, which drew this second copy on desktop too.
+          <span className="mt-[6px] hidden max-phone:block">
+            <PickButton details={details} />
+          </span>
         )}
         {tried.length > 0 && (
           <ul className="my-[4px] flex flex-wrap gap-[6px]" aria-label="Sources that answered">
