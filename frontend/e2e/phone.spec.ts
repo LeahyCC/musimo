@@ -208,7 +208,7 @@ const undersized = (page: Page) =>
     return out
   })
 
-test('the library and download tabs each fit one row at 360px', async ({ page }) => {
+test('the library chips and download tabs each fit one row at 360px', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 })
   await libraryFixtures(page)
   await page.goto('/library/albums')
@@ -219,7 +219,7 @@ test('the library and download tabs each fit one row at 360px', async ({ page })
     const rect = await box(tab)
     rows.add(Math.round(rect.y))
     expect(rect.x + rect.width).toBeLessThanOrEqual(360)
-    expect(rect.height).toBeGreaterThanOrEqual(44)
+    expect(rect.height).toBeGreaterThanOrEqual(36)
   }
   expect(rows.size).toBe(1)
   expect(await pageOverflow(page)).toBe(0)

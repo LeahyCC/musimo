@@ -1,6 +1,13 @@
 import { expect, test } from '@playwright/test'
 
-import { closeLibraryFilters, openLibraryFilters, ORIGIN } from './library-fixtures'
+import {
+  closeLibraryFilters,
+  librarySort,
+  openLibraryFilters,
+  openLibraryView,
+  ORIGIN,
+  toggleLibraryFacet,
+} from './library-fixtures'
 
 const song = {
   id: 'song-1',
@@ -142,17 +149,16 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
   )
 
   await page.goto('/library/albums')
-  await expect(page.getByRole('heading', { name: 'Library', exact: true })).toBeVisible()
-  await expect(page.getByText('LIBRARY READY')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Albums', exact: true })).toBeVisible()
   await page.getByLabel('Search albums').fill('clear water')
   await expect(page.getByRole('button', { name: 'Open Clear Water' })).toBeVisible()
   await openLibraryFilters(page, isMobile)
-  await page.getByLabel('Sort albums').selectOption('title')
-  await page.getByText('All genres', { exact: true }).click()
+  await librarySort(page, 'albums').selectOption('title')
+  await toggleLibraryFacet(page, isMobile, 'Genre')
   await page.getByLabel('Ambient').check()
   await expect(page.getByLabel('Rock')).toBeVisible()
   await page.getByLabel('Rock').check()
-  await page.getByText('All years', { exact: true }).click()
+  await toggleLibraryFacet(page, isMobile, 'Year')
   await page.getByLabel('2026').check()
   await page.getByRole('button', { name: 'Clear filters' }).click()
   await page.getByRole('button', { name: 'List view' }).click()
@@ -244,7 +250,9 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
   await playAll.click()
   await expect(page.locator('.live-player')).toContainText('First Light')
 
-  await page.getByRole('button', { name: 'Artists', exact: true }).click()
+  // A detail page has no view switcher of its own, so go back to the browse page that has.
+  await page.getByRole('button', { name: 'Back to albums' }).click()
+  await openLibraryView(page, isMobile, 'Artists')
   await expect(page).toHaveURL(/\/library\/artists$/)
   await expect(page.locator('.library-artist-card img')).toBeVisible()
   await expect(page.locator('.library-artist-card small')).toHaveText('1 album')

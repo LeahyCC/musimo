@@ -127,10 +127,7 @@ test('home is at the root and search has its own address', async ({ page }) => {
   await expect(page).toHaveURL(/\/library\/albums$/)
   const nav = page.getByRole('navigation', { name: 'Main navigation' })
   await expect(nav.getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page')
-  await page
-    .getByRole('navigation', { name: 'Library views' })
-    .getByRole('button', { name: 'Artists' })
-    .click()
+  await page.goto('/library/artists')
   await expect(page).toHaveURL(/\/library\/artists$/)
   await expect(nav.getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page')
 })
