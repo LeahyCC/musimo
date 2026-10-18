@@ -1,8 +1,7 @@
-import { expect, test } from '@playwright/test'
-
 import type { MusicResult } from '../src/api'
 import { ORIGIN } from './env'
 import { emptyQueue } from './queue-fixtures'
+import { expect, test } from './test'
 
 const track: MusicResult = {
   id: 101,

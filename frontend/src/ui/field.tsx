@@ -2,6 +2,7 @@ import { forwardRef } from 'react'
 import type { InputHTMLAttributes, SelectHTMLAttributes } from 'react'
 
 import { cx } from '../lib/cx'
+import { Select } from './select'
 
 /* `cx` only joins strings, so a caller cannot swap the border, the text color or the width by
    passing another utility for the same property: which one wins is up to the order of the built
@@ -43,13 +44,13 @@ export const Field = forwardRef<
   )
 })
 
-/** The `<select>` counterpart to `Field`, same look and the same touch sizing. */
+/** The `<select>` counterpart to `Field`, same look and the same touch sizing. Its list is the app's own (see `Select`). */
 export const FieldSelect = forwardRef<
   HTMLSelectElement,
   SelectHTMLAttributes<HTMLSelectElement> & FieldOptions
 >(function FieldSelect({ className, children, invalid, fullWidth, tone, ...props }, ref) {
   return (
-    <select
+    <Select
       ref={ref}
       data-ui="field"
       aria-invalid={invalid || undefined}
@@ -57,6 +58,6 @@ export const FieldSelect = forwardRef<
       {...props}
     >
       {children}
-    </select>
+    </Select>
   )
 })

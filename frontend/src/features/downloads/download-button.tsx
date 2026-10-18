@@ -6,7 +6,7 @@ import { ArrowDownToLine, Clock, MoreHorizontal, RotateCcw } from 'lucide-react'
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from '../../api'
 import type { MusicResult } from '../../api'
 import { cx } from '../../lib/cx'
-import { errorBannerClassName, IconButton } from '../../ui'
+import { errorBannerClassName, IconButton, Select } from '../../ui'
 import { formatLabel, FormatOptions } from './download-target'
 import { activeJob, failureMessage, updateJob, useJobs } from './jobs'
 
@@ -171,7 +171,7 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
       >
         <label className="grid min-w-0 gap-[6px] text-small">
           Download to
-          <select
+          <Select
             className="w-full min-w-0 max-w-full"
             value={target}
             onChange={(e) => setTarget(e.target.value)}
@@ -185,19 +185,19 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
                   {disk.path}
                 </option>
               ))}
-          </select>
+          </Select>
         </label>
         {/* It follows the destination so the focus rule above lands on the same control on every
             screen. */}
         <label className="mt-[10px] grid min-w-0 gap-[6px] text-small">
           Format
-          <select
+          <Select
             className="w-full min-w-0 max-w-full"
             value={selected}
             onChange={(e) => setFormat(e.target.value)}
           >
             <FormatOptions />
-          </select>
+          </Select>
         </label>
         <small className="mt-[10px] block text-tiny leading-[1.5] text-muted">
           Original keeps source quality. Conversion does not improve it.

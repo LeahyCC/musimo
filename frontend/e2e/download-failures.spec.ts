@@ -1,8 +1,8 @@
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { DownloadJob, MusicResult } from '../src/api'
 import { ORIGIN } from './env'
+import { expect, test } from './test'
 
 const track: MusicResult = {
   id: 101,

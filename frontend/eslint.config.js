@@ -44,5 +44,24 @@ export default [
       ],
     },
   },
+  {
+    // Specs take `test` from e2e/test.ts, which takes the page's routes down before it closes.
+    files: ['e2e/**/*.ts'],
+    ignores: ['e2e/test.ts'],
+    rules: {
+      'no-restricted-imports': [
+        'error',
+        {
+          paths: [
+            {
+              name: '@playwright/test',
+              importNames: ['test'],
+              message: "Import test from './test' instead.",
+            },
+          ],
+        },
+      ],
+    },
+  },
   prettier,
 ]

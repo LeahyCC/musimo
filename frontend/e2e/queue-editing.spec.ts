@@ -1,4 +1,3 @@
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
@@ -11,6 +10,7 @@ import {
 } from './library-fixtures'
 import { toasts } from './nav'
 import { botModelFixtures, proposalFixtures } from './proposal-fixtures'
+import { expect, test } from './test'
 
 const alpha = librarySong('song-a', { title: 'Alpha' })
 const bravo = librarySong('song-b', { title: 'Bravo' })

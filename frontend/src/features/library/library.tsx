@@ -57,6 +57,7 @@ import {
   InlineError,
   sectionCaptionClassName,
   sectionHeadingClassName,
+  Select,
   textLinkClassName,
 } from '../../ui'
 import { remember, songCount, stored, usePlayer, usePlaylistSongs } from '../player/player'
@@ -1282,7 +1283,7 @@ export function LibraryPage({
           <div className="flex flex-wrap items-center gap-[10px] mt-[4px] mb-[12px]">
             <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
               <SlidersHorizontal size={16} />
-              <select
+              <Select
                 className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
                 aria-label={artistSongsMode ? 'Sort songs' : 'Sort albums'}
                 value={artistOrdering.sort}
@@ -1299,7 +1300,7 @@ export function LibraryPage({
                         {artistAlbumLabels[value]}
                       </option>
                     ))}
-              </select>
+              </Select>
             </label>
             {!artistSongsMode && <LayoutToggle layout={layout} onChange={setLayout} />}
           </div>

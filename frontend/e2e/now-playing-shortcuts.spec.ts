@@ -1,10 +1,10 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { DEFAULT_THEME } from '../src/theme/themes'
 import type { Theme } from '../src/theme/themes'
 import { librarySong, playerFixtures } from './library-fixtures'
+import { expect, test } from './test'
 import { LIGHT_THEME, rgb, themeVars } from './theme-fixtures'
 
 const queue = [

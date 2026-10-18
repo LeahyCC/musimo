@@ -24,7 +24,7 @@ import {
 
 import { cx } from '../../lib/cx'
 import type { Layout } from '../../lib/layout'
-import { IconButton } from '../../ui'
+import { IconButton, Select } from '../../ui'
 import type { IconButtonProps } from '../../ui'
 import { artUrl, durationText, usePlayer } from '../player/player'
 import { PRESET_NAMES, presetLabel } from '../visualizer/visualizer-presets'
@@ -402,7 +402,7 @@ function PresetSelect({
   className?: string
 }) {
   return (
-    <select
+    <Select
       className={cx(presetSelectClassName, className)}
       aria-label="Preset"
       title={preset}
@@ -414,7 +414,7 @@ function PresetSelect({
           {presetLabel(name)}
         </option>
       ))}
-    </select>
+    </Select>
   )
 }
 

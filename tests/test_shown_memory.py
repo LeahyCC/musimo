@@ -4,7 +4,9 @@ device, bounded to the last three presented results and 500 songs, and cleared o
 import json
 import tempfile
 import threading
+import time
 import unittest
+from collections.abc import Callable
 from pathlib import Path
 from unittest.mock import patch
 
@@ -209,12 +211,28 @@ class ShownMemoryTests(unittest.IsolatedAsyncioTestCase):
         async def gone(_: object) -> None:
             return None
 
-        with patch("backend.api.music_bot_api.until_disconnected", gone):
+        present = Proposals.present
+
+        # The write waits until the route has seen the disconnect. Without this a fast thread can
+        # finish first under load, and a request that completed before the client left is a 200.
+        def after_the_disconnect(
+            proposals: Proposals, raw: object, cancelled: Callable[[], bool]
+        ) -> dict[str, object]:
+            deadline = time.monotonic() + 5
+            while not cancelled() and time.monotonic() < deadline:
+                time.sleep(0.005)
+            return present(proposals, raw, cancelled)
+
+        with (
+            patch("backend.api.music_bot_api.until_disconnected", gone),
+            patch.object(Proposals, "present", after_the_disconnect),
+        ):
             response = await self.http.post(
                 "/api/music-bot/memory/shown",
                 json={"proposal_id": proposal["id"], "revision": proposal["revision"]},
             )
         self.assertEqual(response.status_code, 499)
+        self.assertEqual(self.store.shown_memory(), (0, []))
 
     # Bounds and overlapping writes
 

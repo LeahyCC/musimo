@@ -1,4 +1,3 @@
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
@@ -6,6 +5,7 @@ import { DEFAULT_THEME } from '../src/theme/themes'
 import type { Theme } from '../src/theme/themes'
 import { librarySong, playerFixtures } from './library-fixtures'
 import { libraryLink } from './nav'
+import { expect, test } from './test'
 import { LIGHT_THEME, rgb, themeVars } from './theme-fixtures'
 
 const song = librarySong('song-1', { title: 'First Light', duration: 30 })

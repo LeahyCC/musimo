@@ -1,9 +1,9 @@
-import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 import type { DownloadJob, MusicResult } from '../src/api'
 import { COLOR_TOKENS } from '../src/theme/tokens'
 import { librarySong, ORIGIN, playerFixtures } from './library-fixtures'
+import { expect, test } from './test'
 
 // Phone-width layout checks. Everything here runs on the mobile project only; the same
 // screens at desktop width are covered by the specs for each screen.

@@ -1,10 +1,10 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 import type { DownloadJob } from '../src/api'
 import { playerFixtures } from './library-fixtures'
 import { emptyQueue, writableDestination } from './queue-fixtures'
+import { expect, test } from './test'
 
 const LINK = 'https://www.youtube.com/watch?v=aaaaaaaaaaa'
 const PLAYLIST = 'https://www.youtube.com/playlist?list=PL1'
@@ -743,18 +743,21 @@ test.describe('pasted links', () => {
     expect(small).toEqual([])
   })
 
-  test('the sheet is reachable and operable by keyboard alone', async ({ page }) => {
+  test('the sheet is reachable and operable by keyboard alone', async ({ page, browserName }) => {
+    // WebKit on a Mac tabs as Safari does by default: Tab skips buttons and checkboxes, and
+    // Option-Tab reaches every control. WebKit elsewhere and the other engines tab to all of them.
+    const tab = browserName === 'webkit' && process.platform === 'darwin' ? 'Alt+Tab' : 'Tab'
     const seen = await linkFixtures(page, () => ({ body: playlist() }))
     await page.goto('/')
     await submit(page, PLAYLIST)
     await expect(sheet(page).getByRole('heading', { name: 'Road trip' })).toBeFocused()
     // Tab order: close, folder, format, select all, select none, then the songs.
-    await page.keyboard.press('Tab')
+    await page.keyboard.press(tab)
     await expect(sheet(page).getByRole('button', { name: 'Close link review' })).toBeFocused()
     await sheet(page).getByRole('button', { name: 'Select none' }).focus()
     await page.keyboard.press('Enter')
     await expect(sheet(page).getByText('0 of 3 songs selected')).toBeVisible()
-    await page.keyboard.press('Tab')
+    await page.keyboard.press(tab)
     await expect(sheet(page).getByRole('checkbox', { name: /Song aaaaaaaaaaa/ })).toBeFocused()
     await page.keyboard.press('Space')
     await expect(sheet(page).getByText('1 of 3 songs selected')).toBeVisible()
