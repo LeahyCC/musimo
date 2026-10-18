@@ -9,6 +9,7 @@ import {
   playerFixtures,
   requestBody,
 } from './library-fixtures'
+import { toasts } from './nav'
 import { botModelFixtures, proposalFixtures } from './proposal-fixtures'
 
 const alpha = librarySong('song-a', { title: 'Alpha' })
@@ -165,7 +166,7 @@ test('a song row and its album queue songs after the playing one, or at the end'
       ids: ['song-a', 'song-c', 'song-b'],
       current: 'song-a',
     })
-  await expect(page.locator('.live-player')).toContainText('Playing Charlie next.')
+  await expect(toasts(page)).toContainText('Playing Charlie next.')
 
   // Play next again lands behind the first, so the two play in the order they were chosen.
   await page.getByRole('button', { name: 'More actions for Delta' }).click()
@@ -262,8 +263,8 @@ test('adding past the 500 songs the queue keeps is refused with a message', asyn
 
   await page.getByRole('button', { name: 'More actions for Clear Water' }).click()
   await page.getByRole('menuitem', { name: 'Add to queue' }).click()
-  await expect(page.locator('.live-player')).toContainText('The queue is full')
-  await expect(page.locator('.live-player')).toContainText('Nothing was added')
+  await expect(toasts(page)).toContainText('The queue is full')
+  await expect(toasts(page)).toContainText('Nothing was added')
   expect(saves).toHaveLength(before)
 })
 
@@ -325,4 +326,35 @@ test('songs confirmed from a bot preview join Up next in the approved order and 
   await expect.poll(() => lastSave(saves)?.ids).toEqual(['song-a', 'song-b', 'song-d', 'song-c'])
   // The edit is the person's own: the confirmed preview did not queue anything again.
   expect(proposals.commits).toHaveLength(1)
+})
+
+test('a queue that could not be saved says so in a toast, and Retry saves it again', async ({
+  page,
+}) => {
+  const saves = await restoreQueue(page, [alpha, bravo])
+  let refuse = true
+  await page.route('**/api/player/queue', async (route) => {
+    if (route.request().method() === 'PUT' && refuse) {
+      await route.fulfill({ status: 503, json: { detail: 'Queue unavailable' } })
+      return
+    }
+    await route.fallback()
+  })
+  await page.route('**/api/library/albums/album-1', (route) => route.fulfill({ json: album }))
+  await page.goto('/library/albums/album-1')
+  await expect(page.locator('.live-player')).toContainText('Alpha')
+
+  await page.getByRole('button', { name: 'More actions for Charlie' }).click()
+  await page.getByRole('menuitem', { name: 'Add to queue' }).click()
+  const toast = toasts(page).getByText('The queue changed here but could not be saved.')
+  await expect(toast).toBeVisible()
+  // It is a toast, not a line in the player.
+  await expect(page.locator('.live-player')).not.toContainText('could not be saved')
+
+  refuse = false
+  const before = saves.length
+  await toasts(page).getByRole('button', { name: 'Retry' }).click()
+  await expect.poll(() => saves.length).toBeGreaterThan(before)
+  await expect(lastSave(saves)?.ids).toEqual(['song-a', 'song-b', 'song-c'])
+  await expect(toast).toBeHidden()
 })

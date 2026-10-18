@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test'
 
 import { settingsSchema } from '../src/api'
 import { generatedPlayerAudio, librarySong, playerFixtures, requestBody } from './library-fixtures'
+import { mainNav } from './nav'
 import { proposalFixtures } from './proposal-fixtures'
 import type { ProposalMock } from './proposal-fixtures'
 
@@ -179,7 +180,7 @@ test('Undo restores a 701-song shuffle and playback continues beyond its 500-son
     })
   })
   await page.goto('/music-bot')
-  await expect(page.getByText('Queue restored. Press play to continue.').first()).toBeVisible()
+  await expect(page.getByRole('contentinfo')).toContainText(/Deck \d+/)
   await ask(page)
   await page.getByRole('button', { name: 'Replace upcoming' }).click()
   await expect
@@ -268,7 +269,7 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
   const saves = await fixtures(page)
   if (isMobile) await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/music-bot')
-  await expect(page.getByText('Queue restored. Press play to continue.').first()).toBeVisible()
+  await expect(page.getByRole('contentinfo')).toContainText('Playing Song')
   await ask(page)
   await expect(
     page.getByRole('list', { name: 'Proposed songs' }).getByRole('listitem'),
@@ -466,7 +467,8 @@ test('cancellation and navigation suppress late playback commands', async ({ pag
   await expect(page.getByText('Cancelled. Nothing changed.')).toBeVisible()
   expect(saves).toHaveLength(0)
   await say(page, 'skip')
-  await page.getByRole('link', { name: 'Settings', exact: true }).first().click()
+  // Search is in the sidebar and in a phone's bar; Settings is not in the bar.
+  await mainNav(page).getByRole('link', { name: 'Search', exact: true }).click()
   release?.()
   expect(saves).toHaveLength(0)
 })

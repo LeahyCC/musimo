@@ -92,7 +92,9 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
  * Short messages that are not tied to a spot on the page, such as a queue that could not be saved.
  * There is one `role="status"` region, always in the page so a screen reader is already listening
  * when the first toast arrives. It sits bottom right on a wide window and above the mini player on
- * a phone; both follow `--player-height`, so it drops to the edge when the footer is hidden.
+ * a phone; both follow `--player-height`, so it drops to the edge when the footer is hidden. The
+ * floating download pill takes the same corner, so it publishes `--dock-height` and the region
+ * stacks above it.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -137,7 +139,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         className={cx(
           // The popover's own defaults (centred, framed, Canvas colours) are undone here.
           'm-0 top-auto left-auto overflow-visible border-0 bg-transparent p-0 text-text',
-          'pointer-events-none fixed right-[calc(20px+var(--safe-right))] bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+16px)] z-toast grid w-[min(420px,calc(100%-40px))] gap-[8px]',
+          'pointer-events-none fixed right-[calc(20px+var(--safe-right))] bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+16px+var(--dock-height))] z-toast grid w-[min(420px,calc(100%-40px))] gap-[8px]',
           'max-phone:right-[calc(12px+var(--safe-right))] max-phone:left-[calc(12px+var(--safe-left))] max-phone:w-auto',
         )}
       >
