@@ -26,7 +26,7 @@ import {
 import type { BotFailure } from './bot-replies'
 import type { ChatOutcome } from './pet-mood'
 import { usePetSettings } from './pet-settings'
-import { editNote, refreshedNote, staleLines } from './preview-text'
+import { editNote, refreshedNote, staleGone, staleLines } from './preview-text'
 import {
   commitProposal,
   createProposal,
@@ -44,6 +44,7 @@ import {
   refineProposal,
   refreshIntent,
   sameSearch,
+  unavailableSongs,
   UnknownOutcome,
 } from './proposals'
 import type {
@@ -84,18 +85,24 @@ const previewSchema = z.object({
   complete: z.boolean(),
   /** Songs the revision lists that the library no longer has (the server's `missing_ids`). */
   missing: z.number().int().default(0),
+  /** Which songs those are, so a refresh can leave them out of the request. */
+  missingIds: z.array(z.string()).default([]),
 })
 export type Preview = z.infer<typeof previewSchema>
 
 /** Why the last confirmation did not go through, and what the card offers next. */
 export type Problem =
-  | { kind: 'stale'; changes: string[] }
+  /** `gone` are the songs it says left the library. */
+  | { kind: 'stale'; changes: string[]; gone: string[] }
   | { kind: 'unknown'; what: 'save' | 'queue' | 'edit' }
   | { kind: 'repeat'; what: 'save' | 'queue' }
   /** The server recorded a queue confirmation, but the card cannot apply it as recorded. */
   | { kind: 'recorded' }
   /** The open revision was refined elsewhere or is gone, so an edit of it was not made. */
   | { kind: 'changed' }
+  /** Kept songs whose files cannot be played now. They stay in the preview, never dropped quietly,
+   *  and each can be taken out. */
+  | { kind: 'unavailable'; songs: string[] }
 
 type Command = { kind: 'playlist'; name: string } | { kind: 'queue'; action: BotQueueAction }
 /** A confirmation sent but not yet answered. Its operation id is sent again, never replaced. */
@@ -228,6 +235,8 @@ type BotChat = {
   save: (name: string) => Promise<boolean>
   undo: () => void
   removeSong: (id: string) => Promise<void>
+  /** An edit's answer never came, so nothing else can start until it is asked again or ended. */
+  holding: boolean
   /** The songs pinned on the card. Seeded from the revision, and sent with Another set. */
   pins: readonly string[]
   togglePin: (id: string) => void
@@ -298,6 +307,7 @@ const previewOf = (made: ProposalReply): Preview => ({
   sampleIds: made.proposal.sample.ids,
   complete: made.proposal.sample.complete,
   missing: made.missing_ids.length,
+  missingIds: made.missing_ids,
 })
 
 /** What a refinement says when its proposal is gone or already refined elsewhere. */
@@ -332,6 +342,9 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     readSession(PREVIEW_KEY, previewSchema.nullable(), null),
   )
   const [problem, setProblem] = useState<Problem | null>(null)
+  // An edit whose answer never came: the same request is asked again from the card before anything
+  // else starts, so no other request can be made meanwhile.
+  const holding = problem?.kind === 'unknown' && problem.what === 'edit'
   // The songs pinned on the card. They are the person's until Another set sends them, so they live
   // here and start from what the open revision holds.
   const [pins, setPins] = useState<string[]>(() => preview?.intent.context.pinned_ids.slice() ?? [])
@@ -482,6 +495,8 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     serial.current += 1
     request.current.abort()
     request.current = null
+    // A cancelled edit is not asked again: the person's next press is a new one.
+    editAttempt.current = null
     setThinking(false)
     setApplying(false)
     setStartedAt(null)
@@ -498,8 +513,10 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
 
   async function send(raw: string) {
     const text = raw.trim().slice(0, MAX_PROMPT)
-    if (!text || locked) return
+    if (!text || locked || holding) return
     request.current?.abort()
+    // A request of its own ends any edit still waiting to be asked again.
+    editAttempt.current = null
     const controller = new AbortController()
     request.current = controller
     const id = ++serial.current
@@ -573,7 +590,10 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
           // The open revision was refined elsewhere or is gone. Nothing was added, and the card is
           // left as it is until the person asks to see the current one.
           setProblem({ kind: 'changed' })
-          push({ kind: 'note', text: 'That preview changed, so I did not add a song.' })
+          push({
+            kind: 'note',
+            text: 'That preview changed, so I did not make that change. Refresh it, then ask again.',
+          })
           landed('sorry')
           return
         }
@@ -619,6 +639,13 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         // An add whose answer never came. Whether it landed is not known, so the same operation id
         // is asked again from the card rather than a new edit being made.
         setProblem({ kind: 'unknown', what: 'edit' })
+        landed('sorry')
+        return
+      }
+      const unplayable = unavailableSongs(problem)
+      if (unplayable) {
+        // A kept or pinned song that cannot play blocks the request, and is named on the card.
+        setProblem({ kind: 'unavailable', songs: unplayable })
         landed('sorry')
         return
       }
@@ -674,7 +701,12 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       // new ones against its memory of what was shown, and the card shows its revision, not the
       // chat's own list.
       try {
-        const made = await runEdit(open, { kind: 'add', count: answer.plan.add_count }, signal)
+        const made = await runEdit(
+          open,
+          { kind: 'add', count: answer.plan.add_count },
+          newOperationId(),
+          signal,
+        )
         // A pin the server has not seen yet stays pinned on the card.
         const ids = new Set(made.proposal.ids)
         return { made, pinned: pins.filter((pin) => ids.has(pin)) }
@@ -699,9 +731,11 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       try {
         return { made: await refineProposal(open.id, open.revision, intent, signal) }
       } catch (problem) {
-        // Refined in another tab, or pruned: a new proposal takes its place.
-        if (!(problem instanceof ProposalError) || !REVISION_GONE.includes(problem.code))
-          throw problem
+        // Refined in another tab, or pruned. A new proposal is not made in its place unasked: the
+        // card says the preview changed and offers Refresh preview.
+        if (problem instanceof ProposalError && REVISION_GONE.includes(problem.code))
+          return 'changed'
+        throw problem
       }
     }
     return { made: await createProposal(intent, signal) }
@@ -709,22 +743,18 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
 
   /**
    * One edit of the open revision, and if no answer came, the same one again once before giving up.
-   * The operation id is made once per press and kept until the answer is definite, so the server
-   * returns its first revision instead of adding or removing twice; pressing Check again after an
-   * unknown outcome reuses it too. Nothing here decides which songs change.
+   * The operation id belongs to the press that made it and is given here: it is kept until the
+   * answer is definite, so the server returns its first revision instead of adding or removing
+   * twice, and Check again after an unknown outcome sends that same id. A later press makes its own,
+   * even for the same edit of the same revision. Nothing here decides which songs change.
    */
   async function runEdit(
     at: Preview,
     change: ProposalEdit,
+    operationId: string,
     signal: AbortSignal,
   ): Promise<EditReply> {
-    const open = editAttempt.current
-    const sending: EditAttempt =
-      open?.preview.id === at.id &&
-      open.preview.revision === at.revision &&
-      JSON.stringify(open.edit) === JSON.stringify(change)
-        ? open
-        : { edit: change, preview: at, operationId: newOperationId() }
+    const sending: EditAttempt = { edit: change, preview: at, operationId }
     editAttempt.current = sending
     const ask = () =>
       editProposal(
@@ -756,6 +786,8 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
    *  cleared here, since its own cleanup is skipped once it is superseded. */
   function begin() {
     request.current?.abort()
+    // Nothing else starts while an edit waits to be asked again; one that does ends that edit.
+    editAttempt.current = null
     setThinking(false)
     setStartedAt(null)
     const id = ++serial.current
@@ -797,6 +829,34 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  /** A kept song has left the library since the card read its revision, so the server refused the
+   *  request (`unknown_song`). Reading the revision again lists which songs, and the card then
+   *  shows what it shows for any song the library lost, with Refresh preview. False when the read
+   *  finds none, or finds another revision. */
+  async function learnMissing(at: Preview, signal: AbortSignal): Promise<boolean> {
+    try {
+      const read = await readProposal(at.id, signal)
+      if (signal.aborted || read.proposal.revision !== at.revision || !read.missing_ids.length)
+        return false
+      const kept = reply
+      if (kept) setReply(shownReply(kept, read))
+      const here = new Set(read.proposal.ids)
+      showPreview(
+        previewOf(read),
+        pins.filter((pin) => here.has(pin)),
+      )
+
+      push({
+        kind: 'note',
+        text: 'Some songs in this preview left your library. Refresh the preview to leave them out.',
+      })
+      landed('sorry')
+      return true
+    } catch {
+      return false
+    }
+  }
+
   /** A call on the open revision. When that revision is gone or no longer the latest, the call
    *  was not made: the card says the preview changed and offers Refresh preview, and no new
    *  proposal is made in its place. With no answer at all the outcome is unknown, and the same
@@ -818,6 +878,19 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
           landed('sorry')
           return null
         }
+        const unplayable = unavailableSongs(problem)
+        if (unplayable) {
+          setProblem({ kind: 'unavailable', songs: unplayable })
+          landed('sorry')
+          return null
+        }
+
+        if (problem instanceof ProposalError && problem.code === 'unknown_song') {
+          // A kept song left the library after this revision was read. Reading it again names
+          // which, and the card then offers Refresh preview.
+          const at = latestPreview.current
+          if (at && (await learnMissing(at, signal))) return null
+        }
         throw problem
       }
     }
@@ -826,14 +899,16 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
   /**
    * Another set, one more song, or a song fewer, as the next revision of the open proposal. The
    * server picks and keeps the songs; the card then shows its revision. Under the same cancel and
-   * supersede rules as any request, with one operation id for the press.
+   * supersede rules as any request. Each press makes its own operation id; only Check again, which
+   * passes the attempt that got no answer, sends an id again.
    */
-  async function editPreview(change: ProposalEdit): Promise<boolean> {
+  async function editPreview(change: ProposalEdit, again?: EditAttempt): Promise<boolean> {
     const at = latestPreview.current
     if (!reply || !at || committing.current) return false
     const kept = reply
+    const operationId = again?.operationId ?? newOperationId()
     const made = await working(
-      onOpenRevision((signal) => runEdit(at, change, signal)),
+      onOpenRevision((signal) => runEdit(at, change, operationId, signal)),
       {
         prompt: undefined,
         during: 'apply',
@@ -843,12 +918,13 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     attempt.current = null
     const before = kept.tracks.map((track) => track.id)
     setReply(shownReply(kept, made))
-    // An added song is the one edit that cannot carry a pin the server has not seen, so it keeps
-    // the pins here. Another set sent them, and a remove only ever drops the pin it removes.
+    // Another set sent the pins, so the server's are the card's. An add or a remove cannot carry a
+    // pin the server has not seen yet, so the card keeps its own that are still in the list: a pin
+    // on a song that was removed goes with it.
     const here = new Set(made.proposal.ids)
     showPreview(
       previewOf(made),
-      change.kind === 'add' ? pins.filter((pin) => here.has(pin)) : undefined,
+      change.kind === 'another' ? undefined : pins.filter((pin) => here.has(pin)),
     )
     setApplied(null)
     push({
@@ -971,7 +1047,11 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       }
       attempt.current = null
       if (problem instanceof ProposalError && problem.code === 'proposal_stale') {
-        setProblem({ kind: 'stale', changes: staleLines(problem.fields, tracks) })
+        setProblem({
+          kind: 'stale',
+          changes: staleLines(problem.fields, tracks),
+          gone: staleGone(problem.fields),
+        })
         landed('sorry')
         return false
       }
@@ -1076,7 +1156,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       // The same edit with the same operation id: the server returns the revision the first
       // attempt made if it landed, and makes it now if it did not.
       const open = editAttempt.current
-      if (open) void editPreview(open.edit)
+      if (open) void editPreview(open.edit, open)
     } else if (problem.kind === 'unknown') {
       const open = attempt.current
       if (open) void confirm(open.command, open.repeat)
@@ -1089,15 +1169,25 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     const at = latestPreview.current
     if (!reply || !at) return
     const kept = reply
+    // A kept song that left the library would refuse the whole request, so it is left out of it:
+    // the ones the card knows are gone, and the ones a stale commit just named.
+    const gone = [...at.missingIds, ...(problem?.kind === 'stale' ? problem.gone : [])]
+    const left = new Set(gone)
+    const dropped = at.intent.context.keep_ids.filter((song) => left.has(song)).length
     const made = await working(
       onOpenRevision((signal) =>
-        refineProposal(at.id, at.revision, refreshIntent(at.intent), signal),
+        refineProposal(at.id, at.revision, refreshIntent(at.intent, gone), signal),
       ),
     )
     if (!made) return
     attempt.current = null
     setReply(shownReply(kept, made))
-    showPreview(previewOf(made))
+    // The card's own pins that are still in the list stay pinned.
+    const here = new Set(made.proposal.ids)
+    showPreview(
+      previewOf(made),
+      pins.filter((pin) => here.has(pin)),
+    )
     setApplied(null)
     push({
       kind: 'note',
@@ -1106,6 +1196,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
           kept.tracks.map((track) => track.id),
           made.tracks.map((track) => track.id),
         ),
+        dropped,
       ),
     })
     landed('happy')
@@ -1139,7 +1230,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
                 kept.tracks.map((track) => track.id),
                 carryOf(at),
               )
-            : refreshIntent(at.intent),
+            : refreshIntent(at.intent, at.missingIds),
           signal,
         )
       },
@@ -1181,7 +1272,10 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
   /** Takes a song off the card as the next revision of the open proposal, which also keeps it from
    *  being drawn again there. What is confirmed is what the card shows. */
   async function removeSong(id: string) {
-    if (!reply || committing.current || thinking || applying || problem) return
+    // A kept song that cannot be played is the one thing taken out while its problem is showing:
+    // the server named it and will not drop it, so the person does.
+    const named = problem?.kind === 'unavailable' && problem.songs.includes(id)
+    if (!reply || committing.current || thinking || applying || (problem && !named)) return
     const rest = reply.tracks.filter((track) => track.id !== id)
     if (rest.length === reply.tracks.length) return
     if (reference?.id === id) setReference(null)
@@ -1200,7 +1294,8 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
 
     // A restored card has no stored revision to edit, so its shorter list is stored as the first.
     if (!latestPreview.current) {
-      await keepList(rest)
+      if (await keepList(rest))
+        push({ kind: 'note', text: 'I stored the shorter list as a new preview.' })
       return
     }
     await editPreview({ kind: 'remove', ids: [id] })
@@ -1309,6 +1404,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     save,
     undo,
     removeSong,
+    holding,
     pins,
     togglePin,
     anotherSet,

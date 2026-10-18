@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { editNote, overviewFacts, refreshedNote, staleLines } from './preview-text'
+import { editNote, overviewFacts, refreshedNote, staleGone, staleLines } from './preview-text'
 import type { Overview } from './proposals'
 
 const song = (n: number) => `tr-${n.toString(16).padStart(16, '0')}`
@@ -189,6 +189,32 @@ describe('refreshedNote', () => {
     expect(refreshedNote({ added: 0, removed: 0 })).toBe(
       'Refreshed. The same songs are still there.',
     )
+  })
+})
+
+describe('staleGone', () => {
+  it('lists the songs a stale commit says are no longer in the library, and no others', () => {
+    expect(
+      staleGone([
+        { field: `songs.${song(1)}`, message: 'Not in the library' },
+        { field: `songs.${song(2)}`, message: 'The file is unavailable' },
+        { field: `songs.${song(3)}/history`, message: 'Not in the library' },
+        { field: 'library', message: 'Not in the library' },
+      ]),
+    ).toEqual([song(1), song(3)])
+  })
+})
+
+describe('refreshedNote with dropped kept songs', () => {
+  it('says how many kept songs left the library and were dropped', () => {
+    expect(refreshedNote({ added: 0, removed: 0 }, 1)).toBe(
+      'Refreshed. The same songs are still there. 1 kept song no longer in your library was dropped.',
+    )
+
+    expect(refreshedNote({ added: 1, removed: 0 }, 2)).toMatch(
+      /2 kept songs no longer in your library were dropped\.$/,
+    )
+    expect(refreshedNote({ added: 0, removed: 1 })).not.toMatch(/dropped/)
   })
 })
 

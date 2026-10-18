@@ -104,6 +104,28 @@ export function ProblemPanel() {
         </div>
       </div>
     )
+  if (problem.kind === 'unavailable') {
+    const titles = new Map(chat.reply?.tracks.map((track) => [track.id, track.title]))
+    const named = problem.songs.map((song) => titles.get(song) ?? 'A song')
+    return (
+      <div role="alert" data-bot="problem" className={panelClass}>
+        <span>
+          <strong className="font-semibold">
+            {named.length === 1 ? 'A kept song' : 'Some kept songs'} can&rsquo;t play right now
+            {named.length ? `: ${named.join(', ')}` : ''}.
+          </strong>{' '}
+          Nothing was changed, and no song is dropped quietly. Remove{' '}
+          {named.length === 1 ? 'it' : 'them'} from the list, or try again when{' '}
+          {named.length === 1 ? 'its' : 'their'} folder is back.
+        </span>
+        <div>
+          <Button disabled={busy} onClick={chat.dismissProblem}>
+            Try again later
+          </Button>
+        </div>
+      </div>
+    )
+  }
   if (problem.kind === 'unknown')
     return (
       <div role="alert" data-bot="problem" className={panelClass}>

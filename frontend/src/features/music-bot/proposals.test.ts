@@ -20,6 +20,7 @@ import {
   refineProposal,
   refreshIntent,
   sameSearch,
+  unavailableSongs,
   UnknownOutcome,
 } from './proposals'
 
@@ -190,6 +191,47 @@ describe('an older stored intent', () => {
     const kept = refreshIntent(intentSchema.parse(stored))
     expect(kept.filters.exclude_ids).toEqual([song(4)])
     expect(kept.context).toMatchObject({ keep_ids: [song(1)], pinned_ids: [song(1)] })
+  })
+})
+
+describe('refreshIntent and songs that left the library', () => {
+  const kept = intentFromReply(reply(), context, undefined, {
+    excludeIds: [song(4)],
+    pinnedIds: [song(1), song(2)],
+  })
+  const stored = {
+    ...kept,
+    context: { ...kept.context, keep_ids: [song(1), song(2), song(3)] },
+  }
+
+  it('leaves a gone song out of the kept and pinned songs, since the server refuses the whole request over it', () => {
+    const again = refreshIntent(stored, [song(2)])
+    expect(again.context.keep_ids).toEqual([song(1), song(3)])
+    expect(again.context.pinned_ids).toEqual([song(1)])
+    // Nothing else of the request changes: the filters, the seed and the removed songs.
+    expect(again.filters).toEqual(stored.filters)
+    expect(again.seed).toBe(stored.seed)
+    expect(again.filters.exclude_ids).toEqual([song(4)])
+  })
+
+  it('sends the kept songs as they were when none is gone', () => {
+    expect(refreshIntent(stored).context.keep_ids).toEqual([song(1), song(2), song(3)])
+    expect(refreshIntent(stored, [song(9)]).context.keep_ids).toEqual([song(1), song(2), song(3)])
+  })
+})
+
+describe('unavailableSongs', () => {
+  it('reads the songs a song_unavailable refusal names', () => {
+    const refusal = new ProposalError('Cannot play.', 'song_unavailable', 409, [
+      { field: `context.keep_ids.${song(2)}`, message: 'The file is unavailable' },
+      { field: `context.keep_ids.${song(5)}`, message: 'The file is unavailable' },
+    ])
+    expect(unavailableSongs(refusal)).toEqual([song(2), song(5)])
+  })
+
+  it('is null for any other refusal and for anything that is not one', () => {
+    expect(unavailableSongs(new ProposalError('No.', 'unknown_song', 422))).toBeNull()
+    expect(unavailableSongs(new Error('No.'))).toBeNull()
   })
 })
 

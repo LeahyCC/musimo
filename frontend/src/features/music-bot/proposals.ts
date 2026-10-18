@@ -513,8 +513,35 @@ function refinementOf(intent: Intent): Intent {
     : { ...current, context }
 }
 
-/** The same request again, for a preview that went stale. It keeps the seed and the filters. */
-export const refreshIntent = (intent: Intent): Intent => refinementOf(intent)
+/**
+ * The same request again, for a preview that went stale. It keeps the seed and the filters. `gone`
+ * are songs the library no longer has: a kept song is never dropped quietly by the server, so one
+ * that left the library would refuse the whole request (`unknown_song`). The refresh drops it here
+ * instead, and the caller says so.
+ */
+export function refreshIntent(intent: Intent, gone: readonly string[] = []): Intent {
+  const again = refinementOf(intent)
+  if (!gone.length) return again
+  const left = new Set(gone)
+  return {
+    ...again,
+    context: {
+      ...again.context,
+      keep_ids: again.context.keep_ids.filter((song) => !left.has(song)),
+      pinned_ids: again.context.pinned_ids.filter((song) => !left.has(song)),
+    },
+  }
+}
+
+/** The songs a refusal names as kept but unplayable (their folder is offline). The server keeps
+ *  such a song in the list and says which, so the person can take it out. Null for any other
+ *  refusal. */
+export function unavailableSongs(problem: unknown): string[] | null {
+  if (!(problem instanceof ProposalError) || problem.code !== 'song_unavailable') return null
+  return problem.fields.flatMap(
+    ({ field }) => /^context\.keep_ids\.(tr-[0-9a-f]{16})$/.exec(field)?.[1] ?? [],
+  )
+}
 
 /** Songs in `after` that were not in `before`, and the other way round. */
 export function idChanges(

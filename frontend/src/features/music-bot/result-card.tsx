@@ -55,7 +55,8 @@ export function ResultCard({ reply }: { reply: BotReply }) {
   // The player stops offering Undo once the queue moves on, so the refusal shows straight away
   // rather than after a press that cannot work.
   const refused = applied !== null && (applied.undo === 'refused' || !player.canUndoBotQueue)
-  const busy = chat.thinking || chat.applying || chat.confirming || chat.locked !== null
+  const busy =
+    chat.thinking || chat.applying || chat.confirming || chat.holding || chat.locked !== null
   // Taking a song off stores a new preview, so it waits while anything else is in flight and
   // while a confirmation's outcome is unsettled.
   const changing = chat.thinking || chat.applying || chat.confirming || chat.problem !== null
@@ -75,6 +76,9 @@ export function ResultCard({ reply }: { reply: BotReply }) {
   // library lost, which has to be refreshed first.
   const editable = preview !== null && preview.intent.scope === 'library' && !preview.missing
   const pinned = new Set(chat.pins)
+  // A kept song that cannot play is named by the problem on the card, and is the one thing that
+  // can still be taken off while that problem shows.
+  const freed = problem?.kind === 'unavailable' ? problem.songs : []
   const pinnedHere = reply.tracks.filter((track) => pinned.has(track.id)).length
   const replaceRest = pinnedHere > 0 && pinnedHere < reply.tracks.length
 
@@ -153,6 +157,7 @@ export function ResultCard({ reply }: { reply: BotReply }) {
               locked={changing}
               editable={editable}
               pinned={pinned}
+              freed={freed}
             />
           ) : (
             <ol aria-label="Proposed songs" className="m-0 grid list-none border-t border-line p-0">
@@ -187,7 +192,7 @@ export function ResultCard({ reply }: { reply: BotReply }) {
                     onOpenChange={(value) => setMenuFor(value ? track.id : null)}
                     reference={chat.reference?.id === track.id}
                     disabled={busy}
-                    removeDisabled={changing}
+                    removeDisabled={changing && !freed.includes(track.id)}
                     onReference={() =>
                       chat.setReference({ id: track.id, label: `${track.title} · ${track.artist}` })
                     }
@@ -385,6 +390,7 @@ function SongTable({
   locked,
   editable,
   pinned,
+  freed,
 }: {
   reply: BotReply
   songs: BotReply['tracks']
@@ -393,6 +399,8 @@ function SongTable({
   /** A library search, whose songs can be pinned for Another set. */
   editable: boolean
   pinned: ReadonlySet<string>
+  /** Songs that can still be deleted while a problem holds the rest. */
+  freed: readonly string[]
 }) {
   const chat = useBotChat()
   const columns = editable
@@ -429,7 +437,8 @@ function SongTable({
             onKeyDown={(event) => {
               if (event.key === 'Enter')
                 chat.setReference({ id: track.id, label: `${track.title} · ${track.artist}` })
-              if (event.key === 'Delete' && !locked) void chat.removeSong(track.id)
+              if (event.key === 'Delete' && (!locked || freed.includes(track.id)))
+                void chat.removeSong(track.id)
             }}
             onClick={() =>
               chat.setReference({ id: track.id, label: `${track.title} · ${track.artist}` })

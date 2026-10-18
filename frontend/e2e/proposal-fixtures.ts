@@ -30,6 +30,10 @@ export type ProposalMock = {
   refineElsewhere: () => void
   /** The proposals are pruned: every later read, edit and commit says they are gone. */
   prune: () => void
+  /** A song is deleted from the library: its card is gone and a kept song of that id is unknown. */
+  deleteSong: (id: string) => void
+  /** A song's file cannot be played (its folder is offline): a kept song of that id is refused. */
+  breakSong: (id: string) => void
   /** Every commit request body, including retries. */
   commits: Record<string, unknown>[]
   /** What commits wrote, once per operation id. */
@@ -94,7 +98,12 @@ const refuseVersion = (route: Route) =>
     json: envelope('unsupported_version', 'That contract version is not supported.'),
   })
 
-export async function proposalFixtures(page: Page, library: LibraryTrack[]): Promise<ProposalMock> {
+export async function proposalFixtures(page: Page, start: LibraryTrack[]): Promise<ProposalMock> {
+  // The library as the stand-in sees it now: a song deleted from it later is listed in
+  // `missing_ids` and refused as a kept song, as the real engine does.
+  const library = [...start]
+  const unplayable = new Set<string>()
+  const deleted = new Set<string>()
   const mock: ProposalMock = {
     creates: [],
     refines: [],
@@ -104,6 +113,12 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     holdEdit: undefined,
     refineElsewhere: () => elsewhere(),
     prune: () => proposals.clear(),
+    deleteSong: (id) => {
+      deleted.add(id)
+      library.splice(0, library.length, ...library.filter((song) => song.id !== id))
+      byId.delete(id)
+    },
+    breakSong: (id) => unplayable.add(id),
     commits: [],
     saved: [],
     handed: [],
@@ -120,6 +135,56 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     forgetElsewhere: () => forget(),
   }
   const proposals = new Map<string, Stored>()
+
+  /** The rules the real engine applies to kept songs, on any intent that reaches it (a create, a
+   *  refinement, or the intent an edit writes). Null when the intent passes. */
+  function refuseKept(intent: Record<string, unknown>) {
+    const context = object(intent.context)
+    const filters = object(intent.filters)
+    const keep = strings(context.keep_ids)
+    const pinned = strings(context.pinned_ids)
+    const count = context.add_count ?? null
+    const unknown = keep.filter((song) => !byId.has(song))
+    if (unknown.length)
+      return {
+        status: 422,
+        body: envelope('unknown_song', 'Those song ids are not in the library.', [
+          { field: 'context.keep_ids', message: 'Not in the library' },
+        ]),
+      }
+    if (!keep.length && !pinned.length && count === null) return null
+    const bad: { field: string; message: string }[] = []
+    if (intent.scope !== 'library')
+      bad.push({ field: 'context.keep_ids', message: 'Library scope only' })
+    if (new Set(keep).size !== keep.length)
+      bad.push({ field: 'context.keep_ids', message: 'A song is listed twice' })
+    if (!pinned.every((song) => keep.includes(song)))
+      bad.push({ field: 'context.pinned_ids', message: 'Must be kept songs' })
+    if (count === 0 && !keep.length)
+      bad.push({ field: 'context.add_count', message: 'Nothing kept and nothing added' })
+    if (strings(filters.exclude_ids).some((song) => keep.includes(song)))
+      bad.push({ field: 'filters.exclude_ids', message: 'A kept song is excluded' })
+    if (bad.length)
+      return {
+        status: 422,
+        body: envelope('invalid_intent', 'The kept songs do not fit together.', bad),
+      }
+    const cannot = keep.filter((song) => unplayable.has(song))
+    if (cannot.length)
+      return {
+        status: 409,
+        body: envelope(
+          'song_unavailable',
+          'A kept song cannot be played now, so it is not dropped quietly. Remove it, or try again when its folder is back.',
+          cannot.map((song) => ({
+            field: `context.keep_ids.${song}`,
+            message: 'The file is unavailable',
+          })),
+        ),
+      }
+    return null
+  }
+
   // The shown-song memory as the server keeps it: the last three presented library results, each
   // presentation once, the songs read newest first and capped at 500. A forget always moves the
   // revision and is remembered, so a result made before it is not recorded after it.
@@ -272,6 +337,8 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     const intent = requestBody(route)
     mock.creates.push(intent)
     if (!accepted(intent.contract_version, [1, 2, 3, 4, 5])) return refuseVersion(route)
+    const refused = refuseKept(intent)
+    if (refused) return route.fulfill({ status: refused.status, json: refused.body })
     const ids = [...choose(intent, []).map((song) => song.id), ...mock.ghosts]
     made += 1
     const id = `pr-${made.toString(16).padStart(16, '0')}`
@@ -344,6 +411,8 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
         ]),
       })
     if (!accepted(intent.contract_version, [1, 2, 3, 4, 5])) return refuseVersion(route)
+    const refused = refuseKept(intent)
+    if (refused) return route.fulfill({ status: refused.status, json: refused.body })
     const ids = [...choose(intent, base).map((song) => song.id), ...mock.ghosts]
     stored.latest += 1
     stored.revisions.set(stored.latest, ids)
@@ -397,15 +466,31 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
     const edit = object(body.edit)
     const stored = proposals.get(id)
     const first = edited.get(operation)
-    if (first) {
-      // The first attempt's revision, whether or not the proposal has moved on since.
-      const same = first.proposal_id === id && JSON.stringify(first.edit) === JSON.stringify(edit)
-      if (!same || !stored)
+    if (first || receipts.has(operation)) {
+      // The first attempt's revision, whether or not the proposal has moved on since. The same id
+      // with another body, proposal or revision (or one a commit used) is a conflict. Only then is
+      // the revision read, so a pruned proposal is not found rather than a conflict.
+      const same =
+        first !== undefined &&
+        first.proposal_id === id &&
+        first.revision === body.revision &&
+        JSON.stringify(first.edit) === JSON.stringify(edit)
+      if (!same || !first)
         return route.fulfill({
           status: 409,
           json: envelope('operation_conflict', 'That operation id already did something else.'),
         })
       const made = Number(first.made)
+      if (!stored)
+        return route.fulfill({
+          status: 404,
+          json: envelope('proposal_not_found', 'No such proposal.'),
+        })
+      if (!stored.revisions.has(made))
+        return route.fulfill({
+          status: 404,
+          json: envelope('revision_not_found', 'No such revision.'),
+        })
       if (fault === 'drop-after') return route.abort('failed')
       return route.fulfill({
         json: {
@@ -502,6 +587,9 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
         context: { ...context, keep_ids: pins, pinned_ids: pins, add_count: null },
       }
     }
+    // The intent an edit writes goes through the same checks as any other.
+    const refused = refuseKept(intent)
+    if (refused) return route.fulfill({ status: refused.status, json: refused.body })
     stored.latest += 1
     stored.revisions.set(stored.latest, next)
     stored.intents.set(stored.latest, { ...intent, seed: intent.seed ?? 7 })
@@ -509,7 +597,12 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
       libraryRevisions.add(`${id}:${stored.latest}`)
       builtAt.set(`${id}:${stored.latest}`, revision)
     }
-    edited.set(operation, { proposal_id: id, edit, made: stored.latest })
+    edited.set(operation, {
+      proposal_id: id,
+      edit,
+      revision: body.revision,
+      made: stored.latest,
+    })
     mock.written.push({ operation, kind: text(edit.kind), revision: stored.latest })
     if (fault === 'drop-after') return route.abort('failed')
     return route.fulfill({
@@ -550,6 +643,11 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
         status: 404,
         json: envelope('proposal_not_found', 'No such proposal.'),
       })
+    if (!first && edited.has(operation))
+      return route.fulfill({
+        status: 409,
+        json: envelope('operation_conflict', 'That operation id already did something else.'),
+      })
     let replayed = false
     let receipt: Record<string, unknown>
     if (first) {
@@ -560,6 +658,19 @@ export async function proposalFixtures(page: Page, library: LibraryTrack[]): Pro
         return route.fulfill({
           status: 409,
           json: envelope('revision_superseded', `Revision ${stored.latest} is the latest.`),
+        })
+      // A song deleted from the library, or one whose file cannot play, is named as what changed.
+      const changed = ids.flatMap((song) =>
+        deleted.has(song)
+          ? [{ field: `songs.${song}`, message: 'Not in the library' }]
+          : unplayable.has(song)
+            ? [{ field: `songs.${song}`, message: 'The file is unavailable' }]
+            : [],
+      )
+      if (changed.length)
+        return route.fulfill({
+          status: 409,
+          json: envelope('proposal_stale', 'Songs the proposal depends on changed.', changed),
         })
       const key = `${id}:${revision}:${text(target.kind)}`
       if (went.has(key) && body.repeat !== true)

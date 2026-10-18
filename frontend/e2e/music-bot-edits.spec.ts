@@ -68,6 +68,9 @@ const strings = (value: unknown): string[] =>
 const record = (value: unknown): Record<string, unknown> =>
   value && typeof value === 'object' ? { ...value } : {}
 
+/** Songs the test deleted from the library, which a search no longer finds. */
+const deleted = new Set<string>()
+
 /** A library search that starts from songs A to C. A refinement keeps the revision's songs; kept
  *  songs go first and removed ones are left out, as the real engine does. */
 function startsWithThree(intent: Record<string, unknown>, base: string[]): LibraryTrack[] {
@@ -77,7 +80,7 @@ function startsWithThree(intent: Record<string, unknown>, base: string[]): Libra
   const from =
     intent.scope === 'proposal'
       ? library.filter((s) => (base.length ? base : strings(context.proposal_ids)).includes(s.id))
-      : [a, b, c]
+      : [a, b, c].filter((s) => !deleted.has(s.id))
   const rest = from.filter((s) => !gone.includes(s.id) && !keep.includes(s.id))
   return [...library.filter((s) => keep.includes(s.id)), ...rest]
 }
@@ -87,6 +90,7 @@ async function fixtures(page: Page, reply: Record<string, unknown> = answer) {
   await generatedPlayerAudio(page)
   await botModelFixtures(page)
   await page.route('**/api/music-bot/chat', (route) => route.fulfill({ json: reply }))
+  deleted.clear()
   proposals = await proposalFixtures(page, library)
   proposals.pick = startsWithThree
   await page.route('**/api/player/queue', (route) => {
@@ -600,4 +604,209 @@ test('the Windows 95 list pins and edits too', async ({ page, isMobile }) => {
   expect(proposals.edits[0]).toMatchObject({ edit: { kind: 'another', pinned_ids: [a.id] } })
   // Pressing a pin does not make the row the reference song.
   await expect(page.getByText('Reference')).toHaveCount(0)
+})
+
+test('Refresh preview leaves out a kept song that left the library, and says so', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  await addSong(page).click()
+  await expect(card(page)).toContainText('REVISION 2')
+  await expect(rows(page)).toHaveCount(4)
+  // The file is deleted. The next confirmation is refused as stale and names the song.
+  deleted.add(b.id)
+  proposals.deleteSong(b.id)
+  await card(page).getByRole('button', { name: 'Add to queue', exact: true }).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('This preview is out of date.')
+  await expect(problem).toContainText('Song B: not in the library')
+  await problem.getByRole('button', { name: 'Refresh preview' }).click()
+  await expect(card(page)).toContainText('REVISION 3')
+  // The request left the gone song out of the kept songs, so the server did not refuse it.
+  const sent = record(record(proposals.refines.at(-1)?.body.intent).context)
+  expect(strings(sent.keep_ids)).not.toContain(b.id)
+  expect(strings(sent.keep_ids).length).toBeGreaterThan(0)
+  await expect(page.getByText('1 kept song no longer in your library was dropped.')).toBeVisible()
+  await expect(problem).toHaveCount(0)
+  // What is left of the kept songs. The stand-in's search adds nothing to them.
+  expect(await titles(rows(page))).toEqual(['Song A', 'Song C'])
+})
+
+test('an edit refused because a kept song left the library lists it, and Refresh preview leaves it out', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  await addSong(page).click()
+  await expect(card(page)).toContainText('REVISION 2')
+  deleted.add(b.id)
+  proposals.deleteSong(b.id)
+  // Nothing on the card says the song is gone yet. The refusal makes the card read the revision.
+  await addSong(page).click()
+  const missing = card(page).locator('[data-bot="missing"]')
+  await expect(missing).toContainText('1 song in this preview is no longer in your library.')
+  await expect(rows(page)).toHaveCount(3)
+  expect(proposals.written).toHaveLength(1)
+  await missing.getByRole('button', { name: 'Refresh preview' }).click()
+  await expect(card(page)).toContainText('REVISION 3')
+  await expect(missing).toHaveCount(0)
+  expect(
+    strings(record(record(proposals.refines.at(-1)?.body.intent).context).keep_ids),
+  ).not.toContain(b.id)
+  // And the card edits again.
+  await addSong(page).click()
+  await expect(card(page)).toContainText('REVISION 4')
+})
+
+test('a kept song that cannot play is named, stays, and is the one thing that can be removed', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  await addSong(page).click()
+  await expect(card(page)).toContainText('REVISION 2')
+  proposals.breakSong(b.id)
+  await addSong(page).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('A kept song can’t play right now: Song B.')
+  expect(proposals.written).toHaveLength(1)
+  // Nothing was dropped, and everything else waits.
+  await expect(rows(page)).toHaveCount(4)
+  await expect(addSong(page)).toBeDisabled()
+  await expect(another(page)).toBeDisabled()
+  await card(page).getByRole('button', { name: 'More actions for Song A' }).click()
+  await expect(page.getByRole('menuitem', { name: 'Remove from this list' })).toBeDisabled()
+  await page.keyboard.press('Escape')
+  await card(page).getByRole('button', { name: 'More actions for Song B' }).click()
+  await page.getByRole('menuitem', { name: 'Remove from this list' }).click()
+  await expect(card(page)).toContainText('REVISION 3')
+  await expect(problem).toHaveCount(0)
+  await expect(rows(page)).toHaveCount(3)
+  expect(proposals.edits.at(-1)).toMatchObject({ edit: { kind: 'remove', ids: [b.id] } })
+  await addSong(page).click()
+  await expect(card(page)).toContainText('REVISION 4')
+})
+
+test('a pin the server has not seen survives a remove', async ({ page, isMobile }) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  await pin(page, 'Song B').click()
+  await card(page).getByRole('button', { name: 'More actions for Song A' }).click()
+  await page.getByRole('menuitem', { name: 'Remove from this list' }).click()
+  await expect(card(page)).toContainText('REVISION 2')
+  await expect(pin(page, 'Song B')).toHaveAttribute('aria-pressed', 'true')
+  // It is still sent: the next Another set keeps it.
+  await another(page).click()
+  await expect(card(page)).toContainText('REVISION 3')
+  expect(proposals.edits.at(-1)).toMatchObject({ edit: { kind: 'another', pinned_ids: [b.id] } })
+})
+
+test('a pin the server has not seen survives a refresh', async ({ page, isMobile }) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  await pin(page, 'Song C').click()
+  proposals.fault = () => 'stale'
+  await card(page).getByRole('button', { name: 'Add to queue', exact: true }).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await problem.getByRole('button', { name: 'Refresh preview' }).click()
+  await expect(card(page)).toContainText('REVISION 2')
+  await expect(pin(page, 'Song C')).toHaveAttribute('aria-pressed', 'true')
+  await expect(pin(page, 'Song A')).toHaveAttribute('aria-pressed', 'false')
+})
+
+test('while an edit has no answer the chat cannot start another request', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  let chats = 0
+  await page.route('**/api/music-bot/chat', (route) => {
+    chats += 1
+    return route.fulfill({
+      json: { ...answer, plan: { ...plan, add_count: 1, limit: 4 }, tracks: [a, b, c, f] },
+    })
+  })
+  proposals.editFault = (_body, count) => (count <= 2 ? 'drop-after' : undefined)
+  await addSong(page).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('I can’t tell if that went through.')
+  // The lost attempt did land. Typing the same request cannot send it as a second one.
+  await box(page).fill('add a song')
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeDisabled()
+  await box(page).press('Enter')
+  expect(chats).toBe(0)
+  await expect(card(page).getByRole('button', { name: 'Remove filter' })).toHaveCount(0)
+  await problem.getByRole('button', { name: 'Check again' }).click()
+  await expect(card(page)).toContainText('REVISION 2')
+  expect(proposals.written).toHaveLength(1)
+  expect(new Set(proposals.edits.map((body) => body.operation_id)).size).toBe(1)
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
+})
+
+test('every press makes its own operation id, even for the same edit of the same revision', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  let release: (() => void) | undefined
+  proposals.holdEdit = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await addSong(page).click()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(page.getByText('Cancelled. Nothing changed.')).toBeVisible()
+  release?.()
+  proposals.holdEdit = undefined
+  await expect.poll(() => proposals.edits.length).toBe(1)
+  await addSong(page).click()
+  await expect.poll(() => proposals.edits.length).toBe(2)
+  expect(proposals.edits[1]?.operation_id).not.toBe(proposals.edits[0]?.operation_id)
+})
+
+test('a chat follow-up on a preview refined elsewhere says it changed and makes no new proposal', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  await page.route('**/api/music-bot/chat', (route) =>
+    route.fulfill({ json: { ...answer, plan: { ...plan, genres: ['Rock'] } } }),
+  )
+  proposals.refineElsewhere()
+  await say(page, 'only rock')
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('This preview changed.')
+  expect(proposals.creates).toHaveLength(1)
+  await expect(rows(page)).toHaveCount(3)
+  await problem.getByRole('button', { name: 'Refresh preview' }).click()
+  await expect(card(page)).toContainText('REVISION 2')
+  expect(proposals.creates).toHaveLength(1)
+
+  // The same when the proposal is gone.
+  proposals.prune()
+  await say(page, 'only rock again')
+  await expect(problem).toContainText('This preview changed.')
+  expect(proposals.creates).toHaveLength(1)
+})
+
+test('Check again on a proposal that was pruned says it changed, not that the id was reused', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  proposals.editFault = (_body, count) => (count <= 2 ? 'drop-after' : undefined)
+  await addSong(page).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('I can’t tell if that went through.')
+  proposals.prune()
+  await problem.getByRole('button', { name: 'Check again' }).click()
+  await expect(problem).toContainText('This preview changed.')
+  expect(proposals.creates).toHaveLength(1)
 })
