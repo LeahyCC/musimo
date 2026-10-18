@@ -1,6 +1,7 @@
 import { ChevronDown } from 'lucide-react'
 
 import { cx } from '../lib/cx'
+import { Select } from './select'
 
 export type SelectChipOption<Value extends string> = { value: Value; label: string }
 
@@ -51,7 +52,7 @@ export function SelectChip<Value extends string>({
       </span>
       <span aria-hidden="true">{shown}</span>
       <ChevronDown aria-hidden="true" size={14} />
-      <select
+      <Select
         aria-label={label}
         value={value}
         disabled={disabled}
@@ -66,7 +67,7 @@ export function SelectChip<Value extends string>({
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
     </span>
   )
 }

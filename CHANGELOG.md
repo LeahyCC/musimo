@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Styled dropdowns
+
+- Open every dropdown (Sort, Show, Genre, settings fields, download format and folder, visualizer presets) in a list that follows the theme, instead of the browser's own menu. Keyboard use is the same, and a phone keeps its own picker.
+
 ### Final check of the two layouts
 
 - Walk every route in Classic and the Listening room at 1280x800, 390x844 and 360x800, dark and light. `e2e/themed-walk.spec.ts` and `e2e/a11y.spec.ts` now run each route in both layouts.
