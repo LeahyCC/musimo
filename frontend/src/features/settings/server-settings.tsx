@@ -2,7 +2,17 @@ import { useDeferredValue, useEffect, useState } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useBlocker } from '@tanstack/react-router'
-import { AlertCircle, ArrowRight, Check, Folder, LockKeyhole } from 'lucide-react'
+import {
+  AlertCircle,
+  ArrowRight,
+  AudioLines,
+  Check,
+  Folder,
+  Radio,
+  Repeat,
+  Sparkles,
+} from 'lucide-react'
+import type { LucideIcon } from 'lucide-react'
 
 import {
   api,
@@ -15,20 +25,58 @@ import {
 import type { SettingKey, Settings } from '../../api'
 import { PageTitle } from '../../components/page-title'
 import { cx } from '../../lib/cx'
-import { Button, ErrorBanner, Field, FieldSelect, Tag } from '../../ui'
+import { useLayout } from '../../lib/layout'
+import { Button, ErrorBanner, Field, FieldSelect, Switch, Tag } from '../../ui'
 import { systemIsReady } from '../diagnostics/readiness'
 import { RecentActivity } from '../diagnostics/recent-activity'
 import { orderTrouble, sourceProblems } from '../diagnostics/source-status'
 import { pausedSources } from '../downloads/download-target'
 import { LibraryPanel } from './library-panel'
+import { SettingRow, SettingsBlock, SettingsSection } from './settings-layout'
 import { cleanArl, settingsPatch, withYoutubeCookies } from './settings-patch'
 import { CatalogOrder, SourceRow } from './source-controls'
 import { SettingsSwitch } from './user-settings'
 
-const sectionIndexLinkClassName =
-  'hover:text-accent coarse:inline-flex coarse:min-h-11 coarse:items-center'
-const settingsSectionClassName = 'scroll-mt-[115px] mb-[31px]'
-const settingsSectionHeadingClassName = 'border-b border-line pb-[17px] text-section'
+/** The sections in the order the page draws them, which is also the order of Classic's index. */
+const SECTIONS: readonly {
+  id: string
+  title: string
+  description: string
+  Icon: LucideIcon
+}[] = [
+  {
+    id: 'library',
+    title: 'Your library',
+    description: 'Where music lives and how new files are named.',
+    Icon: Folder,
+  },
+  {
+    id: 'audio',
+    title: 'Audio quality',
+    description: 'Applies to newly queued tracks.',
+    Icon: AudioLines,
+  },
+  {
+    id: 'queue',
+    title: 'Queue & retries',
+    description:
+      'How hard Musimo tries before giving up on a song. How many times a song walks the source list is under Sources.',
+    Icon: Repeat,
+  },
+  {
+    id: 'sources',
+    title: 'Sources',
+    description:
+      'Tried in this order for every song. Turn a source off to stop using it. Paste a new Deezer cookie when the old one stops working.',
+    Icon: Radio,
+  },
+  {
+    id: 'music-bot',
+    title: 'Music bot',
+    description: 'Octive runs on your own Ollama server. Nothing leaves your network.',
+    Icon: Sparkles,
+  },
+]
 
 const controls: {
   key: SettingKey
@@ -156,7 +204,7 @@ function NamingPreview({ template }: { template: string }) {
     retry: false,
   })
   return (
-    <p className="text-small [overflow-wrap:anywhere]">
+    <p className="mt-[6px] text-small [overflow-wrap:anywhere]">
       {result.isError ? (
         result.error.message
       ) : (
@@ -316,6 +364,341 @@ export function SettingsPage() {
     }
   }, [settings.isSuccess])
 
+  const room = useLayout() === 'room'
+
+  const renderRow = ({ key, label, help, min, max, optional }: (typeof controls)[number]) => {
+    const setting = settings.data?.[key]
+    if (!setting) return null
+    const value = draft[key] ?? setting.value
+    // The switch below is the only boolean; the text and select fields never hold one.
+    const entered = typeof value === 'boolean' ? '' : value
+    const disabled = setting.locked || save.isPending
+    const isSwitch = typeof setting.value === 'boolean'
+    return (
+      <SettingRow
+        key={key}
+        htmlFor={key}
+        label={label}
+        help={help}
+        lockedBy={setting.locked ? setting.origin : ''}
+        control={isSwitch ? 'switch' : 'field'}
+        detail={
+          <>
+            {key === 'naming_template' && (
+              <NamingPreview template={String(draft.naming_template ?? setting.value ?? '')} />
+            )}
+            {conflicts[key] !== undefined && (
+              <small className="mt-[6px] block text-tiny text-warn">
+                Changed elsewhere to {settingText(conflicts[key])}
+              </small>
+            )}
+          </>
+        }
+      >
+        {isSwitch ? (
+          <Switch
+            id={key}
+            checked={value === true}
+            disabled={disabled}
+            onChange={(e) => edit(key, e.target.checked)}
+          />
+        ) : key === 'destination' ? (
+          <FieldSelect
+            id={key}
+            value={entered}
+            disabled={disabled}
+            onChange={(e) => edit(key, e.target.value)}
+          >
+            {diagnostics.data?.disks.slice(1).map((disk) => (
+              <option key={disk.path} value={disk.path} disabled={!disk.writable}>
+                {disk.path}
+                {disk.writable ? '' : ' (read-only)'}
+              </option>
+            ))}
+          </FieldSelect>
+        ) : key === 'output_format' ? (
+          <FieldSelect
+            id={key}
+            value={entered}
+            disabled={disabled}
+            onChange={(e) => edit(key, e.target.value)}
+          >
+            <option value="original">Original · no re-encoding</option>
+            <option value="m4a">M4A / AAC</option>
+            <option value="opus">Opus</option>
+            <option value="mp3">MP3 · lossy conversion</option>
+          </FieldSelect>
+        ) : (
+          <Field
+            id={key}
+            type={min === undefined ? 'text' : 'number'}
+            min={min}
+            max={max}
+            maxLength={min === undefined ? 400 : undefined}
+            required={!optional}
+            disabled={disabled}
+            value={entered}
+            className={key === 'naming_template' || key === 'ollama_url' ? 'font-mono' : undefined}
+            onChange={(e) => edit(key, min === undefined ? e.target.value : Number(e.target.value))}
+          />
+        )}
+      </SettingRow>
+    )
+  }
+
+  /** The Ollama test sits right under the address it tests. */
+  const ollamaTest = (
+    <SettingsBlock
+      key="ollama-test"
+      className="flex flex-wrap items-center gap-x-[12px] gap-y-[8px]"
+    >
+      <Button
+        disabled={connection.isPending || 'ollama_url' in draft}
+        onClick={() => connection.mutate()}
+      >
+        Test Ollama connection
+      </Button>
+      <Link to="/music-bot" className="underline coarse:min-h-11 coarse:content-center">
+        Open music bot
+      </Link>
+      <p role="status" className="text-small text-muted">
+        {'ollama_url' in draft
+          ? 'Save the address before testing.'
+          : connection.isPending
+            ? 'Connecting…'
+            : connection.isError
+              ? connection.error.message
+              : connection.data
+                ? `Connected. ${connection.data.models.length} installed models (${connection.data.elapsed_ms} ms).`
+                : ''}
+      </p>
+    </SettingsBlock>
+  )
+
+  const sectionBody = (id: string) => (
+    <>
+      {controls
+        .filter((control) => control.section === id)
+        .flatMap((control) => [
+          renderRow(control),
+          control.key === 'ollama_url' ? ollamaTest : null,
+        ])}
+      {id === 'library' && (
+        <>
+          <LibraryPanel />
+          <SettingsBlock className="flex gap-[12px] text-small">
+            <Folder size={17} className="shrink-0" aria-hidden="true" />
+            <div>
+              Mounted folders
+              {diagnostics.data?.disks.slice(1).map((disk) => (
+                <code key={disk.path} className="mt-[8px] block text-accent">
+                  {disk.path} · {disk.exists ? 'available' : 'missing'}
+                </code>
+              ))}
+              <small className="mt-[8px] block leading-[1.6] text-muted">
+                Mount additional folders in Compose before choosing them here.
+              </small>
+            </div>
+          </SettingsBlock>
+        </>
+      )}
+    </>
+  )
+
+  const sourcesBody = (current: Settings) => (
+    <>
+      <CatalogOrder
+        order={(draft.source_order as string[] | undefined) ?? current.source_order.value}
+        tries={Number(draft.tries_per_source ?? current.tries_per_source.value)}
+        triesLocked={current.tries_per_source.locked}
+        triesOrigin={current.tries_per_source.origin}
+        laps={Number(draft.max_attempts ?? current.max_attempts.value)}
+        lapsLocked={current.max_attempts.locked}
+        lapsOrigin={current.max_attempts.origin}
+        orderLocked={current.source_order.locked}
+        orderOrigin={current.source_order.origin}
+        changedElsewhere={(
+          [
+            ['source_order', 'the source list'],
+            ['tries_per_source', 'tries'],
+            ['max_attempts', 'times around the list'],
+            ['deezer_catalog', 'Deezer'],
+            ['deezer_audio', 'Deezer account'],
+            ['disabled_sources', 'the source switches'],
+          ] as const
+        )
+          .filter(([key]) => conflicts[key] !== undefined)
+          .map(([, name]) => name)}
+        deezerOn={(draft.deezer_audio ?? current.deezer_audio.value) === true}
+        hasCookie={arlAfterSave}
+        disabledSources={
+          (draft.disabled_sources as string[] | undefined) ?? current.disabled_sources.value
+        }
+        paused={diagnostics.data?.queue.paused_sources ?? []}
+        trouble={orderTrouble(problems)}
+        disabled={save.isPending}
+        onOrder={(next) => edit('source_order', next)}
+        onTries={(next) => edit('tries_per_source', next)}
+        onLaps={(next) => edit('max_attempts', next)}
+      />
+      <SourceRow
+        id="deezer"
+        mark="d."
+        label="Deezer"
+        note={
+          problemFor('deezer')?.detail ??
+          'Search. Album pages and catalog downloads still use the Deezer catalog.'
+        }
+        warn={problemFor('deezer') !== undefined}
+        on={(draft.deezer_catalog ?? current.deezer_catalog.value) === true}
+        disabled={save.isPending}
+        lockedBy={current.deezer_catalog.locked ? current.deezer_catalog.origin : ''}
+        onChange={(on) => edit('deezer_catalog', on)}
+      />
+      <SourceRow
+        id="deezer_audio"
+        mark="a."
+        label="Deezer account"
+        note={
+          problemFor('deezer_audio')?.detail ??
+          'Turn this off to skip the Deezer account row. The other rows still run.'
+        }
+        warn={problemFor('deezer_audio') !== undefined}
+        on={(draft.deezer_audio ?? current.deezer_audio.value) === true}
+        disabled={save.isPending}
+        lockedBy={current.deezer_audio.locked ? current.deezer_audio.origin : ''}
+        onChange={(on) => edit('deezer_audio', on)}
+      />
+      <SettingRow
+        htmlFor="deezer_arl"
+        label="Deezer cookie"
+        help="In the browser, open DevTools, then Storage, then Cookies, and copy arl. Paste a new one here when it changes. The cookie stays on this server and is not shown again."
+        detail={
+          <>
+            <p className="mt-[7px] text-small text-muted" aria-live="polite">
+              {removeArl
+                ? 'The cookie will be removed when you save.'
+                : arlSaved
+                  ? 'A cookie is saved.'
+                  : 'No Deezer cookie yet.'}
+            </p>
+            {arlSaved && (
+              <button
+                type="button"
+                className="mt-[8px] text-small text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
+                disabled={save.isPending}
+                onClick={() => {
+                  unedit('deezer_arl')
+                  setRemoveArl(!removeArl)
+                  setSaved(false)
+                }}
+              >
+                {removeArl ? 'Keep cookie' : 'Remove cookie'}
+              </button>
+            )}
+          </>
+        }
+      >
+        <Field
+          id="deezer_arl"
+          type="password"
+          autoComplete="off"
+          spellCheck={false}
+          disabled={save.isPending}
+          placeholder={arlSaved ? 'Paste a new cookie to replace it' : 'Paste the arl cookie'}
+          value={typeof draft.deezer_arl === 'string' ? draft.deezer_arl : ''}
+          onChange={(e) => {
+            // An empty box means no change. Removing the cookie is its own button.
+            if (e.target.value.trim() === '') unedit('deezer_arl')
+            else edit('deezer_arl', e.target.value.trim())
+            setRemoveArl(false)
+          }}
+        />
+      </SettingRow>
+      <SettingRow
+        htmlFor="youtube_cookies"
+        label="YouTube cookies"
+        help="Paste a Netscape cookies.txt exported while signed in at youtube.com. An age-restricted video needs it. The file stays on this server and is not shown again."
+        detail={
+          <>
+            <p className="mt-[7px] text-small text-muted" aria-live="polite">
+              {removeCookies
+                ? 'The cookie file will be removed when you save.'
+                : cookieSaved
+                  ? 'A cookie file is saved.'
+                  : 'No YouTube cookie yet.'}
+            </p>
+            {cookieSaved && (
+              <button
+                type="button"
+                className="mt-[8px] text-small text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
+                disabled={save.isPending}
+                onClick={() => {
+                  setCookieText('')
+                  setRemoveCookies(true)
+                  setSaved(false)
+                }}
+              >
+                Remove cookie
+              </button>
+            )}
+          </>
+        }
+      >
+        <textarea
+          id="youtube_cookies"
+          rows={5}
+          spellCheck={false}
+          autoComplete="off"
+          disabled={save.isPending}
+          value={cookieText}
+          placeholder={
+            cookieSaved ? 'Paste a new file to replace the saved one' : 'Paste cookies.txt'
+          }
+          onChange={(event) => {
+            setCookieText(event.target.value)
+            setRemoveCookies(false)
+            setSaved(false)
+          }}
+          className="w-full rounded-[5px] border border-line-strong bg-canvas px-[11px] py-[10px] text-small text-text coarse:text-base"
+        />
+      </SettingRow>
+      {(diagnostics.data?.download_sources ?? [])
+        .filter((source) => source.id !== 'deezer' && source.id !== 'deezer_audio')
+        .map((source) => {
+          const turnedOff = (
+            (draft.disabled_sources as string[] | undefined) ?? current.disabled_sources.value
+          ).includes(source.id)
+          const problem = problemFor(source.id)
+          return (
+            <SourceRow
+              key={source.id}
+              id={source.id}
+              mark={source.label.slice(0, 1)}
+              label={source.label}
+              note={
+                source.working
+                  ? (problem?.detail ?? source.note)
+                  : `${source.label} does not work right now.`
+              }
+              warn={!source.working || problem !== undefined}
+              on={source.working && !turnedOff}
+              disabled={!source.working || save.isPending}
+              lockedBy={current.disabled_sources.locked ? current.disabled_sources.origin : ''}
+              onChange={(on) => {
+                const now =
+                  (draft.disabled_sources as string[] | undefined) ?? current.disabled_sources.value
+                edit(
+                  'disabled_sources',
+                  on ? now.filter((item) => item !== source.id) : [...now, source.id],
+                )
+              }}
+            />
+          )
+        })}
+    </>
+  )
+
   return (
     <>
       <PageTitle eyebrow="SET IT UP YOUR WAY" title="Settings">
@@ -383,429 +766,42 @@ export function SettingsPage() {
       {!settings.data ? (
         !settings.isError && <p role="status">Loading settings…</p>
       ) : (
-        <div className="grid grid-cols-[145px_1fr] gap-[30px] max-tablet:grid-cols-1 max-phone:gap-[26px]">
-          <nav
-            className="sticky top-[119px] flex flex-col gap-[19px] self-start border-l border-line-strong px-[17px] text-small text-muted max-tablet:static max-tablet:flex-row max-phone:gap-[18px] max-phone:px-[12px] max-phone:text-tiny"
-            aria-label="Settings sections"
-          >
-            <a href="#library" className={sectionIndexLinkClassName}>
-              Library
-            </a>
-            <a href="#audio" className={sectionIndexLinkClassName}>
-              Audio quality
-            </a>
-            <a href="#queue" className={sectionIndexLinkClassName}>
-              Queue & retries
-            </a>
-            <a href="#sources" className={sectionIndexLinkClassName}>
-              Sources
-            </a>
-          </nav>
+        <div
+          className={cx(
+            !room &&
+              'grid grid-cols-[170px_1fr] gap-[40px] max-tablet:grid-cols-1 max-tablet:gap-[26px]',
+          )}
+        >
+          {!room && (
+            <nav
+              className="sticky top-[119px] flex flex-col gap-[2px] self-start text-body text-muted max-tablet:static max-tablet:flex-row max-tablet:flex-wrap max-tablet:gap-[6px]"
+              aria-label="Settings sections"
+            >
+              {SECTIONS.map(({ id, title, Icon }) => (
+                <a
+                  key={id}
+                  href={`#${id}`}
+                  className="flex h-[32px] items-center gap-[10px] rounded-[7px] px-[10px] hover:bg-hover hover:text-text coarse:min-h-11"
+                >
+                  <Icon size={15} aria-hidden="true" />
+                  {title}
+                </a>
+              ))}
+            </nav>
+          )}
           <form
             onSubmit={(e) => {
               e.preventDefault()
               save.mutate()
             }}
           >
-            {['library', 'audio', 'queue', 'music-bot'].map((section) => (
-              <section id={section} className={settingsSectionClassName} key={section}>
-                <h2 className={settingsSectionHeadingClassName}>
-                  {section === 'library'
-                    ? 'Your library'
-                    : section === 'audio'
-                      ? 'Audio quality'
-                      : section === 'music-bot'
-                        ? 'Music bot'
-                        : 'Queue & retries'}
-                </h2>
-                {section === 'music-bot' && (
-                  <div className="mt-4 flex flex-wrap items-center gap-3">
-                    <Button
-                      disabled={connection.isPending || 'ollama_url' in draft}
-                      onClick={() => connection.mutate()}
-                    >
-                      Test Ollama connection
-                    </Button>
-                    <Link
-                      to="/music-bot"
-                      className="underline coarse:min-h-11 coarse:content-center"
-                    >
-                      Open music bot
-                    </Link>
-                    <p role="status">
-                      {'ollama_url' in draft
-                        ? 'Save the address before testing.'
-                        : connection.isPending
-                          ? 'Connecting…'
-                          : connection.isError
-                            ? connection.error.message
-                            : connection.data
-                              ? `Connected. ${connection.data.models.length} installed models (${connection.data.elapsed_ms} ms).`
-                              : ''}
-                    </p>
-                  </div>
-                )}
-                {section === 'queue' && (
-                  <p className="mt-[14px] max-w-[520px] text-small text-muted">
-                    How many times a song walks the source list is under Sources.
-                  </p>
-                )}
-                {controls
-                  .filter((control) => control.section === section)
-                  .map(({ key, label, help, min, max, optional }) => {
-                    const setting = settings.data?.[key]
-                    if (!setting) return null
-                    const value = draft[key] ?? setting.value
-                    // The switch below is the only boolean; the text and select fields never
-                    // hold one.
-                    const entered = typeof value === 'boolean' ? '' : value
-                    return (
-                      <div
-                        className="grid grid-cols-[1fr_220px] items-center gap-[28px] border-b border-line py-[19px] max-tablet:grid-cols-[1fr_200px] max-phone:grid-cols-1 max-phone:gap-[13px]"
-                        key={key}
-                      >
-                        <div>
-                          <label htmlFor={key} className="text-body">
-                            {label}
-                          </label>
-                          <p className="mt-[7px] max-w-[380px] text-tiny">{help}</p>
-                          {setting.locked && (
-                            <small className="mt-[8px] flex items-center gap-[5px] text-caption text-warn">
-                              <LockKeyhole size={12} />
-                              Locked by {setting.origin}
-                            </small>
-                          )}
-                        </div>
-                        <div>
-                          {typeof setting.value === 'boolean' ? (
-                            <input
-                              id={key}
-                              type="checkbox"
-                              className="h-[18px] w-[18px] accent-accent coarse:h-[22px] coarse:w-[22px]"
-                              checked={value === true}
-                              disabled={setting.locked || save.isPending}
-                              onChange={(e) => {
-                                if (!(key in draft)) {
-                                  setOriginalValues({ ...originalValues, [key]: setting.value })
-                                }
-                                setDraft({ ...draft, [key]: e.target.checked })
-                                setSaved(false)
-                              }}
-                            />
-                          ) : key === 'destination' ? (
-                            <FieldSelect
-                              id={key}
-                              value={entered}
-                              disabled={setting.locked || save.isPending}
-                              onChange={(e) => {
-                                if (!(key in draft)) {
-                                  setOriginalValues({ ...originalValues, [key]: setting.value })
-                                }
-                                setDraft({ ...draft, [key]: e.target.value })
-                                setSaved(false)
-                              }}
-                            >
-                              {diagnostics.data?.disks.slice(1).map((disk) => (
-                                <option key={disk.path} value={disk.path} disabled={!disk.writable}>
-                                  {disk.path}
-                                  {disk.writable ? '' : ' (read-only)'}
-                                </option>
-                              ))}
-                            </FieldSelect>
-                          ) : key === 'output_format' ? (
-                            <FieldSelect
-                              id={key}
-                              value={entered}
-                              disabled={setting.locked || save.isPending}
-                              onChange={(e) => {
-                                if (!(key in draft)) {
-                                  setOriginalValues({ ...originalValues, [key]: setting.value })
-                                }
-                                setDraft({ ...draft, [key]: e.target.value })
-                                setSaved(false)
-                              }}
-                            >
-                              <option value="original">Original · no re-encoding</option>
-                              <option value="m4a">M4A / AAC</option>
-                              <option value="opus">Opus</option>
-                              <option value="mp3">MP3 · lossy conversion</option>
-                            </FieldSelect>
-                          ) : (
-                            <Field
-                              id={key}
-                              type={min === undefined ? 'text' : 'number'}
-                              min={min}
-                              max={max}
-                              maxLength={min === undefined ? 400 : undefined}
-                              required={!optional}
-                              disabled={setting.locked || save.isPending}
-                              value={entered}
-                              onChange={(e) => {
-                                if (!(key in draft)) {
-                                  setOriginalValues({ ...originalValues, [key]: setting.value })
-                                }
-                                setDraft({
-                                  ...draft,
-                                  [key]:
-                                    min === undefined ? e.target.value : Number(e.target.value),
-                                })
-                                setSaved(false)
-                              }}
-                            />
-                          )}
-                          {conflicts[key] !== undefined && (
-                            <small className="mt-[6px] block text-tiny text-warn">
-                              Changed elsewhere to {settingText(conflicts[key])}
-                            </small>
-                          )}
-                        </div>
-                      </div>
-                    )
-                  })}
-                {section === 'library' && (
-                  <NamingPreview
-                    template={String(
-                      draft.naming_template ?? settings.data?.naming_template.value ?? '',
-                    )}
-                  />
-                )}
-                {section === 'library' && <LibraryPanel />}
-                {section === 'library' && (
-                  <div className="mt-[19px] flex gap-[12px] rounded-md bg-raised p-[15px] text-small">
-                    <Folder size={17} />
-                    <div>
-                      Mounted folders
-                      {diagnostics.data?.disks.slice(1).map((disk) => (
-                        <code key={disk.path} className="mt-[8px] block text-accent">
-                          {disk.path} · {disk.exists ? 'available' : 'missing'}
-                        </code>
-                      ))}
-                      <small className="mt-[8px] block leading-[1.6] text-muted">
-                        Mount additional folders in Compose before choosing them here.
-                      </small>
-                    </div>
-                  </div>
-                )}
-              </section>
-            ))}
-            <section id="sources" className={settingsSectionClassName}>
-              <h2 className={settingsSectionHeadingClassName}>Sources</h2>
-              <p className="mt-[14px] max-w-[520px] text-small text-muted">
-                Turn a source off to stop using it. Paste a new Deezer cookie here when the old one
-                stops working.
-              </p>
-              <CatalogOrder
-                order={
-                  (draft.source_order as string[] | undefined) ?? settings.data.source_order.value
-                }
-                tries={Number(draft.tries_per_source ?? settings.data.tries_per_source.value)}
-                triesLocked={settings.data.tries_per_source.locked}
-                triesOrigin={settings.data.tries_per_source.origin}
-                laps={Number(draft.max_attempts ?? settings.data.max_attempts.value)}
-                lapsLocked={settings.data.max_attempts.locked}
-                lapsOrigin={settings.data.max_attempts.origin}
-                orderLocked={settings.data.source_order.locked}
-                orderOrigin={settings.data.source_order.origin}
-                changedElsewhere={(
-                  [
-                    ['source_order', 'the source list'],
-                    ['tries_per_source', 'tries'],
-                    ['max_attempts', 'times around the list'],
-                    ['deezer_catalog', 'Deezer'],
-                    ['deezer_audio', 'Deezer account'],
-                    ['disabled_sources', 'the source switches'],
-                  ] as const
-                )
-                  .filter(([key]) => conflicts[key] !== undefined)
-                  .map(([, name]) => name)}
-                deezerOn={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
-                hasCookie={arlAfterSave}
-                disabledSources={
-                  (draft.disabled_sources as string[] | undefined) ??
-                  settings.data.disabled_sources.value
-                }
-                paused={diagnostics.data?.queue.paused_sources ?? []}
-                trouble={orderTrouble(problems)}
-                disabled={save.isPending}
-                onOrder={(next) => edit('source_order', next)}
-                onTries={(next) => edit('tries_per_source', next)}
-                onLaps={(next) => edit('max_attempts', next)}
-              />
-              <SourceRow
-                id="deezer"
-                mark="d."
-                label="Deezer"
-                note={
-                  problemFor('deezer')?.detail ??
-                  'Search. Album pages and catalog downloads still use the Deezer catalog.'
-                }
-                warn={problemFor('deezer') !== undefined}
-                on={(draft.deezer_catalog ?? settings.data.deezer_catalog.value) === true}
-                disabled={save.isPending}
-                lockedBy={
-                  settings.data.deezer_catalog.locked ? settings.data.deezer_catalog.origin : ''
-                }
-                onChange={(on) => edit('deezer_catalog', on)}
-              />
-              <SourceRow
-                id="deezer_audio"
-                mark="a."
-                label="Deezer account"
-                note={
-                  problemFor('deezer_audio')?.detail ??
-                  'Turn this off to skip the Deezer account row. The other rows still run.'
-                }
-                warn={problemFor('deezer_audio') !== undefined}
-                on={(draft.deezer_audio ?? settings.data.deezer_audio.value) === true}
-                disabled={save.isPending}
-                lockedBy={
-                  settings.data.deezer_audio.locked ? settings.data.deezer_audio.origin : ''
-                }
-                onChange={(on) => edit('deezer_audio', on)}
-              />
-              <div className="grid grid-cols-[1fr_280px] items-center gap-[28px] border-b border-line py-[16px] max-phone:grid-cols-1 max-phone:gap-[10px]">
-                <div>
-                  <label htmlFor="deezer_arl" className="text-body">
-                    Deezer cookie
-                  </label>
-                  <p className="mt-[7px] max-w-[420px] text-tiny">
-                    In the browser, open DevTools, then Storage, then Cookies, and copy arl. Paste a
-                    new one here when it changes. The cookie stays on this server and is not shown
-                    again.
-                  </p>
-                  <p className="mt-[7px] text-tiny text-muted" aria-live="polite">
-                    {removeArl
-                      ? 'The cookie will be removed when you save.'
-                      : arlSaved
-                        ? 'A cookie is saved.'
-                        : 'No Deezer cookie yet.'}
-                  </p>
-                  {arlSaved && (
-                    <button
-                      type="button"
-                      className="mt-[8px] text-small text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
-                      disabled={save.isPending}
-                      onClick={() => {
-                        unedit('deezer_arl')
-                        setRemoveArl(!removeArl)
-                        setSaved(false)
-                      }}
-                    >
-                      {removeArl ? 'Keep cookie' : 'Remove cookie'}
-                    </button>
-                  )}
-                </div>
-                <Field
-                  id="deezer_arl"
-                  type="password"
-                  autoComplete="off"
-                  spellCheck={false}
-                  disabled={save.isPending}
-                  placeholder={
-                    arlSaved ? 'Paste a new cookie to replace it' : 'Paste the arl cookie'
-                  }
-                  value={typeof draft.deezer_arl === 'string' ? draft.deezer_arl : ''}
-                  onChange={(e) => {
-                    // An empty box means no change. Removing the cookie is its own button.
-                    if (e.target.value.trim() === '') unedit('deezer_arl')
-                    else edit('deezer_arl', e.target.value.trim())
-                    setRemoveArl(false)
-                  }}
-                />
-              </div>
-              <div className="grid grid-cols-[1fr_280px] items-start gap-[28px] border-b border-line py-[16px] max-phone:grid-cols-1 max-phone:gap-[10px]">
-                <div>
-                  <label htmlFor="youtube_cookies" className="text-body">
-                    YouTube cookies
-                  </label>
-                  <p className="mt-[7px] max-w-[420px] text-tiny">
-                    Paste a Netscape cookies.txt exported while signed in at youtube.com. An
-                    age-restricted video needs it. The file stays on this server and is not shown
-                    again.
-                  </p>
-                  <p className="mt-[7px] text-tiny text-muted" aria-live="polite">
-                    {removeCookies
-                      ? 'The cookie file will be removed when you save.'
-                      : cookieSaved
-                        ? 'A cookie file is saved.'
-                        : 'No YouTube cookie yet.'}
-                  </p>
-                  {cookieSaved && (
-                    <button
-                      type="button"
-                      className="mt-[8px] text-small text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
-                      disabled={save.isPending}
-                      onClick={() => {
-                        setCookieText('')
-                        setRemoveCookies(true)
-                        setSaved(false)
-                      }}
-                    >
-                      Remove cookie
-                    </button>
-                  )}
-                </div>
-                <textarea
-                  id="youtube_cookies"
-                  rows={5}
-                  spellCheck={false}
-                  autoComplete="off"
-                  disabled={save.isPending}
-                  value={cookieText}
-                  placeholder={
-                    cookieSaved ? 'Paste a new file to replace the saved one' : 'Paste cookies.txt'
-                  }
-                  onChange={(event) => {
-                    setCookieText(event.target.value)
-                    setRemoveCookies(false)
-                    setSaved(false)
-                  }}
-                  className="w-full rounded-[5px] border border-line-strong bg-raised px-[11px] py-[10px] text-small text-text"
-                />
-              </div>
-              {(diagnostics.data?.download_sources ?? [])
-                .filter((source) => source.id !== 'deezer' && source.id !== 'deezer_audio')
-                .map((source) => {
-                  const turnedOff = (
-                    (draft.disabled_sources as string[] | undefined) ??
-                    settings.data.disabled_sources.value
-                  ).includes(source.id)
-                  const problem = problemFor(source.id)
-                  return (
-                    <div key={source.id}>
-                      <SourceRow
-                        id={source.id}
-                        mark={source.label.slice(0, 1)}
-                        label={source.label}
-                        note={
-                          source.working
-                            ? (problem?.detail ?? source.note)
-                            : `${source.label} does not work right now.`
-                        }
-                        warn={!source.working || problem !== undefined}
-                        on={source.working && !turnedOff}
-                        disabled={!source.working || save.isPending}
-                        lockedBy={
-                          settings.data.disabled_sources.locked
-                            ? settings.data.disabled_sources.origin
-                            : ''
-                        }
-                        onChange={(on) => {
-                          const current =
-                            (draft.disabled_sources as string[] | undefined) ??
-                            settings.data.disabled_sources.value
-                          edit(
-                            'disabled_sources',
-                            on
-                              ? current.filter((item) => item !== source.id)
-                              : [...current, source.id],
-                          )
-                        }}
-                      />
-                    </div>
-                  )
-                })}
-            </section>
+            <div className={cx('grid', room ? 'gap-[28px]' : 'gap-[20px]')}>
+              {SECTIONS.map(({ id, title, description }) => (
+                <SettingsSection key={id} id={id} title={title} description={description}>
+                  {id === 'sources' ? sourcesBody(settings.data) : sectionBody(id)}
+                </SettingsSection>
+              ))}
+            </div>
             {/* `save-bar` is the hook `e2e/phone.spec.ts` measures against the bottom bar. The
                 offset keeps it clear of the player, and on a phone the bar and home indicator. */}
             {/* With nothing to save there is nothing to say, so the bar comes only with an edit, a
@@ -813,7 +809,7 @@ export function SettingsPage() {
             {(isDirty || saved || save.isError) && (
               <div
                 className={cx(
-                  'save-bar sticky bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+8px)] z-sticky flex items-center justify-between gap-[15px] rounded-[7px] border px-[17px] py-[13px] max-phone:p-[12px]',
+                  'save-bar sticky bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+8px)] z-sticky mt-[20px] flex items-center justify-between gap-[15px] rounded-[12px] border px-[17px] py-[13px] shadow-[0_12px_30px_color-mix(in_oklab,var(--color-shadow)_40%,transparent)] max-phone:p-[12px]',
                   save.isError
                     ? 'border-danger-line bg-danger-bg text-danger'
                     : 'border-good-line bg-good-bg',

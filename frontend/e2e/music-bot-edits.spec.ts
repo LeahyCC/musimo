@@ -593,7 +593,7 @@ test('the Windows 95 list pins and edits too', async ({ page, isMobile }) => {
   const win95 = BUILT_IN_THEMES.find((entry) => entry.id === 'win95-light')
   if (!win95) throw new Error('No Windows 95 theme')
   await page.goto('/settings/user')
-  await page.getByText(win95.name, { exact: true }).first().click()
+  await page.getByRole('radio', { name: win95.name }).check()
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'win95')
   await open(page, false)
   await expect(page.locator('[data-bot="list-view"]')).toBeVisible()
