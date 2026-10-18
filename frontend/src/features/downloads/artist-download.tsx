@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react'
+import type { ReactNode } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
@@ -47,7 +48,16 @@ const batchSchema = z.object({
   skipped_queued: z.number(),
 })
 
-export function ArtistDownloadButton({ artistId, name }: { artistId: number; name: string }) {
+export function ArtistDownloadButton({
+  artistId,
+  name,
+  trigger,
+}: {
+  artistId: number
+  name: string
+  /** Draws the page's own button in place of the two default ones; `open` shows the sheet. */
+  trigger?: (open: (allMusic: boolean) => void) => ReactNode
+}) {
   const dialog = useRef<HTMLDialogElement>(null)
   const client = useQueryClient()
   const [opened, setOpened] = useState(false)
@@ -125,46 +135,51 @@ export function ArtistDownloadButton({ artistId, name }: { artistId: number; nam
       for (const job of batch.jobs) updateJob(client, job)
     },
   })
+  const open = (includeAll: boolean) => {
+    download.reset()
+    setExcluded(new Set())
+    setAllMusic(includeAll)
+    setOpened(true)
+    dialog.current?.showModal()
+  }
   return (
     <>
-      <div
-        className="mt-[14px] flex flex-wrap gap-[8px]"
-        role="group"
-        aria-label={`Download ${name}`}
-      >
-        {(
-          [
-            [false, Disc3, 'Albums only'],
-            [true, ListMusic, 'All music'],
-          ] as const
-        ).map(([includeAll, Icon, label]) => (
-          <button
-            type="button"
-            className={cx(
-              'inline-grid min-h-11 grid-cols-[30px_auto] items-center gap-[9px] rounded-[8px] border border-line-strong bg-sunken pt-[7px] pr-[13px] pb-[7px] pl-[7px] text-text',
-              'hover:bg-hover hover:border-[color:var(--line-hover)]',
-              '[&>svg]:box-border [&>svg]:h-[30px] [&>svg]:w-[30px] [&>svg]:rounded-md [&>svg]:bg-active [&>svg]:p-[7px] [&>svg]:text-accent',
-              '[&>span]:grid [&>span]:gap-[3px] [&>span]:text-left [&>span]:text-small [&>span]:leading-none [&>span]:font-semibold',
-              '[&_small]:font-medium [&_small]:tracking-[0.12em] [&_small]:text-caption [&_small]:text-muted [&_small]:uppercase',
-            )}
-            aria-label={includeAll ? 'Download all music' : 'Download all albums'}
-            key={label}
-            onClick={() => {
-              download.reset()
-              setExcluded(new Set())
-              setAllMusic(includeAll)
-              setOpened(true)
-              dialog.current?.showModal()
-            }}
-          >
-            <Icon aria-hidden="true" />
-            <span>
-              <small>Download</small>
-              {label}
-            </span>
-          </button>
-        ))}
-      </div>
+      {trigger ? (
+        trigger(open)
+      ) : (
+        <div
+          className="mt-[14px] flex flex-wrap gap-[8px]"
+          role="group"
+          aria-label={`Download ${name}`}
+        >
+          {(
+            [
+              [false, Disc3, 'Albums only'],
+              [true, ListMusic, 'All music'],
+            ] as const
+          ).map(([includeAll, Icon, label]) => (
+            <button
+              type="button"
+              className={cx(
+                'inline-grid min-h-11 grid-cols-[30px_auto] items-center gap-[9px] rounded-[8px] border border-line-strong bg-sunken pt-[7px] pr-[13px] pb-[7px] pl-[7px] text-text',
+                'hover:bg-hover hover:border-[color:var(--line-hover)]',
+                '[&>svg]:box-border [&>svg]:h-[30px] [&>svg]:w-[30px] [&>svg]:rounded-md [&>svg]:bg-active [&>svg]:p-[7px] [&>svg]:text-accent',
+                '[&>span]:grid [&>span]:gap-[3px] [&>span]:text-left [&>span]:text-small [&>span]:leading-none [&>span]:font-semibold',
+                '[&_small]:font-medium [&_small]:tracking-[0.12em] [&_small]:text-caption [&_small]:text-muted [&_small]:uppercase',
+              )}
+              aria-label={includeAll ? 'Download all music' : 'Download all albums'}
+              key={label}
+              onClick={() => open(includeAll)}
+            >
+              <Icon aria-hidden="true" />
+              <span>
+                <small>Download</small>
+                {label}
+              </span>
+            </button>
+          ))}
+        </div>
+      )}
       <ReviewDialog
         dialogRef={dialog}
         titleId="artist-download-title"

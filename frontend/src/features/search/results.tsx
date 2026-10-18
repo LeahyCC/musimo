@@ -3,38 +3,108 @@ import { useEffect, useRef, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useVirtualizer } from '@tanstack/react-virtual'
-import { Check, Disc3, Pause, Play } from 'lucide-react'
+import {
+  AlertCircle,
+  Check,
+  ChevronLeft,
+  CircleDashed,
+  Clock,
+  Copy,
+  Disc3,
+  Pause,
+  Play,
+} from 'lucide-react'
 
 import { albumSchema, api } from '../../api'
 import type { DownloadJob, MusicResult } from '../../api'
 import { cx } from '../../lib/cx'
+import { useLayout } from '../../lib/layout'
 import { Ownership, textLinkClassName } from '../../ui'
 import { AlbumDownloadButton } from '../downloads/album-download'
 import { DownloadButton } from '../downloads/download-button'
 import { DownloadTarget } from '../downloads/download-target'
 import { failureMessage, useJobs } from '../downloads/jobs'
 import { durationText, usePlayer, usePreviewPlayback } from '../player/player'
+import { ownedFraction, ownedShare } from './coverage'
 import { getLastSearch } from './search-params'
+import type { SearchState } from './search-params'
 
 /* A result section's heading row sits a little tighter than the shared one in `ui/`, and its
    title keeps a gap under it where a count or link wraps below. */
 export const resultsHeadingClassName = 'mb-[17px] flex items-center justify-between gap-[12px]'
 export const resultsTitleClassName = 'mb-[12px] text-base'
 
-export function BackToSearch() {
+const backClassName =
+  'inline-flex h-[32px] items-center gap-[6px] rounded-[8px] bg-transparent py-0 pr-[10px] pl-[6px] -ml-[6px] mb-[16px] text-body text-muted hover:bg-raised hover:text-text coarse:min-h-11'
+
+/** The way back to the last search, or to `fallback` for a visit that did not come from one. */
+export function BackToSearch({ fallback }: { fallback?: SearchState }) {
   const navigate = useNavigate()
   const lastSearch = getLastSearch()
-  if (!lastSearch?.q) return null
+  const target = lastSearch?.q ? lastSearch : fallback
+  if (!target) return null
   return (
     <button
       type="button"
-      data-ui="text-link"
-      className={textLinkClassName()}
-      onClick={() => void navigate({ to: '/search', search: lastSearch })}
+      data-ui="back-link"
+      className={backClassName}
+      onClick={() => void navigate({ to: '/search', search: target })}
     >
-      ← Back to results
+      <ChevronLeft size={16} aria-hidden="true" />
+      Back to results
     </button>
   )
+}
+
+type BadgeState = {
+  variant: 'owned' | 'partial' | 'failed' | 'missing'
+  label: string
+  icon: typeof Check | null
+}
+
+/** What a row or card says about its place in the library, and the icon that goes with it. */
+function badgeState(item: MusicResult, job?: DownloadJob): BadgeState {
+  const failed =
+    item.ownership !== 'owned' && item.ownership !== 'edition' && job?.stage === 'failed'
+  if (failed) return { variant: 'failed', label: 'Download failed', icon: AlertCircle }
+  if (item.kind === 'album')
+    return {
+      variant: item.ownership === 'edition' ? 'partial' : item.ownership,
+      label:
+        item.track_count > 0
+          ? `${item.owned_count} of ${item.track_count}${item.coverage_verified ? '' : ' estimated'}`
+          : 'Checking coverage…',
+      icon: item.ownership === 'owned' || item.ownership === 'edition' ? Check : null,
+    }
+  if (item.ownership === 'owned') return { variant: 'owned', label: 'In library', icon: Check }
+  if (item.ownership === 'edition') {
+    const label = item.matched_album
+      ? `Another edition in library (${item.matched_album})`
+      : 'Another edition in library'
+    return { variant: 'partial', label, icon: Copy }
+  }
+  // The file was downloaded but the library index has no match for it now, so it is not green.
+  if (job?.stage === 'done') return { variant: 'missing', label: 'Downloaded earlier', icon: null }
+  if (job?.stage === 'retry_wait')
+    return { variant: 'missing', label: 'Retry scheduled', icon: Clock }
+  if (job) {
+    const label = job.stage.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
+    return { variant: 'missing', label, icon: Clock }
+  }
+  return { variant: 'missing', label: 'Not in library', icon: CircleDashed }
+}
+
+const dotClassNames = {
+  owned: 'bg-accent',
+  partial: 'bg-partial',
+  failed: 'bg-danger',
+  missing: 'bg-faint',
+}
+const roomTextClassNames = {
+  owned: 'text-accent',
+  partial: 'text-partial',
+  failed: 'text-danger',
+  missing: 'text-muted',
 }
 
 export function Badge({
@@ -46,45 +116,46 @@ export function Badge({
   job?: DownloadJob
   className?: string
 }) {
+  const layout = useLayout()
   if (item.kind === 'artist') return null
-  const failed =
-    item.ownership !== 'owned' && item.ownership !== 'edition' && job?.stage === 'failed'
-  const jobLabel =
-    job?.stage === 'failed'
-      ? 'Download failed'
-      : job?.stage === 'retry_wait'
-        ? 'Retry scheduled'
-        : job?.stage === 'done'
-          ? 'Downloaded earlier'
-          : job?.stage.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
+  const state = badgeState(item, job)
+  const failed = state.variant === 'failed'
   const editionLabel = item.matched_album
     ? `Another edition in library (${item.matched_album})`
     : 'Another edition in library'
+  const title = failed
+    ? job?.error_hint || (job ? failureMessage(job) : '')
+    : item.ownership === 'edition'
+      ? `${editionLabel}\n${item.matched_paths.join('\n')}`
+      : item.matched_paths.join('\n') ||
+        (item.kind === 'album' && !item.coverage_verified
+          ? 'Coverage is still being checked against the library index.'
+          : 'No matching file in the current library index')
+  const Icon = state.icon
+  // The Listening room names the state with a dot and plain words, with no chip behind it.
+  if (layout === 'room')
+    return (
+      <span
+        data-ui="ownership"
+        data-variant={state.variant}
+        title={title}
+        className={cx(
+          'inline-flex w-fit items-center gap-[6px] whitespace-nowrap text-small',
+          roomTextClassNames[state.variant],
+          className,
+        )}
+      >
+        <i
+          aria-hidden="true"
+          className={cx('size-[7px] rounded-pill', dotClassNames[state.variant])}
+        />
+        {state.label}
+      </span>
+    )
   return (
-    <Ownership
-      variant={failed ? 'failed' : item.ownership === 'edition' ? 'partial' : item.ownership}
-      className={className}
-      title={
-        failed
-          ? job.error_hint || failureMessage(job)
-          : item.ownership === 'edition'
-            ? `${editionLabel}\n${item.matched_paths.join('\n')}`
-            : item.matched_paths.join('\n') ||
-              (item.kind === 'album' && !item.coverage_verified
-                ? 'Coverage is still being checked against the library index.'
-                : 'No matching file in the current library index')
-      }
-    >
-      {(item.ownership === 'owned' || item.ownership === 'edition') && <Check size={12} />}
-      {item.kind === 'album'
-        ? item.track_count > 0
-          ? `${item.owned_count} of ${item.track_count}${item.coverage_verified ? '' : ' estimated'}`
-          : 'Checking coverage…'
-        : item.ownership === 'owned'
-          ? 'In library'
-          : item.ownership === 'edition'
-            ? editionLabel
-            : (jobLabel ?? 'Missing')}
+    <Ownership variant={state.variant} className={className} title={title}>
+      {Icon && <Icon size={12} />}
+      {state.label}
     </Ownership>
   )
 }
@@ -93,10 +164,13 @@ export function Art({
   item,
   size = 'card',
   className,
+  rounded = 'rounded-[7px]',
 }: {
   item: MusicResult
   size?: 'card' | 'row'
   className?: string
+  /** The corner radius class, for a hero cover that wants more than a card's. */
+  rounded?: string
 }) {
   const player = usePlayer()
   const active = usePreviewPlayback(item.id).playing
@@ -113,8 +187,8 @@ export function Art({
     <div
       className={cx(
         'group relative isolate flex shrink-0 items-center justify-center overflow-hidden bg-active',
-        item.kind === 'artist' ? 'rounded-pill' : 'rounded-[7px]',
-        size === 'row' ? 'h-[46px] w-[46px]' : 'aspect-square',
+        item.kind === 'artist' ? 'rounded-pill' : rounded,
+        size === 'row' ? 'h-[40px] w-[40px]' : 'aspect-square',
         className,
       )}
     >
@@ -139,6 +213,35 @@ export function Art({
           {active ? <Pause size={19} /> : <Play size={19} />}
         </button>
       )}
+    </div>
+  )
+}
+
+/** The thin bar under an album: how much of it the library holds. Full is accent, some is partial. */
+export function OwnershipBar({
+  item,
+  label,
+  className,
+}: {
+  item: Pick<MusicResult, 'owned_count' | 'track_count'>
+  label: string
+  className?: string
+}) {
+  const share = ownedShare(item)
+  return (
+    <div
+      role="meter"
+      aria-label={label}
+      aria-valuemin={0}
+      aria-valuemax={item.track_count || 1}
+      aria-valuenow={item.owned_count}
+      aria-valuetext={ownedFraction(item) || 'Checking coverage'}
+      className={cx('h-[3px] w-full overflow-hidden rounded-[3px] bg-line-strong', className)}
+    >
+      <div
+        className={cx('h-full rounded-[3px]', share === 1 ? 'bg-accent' : 'bg-partial')}
+        style={{ width: `${share * 100}%` }}
+      />
     </div>
   )
 }
@@ -209,13 +312,7 @@ function MusicCard({ item }: { item: MusicResult }) {
         <Badge item={display} />
       )}
       {item.kind === 'album' && (
-        <meter
-          className="h-[4px] w-full"
-          min={0}
-          max={display.track_count || 1}
-          value={display.owned_count}
-          aria-label={`${item.title} library coverage`}
-        />
+        <OwnershipBar item={display} label={`${item.title} library coverage`} />
       )}
       {item.kind === 'album' && <AlbumDownloadButton item={display} overlay />}
     </article>
@@ -227,12 +324,19 @@ function TrackRow({
   selected = false,
   job,
   focusable = false,
+  first = false,
+  onAlbum = false,
 }: {
   item: MusicResult
   selected?: boolean
   job?: DownloadJob
   focusable?: boolean
+  /** The first row of a boxed list has no rule above it. */
+  first?: boolean
+  /** On an album's own page the album and year are already the heading, so the row drops them. */
+  onAlbum?: boolean
 }) {
+  const room = useLayout() === 'room'
   const player = usePlayer()
   const playing = usePreviewPlayback(item.id).playing
   const previewState = player.previewState(item.id)
@@ -240,15 +344,23 @@ function TrackRow({
   return (
     <div
       className={cx(
-        'track-row flex h-[76px] items-center gap-[14px] border-b border-line p-[8px] text-small',
-        'hover:bg-hover focus:outline-2 focus:outline-accent focus:[outline-offset:-2px] coarse:[&_button]:min-h-11',
-        'max-phone:grid max-phone:grid-cols-[44px_minmax(0,1fr)_auto] max-phone:grid-rows-[1fr_auto] max-phone:gap-[2px_8px] max-phone:p-[6px_0]',
+        'track-row flex h-[60px] items-center gap-[14px] p-[8px] text-small',
+        room
+          ? 'rounded-[10px] hover:bg-raised'
+          : cx('px-[12px] hover:bg-sunken', !first && 'border-t border-line'),
+        'focus:outline-2 focus:outline-accent focus:[outline-offset:-2px] coarse:[&_button]:min-h-11',
+        'max-phone:grid max-phone:h-[78px] max-phone:grid-cols-[40px_minmax(0,1fr)_auto] max-phone:grid-rows-[1fr_auto] max-phone:gap-[2px_8px] max-phone:px-[8px] max-phone:py-[6px]',
         selected && 'bg-accent/9 outline outline-1 outline-accent [outline-offset:-1px]',
       )}
       id={`track-${item.id}`}
       aria-current={selected ? 'true' : undefined}
       tabIndex={focusable ? 0 : -1}
     >
+      {onAlbum && (
+        <span className="w-[22px] text-right font-mono text-tiny text-faint max-phone:hidden">
+          {item.position}
+        </span>
+      )}
       <Art item={item} size="row" className="max-phone:col-start-1 max-phone:row-span-2" />
       <div className="min-w-0 flex-1 max-phone:col-start-2 max-phone:row-start-1">
         <strong className="flex items-center gap-[6px] text-lead font-medium">
@@ -277,15 +389,28 @@ function TrackRow({
           {item.artist}
         </Link>
       </div>
-      <Link
-        className="w-[19%] overflow-hidden text-ellipsis whitespace-nowrap text-muted max-tablet:hidden"
-        to="/albums/$albumId"
-        params={{ albumId: String(item.album_id) }}
+      {!onAlbum && (
+        <Link
+          className="w-[19%] overflow-hidden text-ellipsis whitespace-nowrap text-muted max-tablet:hidden @max-2xl:hidden"
+          to="/albums/$albumId"
+          params={{ albumId: String(item.album_id) }}
+        >
+          {item.album}
+        </Link>
+      )}
+      {!onAlbum && (
+        <span className="w-[32px] text-muted max-phone:hidden @max-xl:hidden">
+          {item.year ?? '…'}
+        </span>
+      )}
+      <span
+        className={cx(
+          'w-[40px] text-right max-phone:hidden',
+          room ? 'font-mono text-tiny text-faint' : 'text-muted',
+        )}
       >
-        {item.album}
-      </Link>
-      <span className="w-[32px] text-muted max-phone:hidden">{item.year ?? '…'}</span>
-      <span className="w-[32px] text-muted max-phone:hidden">{durationText(item.duration)}</span>
+        {durationText(item.duration)}
+      </span>
       <Badge
         item={item}
         job={job}
@@ -322,14 +447,71 @@ export function CardGrid({ items }: { items: MusicResult[] }) {
   )
 }
 
+/**
+ * An album as one list row, the Listening room's Top tab: art, name, the year and count, a thin
+ * bar, and the download. The whole row opens the album; the download keeps its own target.
+ */
+export function AlbumRows({ items }: { items: MusicResult[] }) {
+  return (
+    <div className="grid gap-[8px]">
+      {items.map((item) => (
+        <AlbumRow key={item.id} item={item} />
+      ))}
+    </div>
+  )
+}
+
+function AlbumRow({ item }: { item: MusicResult }) {
+  const detail = useQuery({
+    queryKey: ['album', item.id],
+    queryFn: ({ signal }) => api(`albums/${item.id}?background=true`, albumSchema, { signal }),
+    staleTime: 60_000,
+    retry: false,
+  })
+  const display = detail.data?.album ?? item
+  return (
+    <article className="group relative isolate grid grid-cols-[52px_minmax(0,1fr)_auto] items-center gap-[12px] rounded-[12px] bg-raised p-[8px] hover:bg-hover focus-within:bg-hover">
+      <Art item={item} rounded="rounded-[8px]" className="size-[52px]" />
+      <div className="min-w-0">
+        <Link
+          className="card-primary-link block overflow-hidden text-ellipsis whitespace-nowrap font-semibold"
+          to="/albums/$albumId"
+          params={{ albumId: String(item.id) }}
+        >
+          {item.title}
+        </Link>
+        <span className="mt-[3px] block font-mono text-tiny text-faint">
+          {[
+            display.year,
+            display.track_count > 0
+              ? `${display.track_count} ${display.track_count === 1 ? 'track' : 'tracks'}`
+              : '',
+            ownedFraction(display),
+          ]
+            .filter(Boolean)
+            .join(' · ')}
+        </span>
+        <OwnershipBar
+          item={display}
+          label={`${item.title} library coverage`}
+          className="mt-[7px]"
+        />
+      </div>
+      <AlbumDownloadButton item={display} />
+    </article>
+  )
+}
+
 export function CatalogTrackList({
   items,
   focusTrack,
   resetScroll,
+  onAlbum,
 }: {
   items: MusicResult[]
   focusTrack?: number
   resetScroll?: number
+  onAlbum?: boolean
 }) {
   const parent = useRef<HTMLDivElement>(null)
   const [focusedIndex, setFocusedIndex] = useState(0)
@@ -341,10 +523,13 @@ export function CatalogTrackList({
     const current = jobs.get(job.track_id)
     if (!current || current.updated_at < job.updated_at) jobs.set(job.track_id, job)
   }
+  const room = useLayout() === 'room'
+  // The row measures its own list, not the window, to decide which columns fit.
+  const boxed = cx('@container', !room && 'overflow-hidden rounded-[12px] border border-line')
   const virtual = useVirtualizer({
     count: items.length,
     getScrollElement: () => parent.current,
-    estimateSize: () => 76,
+    estimateSize: () => 60,
     overscan: 6,
   })
   useEffect(() => {
@@ -396,10 +581,12 @@ export function CatalogTrackList({
   }
   if (items.length <= 12)
     return (
-      <div onKeyDown={handleKeyDown}>
+      <div className={boxed} onKeyDown={handleKeyDown}>
         {items.map((item, index) => (
           <TrackRow
             key={item.id}
+            first={index === 0}
+            onAlbum={onAlbum}
             item={item}
             selected={item.id === focusTrack}
             job={jobs.get(item.id)}
@@ -411,7 +598,10 @@ export function CatalogTrackList({
   return (
     <div
       ref={parent}
-      className="virtual-list min-h-[280px] overflow-auto overscroll-contain contain-strict"
+      className={cx(
+        'virtual-list @container min-h-[280px] overflow-auto overscroll-contain contain-strict',
+        room ? '' : 'rounded-[12px] border border-line',
+      )}
       role="region"
       aria-label="Tracks"
       tabIndex={0}
@@ -434,6 +624,8 @@ export function CatalogTrackList({
               }}
             >
               <TrackRow
+                first={row.index === 0}
+                onAlbum={onAlbum}
                 item={item}
                 selected={item.id === focusTrack}
                 job={jobs.get(item.id)}

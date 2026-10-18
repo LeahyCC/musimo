@@ -2,12 +2,16 @@ import { useMemo } from 'react'
 
 import { useInfiniteQuery, useQueries, useQuery } from '@tanstack/react-query'
 import { useNavigate, useParams, useRouterState } from '@tanstack/react-router'
+import { ArrowDownToLine, ListMusic } from 'lucide-react'
 
 import { albumSchema, api, artistSchema, artistTopSchema } from '../../api'
-import type { MusicResult } from '../../api'
 import { InfiniteScroll } from '../../components/infinite-scroll'
-import { ErrorBanner } from '../../ui'
+import { Button, ErrorBanner, SelectChip } from '../../ui'
 import { ArtistDownloadButton } from '../downloads/artist-download'
+import { DownloadTarget } from '../downloads/download-target'
+import { useJobs } from '../downloads/jobs'
+import { CatalogHero, HeroDestination } from './catalog-hero'
+import { releaseCoverage } from './coverage'
 import {
   AlbumDestination,
   BackToSearch,
@@ -38,6 +42,7 @@ export function ArtistPage() {
     staleTime: 3_600_000,
     retry: false,
   })
+  const jobs = useJobs((data) => data.jobs).data
   const popularAlbumIds = useMemo(
     () => [...new Set((top.data?.tracks ?? []).map((track) => track.album_id).filter(Boolean))],
     [top.data],
@@ -76,14 +81,7 @@ export function ArtistPage() {
     ...track,
     year: track.year ?? albumYears.get(track.album_id) ?? null,
   }))
-  const popularAlbums = popularAlbumQueries
-    .map((result) => result.data?.album)
-    .filter(
-      (album): album is MusicResult =>
-        album?.record_type === 'album' && album.artist_id === Number(artistId),
-    )
-    .slice(0, 6)
-  const releaseType = state.type ?? 'albums-eps'
+  const releaseType = state.type ?? 'all'
   const releaseSort = state.sort ?? 'newest'
   const releases = items
     .filter(
@@ -106,30 +104,60 @@ export function ArtistPage() {
       search: { ...state, ...patch },
     })
   }
+  const albums = releases.filter((item) => item.record_type === 'album')
+  const singlesAndEps = releases.filter((item) => item.record_type !== 'album')
+  const loadedAlbums = items.filter((item) => item.record_type === 'album').length
   return (
-    <>
+    <div className="[container-type:inline-size]">
       <BackToSearch />
-      <div className="mt-[25px] mb-[40px] flex items-center gap-[25px]">
-        {artist?.art && (
-          <img src={artist.art} alt="" className="w-[150px] rounded-pill max-phone:w-[95px]" />
-        )}
-        <div>
-          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
-            ARTIST
-          </span>
-          <h1 className="my-[12px]">{artist?.name}</h1>
-          <p>{items.length} releases loaded</p>
+      <CatalogHero
+        cover={
+          artist?.art ? (
+            <img
+              src={artist.art}
+              alt=""
+              className="aspect-square w-full rounded-pill object-cover shadow-[0_24px_50px_-24px_color-mix(in_oklab,var(--color-shadow)_80%,transparent)]"
+            />
+          ) : (
+            <div className="aspect-square w-full rounded-pill bg-active" />
+          )
+        }
+        eyebrow="Artist"
+        source="Deezer"
+        title={artist?.name ?? ''}
+        meta={`${loadedAlbums} albums · ${items.length - loadedAlbums} singles & EPs${query.hasNextPage ? ' so far' : ''}`}
+        coverage={items.length ? releaseCoverage(items, jobs ?? []) : undefined}
+        actions={
           <ArtistDownloadButton
             key={artistId}
             artistId={Number(artistId)}
             name={artist?.name ?? 'Artist'}
+            trigger={(open) => (
+              <>
+                <Button
+                  variant="primary"
+                  aria-label="Download all albums"
+                  onClick={() => open(false)}
+                >
+                  <ArrowDownToLine size={16} />
+                  Download all albums…
+                </Button>
+                <Button aria-label="Download all music" onClick={() => open(true)}>
+                  <ListMusic size={15} />
+                  Download all music…
+                </Button>
+                <HeroDestination>
+                  <DownloadTarget />
+                </HeroDestination>
+              </>
+            )}
           />
-        </div>
-      </div>
-      <section className="mb-[36px]" aria-labelledby="popular-songs-title">
+        }
+      />
+      <section className="mb-[30px]" aria-labelledby="popular-songs-title">
         <div className={resultsHeadingClassName}>
           <h2 id="popular-songs-title" className={resultsTitleClassName}>
-            Popular songs
+            Popular
           </h2>
         </div>
         {top.isPending && <p role="status">Loading popular songs…</p>}
@@ -143,90 +171,65 @@ export function ArtistPage() {
           <p className="text-muted">No popular songs found.</p>
         )}
       </section>
-      <section className="mb-[36px]" aria-labelledby="popular-albums-title">
-        <div className={resultsHeadingClassName}>
-          <h2 id="popular-albums-title" className={resultsTitleClassName}>
-            Popular albums
-          </h2>
-        </div>
-        {(top.isPending || popularAlbumQueries.some((result) => result.isPending)) && (
-          <p role="status">Finding popular albums…</p>
-        )}
-        {popularAlbumQueries.some((result) => result.isError) && (
-          <ErrorBanner role="alert">
-            Some popular albums could not be checked.{' '}
-            <button
-              onClick={() =>
-                void Promise.all(popularAlbumQueries.map((result) => result.refetch()))
-              }
-            >
-              Retry
-            </button>
-          </ErrorBanner>
-        )}
-        {popularAlbums.length > 0 && (
-          <>
-            <AlbumDestination />
-            <CardGrid items={popularAlbums} />
-          </>
-        )}
-        {top.isSuccess &&
-          popularAlbumQueries.every((result) => !result.isPending) &&
-          !popularAlbums.length && <p className="text-muted">No popular albums found.</p>}
-      </section>
-      <section className="mb-[36px]" aria-labelledby="discography-title">
-        <div className="mb-[17px] flex items-end justify-between gap-[12px] max-phone:flex-col max-phone:items-start">
-          <div className="grid gap-[5px]">
-            <h2 id="discography-title" className={resultsTitleClassName}>
-              Discography
-            </h2>
-            <small>
-              {releases.length} shown · {items.length} releases loaded
-            </small>
-          </div>
-          <div className="flex flex-wrap gap-[10px] max-phone:w-full">
-            <label className="grid gap-[5px] text-caption text-muted uppercase tracking-[0.08em] max-phone:w-full">
-              Show
-              <select
-                className="min-w-[145px] rounded-[7px] border border-line-strong bg-sunken px-[10px] py-[8px] pr-[30px] text-small tracking-normal text-text normal-case max-phone:w-full"
-                value={releaseType}
-                onChange={(event) => change({ type: event.target.value as ArtistSearch['type'] })}
-              >
-                <option value="albums-eps">Albums and EPs</option>
-                <option value="album">Albums</option>
-                <option value="ep">EPs</option>
-                <option value="single">Singles</option>
-                <option value="all">All releases</option>
-              </select>
-            </label>
-            <label className="grid gap-[5px] text-caption text-muted uppercase tracking-[0.08em] max-phone:w-full">
-              Sort
-              <select
-                className="min-w-[145px] rounded-[7px] border border-line-strong bg-sunken px-[10px] py-[8px] pr-[30px] text-small tracking-normal text-text normal-case max-phone:w-full"
-                value={releaseSort}
-                onChange={(event) => change({ sort: event.target.value as ArtistSearch['sort'] })}
-              >
-                <option value="newest">Newest</option>
-                <option value="oldest">Oldest</option>
-                <option value="title">Title A to Z</option>
-                <option value="title-desc">Title Z to A</option>
-              </select>
-            </label>
-          </div>
-        </div>
-        {releases.length > 0 ? (
-          <>
-            {/* The popular albums grid above already said it, when it has cards. */}
-            {popularAlbums.length === 0 && <AlbumDestination />}
-            <CardGrid items={releases} />
-          </>
-        ) : (
-          <p className="text-muted">No releases match this view.</p>
-        )}
-      </section>
-      <p className="text-small text-muted">
-        Popular songs come from Deezer. Popular albums are the albums behind those songs. Review
-        alternative editions before downloading an artist.
+      <div
+        className="mb-[16px] flex flex-wrap items-center gap-[8px]"
+        role="group"
+        aria-label="Release filters"
+      >
+        <SelectChip
+          label="Show"
+          value={releaseType}
+          defaultValue="all"
+          options={[
+            { value: 'all', label: 'All releases' },
+            { value: 'albums-eps', label: 'Albums and EPs' },
+            { value: 'album', label: 'Albums' },
+            { value: 'ep', label: 'EPs' },
+            { value: 'single', label: 'Singles' },
+          ]}
+          onChange={(type) => change({ type })}
+        />
+        <SelectChip
+          label="Sort"
+          value={releaseSort}
+          defaultValue="newest"
+          options={[
+            { value: 'newest', label: 'Newest' },
+            { value: 'oldest', label: 'Oldest' },
+            { value: 'title', label: 'Title A to Z' },
+            { value: 'title-desc', label: 'Title Z to A' },
+          ]}
+          onChange={(sort) => change({ sort })}
+        />
+        <small className="text-faint">
+          {releases.length} shown · {items.length} releases loaded
+        </small>
+      </div>
+      {(
+        [
+          ['albums-title', 'Albums', albums],
+          ['singles-title', 'Singles & EPs', singlesAndEps],
+        ] as const
+      ).map(([id, title, group], index) =>
+        group.length > 0 ? (
+          <section key={id} className="mb-[30px]" aria-labelledby={id}>
+            <div className="mb-[14px] flex items-baseline gap-[10px]">
+              <h2 id={id} className="text-base">
+                {title}
+              </h2>
+              <span className="font-mono text-tiny text-faint">{group.length}</span>
+            </div>
+            {/* One line about where downloads go, above the first grid that has cards. */}
+            {(index === 0 || albums.length === 0) && <AlbumDestination />}
+            <CardGrid items={group} />
+          </section>
+        ) : null,
+      )}
+      {releases.length === 0 && <p className="text-muted">No releases match this view.</p>}
+      <p className="text-small text-faint">
+        Popular songs come from Deezer. Counts are estimated from each release's track list and your
+        library's tags, so "other edition" shows only on an album's own page. Review alternative
+        editions before downloading an artist.
       </p>
       {query.hasNextPage && (
         <InfiniteScroll
@@ -235,6 +238,6 @@ export function ArtistPage() {
           onLoadMore={() => void query.fetchNextPage()}
         />
       )}
-    </>
+    </div>
   )
 }
