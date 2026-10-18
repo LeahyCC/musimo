@@ -12,8 +12,6 @@ import type { CSSProperties, ReactNode, SyntheticEvent } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
-  Check,
-  ChevronDown,
   Disc3,
   Maximize2,
   Pause,
@@ -41,7 +39,7 @@ import {
 } from '../../api'
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from '../../api'
 import { cx } from '../../lib/cx'
-import { Button, ErrorBanner, Field, IconButton, iconButtonClassName } from '../../ui'
+import { IconButton, iconButtonClassName } from '../../ui'
 import { audioGraph, resumeAudio } from './audio-graph'
 import { crossfadeSpan } from './crossfade'
 import { useCrossfadeSeconds } from './crossfade-settings'
@@ -56,6 +54,7 @@ import {
   readHistory,
   writeHistory,
 } from './play-history'
+import { PlaylistPicker } from './playlist-picker'
 import { QueueWriter } from './queue-writer'
 import {
   playsAlbumInOrder,
@@ -546,115 +545,6 @@ function readDeck(queueIds: string[]): Deck | null {
   } catch {
     return null
   }
-}
-
-const pickerNoteClassName = 'mt-[6px] mb-[2px] text-muted'
-
-function PlaylistPickerRow({
-  playlist,
-  songs,
-  failed,
-  onRetry,
-  trackId,
-  trackTitle,
-  busy,
-  blocked,
-  expanded,
-  onExpand,
-  onToggleTrack,
-  onRemoveSong,
-}: {
-  playlist: LibraryPlaylist
-  songs?: LibraryTrack[]
-  failed: boolean
-  onRetry: () => void
-  trackId: string
-  trackTitle: string
-  busy: boolean
-  blocked: boolean
-  expanded: boolean
-  onExpand: (open: boolean) => void
-  onToggleTrack: () => void
-  onRemoveSong: (index: number) => void
-}) {
-  const known = songs !== undefined
-  const index = (songs ?? []).findIndex((item) => item.id === trackId)
-  const member = index >= 0
-  const label = busy ? 'Saving…' : !known ? 'Loading…' : member ? 'Remove' : 'Add'
-  return (
-    <div className="playlist-picker-row rounded-[8px] border border-line bg-raised px-[10px] py-[8px]">
-      <div className="flex items-center justify-between gap-[10px]">
-        <IconButton
-          size="compact"
-          aria-label={`${expanded ? 'Hide' : 'Show'} songs in ${playlist.name}`}
-          aria-expanded={expanded}
-          onClick={() => onExpand(!expanded)}
-        >
-          <ChevronDown
-            size={16}
-            className={cx(
-              'transition-transform duration-[140ms] ease-[ease]',
-              expanded && 'rotate-180',
-            )}
-          />
-        </IconButton>
-        {/* Blocks, not grids: text-overflow only cuts text that sits directly in a block box. */}
-        <span className="block min-w-0 flex-1 truncate">
-          {playlist.name}
-          <small className="mt-[2px] block text-tiny text-muted">
-            {songCount((known ? songs.length : playlist.songCount) ?? 0)}
-          </small>
-        </span>
-        {failed ? (
-          <Button className="shrink-0" onClick={onRetry}>
-            Retry
-          </Button>
-        ) : (
-          <Button
-            className="shrink-0"
-            variant={member ? 'default' : 'primary'}
-            // Membership decides the action, so the label has to wait for the song list.
-            aria-label={
-              known
-                ? `${member ? 'Remove' : 'Add'} ${trackTitle} ${member ? 'from' : 'to'} ${playlist.name}`
-                : `Loading songs in ${playlist.name}`
-            }
-            disabled={busy || blocked || !known}
-            onClick={onToggleTrack}
-          >
-            {member && known && !busy && <Check size={14} />}
-            {!member && known && !busy && <Plus size={14} />} {label}
-          </Button>
-        )}
-      </div>
-      {expanded && (
-        <div className="playlist-picker-songs mt-[8px] grid max-h-[190px] grid-cols-[minmax(0,1fr)] gap-[4px] overflow-y-auto overscroll-contain border-t border-line pt-[8px]">
-          {(songs ?? []).map((song, songIndex) => (
-            <div
-              key={`${song.id}-${songIndex}`}
-              className="flex items-center justify-between gap-[8px] px-[2px] py-[4px] text-small"
-            >
-              <span className="block min-w-0 truncate">
-                {song.title}
-                <small className="mt-[5px] block text-tiny text-muted">{song.artist}</small>
-              </span>
-              <IconButton
-                size="compact"
-                aria-label={`Remove ${song.title} from ${playlist.name}`}
-                disabled={busy}
-                onClick={() => onRemoveSong(songIndex)}
-              >
-                <X size={14} />
-              </IconButton>
-            </div>
-          ))}
-          {known && !songs.length && <p className={pickerNoteClassName}>This playlist is empty.</p>}
-          {failed && <ErrorBanner>That playlist could not be read.</ErrorBanner>}
-          {!known && !failed && <p role="status">Loading songs…</p>}
-        </div>
-      )}
-    </div>
-  )
 }
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
@@ -2489,88 +2379,41 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       {/* Outside the footer, which Now Playing hides: `display: none` on an ancestor would take the
           open dialog with it, and the page's Add to playlist button opens this one. */}
       {isLibrary && (
-        <dialog
-          ref={playlistDialog}
-          // `playlist-picker-sheet` carries the handwritten ::backdrop rule. Centered at every
-          // width, so on a phone the name field is never trapped under the keyboard.
-          className="playlist-picker-sheet fixed inset-0 m-auto h-fit max-h-[78dvh] w-[min(520px,calc(100%-32px))] overflow-auto overscroll-contain rounded-[16px] border border-line-strong bg-raised p-[18px] text-text max-phone:max-h-[calc(100dvh-32px)] max-phone:w-[calc(100%-16px)] max-phone:p-[14px]"
-          aria-label="Add track to playlist"
-          onClose={() => setPickerOpen(false)}
-          onClick={(event) => {
-            if (event.target === playlistDialog.current) closePlaylistDialog()
-          }}
-        >
-          <header className="mb-[12px] flex items-center gap-[14px]">
-            <h2 className="flex-1">Add to playlist</h2>
-            <IconButton
-              size="compact"
-              aria-label="Close playlist picker"
-              onClick={() => closePlaylistDialog()}
-            >
-              <X size={16} />
-            </IconButton>
-          </header>
-          <label className="flex rounded-[8px] border border-line bg-sunken px-[11px] text-muted">
-            <input
-              className="w-full border-0 bg-transparent px-[2px] py-[10px] text-inherit"
-              aria-label="Filter playlists"
-              value={playlistSearch}
-              placeholder="Filter playlists"
-              onChange={(event) => setPlaylistSearch(event.target.value)}
-            />
-          </label>
-          {allPlaylists.isLoading && <p role="status">Loading playlists…</p>}
-          {allPlaylists.isError && <ErrorBanner>{allPlaylists.error.message}</ErrorBanner>}
-          <div className="mt-[8px] mb-[10px] grid grid-cols-[minmax(0,1fr)] gap-[8px]">
-            {availablePlaylists.map((playlist, at) => (
-              <PlaylistPickerRow
-                key={playlist.id}
-                playlist={playlist}
-                songs={songsByPlaylist.get(playlist.id)}
-                failed={failedPlaylists.has(playlist.id)}
-                onRetry={() => void playlistDetails[at]?.refetch()}
-                trackId={libraryTrack?.id ?? ''}
-                trackTitle={activeTitle ?? 'this track'}
-                busy={playlistSongs.busy(playlist.id)}
-                blocked={createBusy}
-                expanded={expandedPlaylist === playlist.id}
-                onExpand={(open) => setExpandedPlaylist(open ? playlist.id : '')}
-                onToggleTrack={() => togglePlaylistTrack(playlist)}
-                onRemoveSong={(index) =>
-                  playlistSongs.mutation.mutate({ playlistId: playlist.id, index })
-                }
-              />
-            ))}
-            {!allPlaylists.isLoading && !availablePlaylists.length && (
-              <p className={pickerNoteClassName}>No playlists yet.</p>
-            )}
-            {matchingPlaylists.length > PICKER_ROWS && (
-              <p className={pickerNoteClassName}>
-                Showing {PICKER_ROWS} of {matchingPlaylists.length}. Filter above to reach the
-                others.
-              </p>
-            )}
-          </div>
-          <form className="flex flex-wrap items-end gap-[10px]" onSubmit={submitNewPlaylist}>
-            <label className="grid min-w-[min(260px,100%)] gap-[6px] text-small text-muted">
-              New playlist
-              <Field
-                value={newPlaylistName}
-                placeholder="Create and add this track"
-                maxLength={200}
-                onChange={(event) => setNewPlaylistName(event.target.value)}
-              />
-            </label>
-            <Button type="submit" disabled={createBusy || !newPlaylistName.trim()}>
-              {createBusy ? 'Creating…' : 'Create'}
-            </Button>
-          </form>
-          {(playlistSongs.mutation.isError || createPlaylist.isError) && (
-            <ErrorBanner>
-              {playlistSongs.mutation.error?.message || createPlaylist.error?.message}
-            </ErrorBanner>
-          )}
-        </dialog>
+        <PlaylistPicker
+          dialogRef={playlistDialog}
+          onClose={closePlaylistDialog}
+          onClosed={() => setPickerOpen(false)}
+          trackId={libraryTrack?.id ?? ''}
+          trackTitle={activeTitle ?? 'this track'}
+          trackArt={activeArt}
+          search={playlistSearch}
+          onSearch={setPlaylistSearch}
+          loading={allPlaylists.isLoading}
+          loadError={allPlaylists.isError ? allPlaylists.error.message : undefined}
+          rows={availablePlaylists.map((playlist) => ({
+            playlist,
+            songs: songsByPlaylist.get(playlist.id),
+            failed: failedPlaylists.has(playlist.id),
+            busy: playlistSongs.busy(playlist.id),
+          }))}
+          matching={matchingPlaylists.length}
+          limit={PICKER_ROWS}
+          blocked={createBusy}
+          expanded={expandedPlaylist}
+          onExpand={setExpandedPlaylist}
+          onRetry={(playlistId) =>
+            void playlistDetails[
+              availablePlaylists.findIndex((playlist) => playlist.id === playlistId)
+            ]?.refetch()
+          }
+          onToggleTrack={togglePlaylistTrack}
+          onRemoveSong={(playlistId, index) => playlistSongs.mutation.mutate({ playlistId, index })}
+          newName={newPlaylistName}
+          onNewName={setNewPlaylistName}
+          onCreate={submitNewPlaylist}
+          createBusy={createBusy}
+          changeError={playlistSongs.mutation.error?.message || createPlaylist.error?.message}
+        />
       )}
     </PlayerContext.Provider>
   )

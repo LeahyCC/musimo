@@ -548,7 +548,7 @@ test('the artist download selection is a bottom sheet', async ({ page }) => {
   await page.goto('/artists/7')
   await page.getByRole('button', { name: 'Download all albums' }).click()
   const sheet = page.getByRole('dialog', { name: 'Choose albums to download' })
-  await expect(sheet.getByRole('button', { name: 'Download 1 album (1 song)' })).toBeVisible()
+  await expect(sheet.getByRole('button', { name: 'Queue downloads' })).toBeVisible()
   const viewport = page.viewportSize()
   if (!viewport) throw new Error('No viewport')
   const rect = await box(sheet)

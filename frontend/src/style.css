@@ -339,13 +339,8 @@ meter::-webkit-meter-optimum-value {
   }
 }
 
-/* Dialog backdrops: the command palette, the queue sheet and the playlist picker. */
-.command-palette::backdrop {
-  background: color-mix(in oklab, var(--color-scrim) 73%, transparent);
-  backdrop-filter: blur(4px);
-}
-.queue-sheet::backdrop,
-.playlist-picker-sheet::backdrop {
+/* The queue sheet's backdrop. The overlays in components/review-sheet.tsx style their own. */
+.queue-sheet::backdrop {
   background: color-mix(in oklab, var(--color-scrim) 53%, transparent);
 }
 
