@@ -1,7 +1,7 @@
 import { useId, useLayoutEffect, useRef, useState } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowDownToLine, Check, MoreHorizontal, RotateCcw } from 'lucide-react'
+import { ArrowDownToLine, Clock, MoreHorizontal, RotateCcw } from 'lucide-react'
 
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from '../../api'
 import type { MusicResult } from '../../api'
@@ -136,7 +136,7 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
           onClick={() => mutation.mutate()}
         >
           {existing ? (
-            <Check size={17} />
+            <Clock size={17} />
           ) : failed ? (
             <RotateCcw size={17} />
           ) : (

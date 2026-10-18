@@ -7,6 +7,7 @@ import { api, jobSchema } from '../../api'
 import type { MusicResult } from '../../api'
 import { cx } from '../../lib/cx'
 import { Button, errorBannerClassName, IconButton } from '../../ui'
+import type { ButtonVariant } from '../../ui'
 import { activeJob, updateJob, useJobs } from './jobs'
 
 const batchSchema = z.object({
@@ -23,6 +24,7 @@ export function AlbumDownloadButton({
   target,
   label,
   overlay = false,
+  variant,
 }: {
   item: MusicResult
   missingOnly?: boolean
@@ -31,6 +33,8 @@ export function AlbumDownloadButton({
   label?: string
   /** The card variant: absolutely positioned over the art, hidden until the card is hovered. */
   overlay?: boolean
+  /** How the labelled button looks; a page hero asks for `primary`. */
+  variant?: ButtonVariant
 }) {
   const client = useQueryClient()
   const queue = useJobs()
@@ -87,6 +91,7 @@ export function AlbumDownloadButton({
     >
       {label ? (
         <Button
+          variant={variant}
           disabled={disabled}
           aria-label={ariaLabel}
           title={title}

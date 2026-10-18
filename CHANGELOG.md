@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Search and catalog pages
+
+- Restyle search and the album, artist and podcast pages for both layouts. Search has pill tabs, a top-result card (Classic) or banner (Listening room) showing how much of the best-matching artist is in the library with a button to get the missing albums, and status badges and download icons on every track row. The album, artist and podcast pages open with a hero showing a coverage bar of what is in the library, what is another edition, queued or missing, with the primary action and destination folder. The artist page now lists Popular, Albums and Singles & EPs, and its release filter starts on all releases. A podcast has "Download latest" for its newest episodes
+
 ### Music bot
 
 - Keep a refined list usable after one of its songs is deleted. Refresh preview, Remove and a chat follow-up leave the deleted song out and say how many were dropped, where they used to fail every time (#200)

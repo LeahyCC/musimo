@@ -190,7 +190,7 @@ const ROUTES: Walk[] = [
   {
     name: 'artist',
     path: '/artists/7',
-    ready: (page) => page.getByRole('heading', { name: 'Discography' }),
+    ready: (page) => page.getByRole('heading', { name: 'Albums', level: 2 }),
   },
   {
     name: 'library-albums',
