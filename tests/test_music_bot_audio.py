@@ -155,6 +155,8 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
             {"tempo": "fast"},
             {"tempo_min": 100},
             {"energy_compared": "calmer"},
+            # "Less aggressive, keep the tempo": calmer, with the tempo held where it is.
+            {"energy_compared": "calmer", "tempo_min": 100, "tempo_max": 120},
             {"sound": "dreamy guitar"},
         ]
         for filled in filled_cases:

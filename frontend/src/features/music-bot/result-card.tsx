@@ -9,7 +9,10 @@ import {
   ListPlus,
   ListRestart,
   ListStart,
+  Pin,
   Play,
+  Plus,
+  Shuffle,
   Undo2,
   X,
 } from 'lucide-react'
@@ -67,6 +70,13 @@ export function ResultCard({ reply }: { reply: BotReply }) {
   const opening = preview ? (sample.length ? sample : []) : reply.tracks.slice(0, FIRST_SONGS)
   const foldable = opening.length > 0 && opening.length < reply.tracks.length
   const songs = showAll || !foldable ? reply.tracks : opening
+  // Another set and Add a song need a library search to draw from; the server refuses them on a
+  // refinement of a list, so they are not offered there. Nor on a preview that names songs the
+  // library lost, which has to be refreshed first.
+  const editable = preview !== null && preview.intent.scope === 'library' && !preview.missing
+  const pinned = new Set(chat.pins)
+  const pinnedHere = reply.tracks.filter((track) => pinned.has(track.id)).length
+  const replaceRest = pinnedHere > 0 && pinnedHere < reply.tracks.length
 
   return (
     <div
@@ -137,18 +147,37 @@ export function ResultCard({ reply }: { reply: BotReply }) {
       {reply.tracks.length > 0 ? (
         <>
           {win95 ? (
-            <SongTable reply={reply} songs={songs} locked={changing} />
+            <SongTable
+              reply={reply}
+              songs={songs}
+              locked={changing}
+              editable={editable}
+              pinned={pinned}
+            />
           ) : (
             <ol aria-label="Proposed songs" className="m-0 grid list-none border-t border-line p-0">
               {songs.map((track) => (
                 <li
                   key={track.id}
-                  className="relative grid grid-cols-[minmax(0,1fr)_auto_32px] items-center gap-[10px] border-b border-line py-[7px] pr-0 pl-[2px] coarse:grid-cols-[minmax(0,1fr)_auto_44px]"
+                  className={cx(
+                    'relative grid items-center gap-[10px] border-b border-line py-[7px] pr-0 pl-[2px]',
+                    editable
+                      ? 'grid-cols-[minmax(0,1fr)_auto_auto_32px] coarse:grid-cols-[minmax(0,1fr)_auto_auto_44px]'
+                      : 'grid-cols-[minmax(0,1fr)_auto_32px] coarse:grid-cols-[minmax(0,1fr)_auto_44px]',
+                  )}
                 >
                   <span className="grid min-w-0 gap-[2px]">
                     <strong className="truncate text-small font-medium">{track.title}</strong>
                     <small className="truncate text-tiny text-muted">{track.artist}</small>
                   </span>
+                  {editable && (
+                    <PinToggle
+                      title={track.title}
+                      pinned={pinned.has(track.id)}
+                      disabled={changing}
+                      onToggle={() => chat.togglePin(track.id)}
+                    />
+                  )}
                   <time className="text-tiny whitespace-nowrap text-muted tabular-nums">
                     {durationText(track.duration)}
                   </time>
@@ -190,6 +219,22 @@ export function ResultCard({ reply }: { reply: BotReply }) {
               Total {lengthText(reply.total_seconds)}
             </span>
           </div>
+          {editable && (
+            <div data-bot="edits" className="flex flex-wrap gap-[8px]">
+              <Button
+                disabled={changing}
+                title="Pinned songs stay. The rest are drawn again from the same filters."
+                onClick={() => void chat.anotherSet()}
+              >
+                <Shuffle size={14} aria-hidden="true" />
+                {replaceRest ? 'Replace the rest' : 'Another set'}
+              </Button>
+              <Button disabled={changing} onClick={() => void chat.addSong()}>
+                <Plus size={14} aria-hidden="true" />
+                Add a song
+              </Button>
+            </div>
+          )}
         </>
       ) : preview?.missing ? null : (
         <div className="grid gap-[10px]">
@@ -338,16 +383,24 @@ function SongTable({
   reply,
   songs,
   locked,
+  editable,
+  pinned,
 }: {
   reply: BotReply
   songs: BotReply['tracks']
   /** Delete takes a song off the list, which waits while something else is in flight. */
   locked: boolean
+  /** A library search, whose songs can be pinned for Another set. */
+  editable: boolean
+  pinned: ReadonlySet<string>
 }) {
   const chat = useBotChat()
+  const columns = editable
+    ? 'grid-cols-[minmax(0,1fr)_110px_46px_52px]'
+    : 'grid-cols-[minmax(0,1fr)_110px_46px]'
   return (
     <div role="table" aria-label="Proposed songs" data-bot="list-view" className="grid">
-      <div role="row" className="grid grid-cols-[minmax(0,1fr)_110px_46px]">
+      <div role="row" className={cx('grid', columns)}>
         <span role="columnheader" data-bot="column">
           Title
         </span>
@@ -357,6 +410,11 @@ function SongTable({
         <span role="columnheader" data-bot="column">
           Length
         </span>
+        {editable && (
+          <span role="columnheader" data-bot="column">
+            Pin
+          </span>
+        )}
       </div>
       {songs.map((track) => {
         const picked = chat.reference?.id === track.id
@@ -376,7 +434,7 @@ function SongTable({
             onClick={() =>
               chat.setReference({ id: track.id, label: `${track.title} · ${track.artist}` })
             }
-            className="grid cursor-default grid-cols-[minmax(0,1fr)_110px_46px]"
+            className={cx('grid cursor-default', columns)}
           >
             <span role="cell" className="truncate px-[5px] py-[2px]">
               {track.title}
@@ -387,11 +445,59 @@ function SongTable({
             <span role="cell" className="px-[5px] py-[2px]">
               {durationText(track.duration)}
             </span>
+            {editable && (
+              <span role="cell" className="px-[5px] py-[2px]">
+                <PinToggle
+                  title={track.title}
+                  pinned={pinned.has(track.id)}
+                  disabled={locked}
+                  onToggle={() => chat.togglePin(track.id)}
+                />
+              </span>
+            )}
           </div>
         )
       })}
       <span className="sr-only">{reply.tracks.length} songs in all</span>
     </div>
+  )
+}
+
+/**
+ * Keeps a song when the rest of the set is drawn again. The label stays "Pin" and the state is
+ * `aria-pressed`, so a screen reader hears one button that is on or off rather than a name that
+ * changes under it. Clicks bubble to a Windows 95 row, which would make the song the reference, so
+ * they stop here.
+ */
+function PinToggle({
+  title,
+  pinned,
+  disabled,
+  onToggle,
+}: {
+  title: string
+  pinned: boolean
+  disabled: boolean
+  onToggle: () => void
+}) {
+  return (
+    <button
+      type="button"
+      aria-pressed={pinned}
+      aria-label={`Pin ${title}`}
+      disabled={disabled}
+      onClick={(event) => {
+        event.stopPropagation()
+        onToggle()
+      }}
+      className={cx(
+        'inline-flex min-h-[32px] items-center gap-[4px] rounded-pill border bg-transparent px-[8px] text-tiny whitespace-nowrap hover:bg-hover disabled:opacity-50 coarse:min-h-11',
+        pinned ? 'border-accent text-accent' : 'border-transparent text-muted hover:text-text',
+      )}
+    >
+      <Pin size={13} aria-hidden="true" fill={pinned ? 'currentColor' : 'none'} />
+      Pin
+    </button>
   )
 }
 

@@ -8,12 +8,14 @@ import type { BotReply } from '../../api'
    server picks and keeps the songs. Nothing here chooses, sorts or swaps one; it builds the
    request the chat's own plan describes and reads what comes back. */
 
-/** The engine's contract version. An intent may say 1 to 4 and a commit 2 to 4, so this one
- *  number is accepted by create, refine and commit. Version 3 added `filters.total_length`, which
- *  the chat never sets but a stored intent can carry, so it is kept when an intent is sent again.
- *  Version 4 is the first where an omitted `shown_ids` means the server's memory of shown songs,
- *  which is what the chat relies on, so it never sends an older version. */
-export const CONTRACT_VERSION = 4
+/** The engine's contract version. An intent may say 1 to 5, a commit 2 to 5 and an edit only 5, so
+ *  this one number is accepted by create, refine, edit and commit. Version 3 added
+ *  `filters.total_length`, which the chat never sets but a stored intent can carry, so it is kept
+ *  when an intent is sent again. Version 4 is the first where an omitted `shown_ids` means the
+ *  server's memory of shown songs, which is what the chat relies on. Version 5 added the edit route
+ *  and the fields behind it (`exclude_ids`, `keep_ids`, `pinned_ids`, `add_count`), so the chat
+ *  never sends an older one. */
+export const CONTRACT_VERSION = 5
 
 const idList = z.array(z.string())
 const range = z.object({ min: z.number(), max: z.number() }).nullable()
@@ -42,6 +44,9 @@ const filtersSchema = z.object({
   energy_compared: z.enum(['', 'calmer', 'more_intense']),
   tempo_compared: z.enum(['', 'slower', 'faster']),
   sound: z.string(),
+  // Version 5: songs never picked, the ones a person removed. An intent an older build stored
+  // has none, and says so.
+  exclude_ids: idList.default([]),
 })
 
 const contextSchema = z.object({
@@ -52,6 +57,11 @@ const contextSchema = z.object({
   // Null asks the server to use its own memory of what was shown. A preview an older build stored
   // holds a list instead.
   shown_ids: idList.nullable(),
+  // Version 5, library scope. Kept songs go first as they are, pinned ones are those a person
+  // protected, and `add_count` is how many new songs follow them (null: as the filters say).
+  keep_ids: idList.default([]),
+  pinned_ids: idList.default([]),
+  add_count: z.number().int().nullable().default(null),
 })
 
 /** The canonical request a proposal is made from, as the server echoes it with its seed. */
@@ -221,6 +231,71 @@ export const refineProposal = (
     signal,
   })
 
+/** The latest revision of a proposal. Reads only. */
+export const readProposal = (id: string, signal?: AbortSignal) =>
+  send(`proposals/${id}`, proposalReplySchema, { method: 'GET', signal })
+
+/** A change to the latest revision. The server writes the new intent from the stored one, so the
+ *  filters and the length carry over and the browser cannot change them by accident. */
+export type ProposalEdit =
+  /** The same filters and a fresh seed. `pinnedIds` replaces the revision's pins; left out, they
+   *  stay as they are. */
+  | { kind: 'another'; pinnedIds?: readonly string[] }
+  /** Every song stays, then up to `count` new ones that fit the same filters. */
+  | { kind: 'add'; count: number }
+  /** These songs go and are never picked again in this proposal. */
+  | { kind: 'remove'; ids: readonly string[] }
+
+const editReplySchema = proposalReplySchema.extend({ replayed: z.boolean() })
+export type EditReply = z.infer<typeof editReplySchema>
+
+function editBody(edit: ProposalEdit): Record<string, unknown> {
+  if (edit.kind === 'remove') return { kind: 'remove', ids: [...edit.ids] }
+  if (edit.kind === 'add') return { kind: 'add', count: edit.count }
+  return edit.pinnedIds === undefined
+    ? { kind: 'another' }
+    : { kind: 'another', pinned_ids: [...edit.pinnedIds] }
+}
+
+/**
+ * Stores the next revision for an edit. `revision` must be the latest, and `operationId` is made
+ * once per press and sent again unchanged when no answer came: the server then returns the
+ * revision its first attempt made (`replayed: true`) instead of adding or removing twice. A failure
+ * to hear an answer is `UnknownOutcome`; a typed refusal is `ProposalError` and wrote nothing.
+ */
+export async function editProposal(
+  id: string,
+  revision: number,
+  operationId: string,
+  edit: ProposalEdit,
+  signal?: AbortSignal,
+): Promise<EditReply> {
+  try {
+    return await send(`proposals/${id}/edits`, editReplySchema, {
+      method: 'POST',
+      signal,
+      body: {
+        contract_version: CONTRACT_VERSION,
+        revision,
+        operation_id: operationId,
+        edit: editBody(edit),
+      },
+    })
+  } catch (problem) {
+    // A reply that cannot be read may be the answer to a write that happened, and 499 is what a
+    // dropped connection leaves behind, so neither is a refusal: the same operation id is asked
+    // again.
+    if (
+      problem instanceof ProposalError &&
+      problem.status < 500 &&
+      problem.status !== 499 &&
+      problem.code !== 'invalid_response'
+    )
+      throw problem
+    throw new UnknownOutcome(problem instanceof Error ? problem.message : 'No answer.')
+  }
+}
+
 /** What the server remembers of the library results already shown, for every device. It is
  *  suggestion memory: songs shown go after equally fitting ones, and are never a taste score. */
 const memorySchema = z.object({
@@ -317,21 +392,30 @@ export type IntentContext = {
 /**
  * The intent that makes the chat's own selection again: its plan's filters, the seed it drew, and
  * the songs it was made against. The server then stores what that intent resolves to,
- * so the preview is the server's result rather than a copy of the chat's. A refinement of the
- * chat's list (`add_count`) has no intent of its own, so `freeze` states the exact list as a
- * selection to keep, which a person can then commit as it is.
+ * so the preview is the server's result rather than a copy of the chat's. An answer that adds
+ * songs (`add_count`) while its filters changed has no intent of its own, so `freeze` states the
+ * exact list as a selection to keep, which a person can then commit as it is.
+ *
+ * `carry` is what the open proposal remembers. The songs a person removed travel with every
+ * refinement, so one taken off never comes back. The pinned songs travel only with a library
+ * search, where the server keeps them first as they are. A refinement of a proposal or the queue
+ * only narrows a list that is already there, with no draw to protect a song from, so it drops the
+ * pins.
  */
 export function intentFromReply(
   reply: BotReply,
   context: IntentContext,
   freeze?: readonly string[],
+  carry?: Carry,
 ): Intent {
   const { plan } = reply
   const frozen = freeze !== undefined
+  const scope = frozen ? 'proposal' : plan.scope
+  const pins = scope === 'library' ? [...(carry?.pinnedIds ?? [])] : []
   return {
     contract_version: CONTRACT_VERSION,
     action: 'search',
-    scope: frozen ? 'proposal' : plan.scope,
+    scope,
     filters: {
       artists: plan.artists,
       exclude_artists: plan.exclude_artists,
@@ -354,6 +438,7 @@ export function intentFromReply(
       energy_compared: plan.energy_compared,
       tempo_compared: plan.tempo_compared,
       sound: plan.sound,
+      exclude_ids: [...(carry?.excludeIds ?? [])],
     },
     // A seed repeats a library draw. A kept list was not drawn.
     seed: !frozen && plan.scope === 'library' ? reply.generation_seed : null,
@@ -368,9 +453,52 @@ export function intentFromReply(
       queue_ids: !frozen && plan.scope === 'queue' ? [...context.queueIds] : [],
       // Never sent: the server reads its own memory for a library search, and none otherwise.
       shown_ids: null,
+      keep_ids: pins,
+      pinned_ids: pins,
+      add_count: null,
     },
     explanation: '',
   }
+}
+
+/** What an open proposal keeps across a follow-up. */
+export type Carry = {
+  /** The songs a person removed. */
+  excludeIds: readonly string[]
+  /** The songs a person pinned. */
+  pinnedIds: readonly string[]
+}
+
+/**
+ * Whether the chat's answer asks for the same search as the open revision, so that adding a song
+ * can be the server's edit of that revision. The filters a person can see are compared. Left out
+ * are the removed songs and the total length, which are the server's and not the plan's, and
+ * `limit`: the chat's own answer to "add a song" raises its limit to the kept songs plus the new
+ * one, while the edit sets that itself. A comparison with a song also needs the same song, since
+ * the edit carries the one the revision was made with.
+ */
+export function sameSearch(reply: BotReply, open: Intent): boolean {
+  if (open.scope !== 'library' || reply.plan.scope !== 'library') return false
+  const asked: Record<string, unknown> = { ...open.filters }
+  const now: Record<string, unknown> = {
+    ...intentFromReply(reply, { proposalIds: [], queueIds: [] }).filters,
+  }
+  for (const left of ['exclude_ids', 'total_length', 'limit']) {
+    delete asked[left]
+    delete now[left]
+  }
+  const same = Object.keys(asked).every(
+    (key) => JSON.stringify(asked[key]) === JSON.stringify(now[key]),
+  )
+  const { plan } = reply
+  const compares =
+    plan.similar_to_current || plan.energy_compared !== '' || plan.tempo_compared !== ''
+  return (
+    same &&
+    (!compares ||
+      (reply.reference_id === open.context.reference_id &&
+        reply.current_id === open.context.current_id))
+  )
 }
 
 /** A refinement of a stored revision uses that revision's songs, so the server refuses ids. */

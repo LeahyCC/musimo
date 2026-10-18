@@ -115,3 +115,22 @@ export function refreshedNote(change: { added: number; removed: number }): strin
   ]
   return `Refreshed the preview: ${parts.join(', ')}. Check it before you confirm.`
 }
+
+/** What an edit did to the list, said after it so a change is never silent. `pinned` is how many
+ *  songs an Another set protected. */
+export function editNote(
+  edit: 'another' | 'add' | 'remove',
+  change: { added: number; removed: number },
+  pinned = 0,
+): string {
+  if (edit === 'remove')
+    return `Removed ${plural(change.removed, 'song')}. ${change.removed === 1 ? 'It' : 'They'} won’t come back in this preview.`
+  if (edit === 'add')
+    return change.added
+      ? `Added ${plural(change.added, 'song')} that fit these filters.`
+      : 'No other song fits these filters, so nothing was added.'
+  const kept = pinned ? `, keeping ${plural(pinned, 'pinned song')}` : ''
+  return change.added || change.removed
+    ? `Drew another set${kept}: ${plural(change.removed, 'song')} replaced.`
+    : `Drew another set${kept}, and the same songs came up.`
+}

@@ -88,6 +88,22 @@ export function ProblemPanel() {
         </div>
       </div>
     )
+  if (problem.kind === 'changed')
+    return (
+      <div role="alert" data-bot="problem" className={panelClass}>
+        <span>
+          <strong className="font-semibold">This preview changed.</strong> It was refined somewhere
+          else, or it is gone, so nothing was edited here. Refresh the preview to see the current
+          one.
+        </span>
+        <div>
+          <Button disabled={busy} onClick={chat.resolveProblem}>
+            <RefreshCw size={14} aria-hidden="true" />
+            Refresh preview
+          </Button>
+        </div>
+      </div>
+    )
   if (problem.kind === 'unknown')
     return (
       <div role="alert" data-bot="problem" className={panelClass}>
@@ -95,7 +111,9 @@ export function ProblemPanel() {
           <strong className="font-semibold">I can&rsquo;t tell if that went through.</strong>{' '}
           {problem.what === 'save'
             ? 'The playlist may or may not have been saved.'
-            : 'Nothing has been added to your queue yet.'}{' '}
+            : problem.what === 'edit'
+              ? 'The preview may or may not have changed.'
+              : 'Nothing has been added to your queue yet.'}{' '}
           Checking asks again with the same request, so it cannot be done twice.
         </span>
         <div>
