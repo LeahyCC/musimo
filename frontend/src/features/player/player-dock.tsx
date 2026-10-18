@@ -28,7 +28,7 @@ import {
 
 import { api, libraryPlaylistDetailSchema } from '../../api'
 import { cx } from '../../lib/cx'
-import { Button, ErrorBanner, Field, IconButton, iconButtonClassName, useToast } from '../../ui'
+import { Button, ErrorBanner, Field, IconButton, iconButtonClassName } from '../../ui'
 import { PetSpot } from '../music-bot/pet-host'
 import { SleepTimerControl } from '../now-playing/sleep-timer-control'
 import { SeekBar } from '../now-playing/waveform-seek'
@@ -350,34 +350,7 @@ function ClosePlayer() {
   )
 }
 
-/**
- * Raises a toast when a queue save fails, as well as the strip in Up next, and takes it away again
- * once a retry lands. The shell calls it, so it works while the dock is out of sight on Now Playing.
- */
-export function useQueueSaveToast() {
-  const player = usePlayer()
-  const toast = useToast()
-  const latest = useRef(player)
-  latest.current = player
-  const { notice } = player
-  useEffect(() => {
-    if (notice === QUEUE_SAVE_FAILED)
-      return toast.show({
-        tone: 'warn',
-        text: 'Queue not saved to the server.',
-        action: { label: 'Retry', run: () => latest.current.retryQueueSave() },
-      })
-    if (notice === QUEUE_REPLACED)
-      return toast.show({
-        tone: 'warn',
-        text: 'Another browser saved the queue. Reload to pick it up.',
-        action: { label: 'Reload', run: () => location.reload() },
-      })
-    return undefined
-  }, [notice, toast])
-}
-
-/** The inline version of the toast above, at the head of Up next. */
+/** A failed queue save (the player also shows it as a toast), at the head of Up next. */
 function QueueSaveStrip() {
   const player = usePlayer()
   const failed = player.notice === QUEUE_SAVE_FAILED

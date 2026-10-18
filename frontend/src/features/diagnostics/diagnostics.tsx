@@ -272,9 +272,11 @@ export function DiagnosticsPage() {
     <div>
       <h2 className="text-strong">Ready to download?</h2>
       <p className={cx('mt-[3px] text-small', ready ? 'text-good' : 'text-danger')}>
-        {ready
-          ? `All systems ready. ${checkSummary(checks)}.`
-          : `Some components need attention. ${checkSummary(checks)}.`}
+        {!ready
+          ? `Some components need attention. ${checkSummary(checks)}.`
+          : checks.every((check) => check.tone === 'good')
+            ? `All systems ready. ${checkSummary(checks)}.`
+            : `Ready to download. ${checkSummary(checks)}; the rest are notes, not faults.`}
       </p>
     </div>
   )

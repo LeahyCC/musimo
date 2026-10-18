@@ -76,7 +76,7 @@ export function ThemeFamilyCard({
     <div className={cardClassName(active)}>
       <button
         type="button"
-        aria-label={`Use ${family.name}`}
+        aria-label={`Use ${family[mode].name}`}
         aria-pressed={active}
         className="block rounded-[9px] p-0 text-left"
         onClick={() => onPick(family[mode], mode)}

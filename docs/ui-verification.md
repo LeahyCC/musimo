@@ -157,7 +157,7 @@ Settings draft preservation is implemented with conflict detection (row notices 
 
 Checked 10 September 2026. Automated and manual accessibility checks cover keyboard navigation, touch targets, screen reader support, contrast and zoom.
 
-**Automated checks (e2e/a11y.spec.ts):** Run axe-core accessibility audits on every route (search, library, library album, artist and playlist pages, downloads, settings, diagnostics). All routes pass axe checks with no violations.
+**Automated checks (e2e/a11y.spec.ts):** Run axe-core accessibility audits on every route (search, library, library album, artist and playlist pages, downloads, settings, diagnostics), once in Classic and once in the Listening room. All routes pass axe checks with no violations.
 
 **Keyboard navigation:** Virtual lists (tracks, download queue) maintain focus without remounting on filter changes, with deliberate scroll reset when filters actually change. Escape key closes FilterMenu popovers. All icon-only buttons have aria-label attributes. TrackList uses stable keys to avoid losing focus on filter keystrokes.
 
@@ -178,6 +178,24 @@ The Tailwind migration is finished, so every route was walked under the light fi
 All 40 passed (20 routes, Chromium at 1280 by 800 and the phone project at 390 by 844) with no axe findings. Every screenshot was looked over for a dark patch. There were none: the only dark areas are the fixture artwork placeholders and the Now Playing stage, which draws on `--color-media` and `--color-on-media` by design so it stays readable over any picture. Nothing escaped the tokens, so no component needed a fix.
 
 One thing the walk did catch was in the test fixtures, not the app: a glob of `**/api/artists/7*` does not match `/api/artists/7/top`, so the artist page's popular songs went to the live provider. The walk's search fixture uses a regex instead.
+
+## Both layouts, 18 October 2026
+
+The UI refactor gave the app two layouts, picked in Settings › Yours: Classic (sidebar, top bar and a footer player) and the Listening room (a 72px icon rail, a page header with its own title, and the player docked on the right; on a phone a floating mini player above a five-tab bar with Queue as the fifth tab). This pass walked every route in both.
+
+**Walk.** Twenty-three routes (home, discover, search, search tracks, search podcasts, podcast, album, artist, the library albums, album, artists, artist, artist album, artist songs, tracks, playlists and playlist views, Now Playing, Downloads, Settings, Octive, Your settings and Diagnostics) at 1280x800, 390x844 and 360x800, under the built-in dark theme and the light fixture theme, in Classic and in the Listening room: 276 pages against the isolated stack, each with a restored queue so the player shows and the library, search and player calls served from fixtures. For each page the walk read whether the document scrolled sideways, how many headings of level 1 were visible, and axe, and every layout and theme was looked over in screenshots. No page scrolled sideways and every page had exactly one visible h1. Axe found one thing, a contrast failure in the Listening room's Home on the dark theme (the song count under a playlist tile used `faint` on the hover surface); it now uses `muted`.
+
+**Fixed in the pass.**
+
+- In the Listening room the page name showed twice, in the header and again as the page's own heading. Downloads, Settings, Your settings and Diagnostics now keep the header's title and draw their heading for screen readers only (`PageTitle` does this for every page that uses it), so each page has one h1 and one visible title.
+- Choosing a layout with the arrow keys in Settings › Yours used to lose focus, because the whole shell remounts. Focus now returns to the chosen layout radio, and the two radios sit in a group labelled Layout.
+- With Follow system on, a theme card could announce the light half while the device was dark. The cards now show and announce the half on screen, and the button's name carries it ("Use Slate dark").
+- The Diagnostics banner said "All systems ready" while some checks were only notes. It does so only when every check passes; otherwise it reads "Ready to download. 4 of 6 checks pass; the rest are notes, not faults."
+- The hint under Show on Now Playing says "Art / MilkDrop switch" in the Listening room and "Visualizer button" in Classic.
+
+**Automated.** `e2e/themed-walk.spec.ts` and `e2e/a11y.spec.ts` now run every route in both layouts. The themed walk checks the page, the nav (the sidebar, the room's rail, or the phone's bar), the player and the first card against the light theme's own values, which differ by layout: the room's wide window docks the player on the sunken surface, its phone mini player is raised, and its phone tab bar is on the canvas. See [testing](testing.md#browser-and-container-checks).
+
+**Left open.** Firefox still would not launch on this Mac after `npx playwright install firefox` (`Could not find profile folder`), so nothing here was run in Firefox. The pet cat, which floats over the bottom left of the page, covers a little of the content beside it on a phone (a search field on a playlist page, a card title on Home), so it was left alone.
 
 ## Further coverage
 

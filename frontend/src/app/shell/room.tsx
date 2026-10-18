@@ -19,7 +19,7 @@ import { activeCount, useJobs } from '../../features/downloads/jobs'
 import { PetFace, usePerchShown } from '../../features/music-bot/pet-host'
 import { usePetSettings } from '../../features/music-bot/pet-settings'
 import { usePlayer } from '../../features/player/player'
-import { PlayerDock, RoomMiniPlayer, useQueueSaveToast } from '../../features/player/player-dock'
+import { PlayerDock, RoomMiniPlayer } from '../../features/player/player-dock'
 import { cx } from '../../lib/cx'
 import { usePhone } from '../../lib/use-phone'
 import { useLiveEvents } from '../live-events'
@@ -202,7 +202,6 @@ export function RoomShell() {
   const petHidden = usePetSettings().hidden
   const perched = usePerchShown()
   const [title, subtitle] = useHeading(pathname, status)
-  useQueueSaveToast()
 
   // Now Playing has every control the dock has, so the dock stands down beside it, as the Classic
   // footer does. A preview has no Now Playing, so it keeps the dock there.

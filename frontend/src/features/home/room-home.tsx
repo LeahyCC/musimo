@@ -258,7 +258,7 @@ function Playlists() {
               <span className="min-w-0">
                 <span className="block truncate text-small font-semibold">{playlist.name}</span>
                 {playlist.songCount !== undefined && (
-                  <span className={cx(monoClassName, 'mt-[2px] block text-micro text-faint')}>
+                  <span className={cx(monoClassName, 'mt-[2px] block text-micro text-muted')}>
                     {playlist.songCount} SONGS
                   </span>
                 )}

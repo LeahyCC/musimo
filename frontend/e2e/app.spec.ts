@@ -536,7 +536,9 @@ for (const [scan, ready] of [
     await page.goto('/settings')
     await expect(page.getByText(ready ? 'System ready.' : attention)).toBeVisible()
     await page.goto('/diagnostics')
-    await expect(page.getByText(ready ? 'All systems ready.' : attention)).toBeVisible()
+    await expect(
+      page.getByText(ready ? /^(All systems ready|Ready to download)\./ : attention),
+    ).toBeVisible()
   })
 }
 
@@ -1060,7 +1062,9 @@ test('the visualizer settings change what Now Playing remembers', async ({ page 
   await page.goto('/settings/user')
   const view = page.getByRole('combobox', { name: 'Show on Now Playing' })
   await expect(view).toBeEnabled()
-  await expect(view).toHaveAccessibleDescription(/Visualizer button on the stage/)
+  await expect(view).toHaveAccessibleDescription(
+    /(Visualizer button|Art \/ MilkDrop switch) on the stage/,
+  )
   await expect(view).toHaveValue('artwork')
   await view.selectOption('visualizer')
   await expect
@@ -1555,7 +1559,7 @@ test.describe('Listening room layout', () => {
     const strip = dock.getByText('Queue not saved to server')
     const toast = page.locator('[data-ui="toast"]')
     await expect(strip).toBeVisible()
-    await expect(toast).toContainText('Queue not saved to the server.')
+    await expect(toast).toContainText('The queue changed here but could not be saved.')
     // The toast sits over the page's corner, clear of the dock and its Up next.
     const toastBox = await toast.boundingBox()
     const dockBox = await dock.boundingBox()

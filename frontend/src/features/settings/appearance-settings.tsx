@@ -1,4 +1,4 @@
-import { useId } from 'react'
+import { useEffect, useId, useRef } from 'react'
 import type { ReactNode } from 'react'
 
 import { ChartColumn, Check, CirclePlay, Disc3, History, Repeat, Sparkles } from 'lucide-react'
@@ -115,10 +115,21 @@ const LAYOUT_CARDS: readonly { value: Layout; name: string; description: string 
   },
 ]
 
+/* Switching layout remounts the whole shell, and this section with it, so the radio that was
+   focused is gone. The choice is remembered here, outside the component, for the next mount. */
+let refocusLayout = false
+
 /** Two cards, one radio each. Choosing one switches the app at once and keeps the page you are on. */
 export function LayoutSection() {
   const layout = useLayout()
   const prefix = useId()
+  const group = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!refocusLayout) return
+    refocusLayout = false
+    group.current?.querySelector<HTMLInputElement>('input:checked')?.focus()
+  }, [])
 
   return (
     <section
@@ -133,7 +144,12 @@ export function LayoutSection() {
       >
         <span className={cx(sectionCaptionClassName, 'font-mono')}>SAVED IN THIS BROWSER</span>
       </CardHeading>
-      <div className="mt-[16px] grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-[12px]">
+      <div
+        ref={group}
+        role="radiogroup"
+        aria-labelledby="layout"
+        className="mt-[16px] grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-[12px]"
+      >
         {LAYOUT_CARDS.map(({ value, name, description }) => {
           const chosen = layout === value
           return (
@@ -153,7 +169,10 @@ export function LayoutSection() {
                 aria-describedby={`${prefix}-${value}`}
                 className="absolute inset-0 m-0 size-full cursor-pointer appearance-none opacity-0"
                 checked={chosen}
-                onChange={() => setLayout(value)}
+                onChange={() => {
+                  refocusLayout = true
+                  setLayout(value)
+                }}
               />
               <LayoutPreview layout={value} />
               <span className="flex items-start gap-[10px]">
