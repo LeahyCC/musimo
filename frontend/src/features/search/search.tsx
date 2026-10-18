@@ -643,7 +643,7 @@ function TopTab({
       <>
         {topArtist && <TopResult artist={topArtist} room />}
         <div className="flex flex-wrap gap-x-[24px]">
-          <div className="min-w-0 flex-[3_1_420px]">{section('track')}</div>
+          <div className="min-w-0 flex-[3_1_560px]">{section('track')}</div>
           <div className="min-w-0 flex-[2_1_300px]">{section('album')}</div>
         </div>
         {section('artist')}
@@ -657,7 +657,9 @@ function TopTab({
             <TopResult artist={topArtist} room={false} />
           </div>
         )}
-        <div className="min-w-0 flex-[2_1_420px]">{section('track')}</div>
+        {/* A track row's fixed columns take about 400px, so below 560px the titles shrink to a
+            letter or two. Under that the tracks drop below the top result instead. */}
+        <div className="min-w-0 flex-[2_1_560px]">{section('track')}</div>
       </div>
       {section('album')}
       {section('artist')}
