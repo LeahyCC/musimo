@@ -301,7 +301,13 @@ function Extras({ slider }: { slider: boolean }) {
           onChange={(event) => player.setVolume(Number(event.target.value))}
         />
       )}
-      {isLibrary && <SleepTimerControl />}
+      {isLibrary && (
+        // The control sits near the dock's right edge and its menu opens rightwards, past the
+        // dock's clipped edge, so here the menu is turned to open leftwards instead.
+        <span className="[&_[role=menu]]:right-0 [&_[role=menu]]:left-auto">
+          <SleepTimerControl />
+        </span>
+      )}
       {isLibrary && (
         <IconButton
           size="compact"
@@ -630,7 +636,7 @@ function UpNext({ className }: { className?: string }) {
                 >
                   <IconButton
                     size="compact"
-                    className="min-w-[26px] p-[4px]"
+                    className="min-w-[26px]! p-[4px]!"
                     aria-label={`Move ${track.title} up`}
                     disabled={position === 0}
                     onClick={() => moveTo(index, index - 1)}
@@ -639,7 +645,7 @@ function UpNext({ className }: { className?: string }) {
                   </IconButton>
                   <IconButton
                     size="compact"
-                    className="min-w-[26px] p-[4px]"
+                    className="min-w-[26px]! p-[4px]!"
                     aria-label={`Move ${track.title} down`}
                     disabled={last}
                     onClick={() => moveTo(index, index + 1)}
@@ -648,7 +654,7 @@ function UpNext({ className }: { className?: string }) {
                   </IconButton>
                   <IconButton
                     size="compact"
-                    className="min-w-[26px] p-[4px]"
+                    className="min-w-[26px]! p-[4px]!"
                     aria-label={`Remove ${track.title} from the queue`}
                     onClick={() => remove(index)}
                   >
@@ -683,7 +689,7 @@ function DockColumn() {
   return (
     <aside
       aria-label="Player"
-      className={cx(dockClassName, 'flex min-h-0 flex-col overflow-hidden')}
+      className={cx(dockClassName, 'flex min-h-0 flex-1 flex-col overflow-hidden')}
     >
       <div className="px-[16px] pt-[12px]">
         <div className="mb-[8px] flex items-center gap-[4px]">
