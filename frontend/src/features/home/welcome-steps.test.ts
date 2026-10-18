@@ -26,9 +26,9 @@ const diagnostics = (
   }) as unknown as Diagnostics
 
 describe('welcomeSteps', () => {
-  it('marks the folder step done when every root is ready, and points at the next two', () => {
+  it('marks the folder step done when every root is ready, and points at the collection step', () => {
     const steps = welcomeSteps(diagnostics('idle'))
-    expect(steps.map((step) => step.state)).toEqual(['done', 'now', 'now'])
+    expect(steps.map((step) => step.state)).toEqual(['done', 'now', 'next'])
     expect(steps[0]?.detail).toContain('/music is readable and writable · 5.0 GB free')
   })
 

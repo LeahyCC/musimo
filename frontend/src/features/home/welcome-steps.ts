@@ -56,7 +56,8 @@ export function welcomeSteps(data: Diagnostics | undefined): WelcomeStep[] {
     },
     {
       id: 'scan',
-      state: mounted ? 'now' : 'next',
+      // Step 2 has nothing to check, so it stays the one to do now; the scan takes over once it runs.
+      state: mounted && (scanning || scanned) ? 'now' : 'next',
       title: 'Scan the library',
       detail: scanning
         ? `Scanning: ${data.library.indexed.toLocaleString()} of ${data.library.walked.toLocaleString()} files read so far. You can browse while it runs.`

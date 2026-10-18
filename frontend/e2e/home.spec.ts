@@ -153,7 +153,7 @@ test('home is at the root and search has its own address', async ({ page }) => {
   ).toBeVisible()
   await expect(page.getByRole('heading', { name: /Find it/ })).toHaveCount(0)
   await expect(
-    page.getByRole('region', { name: 'Fresh in your library' }).getByRole('link'),
+    page.getByRole('region', { name: 'Fresh in your library' }).getByRole('listitem'),
   ).toHaveCount(1)
   await expect(page.getByRole('region', { name: 'Last played' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'This week' })).toBeVisible()
