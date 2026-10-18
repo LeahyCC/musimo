@@ -179,11 +179,11 @@ test('a playlist page counts, plays, shuffles and renames its songs', async ({ p
 
   await expect(page.getByRole('heading', { level: 1, name: 'Road trip' })).toBeVisible()
   const header = page.locator('.collection-header')
-  await expect(header).toContainText('PLAYLIST')
+  await expect(header).toContainText('PLAYLIST · PUBLIC')
   await expect(header).toContainText('By listener')
   await expect(header.locator('.collection-cover img')).toBeVisible()
-  await expect(header.locator('.library-count')).toHaveText('1 song · 3 min · Public')
-  for (const name of ['Play all', 'Shuffle', 'Rename', 'Delete'])
+  await expect(header.locator('.library-count')).toHaveText('1 song · 3 min')
+  for (const name of ['Play all', 'Shuffle', 'Add songs', 'Rename', 'Delete'])
     await expect(header.getByRole('button', { name })).toBeVisible()
   await expect(page.getByRole('heading', { name: 'Library', exact: true })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Back to playlists' })).toBeVisible()
@@ -201,9 +201,7 @@ test('a playlist page counts, plays, shuffles and renames its songs', async ({ p
   const results = page.locator('.playlist-add-list')
   await expect(results.getByRole('button', { name: 'Remove Anchor from Long drive' })).toBeVisible()
   await results.getByRole('button', { name: 'Add Beacon to Long drive' }).click()
-  await expect(page.locator('.library-detail .library-count').first()).toHaveText(
-    '2 songs · 6 min · Public',
-  )
+  await expect(page.locator('.library-detail .library-count').first()).toHaveText('2 songs · 6 min')
   await expect(results.getByRole('button', { name: 'Remove Beacon from Long drive' })).toBeVisible()
 })
 
@@ -232,9 +230,7 @@ test('a playlist cover is a mosaic of four covers, or the first cover', async ({
   await expect(covers).toHaveCount(4)
   // No owner is known, so the byline is left out rather than reading "By ".
   await expect(page.locator('.collection-header')).not.toContainText('By ')
-  await expect(page.locator('.collection-header .library-count')).toHaveText(
-    '4 songs · 13 min · Private',
-  )
+  await expect(page.locator('.collection-header .library-count')).toHaveText('4 songs · 13 min')
 
   entry = songs.slice(0, 3)
   await page.reload()
@@ -302,9 +298,7 @@ test('the playlist picker sits at the top on a desktop, toggles membership and r
 
   // The playlist page reads the same cache, so the change is already there.
   await page.goto('/library/playlists/road')
-  await expect(page.locator('.library-detail .library-count').first()).toHaveText(
-    '1 song · 3 min · Public',
-  )
+  await expect(page.locator('.library-detail .library-count').first()).toHaveText('1 song · 3 min')
   await expect(page.locator('.library-tracks')).toContainText('Beacon')
 })
 

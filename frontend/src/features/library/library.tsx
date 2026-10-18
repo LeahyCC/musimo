@@ -9,10 +9,11 @@ import {
 } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
+  ChevronLeft,
   Disc3,
-  Heart,
   Library,
   ListMusic,
+  ListPlus,
   Pencil,
   Plus,
   Search,
@@ -52,6 +53,7 @@ import {
   ErrorBanner,
   Field,
   FieldSelect,
+  IconButton,
   InlineError,
   sectionCaptionClassName,
   sectionHeadingClassName,
@@ -168,6 +170,14 @@ const totalLength = (seconds: number) => {
   return `${Math.floor(minutes / 60)} hr${minutes % 60 ? ` ${minutes % 60} min` : ''}`
 }
 
+/** What a playlist's footer says, from what the playlist really is. */
+const playlistFooter = (isPublic: boolean, liked: boolean) =>
+  liked
+    ? 'Every song you give a thumbs up lands here, newest first. Liked is never deleted.'
+    : isPublic
+      ? 'Public playlists can be read by Subsonic clients on your network.'
+      : 'Private to you. Add songs from the search below, or remove one with the cross on its row.'
+
 const sumDuration = (songs: LibraryTrack[]) => songs.reduce((sum, song) => sum + song.duration, 0)
 
 const textCompare = (left = '', right = '') =>
@@ -231,6 +241,7 @@ export function LibraryPage({
   const filterSheet = useRef<HTMLDialogElement>(null)
   const filterSheetTitle = useId()
   const editionsSheet = useRef<HTMLDialogElement>(null)
+  const addSongsSearch = useRef<HTMLInputElement>(null)
   const editionsSheetTitle = useId()
   const [openGroupKey, setOpenGroupKey] = useState('')
   const [layout, setLayout] = useState<ViewMode>(() =>
@@ -514,6 +525,12 @@ export function LibraryPage({
     const sheet = editionsSheet.current
     if (openEditions && sheet && !sheet.open) sheet.showModal()
   }, [openEditions])
+  // The five most played songs, whatever order the song list below is sorted in.
+  const topSongs = useMemo(
+    () =>
+      [...(artistTracks.data?.items ?? [])].sort((a, b) => b.playCount - a.playCount).slice(0, 5),
+    [artistTracks.data],
+  )
   const artistSongs = useMemo(
     () => sortArtistSongs(artistTracks.data?.items ?? [], artistOrdering.sort),
     [artistTracks.data, artistOrdering.sort],
@@ -592,6 +609,11 @@ export function LibraryPage({
     .map(cover)
   if (!playlistCovers.length && playlist?.coverArt) playlistCovers.push(cover(playlist.coverArt))
   const detailTitle = playlist?.name ?? albumDetail.data?.name ?? ''
+  // The closing line under the songs. Only what the data says: an album's release year and genre,
+  // and what a playlist's visibility means.
+  const foot = playlist
+    ? playlistFooter(playlist.public, playlistLiked)
+    : [album?.year ? `Released ${album.year}` : '', album?.genre].filter(Boolean).join(' · ')
   const detailSource = playlist ? `playlist:${playlist.id}` : `album:${albumId}`
   const detailError = playlistId ? playlistDetail.error : albumId ? albumDetail.error : null
   const busy =
@@ -797,13 +819,18 @@ export function LibraryPage({
           <button
             type="button"
             data-ui="text-link"
-            className={textLinkClassName()}
+            aria-label={`Back to ${backLabel}`}
+            className={cx(
+              textLinkClassName('gap-[6px] capitalize'),
+              'my-[8px] h-[32px] rounded-md pr-[10px] pl-[6px] !text-muted hover:bg-raised hover:!text-text',
+            )}
             onClick={() => {
               if (albumParent) void navigate(artistPageLocation('albums', albumParent.id))
               else changeTab(playlistId ? 'playlists' : albumId ? 'albums' : 'artists')
             }}
           >
-            ← Back to {backLabel}
+            <ChevronLeft size={16} />
+            {room && !albumParent ? 'Library' : backLabel}
           </button>
         </div>
       )}
@@ -913,13 +940,31 @@ export function LibraryPage({
             <CollectionHeader
               cover={
                 <CollectionCover
+                  liked={playlistLiked}
                   urls={playlist ? playlistCovers : album?.coverArt ? [cover(album.coverArt)] : []}
                   fallback={playlist ? <ListMusic /> : <Disc3 />}
                 />
               }
-              eyebrow={playlist ? 'PLAYLIST' : ['ALBUM', album?.year].filter(Boolean).join(' · ')}
+              eyebrow={
+                playlist
+                  ? `PLAYLIST · ${playlistLiked ? 'LINKED TO THUMBS UP' : playlist.public ? 'PUBLIC' : 'PRIVATE'}`
+                  : ['ALBUM', album?.year].filter(Boolean).join(' · ')
+              }
               title={detailTitle}
-              titleIcon={playlistLiked ? <Heart size={22} fill="currentColor" /> : undefined}
+              titleAction={
+                playlist && !playlistLiked ? (
+                  <IconButton
+                    aria-label="Rename"
+                    aria-expanded={renaming}
+                    onClick={() => {
+                      setRenameValue(playlist.name)
+                      setRenaming(!renaming)
+                    }}
+                  >
+                    <Pencil size={15} />
+                  </IconButton>
+                ) : undefined
+              }
               byline={
                 playlist ? (
                   playlist.owner ? (
@@ -941,7 +986,6 @@ export function LibraryPage({
                 ? [
                     songCount(detailTracks.length),
                     totalLength(playlist.duration || sumDuration(detailTracks)),
-                    playlist.public ? 'Public' : 'Private',
                   ]
                 : [
                     songCount(detailTracks.length),
@@ -966,6 +1010,24 @@ export function LibraryPage({
               >
                 <Shuffle size={15} /> Shuffle
               </Button>
+              {album && (
+                <Button
+                  onClick={() => player.addToQueue(detailTracks)}
+                  disabled={!detailTracks.length}
+                >
+                  <ListPlus size={15} /> Queue
+                </Button>
+              )}
+              {playlist && (
+                <Button
+                  onClick={() => {
+                    addSongsSearch.current?.scrollIntoView({ block: 'center' })
+                    addSongsSearch.current?.focus()
+                  }}
+                >
+                  <Plus size={15} /> Add songs
+                </Button>
+              )}
               <RowMenu
                 label={`More actions for ${detailTitle}`}
                 disabled={!detailTracks.length}
@@ -974,17 +1036,6 @@ export function LibraryPage({
                   () => player.addToQueue(detailTracks),
                 )}
               />
-              {playlist && (
-                <Button
-                  onClick={() => {
-                    setRenameValue(playlist.name)
-                    setRenaming(!renaming)
-                  }}
-                  aria-expanded={renaming}
-                >
-                  <Pencil size={15} /> Rename
-                </Button>
-              )}
               {playlist && !playlistLiked && (
                 <Button
                   variant="danger"
@@ -1043,6 +1094,9 @@ export function LibraryPage({
             </InlineError>
           )}
           <TrackList
+            detail
+            thirdColumn={playlist ? 'album' : 'genre'}
+            thumbs={Boolean(playlist)}
             tracks={detailTracks}
             source={detailSource}
             // A playlist is in the order its owner chose, so its rows count places in it. An album's
@@ -1056,6 +1110,11 @@ export function LibraryPage({
                 : undefined
             }
           />
+          {foot && detailTracks.length > 0 && (
+            <p className="library-foot border-t border-line pt-[14px] text-small leading-[1.7] text-faint">
+              {foot}
+            </p>
+          )}
           {playlist && (
             <section className="border-t border-line pt-[12px]">
               <div className={sectionHeadingClassName}>
@@ -1066,6 +1125,7 @@ export function LibraryPage({
                 <Search size={17} />
                 <input
                   className="w-full border-0 bg-transparent p-[11px] text-inherit outline-0"
+                  ref={addSongsSearch}
                   aria-label="Search songs to add"
                   value={playlistTrackQuery}
                   onChange={(event) => setPlaylistTrackQuery(event.target.value)}
@@ -1193,6 +1253,32 @@ export function LibraryPage({
               <ListMusic size={15} /> {artistSongsMode ? 'Albums' : 'All songs'}
             </Button>
           </CollectionHeader>
+          {!artistSongsMode && (
+            <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-[16px] max-[900px]:grid-cols-1">
+              {topSongs.length > 0 && (
+                <section className="library-top-songs min-w-0">
+                  <div className="mb-[10px] flex items-baseline justify-between">
+                    <h2 className="text-strong">Top songs</h2>
+                    <button
+                      type="button"
+                      className="border-0 bg-transparent text-small text-muted hover:text-text coarse:min-h-11"
+                      onClick={() => void navigate(artistPageLocation('songs', artistId))}
+                    >
+                      All {artistSongs.length} songs
+                    </button>
+                  </div>
+                  <TrackList
+                    detail
+                    numbering="position"
+                    tracks={topSongs}
+                    source={`artist:${artistId}:top`}
+                  />
+                </section>
+              )}
+              <PopularityChart albums={artistDetail.data.album} />
+            </div>
+          )}
+          {!artistSongsMode && <h2 className="mt-[12px] text-strong">Albums</h2>}
           <div className="flex flex-wrap items-center gap-[10px] mt-[4px] mb-[12px]">
             <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
               <SlidersHorizontal size={16} />
@@ -1222,7 +1308,7 @@ export function LibraryPage({
           )}
           {artistSongsMode && artistTracks.isLoading && <p role="status">Loading songs…</p>}
           {artistSongsMode ? (
-            <TrackList tracks={artistSongs} source={`artist:${artistId}`} />
+            <TrackList detail tracks={artistSongs} source={`artist:${artistId}`} />
           ) : (
             <>
               <div
@@ -1326,13 +1412,6 @@ export function LibraryPage({
                     ))}
                 </ul>
               </ReviewDialog>
-              <section className="grid gap-[10px] mt-[26px]">
-                <div className={sectionHeadingClassName}>
-                  <h2 className="text-strong">Popularity</h2>
-                  <span className={sectionCaptionClassName}>Play counts by release year</span>
-                </div>
-                <PopularityChart albums={artistDetail.data.album} />
-              </section>
             </>
           )}
         </section>

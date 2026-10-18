@@ -34,7 +34,10 @@ export function TrackList({
   highlightId = '',
   removing = false,
   onRemove,
-  table = false,
+  table: tableView = false,
+  detail = false,
+  thirdColumn = 'album',
+  thumbs = true,
 }: {
   tracks: LibraryTrack[]
   source: string
@@ -45,7 +48,14 @@ export function TrackList({
   onRemove?: (index: number) => void
   /** The Tracks view's table: a header row, a cover on each song and a plays column. */
   table?: boolean
+  /** A collection page's list: the table's columns without its frame, under a ruled header. */
+  detail?: boolean
+  /** What the third column says: the song's album, or its genre on an album's own page. */
+  thirdColumn?: 'album' | 'genre'
+  /** Whether each song shows its own cover; an album's rows would all repeat the one cover. */
+  thumbs?: boolean
 }) {
+  const table = tableView || detail
   const player = usePlayer()
   const room = useLayout() === 'room'
   const highlighted = highlightId ? tracks.findIndex((track) => track.id === highlightId) : -1
@@ -54,8 +64,8 @@ export function TrackList({
     <div
       className={cx(
         'library-tracks grid',
-        table && !room && 'overflow-hidden rounded-[12px] border border-line',
-        table && room && 'gap-[2px]',
+        tableView && !room && 'overflow-hidden rounded-[12px] border border-line',
+        (tableView && room) || detail ? 'gap-[2px]' : '',
       )}
     >
       {table && (
@@ -63,15 +73,17 @@ export function TrackList({
           aria-hidden="true"
           className={cx(
             'flex items-center pr-[46px] text-faint max-phone:hidden',
-            room
-              ? 'pb-[8px] font-mono text-caption tracking-[0.6px]'
-              : 'bg-sunken py-[10px] text-tiny font-semibold tracking-[0.5px]',
+            detail
+              ? 'mb-[4px] border-b border-line pb-[8px] font-mono text-caption tracking-[0.6px]'
+              : room
+                ? 'pb-[8px] font-mono text-caption tracking-[0.6px]'
+                : 'bg-sunken py-[10px] text-tiny font-semibold tracking-[0.5px]',
           )}
         >
           <span className={cx('grid w-full items-center gap-[12px] px-[12px]', columns)}>
             {numbering !== 'none' && <span className="text-right">#</span>}
             <span>TITLE</span>
-            <span>ALBUM</span>
+            <span>{thirdColumn === 'genre' ? 'GENRE' : 'ALBUM'}</span>
             <span className="text-right">PLAYS</span>
             <span className="text-right">TIME</span>
             <span />
@@ -93,8 +105,8 @@ export function TrackList({
           <div
             className={cx(
               'library-track-row flex items-center',
-              table && room ? 'rounded-[10px]' : 'border-b border-line',
-              table && !room && 'last:border-b-0',
+              (table && room) || detail ? 'rounded-[10px]' : 'border-b border-line',
+              tableView && !room && 'last:border-b-0',
               table && marked && 'bg-accent/10',
             )}
             key={`${track.id}-${index}`}
@@ -121,7 +133,7 @@ export function TrackList({
                   className={cx(
                     'text-small text-muted',
                     table && 'text-right',
-                    table && room && 'font-mono text-tiny',
+                    table && (room || detail) && 'font-mono text-tiny',
                     table && marked && 'text-accent',
                   )}
                 >
@@ -129,7 +141,7 @@ export function TrackList({
                 </span>
               )}
               <span className={cx('min-w-0', table ? 'flex items-center gap-[10px]' : 'grid')}>
-                {table && (
+                {table && thumbs && (
                   <span
                     className={cx(
                       'grid h-[36px] w-[36px] flex-none place-items-center overflow-hidden bg-raised text-faint',
@@ -168,13 +180,13 @@ export function TrackList({
                 className="line-clamp-2 min-w-0 text-small text-muted [overflow-wrap:anywhere] max-phone:hidden"
                 title={track.album}
               >
-                {track.album}
+                {thirdColumn === 'genre' ? track.genre : track.album}
               </small>
               {table && (
                 <span
                   className={cx(
                     'text-right text-small text-faint max-phone:hidden',
-                    room && 'font-mono text-tiny',
+                    (room || detail) && 'font-mono text-tiny',
                   )}
                 >
                   {track.playCount.toLocaleString()}
@@ -184,7 +196,7 @@ export function TrackList({
                 className={cx(
                   'text-small text-muted max-phone:hidden',
                   table && 'text-right',
-                  table && room && 'font-mono text-tiny',
+                  table && (room || detail) && 'font-mono text-tiny',
                 )}
               >
                 {durationText(track.duration)}
