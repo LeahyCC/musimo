@@ -26,6 +26,16 @@ describe('pipelineStates', () => {
   it('marks every step done once the job has finished', () => {
     expect(pipelineStates('done')).toEqual(['done', 'done', 'done', 'done', 'done'])
   })
+
+  it('leaves every step pending for a job that has not started one', () => {
+    expect(pipelineStates('queued')).toEqual([
+      'pending',
+      'pending',
+      'pending',
+      'pending',
+      'pending',
+    ])
+  })
 })
 
 describe('pipelineText', () => {
@@ -33,5 +43,6 @@ describe('pipelineText', () => {
     expect(pipelineText('download', 'danger')).toBe('Download, step 2 of 5, failed')
     expect(pipelineText('tag', 'warn')).toBe('Tag, step 4 of 5, held up')
     expect(pipelineText('done', 'good')).toBe('All 5 steps done')
+    expect(pipelineText('queued', 'good')).toBe('No step started')
   })
 })

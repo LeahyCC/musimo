@@ -2,12 +2,25 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { Music2, SendHorizontal, X } from 'lucide-react'
 
+import { cx } from '../../lib/cx'
 import { Button } from '../../ui'
+import { usePlayer } from '../player/player'
 import { MAX_PROMPT, useBotChat } from './bot-chat'
+import { LIKE_STARTER, startersFor } from './starters'
 import { usePetLook } from './use-pet'
 
-export function Composer({ autoFocus }: { autoFocus: boolean }) {
+/** `panel` is the popover and sheet; `page` and `room` are the full page in each layout. */
+export type ComposerLook = 'panel' | 'page' | 'room'
+
+export function Composer({
+  autoFocus,
+  look = 'panel',
+}: {
+  autoFocus: boolean
+  look?: ComposerLook
+}) {
   const chat = useBotChat()
+  const player = usePlayer()
   const win95 = usePetLook().pixel
   const [text, setText] = useState('')
   const field = useRef<HTMLTextAreaElement>(null)
@@ -16,6 +29,10 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
   const waiting = cancellable || chat.confirming || chat.holding
   const latest = chat.log.at(-1)
   const offersReplies = latest?.kind === 'reply' && latest.suggestions.length > 0
+  const onPage = look !== 'panel'
+  const refining = look === 'room' && chat.reply !== null
+  // The empty chat already offers these in its middle, so the row only appears under a conversation.
+  const prompts = onPage && !locked && chat.log.length > 0 ? startersFor(player.libraryTrack) : []
 
   useEffect(() => {
     if (autoFocus && !offersReplies) field.current?.focus()
@@ -37,6 +54,15 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
     void chat.send(sending)
   }
 
+  function ask(prompt: string) {
+    if (prompt === LIKE_STARTER && player.libraryTrack)
+      chat.setReference({
+        id: player.libraryTrack.id,
+        label: `${player.libraryTrack.title} · ${player.libraryTrack.artist}`,
+      })
+    void chat.send(prompt)
+  }
+
   const placeholder =
     chat.locked === 'busy'
       ? 'Chat opens when the scan finishes'
@@ -44,12 +70,17 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
         ? 'Waiting for the model server'
         : chat.locked === 'nomodel'
           ? 'Choose a model to start'
-          : `Ask ${chat.name} for music`
+          : refining
+            ? 'Refine, or ask for something new'
+            : `Ask ${chat.name} for music`
 
   return (
     <form
       data-bot="composer"
-      className="grid shrink-0 gap-[8px] border-t border-line px-[12px] py-[10px]"
+      className={cx(
+        'grid shrink-0 gap-[8px]',
+        onPage ? 'bg-canvas pt-[12px] pb-[4px]' : 'border-t border-line px-[12px] py-[10px]',
+      )}
       onSubmit={(event) => {
         event.preventDefault()
         submit()
@@ -72,7 +103,29 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
           </span>
         </div>
       )}
-      <div className="flex items-end gap-[8px]">
+      {prompts.length > 0 && (
+        <div role="group" aria-label="Prompts" className="flex flex-wrap gap-[8px]">
+          {prompts.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              data-bot="prompt"
+              disabled={waiting}
+              onClick={() => ask(prompt)}
+              className="inline-flex h-[30px] items-center rounded-pill border border-line-strong bg-sunken px-[12px] text-tiny whitespace-nowrap text-muted hover:text-text disabled:opacity-50 coarse:min-h-11"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
+      )}
+      <div
+        className={cx(
+          'flex items-end gap-[8px]',
+          onPage &&
+            'items-center rounded-[12px] border border-line-strong bg-sunken py-[6px] pr-[6px] pl-[14px] focus-within:border-accent',
+        )}
+      >
         <textarea
           ref={field}
           rows={1}
@@ -89,7 +142,12 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
             }
           }}
           data-bot="field"
-          className="min-h-[39px] min-w-0 flex-1 resize-none overflow-y-auto rounded-[8px] border border-line-strong bg-sunken px-[11px] py-[10px] text-small leading-[1.35] text-text placeholder:text-faint disabled:opacity-55"
+          className={cx(
+            'min-w-0 flex-1 resize-none overflow-y-auto text-small leading-[1.35] text-text placeholder:text-faint disabled:opacity-55',
+            onPage
+              ? 'min-h-[36px] border-0 bg-transparent px-0 py-[8px] outline-0'
+              : 'min-h-[39px] rounded-[8px] border border-line-strong bg-sunken px-[11px] py-[10px]',
+          )}
         />
         {cancellable ? (
           <Button className="shrink-0" onClick={chat.cancel}>
@@ -100,7 +158,7 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
             type="submit"
             variant="primary"
             aria-label="Send"
-            className="min-w-11 shrink-0 px-[12px]"
+            className={cx('min-w-11 shrink-0 px-[12px]', onPage && 'size-[38px] rounded-[9px] p-0')}
             disabled={locked || chat.confirming || chat.holding || !text.trim()}
           >
             {win95 ? 'Send' : <SendHorizontal size={16} aria-hidden="true" />}
@@ -112,7 +170,9 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
           <span>
             {locked
               ? 'Your music keeps playing while you wait.'
-              : 'Goes by your tags and play history. Can’t hear the music.'}
+              : onPage
+                ? 'Goes by your tags and play history. Can’t hear the music, so moods and tempos are off the menu.'
+                : 'Goes by your tags and play history. Can’t hear the music.'}
           </span>
           <span className="whitespace-nowrap tabular-nums">
             {waiting || locked

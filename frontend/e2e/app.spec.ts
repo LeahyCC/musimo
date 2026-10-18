@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test'
 import type { MusicResult } from '../src/api'
 import { ORIGIN } from './env'
 import { librarySong, playerFixtures } from './library-fixtures'
+import { mainNav, toasts } from './nav'
 import { writableDestination } from './queue-fixtures'
 
 // Invented catalog records. Settings, queue, diagnostics and events use the real API.
@@ -61,7 +62,7 @@ test.beforeEach(async ({ page }) => {
   await catalogFixtures(page)
 })
 
-test('keyboard search, tab and sort survive navigation and refresh', async ({ page }) => {
+test('keyboard search, tab and sort survive navigation and refresh', async ({ page, isMobile }) => {
   await page.goto('/search')
   await expect(page.getByRole('status').filter({ hasText: /^Live$/ })).toBeVisible()
   await page.keyboard.press('/')
@@ -79,10 +80,9 @@ test('keyboard search, tab and sort survive navigation and refresh', async ({ pa
     'true',
   )
   await expect(page.getByRole('combobox', { name: 'Sort' })).toHaveValue('title')
-  await page
-    .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('link', { name: 'Settings' })
-    .click()
+  // A phone's bar has no Settings tab (Home carries it), so there the address is typed.
+  if (isMobile) await page.goto('/settings')
+  else await mainNav(page).getByRole('link', { name: 'Settings' }).click()
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
   await page.goBack()
   await expect(search).toHaveValue('Fixture')
@@ -928,34 +928,79 @@ test('artist review keeps Download off when the destination is read-only', async
   await expect(dialog.getByText(/missing or read-only/)).toHaveCount(0)
 })
 
-test('mobile nav shows all five items within the bottom bar', async ({ page, isMobile }) => {
+test('mobile nav shows its five tabs within the bottom bar', async ({ page, isMobile }) => {
   if (!isMobile) {
     test.skip()
   }
   await page.goto('/')
-  const nav = page.getByRole('navigation', { name: 'Main navigation' })
-  const searchLink = nav.getByRole('link', { name: 'Search' })
-  const libraryLink = nav.getByRole('link', { name: 'Library' })
-  const downloadsLink = nav.getByRole('link', { name: 'Downloads' })
-  const settingsLink = nav.getByRole('link', { name: 'Settings' })
-  const diagnosticsLink = nav.getByRole('link', { name: 'Diagnostics' })
-
-  await expect(searchLink).toBeVisible()
-  await expect(libraryLink).toBeVisible()
-  await expect(downloadsLink).toBeVisible()
-  await expect(settingsLink).toBeVisible()
-  await expect(diagnosticsLink).toBeVisible()
+  const nav = mainNav(page)
+  const tabs = ['Home', 'Search', 'Library', 'Octive', 'Downloads']
+  await expect(nav.getByRole('link')).toHaveText(tabs)
+  await expect(nav.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page')
 
   const sidebar = page.locator('.sidebar')
   const sidebarBox = await sidebar.boundingBox()
   expect(sidebarBox).toBeTruthy()
   expect(sidebarBox!.height).toBe(64)
 
-  const diagnosticsBox = await diagnosticsLink.boundingBox()
-  expect(diagnosticsBox).toBeTruthy()
-  expect(diagnosticsBox!.y + diagnosticsBox!.height).toBeLessThanOrEqual(
-    sidebarBox!.y + sidebarBox!.height,
-  )
+  const lastBox = await nav.getByRole('link', { name: 'Downloads' }).boundingBox()
+  expect(lastBox).toBeTruthy()
+  expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(sidebarBox!.y + sidebarBox!.height)
+
+  // Settings and Diagnostics are not tabs; Home's header reaches them.
+  await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Diagnostics', exact: true })).toBeVisible()
+})
+
+test('the sidebar groups Library and lights the page it is on', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'The sidebar is for wide windows.')
+  await page.goto('/')
+  const nav = mainNav(page)
+  for (const name of ['Home', 'Search', 'Octive', 'Downloads', 'Settings', 'Diagnostics'])
+    await expect(nav.getByRole('link', { name, exact: true })).toBeVisible()
+  for (const name of ['Albums', 'Artists', 'Tracks', 'Playlists'])
+    await expect(nav.getByRole('link', { name: new RegExp(`^${name}`) })).toBeVisible()
+  await expect(nav.locator('[aria-current="page"]')).toHaveText('Home')
+
+  // A catalog page is found by searching, so Search stays lit there.
+  await page.goto('/albums/42')
+  await expect(nav.locator('[aria-current="page"]')).toHaveText(/^Search/)
+
+  await page.goto('/library/artists')
+  await expect(nav.locator('[aria-current="page"]')).toHaveText('Artists')
+  await page.goto('/music-bot')
+  await expect(nav.locator('[aria-current="page"]')).toHaveText('Octive')
+})
+
+test('Support opens one dialog holding the three links', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'The sidebar is for wide windows.')
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Support' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Support Musimo' })
+  for (const name of ['Donate to MusiCares', 'Buy me a coffee', 'Star on GitHub'])
+    await expect(dialog.getByRole('link', { name })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+})
+
+test('the top bar has the search field, the palette button and Ask Octive', async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto('/')
+  const bar = page.getByRole('banner')
+  await expect(bar.getByRole('textbox', { name: 'Search music or paste a link' })).toBeVisible()
+  await expect(bar.getByRole('link', { name: /Octive/ })).toBeVisible()
+  const palette = bar.getByRole('button', { name: 'Command palette' })
+  if (isMobile) {
+    // No keyboard on a phone, so no button for it.
+    await expect(palette).toBeHidden()
+    return
+  }
+  await palette.click()
+  await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  expect((await bar.boundingBox())?.height).toBe(60)
 })
 
 test('command palette includes library and now playing', async ({ page }) => {
@@ -1157,8 +1202,7 @@ test('no preview state shows disabled button and label', async ({ page }) => {
   )
   await page.goto('/albums/42')
   await page.getByRole('button', { name: 'Find preview No preview track' }).click()
-  const player = page.locator('footer.live-player')
-  await expect(player.getByText('No preview available for this track.')).toBeVisible()
+  await expect(toasts(page).getByText('No preview available for this track.')).toBeVisible()
   const artButton = page.getByRole('button', { name: 'No preview No preview track' })
   await expect(artButton).toBeDisabled()
   const noPreviewButton = page.getByRole('button', { name: 'No preview', exact: true })

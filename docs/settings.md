@@ -22,7 +22,7 @@ The music bot pet (character, name, colour, size, position, chattiness, animatio
 
 - `library_label`: Music by default, 1–60 characters.
 - `output_format`: original, m4a, opus or mp3. Default original. M4A/Opus conversion depends on the actual source; the application must not promise lossless transcoding.
-- `concurrency`: 1–3, default 2. Parallel download workers. Concurrency can also be changed from the Downloads page Parallel select and honours the lock.
+- `concurrency`: 1–3, default 2. Parallel download workers. Concurrency can also be changed from the Classic Downloads page's Parallel downloads chip, and the queue sheet's, which honour the lock.
 - `max_attempts`: 1–4, default 4. For a song from search, how many times to walk the source list (one is a single pass). For a pasted link or a podcast, how many times to retry that one download. It sits with the source list, next to `tries_per_source`.
 - `retry_base_seconds`: 1–30, default 2.
 - `retry_cap_seconds`: 30–300, default 60.

@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
+import { mainNav } from './nav'
 
 const song = librarySong('song-1', { title: 'First Light', duration: 30 })
 
@@ -80,12 +81,12 @@ test('the sidebar has no Now Playing row until a library track is loaded', async
     .getByRole('navigation', { name: 'Main navigation' })
     .getByRole('link', { name: 'Now Playing' })
   await page.goto('/settings/user')
-  await expect(page.getByRole('link', { name: 'Diagnostics' }).first()).toBeVisible()
+  await expect(mainNav(page)).toBeVisible()
   await expect(row).toHaveCount(0)
 
   await loadTrack(page)
   await page.reload()
-  // A phone's bar keeps its five items, so the row is drawn there but hidden.
+  // A phone's bar keeps its five tabs, so the row is not drawn there at all.
   if (isMobile) await expect(row).toBeHidden()
   else await expect(row).toBeVisible()
 })
@@ -111,4 +112,49 @@ test('the palette offers the visualizer commands only while a library track is l
   await page.keyboard.press('Control+k')
   for (const name of [...commands, 'Fullscreen visualizer'])
     await expect(palette.getByRole('button', { name })).toBeVisible()
+})
+
+test('the Listening room puts Art or MilkDrop, Auto or Hold and the window buttons in one pill', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'The stage controls are checked on desktop.')
+  await withWebGl2(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('musimo.layout', 'room')
+    if (localStorage.getItem('musimo.now-playing-view') === null)
+      localStorage.setItem('musimo.now-playing-view', 'artwork')
+  })
+  await playerFixtures(page)
+  await loadTrack(page)
+  await page.goto('/now-playing')
+  await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
+  // The page holds every control the footer has, so the footer stands down in this layout too.
+  await expect(page.getByRole('contentinfo')).toBeHidden()
+
+  const stage = page.locator('.stage')
+  const pill = stage.locator('.stage-view-control')
+  await stage.hover()
+  const view = pill.getByRole('radiogroup', { name: 'Show on the stage' })
+  await expect(view.getByRole('radio', { name: 'Art' })).toBeChecked()
+  // Over the artwork the pill names the album, and has no preset controls.
+  await expect(pill).toContainText('Clear Water')
+  await expect(pill.getByRole('button', { name: 'Change with the music' })).toHaveCount(0)
+  // Pop out is there too where the browser has Document Picture-in-Picture.
+  await expect(pill.getByRole('button', { name: 'Large stage' })).toBeVisible()
+  await expect(pill.getByRole('button', { name: 'Full screen' })).toBeVisible()
+
+  // The radios are drawn by their labels, so the label is what a pointer presses.
+  await view.getByText('MilkDrop').click()
+  await expect(view.getByRole('radio', { name: 'MilkDrop' })).toBeChecked()
+  expect(await page.evaluate(() => localStorage.getItem('musimo.now-playing-view'))).toBe(
+    'visualizer',
+  )
+  await expect(pill.getByRole('button', { name: 'Change with the music' })).toBeVisible()
+  await expect(pill.getByRole('button', { name: 'Next preset' })).toBeVisible()
+
+  // Lyrics leads the room's tabs, beside the art.
+  const tabs = page.getByRole('tablist', { name: 'Now Playing panel' }).getByRole('tab')
+  await expect(tabs).toHaveText(['Lyrics', 'Up next', 'About', 'History'])
+  await expect(tabs.first()).toHaveAttribute('aria-selected', 'true')
 })

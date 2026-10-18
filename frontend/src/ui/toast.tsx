@@ -93,7 +93,8 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
  * There is one `role="status"` region, always in the page so a screen reader is already listening
  * when the first toast arrives. It sits bottom right on a wide window and above the mini player on
  * a phone. Its edges are `--toast-right` and `--toast-bottom` in style.css. Each layout sets its own,
- * and Classic's follow `--player-height`, so it drops to the edge when the footer is hidden.
+ * and Classic's follow `--player-height` and `--dock-height`, so it drops to the edge when the
+ * footer is hidden and stacks above the floating download pill.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -114,13 +115,30 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 
   const api = useMemo(() => ({ show }), [show])
 
+  // Every sheet is a modal <dialog>, which sits in the top layer above any z-index. The region is
+  // a manual popover so it lives there too, and each new toast shows it again to bring it above a
+  // dialog opened since. The message shows over the dialog; its buttons answer once it closes, as
+  // the dialog makes the rest of the page inert. Empty, it is see-through and lets clicks pass.
+  const region = useRef<HTMLDivElement>(null)
+  const newest = toasts.at(-1)?.id
+  useEffect(() => {
+    const element = region.current
+    if (!element?.showPopover) return
+    if (element.matches(':popover-open')) element.hidePopover()
+    element.showPopover()
+  }, [newest])
+
   return (
     <ToastContext.Provider value={api}>
       {children}
       <div
+        ref={region}
+        popover="manual"
         role="status"
         data-ui="toast-region"
         className={cx(
+          // The popover's own defaults (centred, framed, Canvas colours) are undone here.
+          'm-0 top-auto left-auto overflow-visible border-0 bg-transparent p-0 text-text',
           'pointer-events-none fixed right-[var(--toast-right)] bottom-[var(--toast-bottom)] z-toast grid w-[min(420px,calc(100%-40px))] gap-[8px]',
           'max-phone:right-[calc(12px+var(--safe-right))] max-phone:left-[calc(12px+var(--safe-left))] max-phone:w-auto',
         )}
