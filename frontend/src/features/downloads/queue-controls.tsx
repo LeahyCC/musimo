@@ -1,21 +1,82 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import { Pause, Play } from 'lucide-react'
 
 import { api, commandSchema, settingsSchema } from '../../api'
-import { RowMenu } from '../../components/row-menu'
-import type { RowMenuAction } from '../../components/row-menu'
-import { Button, ErrorBanner, FieldSelect } from '../../ui'
-import { pausedSources } from './download-target'
-import { activeJob, failureTallies, paceWaitText, useJobs } from './jobs'
+import { cx } from '../../lib/cx'
+import { Button, ErrorBanner, SelectChip, useToast } from '../../ui'
+import { formatLabel, pausedSources } from './download-target'
+import { activeJob, paceWaitText, useJobs } from './jobs'
 import type { QueueData } from './jobs'
 
-export function QueueControls() {
-  const client = useQueryClient()
-  const queue = useJobs()
-  const settings = useQuery({
+export const useSettings = () =>
+  useQuery({
     queryKey: ['settings'],
     queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
   })
+
+/**
+ * A command for the whole queue (`pause`, `retry-failed`, `clear-unmatched`…). The server answers
+ * with the new controls and any jobs it could not act on; those, and a failed request, are toasts,
+ * since the button that asked may be anywhere on the page.
+ */
+export function useQueueCommand() {
+  const client = useQueryClient()
+  const toast = useToast()
+  return useMutation({
+    mutationFn: (action: string) => api(`queue/${action}`, commandSchema, { method: 'POST' }),
+    onSuccess: (data) => {
+      client.setQueryData<QueueData>(['jobs'], (old) => ({
+        jobs: old?.jobs ?? [],
+        controls: data.controls,
+        summary: old?.summary ?? { active: 0, failed: 0, failure_reasons: [] },
+      }))
+      void client.invalidateQueries({ queryKey: ['jobs'] })
+      if (data.errors.length) toast.show({ tone: 'danger', text: data.errors.join(' · ') })
+    },
+    onError: (error) => toast.show({ tone: 'danger', text: error.message }),
+  })
+}
+
+export function PauseAllButton({ className }: { className?: string }) {
+  const queue = useJobs()
+  const command = useQueueCommand()
+  const paused = queue.data?.controls.paused ?? false
+  return (
+    <Button
+      className={cx('min-h-[36px] py-0', className)}
+      disabled={command.isPending}
+      onClick={() => command.mutate(paused ? 'resume' : 'pause')}
+    >
+      {paused ? <Play size={14} aria-hidden="true" /> : <Pause size={14} aria-hidden="true" />}
+      {paused ? 'Resume all' : 'Pause all'}
+    </Button>
+  )
+}
+
+export function CancelQueuedButton({ className }: { className?: string }) {
+  const command = useQueueCommand()
+  return (
+    <Button
+      className={cx('min-h-[36px] py-0', className)}
+      disabled={command.isPending}
+      onClick={() => command.mutate('cancel-queued')}
+    >
+      Cancel queued
+    </Button>
+  )
+}
+
+const PARALLEL = [
+  { value: '1', label: '1' },
+  { value: '2', label: '2' },
+  { value: '3', label: '3' },
+] as const
+
+/** How many downloads run at once. Saved straight to Settings, unless the server locks it. */
+export function ParallelChip() {
+  const client = useQueryClient()
+  const settings = useSettings()
   const concurrency = useMutation({
     mutationFn: (value: number) =>
       api('settings', settingsSchema, {
@@ -25,93 +86,49 @@ export function QueueControls() {
       }),
     onSuccess: (data) => client.setQueryData(['settings'], data),
   })
-  const command = useMutation({
-    mutationFn: (action: string) => api(`queue/${action}`, commandSchema, { method: 'POST' }),
-    onSuccess: (data) => {
-      client.setQueryData<QueueData>(['jobs'], (old) => ({
-        jobs: old?.jobs ?? [],
-        controls: data.controls,
-        summary: old?.summary ?? { active: 0, failed: 0, failure_reasons: [] },
-      }))
-      void client.invalidateQueries({ queryKey: ['jobs'] })
-    },
-  })
+  const value = String(settings.data?.concurrency.value ?? 2)
+  return (
+    <SelectChip
+      label="Parallel downloads"
+      value={PARALLEL.some((option) => option.value === value) ? value : '2'}
+      options={PARALLEL}
+      disabled={settings.data?.concurrency.locked || concurrency.isPending}
+      onChange={(next) => concurrency.mutate(Number(next))}
+    />
+  )
+}
+
+/** "saving to /music as M4A / AAC", from Settings. Nothing until Settings has loaded. */
+export function SaveTarget({ lead = 'saving to' }: { lead?: string }) {
+  const settings = useSettings()
+  if (!settings.data) return null
+  const format = settings.data.output_format.value
+  return (
+    <>
+      {lead} <span className="font-mono text-text">{settings.data.destination.value}</span>{' '}
+      {format === 'original' ? (
+        'in the original format'
+      ) : (
+        <>
+          as <span className="text-text">{formatLabel(format)}</span>
+        </>
+      )}
+    </>
+  )
+}
+
+/** The pause between groups of tracks and any site paused for blocking: lines above the list. */
+export function QueueAlerts() {
+  const queue = useJobs()
+  const command = useQueueCommand()
   const visible = (queue.data?.jobs ?? []).filter((job) => !job.hidden)
   const wait = visible.some(activeJob)
     ? paceWaitText(queue.data?.controls.pace_until ?? 0, Date.now())
     : ''
-  const { unmatched, errors } = failureTallies(queue.data?.summary, visible)
-  const hasFinished = queue.data?.jobs.some((job) => !job.hidden && !activeJob(job)) ?? false
-  const moreActions: RowMenuAction[] = [
-    ...(errors > 0
-      ? [
-          { label: `Retry errors (${errors})`, onSelect: () => command.mutate('retry-failed') },
-          { label: `Clear errors (${errors})`, onSelect: () => command.mutate('clear-failed') },
-        ]
-      : []),
-    ...(unmatched > 0
-      ? [
-          {
-            label: `Clear no match (${unmatched})`,
-            onSelect: () => command.mutate('clear-unmatched'),
-          },
-        ]
-      : []),
-    ...(hasFinished
-      ? [
-          {
-            label: 'Clear all finished',
-            onSelect: () => {
-              // It hides every done, failed and cancelled card at once, so ask first. History keeps
-              // them.
-              const ask = 'Clear all finished jobs from the queue? They stay in History.'
-              if (window.confirm(ask)) command.mutate('clear-finished')
-            },
-          },
-        ]
-      : []),
-  ]
   // One line per paused site.
   const paused = pausedSources(queue.data?.controls)
   return (
     <>
-      <div className="my-4 flex flex-wrap gap-2 max-phone:grid max-phone:grid-cols-2">
-        <label className="flex items-center gap-2 text-small max-phone:col-span-2">
-          Parallel{' '}
-          <FieldSelect
-            aria-label="Parallel downloads"
-            fullWidth={false}
-            value={settings.data?.concurrency.value ?? 2}
-            disabled={settings.data?.concurrency.locked || concurrency.isPending}
-            onChange={(e) => concurrency.mutate(Number(e.target.value))}
-          >
-            {[1, 2, 3].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </FieldSelect>
-        </label>
-        <Button
-          className="max-phone:w-full max-phone:px-2"
-          disabled={command.isPending}
-          onClick={() => command.mutate(queue.data?.controls.paused ? 'resume' : 'pause')}
-        >
-          {queue.data?.controls.paused ? 'Resume all' : 'Pause all'}
-        </Button>
-        <Button
-          className="max-phone:w-full max-phone:px-2"
-          disabled={command.isPending}
-          onClick={() => command.mutate('cancel-queued')}
-        >
-          Cancel queued
-        </Button>
-        {/* The three that clean up after a run live in a menu, and only the ones with something to
-            act on are listed. With none, there is no menu at all. */}
-        {moreActions.length > 0 && (
-          <RowMenu label="More queue actions" actions={moreActions} disabled={command.isPending} />
-        )}
-      </div>
       {wait && (
         <p className="mb-3 text-small text-muted" role="status">
           {wait}
@@ -128,11 +145,20 @@ export function QueueControls() {
           </button>
         </ErrorBanner>
       ))}
-      {(command.isError || Boolean(command.data?.errors.length)) && (
-        <ErrorBanner role="alert">
-          {command.error?.message ?? command.data?.errors.join(' · ')}
-        </ErrorBanner>
-      )}
+    </>
+  )
+}
+
+/** The queue sheet's controls: the same pause, parallel and cancel the page header has. */
+export function QueueControls() {
+  return (
+    <>
+      <div className="my-4 flex flex-wrap items-center gap-2">
+        <ParallelChip />
+        <PauseAllButton />
+        <CancelQueuedButton />
+      </div>
+      <QueueAlerts />
     </>
   )
 }
