@@ -846,6 +846,35 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(len(self.song_ids(second)), 2)
         self.assertIn("Could only add 1 of 5", str(part(second, "proposal")["summary"]))
 
+    async def test_a_retry_whose_first_attempt_lands_between_its_reads_is_replayed(self) -> None:
+        created = await self.create(seed=1, filters={"limit": 4})
+        proposal_id = part(created, "proposal")["id"]
+        first = await self.edited(proposal_id, 1, {"kind": "add", "count": 2}, "op-race-0001")
+        real = Store.proposal_receipt
+        reads: list[str] = []
+
+        def late(store: Store, operation_id: str) -> JsonObject | None:
+            # The retry's first receipt read happens just before the first attempt's write.
+            reads.append(operation_id)
+            return None if len(reads) == 1 else real(store, operation_id)
+
+        with patch.object(Store, "proposal_receipt", late):
+            retry = await self.edit(proposal_id, 1, {"kind": "add", "count": 2}, "op-race-0001")
+        self.assertEqual(retry.status_code, 200, retry.text)
+        self.assertTrue(payload(retry)["replayed"])
+        self.assertEqual(self.song_ids(payload(retry)), self.song_ids(first))
+        self.assertEqual(part(payload(retry), "proposal")["revision"], 2)
+
+    async def test_a_remove_that_leaves_a_total_short_says_nothing_was_added(self) -> None:
+        total = {"total_length": {"mode": "at_least", "seconds": 800}}
+        created = await self.create(contract_version=5, seed=1, filters=total)
+        proposal_id = part(created, "proposal")["id"]
+        ids = self.song_ids(created)
+        removed = await self.edited(proposal_id, 1, {"kind": "remove", "ids": [ids[0]]})
+        summary = str(part(removed, "proposal")["summary"])
+        self.assertIn("The songs left are not at least 13.3 minutes", summary)
+        self.assertNotIn("Adding 0", summary)
+
     async def test_remove_keeps_the_rest_in_order_and_never_picks_the_removed_again(self) -> None:
         created = await self.create(seed=1, filters={"limit": 6})
         proposal_id = part(created, "proposal")["id"]
@@ -1010,7 +1039,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertEqual(report["unmet_reason"], "not_found")
         summary = str(part(removed, "proposal")["summary"])
-        self.assertIn("kept songs stayed as they were", summary)
+        self.assertIn("nothing was added in their place", summary)
         self.assertNotIn("search limit", summary)
 
     async def test_another_with_pinned_songs_meets_a_total_length_around_them(self) -> None:

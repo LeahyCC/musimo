@@ -120,6 +120,10 @@ class Proposals:
         latest = base["latest"]
         assert isinstance(latest, int)
         if body.revision != latest:
+            # The first attempt of this retry may have landed between the two reads above.
+            first = self.bot.store.proposal_receipt(body.operation_id)
+            if first is not None:
+                return self._edit_replayed(first, wanted)
             raise self._superseded(latest)
         intent = _edited(Intent.model_validate(base["intent"]), _ids(base), body.edit)
         saved = self._save(proposal_id, body.revision, intent, cancelled, wanted)

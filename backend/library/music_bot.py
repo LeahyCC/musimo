@@ -1220,9 +1220,10 @@ class MusicBot:
             assert ms is not None
             return ms
 
-        taken = [item(song, ms) for song in kept if (ms := length_ms(song.duration)) is not None]
-        # A kept song with no usable length cannot count, but it is not dropped either.
-        unknown_length += len(kept) - len(taken)
+        # A kept song with no usable length adds nothing to the total and is counted as unknown,
+        # but it still holds its place in the artist cap and the title rule.
+        taken = [item(song, length_ms(song.duration) or 0) for song in kept]
+        unknown_length += sum(1 for song in kept if length_ms(song.duration) is None)
         eligible = [
             song
             for song in candidates
@@ -1397,6 +1398,12 @@ def _duration_sentence(report: dict[str, object], fixed: int | None = None) -> s
         sentence = f" No selection of whole songs here can be {asked}; no filters were relaxed."
         if report["kept"]:
             sentence = f" No selection that keeps those songs can be {asked}; none were dropped."
+    elif fixed == 0:
+        # Removing songs keeps exactly the rest, so nothing was added to make up the length.
+        sentence = (
+            f" The songs left are not {asked}; nothing was added in their place and no filters "
+            "were relaxed."
+        )
     elif fixed is not None:
         sentence = (
             f" Adding {fixed} {'song' if fixed == 1 else 'songs'} did not make it {asked}; "

@@ -1214,6 +1214,18 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((report["unknown_length"], report["kept"], report["met"]), (1, 2, True))
         self.assertEqual(report["total_seconds"], 600.0)
 
+    def test_a_kept_song_with_no_length_still_holds_its_artist_place(self) -> None:
+        # Harbor has four songs. Two are kept, one with no length; the cap of two is full.
+        self.lengths({"Echo": 0})
+        kept = [self.ids["Echo"], self.ids["Echo (Live)"]]
+        harbor = {
+            self.ids[t] for t in ("Echo", "Echo (Live)", "Echo (Remix)", "Echo - 2011 Remaster")
+        }
+        for context in ({"keep_ids": kept}, {"keep_ids": kept, "add_count": 5}):
+            with self.subTest(context=context):
+                result = self.timed("at_least", 2400, contract_version=5, context=context)
+                self.assertEqual(len(harbor & set(self.ids_of(result))), ARTIST_CAP)
+
 
 class SolverTests(unittest.TestCase):
     """The search alone, with no library: lengths in milliseconds."""
