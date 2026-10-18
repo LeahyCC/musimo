@@ -168,7 +168,7 @@ test('an album page opens with its cover, year, artist link and meta line', asyn
     '/library/artists/artist-1',
   )
   await expect(header.locator('.library-count')).toHaveText('2 songs · 7 min · Ambient')
-  for (const name of ['Play all', 'Shuffle', 'More actions for Clear Water'])
+  for (const name of ['Play all', 'Shuffle', 'Queue', 'More actions for Clear Water'])
     await expect(header.getByRole('button', { name })).toBeVisible()
 
   // The browse heading and the view switcher give way to the header; a slim row carries the way
@@ -350,6 +350,12 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await expect.poll(names).toEqual(['Stone Lines', 'Clear Water'])
 
   await expect(page.getByRole('img', { name: /Clear Water leads with 30 plays/ })).toBeVisible()
+  // The most played songs lead the page, most played first, and link on to the whole list.
+  await expect(page.getByRole('heading', { name: 'Top songs' })).toBeVisible()
+  await expect(page.locator('.library-top-songs .library-track-play strong').first()).toHaveText(
+    'Cinder',
+  )
+  await expect(page.getByRole('button', { name: 'All 3 songs' })).toBeVisible()
   await page.getByRole('button', { name: 'All songs' }).click()
   await expect(page.getByLabel('Sort songs')).toBeVisible()
   // All songs keeps the same header rather than shrinking to a bare count.
