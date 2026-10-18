@@ -61,6 +61,11 @@ const rowClassName =
 // No colours here: each row picks one pair, since `cx` does not merge two of the same property.
 const tileClassName = 'grid size-[32px] shrink-0 place-items-center overflow-hidden rounded-[8px]'
 
+const OPEN_EVENT = 'musimo:open-palette'
+
+/** Opens the palette from a button, such as the Listening room's header search. */
+export const openCommandPalette = () => window.dispatchEvent(new Event(OPEN_EVENT))
+
 export function CommandPalette() {
   const dialog = useRef<HTMLDialogElement>(null)
   const input = useRef<HTMLInputElement>(null)
@@ -255,6 +260,14 @@ export function CommandPalette() {
   }
 
   useEffect(() => {
+    const open = () => {
+      setText('')
+      setActive(0)
+      setOpen(true)
+      if (!dialog.current?.open) dialog.current?.showModal()
+      input.current?.focus()
+    }
+
     const key = (event: globalThis.KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
@@ -262,15 +275,15 @@ export function CommandPalette() {
           dialog.current.close()
           return
         }
-        setText('')
-        setActive(0)
-        setOpen(true)
-        dialog.current?.showModal()
-        input.current?.focus()
+        open()
       }
     }
     window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    window.addEventListener(OPEN_EVENT, open)
+    return () => {
+      window.removeEventListener('keydown', key)
+      window.removeEventListener(OPEN_EVENT, open)
+    }
   }, [])
 
   // The highlighted row follows the arrow keys, so it has to stay in view.

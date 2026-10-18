@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Search and catalog pages
+
+- Restyle search and the album, artist and podcast pages for both layouts. Search has pill tabs, a top-result card (Classic) or banner (Listening room) showing how much of the best-matching artist is in the library with a button to get the missing albums, and status badges and download icons on every track row. The album, artist and podcast pages open with a hero showing a coverage bar of what is in the library, what is another edition, queued or missing, with the primary action and destination folder. The artist page now lists Popular, Albums and Singles & EPs, and its release filter starts on all releases. A podcast has "Download latest" for its newest episodes
+
 ### Music bot
 
 - Keep a refined list usable after one of its songs is deleted. Refresh preview, Remove and a chat follow-up leave the deleted song out and say how many were dropped, where they used to fail every time (#200)
@@ -20,6 +24,7 @@
 
 ### Search and downloads
 
+- Restyle the Downloads page for both layouts. Classic has underline tabs with counts, a header that says where files go, and one card per job with its stage, one bar and the source. The Listening room has four number tiles as tabs and groups its queue by album or artist download, with a segment per track and the five step bar per job. Done shows the path, a match badge when the job has a score and Play. No match shows the sources that answered and Pick a match. Errors are grouped by cause with the fix link on the group, Retry all and Clear errors. History has a heading per day. The overflow menu is gone: each clean-up lives on its tab
 - Show a problem for every download source in Settings, Diagnostics and the queue, not only a YouTube failure or a paused SoundCloud row. A dropped connection is its own error and does not pause the source. A finished download clears that source's error. A Deezer account download keeps its own row, apart from the catalog probe. A song with no match no longer marks the whole install as needing attention
 - Count a saved download toward the pause between groups before the queue starts the next one. A SoundCloud match links to the public page, not the API address. A saved file drops the tool's failed lookup lines. A name lookup miss is retried instead of being called a missing recording
 - Pause between groups of downloads from Settings: a track count, then a wait in minutes, so a long queue does not keep the connection busy the whole time

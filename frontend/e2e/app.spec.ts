@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test'
 import type { MusicResult } from '../src/api'
 import { ORIGIN } from './env'
 import { librarySong, playerFixtures } from './library-fixtures'
+import { mainNav, toasts } from './nav'
 import { writableDestination } from './queue-fixtures'
 
 // Invented catalog records. Settings, queue, diagnostics and events use the real API.
@@ -61,7 +62,7 @@ test.beforeEach(async ({ page }) => {
   await catalogFixtures(page)
 })
 
-test('keyboard search, tab and sort survive navigation and refresh', async ({ page }) => {
+test('keyboard search, tab and sort survive navigation and refresh', async ({ page, isMobile }) => {
   await page.goto('/search')
   await expect(page.getByRole('status').filter({ hasText: /^Live$/ })).toBeVisible()
   await page.keyboard.press('/')
@@ -79,10 +80,9 @@ test('keyboard search, tab and sort survive navigation and refresh', async ({ pa
     'true',
   )
   await expect(page.getByRole('combobox', { name: 'Sort' })).toHaveValue('title')
-  await page
-    .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('link', { name: 'Settings' })
-    .click()
+  // A phone's bar has no Settings tab (Home carries it), so there the address is typed.
+  if (isMobile) await page.goto('/settings')
+  else await mainNav(page).getByRole('link', { name: 'Settings' }).click()
   await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible()
   await page.goBack()
   await expect(search).toHaveValue('Fixture')
@@ -820,22 +820,28 @@ test('artist review counts selections, excludes failed albums and retries submis
   await page.goto('/artists/7')
   await expect(
     page.getByRole('main').getByRole('region').getByRole('heading', { level: 2 }),
-  ).toHaveText(['Popular songs', 'Popular albums', 'Discography'])
+  ).toHaveText(['Popular', 'Albums', 'Singles & EPs'])
   await expect(page.getByText('Most popular song', { exact: true })).toBeVisible()
-  const popularAlbums = page.getByRole('region', { name: 'Popular albums' })
-  await expect(popularAlbums.getByRole('article')).toHaveCount(1)
-  await expect(popularAlbums).not.toContainText('Another artist album')
-  const discography = page.getByRole('region', { name: 'Discography' })
-  await expect(discography.getByRole('article')).toHaveCount(2)
-  await expect(discography.getByRole('article').first()).toContainText('Fixture EP')
-  await discography.getByRole('combobox', { name: 'Show' }).selectOption('album')
+  const albums = page.getByRole('region', { name: 'Albums', exact: true })
+  const singles = page.getByRole('region', { name: 'Singles & EPs', exact: true })
+  await expect(albums.getByRole('article')).toHaveCount(1)
+  // Every release shows by default, newest first.
+  await expect(singles.getByRole('article')).toHaveCount(2)
+  await expect(singles.getByRole('article').first()).toContainText('Fixture single')
+  const filters = page.getByRole('group', { name: 'Release filters' })
+  await filters.getByRole('combobox', { name: 'Show' }).selectOption('albums-eps')
+  await expect(page).toHaveURL(/type=albums-eps/)
+  await expect(singles.getByRole('article')).toHaveCount(1)
+  await expect(singles.getByRole('article').first()).toContainText('Fixture EP')
+  await filters.getByRole('combobox', { name: 'Show' }).selectOption('album')
   await expect(page).toHaveURL(/type=album/)
-  await expect(discography.getByRole('article')).toHaveCount(1)
-  await discography.getByRole('combobox', { name: 'Sort' }).selectOption('title-desc')
+  await expect(albums.getByRole('article')).toHaveCount(1)
+  await expect(singles).toHaveCount(0)
+  await filters.getByRole('combobox', { name: 'Sort' }).selectOption('title-desc')
   await expect(page).toHaveURL(/sort=title-desc/)
   await page.reload()
-  await expect(discography.getByRole('combobox', { name: 'Show' })).toHaveValue('album')
-  await expect(discography.getByRole('combobox', { name: 'Sort' })).toHaveValue('title-desc')
+  await expect(filters.getByRole('combobox', { name: 'Show' })).toHaveValue('album')
+  await expect(filters.getByRole('combobox', { name: 'Sort' })).toHaveValue('title-desc')
   await page.getByRole('button', { name: 'Download all music' }).click()
   const musicDialog = page.getByRole('dialog', { name: 'Choose music to download' })
   await expect(musicDialog.getByText(/^3 releases · 3 songs/)).toBeVisible()
@@ -926,34 +932,79 @@ test('artist review keeps Download off when the destination is read-only', async
   await expect(dialog.getByText(/missing or read-only/)).toHaveCount(0)
 })
 
-test('mobile nav shows all five items within the bottom bar', async ({ page, isMobile }) => {
+test('mobile nav shows its five tabs within the bottom bar', async ({ page, isMobile }) => {
   if (!isMobile) {
     test.skip()
   }
   await page.goto('/')
-  const nav = page.getByRole('navigation', { name: 'Main navigation' })
-  const searchLink = nav.getByRole('link', { name: 'Search' })
-  const libraryLink = nav.getByRole('link', { name: 'Library' })
-  const downloadsLink = nav.getByRole('link', { name: 'Downloads' })
-  const settingsLink = nav.getByRole('link', { name: 'Settings' })
-  const diagnosticsLink = nav.getByRole('link', { name: 'Diagnostics' })
-
-  await expect(searchLink).toBeVisible()
-  await expect(libraryLink).toBeVisible()
-  await expect(downloadsLink).toBeVisible()
-  await expect(settingsLink).toBeVisible()
-  await expect(diagnosticsLink).toBeVisible()
+  const nav = mainNav(page)
+  const tabs = ['Home', 'Search', 'Library', 'Octive', 'Downloads']
+  await expect(nav.getByRole('link')).toHaveText(tabs)
+  await expect(nav.getByRole('link', { name: 'Home' })).toHaveAttribute('aria-current', 'page')
 
   const sidebar = page.locator('.sidebar')
   const sidebarBox = await sidebar.boundingBox()
   expect(sidebarBox).toBeTruthy()
   expect(sidebarBox!.height).toBe(64)
 
-  const diagnosticsBox = await diagnosticsLink.boundingBox()
-  expect(diagnosticsBox).toBeTruthy()
-  expect(diagnosticsBox!.y + diagnosticsBox!.height).toBeLessThanOrEqual(
-    sidebarBox!.y + sidebarBox!.height,
-  )
+  const lastBox = await nav.getByRole('link', { name: 'Downloads' }).boundingBox()
+  expect(lastBox).toBeTruthy()
+  expect(lastBox!.y + lastBox!.height).toBeLessThanOrEqual(sidebarBox!.y + sidebarBox!.height)
+
+  // Settings and Diagnostics are not tabs; Home's header reaches them.
+  await expect(page.getByRole('link', { name: 'Settings', exact: true })).toBeVisible()
+  await expect(page.getByRole('link', { name: 'Diagnostics', exact: true })).toBeVisible()
+})
+
+test('the sidebar groups Library and lights the page it is on', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'The sidebar is for wide windows.')
+  await page.goto('/')
+  const nav = mainNav(page)
+  for (const name of ['Home', 'Search', 'Octive', 'Downloads', 'Settings', 'Diagnostics'])
+    await expect(nav.getByRole('link', { name, exact: true })).toBeVisible()
+  for (const name of ['Albums', 'Artists', 'Tracks', 'Playlists'])
+    await expect(nav.getByRole('link', { name: new RegExp(`^${name}`) })).toBeVisible()
+  await expect(nav.locator('[aria-current="page"]')).toHaveText('Home')
+
+  // A catalog page is found by searching, so Search stays lit there.
+  await page.goto('/albums/42')
+  await expect(nav.locator('[aria-current="page"]')).toHaveText(/^Search/)
+
+  await page.goto('/library/artists')
+  await expect(nav.locator('[aria-current="page"]')).toHaveText('Artists')
+  await page.goto('/music-bot')
+  await expect(nav.locator('[aria-current="page"]')).toHaveText('Octive')
+})
+
+test('Support opens one dialog holding the three links', async ({ page, isMobile }) => {
+  test.skip(isMobile, 'The sidebar is for wide windows.')
+  await page.goto('/')
+  await page.getByRole('button', { name: 'Support' }).click()
+  const dialog = page.getByRole('dialog', { name: 'Support Musimo' })
+  for (const name of ['Donate to MusiCares', 'Buy me a coffee', 'Star on GitHub'])
+    await expect(dialog.getByRole('link', { name })).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toBeHidden()
+})
+
+test('the top bar has the search field, the palette button and Ask Octive', async ({
+  page,
+  isMobile,
+}) => {
+  await page.goto('/')
+  const bar = page.getByRole('banner')
+  await expect(bar.getByRole('textbox', { name: 'Search music or paste a link' })).toBeVisible()
+  await expect(bar.getByRole('link', { name: /Octive/ })).toBeVisible()
+  const palette = bar.getByRole('button', { name: 'Command palette' })
+  if (isMobile) {
+    // No keyboard on a phone, so no button for it.
+    await expect(palette).toBeHidden()
+    return
+  }
+  await palette.click()
+  await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible()
+  await page.keyboard.press('Escape')
+  expect((await bar.boundingBox())?.height).toBe(60)
 })
 
 test('command palette includes library and now playing', async ({ page }) => {
@@ -1186,8 +1237,7 @@ test('no preview state shows disabled button and label', async ({ page }) => {
   )
   await page.goto('/albums/42')
   await page.getByRole('button', { name: 'Find preview No preview track' }).click()
-  const player = page.locator('footer.live-player')
-  await expect(player.getByText('No preview available for this track.')).toBeVisible()
+  await expect(toasts(page).getByText('No preview available for this track.')).toBeVisible()
   const artButton = page.getByRole('button', { name: 'No preview No preview track' })
   await expect(artButton).toBeDisabled()
   const noPreviewButton = page.getByRole('button', { name: 'No preview', exact: true })
@@ -1426,4 +1476,118 @@ test('diagnostics shows not ready when components need attention', async ({ page
   await expect(page.getByRole('heading', { name: 'Ready to download?' })).toBeVisible()
   const healthStrip = page.locator('.health-strip')
   await expect(healthStrip).toBeVisible()
+})
+
+test.describe('Listening room layout', () => {
+  test.skip(({ isMobile }) => isMobile, 'The phone half is in phone.spec.ts.')
+
+  /** Three songs restored, the first loaded, and every queue save answered with `saved()`. */
+  async function roomQueue(page: Page, saved: () => number = () => 204) {
+    await page.addInitScript(() => localStorage.setItem('musimo.layout', 'room'))
+    await playerFixtures(page)
+    await page.route('**/api/player/queue', (route) =>
+      route.fulfill(
+        route.request().method() === 'GET'
+          ? {
+              json: {
+                current: 'song-1',
+                position: 0,
+                entry: ['song-1', 'song-2', 'song-3'].map((id) => librarySong(id)),
+              },
+            }
+          : { status: saved() },
+      ),
+    )
+  }
+
+  test('a rail, a page pane and a player dock with Up next', async ({ page }) => {
+    await roomQueue(page)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const nav = page.getByRole('navigation', { name: 'Main navigation' })
+    for (const name of ['Home', 'Search', 'Library', 'Octive', 'Queue', 'Settings', 'Diagnostics'])
+      await expect(nav.getByRole('link', { name, exact: true })).toBeVisible()
+    await expect(nav.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+
+    // The dock stands in for the Classic footer, which stays only for its audio elements.
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    await expect(dock).toContainText('Song song-1')
+    await expect(page.getByRole('contentinfo')).toBeHidden()
+    const play = await dock.getByRole('button', { name: 'Play', exact: true }).boundingBox()
+    expect(play?.width).toBe(48)
+    expect(play?.height).toBe(48)
+    // Beside the page, not over it.
+    const main = await page.locator('main').boundingBox()
+    const dockBox = await dock.boundingBox()
+    expect(main && dockBox && main.x + main.width <= dockBox.x).toBe(true)
+
+    const upNext = dock.getByRole('region', { name: 'Up next' })
+    const rows = upNext.getByRole('button', { name: /^Play Song/ })
+    await expect(rows).toHaveCount(2)
+    await upNext.getByRole('button', { name: 'Play Song song-2' }).press('Alt+ArrowDown')
+    await expect(rows.first()).toHaveAccessibleName('Play Song song-3')
+    await rows.first().hover()
+    await upNext.getByRole('button', { name: 'Remove Song song-3 from the queue' }).click()
+    await expect(rows).toHaveCount(1)
+
+    await page.getByRole('button', { name: 'Search or paste a link' }).click()
+    await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible()
+    await page.keyboard.press('Escape')
+
+    // Now Playing has every control the dock has, so the dock steps aside there.
+    await dock.getByRole('link', { name: 'Open Now Playing' }).first().click()
+    await expect(page).toHaveURL(/\/now-playing$/)
+    await expect(dock).toBeHidden()
+  })
+
+  test('a failed queue save shows in Up next and as a toast, and Retry clears both', async ({
+    page,
+  }) => {
+    let status = 500
+    await roomQueue(page, () => status)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    await dock.getByRole('button', { name: 'Clear queue' }).click()
+    const strip = dock.getByText('Queue not saved to server')
+    const toast = page.locator('[data-ui="toast"]')
+    await expect(strip).toBeVisible()
+    await expect(toast).toContainText('Queue not saved to the server.')
+    // The toast sits over the page's corner, clear of the dock and its Up next.
+    const toastBox = await toast.boundingBox()
+    const dockBox = await dock.boundingBox()
+    expect(toastBox && dockBox && toastBox.x + toastBox.width <= dockBox.x).toBe(true)
+
+    status = 204
+    await dock.getByRole('button', { name: 'Retry' }).click()
+    await expect(strip).toBeHidden()
+    await expect(toast).toHaveCount(0)
+  })
+
+  test('under the tablet edge the dock is a bar under the page with Up next above it', async ({
+    page,
+  }) => {
+    await roomQueue(page)
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    await expect(dock).toContainText('Song song-1')
+    const main = await page.locator('main').boundingBox()
+    const bar = await dock.boundingBox()
+    expect(main && bar && bar.y >= main.y + main.height).toBe(true)
+    expect(bar?.height).toBe(76)
+    for (const name of ['Previous track', 'Play', 'Next track'])
+      await expect(dock.getByRole('button', { name, exact: true })).toBeVisible()
+
+    await dock.getByRole('button', { name: 'Up next, 2 songs' }).click()
+    const upNext = dock.getByRole('region', { name: 'Up next' })
+    await expect(upNext.getByRole('button', { name: /^Play Song/ })).toHaveCount(2)
+    const panel = await upNext.boundingBox()
+    expect(panel && bar && panel.y + panel.height <= bar.y).toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(upNext).toBeHidden()
+  })
 })

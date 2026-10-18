@@ -129,7 +129,17 @@ for (const ownedCount of [0, 1, 2]) {
       await route.fulfill({ json: { id: 'fixture', jobs: [], skipped: ownedCount } })
     })
     await page.goto('/albums/42')
-    const action = page.locator('.album-actions').getByRole('button')
+    // The hero's bar says it in words too: what is here, and what is still missing.
+    const coverage = page.locator("[data-ui='coverage-bar']")
+    await expect(coverage).toContainText(
+      ownedCount === 0 ? '2 missing of 2' : `${ownedCount} in library`,
+    )
+    if (ownedCount === 1) await expect(coverage).toContainText('1 missing of 2')
+    // The hero also offers a Preview, so the download is the one that is not that.
+    const action = page
+      .locator('.album-actions')
+      .getByRole('button')
+      .filter({ hasNotText: 'Preview' })
     await expect(action).toHaveCount(1)
     await expect(action).toHaveText(ownedCount === 1 ? 'Download missing (1)' : 'Download album')
     await expect(page.locator('.album-actions').getByText('to /music · Original')).toBeVisible()

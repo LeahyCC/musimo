@@ -17,6 +17,7 @@ import { useNavigate } from '@tanstack/react-router'
 import { Disc3 } from 'lucide-react'
 
 import { cx } from '../../lib/cx'
+import { useLayout } from '../../lib/layout'
 import { leavingStyle, useLeaving } from '../../lib/use-leaving'
 import { usePhone } from '../../lib/use-phone'
 import { activeTheme, applyTheme, subscribeTheme } from '../../theme/store'
@@ -237,6 +238,12 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       .catch(() => setNotice('The popout could not open.'))
   }, [])
 
+  // The layout's fonts key on `data-layout` on the root, which the shell only sets in the tab.
+  const layout = useLayout()
+  useEffect(() => {
+    if (pipWindow) pipWindow.document.documentElement.dataset.layout = layout
+  }, [pipWindow, layout])
+
   const closePopout = useCallback(() => pipWindow?.close(), [pipWindow])
 
   // A popout cannot go fullscreen itself, so the request travels back to the
@@ -348,6 +355,16 @@ const stageClassName =
    style.css override both, which is why the square's ratio is here and not on `stageClassName`. */
 const dockedStageClassName = (large: boolean) =>
   large ? 'h-[100cqh] w-[100cqw]' : 'aspect-square w-[min(100cqw,100cqh)] max-phone:w-full'
+
+/* The Listening room's stage sits in a card that grows with its content, so there is no height to
+   share out: a square as wide as its column, or, Large, the card's width and a fixed share of the
+   window, letterboxed. */
+const roomStageClassName = (large: boolean) =>
+  large ? 'h-[clamp(320px,62dvh,760px)] w-full' : 'aspect-square w-full'
+
+/** How the docked stage finds its size: from the room its column leaves (Classic), or from its
+    column's width alone (the Listening room's card). */
+export type StageFit = 'column' | 'width'
 
 // Whether anyone can see the docked stage: the tab is in front and the stage is on screen (not
 // scrolled away, and not under the phone layout's scroll). The stage has no pause, so the caller
@@ -465,6 +482,11 @@ function Stage({
     onCyclePreset: view === 'visualizer' ? popout.cyclePreset : undefined,
   })
   const artwork = <StageArtwork art={art} />
+  const layout = useLayout()
+  const year = track?.year ?? player.track?.year
+  const artLabel = [track?.album ?? player.track?.album, year ? String(year) : '']
+    .filter(Boolean)
+    .join(' · ')
   // Full screen, the popout and a phone each have one size, so there is nothing to switch there.
   const resizable = placement === 'docked' && !fullscreen && !popout.phone
   // Where a right-click landed, while the artwork menu is open. Docked only: in the popout there is
@@ -522,6 +544,7 @@ function Stage({
         artwork
       )}
       <NowPlayingOverlay
+        layout={layout}
         placement={placement}
         fullscreen={fullscreen}
         controls={fullscreen || placement === 'popout'}
@@ -530,9 +553,13 @@ function Stage({
         size={popout.size}
         onSize={resizable ? popout.toggleSize : undefined}
         view={view}
-        onToggleView={popout.toggleView}
+        onView={popout.setView}
         preset={popout.preset}
         onPreset={popout.setPreset}
+        onCyclePreset={popout.cyclePreset}
+        autoPresets={popout.autoPresets}
+        onAutoPresets={popout.setAutoPresets}
+        artLabel={artLabel}
       />
       {menu && track && (
         <ArtworkMenu
@@ -549,14 +576,15 @@ function Stage({
 
 // The Now Playing hero slot: the stage, or the dimmed artwork with a way back
 // while it plays in the popout window.
-export function NowPlayingStage() {
+export function NowPlayingStage({ fit = 'column' }: { fit?: StageFit }) {
   const popout = useNowPlayingPopout()
   const player = usePlayer()
   const container = popout.dockedStage
   const [fullscreen, setFullscreen] = useState(false)
   const track = player.libraryTrack
   const art = track ? artUrl(track) : (player.track?.art ?? '')
-  const docked = dockedStageClassName(popout.size === 'large' && !popout.phone)
+  const large = popout.size === 'large' && !popout.phone
+  const docked = fit === 'width' ? roomStageClassName(large) : dockedStageClassName(large)
 
   useEffect(() => {
     const onChange = () => setFullscreen(document.fullscreenElement === container.current)
@@ -595,7 +623,12 @@ export function NowPlayingStage() {
           its top left, so the art's edge lines up with the title and controls under it when a short
           window makes the square narrower than the column (Large fills it instead). A phone has no
           height to hand out, so there it is only a block. */}
-      <div className="relative grid min-h-0 flex-1 place-items-start [container-type:size] max-phone:[container-type:normal]">
+      <div
+        className={cx(
+          'relative grid min-h-0 flex-1 place-items-start',
+          fit === 'column' && '[container-type:size] max-phone:[container-type:normal]',
+        )}
+      >
         {/* Before the stage, so the stage is painted over it. It is the stage's own size and reaches
             only 16px past it, short of the title below. */}
         <NowPlayingGlow art={art} className={docked} />

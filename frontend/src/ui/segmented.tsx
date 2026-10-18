@@ -8,6 +8,7 @@ export type SegmentedOption<Value extends string> = {
   label: ReactNode
   /** Needed when `label` is only an icon. */
   ariaLabel?: string
+  disabled?: boolean
 }
 
 export interface SegmentedProps<Value extends string> {
@@ -16,6 +17,8 @@ export interface SegmentedProps<Value extends string> {
   value: Value
   options: readonly SegmentedOption<Value>[]
   onChange: (value: Value) => void
+  /** Greys every segment out, e.g. while a request is out. */
+  disabled?: boolean
   className?: string
 }
 
@@ -29,6 +32,7 @@ export function Segmented<Value extends string>({
   value,
   options,
   onChange,
+  disabled,
   className,
 }: SegmentedProps<Value>) {
   const name = useId()
@@ -45,12 +49,14 @@ export function Segmented<Value extends string>({
     >
       {options.map((option) => {
         const selected = option.value === value
+        const off = disabled || option.disabled
         return (
           <label
             key={option.value}
             className={cx(
               'inline-flex h-[30px] cursor-pointer items-center justify-center gap-[6px] rounded-md px-[14px] text-small font-medium whitespace-nowrap coarse:min-h-11',
               selected ? 'bg-active text-text' : 'text-muted hover:text-text',
+              off && 'cursor-not-allowed opacity-50',
               // The radio is hidden, so its focus ring goes on the label.
               'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent has-[:focus-visible]:outline-solid',
             )}
@@ -61,6 +67,7 @@ export function Segmented<Value extends string>({
               name={name}
               value={option.value}
               checked={selected}
+              disabled={off}
               aria-label={option.ariaLabel}
               onChange={() => onChange(option.value)}
             />
