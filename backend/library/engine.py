@@ -17,6 +17,7 @@ from backend.core.audio_recipes import Recipe
 from backend.library.audio_profile import BPM_WINDOW, ProfileSet
 from backend.library.engine_contract import (
     CONTRACT_VERSION,
+    EDIT_VERSION,
     ENGINE_VERSION,
     MEMORY_VERSION,
     SELECTION_LIMIT,
@@ -27,7 +28,14 @@ from backend.library.engine_contract import (
     Intent,
     registry,
 )
-from backend.library.music_bot import BotError, BotRequest, MusicBot, SearchPlan, negation_only
+from backend.library.music_bot import (
+    BotError,
+    BotRequest,
+    Kept,
+    MusicBot,
+    SearchPlan,
+    negation_only,
+)
 from backend.library.player import LibraryView
 
 # resolve never reads the prompt; BotRequest needs some text.
@@ -97,7 +105,8 @@ def refusal(exc: ValidationError, invalid: str, prefix: str = "") -> EngineError
         if (item["loc"], item["type"]) == (("filters", "limit"), "less_than_equal")
         or (
             item["type"] == "too_long"
-            and item["loc"] in {("context", "proposal_ids"), ("context", "queue_ids")}
+            and item["loc"]
+            in {("context", "proposal_ids"), ("context", "queue_ids"), ("context", "keep_ids")}
         )
     ]
     if oversized:
@@ -217,6 +226,11 @@ class Engine:
                     request.model_copy(update={"shown_ids": shown}),
                     now,
                     intent.filters.total_length,
+                    Kept(
+                        tuple(intent.context.keep_ids),
+                        frozenset(intent.filters.exclude_ids),
+                        intent.context.add_count,
+                    ),
                 )
             except BotError as exc:
                 raise EngineError("engine_rejected", exc.detail, exc.status) from exc
@@ -241,6 +255,24 @@ class Engine:
         self, intent: Intent, scalar: Recipe | None, embedding: Recipe | None
     ) -> None:
         filters = intent.filters
+        context = intent.context
+        newer = [
+            name
+            for name, given in (
+                ("filters.exclude_ids", bool(filters.exclude_ids)),
+                ("context.keep_ids", bool(context.keep_ids)),
+                ("context.pinned_ids", bool(context.pinned_ids)),
+                ("context.add_count", context.add_count is not None),
+            )
+            if given
+        ]
+        if newer and intent.contract_version < EDIT_VERSION:
+            raise EngineError(
+                "unknown_field",
+                f"Kept, pinned and excluded songs need contract version {EDIT_VERSION}.",
+                422,
+                [ErrorField(field=name, message="Unknown field") for name in newer],
+            )
         if filters.total_length is not None:
             if intent.contract_version < TOTAL_LENGTH_VERSION:
                 raise EngineError(
@@ -313,8 +345,11 @@ class Engine:
                 filters.model_dump() == type(filters)().model_dump()
                 and intent.scope == "library"
                 and intent.seed is None
-                and not intent.context.proposal_ids
-                and not intent.context.queue_ids
+                and not context.proposal_ids
+                and not context.queue_ids
+                and not context.keep_ids
+                and not context.pinned_ids
+                and context.add_count is None
             )
             if not blank:
                 raise EngineError(
@@ -371,6 +406,7 @@ class Engine:
                 ("reference_id", [context.reference_id] if context.reference_id else []),
                 ("proposal_ids", context.proposal_ids),
                 ("queue_ids", context.queue_ids),
+                ("keep_ids", context.keep_ids),
             )
             if any(sid not in view.stored for sid in ids)
         ]
@@ -378,6 +414,7 @@ class Engine:
             raise EngineError(
                 "unknown_song", "Those song ids are not in the library.", 422, unknown
             )
+        self._check_kept(intent, view)
         if intent.action != "search":
             return
         if intent.scope != "library" and not (context.proposal_ids or context.queue_ids):
@@ -394,6 +431,48 @@ class Engine:
                 "Choose a current or reference song to compare with.",
                 422,
                 [ErrorField(field="context.reference_id", message="Required")],
+            )
+
+    def _check_kept(self, intent: Intent, view: LibraryView) -> None:
+        """Kept songs are placed as they are, so they must make sense together and still play.
+        One that cannot is refused by name, never dropped: a pinned song is the person's."""
+        context, filters = intent.context, intent.filters
+        if not (context.keep_ids or context.pinned_ids or context.add_count is not None):
+            return
+        bad: list[ErrorField] = []
+        if intent.scope != "library":
+            bad.append(ErrorField(field="context.keep_ids", message="Library scope only"))
+        if len(set(context.keep_ids)) != len(context.keep_ids):
+            bad.append(ErrorField(field="context.keep_ids", message="A song is listed twice"))
+        if not set(context.pinned_ids) <= set(context.keep_ids):
+            bad.append(ErrorField(field="context.pinned_ids", message="Must be kept songs"))
+        if context.add_count == 0 and not context.keep_ids:
+            bad.append(
+                ErrorField(field="context.add_count", message="Nothing kept and nothing added")
+            )
+        if set(filters.exclude_ids) & set(context.keep_ids):
+            bad.append(ErrorField(field="filters.exclude_ids", message="A kept song is excluded"))
+        if bad:
+            raise EngineError("invalid_intent", "The kept songs do not fit together.", 422, bad)
+        if len(context.keep_ids) + (context.add_count or 0) > SELECTION_LIMIT:
+            raise EngineError(
+                "selection_too_large",
+                f"A selection holds at most {SELECTION_LIMIT} songs. Nothing was cut.",
+                422,
+                [ErrorField(field="context.add_count", message=f"At most {SELECTION_LIMIT}")],
+            )
+        unplayable = [
+            ErrorField(field=f"context.keep_ids.{sid}", message="The file is unavailable")
+            for sid in context.keep_ids
+            if self.bot.player.local_file(sid) is None
+        ]
+        if unplayable:
+            raise EngineError(
+                "song_unavailable",
+                "A kept song cannot be played now, so it is not dropped quietly. Remove it, or "
+                "try again when its folder is back.",
+                409,
+                unplayable,
             )
 
     def _check_reference(
@@ -437,7 +516,7 @@ class Engine:
                     "allow_artists": [],
                     "add_count": 0,
                     "explanation": intent.explanation,
-                    **intent.filters.model_dump(exclude={"total_length"}),
+                    **intent.filters.model_dump(exclude={"total_length", "exclude_ids"}),
                 }
             )
         except ValidationError as exc:

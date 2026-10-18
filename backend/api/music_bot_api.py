@@ -141,6 +141,19 @@ def install_music_bot_routes(app: FastAPI, get: Callable[[], MusicBot]) -> None:
 
         return await _answer(run)
 
+    @app.post("/api/music-bot/proposals/{proposal_id}/edits", response_model=None)
+    async def edit_proposal(proposal_id: str, http: Request) -> JSONResponse | dict[str, object]:
+        """Another set, more songs or fewer, as the next revision with the filters carried
+        over. Writes only the proposal tables, once per operation id."""
+
+        async def run() -> dict[str, object]:
+            raw = await _body(http)
+            return await _until_done(
+                http, lambda cancelled: Proposals(get()).edit(proposal_id, raw, cancelled)
+            )
+
+        return await _answer(run)
+
     @app.get("/api/music-bot/proposals/{proposal_id}", response_model=None)
     async def read_proposal(
         proposal_id: str, revision: str | None = None

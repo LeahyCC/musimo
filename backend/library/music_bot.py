@@ -40,7 +40,9 @@ from backend.library.duration import (
     CANDIDATE_CAP,
     WORK_LIMIT,
     Item,
+    Outcome,
     TotalLength,
+    bounds,
     fit,
     length_ms,
 )
@@ -58,6 +60,63 @@ from backend.library.selection import (
 
 # How many places one artist may fill in a result, unless the plan names that artist.
 ARTIST_CAP = 2
+
+
+@dataclass(frozen=True)
+class Kept:
+    """What an edit of a stored proposal carries into a library search. Never part of the
+    chat's body: only the engine builds it, from a stored revision.
+
+    `ids` are kept first, in this order, as they are: not filtered again, and counted towards
+    the artist cap, the title rule, the limit and a length. `excluded` are never picked. With
+    `new_songs` None the search fills as the plan says after the kept songs; with a number it
+    adds at most that many, and the limit and a `target_seconds` fill add no more."""
+
+    ids: tuple[str, ...] = ()
+    excluded: frozenset[str] = frozenset()
+    new_songs: int | None = None
+
+
+def _add_within(
+    total_length: TotalLength, items: list[Item], taken: list[Item], count: int, cut: bool
+) -> Outcome:
+    """Add up to `count` items to `taken`, in walk order, skipping any that would reach the
+    ceiling or break the artist cap or the title rule. Whether the total then meets the target
+    is reported; a total the kept songs already put past the ceiling is proven unmet."""
+    floor, ceiling, _ = bounds(total_length.mode, total_length.seconds)
+    total = sum(item.ms for item in taken)
+    groups: dict[str, int] = {}
+    keys: set[object] = set()
+    for item in taken:
+        if item.group is not None:
+            groups[item.group] = groups.get(item.group, 0) + 1
+        if item.unique is not None:
+            keys.add(item.unique)
+    picked: list[int] = []
+    work = 0
+    for index, item in enumerate(items):
+        if len(picked) >= count:
+            break
+        work += 1
+        if ceiling is not None and total + item.ms >= ceiling:
+            continue
+        if item.group is not None and groups.get(item.group, 0) >= ARTIST_CAP:
+            continue
+        if item.unique is not None and item.unique in keys:
+            continue
+        picked.append(index)
+        total += item.ms
+        if item.group is not None:
+            groups[item.group] = groups.get(item.group, 0) + 1
+        if item.unique is not None:
+            keys.add(item.unique)
+    met = total >= floor and (ceiling is None or total < ceiling)
+    past = ceiling is not None and sum(item.ms for item in taken) >= ceiling
+    complete = len(picked) >= count or not cut
+    unmet: Literal["", "proven", "not_found"] = "" if met else ("proven" if past else "not_found")
+    return Outcome(picked, total, met, unmet, None, 0, complete, work)
+
+
 ShortText = Annotated[str, StringConstraints(min_length=1, max_length=120)]
 Suggestion = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=60)]
 Scope = Literal["library", "proposal", "queue"]
@@ -719,12 +778,17 @@ class MusicBot:
         request: BotRequest,
         now: datetime | None = None,
         total_length: TotalLength | None = None,
+        kept: Kept | None = None,
     ) -> dict[str, object]:
         """`now` pins the local clock for a caller that records it; None reads it here.
         `total_length` is the structured intent's total-length comparator. The chat never sets
-        it, so its `target_seconds` fill is unchanged."""
+        it, so its `target_seconds` fill is unchanged. `kept` is an edit's kept and excluded
+        songs (see Kept); the chat never sets it either."""
         if total_length is not None and (plan.target_seconds or plan.add_count):
             raise BotError("A total length replaces target_seconds and add_count.", 422)
+        kept = kept or Kept()
+        if kept.ids and plan.scope != "library":
+            raise BotError("Kept songs belong to a library search.", 422)
         plan = merge_plan(request.previous, plan)
         if plan.action not in {"clarify", "unsupported"}:
             plan = plan.model_copy(update={"suggestions": []})
@@ -773,7 +837,11 @@ class MusicBot:
         )
         matched: list[StoredSong] = []
         missing = {"missing_scalar": 0, "missing_vector": 0}
+        # Kept songs are placed as they are, and excluded ones never come back.
+        skip = kept.excluded | set(kept.ids)
         for song in songs:
+            if song.song_id in skip:
+                continue
             if miss is not None or not self._matches(song, plan, liked, now):
                 continue
             verdict = gates.verdict(plan, song)
@@ -810,7 +878,20 @@ class MusicBot:
         elif plan.history == "familiar":
             relevance = {s.song_id: round(math.log1p(s.play_count), 6) for s in matched}
         retained: list[StoredSong] = []
-        if plan.add_count:
+        # A fixed number of new songs after the kept ones: the limit and the fill add no more.
+        fixed = kept.new_songs
+        adding = fixed if fixed is not None else plan.add_count
+        if kept.ids or fixed is not None:
+            # The engine checked that each is still in the library with a file. A number with
+            # nothing kept still means "this many", so it caps the limit the same way.
+            if any(sid not in view.stored for sid in kept.ids):
+                raise BotError("A kept song is no longer in the library.", 409)
+            retained = [view.stored[sid] for sid in kept.ids]
+            if len(retained) + adding > 500:
+                raise BotError("Adding those songs would exceed the 500-song selection limit.", 422)
+            limit = len(retained) + adding if fixed is not None else max(plan.limit, len(retained))
+            plan = plan.model_copy(update={"limit": limit})
+        elif plan.add_count:
             # Keep the old order, rechecking every retained song against the new filters/files.
             retained = [
                 view.stored[sid]
@@ -834,7 +915,7 @@ class MusicBot:
             )
             need = need_for(
                 plan.limit,
-                plan.add_count,
+                adding,
                 total_length.seconds if total_length is not None else plan.target_seconds,
                 [s.duration for s in matched],
             )
@@ -847,10 +928,12 @@ class MusicBot:
         candidates = [view.stored[sid] for sid in walk]
         duration: dict[str, object] | None = None
         if total_length is None:
-            tracks, total = self._fill(view, plan, retained, candidates, seed_song)
+            tracks, total = self._fill(
+                view, plan, retained, candidates, seed_song, fixed is None and not plan.add_count
+            )
         else:
             tracks, total, duration = self._fill_total(
-                view, plan, candidates, seed_song, total_length, unknown_length
+                view, plan, candidates, seed_song, total_length, unknown_length, retained, fixed
             )
         added = tracks[len(retained) :]
         added_ids = {str(t["id"]) for t in added}
@@ -874,13 +957,13 @@ class MusicBot:
         if plan.exclude_played_days:
             summary += f" Recent plays excluded using {self.store.current().music_timezone}."
         if duration is not None:
-            summary += _duration_sentence(duration)
+            summary += _duration_sentence(duration, fixed)
         elif shortfall:
             summary += f" {round(shortfall / 60, 1)} minutes short; no exclusions were relaxed."
-        if plan.add_count and len(tracks) < plan.limit:
+        if adding and len(tracks) < len(retained) + adding:
             summary += (
                 f" Could only add {max(0, len(tracks) - len(retained))} "
-                f"of {plan.add_count} requested songs."
+                f"of {adding} requested songs."
             )
         # Said only for a fresh selection that chose among more matches than it used. Adding to a
         # proposal is about the new songs alone, so it says nothing here.
@@ -889,7 +972,8 @@ class MusicBot:
             and drawn.sampled
             and added
             and len(added) < len(matched)
-            and not plan.add_count
+            and not adding
+            and fixed is None
         ):
             fits = set(relevance.values()) if relevance is not None else set()
             if len(fits) <= 1:
@@ -1033,6 +1117,7 @@ class MusicBot:
         retained: list[StoredSong],
         candidates: list[StoredSong],
         seed: StoredSong | None,
+        to_target: bool = True,
     ) -> tuple[list[dict[str, object]], float]:
         """Walk the songs in the order resolve built and keep the ones that can play. That order
         is drawn for a library search and is the person's own for a refinement; it never reads
@@ -1043,7 +1128,9 @@ class MusicBot:
         same artist once and lets an artist fill at most two places unless the plan names it.
         Refining a proposal or the queue only filters that selection, so neither rule applies
         there. A song with no artist tag has no artist to cap or to share a title with.
-        Retained proposal songs were checked already; they still count towards both rules.
+        Retained proposal songs were checked already; they still count towards both rules, the
+        limit and the length, and are never cut by either. With `to_target` the walk stops
+        once the total reaches `target_seconds`; adding a set number of songs does not.
         """
         capped = plan.scope == "library" or bool(plan.add_count)
         named = {_artist_key(name) for name in plan.artists}
@@ -1061,6 +1148,10 @@ class MusicBot:
             artist_key = _artist_key(song.artist)
             title_key = normalize(song.title)
             if not checked:
+                if len(tracks) >= plan.limit or (
+                    to_target and plan.target_seconds and total >= plan.target_seconds
+                ):
+                    break
                 if seed is not None and song.song_id == seed.song_id:
                     continue
                 if seed_key[0] and (title_key, artist_key) == seed_key:
@@ -1082,10 +1173,6 @@ class MusicBot:
             total += song.duration
             kept.add((title_key, artist_key))
             per_artist[artist_key] = per_artist.get(artist_key, 0) + 1
-            if len(tracks) >= plan.limit or (
-                not plan.add_count and plan.target_seconds and total >= plan.target_seconds
-            ):
-                break
         return tracks, total
 
     def _fill_total(
@@ -1096,6 +1183,8 @@ class MusicBot:
         seed: StoredSong | None,
         total_length: TotalLength,
         unknown_length: int,
+        retained: list[StoredSong] | None = None,
+        fixed: int | None = None,
     ) -> tuple[list[dict[str, object]], float, dict[str, object]]:
         """Pick songs from the walk whose summed length meets `total_length`, and report how
         close it came. The first CANDIDATE_CAP songs that can play are searched, in the walk's
@@ -1103,24 +1192,38 @@ class MusicBot:
         artist cap and the named-artist exception are those of `_fill`; the cap and the title
         rule are rules of the search here, not of the walk, so a song skipped for one total can
         be picked for another.
+
+        `retained` are an edit's kept songs: always first, counted in the total, the cap and
+        the title rule, never dropped. A kept song with no usable length stays and is counted
+        as unknown. With `fixed` set (adding a number of songs), the walk takes the first songs
+        that keep the total under the ceiling, up to that many, rather than searching for the
+        closest total: the person asked for that many more songs, not a different set.
         """
+        kept = retained or []
         capped = plan.scope == "library"
         named = {_artist_key(name) for name in plan.artists}
         seed_key = (
             (normalize(seed.title), _artist_key(seed.artist)) if seed is not None else ("", "")
         )
 
-        def item(song: StoredSong) -> Item:
+        def item(song: StoredSong, ms: int) -> Item:
             artist = _artist_key(song.artist)
             title = normalize(song.title)
-            ms = length_ms(song.duration)
-            assert ms is not None
             return Item(
                 ms,
                 artist if capped and artist and artist not in named else None,
                 (title, artist) if capped and title and artist else None,
             )
 
+        def length(song: StoredSong) -> int:
+            ms = length_ms(song.duration)
+            assert ms is not None
+            return ms
+
+        # A kept song with no usable length adds nothing to the total and is counted as unknown,
+        # but it still holds its place in the artist cap and the title rule.
+        taken = [item(song, length_ms(song.duration) or 0) for song in kept]
+        unknown_length += sum(1 for song in kept if length_ms(song.duration) is None)
         eligible = [
             song
             for song in candidates
@@ -1135,23 +1238,30 @@ class MusicBot:
                 break
             if self.player.local_file(song.song_id) is not None:
                 usable.append(song)
-        found = fit(
-            total_length.mode,
-            total_length.seconds,
-            [item(song) for song in usable],
-            [item(song) for song in eligible],
-            cut,
-            plan.limit,
-            ARTIST_CAP,
-        )
-        tracks = [view.by_song[usable[index].song_id] for index in found.picked]
+        items = [item(song, length(song)) for song in usable]
+        if fixed is None:
+            found = fit(
+                total_length.mode,
+                total_length.seconds,
+                items,
+                [item(song, length(song)) for song in eligible],
+                cut,
+                max(0, plan.limit - len(kept)),
+                ARTIST_CAP,
+                taken=taken,
+            )
+        else:
+            found = _add_within(total_length, items, taken, fixed, cut)
+        tracks = [view.by_song[song.song_id] for song in kept] + [
+            view.by_song[usable[index].song_id] for index in found.picked
+        ]
         # Every total and deviation here comes from the whole milliseconds the search compared,
         # so `met` and the numbers cannot disagree at a boundary.
         target_ms = total_length.seconds * 1000
         total = found.total_ms / 1000
         alternative: dict[str, object] | None = None
         if found.alternative is not None:
-            longer = [usable[index] for index in found.alternative]
+            longer = [*kept, *(usable[index] for index in found.alternative)]
             alternative = {
                 "ids": [song.song_id for song in longer],
                 "tracks": [view.by_song[song.song_id] for song in longer],
@@ -1170,6 +1280,7 @@ class MusicBot:
                 "met": found.met,
                 "unmet_reason": found.unmet,
                 "unknown_length": unknown_length,
+                "kept": len(kept),
                 "candidates": len(usable),
                 "candidate_cap": CANDIDATE_CAP,
                 "candidates_capped": cut,
@@ -1269,8 +1380,10 @@ def _span(seconds: float) -> str:
     return f"{round(seconds / 60, 1)} minutes"
 
 
-def _duration_sentence(report: dict[str, object]) -> str:
-    """The total-length outcome in words. The structured fields say the same."""
+def _duration_sentence(report: dict[str, object], fixed: int | None = None) -> str:
+    """The total-length outcome in words. The structured fields say the same. `fixed` is the
+    number of songs an edit was asked to add: nothing was searched for a closer total then, so
+    "found within the search limit" would claim a search that did not happen."""
     target = report["target_seconds"]
     deviation = report["deviation_seconds"]
     unknown = report["unknown_length"]
@@ -1283,6 +1396,19 @@ def _duration_sentence(report: dict[str, object]) -> str:
         sentence = f" Asked for {asked}: {off}."
     elif report["unmet_reason"] == "proven":
         sentence = f" No selection of whole songs here can be {asked}; no filters were relaxed."
+        if report["kept"]:
+            sentence = f" No selection that keeps those songs can be {asked}; none were dropped."
+    elif fixed == 0:
+        # Removing songs keeps exactly the rest, so nothing was added to make up the length.
+        sentence = (
+            f" The songs left are not {asked}; nothing was added in their place and no filters "
+            "were relaxed."
+        )
+    elif fixed is not None:
+        sentence = (
+            f" Adding {fixed} {'song' if fixed == 1 else 'songs'} did not make it {asked}; "
+            "the kept songs stayed as they were and no filters were relaxed."
+        )
     else:
         sentence = (
             f" No selection that is {asked} was found within the search limit "

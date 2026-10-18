@@ -13,6 +13,7 @@ search that ran to the end over all of them, rules a total out; otherwise it is 
 """
 
 import math
+from collections.abc import Iterable
 from dataclasses import dataclass
 from typing import Literal, NamedTuple
 
@@ -50,6 +51,8 @@ class Item:
 class Found(NamedTuple):
     picked: list[int]
     total_ms: int
+    # A selection in range was found. With kept songs that can be picking nothing more.
+    hit: bool
     # Every combination was ruled in or out, or the goal was hit exactly.
     complete: bool
     work: int
@@ -121,12 +124,17 @@ def search(
     ceiling: int | None,
     goal: int,
     work_limit: int,
+    taken: Iterable[Item] = (),
 ) -> Found:
     """The selection whose total in [floor, ceiling) is closest to `goal`, by a depth-first walk
     that tries each item in order before skipping it. Its first path is a plain greedy fill in
     the caller's order; later paths swap the later items first, so the front of the walk is
     kept when it can be. Branches that cannot reach the floor, or cannot beat the best found,
     are cut using the remaining lengths, ignoring the group and key rules (so the cut is safe).
+
+    `taken` are songs already in the selection (kept by an edit). The bounds are relative to
+    them, so a floor at or below 0 means they meet it already and picking nothing counts; they
+    hold their places in the group cap and the key rule.
     """
     count = len(items)
     rest = [0] * (count + 1)
@@ -137,9 +145,17 @@ def search(
     best: list[int] = []
     best_total = 0
     best_gap = math.inf
+    hit = False
+    if floor <= 0 and (ceiling is None or ceiling > 0):
+        best_gap, hit = abs(goal), True
     chosen: list[int] = []
     groups: dict[str, int] = {}
     keys: set[object] = set()
+    for item in taken:
+        if item.group is not None:
+            groups[item.group] = groups.get(item.group, 0) + 1
+        if item.unique is not None:
+            keys.add(item.unique)
     total = 0
     work = 0
     index = 0
@@ -175,12 +191,12 @@ def search(
         )
         if exhausted:
             if not chosen:
-                return Found(best, best_total, True, work)
+                return Found(best, best_total, hit, True, work)
             index = drop() + 1
             continue
         work += 1
         if work > work_limit:
-            return Found(best, best_total, False, work - 1)
+            return Found(best, best_total, hit, False, work - 1)
         item = items[index]
         fits = (
             len(chosen) < limit
@@ -193,9 +209,9 @@ def search(
             continue
         take(index)
         if total >= floor and abs(total - goal) < best_gap:
-            best, best_total, best_gap = list(chosen), total, abs(total - goal)
+            best, best_total, best_gap, hit = list(chosen), total, abs(total - goal), True
             if best_gap == 0:
-                return Found(best, best_total, True, work)
+                return Found(best, best_total, True, True, work)
         if total >= goal or len(chosen) >= limit:
             # Adding more only moves away from the goal: try the next item here instead.
             index = drop() + 1
@@ -212,6 +228,7 @@ def fit(
     limit: int,
     group_cap: int,
     work_limit: int = WORK_LIMIT,
+    taken: list[Item] | None = None,
 ) -> Outcome:
     """Meet a target from `candidates`, or say why not and offer the other side.
 
@@ -219,42 +236,56 @@ def fit(
     files unchecked, so it may hold more than can play); the shortage proofs read it, which
     only makes them more cautious. `capped` says the cap left some out.
 
+    `taken` are songs an edit keeps. They are always in the selection and are never dropped
+    to meet the target: the total counts them, `limit` is the number of songs that may join
+    them, and `picked` and the alternative name only the songs added. Kept songs already past
+    a ceiling make the target unmet, proven, with no alternative.
+
     When the target cannot be met the result is the longest selection below its floor (for
     about, at least and over), never a looser search. When it has a ceiling, the shortest
     selection at or past it is the alternative. A long mix alone is offered that way, never cut.
     Each of the up to three searches has its own `work_limit`.
     """
+    kept = taken or []
+    base = sum(item.ms for item in kept)
     floor, ceiling, goal = bounds(mode, seconds)
+    has_floor = floor > 1
+    # Relative to the kept songs from here on.
+    floor, goal = floor - base, goal - base
+    ceiling = ceiling - base if ceiling is not None else None
+    if ceiling is not None and ceiling <= 0:
+        return Outcome([], base, False, "proven", None, 0, True, 0)
     shortest = min((item.ms for item in everything), default=None)
     proven = (
-        shortest is None
-        or most(everything, limit, group_cap) < floor
-        or (ceiling is not None and shortest >= ceiling)
+        # Nothing more to add, and the kept songs alone are short.
+        (shortest is None and floor > 0)
+        or (floor > 0 and most(everything, limit, group_cap) < floor)
+        or (ceiling is not None and shortest is not None and shortest >= ceiling and floor > 0)
     )
     work = 0
     complete = True
     if not proven:
-        found = search(candidates, limit, group_cap, floor, ceiling, goal, work_limit)
+        found = search(candidates, limit, group_cap, floor, ceiling, goal, work_limit, kept)
         work, complete = found.work, found.complete
-        if found.picked:
-            return Outcome(found.picked, found.total_ms, True, "", None, 0, complete, work)
+        if found.hit:
+            return Outcome(found.picked, base + found.total_ms, True, "", None, 0, complete, work)
         proven = complete and not capped
     picked: list[int] = []
     total = 0
-    if floor > 1 and candidates:
-        shorter = search(candidates, limit, group_cap, 1, floor, floor - 1, work_limit)
+    if has_floor and candidates:
+        shorter = search(candidates, limit, group_cap, 1 - base, floor, floor - 1, work_limit, kept)
         work += shorter.work
         picked, total = shorter.picked, shorter.total_ms
     alternative = None
     alternative_ms = 0
     if ceiling is not None and candidates:
-        longer = search(candidates, limit, group_cap, ceiling, None, ceiling, work_limit)
+        longer = search(candidates, limit, group_cap, ceiling, None, ceiling, work_limit, kept)
         work += longer.work
         if longer.picked:
-            alternative, alternative_ms = longer.picked, longer.total_ms
+            alternative, alternative_ms = longer.picked, base + longer.total_ms
     return Outcome(
         picked,
-        total,
+        base + total,
         False,
         "proven" if proven else "not_found",
         alternative,
