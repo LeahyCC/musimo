@@ -146,7 +146,11 @@ const ROUTES: Walk[] = [
   {
     name: 'home',
     path: '/',
-    ready: (page) => page.getByRole('heading', { level: 1, name: 'Home' }),
+    ready: (page) =>
+      page.getByRole('heading', {
+        level: 1,
+        name: /^(Good (morning|afternoon|evening)|Home|Let.s find your music)$/,
+      }),
     cardless: true,
   },
   {
@@ -186,7 +190,7 @@ const ROUTES: Walk[] = [
   {
     name: 'artist',
     path: '/artists/7',
-    ready: (page) => page.getByRole('heading', { name: 'Discography' }),
+    ready: (page) => page.getByRole('heading', { name: 'Albums', level: 2 }),
   },
   {
     name: 'library-albums',
@@ -356,7 +360,9 @@ for (const route of ROUTES) {
     // the canvas by design (the library grid does), so it is held to not being any dark surface.
     expect(chrome.body).toBe(rgb(LIGHT_THEME.colors['--color-canvas']))
     expect(chrome.nav).toBe(rgb(LIGHT_THEME.colors['--color-sidebar']))
-    if (!route.playerHidden) expect(chrome.player).toBe(rgb(LIGHT_THEME.colors['--color-raised']))
+    // The phone's mini player is a card in the hover surface, not the desktop footer's raised one.
+    const playerToken = isMobile ? '--color-hover' : '--color-raised'
+    if (!route.playerHidden) expect(chrome.player).toBe(rgb(LIGHT_THEME.colors[playerToken]))
 
     // A card is whichever boxed surface the route has first: a music or library card, a panel.
     // Only the routes that say so have none; anywhere else a missing card is a missing surface.

@@ -16,9 +16,10 @@ const NO_QUEUE_END = 'Not with shuffle or repeat'
  * cross next to that cancels in one press. Arrow keys move through the menu, Escape closes it and
  * returns to the button, and choosing an item closes it.
  *
- * The row sits at the foot of the column, so the menu always opens upward.
+ * The row sits at the foot of the column, so the menu always opens upward. `labelled` adds the
+ * word Sleep beside the moon, as Classic draws it.
  */
-export function SleepTimerControl() {
+export function SleepTimerControl({ labelled = false }: { labelled?: boolean }) {
   const { sleep, setSleep, shuffle, repeat } = usePlayer()
   const root = useRef<HTMLDivElement>(null)
   const trigger = useRef<HTMLButtonElement>(null)
@@ -92,8 +93,13 @@ export function SleepTimerControl() {
         aria-expanded={open}
         aria-controls={open ? menuId : undefined}
         onClick={() => setOpen(!open)}
+        // Classic shows the word beside the moon; the name stays "Sleep timer" either way.
+        className={cx(
+          labelled && 'gap-[6px] rounded-[8px] px-[10px] text-small hover:bg-hover hover:text-text',
+        )}
       >
-        <Moon size={17} />
+        <Moon size={labelled ? 15 : 17} />
+        {labelled && <span aria-hidden="true">Sleep</span>}
       </IconButton>
       {sleep && (
         <>

@@ -34,7 +34,12 @@ async function libraryFixtures(page: Page) {
 test.describe('Accessibility', () => {
   test('home page should not have accessibility violations', async ({ page }) => {
     await page.goto('/')
-    await page.getByRole('heading', { name: 'Home', level: 1 }).waitFor()
+    await page
+      .getByRole('heading', {
+        name: /^(Good (morning|afternoon|evening)|Home|Let.s find your music)$/,
+        level: 1,
+      })
+      .waitFor()
     const results = await new AxeBuilder({ page }).analyze()
     expect(results.violations).toEqual([])
   })

@@ -20,6 +20,7 @@ import type {
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 
 import { cx } from '../../lib/cx'
+import { useLayout } from '../../lib/layout'
 import { usePhone } from '../../lib/use-phone'
 import { usePlayer } from '../player/player'
 import { useBotChat } from './bot-chat'
@@ -60,10 +61,13 @@ export function usePerchShown(): boolean {
   const { settings } = usePetLook()
   const player = usePlayer()
   const phone = usePhone()
+  const layout = useLayout()
   const nowPlaying = useRouterState({
     select: (state) => state.location.pathname === '/now-playing',
   })
   if (settings.hidden) return false
+  // The Listening room has no footer on a wide window. Its player dock holds a spot of its own.
+  if (layout === 'room' && !phone) return false
   // The footer stands down on Now Playing while a library track plays; the page has its own spot.
   if (nowPlaying && player.libraryTrack) return false
   // A phone hides the mini player until something plays.

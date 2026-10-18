@@ -2,13 +2,32 @@ import { useState } from 'react'
 
 import { useQuery } from '@tanstack/react-query'
 import { Link, useParams, useRouterState } from '@tanstack/react-router'
+import { Pause, Play } from 'lucide-react'
 
 import { albumSchema, api, settingsSchema } from '../../api'
-import { ErrorBanner, FieldSelect } from '../../ui'
+import type { MusicResult } from '../../api'
+import { Button, ErrorBanner, FieldSelect } from '../../ui'
 import { AlbumDownloadButton } from '../downloads/album-download'
 import { DownloadTarget } from '../downloads/download-target'
-import { durationText } from '../player/player'
-import { Art, BackToSearch, Badge, CatalogTrackList } from './results'
+import { useJobs } from '../downloads/jobs'
+import { durationText, usePlayer, usePreviewPlayback } from '../player/player'
+import { CatalogHero, HeroDestination } from './catalog-hero'
+import { queuedTrackIds, trackCoverage } from './coverage'
+import { Art, BackToSearch, CatalogTrackList } from './results'
+
+/** Plays the first track's clip, or the first one that has a clip. */
+function PreviewAlbum({ tracks }: { tracks: MusicResult[] }) {
+  const player = usePlayer()
+  const first = tracks.find((track) => track.preview) ?? tracks[0]
+  const playing = usePreviewPlayback(first?.id ?? 0).playing
+  if (!first) return null
+  return (
+    <Button onClick={() => player.play(first)}>
+      {playing ? <Pause size={15} /> : <Play size={15} />}
+      {playing ? 'Pause preview' : 'Preview'}
+    </Button>
+  )
+}
 
 export function AlbumPage() {
   const { albumId } = useParams({ from: '/albums/$albumId' })
@@ -25,6 +44,7 @@ export function AlbumPage() {
     queryKey: ['settings'],
     queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
   })
+  const queued = useJobs((data) => queuedTrackIds(data.jobs)).data
   const [quality, setQuality] = useState<string | undefined>(undefined)
   const chosenQuality = quality ?? settings.data?.output_format.value ?? 'original'
   if (query.isError)
@@ -45,69 +65,77 @@ export function AlbumPage() {
   )
   const bitrate = chosenQuality === 'mp3' ? 320 : 160
   return (
-    <>
+    <div className="[container-type:inline-size]">
       <BackToSearch />
-      <div className="mt-[24px] mb-[32px] flex items-center gap-[28px] max-phone:items-start max-phone:gap-[16px]">
-        <Art item={album} className="w-[210px] max-phone:w-[95px]" />
-        <div>
-          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
-            {album.record_type.toUpperCase()} · {album.year ?? 'Year unknown'}
-          </span>
-          <h1 className="my-[12px] max-phone:text-[24px]">{album.title}</h1>
+      <CatalogHero
+        cover={
+          <Art
+            item={album}
+            rounded="rounded-[14px]"
+            className="w-full shadow-[0_24px_50px_-24px_color-mix(in_oklab,var(--color-shadow)_80%,transparent)]"
+          />
+        }
+        eyebrow={`${album.record_type} · ${album.year ?? 'Year unknown'}`}
+        source="Deezer"
+        title={album.title}
+        byline={
           <Link to="/artists/$artistId" params={{ artistId: String(album.artist_id) }}>
             {album.artist}
           </Link>
-          <p className="my-[15px] text-body">
-            {label} · {album.track_count} tracks · {durationText(duration)} · ~
-            {Math.round((duration * bitrate) / 8 / 1024)} MB estimated
-          </p>
-          <Badge item={album} />
-        </div>
-      </div>
-      <div className="album-actions mb-[25px] flex flex-wrap items-center gap-[15px]">
-        <label className="text-small text-muted">
-          Quality{' '}
-          <FieldSelect
-            tone="sunken"
-            fullWidth={false}
-            value={chosenQuality}
-            onChange={(e) => setQuality(e.target.value)}
-          >
-            <option value="original">Original</option>
-            <option value="m4a">M4A</option>
-            <option value="opus">Opus</option>
-            <option value="mp3">MP3</option>
-          </FieldSelect>
-        </label>
-        <AlbumDownloadButton
-          key={`${album.id}-${hasOwnedTracks ? 'missing' : 'all'}`}
-          item={album}
-          missingOnly={hasOwnedTracks}
-          format={chosenQuality}
-          target={settings.data?.destination.value}
-          label={
-            hasOwnedTracks && missingCount > 0
-              ? `Download missing (${missingCount})`
-              : 'Download album'
-          }
-        />
-        <small className="w-full text-muted">
-          Size assumes {bitrate} kbps; actual source varies.
-        </small>
-        {editionCount > 0 && (
-          <small className="w-full text-muted">
-            {editionCount} track{editionCount === 1 ? ' has' : 's have'} another edition in your
-            library
-          </small>
-        )}
-        <DownloadTarget format={chosenQuality} />
-      </div>
+        }
+        meta={`${label} · ${album.track_count} tracks · ${durationText(duration)} · ~${Math.round((duration * bitrate) / 8 / 1024)} MB estimated`}
+        coverage={trackCoverage(tracks, queued ?? new Set())}
+        actions={
+          <>
+            <AlbumDownloadButton
+              key={`${album.id}-${hasOwnedTracks ? 'missing' : 'all'}`}
+              variant="primary"
+              item={album}
+              missingOnly={hasOwnedTracks}
+              format={chosenQuality}
+              target={settings.data?.destination.value}
+              label={
+                hasOwnedTracks && missingCount > 0
+                  ? `Download missing (${missingCount})`
+                  : 'Download album'
+              }
+            />
+            <PreviewAlbum tracks={tracks} />
+            <label className="text-small text-muted">
+              Quality{' '}
+              <FieldSelect
+                tone="sunken"
+                fullWidth={false}
+                value={chosenQuality}
+                onChange={(e) => setQuality(e.target.value)}
+              >
+                <option value="original">Original</option>
+                <option value="m4a">M4A</option>
+                <option value="opus">Opus</option>
+                <option value="mp3">MP3</option>
+              </FieldSelect>
+            </label>
+            <HeroDestination>
+              <DownloadTarget format={chosenQuality} />
+            </HeroDestination>
+            <small className="w-full text-faint">
+              Size assumes {bitrate} kbps; actual source varies.
+              {editionCount > 0 &&
+                ` ${editionCount} track${editionCount === 1 ? ' has' : 's have'} another edition in your library.`}
+            </small>
+          </>
+        }
+      />
       {!complete && (
         <ErrorBanner>
           The catalog returned an incomplete track list. Coverage is partial.
         </ErrorBanner>
       )}
-      <CatalogTrackList items={tracks} focusTrack={focusTrack} />
-    </>
+      <CatalogTrackList items={tracks} focusTrack={focusTrack} onAlbum />
+      <p className="mt-[18px] border-t border-line pt-[14px] text-small text-faint">
+        Track list from Deezer. Coverage is a file match against your library index, not proof of
+        rights.
+      </p>
+    </div>
   )
 }

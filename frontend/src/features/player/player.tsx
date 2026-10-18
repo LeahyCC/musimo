@@ -12,9 +12,8 @@ import type { CSSProperties, ReactNode, SyntheticEvent } from 'react'
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useRouterState } from '@tanstack/react-router'
 import {
-  Check,
-  ChevronDown,
   Disc3,
+  ListMusic,
   Maximize2,
   Pause,
   Play,
@@ -41,7 +40,8 @@ import {
 } from '../../api'
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from '../../api'
 import { cx } from '../../lib/cx'
-import { Button, ErrorBanner, Field, IconButton, iconButtonClassName } from '../../ui'
+import { IconButton, iconButtonClassName, useToast } from '../../ui'
+import type { ToastAction, ToastTone } from '../../ui'
 import { audioGraph, resumeAudio } from './audio-graph'
 import { crossfadeSpan } from './crossfade'
 import { useCrossfadeSeconds } from './crossfade-settings'
@@ -56,6 +56,7 @@ import {
   readHistory,
   writeHistory,
 } from './play-history'
+import { PlaylistPicker } from './playlist-picker'
 import { QueueWriter } from './queue-writer'
 import {
   playsAlbumInOrder,
@@ -155,6 +156,8 @@ type Playback = {
   sleep: SleepStatus | null
   /** Starts a sleep timer, replacing any running one. Null cancels it. */
   setSleep: (choice: SleepChoice | null) => void
+  /** Saves the queue again after a failed save. One that lands takes the failure notice away. */
+  retryQueueSave: () => void
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -202,12 +205,16 @@ const PlayerContext = createContext<Playback>({
   stop: () => undefined,
   sleep: null,
   setSleep: () => undefined,
+  retryQueueSave: () => undefined,
 })
 export const usePlayer = () => useContext(PlayerContext)
 
 const LIBRARY_NOTICE = 'Your music library'
 const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
-const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
+/** The notices a failed queue save leaves, so the Listening room can show them in Up next too. */
+export const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
+export const QUEUE_REPLACED =
+  'Another browser saved the queue. Refresh to restore it before saving more changes.'
 const SLEEP_ENDED_NOTICE = 'Sleep timer ended. Playback paused.'
 const SLEEP_CANCELLED_NOTICE = 'Sleep timer cancelled.'
 const SLEEP_QUEUE_LOST_NOTICE =
@@ -409,12 +416,13 @@ export const durationText = (seconds: number) =>
 const PICKER_ROWS = 25
 
 /* `live-player` carries no styling of its own. It is the hook the player, playlist and popout
-   specs use, and the one the leftover seek-bar rules in style.css hang off. The idle footer is
+   specs use, and the one the seek and volume bar rules in style.css hang off. The idle footer is
    hidden on a phone where it is rendered, not here. */
 const footerClassName = cx(
-  'live-player fixed right-[var(--safe-right)] bottom-0 left-[calc(var(--sidebar-width)+var(--safe-left))] z-bar flex h-[75px] items-center justify-between gap-[20px] border-t border-line-strong bg-raised px-[33px]',
-  'max-tablet:gap-[10px] max-tablet:px-[16px]',
-  'max-phone:right-0 max-phone:bottom-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:left-0 max-phone:h-auto max-phone:min-h-[60px] max-phone:gap-[6px] max-phone:pt-[10px] max-phone:pr-[calc(12px+var(--safe-right))] max-phone:pb-[8px] max-phone:pl-[calc(12px+var(--safe-left))]',
+  'live-player fixed right-[var(--safe-right)] bottom-0 left-[calc(var(--sidebar-width)+var(--safe-left))] z-bar grid h-[76px] grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)] items-center gap-[20px] border-t border-line-strong bg-raised px-[20px]',
+  'max-tablet:gap-[12px] max-tablet:px-[16px]',
+  // The phone's mini player is a card above the tab bar, not a bar across the screen.
+  'max-phone:right-[calc(8px+var(--safe-right))] max-phone:bottom-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:left-[calc(8px+var(--safe-left))] max-phone:mb-[6px] max-phone:flex max-phone:h-auto max-phone:min-h-[56px] max-phone:gap-[6px] max-phone:rounded-[12px] max-phone:border-0 max-phone:bg-hover max-phone:p-[8px]',
 )
 
 export const songCount = (count: number) => `${count} ${count === 1 ? 'song' : 'songs'}`
@@ -548,115 +556,6 @@ function readDeck(queueIds: string[]): Deck | null {
   }
 }
 
-const pickerNoteClassName = 'mt-[6px] mb-[2px] text-muted'
-
-function PlaylistPickerRow({
-  playlist,
-  songs,
-  failed,
-  onRetry,
-  trackId,
-  trackTitle,
-  busy,
-  blocked,
-  expanded,
-  onExpand,
-  onToggleTrack,
-  onRemoveSong,
-}: {
-  playlist: LibraryPlaylist
-  songs?: LibraryTrack[]
-  failed: boolean
-  onRetry: () => void
-  trackId: string
-  trackTitle: string
-  busy: boolean
-  blocked: boolean
-  expanded: boolean
-  onExpand: (open: boolean) => void
-  onToggleTrack: () => void
-  onRemoveSong: (index: number) => void
-}) {
-  const known = songs !== undefined
-  const index = (songs ?? []).findIndex((item) => item.id === trackId)
-  const member = index >= 0
-  const label = busy ? 'Saving…' : !known ? 'Loading…' : member ? 'Remove' : 'Add'
-  return (
-    <div className="playlist-picker-row rounded-[8px] border border-line bg-raised px-[10px] py-[8px]">
-      <div className="flex items-center justify-between gap-[10px]">
-        <IconButton
-          size="compact"
-          aria-label={`${expanded ? 'Hide' : 'Show'} songs in ${playlist.name}`}
-          aria-expanded={expanded}
-          onClick={() => onExpand(!expanded)}
-        >
-          <ChevronDown
-            size={16}
-            className={cx(
-              'transition-transform duration-[140ms] ease-[ease]',
-              expanded && 'rotate-180',
-            )}
-          />
-        </IconButton>
-        {/* Blocks, not grids: text-overflow only cuts text that sits directly in a block box. */}
-        <span className="block min-w-0 flex-1 truncate">
-          {playlist.name}
-          <small className="mt-[2px] block text-tiny text-muted">
-            {songCount((known ? songs.length : playlist.songCount) ?? 0)}
-          </small>
-        </span>
-        {failed ? (
-          <Button className="shrink-0" onClick={onRetry}>
-            Retry
-          </Button>
-        ) : (
-          <Button
-            className="shrink-0"
-            variant={member ? 'default' : 'primary'}
-            // Membership decides the action, so the label has to wait for the song list.
-            aria-label={
-              known
-                ? `${member ? 'Remove' : 'Add'} ${trackTitle} ${member ? 'from' : 'to'} ${playlist.name}`
-                : `Loading songs in ${playlist.name}`
-            }
-            disabled={busy || blocked || !known}
-            onClick={onToggleTrack}
-          >
-            {member && known && !busy && <Check size={14} />}
-            {!member && known && !busy && <Plus size={14} />} {label}
-          </Button>
-        )}
-      </div>
-      {expanded && (
-        <div className="playlist-picker-songs mt-[8px] grid max-h-[190px] grid-cols-[minmax(0,1fr)] gap-[4px] overflow-y-auto overscroll-contain border-t border-line pt-[8px]">
-          {(songs ?? []).map((song, songIndex) => (
-            <div
-              key={`${song.id}-${songIndex}`}
-              className="flex items-center justify-between gap-[8px] px-[2px] py-[4px] text-small"
-            >
-              <span className="block min-w-0 truncate">
-                {song.title}
-                <small className="mt-[5px] block text-tiny text-muted">{song.artist}</small>
-              </span>
-              <IconButton
-                size="compact"
-                aria-label={`Remove ${song.title} from ${playlist.name}`}
-                disabled={busy}
-                onClick={() => onRemoveSong(songIndex)}
-              >
-                <X size={14} />
-              </IconButton>
-            </div>
-          ))}
-          {known && !songs.length && <p className={pickerNoteClassName}>This playlist is empty.</p>}
-          {failed && <ErrorBanner>That playlist could not be read.</ErrorBanner>}
-          {!known && !failed && <p role="status">Loading songs…</p>}
-        </div>
-      )}
-    </div>
-  )
-}
-
 export function PlayerProvider({ children }: { children: ReactNode }) {
   // One element for previews and two for the library. Previews stream from the provider's CDN
   // without CORS headers, and the Web Audio analyser the visualizer needs would silence such media
@@ -714,6 +613,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Bumped on every queue save so an older response cannot count as the latest one.
   const queueSave = useRef(0)
   const queueWriter = useRef<QueueWriter | null>(null)
+  // The queue saves itself every 10 seconds while music plays, so a server that is down would
+  // raise the same toast each time. It is said once per kind, until a save goes through again.
+  const queueFailureShown = useRef<'failed' | 'replaced' | null>(null)
   // The collection that filled the queue. Edits leave it alone; `queueSource` says what it counts as.
   const sourceRef = useRef('')
   const editedRef = useRef(false)
@@ -830,7 +732,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const value = stored('musimo.player-repeat', 'off')
     return value === 'all' || value === 'one' ? value : 'off'
   })
-  const [notice, setNotice] = useState('Choose a track to start listening.')
+  const [notice, setNoticeText] = useState('Choose a track to start listening.')
+  const toast = useToast()
+  // The toasts still up, by text, so a message that comes again replaces itself rather than stacking.
+  const toasts = useRef(new Map<string, () => void>())
+  /**
+   * Sets the line Now Playing reads and, when given a tone, also shows it as a toast: the footer
+   * has no room for a line of its own. Passive status ("Your music library") has no tone.
+   */
+  const setNotice = useCallback(
+    (text: string, tone?: ToastTone, action?: ToastAction) => {
+      setNoticeText(text)
+      if (!tone) return
+      toasts.current.get(text)?.()
+      if (toasts.current.size > 20) toasts.current.clear()
+      toasts.current.set(text, toast.show({ tone, text, action }))
+    },
+    [toast],
+  )
   const replaySettings = useReplayGainSettings()
   const crossfadeSeconds = useCrossfadeSeconds()
   // What the timer was set to, and for a minutes timer the whole seconds it has left. The running
@@ -912,7 +831,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }),
     onSuccess: (playlist) => {
       void queryClient.invalidateQueries({ queryKey: ['library-playlists'] })
-      if (playlist.id) setNotice(`Created playlist ${playlist.name}.`)
+      if (playlist.id) setNotice(`Created playlist ${playlist.name}.`, 'good')
       setNewPlaylistName('')
       closePlaylistDialog()
     },
@@ -930,7 +849,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       })
       if (controller.signal.aborted || previewCurrent.current?.id !== item.id) return
       if (!clip.url) {
-        setNotice('No preview available for this track.')
+        setNotice('No preview available for this track.', 'warn')
         setPreviewStates((prev) => new Map(prev).set(item.id, 'none'))
         return
       }
@@ -939,7 +858,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       startAudio(clip.url)
     } catch (error) {
       if (!controller.signal.aborted) {
-        setNotice(error instanceof Error ? error.message : 'Preview unavailable')
+        setNotice(error instanceof Error ? error.message : 'Preview unavailable', 'danger')
       }
     }
   }
@@ -956,22 +875,35 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // aborts the old one's play; saying "press play" over either would bury the real message.
       if (element.src !== new URL(url, location.href).href) return
       if (error instanceof DOMException && error.name !== 'NotAllowedError') return
-      setNotice('Press play when you are ready.')
+      setNotice('Press play when you are ready.', 'info')
     })
+  }
+
+  // Retry saves the queue as it is now, not as it was when the failure happened.
+  // With nothing loaded there is no queue for Retry to send, so the toast goes without it.
+  function queueSaveFailed() {
+    setNotice(
+      QUEUE_SAVE_FAILED,
+      'warn',
+      libraryCurrent.current ? { label: 'Retry', run: () => void saveQueue(true) } : undefined,
+    )
   }
 
   // `announce` is for an edit the listener just made: it is the one save whose failure they need
   // to hear about, since the queue on screen would then differ from the one that restores.
   function persistQueue(body: string): Promise<Response | null> {
-    queueWriter.current ??= new QueueWriter((replaced) =>
-      setNotice(
-        replaced
-          ? 'Another browser saved the queue. Refresh to restore it before saving more changes.'
-          : QUEUE_SAVE_FAILED,
-      ),
-    )
+    queueWriter.current ??= new QueueWriter((replaced) => {
+      const kind = replaced ? 'replaced' : 'failed'
+      if (queueFailureShown.current === kind) return
+      queueFailureShown.current = kind
+      if (replaced) setNotice(QUEUE_REPLACED, 'warn')
+      else queueSaveFailed()
+    })
 
-    return queueWriter.current.save(body)
+    return queueWriter.current.save(body).then((response) => {
+      if (response?.ok) queueFailureShown.current = null
+      return response
+    })
   }
 
   function saveQueue(announce = false): Promise<boolean> {
@@ -990,7 +922,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (!response) return false
         if (generation !== queueSave.current) return false
         if (!response.ok) {
-          if (announce && response.status !== 409) setNotice(QUEUE_SAVE_FAILED)
+          if (announce && response.status !== 409) queueSaveFailed()
           return false
         }
         // The deck fingerprint has to match the queue that was actually stored.
@@ -998,7 +930,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return true
       })
       .catch(() => {
-        if (generation === queueSave.current && announce) setNotice(QUEUE_SAVE_FAILED)
+        if (generation === queueSave.current && announce) queueSaveFailed()
         return false
       })
   }
@@ -1228,7 +1160,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (repeat === 'one') loadLibrary(indexRef.current, false)
     else next(false)
     clearSleep()
-    setNotice(SLEEP_ENDED_NOTICE)
+    setNotice(SLEEP_ENDED_NOTICE, 'info')
     saveQueue()
   }
 
@@ -1239,7 +1171,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     fadingOut.current = null
     for (const element of elements()) element?.pause()
     clearSleep()
-    setNotice(SLEEP_ENDED_NOTICE)
+    setNotice(SLEEP_ENDED_NOTICE, 'info')
   }
 
   // Forgets the timer and puts the level back. Whatever ends a timer calls this after it has paused,
@@ -1254,7 +1186,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   function startSleep(choice: SleepChoice | null) {
     if (!choice) {
       clearSleep()
-      setNotice(SLEEP_CANCELLED_NOTICE)
+      setNotice(SLEEP_CANCELLED_NOTICE, 'info')
       return
     }
     sleepGain.current = 1
@@ -1263,7 +1195,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     sleepRef.current = { choice, endsAt }
     setSleepChoice(choice)
     setSleepLeft(choice.kind === 'minutes' ? choice.minutes * 60 : 0)
-    setNotice(`Sleep timer set for ${sleepChoiceLabel(choice)}.`)
+    setNotice(`Sleep timer set for ${sleepChoiceLabel(choice)}.`, 'info')
     ensureTicking()
   }
 
@@ -1323,11 +1255,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     failures.current += 1
     if (failures.current >= MAX_FAILURES) {
       failures.current = 0
-      setNotice(failureLimitNotice)
+      setNotice(failureLimitNotice, 'danger')
       return
     }
     next(wantPlay.current)
-    setNotice(skippedNotice(failed.title))
+    setNotice(skippedNotice(failed.title), 'warn')
   }
 
   function loadLibrary(index: number, autoplay = true, seek = 0) {
@@ -1412,7 +1344,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         startAudio(streamUrl(item))
         return
       }
-      setNotice('Press play when you are ready.')
+      setNotice('Press play when you are ready.', 'info')
     })
   }
 
@@ -1569,7 +1501,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const inQueue = libraryCurrent.current ? queueRef.current.length : 0
     const refusal = queueOverflow(inQueue, tracks.length)
     if (refusal) {
-      setNotice(refusal)
+      setNotice(refusal, 'warn')
       return
     }
     const entries = tracks.map((track) => ({ ...track }))
@@ -1587,7 +1519,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const at = upNext ? playNextPosition(queue, indexRef.current, chosen.current) : queue.length
     editQueue([...queue.slice(0, at), ...entries, ...queue.slice(at)], indexRef.current)
     const what = entries.length === 1 ? (entries[0]?.title ?? 'song') : songCount(entries.length)
-    setNotice(upNext ? `Playing ${what} next.` : `Added ${what} to the queue.`)
+    setNotice(upNext ? `Playing ${what} next.` : `Added ${what} to the queue.`, 'good')
   }
 
   const playNext = (tracks: LibraryTrack[]) => enqueue(tracks, true)
@@ -1669,9 +1601,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       queueSave.current += 1
       void persistQueue(JSON.stringify({ ids: [], current: '', position: 0 }))
         .then((response) => {
-          if (response && !response.ok && response.status !== 409) setNotice(QUEUE_SAVE_FAILED)
+          if (response && !response.ok && response.status !== 409) queueSaveFailed()
         })
-        .catch(() => setNotice(QUEUE_SAVE_FAILED))
+        .catch(() => queueSaveFailed())
     } else {
       // Upcoming edits leave the playing element and its clock untouched. Undoing Play restores
       // the former song paused, so a delayed Undo never promises a browser autoplay success.
@@ -1680,7 +1612,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       deck.current = before.deck
       void saveQueue(true)
     }
-    setNotice('Queue edit undone.')
+    setNotice('Queue edit undone.', 'info')
   }
 
   function removeFromQueue(index: number) {
@@ -1737,7 +1669,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       total: count,
     }
     void saveQueue()
-    setNotice(`Shuffling ${count.toLocaleString()} songs.`)
+    setNotice(`Shuffling ${count.toLocaleString()} songs.`, 'info')
   }
 
   function toggle() {
@@ -1750,7 +1682,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       element.pause()
     } else if (element.ended && deck.current) void fillThenPlay(true)
     else if (element.getAttribute('src'))
-      void element.play().catch(() => setNotice('Cannot play this track.'))
+      void element.play().catch(() => setNotice('Cannot play this track.', 'danger'))
     else if (previewCurrent.current) {
       previewStage.current = 1
       void loadPreview(previewCurrent.current, false)
@@ -1937,7 +1869,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // With either on there is no last track to wait for, so an end of queue timer could never fire.
     if (sleepRef.current?.choice.kind === 'queue' && (shuffle || repeat !== 'off')) {
       clearSleep()
-      setNotice(SLEEP_QUEUE_LOST_NOTICE)
+      setNotice(SLEEP_QUEUE_LOST_NOTICE, 'warn')
     }
   }, [shuffle, repeat])
 
@@ -1990,11 +1922,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const activeArt = libraryTrack ? artUrl(libraryTrack) : track?.art
   const isLibrary = Boolean(libraryTrack)
   const seekMax = length || 30
-  // The phone mini player draws the seek bar's played portion from this, since WebKit has no
+  // The seek and volume bars draw their played portion from --progress, since WebKit has no
   // pseudo-element for a range's progress.
   const seekStyle = {
     '--progress': `${Math.min(100, (Math.min(position, seekMax) / seekMax) * 100).toFixed(2)}%`,
   } as CSSProperties
+  const volumeStyle = { '--progress': `${(muted ? 0 : volume) * 100}%` } as CSSProperties
 
   // The Now Playing page has every control the footer has (like, add to playlist, seek, the
   // transport, shuffle, repeat, volume and close) and shows the title, so the footer stands down
@@ -2007,10 +1940,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const footer = footerRef.current
     if (!footer) return
     const publish = () => {
-      document.documentElement.style.setProperty(
-        '--player-height',
-        `${footer.getBoundingClientRect().height}px`,
-      )
+      const { height } = footer.getBoundingClientRect()
+      // The phone's mini player floats above the tab bar with a gap under it, and that gap is
+      // as much room as the player takes. Hidden, it takes none.
+      const gap = height ? Number.parseFloat(getComputedStyle(footer).marginBottom) || 0 : 0
+      document.documentElement.style.setProperty('--player-height', `${height + gap}px`)
     }
     // A hidden footer (a phone with nothing playing, or Now Playing) gets no first observation,
     // so the height is published now, as 0 while it is hidden, and again whenever it shows or
@@ -2022,9 +1956,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [activeTitle, hidden])
 
   const cover = activeArt ? (
-    <img className="size-[45px] rounded-md max-phone:size-[40px]" src={activeArt} alt="" />
+    <img className="size-[48px] rounded-md max-phone:size-[40px]" src={activeArt} alt="" />
   ) : (
-    <Disc3 size={30} className="text-faint" />
+    <span className="grid size-[48px] place-items-center rounded-md bg-sunken max-phone:size-[40px]">
+      <Disc3 size={24} className="text-faint" />
+    </span>
   )
 
   function openPlaylistDialog() {
@@ -2169,9 +2105,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (previewStage.current < 2) {
           previewStage.current += 1
           void loadPreview(item, previewStage.current === 2)
-        } else setNotice('No playable preview available.')
+        } else setNotice('No playable preview available.', 'danger')
       },
     }
+  }
+
+  function retryQueueSave() {
+    void saveQueue(true).then((saved) => {
+      if (saved) setNoticeText((now) => (now === QUEUE_SAVE_FAILED ? LIBRARY_NOTICE : now))
+    })
   }
 
   function submitNewPlaylist(event: FormEvent<HTMLFormElement>) {
@@ -2236,17 +2178,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         stop,
         sleep,
         setSleep: startSleep,
+        retryQueueSave,
       }}
     >
       {children}
       <footer
         ref={footerRef}
         // The attribute rather than a `hidden` utility: Tailwind's base layer gives it
-        // `display: none !important`, so it wins over the footer's own `flex` in any order.
+        // `display: none !important`, so it wins over the footer's own `grid` in any order.
         hidden={hidden}
         className={cx(footerClassName, !activeTitle && 'max-phone:hidden')}
       >
-        <div className="flex min-w-0 flex-1 items-center gap-[13px] text-small max-phone:gap-[10px] [&_a:hover]:underline">
+        {/* Left: the cover, what is playing, like. */}
+        <div className="flex min-w-0 items-center gap-[12px] text-small max-phone:flex-1 max-phone:gap-[10px] [&_a:hover]:underline">
           {/* Now Playing is for library tracks only, so a preview's thumbnail stays a picture.
               On a phone this is the mini player's way in besides the title. */}
           {isLibrary ? (
@@ -2262,7 +2206,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             cover
           )}
           <span className="min-w-0">
-            <strong className="block truncate text-small font-medium max-phone:text-body">
+            <strong className="block truncate text-body font-semibold">
               {isLibrary ? (
                 <Link to="/now-playing">{activeTitle}</Link>
               ) : track?.album_id ? (
@@ -2278,7 +2222,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               )}
             </strong>
             {activeArtist && (
-              <small className="mt-[5px] block truncate text-caption text-muted max-phone:mt-[2px] max-phone:max-w-full max-phone:text-tiny max-phone:leading-[1.3]">
+              <small className="mt-[3px] block truncate text-small text-muted max-phone:mt-[1px] max-phone:max-w-full max-phone:leading-[1.3]">
                 {libraryTrack?.artistId ? (
                   <Link
                     to="/library/artists/$artistId"
@@ -2294,7 +2238,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                   activeArtist
                 )}
                 {activeAlbum && (
-                  <>
+                  <span>
                     {' · '}
                     {libraryTrack?.albumId ? (
                       <Link
@@ -2310,20 +2254,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
                     ) : (
                       activeAlbum
                     )}
-                  </>
+                  </span>
                 )}
               </small>
             )}
-            <small
-              className="mt-[2px] block truncate text-caption text-muted max-phone:mt-[2px] max-phone:max-w-full max-phone:text-tiny max-phone:leading-[1.3]"
-              role="status"
-            >
-              {notice}
-            </small>
           </span>
-        </div>
-        {isLibrary && (
-          <div className="flex items-center gap-[13px] text-small max-phone:hidden">
+          {isLibrary && (
             <IconButton
               active={isLiked}
               // The label already says which way the press goes, so a pressed state on top of it
@@ -2332,150 +2268,202 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               aria-label={
                 isLiked ? `Remove ${activeTitle} from liked` : `Add ${activeTitle} to liked`
               }
+              className="max-phone:hidden"
               disabled={!canToggleLiked || playlistSongs.busy(likedPlaylist.data?.id ?? '')}
               size="compact"
               onClick={() => toggleLikedTrack()}
             >
               <ThumbsUp size={16} fill={isLiked ? 'currentColor' : 'none'} />
             </IconButton>
-            <IconButton
-              aria-label={`Add ${activeTitle} to a playlist`}
-              disabled={!isLibrary}
-              size="compact"
-              onClick={() => openPlaylistDialog()}
-            >
-              <Plus size={16} />
-            </IconButton>
-            {/* The cover beside the title is the link. This icon shows only where the cover does
-                too, so it is a second way to click, not a second stop for a keyboard or a reader. */}
-            <Link
-              data-ui="icon-button"
-              className={iconButtonClassName(false, 'shrink-0', 'compact')}
-              aria-hidden="true"
-              tabIndex={-1}
-              to="/now-playing"
-            >
-              <Maximize2 size={17} />
-            </Link>
-          </div>
-        )}
-        <div className="playback-controls flex items-center gap-[12px] text-tiny text-muted max-phone:gap-[2px]">
-          {isLibrary ? (
-            <IconButton
-              size="compact"
-              className="max-phone:hidden"
-              aria-label="Previous track"
-              onClick={previous}
-            >
-              <SkipBack size={17} />
-            </IconButton>
-          ) : (
-            <IconButton
-              size="compact"
-              className="max-phone:hidden"
-              aria-label="Restart preview"
-              disabled={!ready}
-              onClick={() => {
-                const element = previewAudio.current
-                if (element) {
-                  element.currentTime = 0
-                  void element.play().catch(() => setNotice('Press play when you are ready.'))
-                }
-              }}
-            >
-              <RotateCcw size={16} />
-            </IconButton>
           )}
-          <IconButton
-            variant="play"
-            aria-label={
-              isLibrary ? (playing ? 'Pause' : 'Play') : playing ? 'Pause preview' : 'Play preview'
-            }
-            disabled={!activeTitle}
-            onClick={toggle}
-          >
-            {playing ? <Pause size={19} /> : <Play size={19} />}
-          </IconButton>
-          {isLibrary && (
-            <IconButton size="compact" aria-label="Next track" onClick={() => next()}>
-              <SkipForward size={17} />
-            </IconButton>
-          )}
-          <span className="max-phone:hidden">{durationText(position)}</span>
-          {/* On a phone the seek bar leaves the row and runs along the player's top edge, where
-              the handwritten rules in style.css draw its track from --progress. */}
-          <input
-            className={cx(
-              'w-[140px] accent-accent max-tablet:w-[90px]',
-              'max-phone:absolute max-phone:top-[-6px] max-phone:left-0 max-phone:m-0 max-phone:block max-phone:h-[13px] max-phone:w-full max-phone:appearance-none max-phone:bg-transparent max-phone:disabled:opacity-60',
-            )}
-            aria-label={isLibrary ? 'Playback position' : 'Preview position'}
-            type="range"
-            min="0"
-            max={seekMax}
-            step="0.1"
-            value={Math.min(position, seekMax)}
-            disabled={!ready}
-            style={seekStyle}
-            onChange={(event) => seek(Number(event.target.value))}
-          />
-          <span className="max-phone:hidden">{durationText(length)}</span>
         </div>
-        <div className="flex items-center gap-[4px] text-small max-phone:hidden">
-          {isLibrary && (
-            <>
+        {/* Middle: the transport, with the progress bar under it. On a phone only play and next
+            stay, and the bar leaves the row to run along the player's top edge, where the
+            handwritten rules in style.css draw its track from --progress. */}
+        <div className="playback-controls flex flex-col items-center gap-[6px] max-phone:contents">
+          <div className="flex items-center gap-[8px] text-muted max-phone:gap-[2px]">
+            {isLibrary && (
               <IconButton
                 active={shuffle}
                 size="compact"
                 aria-label="Shuffle"
+                className="max-phone:hidden"
                 onClick={toggleShuffle}
               >
-                <Shuffle size={17} />
+                <Shuffle size={16} />
               </IconButton>
+            )}
+            {isLibrary ? (
+              <IconButton
+                size="compact"
+                className="max-phone:hidden"
+                aria-label="Previous track"
+                onClick={previous}
+              >
+                <SkipBack size={17} fill="currentColor" />
+              </IconButton>
+            ) : (
+              <IconButton
+                size="compact"
+                className="max-phone:hidden"
+                aria-label="Restart preview"
+                disabled={!ready}
+                onClick={() => {
+                  const element = previewAudio.current
+                  if (element) {
+                    element.currentTime = 0
+                    void element
+                      .play()
+                      .catch(() => setNotice('Press play when you are ready.', 'info'))
+                  }
+                }}
+              >
+                <RotateCcw size={16} />
+              </IconButton>
+            )}
+            <button
+              type="button"
+              data-ui="icon-button"
+              data-variant="play"
+              className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-pill border-0 bg-accent p-0 text-accent-ink coarse:min-h-11 coarse:min-w-11 max-phone:size-[44px] max-phone:bg-transparent max-phone:text-text"
+              aria-label={
+                isLibrary
+                  ? playing
+                    ? 'Pause'
+                    : 'Play'
+                  : playing
+                    ? 'Pause preview'
+                    : 'Play preview'
+              }
+              disabled={!activeTitle}
+              onClick={toggle}
+            >
+              {playing ? (
+                <Pause size={18} fill="currentColor" />
+              ) : (
+                <Play size={18} fill="currentColor" />
+              )}
+            </button>
+            {isLibrary && (
+              <IconButton
+                size="compact"
+                className="max-phone:size-[44px]"
+                aria-label="Next track"
+                onClick={() => next()}
+              >
+                <SkipForward size={17} fill="currentColor" />
+              </IconButton>
+            )}
+            {isLibrary && (
               <IconButton
                 active={repeat !== 'off'}
                 size="compact"
+                className="max-phone:hidden"
                 aria-label={`Repeat ${repeat}`}
                 onClick={cycleRepeat}
               >
-                <Repeat size={17} />
+                <Repeat size={16} />
                 {repeat === 'one' && (
                   <small className="absolute mt-[5px] block translate-x-[7px] translate-y-[7px] text-micro text-accent">
                     1
                   </small>
                 )}
               </IconButton>
-            </>
+            )}
+          </div>
+          <div className="flex w-full max-w-[520px] items-center gap-[10px] text-tiny text-faint tabular-nums max-phone:contents">
+            <span className="w-[36px] shrink-0 text-right max-phone:hidden">
+              {durationText(position)}
+            </span>
+            <input
+              className="h-[16px] min-w-0 flex-1 appearance-none bg-transparent accent-accent max-phone:absolute max-phone:top-[-5px] max-phone:left-[8px] max-phone:m-0 max-phone:block max-phone:h-[13px] max-phone:w-[calc(100%-16px)] max-phone:flex-none max-phone:disabled:opacity-60"
+              aria-label={isLibrary ? 'Playback position' : 'Preview position'}
+              type="range"
+              min="0"
+              max={seekMax}
+              step="0.1"
+              value={Math.min(position, seekMax)}
+              disabled={!ready}
+              style={seekStyle}
+              onChange={(event) => seek(Number(event.target.value))}
+            />
+            <span className="w-[36px] shrink-0 max-phone:hidden">{durationText(length)}</span>
+          </div>
+        </div>
+        {/* Right: playlist, queue, volume, expand, and the close that ends playback. A phone
+            keeps only the close. */}
+        <div className="flex items-center justify-end gap-[4px] text-muted max-phone:contents">
+          {isLibrary && (
+            <IconButton
+              aria-label={`Add ${activeTitle} to a playlist`}
+              className="max-phone:hidden"
+              disabled={!isLibrary}
+              size="compact"
+              onClick={() => openPlaylistDialog()}
+            >
+              <Plus size={17} />
+            </IconButton>
+          )}
+          {isLibrary && (
+            // The queue lives on Now Playing, so this is a link there.
+            <Link
+              data-ui="icon-button"
+              className={iconButtonClassName(false, 'shrink-0 max-phone:hidden', 'compact')}
+              aria-label="Queue"
+              to="/now-playing"
+            >
+              <ListMusic size={17} />
+            </Link>
           )}
           <IconButton
             size="compact"
+            className="max-phone:hidden"
             aria-label={
               isLibrary ? (muted ? 'Unmute' : 'Mute') : muted ? 'Unmute preview' : 'Mute preview'
             }
             onClick={toggleMute}
           >
-            {muted || volume === 0 ? <VolumeX size={18} /> : <Volume2 size={18} />}
+            {muted || volume === 0 ? <VolumeX size={17} /> : <Volume2 size={17} />}
           </IconButton>
           <input
-            className="w-[80px] accent-accent max-tablet:w-[64px]"
+            className="mx-[2px] h-[16px] w-[90px] appearance-none bg-transparent accent-accent max-tablet:w-[56px] max-phone:hidden"
             type="range"
             aria-label={isLibrary ? 'Volume' : 'Preview volume'}
             min="0"
             max="1"
             step="0.01"
             value={muted ? 0 : volume}
+            style={volumeStyle}
             onChange={(event) => changeVolume(Number(event.target.value))}
           />
+          {isLibrary && (
+            // The cover beside the title is the link. This icon shows only where the cover does
+            // too, so it is a second way to click, not a second stop for a keyboard or a reader.
+            <Link
+              data-ui="icon-button"
+              className={iconButtonClassName(
+                false,
+                'shrink-0 max-tablet:hidden max-phone:hidden',
+                'compact',
+              )}
+              aria-hidden="true"
+              tabIndex={-1}
+              to="/now-playing"
+            >
+              <Maximize2 size={16} />
+            </Link>
+          )}
+          {(track || libraryTrack) && (
+            <IconButton
+              size="compact"
+              className="max-phone:size-[44px]"
+              aria-label={isLibrary ? 'Close player' : 'Close preview'}
+              onClick={stop}
+            >
+              <X size={16} />
+            </IconButton>
+          )}
         </div>
-        {(track || libraryTrack) && (
-          <IconButton
-            size="compact"
-            aria-label={isLibrary ? 'Close player' : 'Close preview'}
-            onClick={stop}
-          >
-            <X size={16} />
-          </IconButton>
-        )}
         <audio
           ref={previewAudio}
           className="preview-audio"
@@ -2489,88 +2477,41 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       {/* Outside the footer, which Now Playing hides: `display: none` on an ancestor would take the
           open dialog with it, and the page's Add to playlist button opens this one. */}
       {isLibrary && (
-        <dialog
-          ref={playlistDialog}
-          // `playlist-picker-sheet` carries the handwritten ::backdrop rule. Centered at every
-          // width, so on a phone the name field is never trapped under the keyboard.
-          className="playlist-picker-sheet fixed inset-0 m-auto h-fit max-h-[78dvh] w-[min(520px,calc(100%-32px))] overflow-auto overscroll-contain rounded-[16px] border border-line-strong bg-raised p-[18px] text-text max-phone:max-h-[calc(100dvh-32px)] max-phone:w-[calc(100%-16px)] max-phone:p-[14px]"
-          aria-label="Add track to playlist"
-          onClose={() => setPickerOpen(false)}
-          onClick={(event) => {
-            if (event.target === playlistDialog.current) closePlaylistDialog()
-          }}
-        >
-          <header className="mb-[12px] flex items-center gap-[14px]">
-            <h2 className="flex-1">Add to playlist</h2>
-            <IconButton
-              size="compact"
-              aria-label="Close playlist picker"
-              onClick={() => closePlaylistDialog()}
-            >
-              <X size={16} />
-            </IconButton>
-          </header>
-          <label className="flex rounded-[8px] border border-line bg-sunken px-[11px] text-muted">
-            <input
-              className="w-full border-0 bg-transparent px-[2px] py-[10px] text-inherit"
-              aria-label="Filter playlists"
-              value={playlistSearch}
-              placeholder="Filter playlists"
-              onChange={(event) => setPlaylistSearch(event.target.value)}
-            />
-          </label>
-          {allPlaylists.isLoading && <p role="status">Loading playlists…</p>}
-          {allPlaylists.isError && <ErrorBanner>{allPlaylists.error.message}</ErrorBanner>}
-          <div className="mt-[8px] mb-[10px] grid grid-cols-[minmax(0,1fr)] gap-[8px]">
-            {availablePlaylists.map((playlist, at) => (
-              <PlaylistPickerRow
-                key={playlist.id}
-                playlist={playlist}
-                songs={songsByPlaylist.get(playlist.id)}
-                failed={failedPlaylists.has(playlist.id)}
-                onRetry={() => void playlistDetails[at]?.refetch()}
-                trackId={libraryTrack?.id ?? ''}
-                trackTitle={activeTitle ?? 'this track'}
-                busy={playlistSongs.busy(playlist.id)}
-                blocked={createBusy}
-                expanded={expandedPlaylist === playlist.id}
-                onExpand={(open) => setExpandedPlaylist(open ? playlist.id : '')}
-                onToggleTrack={() => togglePlaylistTrack(playlist)}
-                onRemoveSong={(index) =>
-                  playlistSongs.mutation.mutate({ playlistId: playlist.id, index })
-                }
-              />
-            ))}
-            {!allPlaylists.isLoading && !availablePlaylists.length && (
-              <p className={pickerNoteClassName}>No playlists yet.</p>
-            )}
-            {matchingPlaylists.length > PICKER_ROWS && (
-              <p className={pickerNoteClassName}>
-                Showing {PICKER_ROWS} of {matchingPlaylists.length}. Filter above to reach the
-                others.
-              </p>
-            )}
-          </div>
-          <form className="flex flex-wrap items-end gap-[10px]" onSubmit={submitNewPlaylist}>
-            <label className="grid min-w-[min(260px,100%)] gap-[6px] text-small text-muted">
-              New playlist
-              <Field
-                value={newPlaylistName}
-                placeholder="Create and add this track"
-                maxLength={200}
-                onChange={(event) => setNewPlaylistName(event.target.value)}
-              />
-            </label>
-            <Button type="submit" disabled={createBusy || !newPlaylistName.trim()}>
-              {createBusy ? 'Creating…' : 'Create'}
-            </Button>
-          </form>
-          {(playlistSongs.mutation.isError || createPlaylist.isError) && (
-            <ErrorBanner>
-              {playlistSongs.mutation.error?.message || createPlaylist.error?.message}
-            </ErrorBanner>
-          )}
-        </dialog>
+        <PlaylistPicker
+          dialogRef={playlistDialog}
+          onClose={closePlaylistDialog}
+          onClosed={() => setPickerOpen(false)}
+          trackId={libraryTrack?.id ?? ''}
+          trackTitle={activeTitle ?? 'this track'}
+          trackArt={activeArt}
+          search={playlistSearch}
+          onSearch={setPlaylistSearch}
+          loading={allPlaylists.isLoading}
+          loadError={allPlaylists.isError ? allPlaylists.error.message : undefined}
+          rows={availablePlaylists.map((playlist) => ({
+            playlist,
+            songs: songsByPlaylist.get(playlist.id),
+            failed: failedPlaylists.has(playlist.id),
+            busy: playlistSongs.busy(playlist.id),
+          }))}
+          matching={matchingPlaylists.length}
+          limit={PICKER_ROWS}
+          blocked={createBusy}
+          expanded={expandedPlaylist}
+          onExpand={setExpandedPlaylist}
+          onRetry={(playlistId) =>
+            void playlistDetails[
+              availablePlaylists.findIndex((playlist) => playlist.id === playlistId)
+            ]?.refetch()
+          }
+          onToggleTrack={togglePlaylistTrack}
+          onRemoveSong={(playlistId, index) => playlistSongs.mutation.mutate({ playlistId, index })}
+          newName={newPlaylistName}
+          onNewName={setNewPlaylistName}
+          onCreate={submitNewPlaylist}
+          createBusy={createBusy}
+          changeError={playlistSongs.mutation.error?.message || createPlaylist.error?.message}
+        />
       )}
     </PlayerContext.Provider>
   )

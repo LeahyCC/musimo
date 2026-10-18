@@ -1,255 +1,286 @@
 import { useState } from 'react'
 
-import { useInfiniteQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ArrowDownToLine } from 'lucide-react'
+import { ArrowDownToLine, History as HistoryIcon, Settings2 } from 'lucide-react'
 
-import { api, historySchema } from '../../api'
-import type { DownloadJob } from '../../api'
-import { InfiniteScroll } from '../../components/infinite-scroll'
-import { PageTitle } from '../../components/page-title'
 import { cx } from '../../lib/cx'
-import { useDebounced } from '../../lib/use-debounced'
-import { buttonClassName, EmptyPanel, ErrorBanner, errorBannerClassName, Field } from '../../ui'
-import { batchName, BatchSummary, errorLink, JobList } from './job-list'
+import { useLayout } from '../../lib/layout'
+import {
+  buttonClassName,
+  EmptyPanel,
+  ErrorBanner,
+  iconButtonClassName,
+  tabId,
+  TabList,
+  tabPanelId,
+} from '../../ui'
+import { BatchQueue, BatchSummaries } from './batch-queue'
+import { DonePanel, ErrorsPanel, NoMatchPanel } from './finished-panels'
+import { History } from './history'
+import { JobList } from './job-list'
+import { finishedToday } from './job-steps'
 import { activeJob, errorJob, failureTallies, unmatchedJob, useJobs } from './jobs'
-import { QueueControls } from './queue-controls'
+import {
+  CancelQueuedButton,
+  ParallelChip,
+  PauseAllButton,
+  QueueAlerts,
+  SaveTarget,
+  useSettings,
+} from './queue-controls'
 
-function History() {
-  const [q, setQ] = useState(''),
-    [from, setFrom] = useState(''),
-    [until, setUntil] = useState('')
-  // The box stays immediate. The request waits for a pause in typing: a typed search reads the
-  // text of every finished job while it holds the database, about a quarter second at 52k jobs.
-  const deferredQ = useDebounced(q, 250)
-  const query = useInfiniteQuery({
-    queryKey: ['history', deferredQ, from, until],
-    initialPageParam: 0,
-    queryFn: ({ signal, pageParam }) =>
-      api(
-        `history?${new URLSearchParams({ q: deferredQ, since: from ? String(new Date(from).getTime() / 1000) : '0', until: until ? String(new Date(until + 'T23:59:59').getTime() / 1000) : '1000000000000', offset: String(pageParam) })}`,
-        historySchema,
-        { signal },
-      ),
-    getNextPageParam: (page, pages) =>
-      pages.reduce((count, item) => count + item.jobs.length, 0) < page.total
-        ? pages.length * 100
-        : undefined,
-  })
-  return (
-    <>
-      <div className="my-4 flex flex-wrap gap-3">
-        <Field
-          aria-label="Search download history"
-          fullWidth={false}
-          placeholder="Search history"
-          value={q}
-          onChange={(e) => setQ(e.target.value)}
-        />
-        <label className="flex items-center gap-2 text-small">
-          From
-          <Field
-            type="date"
-            fullWidth={false}
-            value={from}
-            onChange={(e) => setFrom(e.target.value)}
-          />
-        </label>
-        <label className="flex items-center gap-2 text-small">
-          To
-          <Field
-            type="date"
-            fullWidth={false}
-            value={until}
-            onChange={(e) => setUntil(e.target.value)}
-          />
-        </label>
-      </div>
-      {query.isPending && <p>Loading history…</p>}
-      {query.isError && (
-        <ErrorBanner>
-          {query.error.message}
-          <button onClick={() => void query.refetch()}>Retry</button>
-        </ErrorBanner>
-      )}
-      {!query.isPending && !query.isError && query.data?.pages[0]?.jobs.length === 0 && (
-        <EmptyPanel>
-          <h2>Nothing has finished yet.</h2>
-        </EmptyPanel>
-      )}
-      <JobList jobs={query.data?.pages.flatMap((page) => page.jobs) ?? []} />
-      {query.hasNextPage && (
-        <InfiniteScroll
-          hasMore={query.hasNextPage}
-          loading={query.isFetchingNextPage}
-          onLoadMore={() => void query.fetchNextPage()}
-        />
-      )}
-    </>
-  )
+type Tab = 'queue' | 'done' | 'unmatched' | 'errors' | 'history'
+const TAB_IDS = 'downloads'
+
+const EMPTY: Record<Tab, string> = {
+  queue: 'No queued downloads',
+  done: 'No done downloads',
+  unmatched: 'No tracks are waiting for a match',
+  errors: 'No failed downloads',
+  history: '',
 }
 
-export function DownloadsPage() {
+/** The queue as the page needs it: each tab's jobs and its count, from one read of the cache. */
+function useDownloadTabs() {
   const queue = useJobs()
-  const [tab, setTab] = useState('queue')
-  // null shows every failure. Single-track failures have an empty batch, so they need
-  // their own chip rather than sharing the unfiltered state.
-  const [group, setGroup] = useState<string | null>(null)
   const all = (queue.data?.jobs ?? []).filter((job) => !job.hidden)
   const { unmatched, errors } = failureTallies(queue.data?.summary, all)
-  const pile =
-    tab === 'unmatched' ? all.filter(unmatchedJob) : tab === 'errors' ? all.filter(errorJob) : []
-  // Album and artist downloads fail in clusters, so the batch is the useful unit to inspect.
-  const failureGroups = [
-    ...pile.reduce(
-      (map, job) => map.set(job.batch_id, [...(map.get(job.batch_id) ?? []), job]),
-      new Map<string, DownloadJob[]>(),
-    ),
-  ].sort(([left], [right]) => left.localeCompare(right))
-  // Chips only appear above one group, so the filter has to read from the same condition or
-  // the list could narrow by a control the user cannot see.
-  const grouped = failureGroups.length > 1
-  const selectedGroup =
-    grouped && group !== null && failureGroups.some(([id]) => id === group) ? group : null
-  const jobs = (
-    tab === 'queue'
-      ? all.filter(activeJob)
-      : tab === 'done'
-        ? all.filter((job) => job.stage === 'done')
-        : pile.filter((job) => selectedGroup === null || job.batch_id === selectedGroup)
-  ).sort((a, b) => (tab === 'queue' ? a.created_at - b.created_at : b.updated_at - a.updated_at))
-  const counts = {
-    queue: queue.data?.summary.active ?? all.filter(activeJob).length,
-    done: all.filter((job) => job.stage === 'done').length,
-    unmatched,
-    errors,
+  const reasons = queue.data?.summary.failure_reasons ?? []
+  const newest = (a: { updated_at: number }, b: { updated_at: number }) =>
+    b.updated_at - a.updated_at
+  const active = all.filter(activeJob).sort((a, b) => a.created_at - b.created_at)
+  const done = all.filter((job) => job.stage === 'done').sort(newest)
+  return {
+    queue,
+    all,
+    lists: {
+      queue: active,
+      done,
+      unmatched: all.filter(unmatchedJob).sort(newest),
+      errors: all.filter(errorJob).sort(newest),
+    },
+    counts: {
+      queue: queue.data?.summary.active ?? active.length,
+      done: done.length,
+      unmatched,
+      errors,
+    },
+    doneToday: done.filter((job) => finishedToday(job, Date.now())).length,
+    reasons: {
+      unmatched: reasons.filter((reason) => reason.code === 'NO_MATCH'),
+      errors: reasons.filter((reason) => reason.code !== 'NO_MATCH'),
+    },
   }
-  const tabs = [
-    ['queue', 'Queue', counts.queue],
-    ['done', 'Done', counts.done],
-    ['unmatched', 'No match', counts.unmatched],
-    ['errors', 'Errors', counts.errors],
-    ['history', 'History', null],
-  ] as const
-  const pileCount = tab === 'unmatched' ? counts.unmatched : counts.errors
-  const reasons = (queue.data?.summary.failure_reasons ?? []).filter((reason) =>
-    tab === 'unmatched' ? reason.code === 'NO_MATCH' : reason.code !== 'NO_MATCH',
-  )
+}
+
+type DownloadTabs = ReturnType<typeof useDownloadTabs>
+
+/** "3 downloading · 11 queued", counted from the jobs the page holds. */
+function queueLine(jobs: DownloadTabs['lists']['queue']) {
+  const moving = jobs.filter((job) => !['queued', 'retry_wait', 'paused'].includes(job.stage))
+  const waiting = jobs.length - moving.length
+  return `${moving.length} downloading · ${waiting} queued`
+}
+
+function TabContent({ tab, data }: { tab: Tab; data: DownloadTabs }) {
+  const layout = useLayout()
+  if (tab === 'history') return <History />
+  const jobs = data.lists[tab]
+  const body =
+    tab === 'unmatched' ? (
+      <NoMatchPanel jobs={jobs} count={data.counts.unmatched} reasons={data.reasons.unmatched} />
+    ) : tab === 'errors' ? (
+      <ErrorsPanel jobs={jobs} count={data.counts.errors} reasons={data.reasons.errors} />
+    ) : !jobs.length ? null : tab === 'done' ? (
+      <DonePanel jobs={jobs} />
+    ) : layout === 'room' ? (
+      <BatchQueue jobs={data.all} />
+    ) : (
+      <>
+        <BatchSummaries jobs={data.all} />
+        <JobList jobs={jobs} />
+      </>
+    )
   return (
     <>
-      <PageTitle eyebrow="YOUR COLLECTION, IN MOTION" title="Downloads">
-        <Link data-ui="button" className={buttonClassName()} to="/settings">
-          Download settings
-        </Link>
-      </PageTitle>
-      <QueueControls />
-      <BatchSummary jobs={queue.data?.jobs ?? []} />
-      <div className="download-tabs mt-6 mb-4 flex flex-wrap gap-1.5 max-phone:flex-nowrap max-phone:gap-1">
-        {tabs.map(([value, label, count]) => (
-          <button
-            key={value}
-            data-ui="tab"
-            className={cx(
-              'rounded-pill border-0 px-[17px] py-[10px] whitespace-nowrap coarse:min-h-11',
-              'max-phone:min-w-0 max-phone:flex-1 max-phone:px-[2px] max-phone:text-body max-phone:overflow-hidden max-phone:text-ellipsis',
-              tab === value ? 'bg-accent text-accent-ink' : 'bg-transparent text-muted',
-            )}
-            aria-pressed={tab === value}
-            onClick={() => setTab(value)}
-          >
-            {label}
-            {count !== null && <span className="max-phone:sr-only"> ({count})</span>}
-          </button>
-        ))}
-      </div>
-      {queue.isError && (
-        <ErrorBanner>
-          {queue.error.message}
-          <button onClick={() => void queue.refetch()}>Retry</button>
-        </ErrorBanner>
-      )}
-      {(tab === 'unmatched' || tab === 'errors') && pileCount > 0 && (
-        <section
-          className={errorBannerClassName('list')}
-          aria-label={tab === 'unmatched' ? 'No match summary' : 'Failure summary'}
-        >
-          <strong>
-            {tab === 'unmatched'
-              ? `${pileCount} ${pileCount === 1 ? 'track has' : 'tracks have'} no close match`
-              : `${pileCount} ${pileCount === 1 ? 'download' : 'downloads'} failed`}
-          </strong>
-          {reasons.map((reason) => {
-            const link = errorLink(reason.fix || '')
-            return (
-              <span key={[reason.code, reason.message, reason.hint, reason.fix].join('|')}>
-                {reason.count} · {reason.hint || reason.message}{' '}
-                {reason.code && <small>({reason.code})</small>}
-                {link &&
-                  (() => {
-                    const [to, hash] = link.href.split('#')
-                    return (
-                      <>
-                        {' '}
-                        <Link to={to} hash={hash}>
-                          {link.text}
-                        </Link>
-                      </>
-                    )
-                  })()}
-              </span>
-            )
-          })}
-          {selectedGroup === null && jobs.length < pileCount && (
-            <small>Showing the latest {jobs.length} below.</small>
-          )}
-        </section>
-      )}
-      {(tab === 'unmatched' || tab === 'errors') && grouped && (
-        <div
-          className="my-[14px] flex flex-wrap gap-2"
-          role="group"
-          aria-label={
-            tab === 'unmatched' ? 'No matches by download group' : 'Failures by download group'
-          }
-        >
-          {failureGroups.map(([id, rows]) => (
-            <button
-              key={id}
-              className={cx(
-                'max-w-full truncate rounded-pill border px-3 py-[7px] text-small coarse:min-h-11',
-                selectedGroup === id
-                  ? 'border-accent bg-accent text-accent-ink'
-                  : 'border-line bg-sunken text-muted',
-              )}
-              aria-pressed={selectedGroup === id}
-              onClick={() => setGroup(selectedGroup === id ? null : id)}
-            >
-              {id === '' ? 'Single tracks' : batchName(rows)} ({rows.length})
-            </button>
-          ))}
-        </div>
-      )}
-      {tab === 'history' ? (
-        <History />
-      ) : jobs.length ? (
-        <JobList jobs={jobs} />
-      ) : queue.isError ? null : (
+      {body}
+      {!jobs.length && !data.queue.isError && (
         <EmptyPanel>
           <ArrowDownToLine size={36} />
-          <h2>
-            {queue.isPending
-              ? 'Loading queue…'
-              : tab === 'unmatched'
-                ? 'No tracks are waiting for a match'
-                : tab === 'errors'
-                  ? 'No failed downloads'
-                  : `No ${tab === 'queue' ? 'queued' : tab} downloads`}
-          </h2>
+          <h2>{data.queue.isPending ? 'Loading queue…' : EMPTY[tab]}</h2>
           <Link to="/search" data-ui="button" className={buttonClassName('primary')}>
             Find a track
           </Link>
         </EmptyPanel>
       )}
+    </>
+  )
+}
+
+function ClassicHeader({ data }: { data: DownloadTabs }) {
+  return (
+    <header className="mb-[20px] flex flex-wrap items-end justify-between gap-[16px]">
+      <div className="min-w-0">
+        <h1 className="text-display font-semibold tracking-[-0.7px]">Downloads</h1>
+        <p className="mt-[6px] text-body text-muted">
+          {queueLine(data.lists.queue)} <SaveTarget lead="· saving to" />
+        </p>
+      </div>
+      <div className="flex flex-wrap items-center gap-[8px]">
+        <ParallelChip />
+        <PauseAllButton />
+        <CancelQueuedButton />
+        <Link
+          to="/settings"
+          aria-label="Download settings"
+          title="Download settings"
+          className={iconButtonClassName(false, 'h-[36px] w-[36px] bg-hover', 'box', 'outlined')}
+        >
+          <Settings2 size={16} />
+        </Link>
+      </div>
+    </header>
+  )
+}
+
+const roomTiles = [
+  { tab: 'queue', label: 'Active' },
+  { tab: 'unmatched', label: 'No match' },
+  { tab: 'done', label: 'Done today' },
+  { tab: 'errors', label: 'Needs you' },
+] as const
+
+/**
+ * The Listening room's four numbers double as the tabs, and History is a toggle beside them. They
+ * are pressed buttons, not ARIA tabs: History sits apart from the row, so no tab row would hold all
+ * five.
+ */
+function RoomHeader({
+  data,
+  tab,
+  setTab,
+}: {
+  data: DownloadTabs
+  tab: Tab
+  setTab: (tab: Tab) => void
+}) {
+  const settings = useSettings()
+  const values: Record<(typeof roomTiles)[number]['tab'], number> = {
+    queue: data.counts.queue,
+    unmatched: data.counts.unmatched,
+    done: data.doneToday,
+    errors: data.counts.errors,
+  }
+  const parallel = settings.data?.concurrency.value
+  return (
+    <>
+      <h1 className="mb-[16px] text-display font-semibold tracking-[-0.7px]">Downloads</h1>
+      <div
+        role="group"
+        aria-label="Download views"
+        className="download-tabs mb-[18px] grid grid-cols-[repeat(auto-fit,minmax(130px,1fr))] gap-[10px] max-phone:grid-cols-2"
+      >
+        {roomTiles.map((tile) => {
+          const pressed = tab === tile.tab
+          const alarm = tile.tab === 'errors' && values.errors > 0
+          return (
+            <button
+              key={tile.tab}
+              aria-pressed={pressed}
+              onClick={() => setTab(tile.tab)}
+              className={cx(
+                'rounded-[16px] border px-[16px] py-[14px] text-left text-text',
+                alarm ? 'bg-danger-bg' : pressed ? 'bg-active' : 'bg-raised',
+                pressed
+                  ? alarm
+                    ? 'border-danger'
+                    : 'border-accent'
+                  : alarm
+                    ? 'border-danger-line'
+                    : 'border-transparent',
+              )}
+            >
+              <span
+                className={cx(
+                  'block font-mono text-[10.5px] tracking-[0.6px] uppercase',
+                  tile.tab === 'queue' ? 'text-accent' : alarm ? 'text-danger' : 'text-muted',
+                )}
+              >
+                {tile.label}
+              </span>
+              <span className="mt-[8px] block text-[26px] font-semibold tracking-[-0.8px]">
+                {values[tile.tab]}
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      <div className="mb-[14px] flex flex-wrap items-center gap-[8px]">
+        <span className="text-small text-muted">
+          <SaveTarget lead="Saving to" />
+          {parallel !== undefined && ` · ${parallel} at a time`}
+        </span>
+        <span className="flex-1" />
+        <PauseAllButton className="rounded-[10px] border-0" />
+        <CancelQueuedButton className="rounded-[10px] border-0" />
+        <button
+          aria-pressed={tab === 'history'}
+          onClick={() => setTab(tab === 'history' ? 'queue' : 'history')}
+          className={buttonClassName(
+            'default',
+            cx('min-h-[36px] rounded-[10px] border-0 py-0', tab === 'history' && 'bg-active'),
+          )}
+        >
+          <HistoryIcon size={14} aria-hidden="true" />
+          History
+        </button>
+      </div>
+    </>
+  )
+}
+
+export function DownloadsPage() {
+  const layout = useLayout()
+  const data = useDownloadTabs()
+  const [tab, setTab] = useState<Tab>('queue')
+  const tabs = [
+    { id: 'queue', label: 'Queue', count: data.counts.queue },
+    { id: 'done', label: 'Done', count: data.counts.done },
+    { id: 'unmatched', label: 'No match', count: data.counts.unmatched },
+    { id: 'errors', label: 'Errors', count: data.counts.errors },
+    { id: 'history', label: 'History' },
+  ] as const
+  const error = data.queue.isError && (
+    <ErrorBanner>
+      {data.queue.error.message}
+      <button onClick={() => void data.queue.refetch()}>Retry</button>
+    </ErrorBanner>
+  )
+  if (layout === 'room')
+    return (
+      <>
+        <RoomHeader data={data} tab={tab} setTab={setTab} />
+        <QueueAlerts />
+        {error}
+        <TabContent tab={tab} data={data} />
+      </>
+    )
+  return (
+    <>
+      <ClassicHeader data={data} />
+      <QueueAlerts />
+      <TabList
+        label="Downloads"
+        idBase={TAB_IDS}
+        tabs={tabs}
+        value={tab}
+        onChange={setTab}
+        className="download-tabs mb-[16px] overflow-x-auto overflow-y-hidden [scrollbar-width:none] max-phone:gap-[14px]"
+      />
+      <div role="tabpanel" id={tabPanelId(TAB_IDS, tab)} aria-labelledby={tabId(TAB_IDS, tab)}>
+        {error}
+        <TabContent tab={tab} data={data} />
+      </div>
     </>
   )
 }

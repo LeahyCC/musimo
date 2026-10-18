@@ -6,6 +6,7 @@ import {
   openLibraryFilters,
   openLibraryView,
   ORIGIN,
+  playerFixtures,
   toggleLibraryFacet,
 } from './library-fixtures'
 
@@ -292,4 +293,49 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
     await expect(navRow).toHaveAttribute('aria-current', 'page')
     await expect(navRow.locator('img')).toBeVisible()
   }
+})
+
+test('the footer player is three columns with the transport and progress in the middle', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'The three columns are for wide windows.')
+  await playerFixtures(page)
+  await page.route('**/api/player/queue', (route) =>
+    route.fulfill(
+      route.request().method() === 'GET'
+        ? { json: { current: song.id, position: 0, entry: [song] } }
+        : { status: 204 },
+    ),
+  )
+  await page.goto('/downloads')
+  const footer = page.locator('footer.live-player')
+  await expect(footer).toContainText('First Light')
+  await expect(footer).toContainText('Harbor Static · Clear Water')
+  const frame = await footer.boundingBox()
+  const cover = await footer.getByRole('link', { name: 'Open Now Playing' }).boundingBox()
+  const play = await footer.getByRole('button', { name: 'Play', exact: true }).boundingBox()
+  const seek = await footer.getByRole('slider', { name: 'Playback position' }).boundingBox()
+  const volume = await footer.getByRole('slider', { name: 'Volume' }).boundingBox()
+  if (!frame || !cover || !play || !seek || !volume) throw new Error('A control has no box')
+  expect(frame.height).toBe(76)
+  // Columns of 1 : 1.3 : 1 leave the transport centred on the bar, with the progress under it.
+  expect(Math.abs(play.x + play.width / 2 - (frame.x + frame.width / 2))).toBeLessThan(2)
+  expect(seek.y).toBeGreaterThan(play.y + play.height - 1)
+  expect(cover.x).toBeLessThan(play.x)
+  expect(play.x).toBeLessThan(volume.x)
+
+  // Every control the footer had still has a place, and the queue is one click to Now Playing.
+  for (const name of [
+    'Add First Light to liked',
+    'Add First Light to a playlist',
+    'Shuffle',
+    'Previous track',
+    'Next track',
+    'Repeat off',
+    'Mute',
+    'Close player',
+  ])
+    await expect(footer.getByRole('button', { name, exact: true })).toBeVisible()
+  await expect(footer.getByRole('link', { name: 'Queue' })).toHaveAttribute('href', '/now-playing')
 })

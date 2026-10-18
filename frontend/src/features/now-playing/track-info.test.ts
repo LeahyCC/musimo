@@ -5,6 +5,7 @@ import {
   contributorGroups,
   fileRows,
   fileSummary,
+  formatChips,
   isLowQualityLossy,
   otherAlbums,
   playedAt,
@@ -122,6 +123,20 @@ const queued: LibraryTrack = {
   duration: 200,
   playCount: 0,
 }
+
+describe('formatChips', () => {
+  it('is format, sample rate, bitrate and year, each only where known', () => {
+    expect(
+      formatChips(song({ suffix: 'flac', samplingRate: 44100, bitRate: 1012, year: 2020 }), queued),
+    ).toEqual(['FLAC', '44.1 kHz', '1,012 kbps', '2020'])
+    expect(formatChips(song({ suffix: 'opus', bitRate: 0 }), queued)).toEqual(['OPUS'])
+  })
+
+  it('takes the queued year while the song has not arrived, and is empty with nothing known', () => {
+    expect(formatChips(undefined, { ...queued, year: 2018 })).toEqual(['2018'])
+    expect(formatChips(undefined, queued)).toEqual([])
+  })
+})
 
 describe('releaseRows', () => {
   it('lists what is known, with the song’s tags winning over the queued copy', () => {
