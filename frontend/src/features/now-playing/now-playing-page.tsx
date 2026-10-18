@@ -717,7 +717,11 @@ export function NowPlayingPage() {
         ) : (
           <h1>Nothing playing yet.</h1>
         )}
-        <Link data-ui="button" className={buttonClassName('primary', 'mx-auto')} to="/library">
+        <Link
+          data-ui="button"
+          className={buttonClassName('primary', 'mx-auto')}
+          to="/library/albums"
+        >
           Open your library
         </Link>
       </EmptyPanel>

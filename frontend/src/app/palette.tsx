@@ -7,8 +7,9 @@ import { useNowPlayingPopout } from '../features/now-playing/now-playing-popout'
 import { usePlayer } from '../features/player/player'
 
 const pages = [
+  { label: 'Home', to: '/' },
   { label: 'Search music', to: '/search' },
-  { label: 'Library', to: '/library' },
+  { label: 'Library', to: '/library/albums' },
   { label: 'Now Playing', to: '/now-playing' },
   { label: 'Downloads', to: '/downloads' },
   { label: 'Settings', to: '/settings' },

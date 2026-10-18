@@ -124,4 +124,53 @@ Library detail waits for Library browse because both edit `library.tsx`.
 
 ## Colour tokens
 
-Filled in by the Foundation card.
+Every colour the prototypes use, mapped to the token a screen writes instead. The hex values are `musimo-dark`. A `/n` after a token is Tailwind's opacity modifier (`bg-accent/85`); a mix is `color-mix(in oklab, …)`. Two tokens are new: `--color-warn-line` and `--color-chart-idle`. Both have a value in all 12 built-in themes and sit in the theme editor.
+
+| Hex                         | Role in the prototypes                                                    | Token                                                  |
+| --------------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------ |
+| `#111716`                   | Page background, Listening room panels                                    | `canvas`                                               |
+| `#0e1312`                   | Classic sidebar, phone tab bar, the Listening room backdrop behind panels | `sidebar`                                              |
+| `#17201b`                   | Cards, tiles, sections                                                    | `raised`                                               |
+| `#151c19`                   | Search fields, toolbars, segmented control track, list group headers      | `sunken`                                               |
+| `#1e2a23`                   | Hover, secondary buttons, count badges                                    | `hover`                                                |
+| `#263327`                   | Selected nav row, selected segment, active chip, filter chip              | `active`                                               |
+| `#e8ece8`                   | Primary text                                                              | `text`                                                 |
+| `#93a39b`                   | Secondary text, chip keys                                                 | `muted`                                                |
+| `#819088`                   | Eyebrows, timestamps, mono captions                                       | `faint`                                                |
+| `#2a3630`                   | Borders, pending pipeline step, missing coverage                          | `line`                                                 |
+| `#344035`                   | Stronger borders, dashed add chip, switch off, unplayed waveform          | `line-strong`                                          |
+| `#3d4b43`                   | Chart bars that are not picked out (past weeks, other years)              | `chart-idle` (new)                                     |
+| `#c3e4a2`                   | Accent, owned coverage, done pipeline step, switch on                     | `accent`                                               |
+| `#172014`                   | Text on accent, switch knob when on                                       | `accent-ink`                                           |
+| `#d9ff73`                   | Live state, Now Playing nav dot                                           | `accent-hot`                                           |
+| `#283a28`                   | Good chip background                                                      | `good-bg`                                              |
+| `#4b6743`                   | Good chip border, active select chip border                               | `good-line`                                            |
+| `#f8ca76`                   | Warning text and icon                                                     | `warn`                                                 |
+| `#342e1d`                   | Warning toast and banner background                                       | `warn-bg`                                              |
+| `#5a4b2a`                   | Warning toast and source row border                                       | `warn-line` (new)                                      |
+| `#efbaa2`                   | Error text, failed segment                                                | `danger`                                               |
+| `#39251f`                   | Error group header, reason chips                                          | `danger-bg`                                            |
+| `#674343`                   | Error border                                                              | `danger-line`                                          |
+| `#2a3a27`                   | Owned badge background                                                    | `owned-bg`                                             |
+| `#e4cc9c`                   | Other edition, partial                                                    | `partial`                                              |
+| `#3a3224`                   | Partial badge background                                                  | `partial-bg`                                           |
+| `#020305`                   | Behind the visualizer and artwork                                         | `media`                                                |
+| `#fff`, `#ffffff`           | Icons and text over artwork or the visualizer, the room's white play disc | `on-media`                                             |
+| `#000000`                   | Shadows; dark washes over art                                             | `shadow`, `scrim`                                      |
+| `#7fa86a`                   | End of the Liked playlist cover gradient                                  | mix of `accent` and `good-line`, 50%                   |
+| `#7d9468`                   | Running segment in a batch progress bar                                   | mix of `accent` 55% and `line`                         |
+| `#56645c`                   | Lyric lines already sung                                                  | mix of `faint` 60% and `canvas`                        |
+| `#0a0d0c`                   | Background of the prototype documents themselves, not the app             | none                                                   |
+| `rgba(0,0,0,.25–.85)`       | Shadows, control pills over art, image washes                             | `shadow/n` for shadows, `scrim/n` for washes and pills |
+| `rgba(255,255,255,.1–.9)`   | Secondary text, rings and inactive bars over art                          | `on-media/n`                                           |
+| `rgba(195,228,162,.55–.9)`  | Cover ring, now-playing row wash, AUTO pill                               | `accent/n`                                             |
+| `rgba(232,236,232,.08–.15)` | Room dock buttons and progress track                                      | `text/n`                                               |
+| `rgba(17,23,22,.85)`        | Icon chip over a cover                                                    | `canvas/85`                                            |
+| `rgba(14,19,18,.75)`        | Year badge over a cover                                                   | `sidebar/75`                                           |
+| `rgba(248,202,118,.15)`     | Retry button inside a warning toast                                       | `warn/15`                                              |
+| `rgba(239,186,162,.06)`     | Failed job row wash                                                       | `danger/6`                                             |
+| `rgba(2,3,5,.16)`           | Visualizer trail fade (`viz.js`)                                          | `media/16`                                             |
+
+The Appearance prototype's theme cards show each built-in theme's own canvas, raised, accent and text. Those come from `BUILT_IN_THEMES` at runtime, so they need no mapping.
+
+There is no separate token for a deeper sidebar or for "other edition". The first is `sidebar`, the second is `partial`.

@@ -367,7 +367,7 @@ test('deleting the active theme falls back to the default', async ({ page }) => 
 
 test('a second tab follows a theme saved in the first', async ({ page, context }) => {
   const other = await context.newPage()
-  await other.goto('/library')
+  await other.goto('/library/albums')
   await backdropIs(other, DEFAULT_THEME.colors['--color-canvas'])
 
   await duplicateDefault(page, 'Plum')

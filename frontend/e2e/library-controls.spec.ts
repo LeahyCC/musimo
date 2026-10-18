@@ -115,8 +115,9 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
 test('loading states name what is on the way and hold the counts back', async ({ page }) => {
   await libraryFixtures(page)
   await page.route('**/api/library/albums?**', () => new Promise(() => undefined))
+  // The bare library address opens Albums, so that is what it says while waiting.
   await page.goto('/library')
-  // The home view loads albums, so that is what it says while waiting.
+  await expect(page).toHaveURL(/\/library\/albums$/)
   await expect(page.getByText('Loading albums…')).toBeVisible()
 
   await page.route('**/api/library/albums/album-1', () => new Promise(() => undefined))
@@ -184,9 +185,9 @@ test('a failed load reports under the heading it belongs to', async ({ page }) =
   await page.route('**/api/library/albums?**', (route) =>
     route.fulfill({ status: 500, json: { detail: 'The library index is unavailable.' } }),
   )
-  await page.goto('/library')
+  await page.goto('/library/albums')
 
-  const heading = page.getByRole('heading', { name: 'Fresh in your library' })
+  const heading = page.getByRole('heading', { name: 'Albums', exact: true })
   const error = page.getByRole('alert')
   await expect(heading).toBeVisible()
   await expect(error).toContainText('The library index is unavailable.')
@@ -582,21 +583,22 @@ test('the artists view sends its filters to the server and keeps favourites', as
 
 test('library view tabs have aria-pressed state', async ({ page }) => {
   await libraryFixtures(page)
-  await page.goto('/library')
+  await page.goto('/library/albums')
 
-  const homeTab = page.getByRole('button', { name: 'Home', exact: true })
-  const albumsTab = page.getByRole('button', { name: 'Albums', exact: true })
-  const artistsTab = page.getByRole('button', { name: 'Artists', exact: true })
-  const tracksTab = page.getByRole('button', { name: 'Tracks', exact: true })
-  const playlistsTab = page.getByRole('button', { name: 'Playlists', exact: true })
+  const views = page.getByRole('navigation', { name: 'Library views' })
+  // Home is the dashboard at `/` now, not a library view.
+  await expect(views.getByRole('button', { name: 'Home', exact: true })).toHaveCount(0)
+  const albumsTab = views.getByRole('button', { name: 'Albums', exact: true })
+  const artistsTab = views.getByRole('button', { name: 'Artists', exact: true })
+  const tracksTab = views.getByRole('button', { name: 'Tracks', exact: true })
+  const playlistsTab = views.getByRole('button', { name: 'Playlists', exact: true })
 
-  await expect(homeTab).toHaveAttribute('aria-pressed', 'true')
-  await expect(albumsTab).toHaveAttribute('aria-pressed', 'false')
+  await expect(albumsTab).toHaveAttribute('aria-pressed', 'true')
   await expect(artistsTab).toHaveAttribute('aria-pressed', 'false')
   await expect(tracksTab).toHaveAttribute('aria-pressed', 'false')
   await expect(playlistsTab).toHaveAttribute('aria-pressed', 'false')
 
-  await albumsTab.click()
-  await expect(homeTab).toHaveAttribute('aria-pressed', 'false')
-  await expect(albumsTab).toHaveAttribute('aria-pressed', 'true')
+  await artistsTab.click()
+  await expect(albumsTab).toHaveAttribute('aria-pressed', 'false')
+  await expect(artistsTab).toHaveAttribute('aria-pressed', 'true')
 })

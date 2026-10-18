@@ -132,6 +132,13 @@ Phase 1 added three more, because nothing above could express them:
 | `--color-media`        | Solid backing behind artwork and the visualizer                                    | `#020305` |
 | `--color-on-media`     | Text and icons over artwork or the scrim; stays light when the page text goes dark | `#ffffff` |
 
+The UI refactor's Foundation card added two more (see the mapping in [ui-refactor-plan.md](ui-refactor-plan.md#colour-tokens)):
+
+| Token                | Role                                                            | Value     |
+| -------------------- | --------------------------------------------------------------- | --------- |
+| `--color-warn-line`  | Border of a warning toast, banner or row, beside `--color-warn` | `#5a4b2a` |
+| `--color-chart-idle` | Chart bars that are not picked out                              | `#3d4b43` |
+
 If a later pass finds a color that none of these can express, add a token with a role name and list it here. Do not name a token after a screen.
 
 Layout variables stay CSS custom properties, not Tailwind spacing, because JavaScript and several `calc()`s read them:

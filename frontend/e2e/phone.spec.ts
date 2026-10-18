@@ -211,9 +211,9 @@ const undersized = (page: Page) =>
 test('the library and download tabs each fit one row at 360px', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 })
   await libraryFixtures(page)
-  await page.goto('/library')
+  await page.goto('/library/albums')
   const tabs = page.getByRole('navigation', { name: 'Library views' }).getByRole('button')
-  await expect(tabs).toHaveCount(5)
+  await expect(tabs).toHaveCount(4)
   const rows = new Set<number>()
   for (const tab of await tabs.all()) {
     const rect = await box(tab)
@@ -328,7 +328,7 @@ test('the library shows its first album in the top half and keeps its controls i
       },
     }),
   )
-  await page.goto('/library')
+  await page.goto('/library/albums')
   const firstCard = page.locator('.library-card').first()
   await expect(firstCard).toBeVisible()
   expect((await box(firstCard)).y).toBeLessThan(844 * 0.45)
@@ -342,7 +342,7 @@ test('the library shows its first album in the top half and keeps its controls i
     Math.abs(search.y + search.height / 2 - (filterBox.y + filterBox.height / 2)),
   ).toBeLessThan(8)
   expect(filterBox.height).toBeGreaterThanOrEqual(44)
-  await expect(page.getByLabel('Sort home')).toBeHidden()
+  await expect(page.getByLabel('Sort albums')).toBeHidden()
   await expect(page.getByText('All genres', { exact: true })).toBeHidden()
   await expect(page.getByRole('button', { name: 'List view' })).toBeHidden()
   // The count reads under the list rather than in a toolbar.
@@ -350,7 +350,7 @@ test('the library shows its first album in the top half and keeps its controls i
 
   await filter.click()
   const sheet = page.getByRole('dialog', { name: 'Filter albums' })
-  await expect(sheet.getByLabel('Sort home')).toBeVisible()
+  await expect(sheet.getByLabel('Sort albums')).toBeVisible()
   await expect(sheet.getByText('All years', { exact: true })).toBeVisible()
   await expect(sheet.getByRole('button', { name: 'Grid view' })).toBeVisible()
   await sheet.getByText('All genres', { exact: true }).click()

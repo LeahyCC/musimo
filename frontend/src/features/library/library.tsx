@@ -793,7 +793,7 @@ export function LibraryPage({
           )}
           aria-label="Library views"
         >
-          {(['home', 'albums', 'artists', 'tracks', 'playlists'] as Tab[]).map((item) => (
+          {(['albums', 'artists', 'tracks', 'playlists'] as Tab[]).map((item) => (
             <button
               data-ui="tab"
               className={cx(
