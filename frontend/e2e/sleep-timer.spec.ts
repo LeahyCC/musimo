@@ -109,7 +109,7 @@ test('end of album or queue is not offered with shuffle on', async ({ page }) =>
   await expect(item).toContainText('Not with shuffle or repeat')
 })
 
-test('the control row stays on one line at 1280 by 720 with a timer running', async ({
+test('the row under the transport stays on one line at 1280 by 720 with a timer running', async ({
   page,
   isMobile,
 }) => {
@@ -119,13 +119,15 @@ test('the control row stays on one line at 1280 by 720 with a timer running', as
   await choose(page, '15 minutes')
   await expect(page.getByRole('timer', { name: 'Sleep time left' })).toBeVisible()
 
-  // Every control in the row shares one line when their tops and bottoms overlap the shuffle's.
-  const names = ['Shuffle', 'Sleep timer', 'Cancel sleep timer', 'Mute', 'Close player']
+  // Classic sets the transport on a row of its own and the sleep timer, More like this, volume and
+  // close on the row under it. Every control in that row shares one line when their tops and
+  // bottoms overlap the sleep timer's.
+  const names = ['Sleep timer', 'Cancel sleep timer', 'More like this', 'Mute', 'Close player']
   const boxes = await Promise.all(
     names.map((name) => page.getByRole('button', { name, exact: true }).first().boundingBox()),
   )
   const [first, ...rest] = boxes
-  if (!first) throw new Error('Missing the shuffle button')
+  if (!first) throw new Error('Missing the sleep timer button')
   for (const box of rest) {
     if (!box) throw new Error('Missing a control in the row')
     expect(Math.abs(box.y + box.height / 2 - (first.y + first.height / 2))).toBeLessThan(
