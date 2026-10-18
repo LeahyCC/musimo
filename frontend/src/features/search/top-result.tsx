@@ -28,9 +28,16 @@ export function TopResult({ artist, room }: { artist: MusicResult; room: boolean
   })
   const jobs = useJobs((data) => data.jobs).data
   const items = releases.data?.pages.flatMap((page) => page.items) ?? []
-  const counts = items.length ? releaseCoverage(items, jobs ?? []) : undefined
+  const counts = releaseCoverage(items, jobs ?? [])
   const ownedSongs = counts?.owned ?? 0
-  const missing = counts?.missing ?? 0
+  // The button opens the albums-only sheet, so its count leaves singles and EPs out too.
+  const albums = releaseCoverage(
+    items.filter((release) => release.record_type === 'album'),
+    jobs ?? [],
+  )
+  const missing = albums?.missing
+  // Only the first page of releases is loaded, so "nothing missing" holds only when that is all.
+  const nothingMissing = missing === 0 && !releases.hasNextPage
   const name = (
     <Link
       to="/artists/$artistId"
@@ -67,9 +74,11 @@ export function TopResult({ artist, room }: { artist: MusicResult; room: boolean
           {counts ? (
             <CoverageBar {...counts} className="mt-[12px]" />
           ) : (
-            <p className="mt-[12px] text-small text-faint" role="status">
-              {releases.isError ? 'Library counts are unavailable.' : 'Checking your library…'}
-            </p>
+            (releases.isPending || releases.isError) && (
+              <p className="mt-[12px] text-small text-faint" role="status">
+                {releases.isError ? 'Library counts are unavailable.' : 'Checking your library…'}
+              </p>
+            )
           )}
         </div>
         <ArtistDownloadButton
@@ -79,15 +88,15 @@ export function TopResult({ artist, room }: { artist: MusicResult; room: boolean
             <Button
               variant="primary"
               className="relative z-raised"
-              disabled={counts !== undefined && missing === 0}
+              disabled={nothingMissing}
               onClick={() => open(false)}
             >
               <ArrowDownToLine size={16} />
-              {counts
-                ? missing > 0
+              {nothingMissing
+                ? 'Nothing missing'
+                : missing
                   ? `Get the ${missing} missing`
-                  : 'Nothing missing'
-                : 'Get missing albums'}
+                  : 'Get missing albums'}
             </Button>
           )}
         />

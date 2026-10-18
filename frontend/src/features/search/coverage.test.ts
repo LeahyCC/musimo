@@ -57,6 +57,10 @@ describe('trackCoverage', () => {
 })
 
 describe('releaseCoverage', () => {
+  it('says nothing when the listing has no song counts', () => {
+    expect(releaseCoverage([result(1), result(2)], [])).toBeUndefined()
+  })
+
   const releases = [
     result(10, { track_count: 10, owned_count: 6 }),
     result(11, { track_count: 5, owned_count: 0 }),

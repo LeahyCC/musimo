@@ -30,13 +30,17 @@ export function trackCoverage(tracks: readonly MusicResult[], queued: ReadonlySe
  * An artist's releases as songs. The release rows carry a song count and how many of them the
  * library tags match, so this is an estimate until each album's own page has been checked, and it
  * cannot tell "another edition" apart; that part of the bar is left out for an artist.
+ *
+ * Deezer's artist listing often has no song counts at all (every `track_count` is 0). That is
+ * "not known", not "nothing missing", so it returns undefined and the page says nothing.
  */
 export function releaseCoverage(
   releases: readonly MusicResult[],
   jobs: readonly DownloadJob[],
-): CoverageCounts {
+): CoverageCounts | undefined {
   const ids = new Set(releases.map((release) => release.id))
   const total = releases.reduce((sum, release) => sum + release.track_count, 0)
+  if (total === 0) return undefined
   const owned = releases.reduce(
     (sum, release) => sum + Math.min(release.owned_count, release.track_count),
     0,

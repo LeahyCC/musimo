@@ -126,7 +126,7 @@ export function ArtistPage() {
         source="Deezer"
         title={artist?.name ?? ''}
         meta={`${loadedAlbums} albums · ${items.length - loadedAlbums} singles & EPs${query.hasNextPage ? ' so far' : ''}`}
-        coverage={items.length ? releaseCoverage(items, jobs ?? []) : undefined}
+        coverage={releaseCoverage(items, jobs ?? [])}
         actions={
           <ArtistDownloadButton
             key={artistId}
