@@ -110,7 +110,7 @@ async function fixtures(page: Page, { restore = true, theme, pet }: Options = {}
   const found: Theme | undefined = BUILT_IN_THEMES.find((entry) => entry.id === theme)
   if (found) {
     await page.goto('/settings/user')
-    await page.getByText(found.name, { exact: true }).first().click()
+    await page.getByRole('radio', { name: found.name }).check()
     await expect(page.locator('html')).toHaveCSS('color-scheme', found.scheme)
   }
   return saves

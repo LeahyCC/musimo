@@ -361,7 +361,9 @@ for (const route of ROUTES) {
     // A card is whichever boxed surface the route has first: a music or library card, a panel.
     // Only the routes that say so have none; anywhere else a missing card is a missing surface.
     const card = page
-      .locator("#main article, #main [data-ui='panel'], #main [data-ui='empty-panel']")
+      .locator(
+        "#main article, #main [data-ui='panel'], #main [data-ui='card'], #main [data-ui='empty-panel']",
+      )
       .first()
     if (!route.cardless) {
       await expect(card, `${route.name} card`).toHaveCount(1)

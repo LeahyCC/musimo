@@ -7,9 +7,20 @@
    before anything is set, and every failure falls through to the default theme in the stylesheet. */
 ;(function () {
   try {
-    var raw = localStorage.getItem('musimo.theme-vars')
-    if (!raw) return
-    var saved = JSON.parse(raw)
+    var saved = null
+    // Follow system keeps both halves of the chosen family, because only the device knows which
+    // one this load needs. Anything unreadable in it falls back to the single saved theme.
+    if (localStorage.getItem('musimo.theme-follow-system') === '1' && window.matchMedia) {
+      var pair = JSON.parse(localStorage.getItem('musimo.theme-vars-system') || 'null')
+      if (pair && typeof pair === 'object') {
+        saved = window.matchMedia('(prefers-color-scheme: dark)').matches ? pair.dark : pair.light
+      }
+    }
+    if (!saved) {
+      var raw = localStorage.getItem('musimo.theme-vars')
+      if (!raw) return
+      saved = JSON.parse(raw)
+    }
     if (!saved || typeof saved !== 'object') return
     var root = document.documentElement
     var vars = saved.vars

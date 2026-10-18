@@ -505,7 +505,7 @@ test('touch controls are 44px and no text control is small enough to zoom', asyn
 test('Your settings is one column and stays inside a 360px screen', async ({ page }) => {
   await page.setViewportSize({ width: 360, height: 780 })
   await page.goto('/settings/user')
-  await expect(page.getByRole('heading', { name: 'Appearance' })).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Theme', exact: true })).toBeVisible()
   expect(await undersized(page)).toEqual([])
   expect(await pageOverflow(page)).toBe(0)
 

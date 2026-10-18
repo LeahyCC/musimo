@@ -24,7 +24,7 @@ const seed = ([active, custom, vars]: readonly [string, string, string]) => {
 }
 
 /** The theme cards. The page has other radio groups, such as the pet's. */
-const themePicker = (page: Page) => page.locator('section[aria-labelledby="appearance"]')
+const themePicker = (page: Page) => page.locator('section[aria-labelledby="theme"]')
 
 const painted = (page: Page) =>
   page.evaluate(() => {
@@ -417,7 +417,7 @@ test('the Settings guard still fires when switching to Yours', async ({ page }) 
 
 test('the page passes axe under the default and a light theme', async ({ page }) => {
   await page.goto('/settings/user')
-  await page.getByRole('heading', { name: 'Appearance' }).waitFor()
+  await page.getByRole('heading', { name: 'Theme', exact: true }).waitFor()
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 
   // The editor is another page's worth of controls, so it is audited on its own.
@@ -427,7 +427,7 @@ test('the page passes axe under the default and a light theme', async ({ page })
 
   await page.addInitScript(seed, stored)
   await page.goto('/settings/user')
-  await page.getByRole('heading', { name: 'Appearance' }).waitFor()
+  await page.getByRole('heading', { name: 'Theme', exact: true }).waitFor()
   expect((await new AxeBuilder({ page }).analyze()).violations).toEqual([])
 })
 

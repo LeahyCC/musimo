@@ -1,9 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 
 import { Link, useBlocker } from '@tanstack/react-router'
+import { Copy, Upload } from 'lucide-react'
 
 import { PageTitle } from '../../components/page-title'
 import { cx } from '../../lib/cx'
+import { useLayout } from '../../lib/layout'
+import { familyOf } from '../../theme/follow-system'
 import { MAX_CUSTOM_THEMES } from '../../theme/schema'
 import {
   cancelPreview,
@@ -12,17 +15,28 @@ import {
   exportTheme,
   hasRoomForTheme,
   importTheme,
+  isBuiltInTheme,
   MAX_THEME_FILE_BYTES,
   previewTheme,
   saveAndActivate,
   setActiveTheme,
+  setFollowSystem,
+  THEME_FAMILIES,
   themeFileName,
+  useFollowSystem,
   useTheme,
   useThemes,
 } from '../../theme/store'
 import { DEFAULT_THEME_ID } from '../../theme/themes'
-import type { Theme } from '../../theme/themes'
-import { Button, Field, FieldSelect, InlineError, Panel, textLinkClassName } from '../../ui'
+import type { ColorScheme, Theme } from '../../theme/themes'
+import {
+  Button,
+  buttonClassName,
+  FieldSelect,
+  InlineError,
+  Switch,
+  textLinkClassName,
+} from '../../ui'
 import { PetSettingsSection } from '../music-bot/pet-settings-section'
 import { useNowPlayingPopout } from '../now-playing/now-playing-popout'
 import { CROSSFADE_OPTIONS, parseCrossfade } from '../player/crossfade'
@@ -34,28 +48,38 @@ import {
   useReplayGainSettings,
 } from '../player/replay-gain-settings'
 import { PRESET_NAMES, presetLabel } from '../visualizer/visualizer-presets'
-import { ThemeCard, ThemeEditor } from './theme-editor'
+import { HomeSectionsSection, LayoutSection } from './appearance-settings'
+import { ThemeEditor } from './theme-editor'
+import { CustomThemeCard, ThemeFamilyCard } from './theme-picker'
 
-const switchLinkClassName =
-  'inline-flex items-center justify-center rounded-pill px-[16px] py-[8px] text-small coarse:min-h-11'
 const switchActiveProps = { 'className': 'bg-active text-text', 'aria-current': 'page' } as const
-const switchInactiveProps = { className: 'text-muted' } as const
+const switchInactiveProps = { className: 'text-muted hover:text-text' } as const
 
 /**
  * Server settings and personal ones are two pages under one Settings entry, so the switch is what
  * says which of the two you are on. Both halves are routed links, which is also what keeps each
- * page's unsaved-changes blocker in front of a person leaving a draft behind.
+ * page's unsaved-changes blocker in front of a person leaving a draft behind. The Listening room
+ * names the second half for what is in it.
  */
 export function SettingsSwitch() {
+  const room = useLayout() === 'room'
+  const linkClassName = cx(
+    'inline-flex items-center justify-center text-small font-medium coarse:min-h-11',
+    room ? 'h-[34px] rounded-[10px] px-[16px] font-semibold' : 'h-[30px] rounded-md px-[14px]',
+  )
+
   return (
     <nav
       aria-label="Settings type"
-      className="mb-[24px] inline-flex gap-[3px] rounded-pill border border-line bg-sunken p-[3px]"
+      className={cx(
+        'mb-[24px] flex w-fit gap-[3px] bg-sunken',
+        room ? 'rounded-[14px] p-[4px]' : 'rounded-[9px] border border-line p-[3px]',
+      )}
     >
       <Link
         to="/settings"
         activeOptions={{ exact: true }}
-        className={switchLinkClassName}
+        className={linkClassName}
         activeProps={switchActiveProps}
         inactiveProps={switchInactiveProps}
       >
@@ -63,11 +87,11 @@ export function SettingsSwitch() {
       </Link>
       <Link
         to="/settings/user"
-        className={switchLinkClassName}
+        className={linkClassName}
         activeProps={switchActiveProps}
         inactiveProps={switchInactiveProps}
       >
-        Yours
+        {room ? 'Appearance & you' : 'Yours'}
       </Link>
     </nav>
   )
@@ -332,7 +356,11 @@ export function UserSettingsPage() {
   const [error, setError] = useState('')
   const [status, setStatus] = useState('')
   const heading = useRef<HTMLHeadingElement>(null)
-  const room = hasRoomForTheme()
+  const hasRoom = hasRoomForTheme()
+  const following = useFollowSystem()
+  // The half each family leans towards when it is not the one on screen, so a card keeps the half
+  // it was last given.
+  const [modes, setModes] = useState<Record<string, ColorScheme>>({})
   const dirty = edit !== null && !same(edit.draft, edit.start)
 
   // Read in the cleanup below, which must not re-run when an edit changes the draft.
@@ -421,112 +449,185 @@ export function UserSettingsPage() {
     else setError(result.message)
   }
 
+  const pickFamilyTheme = (theme: Theme, scheme: ColorScheme) => {
+    const family = familyOf(theme.id, THEME_FAMILIES)
+    if (family) setModes((current) => ({ ...current, [family.id]: scheme }))
+    pick(theme)
+  }
+
+  const toggleFollowSystem = (on: boolean) => {
+    setFollowSystem(on)
+    setError('')
+    setStatus(on ? 'Following your device.' : 'Following your device is off.')
+  }
+
+  const activeFamily = familyOf(active.id, THEME_FAMILIES)
+  const custom = themes.filter((theme) => !isBuiltInTheme(theme.id))
+  const followNote = !following
+    ? ''
+    : activeFamily
+      ? `Following your device: ${active.scheme} for now.`
+      : 'A theme of your own has no other half, so it stays as it is.'
+
   return (
-    <>
+    <div className="max-w-[900px]">
       <PageTitle eyebrow="MAKE IT YOURS" title="Your settings" />
       <SettingsSwitch />
       <p className="mb-[24px] max-w-[640px] text-lead">
         These live in this browser, not on the server. Another browser or device starts from the
         default until you bring a theme over.
       </p>
-      <section aria-labelledby="appearance" className="grid gap-[20px]">
-        <h2
-          id="appearance"
-          ref={heading}
-          tabIndex={-1}
-          className="border-b border-line pb-[17px] text-section outline-none"
+      {/* Editing a theme is a mode of its own, with Save and Cancel in a bar that sticks to the
+          bottom of the Theme section. Everything under it would let that bar scroll away at the
+          end of the page, and everything above it is about other things, so only the editor shows. */}
+      <div className="grid gap-[20px]">
+        {!edit && <LayoutSection />}
+        {!edit && <HomeSectionsSection />}
+        <section
+          aria-labelledby="theme"
+          data-ui="card"
+          className="rounded-[16px] border border-line bg-sunken px-[20px] py-[18px] max-phone:px-[14px]"
         >
-          Appearance
-        </h2>
-        {/* Always mounted, so a screen reader hears it fill rather than missing a region that
-            arrived already full. */}
-        <p role="status" className={cx('text-small text-good', !status && 'sr-only')}>
-          {status}
-        </p>
-        {edit ? (
-          <ThemeEditor
-            draft={edit.draft}
-            onChange={change}
-            onSave={save}
-            onCancel={cancel}
-            error={error}
-          />
-        ) : (
-          <>
-            <fieldset className="m-0 grid gap-[14px] border-0 p-0">
-              <legend className="mb-[8px] text-small text-muted">
-                Pick a theme and it is on straight away. To change one, make a copy of it: built-in
-                themes stay as they are.
-              </legend>
-              <div className="grid gap-[14px] [grid-template-columns:repeat(auto-fill,minmax(260px,1fr))] max-phone:grid-cols-1">
-                {themes.map((theme) => (
-                  <ThemeCard
-                    key={theme.id}
-                    theme={theme}
-                    active={theme.id === active.id}
-                    room={room}
-                    onPick={() => pick(theme)}
-                    onDuplicate={() => startEdit(theme, true)}
-                    onEdit={() => startEdit(theme, false)}
-                    onExport={() => download(theme)}
-                    onDelete={() => remove(theme)}
-                  />
-                ))}
-              </div>
-            </fieldset>
-            {!room && (
-              <p className="text-small text-warn">
-                You have {MAX_CUSTOM_THEMES} themes, the most Musimo keeps. Delete one to make or
-                import another.
+          <div className="flex flex-wrap items-start justify-between gap-[12px]">
+            <div>
+              <h2 id="theme" ref={heading} tabIndex={-1} className="text-strong outline-none">
+                Theme
+              </h2>
+              <p className="mt-[4px] text-small text-muted">
+                Each theme comes in dark and light. Applies right away. To change one, make a copy
+                of it: built-in themes stay as they are.
               </p>
-            )}
-            <div className="flex flex-wrap items-center gap-[12px]">
-              <Button
-                disabled={active.id === DEFAULT_THEME_ID}
-                onClick={() => {
-                  setActiveTheme(DEFAULT_THEME_ID)
-                  setError('')
-                  setStatus('The default theme is on.')
-                }}
-              >
-                Reset to default
-              </Button>
-              <p className="text-small">Turns the default back on. Your themes are kept.</p>
             </div>
-            <Panel className="grid max-w-[520px] gap-[10px]">
-              <h3>Move a theme between browsers</h3>
-              <p className="text-small">
-                Export, on a theme you made, writes a file you can keep or send. Import reads one
-                back in and turns it on.
-              </p>
-              <label htmlFor="theme-import" className="text-small">
-                Import a theme file
-              </label>
-              <Field
-                id="theme-import"
-                type="file"
-                accept="application/json,.json"
-                disabled={!room}
-                aria-describedby={error ? 'theme-import-error' : undefined}
-                onChange={(event) => {
-                  const chosen = event.target.files?.[0]
-                  // Clearing the input is what lets the same file be picked twice in a row.
-                  event.target.value = ''
-                  if (chosen) void load(chosen)
-                }}
+            {!edit && (
+              <div className="flex flex-wrap gap-[8px]">
+                <label
+                  className={cx(
+                    buttonClassName(),
+                    hasRoom ? 'cursor-pointer' : 'cursor-not-allowed opacity-[0.55]',
+                    'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent has-[:focus-visible]:outline-solid',
+                  )}
+                >
+                  <Upload size={14} aria-hidden="true" />
+                  Import
+                  <input
+                    type="file"
+                    accept="application/json,.json"
+                    aria-label="Import a theme file"
+                    aria-describedby={error ? 'theme-import-error' : undefined}
+                    className="sr-only"
+                    disabled={!hasRoom}
+                    onChange={(event) => {
+                      const chosen = event.target.files?.[0]
+                      // Clearing the input is what lets the same file be picked twice in a row.
+                      event.target.value = ''
+                      if (chosen) void load(chosen)
+                    }}
+                  />
+                </label>
+                <Button
+                  aria-label={`Duplicate and edit ${active.name}`}
+                  disabled={!hasRoom}
+                  onClick={() => startEdit(active, true)}
+                >
+                  <Copy size={14} aria-hidden="true" />
+                  Duplicate and edit
+                </Button>
+              </div>
+            )}
+          </div>
+          {/* Always mounted, so a screen reader hears it fill rather than missing a region that
+              arrived already full. */}
+          <p role="status" className={cx('mt-[12px] text-small text-good', !status && 'sr-only')}>
+            {status}
+          </p>
+          {edit ? (
+            <div className="mt-[16px] grid gap-[20px]">
+              <ThemeEditor
+                draft={edit.draft}
+                onChange={change}
+                onSave={save}
+                onCancel={cancel}
+                error={error}
               />
+            </div>
+          ) : (
+            <>
+              <div className="mt-[14px] flex flex-wrap items-center gap-x-[10px] gap-y-[6px]">
+                <label htmlFor="follow-system" className="text-small text-muted">
+                  Follow system
+                </label>
+                <Switch
+                  id="follow-system"
+                  checked={following}
+                  aria-describedby="follow-system-note"
+                  onChange={(event) => toggleFollowSystem(event.target.checked)}
+                />
+                <span id="follow-system-note" className="text-small text-faint">
+                  {followNote || 'Light by day, dark by night: your device decides.'}
+                </span>
+              </div>
+              <fieldset className="m-0 mt-[14px] border-0 p-0">
+                <legend className="sr-only">Themes</legend>
+                <div className="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-[10px] max-phone:grid-cols-1">
+                  {THEME_FAMILIES.map((family) => (
+                    <ThemeFamilyCard
+                      key={family.id}
+                      family={family}
+                      active={activeFamily === family}
+                      mode={
+                        activeFamily === family
+                          ? active.scheme
+                          : (modes[family.id] ?? active.scheme)
+                      }
+                      following={following}
+                      onPick={pickFamilyTheme}
+                    />
+                  ))}
+                  {custom.map((theme) => (
+                    <CustomThemeCard
+                      key={theme.id}
+                      theme={theme}
+                      active={theme.id === active.id}
+                      onPick={() => pick(theme)}
+                      onEdit={() => startEdit(theme, false)}
+                      onExport={() => download(theme)}
+                      onDelete={() => remove(theme)}
+                    />
+                  ))}
+                </div>
+              </fieldset>
+              {!hasRoom && (
+                <p className="mt-[14px] text-small text-warn">
+                  You have {MAX_CUSTOM_THEMES} themes, the most Musimo keeps. Delete one to make or
+                  import another.
+                </p>
+              )}
               {error && (
-                <InlineError id="theme-import-error" role="alert">
+                <InlineError id="theme-import-error" role="alert" className="mt-[14px]">
                   {error}
                 </InlineError>
               )}
-            </Panel>
-          </>
-        )}
-      </section>
-      {/* Editing a theme is a mode of its own, with Save and Cancel in a bar that sticks to the
-          bottom of the Appearance section. Anything below that section would let the bar scroll
-          away at the end of the page, so the other settings wait until the edit is done. */}
+              <div className="mt-[14px] flex flex-wrap items-center gap-[12px]">
+                <Button
+                  disabled={active.id === DEFAULT_THEME_ID && !following}
+                  onClick={() => {
+                    setFollowSystem(false)
+                    setActiveTheme(DEFAULT_THEME_ID)
+                    setError('')
+                    setStatus('The default theme is on.')
+                  }}
+                >
+                  Reset to default
+                </Button>
+                <p className="text-small text-muted">
+                  Turns the default back on. Your themes are kept. Export, on a theme you made,
+                  writes a file you can bring to another browser with Import.
+                </p>
+              </div>
+            </>
+          )}
+        </section>
+      </div>
       {!edit && (
         <>
           <div className="mt-[32px]">
@@ -540,6 +641,6 @@ export function UserSettingsPage() {
           </div>
         </>
       )}
-    </>
+    </div>
   )
 }

@@ -1,6 +1,7 @@
 import { SourceMark } from '../../components/source-mark'
 import { cx } from '../../lib/cx'
-import { Field } from '../../ui'
+import { Field, Switch } from '../../ui'
+import { LockBadge, SettingsBlock } from './settings-layout'
 
 // A text button is shorter than a finger. On a touch screen it gets the 44px floor.
 const orderButtonClassName =
@@ -81,19 +82,24 @@ export function CatalogOrder({
   const allSkipped = order.length > 0 && order.every((id) => skipReason(id))
   const waitingOnPause = allSkipped && order.some((id) => paused.includes(id) && !hardSkip(id))
   return (
-    <div className="mt-[18px] border-b border-line pb-[16px]">
-      <p className="text-body">
+    <SettingsBlock>
+      <p className="flex flex-wrap items-center gap-[8px] text-body font-medium">
         Where a song from search is fetched
-        {orderLocked ? <span className="text-warn"> · Locked by {orderOrigin}</span> : null}
+        {orderLocked ? <LockBadge origin={orderOrigin} /> : null}
       </p>
-      <p className="mt-[7px] max-w-[420px] text-tiny text-muted">
+      <p className="mt-[3px] max-w-[460px] text-small leading-[1.5] text-muted">
         The top row goes first. A failure asks the next row. After the last row, start again. A
         search with no song moves on straight away.
       </p>
       <div className="mt-[14px] grid grid-cols-[1fr_80px] items-center gap-x-[16px] gap-y-[10px] max-phone:grid-cols-1">
         <label htmlFor="tries_per_source" className="text-small">
           Tries on one source before the next
-          {triesLocked ? <span className="text-warn"> · Locked by {triesOrigin}</span> : null}
+          {triesLocked ? (
+            <>
+              {' '}
+              <LockBadge origin={triesOrigin} />
+            </>
+          ) : null}
         </label>
         {/* Every keystroke is kept, as in the other number settings. A cleared box shows empty
             rather than 0, and `required` with the range stops a save outside 1 to 4. */}
@@ -109,7 +115,12 @@ export function CatalogOrder({
         />
         <label htmlFor="max_attempts" className="text-small">
           Times around the list
-          {lapsLocked ? <span className="text-warn"> · Locked by {lapsOrigin}</span> : null}
+          {lapsLocked ? (
+            <>
+              {' '}
+              <LockBadge origin={lapsOrigin} />
+            </>
+          ) : null}
         </label>
         <Field
           id="max_attempts"
@@ -197,7 +208,7 @@ export function CatalogOrder({
           ))}
         </div>
       )}
-    </div>
+    </SettingsBlock>
   )
 }
 
@@ -225,23 +236,25 @@ export function SourceRow({
   onChange: (on: boolean) => void
 }) {
   return (
-    <div className="flex items-center gap-[15px] border-b border-line py-[16px]">
+    <SettingsBlock className="flex items-center gap-[15px]">
       <SourceMark>{mark}</SourceMark>
       <div className="min-w-0 flex-1">
-        <label htmlFor={id} className="text-body">
-          {label}
-          {lockedBy ? <span className="text-warn"> · Locked by {lockedBy}</span> : null}
-        </label>
-        <p className={cx('mt-[4px] text-tiny', warn ? 'text-warn' : 'text-muted')}>{note}</p>
+        <div className="flex flex-wrap items-center gap-[8px]">
+          <label htmlFor={id} className="text-body font-medium">
+            {label}
+          </label>
+          {lockedBy ? <LockBadge origin={lockedBy} /> : null}
+        </div>
+        <p className={cx('mt-[3px] text-small leading-[1.5]', warn ? 'text-warn' : 'text-muted')}>
+          {note}
+        </p>
       </div>
-      <input
+      <Switch
         id={id}
-        type="checkbox"
-        className="h-[18px] w-[18px] shrink-0 accent-accent coarse:h-[22px] coarse:w-[22px]"
         checked={on}
         disabled={disabled || lockedBy !== ''}
         onChange={(event) => onChange(event.target.checked)}
       />
-    </div>
+    </SettingsBlock>
   )
 }

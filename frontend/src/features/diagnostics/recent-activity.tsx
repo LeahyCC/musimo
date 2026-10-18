@@ -8,6 +8,7 @@ import { api } from '../../api'
 import { cx } from '../../lib/cx'
 import { Button, ErrorBanner } from '../../ui'
 import { groupRuns } from './activity-runs'
+import { shortAge } from './short-age'
 
 const activitySchema = z.object({
   events: z.array(z.object({ id: z.number(), kind: z.string(), created_at: z.string() })),
@@ -27,10 +28,24 @@ type ActivityEvent = z.infer<typeof activitySchema>['events'][number]
 
 const eventName = (kind: string) => labels[kind] ?? kind.replaceAll('.', ' ')
 
-function EventRow({ event }: { event: ActivityEvent }) {
+function EventRow({ event, side }: { event: ActivityEvent; side: boolean }) {
+  if (side) {
+    return (
+      <li className="grid grid-cols-[60px_minmax(0,1fr)] gap-[10px] py-[8px] text-[12.5px]">
+        <time className="pt-[2px] font-mono text-[10.5px] text-faint" dateTime={event.created_at}>
+          {shortAge(new Date(event.created_at), new Date())}
+        </time>
+        <span className="flex items-baseline gap-[8px]">
+          <i className="size-[6px] flex-none -translate-y-px rounded-full bg-muted" />
+          {eventName(event.kind)}
+        </span>
+      </li>
+    )
+  }
+
   return (
-    <li className="flex items-center gap-3 border-t border-line py-[13px] text-small max-phone:gap-2">
-      <span className="h-[5px] w-[5px] rounded-full bg-muted" />
+    <li className="flex items-center gap-3 border-t border-line px-[16px] py-[11px] text-small first:border-t-0 max-phone:gap-2">
+      <span className="size-[8px] flex-none rounded-full bg-muted" />
       <span>{eventName(event.kind)}</span>
       <time className="ml-auto text-caption text-faint" dateTime={event.created_at}>
         {new Date(event.created_at).toLocaleString()}
@@ -49,7 +64,12 @@ function timeRange(from: string, to: string) {
   return `${start.toLocaleString()} to ${finish}`
 }
 
-export function RecentActivity() {
+/**
+ * The feed of what the server has done. On a page of its own it is a full-width list under the
+ * checks. `side` is the Listening room's Diagnostics, where it is a narrow panel beside them, the
+ * time in a mono column on the left.
+ */
+export function RecentActivity({ side = false }: { side?: boolean }) {
   const client = useQueryClient()
   // Runs are opened by the id of their oldest event, which stays put as newer events join the run.
   const [expanded, setExpanded] = useState<ReadonlySet<number>>(new Set())
@@ -70,8 +90,13 @@ export function RecentActivity() {
     },
   })
   return (
-    <section className="mt-8" aria-labelledby="activity-heading">
-      <div className="mb-[21px] flex items-center justify-between gap-3">
+    <section
+      className={cx(side ? 'min-w-0 rounded-[18px] bg-sunken px-[18px] py-[16px]' : 'mt-8')}
+      aria-labelledby="activity-heading"
+    >
+      <div
+        className={cx('flex items-center justify-between gap-3', side ? 'mb-[10px]' : 'mb-[12px]')}
+      >
         <h2 id="activity-heading" className="text-strong">
           Recent activity
         </h2>
@@ -96,11 +121,14 @@ export function RecentActivity() {
       {activity.data &&
         (activity.data.count ? (
           <>
-            <p className="text-muted text-small">
+            <p className="mb-[8px] text-small text-muted">
               Showing the latest {activity.data.events.length} of {activity.data.count} entries.
             </p>
             <div
-              className="max-h-[320px] overflow-y-auto overscroll-contain pr-2 [scrollbar-gutter:stable]"
+              className={cx(
+                'max-h-[320px] overflow-y-auto overscroll-contain [scrollbar-gutter:stable]',
+                side ? 'pr-2' : 'rounded-[12px] border border-line',
+              )}
               role="region"
               aria-label="Recent activity entries"
               tabIndex={0}
@@ -110,14 +138,22 @@ export function RecentActivity() {
                   const newest = run.events[0]
                   const oldest = run.events[run.events.length - 1]
                   if (!newest || !oldest) return null
-                  if (run.events.length === 1) return <EventRow key={newest.id} event={newest} />
+                  if (run.events.length === 1) {
+                    return <EventRow key={newest.id} event={newest} side={side} />
+                  }
                   const open = expanded.has(oldest.id)
                   return (
-                    <li key={oldest.id} className="border-t border-line text-small">
+                    <li
+                      key={oldest.id}
+                      className={cx('text-small', !side && 'border-t border-line first:border-t-0')}
+                    >
                       <button
                         type="button"
                         aria-expanded={open}
-                        className="flex w-full items-center gap-3 border-0 bg-transparent py-[13px] text-left text-small text-text max-phone:gap-2 coarse:min-h-11"
+                        className={cx(
+                          'flex w-full items-center gap-3 border-0 bg-transparent text-left text-small text-text max-phone:gap-2 coarse:min-h-11',
+                          side ? 'py-[8px]' : 'px-[16px] py-[11px]',
+                        )}
                         onClick={() =>
                           setExpanded((set) => {
                             const next = new Set(set)
@@ -134,14 +170,18 @@ export function RecentActivity() {
                         <span className="rounded-pill bg-raised px-[8px] py-[1px] text-caption text-muted">
                           ×{run.events.length}
                         </span>
-                        <span className="ml-auto text-caption text-faint">
-                          {timeRange(oldest.created_at, newest.created_at)}
+                        <span
+                          className={cx('ml-auto text-caption text-faint', side && 'font-mono')}
+                        >
+                          {side
+                            ? shortAge(new Date(newest.created_at), new Date())
+                            : timeRange(oldest.created_at, newest.created_at)}
                         </span>
                       </button>
                       {open && (
                         <ul className="m-0 list-none p-0 pl-[26px]">
                           {run.events.map((event) => (
-                            <EventRow key={event.id} event={event} />
+                            <EventRow key={event.id} event={event} side={side} />
                           ))}
                         </ul>
                       )}
@@ -156,7 +196,7 @@ export function RecentActivity() {
             No recent activity. New events will appear here.
           </p>
         ))}
-      <p className="text-muted text-small">
+      <p className="mt-[8px] text-small text-muted">
         Clears this activity feed. Download history and live update records are kept separately.
       </p>
     </section>

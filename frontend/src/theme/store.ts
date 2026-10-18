@@ -1,6 +1,8 @@
 import { useSyncExternalStore } from 'react'
 
 import { clearStored, readStored, writeStored } from '../lib/storage'
+import { familyOf, resolveFollowSystem, themeFamilies } from './follow-system'
+import type { ThemeFamily } from './follow-system'
 import {
   CUSTOM_THEMES_VERSION,
   HEX_COLOR,
@@ -17,14 +19,23 @@ import { COLOR_TOKENS } from './tokens'
 /* The theme service. It owns the three browser keys, the active theme, and the writes that repaint
    a document. Themes are a personal preference like volume, so nothing here talks to the server.
 
-   `musimo.theme`         the active theme's id
-   `musimo.custom-themes` the person's own themes, versioned
-   `musimo.theme-vars`    the resolved properties, read by `public/theme-boot.js` before first paint
+   `musimo.theme`                the theme the person chose, by id
+   `musimo.custom-themes`        the person's own themes, versioned
+   `musimo.theme-vars`           the resolved properties of the theme on screen, read by
+                                 `public/theme-boot.js` before first paint
+   `musimo.theme-follow-system`  `1` while the dark or light half follows the device
+   `musimo.theme-vars-system`    both halves of the chosen family, for the boot script, which has
+                                 to pick one before anything else runs. Only there while following.
+
+   With Follow system on, the chosen theme and the one on screen can differ: the person chose
+   Slate dark, the device is light, Slate light is shown. The chosen one is what is stored.
 */
 
 const ACTIVE_KEY = 'musimo.theme'
 const CUSTOM_KEY = 'musimo.custom-themes'
 const VARS_KEY = 'musimo.theme-vars'
+const FOLLOW_KEY = 'musimo.theme-follow-system'
+const SYSTEM_VARS_KEY = 'musimo.theme-vars-system'
 
 /** What the boot script reads. Its shape is duplicated there, in plain JavaScript, on purpose. */
 export type ThemeVars = { scheme: ColorScheme; skin?: Skin; vars: Record<string, string> }
@@ -34,7 +45,12 @@ export type ThemeError = 'invalid-json' | 'invalid-theme' | 'too-many' | 'storag
 export type ThemeResult =
   { ok: true; theme: Theme } | { ok: false; error: ThemeError; message: string }
 
-type Snapshot = { theme: Theme; themes: readonly Theme[] }
+/** What the boot script reads while Follow system is on: one set of properties per half. */
+export type SystemThemeVars = { dark: ThemeVars; light: ThemeVars }
+
+type Snapshot = { theme: Theme; themes: readonly Theme[]; followSystem: boolean }
+
+export const THEME_FAMILIES: readonly ThemeFamily[] = themeFamilies(BUILT_IN_THEMES)
 
 let custom: readonly Theme[] = []
 /** Stored entries this build could not read. They are written back untouched, never dropped. */
@@ -43,9 +59,11 @@ let unreadable: readonly unknown[] = []
 let writable = true
 let themes: readonly Theme[] = BUILT_IN_THEMES
 let activeId = DEFAULT_THEME_ID
+let followSystem = false
+let systemScheme: ColorScheme = 'dark'
 /** An unsaved theme being edited. It paints, but it is never written to storage. */
 let previewed: Theme | null = null
-let snapshot: Snapshot = { theme: DEFAULT_THEME, themes: BUILT_IN_THEMES }
+let snapshot: Snapshot = { theme: DEFAULT_THEME, themes: BUILT_IN_THEMES, followSystem: false }
 let started = false
 const listeners = new Set<() => void>()
 
@@ -57,6 +75,13 @@ function setCustom(next: readonly Theme[]) {
 }
 
 const findTheme = (id: string): Theme | undefined => themes.find((theme) => theme.id === id)
+
+/** The id on screen: the chosen one, unless Follow system swaps it for the other half. */
+const shownId = (): string =>
+  resolveFollowSystem(activeId, followSystem, systemScheme, THEME_FAMILIES)
+
+const readSystemScheme = (): ColorScheme =>
+  window.matchMedia?.('(prefers-color-scheme: dark)').matches === false ? 'light' : 'dark'
 
 /** The properties the boot script writes, and what `musimo.theme-vars` holds. */
 export function resolveVars(theme: Theme): ThemeVars {
@@ -94,8 +119,17 @@ export function applyTheme(theme: Theme, target: Document = document) {
   if (meta && HEX_COLOR.test(canvas)) meta.setAttribute('content', canvas)
 }
 
+/** Both halves of a family, in the shape the boot script takes. */
+export function resolveSystemVars(family: ThemeFamily): SystemThemeVars {
+  return { dark: resolveVars(family.dark), light: resolveVars(family.light) }
+}
+
 function commit() {
-  snapshot = { theme: previewed ?? findTheme(activeId) ?? DEFAULT_THEME, themes }
+  snapshot = {
+    theme: previewed ?? findTheme(shownId()) ?? DEFAULT_THEME,
+    themes,
+    followSystem,
+  }
   applyTheme(snapshot.theme)
   for (const listener of listeners) listener()
 }
@@ -109,17 +143,20 @@ function persistCustom(): boolean {
 }
 
 /* The default is stored as the absence of a key, so a person who never picked a theme, and one who
-   went back to the default, leave the same clean slate for the boot script. */
+   went back to the default, leave the same clean slate for the boot script. Following the system
+   is the exception: the default is then one half of a pair, and the pair has to be there. */
 function persistActive() {
-  const theme = findTheme(activeId)
-  if (!theme || theme.id === DEFAULT_THEME_ID) {
-    clearStored(ACTIVE_KEY)
-    clearStored(VARS_KEY)
+  const chosen = findTheme(activeId)
+  if (!chosen || chosen.id === DEFAULT_THEME_ID) clearStored(ACTIVE_KEY)
+  else writeStored(ACTIVE_KEY, chosen.id)
 
-    return
-  }
-  writeStored(ACTIVE_KEY, theme.id)
-  writeStored(VARS_KEY, JSON.stringify(resolveVars(theme)))
+  const shown = findTheme(shownId())
+  if (!shown || (shown.id === DEFAULT_THEME_ID && !followSystem)) clearStored(VARS_KEY)
+  else writeStored(VARS_KEY, JSON.stringify(resolveVars(shown)))
+
+  const family = followSystem ? familyOf(activeId, THEME_FAMILIES) : undefined
+  if (family) writeStored(SYSTEM_VARS_KEY, JSON.stringify(resolveSystemVars(family)))
+  else clearStored(SYSTEM_VARS_KEY)
 }
 
 /*
@@ -162,6 +199,7 @@ function loadStored() {
   readCustom()
   const saved = readStored(ACTIVE_KEY)
   activeId = saved && findTheme(saved) ? saved : DEFAULT_THEME_ID
+  followSystem = readStored(FOLLOW_KEY) === '1'
 }
 
 /*
@@ -193,6 +231,21 @@ export function activeTheme(): Theme {
 
 export function setActiveTheme(id: string) {
   activeId = findTheme(id) ? id : DEFAULT_THEME_ID
+  previewed = null
+  persistActive()
+  commit()
+}
+
+/**
+ * Turns Follow system on or off. Turning it off keeps what is on screen: the theme that was being
+ * shown becomes the chosen one, so the page does not jump when the switch is released.
+ */
+export function setFollowSystem(on: boolean) {
+  if (on === followSystem) return
+  if (!on) activeId = shownId()
+  followSystem = on
+  if (on) writeStored(FOLLOW_KEY, '1')
+  else clearStored(FOLLOW_KEY)
   previewed = null
   persistActive()
   commit()
@@ -344,6 +397,13 @@ export function useTheme(): Theme {
 
 const getThemes = (): readonly Theme[] => themes
 
+const getFollowSystem = (): boolean => followSystem
+
+/** Whether the dark or light half follows the device. */
+export function useFollowSystem(): boolean {
+  return useSyncExternalStore(subscribeTheme, getFollowSystem, getFollowSystem)
+}
+
 /** Every theme, built-ins first. Re-renders when one is added, changed or removed. */
 export function useThemes(): readonly Theme[] {
   return useSyncExternalStore(subscribeTheme, getThemes, getThemes)
@@ -354,6 +414,7 @@ export function startTheme() {
   if (started) return
   started = true
   loadStored()
+  systemScheme = readSystemScheme()
   // Brings the boot script's copy back in line with what was just resolved: a theme that no longer
   // exists, colors a release has since changed, or keys written by hand without the third one.
   // Without this the boot script paints the stale copy first on every load. A list this build
@@ -363,8 +424,24 @@ export function startTheme() {
   window.addEventListener('storage', (event) => {
     // A null key means the whole store was cleared. An edit in progress in this tab is left alone:
     // another tab changing the saved theme should not throw away what is being typed here.
-    if (event.key !== null && event.key !== ACTIVE_KEY && event.key !== CUSTOM_KEY) return
+    if (
+      event.key !== null &&
+      event.key !== ACTIVE_KEY &&
+      event.key !== CUSTOM_KEY &&
+      event.key !== FOLLOW_KEY
+    ) {
+      return
+    }
     loadStored()
+    commit()
+  })
+
+  // The device switching between light and dark (a schedule, or a person changing it) while the
+  // page is open. Only Follow system cares.
+  window.matchMedia?.('(prefers-color-scheme: dark)').addEventListener('change', (event) => {
+    systemScheme = event.matches ? 'dark' : 'light'
+    if (!followSystem) return
+    if (writable) persistActive()
     commit()
   })
 }

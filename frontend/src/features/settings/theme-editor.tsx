@@ -1,14 +1,12 @@
 import { useEffect, useId, useRef } from 'react'
 
-import { AlertTriangle, Check, Copy, Download, Pencil, Trash2 } from 'lucide-react'
+import { AlertTriangle } from 'lucide-react'
 
 import { cx } from '../../lib/cx'
 import { MIN_CONTRAST, themeContrast } from '../../theme/contrast'
 import { HEX_COLOR, MAX_THEME_NAME } from '../../theme/schema'
-import { isBuiltInTheme } from '../../theme/store'
 import type { Theme } from '../../theme/themes'
 import { COLOR_TOKENS, TOKEN_GROUPS } from '../../theme/tokens'
-import type { ColorToken } from '../../theme/tokens'
 import {
   Button,
   ErrorBanner,
@@ -19,109 +17,6 @@ import {
   StatusChip,
   Tag,
 } from '../../ui'
-
-/** The four colors that tell two themes apart at a glance, in the order the strip shows them. */
-const SWATCH_TOKENS: readonly ColorToken[] = [
-  '--color-canvas',
-  '--color-raised',
-  '--color-text',
-  '--color-accent',
-]
-
-function Swatches({ theme }: { theme: Theme }) {
-  return (
-    <span
-      aria-hidden="true"
-      className="inline-flex shrink-0 overflow-hidden rounded-sm border border-line"
-    >
-      {SWATCH_TOKENS.map((token) => (
-        <span
-          key={token}
-          className="block h-[30px] w-[24px]"
-          style={{ background: theme.colors[token] }}
-        />
-      ))}
-    </span>
-  )
-}
-
-export function ThemeCard({
-  theme,
-  active,
-  room,
-  onPick,
-  onDuplicate,
-  onEdit,
-  onExport,
-  onDelete,
-}: {
-  theme: Theme
-  active: boolean
-  room: boolean
-  onPick: () => void
-  onDuplicate: () => void
-  onEdit: () => void
-  onExport: () => void
-  onDelete: () => void
-}) {
-  const custom = !isBuiltInTheme(theme.id)
-
-  return (
-    <div
-      className={cx(
-        'grid content-start gap-[14px] rounded-lg border bg-raised p-[14px]',
-        active ? 'border-accent' : 'border-line',
-      )}
-    >
-      {/* The label is the touch target for the radio, so it is the one that has to reach 44px. */}
-      <label className="flex cursor-pointer items-center gap-[12px] coarse:min-h-11">
-        <input
-          type="radio"
-          name="theme"
-          value={theme.id}
-          checked={active}
-          className="h-[18px] w-[18px] shrink-0 accent-accent"
-          onChange={onPick}
-        />
-        <Swatches theme={theme} />
-        <span className="min-w-0 flex-1 text-lead [overflow-wrap:anywhere]">{theme.name}</span>
-        {/* A tick and the word, so the active card is not marked by its border color alone. */}
-        {active && (
-          <span className="inline-flex shrink-0 items-center gap-[4px] text-tiny text-accent">
-            <Check size={14} />
-            Active
-          </span>
-        )}
-      </label>
-      <div className="flex flex-wrap gap-[8px]">
-        <Button
-          aria-label={`Duplicate and edit ${theme.name}`}
-          disabled={!room}
-          onClick={onDuplicate}
-        >
-          <Copy size={14} />
-          Duplicate and edit
-        </Button>
-        {custom && (
-          <>
-            <Button aria-label={`Edit ${theme.name}`} onClick={onEdit}>
-              <Pencil size={14} />
-              Edit
-            </Button>
-            <Button aria-label={`Export ${theme.name}`} onClick={onExport}>
-              <Download size={14} />
-              Export
-            </Button>
-            <Button variant="danger" aria-label={`Delete ${theme.name}`} onClick={onDelete}>
-              <Trash2 size={14} />
-              Delete
-            </Button>
-          </>
-        )}
-      </div>
-    </div>
-  )
-}
 
 /*
  * Leaving this page ends the edit, so the page itself has to show every color being chosen. The
