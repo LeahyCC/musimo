@@ -1,6 +1,5 @@
-import { expect, test } from '@playwright/test'
-
 import { libraryAlbumsSchema, playerQueueSchema } from '../src/api'
+import { expect, test } from './test'
 
 // No route mocks: the scanner, SQLite, stream and browser must agree on the same ids.
 test('local files play, seek, restore their queue and persist playlist edits', async ({

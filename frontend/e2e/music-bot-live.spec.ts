@@ -1,11 +1,10 @@
-import { expect, test } from '@playwright/test'
-
 import {
   libraryPlaylistDetailSchema,
   libraryTracksSchema,
   playerQueueSchema,
   settingsSchema,
 } from '../src/api'
+import { expect, test } from './test'
 
 test('live Ollama interprets, refines and applies real library songs through the browser', async ({
   page,

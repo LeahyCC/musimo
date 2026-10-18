@@ -1,4 +1,3 @@
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
@@ -12,6 +11,7 @@ import {
   playerFixtures,
   requestBody,
 } from './library-fixtures'
+import { expect, test } from './test'
 
 const first = librarySong('s1', { title: 'Beacon', duration: 180 })
 const second = librarySong('s2', { title: 'Anchor', duration: 180 })

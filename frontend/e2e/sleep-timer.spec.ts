@@ -1,7 +1,7 @@
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
+import { expect, test } from './test'
 
 const alpha = librarySong('song-a', { title: 'Alpha', duration: 30 })
 const bravo = librarySong('song-b', { title: 'Bravo', duration: 30 })

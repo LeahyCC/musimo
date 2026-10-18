@@ -1,5 +1,3 @@
-import { expect, test } from '@playwright/test'
-
 import {
   closeLibraryFilters,
   librarySort,
@@ -9,6 +7,7 @@ import {
   playerFixtures,
   toggleLibraryFacet,
 } from './library-fixtures'
+import { expect, test } from './test'
 
 const song = {
   id: 'song-1',

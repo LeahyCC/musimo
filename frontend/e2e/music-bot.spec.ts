@@ -1,5 +1,4 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { settingsSchema } from '../src/api'
@@ -7,6 +6,7 @@ import { generatedPlayerAudio, librarySong, playerFixtures, requestBody } from '
 import { mainNav } from './nav'
 import { proposalFixtures } from './proposal-fixtures'
 import type { ProposalMock } from './proposal-fixtures'
+import { expect, test } from './test'
 
 const first = librarySong('tr-0000000000000001', { title: 'First Light', year: 1992 })
 const second = librarySong('tr-0000000000000002', {
