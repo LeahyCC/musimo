@@ -16,6 +16,10 @@ Search tracks, albums, artists and podcasts. Hear a preview, see what you alread
 
 <p align="center"><b>Now Playing.</b> The file you are hearing, as artwork or a MilkDrop visualizer.</p>
 
+<img src="docs/assets/visualizer.gif" alt="Now Playing with the MilkDrop visualizer on the stage. The picture moves while First Light plays. Up next shows Second Tide." width="100%" />
+
+<p align="center"><b>Visualizer.</b> The same stage, drawing to the music. Press V, or the button on the artwork.</p>
+
 <img src="docs/assets/listening-room.png" alt="The Listening room layout. A slim icon rail on the left, the Home page in the middle with the track you left off on, new albums, playlists and Ask Octive, and the player docked on the right with the artwork, a visualizer switch, the transport and Up next." width="100%" />
 
 <p align="center"><b>Listening room.</b> The other layout, picked in Settings, Yours: a slim rail, with the player and Up next docked on the right.</p>
