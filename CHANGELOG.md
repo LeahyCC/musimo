@@ -26,6 +26,7 @@
 - Raise the contrast of the song count under a playlist on the Listening room's Home in dark themes.
 - Let `scripts/check.sh browser` take `MUSIMO_CI_PROJECT` and `MUSIMO_CI_PORT` from the environment, so two runs do not collide.
 - Retake the README screenshots in Classic and add one of the Listening room.
+- Show the MilkDrop visualizer in the README as a short animation.
 
 ### Search and catalog pages
 
