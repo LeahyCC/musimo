@@ -695,7 +695,7 @@ class MusicBot:
             plan.max_seconds is not None and song.duration > plan.max_seconds
         ):
             return False
-        if plan.target_seconds and song.duration <= 0:
+        if plan.target_seconds and not (math.isfinite(song.duration) and song.duration > 0):
             return False
         if plan.exclude_played_days and song.play_count > 0 and not song.last_played:
             return False

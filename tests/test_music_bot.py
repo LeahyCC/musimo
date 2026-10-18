@@ -1,5 +1,7 @@
 import asyncio
+import dataclasses
 import json
+import math
 import tempfile
 import unittest
 from datetime import datetime
@@ -747,6 +749,17 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
         result = self.resolve(plan(artists=["Nobody"], target_seconds=3600))
         self.assertEqual(result["tracks"], [])
         self.assertEqual(result["shortfall_seconds"], 3600)
+
+    def test_a_fill_skips_a_song_whose_length_is_not_finite(self) -> None:
+        song = self.player.view().stored[self.ids["A yesterday"]]
+        for seconds in (math.inf, math.nan, 0.0):
+            with self.subTest(seconds=seconds):
+                broken = dataclasses.replace(song, duration=seconds)
+                self.assertFalse(
+                    self.bot._matches(broken, plan(target_seconds=3600), set(), self.now)
+                )
+                # Without a time to fill it can still be found.
+                self.assertTrue(self.bot._matches(broken, plan(), set(), self.now))
 
     def test_recheck_deleted_file_or_new_play(self) -> None:
         sid = self.ids["A yesterday"]

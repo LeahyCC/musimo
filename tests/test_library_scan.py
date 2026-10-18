@@ -1,6 +1,7 @@
 """The scan reads player columns once, and an empty root does not wipe them."""
 
 import asyncio
+import math
 import os
 import tempfile
 import threading
@@ -9,6 +10,7 @@ import unittest
 import wave
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from mutagen.id3 import ID3, TALB, TCMP, TCON, TDRC, TIT2, TPE1, TPE2, TPOS, TRCK, TXXX
@@ -16,6 +18,7 @@ from mutagen.wave import WAVE
 
 from backend.core.store import Store
 from backend.library.index import Library
+from backend.library.tags import facts_for, track_length
 
 
 def wav(path: Path) -> None:
@@ -123,3 +126,14 @@ class LibraryScanTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(str(again["added_at"]), added)
         counted = self.store.db.execute("SELECT count(*) FROM library_files").fetchone()[0]
         self.assertEqual(counted, 1)
+
+
+class TrackLengthTests(unittest.TestCase):
+    def test_a_broken_length_is_stored_as_unknown(self) -> None:
+        for raw in (math.inf, -math.inf, math.nan, -3.0, 0, None, "12", True):
+            with self.subTest(raw=raw):
+                self.assertEqual(track_length(raw), 0.0)
+                audio = SimpleNamespace(tags=None, info=SimpleNamespace(length=raw))
+                self.assertEqual(facts_for(audio, ".mp3", 1000).duration, 0.0)
+        self.assertEqual(track_length(212.5), 212.5)
+        self.assertEqual(track_length(7), 7.0)

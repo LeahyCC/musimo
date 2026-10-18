@@ -751,6 +751,27 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(set(self.ids_of(plain)), {self.ids["Mist"], self.ids["Fog"]})
         self.assertIsNone(plain["duration"])
 
+    async def test_a_stored_nonfinite_length_does_not_break_a_reply(self) -> None:
+        # SQLite keeps an infinite length and JSON cannot carry it, so one such row used to
+        # turn a bare target_seconds fill (and any reply listing that song) into a 500.
+        self.lengths({"Mist": float("inf"), "Fog": float("-inf")})
+        app = FastAPI()
+        install_music_bot_routes(app, lambda: self.bot)
+        async with httpx.AsyncClient(
+            transport=httpx.ASGITransport(app=app), base_url="http://test"
+        ) as client:
+            for filters in ({"genres": ["jazz"]}, {"target_seconds": 3600}):
+                with self.subTest(filters=filters):
+                    reply = await client.post(
+                        "/api/music-bot/intent", json=PLAIN | {"filters": filters}
+                    )
+                    self.assertEqual(reply.status_code, 200)
+                    durations = [t["duration"] for t in reply.json()["tracks"]]
+                    self.assertTrue(all(d == 0 or d == 200 for d in durations))
+        filled = self.run_at(intent(filters={"target_seconds": 3600}))
+        self.assertNotIn(self.ids["Mist"], self.ids_of(filled))
+        self.assertNotIn(self.ids["Fog"], self.ids_of(filled))
+
     def test_filters_hold_when_the_time_cannot_be_met(self) -> None:
         # Rock songs are long enough to reach an hour; the request asks for jazz.
         self.lengths({"Rain": 1800, "Snow": 1800, "Hail": 1800})
