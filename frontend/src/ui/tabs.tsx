@@ -2,7 +2,11 @@ import type { KeyboardEvent } from 'react'
 
 import { cx } from '../lib/cx'
 
-export type TabItem<Id extends string> = { id: Id; label: string }
+/**
+ * `count` draws a pill after the label. A phone hides the pill to keep a row of tabs on one line,
+ * and the tab's name still says it, e.g. "Queue (3)".
+ */
+export type TabItem<Id extends string> = { id: Id; label: string; count?: number }
 
 /** The ids a tab and its panel point at each other with, from one shared prefix. */
 export const tabId = (base: string, id: string) => `${base}-tab-${id}`
@@ -83,7 +87,7 @@ export function TabList<Id extends string>({
             tabIndex={selected ? 0 : -1}
             data-ui="tab"
             className={cx(
-              '-mb-px border-0 border-b-2 bg-transparent px-[2px] py-[10px] text-body font-medium coarse:min-h-11',
+              '-mb-px border-0 border-b-2 bg-transparent px-[2px] py-[10px] text-body font-medium whitespace-nowrap coarse:min-h-11',
               selected
                 ? 'border-accent text-text'
                 : 'border-transparent text-muted hover:text-text',
@@ -91,6 +95,20 @@ export function TabList<Id extends string>({
             onClick={() => onChange(tab.id)}
           >
             {tab.label}
+            {tab.count !== undefined && (
+              <>
+                <span
+                  aria-hidden="true"
+                  className={cx(
+                    'ml-[7px] inline-grid h-[18px] min-w-[20px] place-items-center rounded-pill px-[6px] text-tiny max-phone:hidden',
+                    selected ? 'bg-accent text-accent-ink' : 'bg-hover text-muted',
+                  )}
+                >
+                  {tab.count}
+                </span>
+                <span className="sr-only"> ({tab.count})</span>
+              </>
+            )}
           </button>
         )
       })}

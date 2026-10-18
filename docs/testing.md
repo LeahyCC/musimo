@@ -113,7 +113,7 @@ Prefer a role, label or `data-ui` locator. These class hooks are the ones the su
 
 - Shell: `.sidebar` (the bottom bar's box on a phone), `.nav-badge`, `.save-bar`, `footer.live-player` (also carries the phone seek bar rules), `audio.preview-audio`, `audio.library-audio`.
 - Search and album: `.track-row`, `.explicit`, `.album-actions`, `.download-target`, `.virtual-list` (also the handwritten list height rule, and `.queue-sheet .virtual-list` shortens it inside the sheet).
-- Downloads: `.job-card` and its stage class, `.download-tabs`.
+- Downloads: `.job-card` and its stage class (on every card and row in both layouts, and on History rows), `.download-tabs` (Classic's tab list, whose tabs are `role="tab"`, and the Listening room's tile group).
 - Library: `.library-grid`, `.library-card`, `.library-card-play`, `.library-card-copy`, `.library-artist-card`, `.library-artist-heading`, `.library-detail`, `.library-count`, `.library-list-row`, `.library-list-open`, `.library-list-actions`, `.library-tracks`, `.library-track-row`, `.library-track-play`, `.playlist-add-list`.
 - Playlist picker: `.playlist-picker-row`, `.playlist-picker-songs`.
 - Now Playing: `.stage`, `.stage-top`, `.stage-controls` (only in full screen and the popout), `.stage-overlay`, `img.stage-art`, `canvas.stage-visualizer`, and `.popout-body` in the popout. `.stage` and `.popout-body` also carry the fullscreen and popout rules, and the idle hook finds `.stage-overlay` too.

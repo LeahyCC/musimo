@@ -28,8 +28,12 @@ const toneSwatch: Record<PipelineTone, string> = {
 
 export type PipelineState = 'done' | 'current' | 'pending'
 
-/** Steps before the current one are done, the ones after it are pending. `done` finishes all five. */
-export function pipelineStates(current: PipelineStep | 'done'): PipelineState[] {
+/**
+ * Steps before the current one are done, the ones after it are pending. `done` finishes all five,
+ * `queued` leaves all five pending: a job waiting its turn, or one that kept no record of its step.
+ */
+export function pipelineStates(current: PipelineStep | 'done' | 'queued'): PipelineState[] {
+  if (current === 'queued') return PIPELINE_STEPS.map(() => 'pending')
   const at = current === 'done' ? PIPELINE_STEPS.length : PIPELINE_STEPS.indexOf(current)
   return PIPELINE_STEPS.map((_, index) =>
     index < at ? 'done' : index === at ? 'current' : 'pending',
@@ -37,15 +41,16 @@ export function pipelineStates(current: PipelineStep | 'done'): PipelineState[] 
 }
 
 /** What the bar says in words, e.g. "Download, step 2 of 5, failed". */
-export function pipelineText(current: PipelineStep | 'done', tone: PipelineTone) {
+export function pipelineText(current: PipelineStep | 'done' | 'queued', tone: PipelineTone) {
   if (current === 'done') return `All ${PIPELINE_STEPS.length} steps done`
+  if (current === 'queued') return 'No step started'
   const step = PIPELINE_STEPS.indexOf(current) + 1
   return `${stepNames[current]}, step ${step} of ${PIPELINE_STEPS.length}, ${toneWords[tone]}`
 }
 
 export interface PipelineBarProps {
-  /** The step a job is on, or `done` once it has moved into the library. */
-  current: PipelineStep | 'done'
+  /** The step a job is on, `done` once it has moved into the library, `queued` before any step. */
+  current: PipelineStep | 'done' | 'queued'
   tone?: PipelineTone
   className?: string
 }
