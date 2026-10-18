@@ -6,6 +6,7 @@ import {
   bodyNumber,
   bodyText,
   closeLibraryFilters,
+  libraryShow,
   librarySong,
   openLibraryFilters,
   playerFixtures,
@@ -99,6 +100,7 @@ test('the liked playlist leads the list and cannot be deleted from it', async ({
 }) => {
   await playlistFixtures(page)
   await page.goto('/library/playlists')
+  await showListView(page, isMobile)
 
   const rows = page.locator('.library-list-row')
   await expect(rows).toHaveCount(2)
@@ -117,17 +119,23 @@ test('the liked playlist leads the list and cannot be deleted from it', async ({
   await expect.poll(() => trash.evaluate((element) => getComputedStyle(element).opacity)).toBe('1')
 
   await openLibraryFilters(page, isMobile)
-  // A phone has this select twice in the document: the toolbar's, hidden there, and the sheet's.
-  await page.locator('select[aria-label="Filter playlists"]:visible').selectOption('private')
+  await libraryShow(page, 'Filter playlists').selectOption('private')
   await closeLibraryFilters(page, isMobile)
   await expect(rows).toHaveCount(1)
   await expect(rows.first()).toContainText('Liked')
 })
 
+/** The rows carry the controls these specs measure, so they look at the list rather than the cards. */
+async function showListView(page: Page, isMobile: boolean) {
+  await openLibraryFilters(page, isMobile)
+  await page.getByRole('button', { name: 'List view' }).click()
+  await closeLibraryFilters(page, isMobile)
+}
+
 const LONG_NAME =
   'An Unreasonably Long Title That Keeps Going Well Past Any Sensible Width (Deluxe Remastered Anniversary Edition)'
 
-test('a long playlist name stops short of its controls', async ({ page }) => {
+test('a long playlist name stops short of its controls', async ({ page, isMobile }) => {
   await playlistFixtures(page)
   await page.route(
     (url) => url.pathname === '/api/library/playlists',
@@ -150,6 +158,7 @@ test('a long playlist name stops short of its controls', async ({ page }) => {
       }),
   )
   await page.goto('/library/playlists')
+  await showListView(page, isMobile)
   const row = page.locator('.library-list-row').first()
   await expect(row).toContainText('An Unreasonably')
   const name = await row.locator('.library-list-open strong').boundingBox()

@@ -167,10 +167,8 @@ test('home is at the root and search has its own address', async ({ page }) => {
   const nav = mainNav(page)
   const lit = nav.locator('[aria-current="page"]')
   await expect(lit).toHaveText(/^(Library|Albums)/)
-  await page
-    .getByRole('navigation', { name: 'Library views' })
-    .getByRole('button', { name: 'Artists' })
-    .click()
+  // A wide Classic screen switches views from the sidebar, so the test goes by address.
+  await page.goto('/library/artists')
   await expect(page).toHaveURL(/\/library\/artists$/)
   await expect(lit).toHaveText(/^(Library|Artists)/)
 })
