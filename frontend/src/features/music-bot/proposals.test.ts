@@ -6,6 +6,7 @@ import {
   commitProposal,
   CONTRACT_VERSION,
   createProposal,
+  editProposal,
   forgetMemory,
   idChanges,
   intentFromReply,
@@ -15,8 +16,11 @@ import {
   ProposalError,
   proposalReplySchema,
   readMemory,
+  readProposal,
   refineProposal,
   refreshIntent,
+  sameSearch,
+  unavailableSongs,
   UnknownOutcome,
 } from './proposals'
 
@@ -64,7 +68,7 @@ describe('intentFromReply', () => {
   it('repeats a library draw: the plan’s filters, its seed and the songs it was made against', () => {
     const intent = intentFromReply(reply(), context)
     expect(intent).toMatchObject({
-      contract_version: 4,
+      contract_version: 5,
       action: 'search',
       scope: 'library',
       seed: 77,
@@ -75,6 +79,7 @@ describe('intentFromReply', () => {
         year_to: 1999,
         target_seconds: 3600,
         limit: 100,
+        exclude_ids: [],
       },
       context: {
         current_id: song(8),
@@ -82,6 +87,9 @@ describe('intentFromReply', () => {
         shown_ids: null,
         proposal_ids: [],
         queue_ids: [],
+        keep_ids: [],
+        pinned_ids: [],
+        add_count: null,
       },
     })
   })
@@ -115,15 +123,168 @@ describe('intentFromReply', () => {
   })
 })
 
+describe('what an open proposal carries into a follow-up', () => {
+  const carry = { excludeIds: [song(4)], pinnedIds: [song(1), song(2)] }
+
+  it('keeps a removed song out of every refinement, whatever its scope', () => {
+    for (const scope of ['library', 'proposal', 'queue']) {
+      expect(
+        intentFromReply(reply({ scope }), context, undefined, carry).filters.exclude_ids,
+      ).toEqual([song(4)])
+    }
+
+    expect(intentFromReply(reply(), context, [song(1)], carry).filters.exclude_ids).toEqual([
+      song(4),
+    ])
+  })
+
+  it('keeps pinned songs first as they are, but only in a library search', () => {
+    expect(intentFromReply(reply(), context, undefined, carry).context).toMatchObject({
+      keep_ids: [song(1), song(2)],
+      pinned_ids: [song(1), song(2)],
+      add_count: null,
+    })
+
+    // A refinement of a list has no draw to protect a song from: the pins are dropped.
+    for (const scope of ['proposal', 'queue']) {
+      expect(intentFromReply(reply({ scope }), context, undefined, carry).context).toMatchObject({
+        keep_ids: [],
+        pinned_ids: [],
+      })
+    }
+
+    expect(intentFromReply(reply(), context, [song(1)], carry).context).toMatchObject({
+      keep_ids: [],
+      pinned_ids: [],
+    })
+  })
+
+  it('carries nothing when no proposal is open', () => {
+    const intent = intentFromReply(reply(), context)
+    expect(intent.filters.exclude_ids).toEqual([])
+    expect(intent.context.pinned_ids).toEqual([])
+  })
+})
+
+describe('an older stored intent', () => {
+  it('still parses, with no removed, kept or pinned songs and no song count', () => {
+    const current = intentFromReply(reply(), context)
+    const { exclude_ids: _removed, ...filters } = current.filters
+    const { keep_ids: _kept, pinned_ids: _pinned, add_count: _count, ...older } = current.context
+    const parsed = intentSchema.parse({
+      ...current,
+      contract_version: 4,
+      filters,
+      context: older,
+    })
+    expect(parsed.filters.exclude_ids).toEqual([])
+    expect(parsed.context).toMatchObject({ keep_ids: [], pinned_ids: [], add_count: null })
+    // A refresh says the current version, since the edit fields need it.
+    expect(refreshIntent(parsed).contract_version).toBe(5)
+  })
+
+  it('keeps the removed, kept and pinned songs a version 5 intent carries', () => {
+    const stored = intentFromReply(reply(), context, undefined, {
+      excludeIds: [song(4)],
+      pinnedIds: [song(1)],
+    })
+    const kept = refreshIntent(intentSchema.parse(stored))
+    expect(kept.filters.exclude_ids).toEqual([song(4)])
+    expect(kept.context).toMatchObject({ keep_ids: [song(1)], pinned_ids: [song(1)] })
+  })
+})
+
+describe('refreshIntent and songs that left the library', () => {
+  const kept = intentFromReply(reply(), context, undefined, {
+    excludeIds: [song(4)],
+    pinnedIds: [song(1), song(2)],
+  })
+  const stored = {
+    ...kept,
+    context: { ...kept.context, keep_ids: [song(1), song(2), song(3)] },
+  }
+
+  it('leaves a gone song out of the kept and pinned songs, since the server refuses the whole request over it', () => {
+    const again = refreshIntent(stored, [song(2)])
+    expect(again.context.keep_ids).toEqual([song(1), song(3)])
+    expect(again.context.pinned_ids).toEqual([song(1)])
+    // Nothing else of the request changes: the filters, the seed and the removed songs.
+    expect(again.filters).toEqual(stored.filters)
+    expect(again.seed).toBe(stored.seed)
+    expect(again.filters.exclude_ids).toEqual([song(4)])
+  })
+
+  it('sends the kept songs as they were when none is gone', () => {
+    expect(refreshIntent(stored).context.keep_ids).toEqual([song(1), song(2), song(3)])
+    expect(refreshIntent(stored, [song(9)]).context.keep_ids).toEqual([song(1), song(2), song(3)])
+  })
+})
+
+describe('unavailableSongs', () => {
+  it('reads the songs a song_unavailable refusal names', () => {
+    const refusal = new ProposalError('Cannot play.', 'song_unavailable', 409, [
+      { field: `context.keep_ids.${song(2)}`, message: 'The file is unavailable' },
+      { field: `context.keep_ids.${song(5)}`, message: 'The file is unavailable' },
+    ])
+    expect(unavailableSongs(refusal)).toEqual([song(2), song(5)])
+  })
+
+  it('is null for any other refusal and for anything that is not one', () => {
+    expect(unavailableSongs(new ProposalError('No.', 'unknown_song', 422))).toBeNull()
+    expect(unavailableSongs(new Error('No.'))).toBeNull()
+  })
+})
+
+describe('sameSearch', () => {
+  const open = intentFromReply(reply(), context)
+
+  it('is true for an answer that asks for the same search with more songs', () => {
+    // The chat's own add answer raises its limit to the kept songs plus the new one.
+    expect(sameSearch(reply({ add_count: 1, limit: 4 }), open)).toBe(true)
+  })
+
+  it('ignores the songs a person removed, which are the server’s and not the plan’s', () => {
+    const removed = intentFromReply(reply(), context, undefined, {
+      excludeIds: [song(4)],
+      pinnedIds: [],
+    })
+    expect(sameSearch(reply({ add_count: 1 }), removed)).toBe(true)
+  })
+
+  it('is false when any filter the person can see changed', () => {
+    expect(sameSearch(reply({ add_count: 1, genres: ['Jazz'] }), open)).toBe(false)
+    expect(sameSearch(reply({ add_count: 1, year_from: 1980 }), open)).toBe(false)
+    expect(sameSearch(reply({ add_count: 1, exclude_artists: [] }), open)).toBe(false)
+    expect(sameSearch(reply({ add_count: 1, favourites: true }), open)).toBe(false)
+  })
+
+  it('is false for a revision that narrows a list, which has nothing to draw more songs from', () => {
+    expect(
+      sameSearch(reply({ add_count: 1 }), intentFromReply(reply({ scope: 'proposal' }), context)),
+    ).toBe(false)
+    expect(sameSearch(reply({ add_count: 1, scope: 'proposal' }), open)).toBe(false)
+  })
+
+  it('needs the same song when the search compares with one', () => {
+    const similar = intentFromReply(reply({ similar_to_current: true }), context)
+    expect(sameSearch(reply({ add_count: 1, similar_to_current: true }), similar)).toBe(true)
+    expect(
+      sameSearch(
+        reply({ add_count: 1, similar_to_current: true }, { reference_id: song(7) }),
+        similar,
+      ),
+    ).toBe(false)
+  })
+})
+
 describe('contract version', () => {
-  it('is one the server accepts for an intent (1 to 4) and for a commit (2 to 4)', () => {
-    expect(CONTRACT_VERSION).toBeGreaterThanOrEqual(2)
-    expect(CONTRACT_VERSION).toBeLessThanOrEqual(4)
+  it('is one the server accepts for an intent (1 to 5), a commit (2 to 5) and an edit (5)', () => {
+    expect(CONTRACT_VERSION).toBe(5)
     expect(intentFromReply(reply(), context).contract_version).toBe(CONTRACT_VERSION)
   })
 
-  it('is 4 or more, the first version where an omitted shown list reads the server memory', () => {
-    expect(CONTRACT_VERSION).toBeGreaterThanOrEqual(4)
+  it('is 5, the first version with the edit route and its fields', () => {
+    expect(CONTRACT_VERSION).toBeGreaterThanOrEqual(5)
   })
 
   it('upgrades an intent an older build stored, so a refresh still reads the memory', () => {
@@ -280,7 +441,7 @@ describe('the proposal routes', () => {
     })
     expect(done.receipt.status).toBe('ready_for_player')
     expect(sentBody(fetcher)).toEqual({
-      contract_version: 4,
+      contract_version: 5,
       revision: 1,
       operation_id: 'op-12345678',
       target: { kind: 'queue' },
@@ -327,6 +488,8 @@ describe('the proposal routes', () => {
     await expect(commitProposal(proposal.id, request)).rejects.toBeInstanceOf(UnknownOutcome)
     answer(500, { status: 'error', error: { code: 'internal_error', message: 'Failed.' } })
     await expect(commitProposal(proposal.id, request)).rejects.toBeInstanceOf(UnknownOutcome)
+    answer(499, { detail: 'Client closed the request.' })
+    await expect(commitProposal(proposal.id, request)).rejects.toBeInstanceOf(UnknownOutcome)
   })
 
   it('calls a commit reply it cannot read unknown, since the write may have happened', async () => {
@@ -363,6 +526,131 @@ describe('the proposal routes', () => {
         repeat: false,
       }),
     ).rejects.toMatchObject({ code: 'already_committed' })
+  })
+})
+
+describe('editProposal', () => {
+  const made = { proposal, tracks: [], missing_ids: [], replayed: false }
+
+  it('sends the version, the revision, the operation id and the edit, and reads the revision made', async () => {
+    const fetcher = answer(200, made)
+    const done = await editProposal(proposal.id, 3, 'op-12345678', { kind: 'add', count: 2 })
+    expect(done.replayed).toBe(false)
+    expect(fetcher.mock.calls[0]?.[0]).toBe(`/api/music-bot/proposals/${proposal.id}/edits`)
+    expect(sentBody(fetcher)).toEqual({
+      contract_version: 5,
+      revision: 3,
+      operation_id: 'op-12345678',
+      edit: { kind: 'add', count: 2 },
+    })
+  })
+
+  it('names the pinned songs for another set, and none at all when they are left as they are', async () => {
+    const fetcher = answer(200, made)
+    await editProposal(proposal.id, 1, 'op-12345678', { kind: 'another', pinnedIds: [song(1)] })
+    expect(sentBody(fetcher).edit).toEqual({ kind: 'another', pinned_ids: [song(1)] })
+    await editProposal(proposal.id, 1, 'op-12345678', { kind: 'another', pinnedIds: [] })
+    expect(JSON.parse(String(fetcher.mock.calls[1]?.[1]?.body))).toMatchObject({
+      edit: { kind: 'another', pinned_ids: [] },
+    })
+    await editProposal(proposal.id, 1, 'op-12345678', { kind: 'another' })
+    expect(JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body))).toMatchObject({
+      edit: { kind: 'another' },
+    })
+
+    expect(JSON.parse(String(fetcher.mock.calls[2]?.[1]?.body)).edit).not.toHaveProperty(
+      'pinned_ids',
+    )
+  })
+
+  it('names the songs to remove', async () => {
+    const fetcher = answer(200, made)
+    await editProposal(proposal.id, 1, 'op-12345678', { kind: 'remove', ids: [song(1), song(2)] })
+    expect(sentBody(fetcher).edit).toEqual({ kind: 'remove', ids: [song(1), song(2)] })
+  })
+
+  it('reads a replayed answer as the revision the first attempt made', async () => {
+    answer(200, { ...made, replayed: true })
+    const done = await editProposal(proposal.id, 1, 'op-12345678', { kind: 'add', count: 1 })
+    expect(done.replayed).toBe(true)
+  })
+
+  it('calls a network error, a timeout, a 5xx and a 499 unknown, so the same id is asked again', async () => {
+    const edit = { kind: 'add', count: 1 } as const
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new TypeError('Failed to fetch'))),
+    )
+
+    await expect(editProposal(proposal.id, 1, 'op-12345678', edit)).rejects.toBeInstanceOf(
+      UnknownOutcome,
+    )
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.reject(new DOMException('Timed out', 'TimeoutError'))),
+    )
+
+    await expect(editProposal(proposal.id, 1, 'op-12345678', edit)).rejects.toBeInstanceOf(
+      UnknownOutcome,
+    )
+    answer(502, 'Bad gateway')
+    await expect(editProposal(proposal.id, 1, 'op-12345678', edit)).rejects.toBeInstanceOf(
+      UnknownOutcome,
+    )
+    answer(500, { status: 'error', error: { code: 'internal_error', message: 'Failed.' } })
+    await expect(editProposal(proposal.id, 1, 'op-12345678', edit)).rejects.toBeInstanceOf(
+      UnknownOutcome,
+    )
+    answer(499, { detail: 'Client closed the request.' })
+    await expect(editProposal(proposal.id, 1, 'op-12345678', edit)).rejects.toBeInstanceOf(
+      UnknownOutcome,
+    )
+  })
+
+  it('calls a 200 it cannot read unknown, since the edit may have landed', async () => {
+    const edit = { kind: 'add', count: 1 } as const
+    answer(200, { proposal: {} })
+    await expect(editProposal(proposal.id, 1, 'op-12345678', edit)).rejects.toBeInstanceOf(
+      UnknownOutcome,
+    )
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn<typeof fetch>(() => Promise.resolve(new Response('<html>', { status: 200 }))),
+    )
+
+    await expect(editProposal(proposal.id, 1, 'op-12345678', edit)).rejects.toBeInstanceOf(
+      UnknownOutcome,
+    )
+  })
+
+  it('reads a typed refusal as a refusal: nothing was written', async () => {
+    const edit = { kind: 'add', count: 1 } as const
+    for (const [status, code] of [
+      [409, 'revision_superseded'],
+      [404, 'proposal_not_found'],
+      [422, 'edit_unsupported'],
+      [422, 'invalid_edit'],
+      [409, 'operation_conflict'],
+    ] as const) {
+      answer(status, { status: 'error', error: { code, message: 'No.' } })
+      await expect(editProposal(proposal.id, 1, 'op-12345678', edit)).rejects.toMatchObject({
+        name: 'ProposalError',
+        code,
+        status,
+      })
+    }
+  })
+})
+
+describe('readProposal', () => {
+  it('reads the latest revision with a GET and no body', async () => {
+    const fetcher = answer(200, { proposal, tracks: [], missing_ids: [] })
+    await readProposal(proposal.id)
+    expect(fetcher.mock.calls[0]?.[0]).toBe(`/api/music-bot/proposals/${proposal.id}`)
+    expect(fetcher.mock.calls[0]?.[1]).toMatchObject({ method: 'GET' })
+    expect(fetcher.mock.calls[0]?.[1]?.body).toBeUndefined()
   })
 })
 

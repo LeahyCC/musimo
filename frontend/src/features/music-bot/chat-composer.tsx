@@ -13,7 +13,7 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
   const field = useRef<HTMLTextAreaElement>(null)
   const locked = chat.locked !== null
   const cancellable = chat.thinking || chat.applying
-  const waiting = cancellable || chat.confirming
+  const waiting = cancellable || chat.confirming || chat.holding
   const latest = chat.log.at(-1)
   const offersReplies = latest?.kind === 'reply' && latest.suggestions.length > 0
 
@@ -101,7 +101,7 @@ export function Composer({ autoFocus }: { autoFocus: boolean }) {
             variant="primary"
             aria-label="Send"
             className="min-w-11 shrink-0 px-[12px]"
-            disabled={locked || chat.confirming || !text.trim()}
+            disabled={locked || chat.confirming || chat.holding || !text.trim()}
           >
             {win95 ? 'Send' : <SendHorizontal size={16} aria-hidden="true" />}
           </Button>

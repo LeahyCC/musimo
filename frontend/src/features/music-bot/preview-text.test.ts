@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { overviewFacts, refreshedNote, staleLines } from './preview-text'
+import { editNote, overviewFacts, refreshedNote, staleGone, staleLines } from './preview-text'
 import type { Overview } from './proposals'
 
 const song = (n: number) => `tr-${n.toString(16).padStart(16, '0')}`
@@ -188,6 +188,58 @@ describe('refreshedNote', () => {
     expect(refreshedNote({ added: 0, removed: 1 })).toMatch(/1 song left\./)
     expect(refreshedNote({ added: 0, removed: 0 })).toBe(
       'Refreshed. The same songs are still there.',
+    )
+  })
+})
+
+describe('staleGone', () => {
+  it('lists the songs a stale commit says are no longer in the library, and no others', () => {
+    expect(
+      staleGone([
+        { field: `songs.${song(1)}`, message: 'Not in the library' },
+        { field: `songs.${song(2)}`, message: 'The file is unavailable' },
+        { field: `songs.${song(3)}/history`, message: 'Not in the library' },
+        { field: 'library', message: 'Not in the library' },
+      ]),
+    ).toEqual([song(1), song(3)])
+  })
+})
+
+describe('refreshedNote with dropped kept songs', () => {
+  it('says how many kept songs left the library and were dropped', () => {
+    expect(refreshedNote({ added: 0, removed: 0 }, 1)).toBe(
+      'Refreshed. The same songs are still there. 1 kept song no longer in your library was dropped.',
+    )
+
+    expect(refreshedNote({ added: 1, removed: 0 }, 2)).toMatch(
+      /2 kept songs no longer in your library were dropped\.$/,
+    )
+    expect(refreshedNote({ added: 0, removed: 1 })).not.toMatch(/dropped/)
+  })
+})
+
+describe('editNote', () => {
+  it('says how many songs an edit moved, in the words for one and for many', () => {
+    expect(editNote('remove', { added: 0, removed: 1 })).toBe(
+      'Removed 1 song. It won’t come back in this preview.',
+    )
+    expect(editNote('remove', { added: 0, removed: 2 })).toMatch(/^Removed 2 songs\. They won’t/)
+    expect(editNote('add', { added: 1, removed: 0 })).toBe('Added 1 song that fit these filters.')
+  })
+
+  it('says so when an add found nothing, rather than reporting an add', () => {
+    expect(editNote('add', { added: 0, removed: 0 })).toBe(
+      'No other song fits these filters, so nothing was added.',
+    )
+  })
+
+  it('names the pinned songs an Another set kept, and the songs it replaced', () => {
+    expect(editNote('another', { added: 3, removed: 3 }, 2)).toBe(
+      'Drew another set, keeping 2 pinned songs: 3 songs replaced.',
+    )
+
+    expect(editNote('another', { added: 0, removed: 0 })).toBe(
+      'Drew another set, and the same songs came up.',
     )
   })
 })

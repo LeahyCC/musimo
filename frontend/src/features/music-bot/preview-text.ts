@@ -106,12 +106,43 @@ export function staleLines(
   return rest > 0 ? [...lines, `and ${plural(rest, 'other change')}`] : lines
 }
 
-/** What a refresh did to the list, said after it so nothing changes silently. */
-export function refreshedNote(change: { added: number; removed: number }): string {
-  if (!change.added && !change.removed) return 'Refreshed. The same songs are still there.'
-  const parts = [
-    ...(change.removed ? [`${plural(change.removed, 'song')} left`] : []),
-    ...(change.added ? [`${plural(change.added, 'song')} came in`] : []),
-  ]
-  return `Refreshed the preview: ${parts.join(', ')}. Check it before you confirm.`
+/** The songs a stale commit says are no longer in the library, from its `songs.<id>` fields. */
+export function staleGone(fields: readonly { field: string; message: string }[]): string[] {
+  return fields.flatMap(({ field, message }) =>
+    message === 'Not in the library' ? (/^songs\.(tr-[0-9a-f]{16})/.exec(field)?.[1] ?? []) : [],
+  )
+}
+
+/** What a refresh did to the list, said after it so nothing changes silently. `dropped` is how
+ *  many kept songs had left the library and were taken out of the request. */
+export function refreshedNote(change: { added: number; removed: number }, dropped = 0): string {
+  const base =
+    !change.added && !change.removed
+      ? 'Refreshed. The same songs are still there.'
+      : `Refreshed the preview: ${[
+          ...(change.removed ? [`${plural(change.removed, 'song')} left`] : []),
+          ...(change.added ? [`${plural(change.added, 'song')} came in`] : []),
+        ].join(', ')}. Check it before you confirm.`
+  return dropped
+    ? `${base} ${plural(dropped, 'kept song')} no longer in your library ${dropped === 1 ? 'was' : 'were'} dropped.`
+    : base
+}
+
+/** What an edit did to the list, said after it so a change is never silent. `pinned` is how many
+ *  songs an Another set protected. */
+export function editNote(
+  edit: 'another' | 'add' | 'remove',
+  change: { added: number; removed: number },
+  pinned = 0,
+): string {
+  if (edit === 'remove')
+    return `Removed ${plural(change.removed, 'song')}. ${change.removed === 1 ? 'It' : 'They'} won’t come back in this preview.`
+  if (edit === 'add')
+    return change.added
+      ? `Added ${plural(change.added, 'song')} that fit these filters.`
+      : 'No other song fits these filters, so nothing was added.'
+  const kept = pinned ? `, keeping ${plural(pinned, 'pinned song')}` : ''
+  return change.added || change.removed
+    ? `Drew another set${kept}: ${plural(change.removed, 'song')} replaced.`
+    : `Drew another set${kept}, and the same songs came up.`
 }

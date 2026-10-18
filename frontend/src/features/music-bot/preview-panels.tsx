@@ -88,6 +88,44 @@ export function ProblemPanel() {
         </div>
       </div>
     )
+  if (problem.kind === 'changed')
+    return (
+      <div role="alert" data-bot="problem" className={panelClass}>
+        <span>
+          <strong className="font-semibold">This preview changed.</strong> It was refined somewhere
+          else, or it is gone, so nothing was edited here. Refresh the preview to see the current
+          one.
+        </span>
+        <div>
+          <Button disabled={busy} onClick={chat.resolveProblem}>
+            <RefreshCw size={14} aria-hidden="true" />
+            Refresh preview
+          </Button>
+        </div>
+      </div>
+    )
+  if (problem.kind === 'unavailable') {
+    const titles = new Map(chat.reply?.tracks.map((track) => [track.id, track.title]))
+    const named = problem.songs.map((song) => titles.get(song) ?? 'A song')
+    return (
+      <div role="alert" data-bot="problem" className={panelClass}>
+        <span>
+          <strong className="font-semibold">
+            {named.length === 1 ? 'A kept song' : 'Some kept songs'} can&rsquo;t play right now
+            {named.length ? `: ${named.join(', ')}` : ''}.
+          </strong>{' '}
+          Nothing was changed, and no song is dropped quietly. Remove{' '}
+          {named.length === 1 ? 'it' : 'them'} from the list, or try again when{' '}
+          {named.length === 1 ? 'its' : 'their'} folder is back.
+        </span>
+        <div>
+          <Button disabled={busy} onClick={chat.dismissProblem}>
+            Try again later
+          </Button>
+        </div>
+      </div>
+    )
+  }
   if (problem.kind === 'unknown')
     return (
       <div role="alert" data-bot="problem" className={panelClass}>
@@ -95,7 +133,9 @@ export function ProblemPanel() {
           <strong className="font-semibold">I can&rsquo;t tell if that went through.</strong>{' '}
           {problem.what === 'save'
             ? 'The playlist may or may not have been saved.'
-            : 'Nothing has been added to your queue yet.'}{' '}
+            : problem.what === 'edit'
+              ? 'The preview may or may not have changed.'
+              : 'Nothing has been added to your queue yet.'}{' '}
           Checking asks again with the same request, so it cannot be done twice.
         </span>
         <div>

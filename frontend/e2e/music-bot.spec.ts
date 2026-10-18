@@ -754,7 +754,7 @@ test('Save and Add to queue confirm the shown revision and never search again', 
   expect(proposals.refines).toHaveLength(0)
   const [playlist, queue] = proposals.commits
   expect(playlist).toMatchObject({
-    contract_version: 4,
+    contract_version: 5,
     revision: 1,
     target: { kind: 'playlist', name: 'Road trip' },
     repeat: false,
@@ -953,7 +953,7 @@ test('Save as playlist on a restored card makes a preview first and saves on a s
     .toEqual([{ name: 'Restored', ids: [first.id, second.id] }])
 })
 
-test('taking a song off the card stores the shorter list, and that is what is confirmed', async ({
+test('taking a song off the card is the next revision, and that is what is confirmed', async ({
   page,
 }) => {
   const saves = await fixtures(page)
@@ -964,14 +964,18 @@ test('taking a song off the card stores the shorter list, and that is what is co
   await expect(
     card(page).getByRole('list', { name: 'Proposed songs' }).getByRole('listitem'),
   ).toHaveCount(1)
-  expect(proposals.creates).toHaveLength(2)
-  expect(proposals.creates[1]).toMatchObject({
-    scope: 'proposal',
-    context: { proposal_ids: [second.id] },
+  // A remove edit of the open proposal, not a new proposal.
+  expect(proposals.creates).toHaveLength(1)
+  expect(proposals.edits).toHaveLength(1)
+  expect(proposals.edits[0]).toMatchObject({
+    revision: 1,
+    edit: { kind: 'remove', ids: [first.id] },
   })
+  await expect(card(page)).toContainText('REVISION 2')
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
   await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, second.id])
   expect(proposals.handed).toEqual([[second.id]])
+  expect(proposals.commits[0]).toMatchObject({ revision: 2 })
 })
 
 test('a song the library no longer has is named, left off the list, and refreshed before confirming', async ({
@@ -1040,9 +1044,9 @@ test('every request names a contract version the server takes, for create, refin
   await expect(card(page)).toContainText('REVISION 2')
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
   await expect.poll(() => proposals.commits.length).toBe(1)
-  expect(proposals.creates[0]?.contract_version).toBe(4)
-  expect(proposals.refines[0]?.body.intent).toMatchObject({ contract_version: 4 })
-  expect(proposals.commits[0]?.contract_version).toBe(4)
+  expect(proposals.creates[0]?.contract_version).toBe(5)
+  expect(proposals.refines[0]?.body.intent).toMatchObject({ contract_version: 5 })
+  expect(proposals.commits[0]?.contract_version).toBe(5)
 })
 
 test('a recorded queue confirmation the card cannot match says so, leaves the queue alone and offers a refresh', async ({
