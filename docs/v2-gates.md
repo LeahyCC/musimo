@@ -19,6 +19,7 @@ Owner answers are marked **Colin**. Everything else is a recommendation Colin as
 - Version 1, about 120 cases, written and labelled before any candidate runs. Each case records the intended meaning (action, scope, every hard constraint, follow-up state), not only a valid JSON shape.
 - Covers: entity lookup and ambiguous titles, fine genre ("liquid" versus broad drum and bass), every duration mode and its boundary words, negation ("no vocals"), similar songs, queue and transport commands, multi-turn follow-ups that must keep earlier constraints, out-of-scope requests, and outage cases (timeout, malformed output, truncated context, invented ids).
 - Split: about 70 development cases for prompt work, about 50 held-out cases sealed with a checksum. The held-out set runs once per candidate, after its prompt is frozen.
+- Written 17 October 2026 as [evals/interpreter](../evals/interpreter/README.md): 72 development and 56 held-out cases, labelled in the version 5 contract's own fields, with the scoring rules fixed there. The held-out digest is in `seal.json` and checked by `tests/test_interpreter_suite.py`. Five held-out cases are truly ambiguous, so the 80% question mark means at least 4 of 5. The same session wrote both splits, so the 2A prompt work should be done by a session that has not read `heldout.json`.
 
 ### Pass marks
 
@@ -95,6 +96,6 @@ Missing, failed or stale rows count as abstentions, never as a negative label. A
 ## What happens next
 
 1. Colin signed off this page on 17 October 2026.
-2. 2A: write the prompt suite and seal its held-out part. Colin installs the shortlisted models on the Ollama computer. Then one evaluation run per model, reported with the SHA, model digests, settings, results and failures.
+2. 2A: write the prompt suite and seal its held-out part (done 17 October). Colin installs the shortlisted models on the Ollama computer. Then one evaluation run per model, reported with the SHA, model digests, settings, results and failures.
 3. 3A starts after a 2A model passes.
 4. 4A: build the 120-clip blind set and seal its held-out part, then run the frozen candidates once.
