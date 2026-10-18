@@ -173,9 +173,9 @@ const totalLength = (seconds: number) => {
 /** What a playlist's footer says, from what the playlist really is. */
 const playlistFooter = (isPublic: boolean, liked: boolean) =>
   liked
-    ? 'Every song you give a thumbs up lands here, newest first. Liked is never deleted.'
+    ? 'Every song you give a thumbs up lands here. Liked can be renamed but never deleted.'
     : isPublic
-      ? 'Public playlists can be read by Subsonic clients on your network.'
+      ? 'Public playlist. Add songs from the search below, or remove one with the cross on its row.'
       : 'Private to you. Add songs from the search below, or remove one with the cross on its row.'
 
 const sumDuration = (songs: LibraryTrack[]) => songs.reduce((sum, song) => sum + song.duration, 0)
@@ -819,9 +819,8 @@ export function LibraryPage({
           <button
             type="button"
             data-ui="text-link"
-            aria-label={`Back to ${backLabel}`}
             className={cx(
-              textLinkClassName('gap-[6px] capitalize'),
+              textLinkClassName('gap-[6px]'),
               'my-[8px] h-[32px] rounded-md pr-[10px] pl-[6px] !text-muted hover:bg-raised hover:!text-text',
             )}
             onClick={() => {
@@ -830,7 +829,8 @@ export function LibraryPage({
             }}
           >
             <ChevronLeft size={16} />
-            {room && !albumParent ? 'Library' : backLabel}
+            {/* The words are the button's name, so voice control can say what it sees. */}
+            {room && !albumParent ? 'Back to Library' : `Back to ${backLabel}`}
           </button>
         </div>
       )}
@@ -952,9 +952,9 @@ export function LibraryPage({
               }
               title={detailTitle}
               titleAction={
-                playlist && !playlistLiked ? (
+                playlist ? (
                   <IconButton
-                    aria-label="Rename"
+                    aria-label="Rename playlist"
                     aria-expanded={renaming}
                     onClick={() => {
                       setRenameValue(playlist.name)

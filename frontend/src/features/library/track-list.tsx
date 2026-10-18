@@ -72,7 +72,9 @@ export function TrackList({
         <div
           aria-hidden="true"
           className={cx(
-            'flex items-center pr-[46px] text-faint max-phone:hidden',
+            // Room for the row menu, and on a playlist the remove button beside it (38px + 5px).
+            'flex items-center text-faint max-phone:hidden',
+            onRemove ? 'pr-[89px]' : 'pr-[46px]',
             detail
               ? 'mb-[4px] border-b border-line pb-[8px] font-mono text-caption tracking-[0.6px]'
               : room

@@ -89,10 +89,13 @@ export function CollectionHeader({
       <div className="grid min-w-0 flex-1 gap-[8px] max-phone:contents">
         <div className="grid min-w-0 gap-[8px] max-phone:gap-[4px]">
           <p className="font-mono text-tiny tracking-[0.8px] text-faint">{eyebrow}</p>
-          <h1 className="flex items-center gap-[10px] text-[clamp(26px,3.4vw,40px)] leading-[1.08] font-semibold tracking-[-1px] max-phone:text-[24px]">
-            <span className="line-clamp-2 min-w-0 break-words">{title}</span>
+          {/* The action sits beside the heading, not in it, so it is not read as part of the title. */}
+          <div className="flex items-center gap-[10px]">
+            <h1 className="line-clamp-2 min-w-0 text-[clamp(26px,3.4vw,40px)] leading-[1.08] font-semibold tracking-[-1px] break-words max-phone:text-[24px]">
+              {title}
+            </h1>
             {titleAction}
-          </h1>
+          </div>
           {byline}
           {meta && <p className="library-count text-body text-muted">{meta}</p>}
         </div>
