@@ -510,7 +510,7 @@ test('autoplay refusal is honest and Undo restores an empty queue', async ({ pag
   })
   await page.goto('/music-bot')
   await ask(page)
-  await page.getByRole('main').getByRole('button', { name: 'Play', exact: true }).click()
+  await page.getByRole('main').getByRole('button', { name: 'Play now', exact: true }).click()
   await expect(page.getByText('Press play when you are ready.').first()).toBeVisible()
   // Loaded, not claimed as playing: the browser refused to start it.
   await expect(card(page).getByRole('status')).toContainText('These 2 songs replaced your queue.')
@@ -590,7 +590,7 @@ test('a full queue refuses additions and a failed save is reported', async ({ pa
   )
   await expect(page.getByText('No room on the shelf!')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Replace upcoming instead' })).toBeVisible()
-  await page.getByRole('main').getByRole('button', { name: 'Play', exact: true }).click()
+  await page.getByRole('main').getByRole('button', { name: 'Play now', exact: true }).click()
   await expect(
     page.getByText('The queue changed here but could not be saved.').first(),
   ).toBeVisible()
@@ -1130,4 +1130,12 @@ test('a stale or unsettled preview cannot have a song taken off it, and Refresh 
   await expect(problem.getByRole('button', { name: 'Refresh preview' })).toBeDisabled()
   release?.()
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible()
+})
+
+test('a prompt in the address is sent once and then dropped from it', async ({ page }) => {
+  await fixtures(page, false)
+  await page.goto('/music-bot?prompt=Play%20some%20hip%20hop')
+  await expect(page.getByRole('list', { name: 'Proposed songs' })).toBeVisible()
+  await expect(page.locator('[data-bot="you"]')).toHaveText('Play some hip hop')
+  await expect(page).toHaveURL(/\/music-bot$/)
 })

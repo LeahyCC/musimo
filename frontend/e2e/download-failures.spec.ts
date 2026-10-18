@@ -131,16 +131,15 @@ test('failed downloads show a count, cause and retry state', async ({ page }) =>
   )
 
   await page.goto('/downloads')
-  // A missing recording is not a broken download, so the menu clears it and does not retry it.
-  await page.getByRole('button', { name: 'More queue actions' }).click()
-  await expect(page.getByRole('menuitem', { name: 'Clear no match (1)' })).toBeVisible()
-  await expect(page.getByRole('menuitem', { name: /Retry errors/ })).toHaveCount(0)
-  await page.keyboard.press('Escape')
-  await expect(page.getByRole('button', { name: 'No match (1)', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'No match (1)', exact: true }).click()
+  // A missing recording is not a broken download: it sits on its own tab, which clears it and
+  // never offers to retry everything.
+  await expect(page.getByRole('tab', { name: 'Errors (0)', exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'No match (1)', exact: true }).click()
   await expect(page.getByLabel('No match summary')).toContainText(
     'No matching recording was found on YouTube.',
   )
+  await expect(page.getByRole('button', { name: 'Clear no match' })).toBeVisible()
+  await expect(page.getByRole('button', { name: /Retry all/ })).toHaveCount(0)
 
   await page.goto('/albums/42')
   await expect(page.getByText('Download failed', { exact: true })).toHaveAttribute(
@@ -148,7 +147,8 @@ test('failed downloads show a count, cause and retry state', async ({ page }) =>
     'No matching recording was found on YouTube.',
   )
   await page.getByRole('button', { name: /Retry Recording 1/ }).click()
-  await expect(page.getByText('Queued', { exact: true })).toBeVisible()
+  // The queue sheet names the stage too, so look on the track's own row.
+  await expect(page.locator('#track-101').getByText('Queued', { exact: true })).toBeVisible()
 })
 
 /** Alternating tall and short cards, so a wrong height is impossible to miss. */
@@ -235,7 +235,10 @@ test('a long failure queue lists cards without overlapping, and can be grouped o
   await page.route('**/api/snapshot', (route) =>
     route.fulfill({ status: 503, json: { detail: 'Snapshot unavailable in this fixture' } }),
   )
-  const jobs = Array.from({ length: 9 }, (_, index) => varied(index))
+  const jobs = [
+    ...Array.from({ length: 9 }, (_, index) => varied(index)),
+    { ...failed, id: 'done-1', stage: 'done', error_code: '', error: '', error_hint: '' },
+  ]
   await page.route('**/api/jobs*', (route) =>
     route.fulfill({
       json: {
@@ -252,7 +255,7 @@ test('a long failure queue lists cards without overlapping, and can be grouped o
   })
 
   await page.goto('/downloads')
-  await page.getByRole('button', { name: 'No match (9)', exact: true }).click()
+  await page.getByRole('tab', { name: 'No match (9)', exact: true }).click()
   // Cards flow inside one offset container. Giving each card its own absolute offset is
   // what let a card be drawn over its neighbour before its real height was measured.
   const wrappers = await page
@@ -275,23 +278,21 @@ test('a long failure queue lists cards without overlapping, and can be grouped o
   await expect(page.locator('#main .virtual-list')).toBeVisible()
   expect(await overlaps(page)).toEqual([])
 
-  await page.getByRole('button', { name: 'More queue actions' }).click()
-  await page.getByRole('menuitem', { name: 'Clear no match (9)' }).click()
+  await page.getByRole('button', { name: 'Clear no match' }).click()
   await expect.poll(() => cleared).toContain('clear-unmatched')
 
   // Clear all finished asks first: dismissing the prompt sends nothing, accepting it does.
+  await page.getByRole('tab', { name: 'Done (1)', exact: true }).click()
   page.once('dialog', (dialog) => void dialog.dismiss())
-  await page.getByRole('button', { name: 'More queue actions' }).click()
-  await page.getByRole('menuitem', { name: 'Clear all finished' }).click()
+  await page.getByRole('button', { name: 'Clear all finished' }).click()
   await page.waitForTimeout(200)
   expect(cleared).not.toContain('clear-finished')
   page.once('dialog', (dialog) => void dialog.accept())
-  await page.getByRole('button', { name: 'More queue actions' }).click()
-  await page.getByRole('menuitem', { name: 'Clear all finished' }).click()
+  await page.getByRole('button', { name: 'Clear all finished' }).click()
   await expect.poll(() => cleared).toContain('clear-finished')
 })
 
-test('the queue controls keep three buttons and hide overflow actions with nothing to act on', async ({
+test('the queue controls keep three buttons and offer no clean-up with nothing to act on', async ({
   page,
 }) => {
   await page.route('**/api/snapshot', (route) =>
@@ -311,11 +312,15 @@ test('the queue controls keep three buttons and hide overflow actions with nothi
   await expect(page.getByRole('combobox', { name: 'Parallel downloads' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Pause all', exact: true })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Cancel queued' })).toBeVisible()
-  // Nothing has failed or finished, so there is nothing for a menu to hold.
-  await expect(page.getByRole('button', { name: 'More queue actions' })).toHaveCount(0)
-  await expect(
-    page.getByRole('menuitem', { name: /Retry errors|Clear errors|Clear no match/ }),
-  ).toHaveCount(0)
+  // Nothing has failed or finished, so no tab offers to retry or clear anything.
+  for (const name of ['Errors (0)', 'No match (0)', 'Done (0)']) {
+    await page.getByRole('tab', { name, exact: true }).click()
+    await expect(
+      page.getByRole('button', {
+        name: /Retry all|Clear errors|Clear no match|Clear all finished/,
+      }),
+    ).toHaveCount(0)
+  }
 })
 
 test('recording matches link to their own page, or to YouTube for older jobs', async ({ page }) => {
@@ -333,7 +338,7 @@ test('recording matches link to their own page, or to YouTube for older jobs', a
     }),
   )
   await page.goto('/downloads')
-  await page.getByRole('button', { name: 'No match (1)', exact: true }).click()
+  await page.getByRole('tab', { name: 'No match (1)', exact: true }).click()
   await page.getByText(/Recording matches/).click()
   const links = page.locator('#main .job-card').getByRole('link', { name: 'Listen ↗' })
   await expect(links).toHaveCount(3)
@@ -386,13 +391,13 @@ test('a queued card keeps its own height when a job above it finishes', async ({
   })
 
   await page.goto('/downloads')
-  await expect(page.getByRole('button', { name: 'Queue (9)', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Queue (9)', exact: true })).toBeVisible()
   expect(await overlaps(page)).toEqual([])
 
   // The finished job leaves the queue, so every card below it shifts up one position while
   // staying on screen. Measurements have to follow the card, not the position.
   release()
-  await expect(page.getByRole('button', { name: 'Queue (8)', exact: true })).toBeVisible()
+  await expect(page.getByRole('tab', { name: 'Queue (8)', exact: true })).toBeVisible()
   expect(await overlaps(page)).toEqual([])
 })
 
@@ -465,22 +470,22 @@ test('error hints link to the relevant setting or diagnostic', async ({ page }) 
   )
 
   await page.goto('/downloads')
-  await page.getByRole('button', { name: 'Errors (1)', exact: true }).click()
+  await page.getByRole('tab', { name: 'Errors (1)', exact: true }).click()
 
-  // Failed card shows hint and link
-  const card = page.locator('.job-card')
-  await expect(card.getByText('The destination folder is missing or not writable.')).toBeVisible()
-  await expect(card.getByRole('link', { name: 'Open Settings' })).toBeVisible()
+  // The summary names the cause in short, with its count.
+  await expect(page.getByLabel('Failure summary')).toContainText('Read-only folder1')
 
-  // Failed tab summary shows hint and link
-  const summary = page.getByLabel('Failure summary')
-  await expect(
-    summary.getByText('The destination folder is missing or not writable.'),
-  ).toBeVisible()
-  await expect(summary.getByRole('link', { name: 'Open Settings' })).toBeVisible()
+  // Failures are grouped by cause: the group says what went wrong and links to the fix, and
+  // holds the failed card.
+  const group = page.getByRole('region', {
+    name: 'The destination folder is missing or not writable.',
+  })
+  await expect(group.locator('.job-card')).toHaveCount(1)
+  await expect(group.locator('.job-card')).toContainText('Recording 1')
+  await expect(group.getByRole('link', { name: 'Open Settings' })).toBeVisible()
 
   // Clicking link navigates to Settings with hash
-  await card.getByRole('link', { name: 'Open Settings' }).click()
+  await group.getByRole('link', { name: 'Open Settings' }).click()
   await expect(page).toHaveURL(/\/settings#destination/)
 })
 
@@ -512,7 +517,7 @@ test('long titles and labels stay inside the page', async ({ page }) => {
   )
 
   await page.goto('/downloads')
-  const failedTab = page.getByRole('button', { name: 'No match (3)', exact: true })
+  const failedTab = page.getByRole('tab', { name: 'No match (3)', exact: true })
   await failedTab.click()
   await expect(page.locator('#main .job-card')).toHaveCount(3)
   // A tab label such as "Queue (5)" stays on one line at narrow widths; the row wraps instead.
@@ -604,7 +609,7 @@ test('done jobs with warnings show the count in their heading', async ({ page })
   )
 
   await page.goto('/downloads')
-  await page.getByRole('button', { name: 'Done (1)', exact: true }).click()
+  await page.getByRole('tab', { name: 'Done (1)', exact: true }).click()
 
   const card = page.locator('.job-card')
   await expect(card.getByText('opus · 161 kbps · 2 warnings')).toBeVisible()
@@ -656,7 +661,7 @@ test('a link job shows where its tags came from as a note, not a warning', async
   )
 
   await page.goto('/downloads')
-  await page.getByRole('button', { name: 'Done (2)', exact: true }).click()
+  await page.getByRole('tab', { name: 'Done (2)', exact: true }).click()
 
   const cards = page.locator('.job-card')
   const first = cards.filter({ has: page.getByText('Tagged from Internet Archive') })
@@ -706,7 +711,7 @@ test('history tab shows empty state when no jobs finished', async ({ page }) => 
   )
 
   await page.goto('/downloads')
-  await expect(page.getByRole('button', { name: 'Queue (0)', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'History' }).click()
+  await expect(page.getByRole('tab', { name: 'Queue (0)', exact: true })).toBeVisible()
+  await page.getByRole('tab', { name: 'History' }).click()
   await expect(page.getByText('Nothing has finished yet.')).toBeVisible()
 })
