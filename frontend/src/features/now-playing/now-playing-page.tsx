@@ -775,7 +775,10 @@ function ClassicNowPlaying({ track, large, lyricsView, onLyricsView }: LayoutPro
           ? 'grid-cols-1'
           : cx(
               nowPlayingScreenClassName,
-              'grid-cols-[minmax(0,520px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]',
+              // The column is at most a 520px square and about 300px of controls. A taller window
+              // only stretched the tabs and left empty space under the column, so the page stops
+              // here and the rest of the window stays below it.
+              'max-h-[880px] grid-cols-[minmax(0,520px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] max-phone:max-h-none',
             ),
       )}
     >
