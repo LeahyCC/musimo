@@ -45,7 +45,7 @@ from backend.library.browse import (
     track_text,
 )
 from backend.library.lyrics import lyric_lines
-from backend.library.tags import CONTENT_TYPES
+from backend.library.tags import CONTENT_TYPES, track_length
 from backend.version import VERSION
 
 # The request validator and the comparators share these names.
@@ -337,7 +337,8 @@ def song_row(row: sqlite3.Row) -> StoredSong:
         title=str(row["title"]),
         artist=str(row["artist"]),
         album=str(row["album"]),
-        duration=float(row["duration"]),
+        # Rows scanned before lengths were clamped can still hold inf.
+        duration=track_length(row["duration"]),
         track=int(row["track"]),
         disc=int(row["disc"]),
         year=int(row["year"]),

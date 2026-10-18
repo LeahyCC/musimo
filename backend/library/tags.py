@@ -299,10 +299,19 @@ def info_number(info: object, name: str) -> int:
     return int(raw)
 
 
+def track_length(raw: object) -> float:
+    """A stored length in seconds, 0 when unknown. A broken header can report inf or NaN:
+    SQLite keeps inf (and refuses NaN in a NOT NULL column) and JSON can carry neither."""
+    if isinstance(raw, bool) or not isinstance(raw, (int, float)):
+        return 0.0
+    seconds = float(raw)
+    return seconds if math.isfinite(seconds) and seconds > 0 else 0.0
+
+
 def facts_for(audio: object, suffix: str, size: int) -> AudioFacts:
     found = collect(audio)
     info = getattr(audio, "info", None)
-    duration = float(getattr(info, "length", 0) or 0)
+    duration = track_length(getattr(info, "length", 0))
     bitrate = info_number(info, "bitrate")
     if bitrate >= 1000:
         bitrate = int(round(bitrate / 1000))
