@@ -424,12 +424,23 @@ test('the mini player is one row and hands the rest to Now Playing', async ({ pa
   const nav = await box(page.locator('.sidebar'))
   const rect = await box(player)
   expect(rect.height).toBeLessThan(90)
-  expect(rect.y + rect.height).toBeCloseTo(nav.y, 0)
+  // A card floating 6px above the bar, not a strip against it.
+  expect(rect.y + rect.height).toBeCloseTo(nav.y - 6, 0)
   for (const name of ['Volume', 'Shuffle', 'Repeat off', 'Previous track']) {
     await expect(player.getByRole(name === 'Volume' ? 'slider' : 'button', { name })).toBeHidden()
   }
   await expect(player.getByRole('button', { name: 'Next track' })).toBeVisible()
   await expect(player.getByRole('button', { name: 'Close player' })).toBeVisible()
+  // A rounded card, with play and next at touch size.
+  await expect(player).toHaveCSS('border-top-left-radius', '12px')
+  for (const name of ['Play', 'Pause', 'Next track']) {
+    const control = player.getByRole('button', { name, exact: true })
+    if (await control.isVisible()) {
+      const size = await box(control)
+      expect(size.width).toBe(44)
+      expect(size.height).toBe(44)
+    }
+  }
   const seek = player.getByRole('slider', { name: 'Playback position' })
   await expect(seek).toBeEnabled()
   await seek.focus()

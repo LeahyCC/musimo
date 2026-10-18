@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Page, Route } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
+import { libraryLink } from './nav'
 
 const queue = [
   librarySong('song-1', { title: 'First Light', duration: 30 }),
@@ -193,10 +194,7 @@ test('the footer player keeps the plain bar', async ({ page }) => {
   await openNowPlaying(page, answerWithPeaks)
   await expect(seekBar(page)).toHaveAttribute('data-seek-bar', 'waveform')
 
-  await page
-    .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('link', { name: 'Library' })
-    .click()
+  await libraryLink(page).click()
   const footer = page.getByRole('contentinfo')
   await expect(footer).toContainText('First Light')
   await expect(footer.getByRole('slider', { name: 'Playback position' })).toBeVisible()

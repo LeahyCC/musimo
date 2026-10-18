@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
 import { bodyText, librarySong, playerFixtures, requestBody } from './library-fixtures'
+import { toasts } from './nav'
 
 // The test stream is 30 seconds of silence whatever the song says, so the songs say the same.
 const song = (id: string, title: string) => librarySong(id, { title, duration: 30 })
@@ -214,7 +215,7 @@ test('a song that cannot be played is skipped and the player says which', async 
   await restoreQueue(page, [alpha, bravo, charlie], ['song-b'])
   await playToTheEnd(page)
   const player = page.getByRole('contentinfo')
-  await expect(player.getByRole('status')).toHaveText('Skipped Bravo, it could not be played', {
+  await expect(toasts(page)).toHaveText('Skipped Bravo, it could not be played', {
     timeout: 15_000,
   })
   await expect(player).toContainText('Charlie')
@@ -224,9 +225,9 @@ test('three failures in a row stop the queue with a message', async ({ page }) =
   await restoreQueue(page, [alpha, bravo, charlie, delta], ['song-a', 'song-b', 'song-c'])
   await page.goto('/')
   const player = page.getByRole('contentinfo')
-  await expect(player.getByRole('status')).toHaveText(
-    /^Stopped after 3 tracks in a row could not be played/,
-  )
+  await expect(
+    toasts(page).getByText(/^Stopped after 3 tracks in a row could not be played/),
+  ).toBeVisible()
   // The fourth song was never tried.
   await expect(player).toContainText('Charlie')
   await expect(player).not.toContainText('Delta')

@@ -417,7 +417,7 @@ test.describe('desktop', () => {
     await expect(page.locator('[data-pet="perch"]')).toHaveCount(0)
     const row = page
       .getByRole('navigation', { name: 'Main navigation' })
-      .getByRole('link', { name: /Music bot/ })
+      .getByRole('link', { name: /Octive/ })
     await expect(row.locator('[data-pet="face"]')).toBeVisible()
     await shot(page, 'desktop-dark-hidden')
     await row.click()
@@ -516,7 +516,7 @@ test.describe('phone', () => {
     const size = await button.boundingBox()
     expect(size?.width).toBeGreaterThanOrEqual(44)
     expect(size?.height).toBeGreaterThanOrEqual(44)
-    // The mini player's seek strip reaches 6px above its top edge, so the pet stops above that.
+    // The mini player's seek strip reaches 5px above its top edge, so the pet stops above that.
     await clearOf(button, page.locator('footer.live-player'), 6)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await shot(page, 'phone-dark-mini')
@@ -539,7 +539,7 @@ test.describe('phone', () => {
     await fixtures(page, { restore: false })
     await page.goto('/search')
     await expect(page.locator('[data-pet="perch"]')).toHaveCount(0)
-    const link = page.getByRole('banner').getByRole('link', { name: /Music bot/ })
+    const link = page.getByRole('banner').getByRole('link', { name: /Octive/ })
     await expect(link.locator('[data-pet="face"]')).toBeVisible()
     await shot(page, 'phone-dark-idle')
     await link.click()

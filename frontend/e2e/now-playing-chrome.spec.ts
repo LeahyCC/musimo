@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
+import { mainNav } from './nav'
 
 const song = librarySong('song-1', { title: 'First Light', duration: 30 })
 
@@ -80,12 +81,12 @@ test('the sidebar has no Now Playing row until a library track is loaded', async
     .getByRole('navigation', { name: 'Main navigation' })
     .getByRole('link', { name: 'Now Playing' })
   await page.goto('/settings/user')
-  await expect(page.getByRole('link', { name: 'Diagnostics' }).first()).toBeVisible()
+  await expect(mainNav(page)).toBeVisible()
   await expect(row).toHaveCount(0)
 
   await loadTrack(page)
   await page.reload()
-  // A phone's bar keeps its five items, so the row is drawn there but hidden.
+  // A phone's bar keeps its five tabs, so the row is not drawn there at all.
   if (isMobile) await expect(row).toBeHidden()
   else await expect(row).toBeVisible()
 })

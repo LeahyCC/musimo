@@ -1,4 +1,4 @@
-import { useRef } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { Link } from '@tanstack/react-router'
 import { ArrowDownToLine, ChevronUp, X } from 'lucide-react'
@@ -12,9 +12,31 @@ import { QueueControls } from './queue-controls'
 
 export function QueueDock() {
   const dialog = useRef<HTMLDialogElement>(null)
+  const pill = useRef<HTMLButtonElement>(null)
   const queue = useJobs()
   const active = (queue.data?.jobs ?? []).filter(activeJob)
   const speed = active.reduce((total, job) => total + job.speed, 0)
+  const showing = active.length > 0
+
+  // Toasts sit in the same corner, so the pill says how much room it takes (0 where it is hidden,
+  // on a phone) and the toast region stacks above it.
+  useEffect(() => {
+    const button = pill.current
+    if (!button) return
+    const root = document.documentElement
+    const publish = () => {
+      const height = button.offsetHeight
+      root.style.setProperty('--dock-height', height ? `${height + 8}px` : '0px')
+    }
+    publish()
+    const observer = new ResizeObserver(publish)
+    observer.observe(button)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--dock-height')
+    }
+  }, [showing])
+
   // A floating dock advertising an empty queue has nothing to offer over the Downloads nav
   // link, and on short pages (e.g. the search-empty home) it has nowhere to float without
   // sitting on top of other content, since there's no space reserved for it.
@@ -24,6 +46,7 @@ export function QueueDock() {
       {/* The dock floats above the footer player, and on a phone it would land on the Save
           button or the last row's controls, so there the count moves into the bottom bar. */}
       <button
+        ref={pill}
         className="fixed right-[calc(24px+var(--safe-right))] bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+12px)] z-dock flex items-center gap-[8px] rounded-pill border-0 bg-accent-hot px-[15px] py-[11px] text-small font-bold text-accent-ink shadow-[0_4px_24px_color-mix(in_oklab,var(--color-shadow)_33%,transparent)] max-phone:hidden"
         onClick={() => dialog.current?.showModal()}
         aria-label={`Open queue, ${active.length} active downloads`}

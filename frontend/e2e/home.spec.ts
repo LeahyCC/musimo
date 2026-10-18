@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { playerFixtures } from './library-fixtures'
+import { mainNav } from './nav'
 
 const SEARCHES_KEY = 'musimo.recent-searches'
 
@@ -122,15 +123,17 @@ test('home is at the root and search has its own address', async ({ page }) => {
   await page.getByRole('button', { name: 'Radiohead' }).click()
   await expect(page).toHaveURL(/\/search\?q=Radiohead/)
 
-  // The bare library address has no page of its own; it opens Albums and lights Library.
+  // The bare library address has no page of its own; it opens Albums. The sidebar lights the view
+  // it is on, and a phone's one Library tab stays lit across all of them.
   await page.goto('/library')
   await expect(page).toHaveURL(/\/library\/albums$/)
-  const nav = page.getByRole('navigation', { name: 'Main navigation' })
-  await expect(nav.getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page')
+  const nav = mainNav(page)
+  const lit = nav.locator('[aria-current="page"]')
+  await expect(lit).toHaveText(/^(Library|Albums)/)
   await page
     .getByRole('navigation', { name: 'Library views' })
     .getByRole('button', { name: 'Artists' })
     .click()
   await expect(page).toHaveURL(/\/library\/artists$/)
-  await expect(nav.getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page')
+  await expect(lit).toHaveText(/^(Library|Artists)/)
 })
