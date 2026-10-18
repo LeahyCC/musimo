@@ -1,9 +1,8 @@
-import { expect, test } from '@playwright/test'
-
 import type { DownloadJob, Episode } from '../src/api'
 import { playerFixtures } from './library-fixtures'
 import { emptyQueue } from './queue-fixtures'
 import { episodes, podcast, searchFixtures } from './search-fixtures'
+import { expect, test } from './test'
 
 /** The queued job the server would answer with for one episode. */
 const queuedJob = (episode: Episode): DownloadJob => ({

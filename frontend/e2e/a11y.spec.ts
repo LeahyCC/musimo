@@ -1,8 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
+import { expect, test } from './test'
 
 async function libraryFixtures(page: Page) {
   await playerFixtures(page)

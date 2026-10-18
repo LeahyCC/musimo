@@ -1,4 +1,3 @@
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
@@ -6,6 +5,7 @@ import { ORIGIN } from './env'
 import { librarySong, playerFixtures } from './library-fixtures'
 import { mainNav, toasts } from './nav'
 import { writableDestination } from './queue-fixtures'
+import { expect, test } from './test'
 
 // Invented catalog records. Settings, queue, diagnostics and events use the real API.
 const track: MusicResult = {

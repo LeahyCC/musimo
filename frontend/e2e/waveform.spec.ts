@@ -1,8 +1,8 @@
-import { expect, test } from '@playwright/test'
 import type { Page, Route } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
 import { libraryLink } from './nav'
+import { expect, test } from './test'
 
 const queue = [
   librarySong('song-1', { title: 'First Light', duration: 30 }),

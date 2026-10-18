@@ -2,6 +2,15 @@ import { defineConfig, devices } from '@playwright/test'
 
 import { BASE_URL } from './e2e/env'
 
+// Firefox opens the profile named by XRE_PROFILE_PATH ahead of the one Playwright makes, and stops
+// with "Could not find profile folder" when that folder is gone. Firefox sets these variables when
+// it restarts itself, so a stale one can reach this shell. They are left out of its environment.
+const firefoxEnv = Object.fromEntries(
+  Object.entries(process.env).filter(
+    (entry): entry is [string, string] => entry[1] !== undefined && !entry[0].startsWith('XRE_'),
+  ),
+)
+
 export default defineConfig({
   testDir: './e2e',
   globalSetup: './e2e/setup.ts',
@@ -26,7 +35,10 @@ export default defineConfig({
   },
   projects: [
     { name: 'chromium', use: { ...devices['Desktop Chrome'] } },
-    { name: 'firefox', use: { ...devices['Desktop Firefox'] } },
+    {
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'], launchOptions: { env: firefoxEnv } },
+    },
     { name: 'webkit', use: { ...devices['Desktop Safari'] } },
     { name: 'mobile', use: { ...devices['iPhone 13'], defaultBrowserType: 'chromium' } },
   ],

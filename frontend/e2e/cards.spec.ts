@@ -1,7 +1,6 @@
-import { expect, test } from '@playwright/test'
-
 import type { DownloadJob, MusicResult } from '../src/api'
 import { emptyQueue } from './queue-fixtures'
+import { expect, test } from './test'
 
 test('card links and download controls work independently in a natural-height grid', async ({
   page,

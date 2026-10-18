@@ -1,8 +1,8 @@
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { playerFixtures } from './library-fixtures'
 import { mainNav } from './nav'
+import { expect, test } from './test'
 
 const SEARCHES_KEY = 'musimo.recent-searches'
 

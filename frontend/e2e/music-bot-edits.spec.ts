@@ -1,5 +1,4 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
@@ -7,6 +6,7 @@ import { BUILT_IN_THEMES } from '../src/theme/themes'
 import { generatedPlayerAudio, librarySong, playerFixtures } from './library-fixtures'
 import { botModelFixtures, proposalFixtures } from './proposal-fixtures'
 import type { ProposalMock } from './proposal-fixtures'
+import { expect, test } from './test'
 
 /* A result card's edits: pin a song, replace the rest, add a song, remove one, and what happens
    when an edit gets no answer or the preview changed elsewhere. The server's routes are the

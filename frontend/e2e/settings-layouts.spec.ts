@@ -1,8 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { BUILT_IN_THEMES } from '../src/theme/themes'
+import { expect, test } from './test'
 import { rgb } from './theme-fixtures'
 
 /* Settings › Yours (layout, Home page, Follow system) and the two layouts of Server settings and

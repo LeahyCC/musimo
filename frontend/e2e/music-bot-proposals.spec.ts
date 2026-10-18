@@ -1,4 +1,3 @@
-import { expect, test } from '@playwright/test'
 import type { APIRequestContext } from '@playwright/test'
 import { z } from 'zod'
 
@@ -10,6 +9,7 @@ import {
 } from '../src/api'
 import { generatedPlayerAudio } from './library-fixtures'
 import { botModelFixtures } from './proposal-fixtures'
+import { expect, test } from './test'
 
 /* The chat's preview, confirmation and stale path against the real proposal routes, SQLite and
    scanner, on the generated tagged files global setup writes. Only the language model is

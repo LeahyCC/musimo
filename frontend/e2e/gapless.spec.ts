@@ -1,9 +1,9 @@
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
 import { bodyText, librarySong, playerFixtures, requestBody } from './library-fixtures'
 import { toasts } from './nav'
+import { expect, test } from './test'
 
 // The test stream is 30 seconds of silence whatever the song says, so the songs say the same.
 const song = (id: string, title: string) => librarySong(id, { title, duration: 30 })
@@ -11,6 +11,8 @@ const alpha = song('song-a', 'Alpha')
 const bravo = song('song-b', 'Bravo')
 const charlie = song('song-c', 'Charlie')
 const delta = song('song-d', 'Delta')
+// How much sooner than the real end the hidden-tab test's songs say they end.
+const EARLY_END = 5
 
 type Scrobble = { id: string; submission: boolean }
 
@@ -43,7 +45,7 @@ async function restoreQueue(page: Page, queue: LibraryTrack[], unplayable: strin
 }
 
 /** Starts the restored queue and moves the playing song to its last seconds. */
-async function playToTheEnd(page: Page) {
+async function playToTheEnd(page: Page, seconds = 27) {
   await page.goto('/')
   await expect(page.getByRole('contentinfo')).toContainText('Alpha')
   await page.keyboard.press('Space')
@@ -52,9 +54,9 @@ async function playToTheEnd(page: Page) {
     .poll(() => active.evaluate((element: HTMLAudioElement) => !element.paused))
     .toBe(true)
 
-  await active.evaluate((element: HTMLAudioElement) => {
-    element.currentTime = 27
-  })
+  await active.evaluate((element: HTMLAudioElement, at) => {
+    element.currentTime = at
+  }, seconds)
 }
 
 test('the next song loads into the standby element and takes over when the song ends', async ({
@@ -92,7 +94,7 @@ test('a hidden tab with slow timers starts the next song before the last one end
   // page loads and frozen once the song plays, which is slower still: the only timer that can run
   // is the worker's. Media events are not timers, so the audio and its events carry on.
   await page.clock.install()
-  await page.addInitScript(() => {
+  await page.addInitScript((earlyEnd) => {
     Object.defineProperty(document, 'visibilityState', { get: () => 'hidden', configurable: true })
     Object.defineProperty(document, 'hidden', { get: () => true, configurable: true })
     // What the media elements report, in order. Media events do not bubble, so this listens while
@@ -108,9 +110,24 @@ test('a hidden tab with slow timers starts the next song before the last one end
         },
         true,
       )
-  })
-  await restoreQueue(page, [alpha, bravo, charlie])
-  await playToTheEnd(page)
+    // The library elements say each stream is five seconds shorter than it is, and the songs say
+    // the same. The player then times the handover for an end five seconds before the real one,
+    // so `ended` cannot get there first however busy the machine is. Left to the real end, the
+    // handover is 40 ms early, and a loaded machine lets `ended` win that race.
+    const real = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'duration')?.get
+    Object.defineProperty(HTMLMediaElement.prototype, 'duration', {
+      configurable: true,
+      get(this: HTMLMediaElement) {
+        const length = real?.call(this) as number
+        return this.classList.contains('library-audio') && Number.isFinite(length)
+          ? length - earlyEnd
+          : length
+      },
+    })
+  }, EARLY_END)
+  const early = (track: LibraryTrack) => ({ ...track, duration: 30 - EARLY_END })
+  await restoreQueue(page, [alpha, bravo, charlie].map(early))
+  await playToTheEnd(page, 27 - EARLY_END)
   await expect(page.locator('audio.library-audio[data-role="standby"]')).toHaveAttribute(
     'src',
     /song-b/,
@@ -120,13 +137,11 @@ test('a hidden tab with slow timers starts the next song before the last one end
 
   const log = () => page.evaluate(() => (window as unknown as { audioLog: string[] }).audioLog)
   await expect
-    .poll(async () => (await log()).includes('ended:song-a'), { timeout: 15_000 })
+    .poll(async () => (await log()).includes('play:song-b'), { timeout: 15_000 })
     .toBe(true)
 
   // Bravo started while Alpha was still playing, so it was the worker that did it, not `ended`.
-  const events = await log()
-  expect(events).toContain('play:song-b')
-  expect(events.indexOf('play:song-b')).toBeLessThan(events.indexOf('ended:song-a'))
+  expect(await log()).not.toContain('ended:song-a')
 })
 
 test('both library elements feed the analyser, so the visualizer survives a handover', async ({

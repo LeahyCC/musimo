@@ -1,4 +1,3 @@
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import {
@@ -11,6 +10,7 @@ import {
   playerFixtures,
   toggleLibraryFacet,
 } from './library-fixtures'
+import { expect, test } from './test'
 
 const library = [
   librarySong('s1', { title: 'Beacon', genre: 'Jazz', year: 1999, playCount: 12 }),

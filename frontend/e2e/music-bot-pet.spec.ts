@@ -1,5 +1,4 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 import { BUILT_IN_THEMES } from '../src/theme/themes'
@@ -7,6 +6,7 @@ import type { Theme } from '../src/theme/themes'
 import { generatedPlayerAudio, librarySong, playerFixtures, requestBody } from './library-fixtures'
 import { proposalFixtures } from './proposal-fixtures'
 import type { ProposalMock } from './proposal-fixtures'
+import { expect, test } from './test'
 
 /* The music bot's pet: where it perches, opening and closing its chat, every action on a result
    from the popover, its quick menu and settings, the phone sheet, the Windows 95 skin and reduced

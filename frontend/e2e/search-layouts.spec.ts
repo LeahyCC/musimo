@@ -1,9 +1,9 @@
-import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { playerFixtures } from './library-fixtures'
 import { emptyQueue } from './queue-fixtures'
 import { searchFixtures } from './search-fixtures'
+import { expect, test } from './test'
 
 async function open(page: Page, layout: 'classic' | 'room', url: string) {
   await page.addInitScript((value) => localStorage.setItem('musimo.layout', value), layout)

@@ -1,5 +1,4 @@
 import AxeBuilder from '@axe-core/playwright'
-import { expect, test } from '@playwright/test'
 import type { Locator, Page } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
@@ -7,6 +6,7 @@ import { DEFAULT_THEME } from '../src/theme/themes'
 import { librarySong, playerFixtures } from './library-fixtures'
 import { emptyQueue } from './queue-fixtures'
 import { searchFixtures } from './search-fixtures'
+import { expect, test } from './test'
 import { LIGHT_THEME, rgb, themeVars } from './theme-fixtures'
 
 /* Every route under the light fixture theme. The theme is the opposite of the built-in one, so a
