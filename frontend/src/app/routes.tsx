@@ -7,6 +7,7 @@ import {
   Link,
   redirect,
   useParams,
+  useRouterState,
   useSearch,
 } from '@tanstack/react-router'
 
@@ -42,10 +43,11 @@ const NowPlayingPage = lazy(() =>
   })),
 )
 
-const rootRoute = createRootRoute({
-  component: () => (
+function Root() {
+  const page = useRouterState({ select: (state) => state.location.pathname })
+  return (
     // Toasts sit outermost so the player and the music bot can raise one, not just the shell.
-    <ToastProvider>
+    <ToastProvider page={page}>
       <PlayerProvider>
         <MusicBotProvider>
           <PopoutProvider>
@@ -56,7 +58,11 @@ const rootRoute = createRootRoute({
         </MusicBotProvider>
       </PlayerProvider>
     </ToastProvider>
-  ),
+  )
+}
+
+const rootRoute = createRootRoute({
+  component: Root,
   notFoundComponent: () => (
     <EmptyPanel>
       <h1>Page not found</h1>
