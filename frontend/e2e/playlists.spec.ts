@@ -275,7 +275,7 @@ test('the playlist picker sits at the top on a desktop, toggles membership and r
   const row = sheet.locator('.playlist-picker-row').filter({ hasText: 'Road trip' })
   await expect(row).toContainText('1 song')
   await row.getByRole('button', { name: 'Add Beacon to Road trip' }).click()
-  await expect(row.getByRole('button', { name: 'Remove Beacon from Road trip' })).toHaveText(
+  await expect(row.getByRole('button', { name: 'Added, remove Beacon from Road trip' })).toHaveText(
     'Added',
   )
   await expect(row).toContainText('2 songs')

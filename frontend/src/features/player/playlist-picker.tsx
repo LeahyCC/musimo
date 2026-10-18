@@ -99,11 +99,16 @@ function PlaylistPickerRow({
                 ? 'border-good-line bg-good-bg text-accent'
                 : 'border-line-strong bg-transparent text-text hover:bg-active',
             )}
-            // Membership decides the action, so the label has to wait for the song list.
+            // Membership decides the action, so the label has to wait for the song list. The
+            // name starts with the visible word, so voice control can say "click Added".
             aria-label={
-              known
-                ? `${member ? 'Remove' : 'Add'} ${trackTitle} ${member ? 'from' : 'to'} ${playlist.name}`
-                : `Loading songs in ${playlist.name}`
+              !known
+                ? `Loading songs in ${playlist.name}`
+                : `${busy ? 'Saving, ' : ''}${
+                    member
+                      ? `Added, remove ${trackTitle} from ${playlist.name}`
+                      : `Add ${trackTitle} to ${playlist.name}`
+                  }`
             }
             disabled={busy || blocked || !known}
             onClick={onToggleTrack}

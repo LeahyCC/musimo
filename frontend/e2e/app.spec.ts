@@ -589,7 +589,7 @@ for (const webGl2 of [true, false]) {
 
     // Through the palette, so the tab does not reload and the preview keeps playing.
     await page.keyboard.press('Control+k')
-    await page.getByRole('dialog').getByRole('button', { name: 'Now Playing', exact: true }).click()
+    await page.getByRole('dialog').getByRole('option', { name: 'Now Playing', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'A preview is playing.' })).toBeVisible()
     await expect(page.getByText('with tracks from your library')).toHaveText(
       webGl2
@@ -963,9 +963,9 @@ test('command palette includes library and now playing', async ({ page }) => {
   const palette = page.getByRole('dialog')
   await expect(palette).toBeVisible()
 
-  await expect(palette.getByRole('button', { name: /Library/ })).toBeVisible()
-  await expect(palette.getByRole('button', { name: /Now Playing/ })).toBeVisible()
-  await expect(palette.getByRole('button', { name: /Settings/ })).toBeVisible()
+  await expect(palette.getByRole('option', { name: /Library/ })).toBeVisible()
+  await expect(palette.getByRole('option', { name: /Now Playing/ })).toBeVisible()
+  await expect(palette.getByRole('option', { name: /Settings/ })).toBeVisible()
 })
 
 test('the palette groups its rows, moves with the arrow keys and offers to review a link', async ({
@@ -980,10 +980,10 @@ test('the palette groups its rows, moves with the arrow keys and offers to revie
   const palette = page.getByRole('dialog', { name: 'Command palette' })
   await expect(palette.getByText('Go to', { exact: true })).toBeVisible()
   await expect(palette.getByText('Actions', { exact: true })).toBeVisible()
-  await expect(palette.getByRole('button', { name: /Switch layout/ })).toBeVisible()
+  await expect(palette.getByRole('option', { name: /Switch layout/ })).toBeVisible()
 
   // The catalog row comes first, so one step down lands on Downloads.
-  const box = palette.getByRole('textbox', { name: 'Search commands or music' })
+  const box = palette.getByRole('combobox', { name: 'Search commands or music' })
   await box.fill('Download')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')
@@ -992,7 +992,7 @@ test('the palette groups its rows, moves with the arrow keys and offers to revie
 
   await page.keyboard.press('Control+k')
   await box.fill('https://www.youtube.com/watch?v=abc')
-  await expect(palette.getByRole('button', { name: /Review this link/ })).toBeVisible()
+  await expect(palette.getByRole('option', { name: /Review this link/ })).toBeVisible()
   await expect(palette.getByText('Go to', { exact: true })).toHaveCount(0)
   await page.keyboard.press('Escape')
   await expect(palette).toBeHidden()
@@ -1085,8 +1085,8 @@ test('command palette offers the visualizer commands only where WebGL 2 exists',
   await expect(page.locator('.live-player')).toContainText('Song song-1')
   await page.keyboard.press('Control+k')
   const palette = page.getByRole('dialog')
-  await expect(palette.getByRole('button', { name: 'Now Playing' })).toBeVisible()
-  await expect(palette.getByRole('button', { name: 'Toggle visualizer' })).toHaveCount(0)
+  await expect(palette.getByRole('option', { name: 'Now Playing' })).toBeVisible()
+  await expect(palette.getByRole('option', { name: 'Toggle visualizer' })).toHaveCount(0)
 })
 
 test('toggle visualizer from another route lands on Now Playing with it on', async ({ page }) => {
@@ -1101,7 +1101,7 @@ test('toggle visualizer from another route lands on Now Playing with it on', asy
   await page.goto('/settings/user')
   await expect(page.locator('.live-player')).toContainText('Song song-1')
   await page.keyboard.press('Control+k')
-  await page.getByRole('dialog').getByRole('button', { name: 'Toggle visualizer' }).click()
+  await page.getByRole('dialog').getByRole('option', { name: 'Toggle visualizer' }).click()
   await expect(page).toHaveURL(/\/now-playing$/)
   expect(await page.evaluate(() => localStorage.getItem('musimo.now-playing-view'))).toBe(
     'visualizer',

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 
 import { useMutation, useQuery } from '@tanstack/react-query'
@@ -58,12 +58,14 @@ const layoutNames = { classic: 'Classic', room: 'Listening room' } as const
 
 const rowClassName =
   'flex w-full items-center gap-[12px] rounded-[10px] border-0 px-[10px] py-[8px] text-left text-inherit hover:bg-hover coarse:min-h-11'
-const tileClassName =
-  'grid size-[32px] shrink-0 place-items-center overflow-hidden rounded-[8px] bg-hover text-muted'
+// No colours here: each row picks one pair, since `cx` does not merge two of the same property.
+const tileClassName = 'grid size-[32px] shrink-0 place-items-center overflow-hidden rounded-[8px]'
 
 export function CommandPalette() {
   const dialog = useRef<HTMLDialogElement>(null)
   const input = useRef<HTMLInputElement>(null)
+  const listId = useId()
+  const optionId = (index: number) => `${listId}-option-${index}`
   const list = useRef<HTMLDivElement>(null)
   const [text, setText] = useState('')
   const [lookup, setLookup] = useState('')
@@ -273,7 +275,7 @@ export function CommandPalette() {
 
   // The highlighted row follows the arrow keys, so it has to stay in view.
   useEffect(() => {
-    list.current?.querySelector('[data-active="true"]')?.scrollIntoView({ block: 'nearest' })
+    list.current?.querySelector('[aria-selected="true"]')?.scrollIntoView({ block: 'nearest' })
   }, [current, flat.length])
 
   const onKeyDown = (event: KeyboardEvent<HTMLInputElement>) => {
@@ -306,6 +308,13 @@ export function CommandPalette() {
             ref={input}
             className="min-w-0 flex-1 border-0 bg-transparent text-base text-text outline-none placeholder:text-faint"
             aria-label="Search commands or music"
+            // Focus stays here while the arrow keys move through the list, so the list is a
+            // listbox this box controls and the highlighted row is its active descendant.
+            role="combobox"
+            aria-autocomplete="list"
+            aria-expanded={flat.length > 0}
+            aria-controls={listId}
+            aria-activedescendant={flat.length ? optionId(current) : undefined}
             value={text}
             placeholder="Search, jump to a page, or paste a link"
             onChange={(e) => {
@@ -316,7 +325,7 @@ export function CommandPalette() {
           />
           <button
             type="button"
-            aria-label="Close command palette"
+            aria-label="ESC, close command palette"
             className="rounded-[5px] border border-line-strong bg-transparent px-[6px] py-px font-mono text-tiny text-faint"
             onClick={close}
           >
@@ -324,46 +333,69 @@ export function CommandPalette() {
           </button>
         </label>
         <div ref={list} className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto p-[6px]">
-          {shown.map((group) => (
-            <div key={group.label || 'link'}>
-              {group.label && (
-                <p className={cx(eyebrowClassName, 'px-[10px] pt-[10px] pb-[4px]')}>
-                  {group.label}
-                </p>
-              )}
-              {group.items.map((command) => {
-                at += 1
-                const isActive = at === current
-                const Icon = command.icon
-                const index = at
-                return (
-                  <button
-                    key={`${group.label}:${command.label}:${index}`}
-                    type="button"
-                    data-active={isActive}
-                    className={cx(rowClassName, isActive ? 'bg-active' : 'bg-transparent')}
-                    onClick={() => run(command)}
-                    onPointerMove={() => setActive(index)}
+          <div id={listId} role="listbox" aria-label="Commands">
+            {shown.map((group, groupIndex) => (
+              <div
+                key={group.label || 'link'}
+                role="group"
+                aria-labelledby={group.label ? `${listId}-group-${groupIndex}` : undefined}
+                aria-label={group.label ? undefined : 'Link'}
+              >
+                {group.label && (
+                  <p
+                    id={`${listId}-group-${groupIndex}`}
+                    className={cx(eyebrowClassName, 'px-[10px] pt-[10px] pb-[4px]')}
                   >
-                    <span className={cx(tileClassName, link && 'bg-canvas text-accent')}>
-                      {command.art ? (
-                        <img src={command.art} alt="" className="size-full object-cover" />
-                      ) : (
-                        Icon && <Icon size={16} aria-hidden="true" />
+                    {group.label}
+                  </p>
+                )}
+                {group.items.map((command) => {
+                  at += 1
+                  const isActive = at === current
+                  const Icon = command.icon
+                  const index = at
+                  return (
+                    <div
+                      key={`${group.label}:${command.label}:${index}`}
+                      id={optionId(index)}
+                      role="option"
+                      aria-selected={isActive}
+                      tabIndex={-1}
+                      className={cx(
+                        rowClassName,
+                        'cursor-pointer',
+                        isActive ? 'bg-active' : 'bg-transparent',
                       )}
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="block truncate font-medium">{command.label}</span>
-                      {command.sub && (
-                        <span className="block truncate text-small text-muted">{command.sub}</span>
-                      )}
-                    </span>
-                    {isActive && <Kbd className="border-0 text-muted">↵</Kbd>}
-                  </button>
-                )
-              })}
-            </div>
-          ))}
+                      onClick={() => run(command)}
+                      onPointerMove={() => setActive(index)}
+                    >
+                      <span
+                        className={cx(
+                          tileClassName,
+                          link ? 'bg-canvas text-accent' : 'bg-hover text-muted',
+                        )}
+                      >
+                        {command.art ? (
+                          <img src={command.art} alt="" className="size-full object-cover" />
+                        ) : (
+                          Icon && <Icon size={16} aria-hidden="true" />
+                        )}
+                      </span>
+                      <span className="min-w-0 flex-1">
+                        <span className="block truncate font-medium">{command.label}</span>
+                        {command.sub && (
+                          <span className="block truncate text-small text-muted">
+                            {command.sub}
+                          </span>
+                        )}
+                      </span>
+                      {isActive && <Kbd className="border-0 text-muted">↵</Kbd>}
+                    </div>
+                  )
+                })}
+              </div>
+            ))}
+          </div>
           {!flat.length && <p className="px-[10px] py-[12px] text-muted">Nothing matches.</p>}
         </div>
         <footer className="flex flex-none gap-[16px] border-t border-line px-[16px] py-[10px] font-mono text-tiny text-faint uppercase max-phone:hidden">
