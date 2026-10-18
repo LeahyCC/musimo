@@ -96,6 +96,6 @@ Missing, failed or stale rows count as abstentions, never as a negative label. A
 ## What happens next
 
 1. Colin signed off this page on 17 October 2026.
-2. 2A: write the prompt suite and seal its held-out part (done 17 October). Colin installs the shortlisted models on the Ollama computer. Then one evaluation run per model, reported with the SHA, model digests, settings, results and failures.
+2. 2A: write the prompt suite and seal its held-out part (done 17 October in #199). Colin installs the shortlisted models on the Ollama computer. Then one evaluation run per model, reported with the SHA, model digests, settings, results and failures.
 3. 3A starts after a 2A model passes.
 4. 4A: build the 120-clip blind set and seal its held-out part, then run the frozen candidates once.

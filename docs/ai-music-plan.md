@@ -71,7 +71,11 @@ The chat card uses them. On a library search each song has a Pin toggle, and Ano
 
 "Less aggressive, keep the tempo" is not built. It needs energy measurements next to the tempo, the energy setting is off and no listening check has passed, so the engine refuses a request that needs them (`unsupported_capability`) and the chat says why instead of guessing from genre or title. It stays refused until a recipe is on.
 
-Limits: a pinned or kept song that the filters would now drop stays, by design. The add count is filled greedily from the seeded walk, not searched for the closest total. A removed song stays excluded for the rest of that proposal, not for later searches. Edits write only the proposal tables, and only the last 20 revisions and 200 receipts are kept.
+Limits: a pinned or kept song that the filters would now drop stays, by design. The add count is filled greedily from the seeded walk, not searched for the closest total. A removed song stays excluded for the rest of that proposal, not for later searches. Edits write only the proposal tables, and only the last 20 revisions and 200 receipts are kept. A refined list that loses a song to a delete leaves it out on the next refine or remove and says how many were dropped (#200). Creating a new proposal that names a deleted song is still refused.
+
+### Interpreter suite (V2 package 2A)
+
+The labelled requests a 2A model is judged on are in [evals/interpreter](../evals/interpreter/README.md) (#199): 72 development cases for prompt work and 56 held-out cases sealed by checksum, against an invented 25-song library. Each case says what the request means in the version 5 contract's fields, and the scoring rules sit beside the cases. No model has run against it. The host, model range and pass marks are in [V2 gates](v2-gates.md). Next, Colin installs two to four 9B to 12B instruct models on the Ollama computer, and each runs once against its frozen prompt.
 
 ## 2. Music indexing for the bot
 
@@ -88,6 +92,8 @@ Pause new analysis during bot requests to reduce contention. Stop and release th
 Profile fields: song ID, file size and modification time, model/version, sampling recipe, status, measured descriptors, predicted tags with scores, and a compact sound vector. Recheck file identity before committing results. Reanalyse changed files and changed analysis recipes; exclude removed or unavailable files. Model upgrades retain the previous working index until replacement data is ready, and never compare vectors from different model versions.
 
 ## Model choice and speed gate
+
+For V2 package 2A, [V2 gates](v2-gates.md) replaces the model list and speed gate below: the candidates are 9B to 12B instruct models Colin installs, llama3.1:8b is the baseline, and the pass marks are fixed there. The rest of this section records the earlier comparison.
 
 For the chat-model comparison, test `huihui_ai/qwen3.5-abliterated:9b` and the already-installed `huihui_ai/gemma-4-abliterated:12b`. The standard `qwen3.5:9b` download was cancelled and is no longer planned. Verify installation and model digests before testing. Keep the selected default unchanged pending review of the request corpus.
 
