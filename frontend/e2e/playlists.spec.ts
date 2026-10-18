@@ -244,7 +244,7 @@ async function openPicker(page: Page, isMobile: boolean, title: string) {
   await page.getByRole('button', { name: 'Add to playlist' }).click()
 }
 
-test('the playlist picker centres, toggles membership and removes other songs', async ({
+test('the playlist picker sits at the top on a desktop, toggles membership and removes other songs', async ({
   page,
   isMobile,
 }) => {
@@ -259,14 +259,25 @@ test('the playlist picker centres, toggles membership and removes other songs', 
   const box = await sheet.boundingBox()
   const viewport = page.viewportSize()
   if (!box || !viewport) throw new Error('Missing dialog or viewport measurements')
-  // Centred means the gaps above and below match, and the same left and right.
-  expect(Math.abs(box.y - (viewport.height - box.y - box.height))).toBeLessThan(2)
+  // Centred left to right. Hung from the top on a desktop, sat on the bottom edge on a phone.
   expect(Math.abs(box.x - (viewport.width - box.x - box.width))).toBeLessThan(2)
+  if (isMobile) {
+    expect(box.x).toBe(0)
+    expect(box.width).toBe(viewport.width)
+    expect(Math.abs(box.y + box.height - viewport.height)).toBeLessThan(2)
+  } else {
+    expect(box.y).toBeGreaterThan(0)
+    expect(box.y).toBeLessThan(viewport.height / 3)
+    expect(box.width).toBeLessThanOrEqual(520)
+  }
+  await expect(sheet.getByRole('button', { name: 'New playlist with this song' })).toBeVisible()
 
   const row = sheet.locator('.playlist-picker-row').filter({ hasText: 'Road trip' })
   await expect(row).toContainText('1 song')
   await row.getByRole('button', { name: 'Add Beacon to Road trip' }).click()
-  await expect(row.getByRole('button', { name: 'Remove Beacon from Road trip' })).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Added, remove Beacon from Road trip' })).toHaveText(
+    'Added',
+  )
   await expect(row).toContainText('2 songs')
 
   await row.getByRole('button', { name: 'Show songs in Road trip' }).click()

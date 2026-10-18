@@ -589,7 +589,7 @@ for (const webGl2 of [true, false]) {
 
     // Through the palette, so the tab does not reload and the preview keeps playing.
     await page.keyboard.press('Control+k')
-    await page.getByRole('dialog').getByRole('button', { name: 'Now Playing', exact: true }).click()
+    await page.getByRole('dialog').getByRole('option', { name: 'Now Playing', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'A preview is playing.' })).toBeVisible()
     await expect(page.getByText('with tracks from your library')).toHaveText(
       webGl2
@@ -844,26 +844,24 @@ test('artist review counts selections, excludes failed albums and retries submis
   await expect(filters.getByRole('combobox', { name: 'Sort' })).toHaveValue('title-desc')
   await page.getByRole('button', { name: 'Download all music' }).click()
   const musicDialog = page.getByRole('dialog', { name: 'Choose music to download' })
-  await expect(musicDialog.getByText('3 releases · 3 songs', { exact: true })).toBeVisible()
+  await expect(musicDialog.getByText(/^3 releases · 3 songs/)).toBeVisible()
   await expect(musicDialog.getByRole('checkbox', { name: /Fixture single/ })).toBeChecked()
   await musicDialog.getByRole('button', { name: 'Close download selection' }).click()
   await page.getByRole('button', { name: 'Download all albums' }).click()
   const dialog = page.getByRole('dialog', { name: 'Choose albums to download' })
-  await expect(dialog.getByText('2 albums · 2 songs', { exact: true })).toBeVisible()
-  await expect(
-    dialog.getByText('1 song already in library · 0 already queued', { exact: true }),
-  ).toBeVisible()
+  await expect(dialog.getByText(/^2 albums · 2 songs/)).toBeVisible()
+  await expect(dialog.getByText(/1 song already in library · 0 already queued/)).toBeVisible()
   await expect(dialog.getByRole('checkbox', { name: /Unavailable album/ })).toBeDisabled()
   await dialog.getByRole('checkbox', { name: /Second album/ }).uncheck()
-  await expect(dialog.getByText('1 album · 1 song', { exact: true })).toBeVisible()
-  await dialog.getByRole('checkbox', { name: 'Skip songs already in my library' }).uncheck()
-  await expect(dialog.getByText('1 album · 2 songs', { exact: true })).toBeVisible()
+  await expect(dialog.getByText(/^1 album · 1 song/)).toBeVisible()
+  await dialog.getByRole('switch', { name: /Skip songs already in my library/ }).uncheck()
+  await expect(dialog.getByText(/^1 album · 2 songs/)).toBeVisible()
   await dialog.getByRole('button', { name: 'Select none' }).click()
-  await expect(dialog.getByRole('button', { name: 'Download 0 albums (0 songs)' })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: 'Queue downloads' })).toBeDisabled()
   await dialog.getByRole('button', { name: 'Select all' }).click()
-  await dialog.getByRole('checkbox', { name: 'Skip songs already in my library' }).check()
+  await dialog.getByRole('switch', { name: /Skip songs already in my library/ }).check()
   await dialog.getByRole('combobox', { name: 'Format', exact: true }).selectOption('mp3')
-  const confirm = dialog.getByRole('button', { name: 'Download 2 albums (2 songs)' })
+  const confirm = dialog.getByRole('button', { name: 'Queue downloads' })
   await confirm.click()
   await expect(dialog.getByRole('alert')).toContainText('Queue unavailable; try again')
   await confirm.click()
@@ -921,16 +919,16 @@ test('artist review keeps Download off when the destination is read-only', async
   await page.goto('/artists/7')
   await page.getByRole('button', { name: 'Download all albums' }).click()
   const dialog = page.getByRole('dialog', { name: 'Choose albums to download' })
-  await expect(dialog.getByText('1 album · 1 song', { exact: true })).toBeVisible()
+  await expect(dialog.getByText(/^1 album · 1 song/)).toBeVisible()
   await expect(dialog.getByRole('alert')).toContainText('missing or read-only')
-  await expect(dialog.getByRole('button', { name: 'Download 1 album (1 song)' })).toBeDisabled()
+  await expect(dialog.getByRole('button', { name: 'Queue downloads' })).toBeDisabled()
 
   // Once the folder can be written to, the same sheet lets the download through.
   writable = true
   await dialog.getByRole('button', { name: 'Close download selection' }).click()
   await page.reload()
   await page.getByRole('button', { name: 'Download all albums' }).click()
-  await expect(dialog.getByRole('button', { name: 'Download 1 album (1 song)' })).toBeEnabled()
+  await expect(dialog.getByRole('button', { name: 'Queue downloads' })).toBeEnabled()
   await expect(dialog.getByText(/missing or read-only/)).toHaveCount(0)
 })
 
@@ -1011,13 +1009,44 @@ test('the top bar has the search field, the palette button and Ask Octive', asyn
 
 test('command palette includes library and now playing', async ({ page }) => {
   await page.goto('/')
+  await expect(page.getByRole('main')).toBeVisible()
   await page.keyboard.press('Control+k')
   const palette = page.getByRole('dialog')
   await expect(palette).toBeVisible()
 
-  await expect(palette.getByRole('button', { name: /Library/ })).toBeVisible()
-  await expect(palette.getByRole('button', { name: /Now Playing/ })).toBeVisible()
-  await expect(palette.getByRole('button', { name: /Settings/ })).toBeVisible()
+  await expect(palette.getByRole('option', { name: /Library/ })).toBeVisible()
+  await expect(palette.getByRole('option', { name: /Now Playing/ })).toBeVisible()
+  await expect(palette.getByRole('option', { name: /Settings/ })).toBeVisible()
+})
+
+test('the palette groups its rows, moves with the arrow keys and offers to review a link', async ({
+  page,
+}) => {
+  await page.route('**/api/library/tracks/search*', (route) =>
+    route.fulfill({ json: { items: [] } }),
+  )
+  await page.goto('/')
+  await expect(page.getByRole('main')).toBeVisible()
+  await page.keyboard.press('Control+k')
+  const palette = page.getByRole('dialog', { name: 'Command palette' })
+  await expect(palette.getByText('Go to', { exact: true })).toBeVisible()
+  await expect(palette.getByText('Actions', { exact: true })).toBeVisible()
+  await expect(palette.getByRole('option', { name: /Switch layout/ })).toBeVisible()
+
+  // The catalog row comes first, so one step down lands on Downloads.
+  const box = palette.getByRole('combobox', { name: 'Search commands or music' })
+  await box.fill('Download')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/\/downloads/)
+  await expect(palette).toBeHidden()
+
+  await page.keyboard.press('Control+k')
+  await box.fill('https://www.youtube.com/watch?v=abc')
+  await expect(palette.getByRole('option', { name: /Review this link/ })).toBeVisible()
+  await expect(palette.getByText('Go to', { exact: true })).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(palette).toBeHidden()
 })
 
 test('the visualizer settings change what Now Playing remembers', async ({ page }) => {
@@ -1107,8 +1136,8 @@ test('command palette offers the visualizer commands only where WebGL 2 exists',
   await expect(page.locator('.live-player')).toContainText('Song song-1')
   await page.keyboard.press('Control+k')
   const palette = page.getByRole('dialog')
-  await expect(palette.getByRole('button', { name: 'Now Playing' })).toBeVisible()
-  await expect(palette.getByRole('button', { name: 'Toggle visualizer' })).toHaveCount(0)
+  await expect(palette.getByRole('option', { name: 'Now Playing' })).toBeVisible()
+  await expect(palette.getByRole('option', { name: 'Toggle visualizer' })).toHaveCount(0)
 })
 
 test('toggle visualizer from another route lands on Now Playing with it on', async ({ page }) => {
@@ -1123,7 +1152,7 @@ test('toggle visualizer from another route lands on Now Playing with it on', asy
   await page.goto('/settings/user')
   await expect(page.locator('.live-player')).toContainText('Song song-1')
   await page.keyboard.press('Control+k')
-  await page.getByRole('dialog').getByRole('button', { name: 'Toggle visualizer' }).click()
+  await page.getByRole('dialog').getByRole('option', { name: 'Toggle visualizer' }).click()
   await expect(page).toHaveURL(/\/now-playing$/)
   expect(await page.evaluate(() => localStorage.getItem('musimo.now-playing-view'))).toBe(
     'visualizer',

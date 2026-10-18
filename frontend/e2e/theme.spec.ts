@@ -387,7 +387,7 @@ test('the command palette opens the page', async ({ page, isMobile }) => {
   await page.keyboard.press('ControlOrMeta+k')
   await page.getByRole('dialog', { name: 'Command palette' }).waitFor()
 
-  await page.getByRole('button', { name: 'Change theme' }).click()
+  await page.getByRole('option', { name: 'Change theme' }).click()
 
   await expect(page.getByRole('heading', { name: 'Your settings' })).toBeVisible()
   await expect(page).toHaveURL(/\/settings\/user$/)

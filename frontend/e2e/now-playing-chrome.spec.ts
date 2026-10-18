@@ -102,16 +102,16 @@ test('the palette offers the visualizer commands only while a library track is l
   await page.goto('/now-playing')
   await expect(page.getByRole('heading', { name: 'Nothing playing yet.' })).toBeVisible()
   await page.keyboard.press('Control+k')
-  await expect(palette.getByRole('button', { name: 'Now Playing', exact: true })).toBeVisible()
+  await expect(palette.getByRole('option', { name: 'Now Playing', exact: true })).toBeVisible()
   for (const name of [...commands, 'Fullscreen visualizer'])
-    await expect(palette.getByRole('button', { name })).toHaveCount(0)
+    await expect(palette.getByRole('option', { name })).toHaveCount(0)
 
   await loadTrack(page)
   await page.reload()
   await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
   await page.keyboard.press('Control+k')
   for (const name of [...commands, 'Fullscreen visualizer'])
-    await expect(palette.getByRole('button', { name })).toBeVisible()
+    await expect(palette.getByRole('option', { name })).toBeVisible()
 })
 
 test('the Listening room puts Art or MilkDrop, Auto or Hold and the window buttons in one pill', async ({

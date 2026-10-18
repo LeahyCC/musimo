@@ -250,9 +250,9 @@ test.describe('pasted links', () => {
     await expect(sheet(page).getByText('Band', { exact: true })).toBeVisible()
     await expect(sheet(page).getByText('3:20 · 2024-05-01')).toBeVisible()
     await expect(sheet(page).locator('img')).toBeVisible()
-    await expect(sheet(page).getByText(/^to \S+ · /)).toBeVisible()
+    await expect(sheet(page).getByText('Pasted link')).toBeVisible()
     await expect(sheet(page).getByRole('combobox', { name: 'Format' })).toBeVisible()
-    await expect(sheet(page).getByRole('combobox', { name: 'Download to' })).toBeVisible()
+    await expect(sheet(page).getByRole('combobox', { name: 'Folder' })).toBeVisible()
     expect(seen.resolved).toEqual([LINK])
 
     await sheet(page).getByRole('button', { name: 'Download' }).click()
@@ -451,16 +451,14 @@ test.describe('pasted links', () => {
     )
     await page.goto('/')
     await paste(page, 'https://www.mixcloud.com/dj/mix-one/')
-    await expect(sheet(page).getByText(`Saved as ${path}`)).toBeVisible()
+    await expect(sheet(page).getByRole('definition').filter({ hasText: path })).toBeVisible()
     await dismiss(page)
 
     // Several at once: the folder, and nothing for a song among them.
     await paste(page, 'https://www.mixcloud.com/dj/uploads/')
     await expect(sheet(page).getByText('Saved as', { exact: false })).toHaveCount(0)
     await sheet(page).getByRole('button', { name: 'Select all' }).click()
-    await expect(
-      sheet(page).getByText('Saved under Mixes/, in a folder for each uploader'),
-    ).toBeVisible()
+    await expect(sheet(page).getByText('Under Mixes/, in a folder for each uploader')).toBeVisible()
   })
 
   test('a read-only destination keeps Download off and says why', async ({ page }) => {
@@ -750,7 +748,7 @@ test.describe('pasted links', () => {
     await page.goto('/')
     await submit(page, PLAYLIST)
     await expect(sheet(page).getByRole('heading', { name: 'Road trip' })).toBeFocused()
-    // Tab order: close, format, destination, select all, select none, then the songs.
+    // Tab order: close, folder, format, select all, select none, then the songs.
     await page.keyboard.press('Tab')
     await expect(sheet(page).getByRole('button', { name: 'Close link review' })).toBeFocused()
     await sheet(page).getByRole('button', { name: 'Select none' }).focus()

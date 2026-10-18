@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { Disc3, ListMusic } from 'lucide-react'
+import { ArrowDownToLine, Disc3, ListMusic } from 'lucide-react'
 import { z } from 'zod'
 
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from '../../api'
@@ -17,8 +17,8 @@ import {
   TargetSelect,
 } from '../../components/review-sheet'
 import { cx } from '../../lib/cx'
-import { Button, ErrorBanner } from '../../ui'
-import { DESTINATION_PROBLEM, destinationBroken } from './download-target'
+import { Button, ErrorBanner, Switch } from '../../ui'
+import { DESTINATION_PROBLEM, destinationBroken, formatLabel } from './download-target'
 import { activeJob, updateJob, useJobs } from './jobs'
 
 const planSchema = z.object({
@@ -96,12 +96,14 @@ export function ArtistDownloadButton({
   const selected = albums.filter((album) => !album.error && !excluded.has(album.id))
   const seen = new Set<string>()
   const counts = new Map<number, number>()
+  const albumSeconds = new Map<number, number>()
   let songs = 0,
     owned = 0,
     queued = 0,
     seconds = 0
   for (const album of selected) {
     let count = 0
+    let length = 0
     for (const track of album.tracks) {
       if (seen.has(track.identity)) continue
       seen.add(track.identity)
@@ -110,13 +112,17 @@ export function ArtistDownloadButton({
       else {
         count++
         songs++
-        seconds += track.duration
+        length += track.duration
       }
     }
     counts.set(album.id, count)
+    albumSeconds.set(album.id, length)
+    seconds += length
   }
   const albumCount = [...counts.values()].filter((count) => count > 0).length
-  const megabytes = Math.ceil((seconds * (chosenFormat === 'mp3' ? 320 : 160)) / 8 / 1024)
+  const kbps = chosenFormat === 'mp3' ? 320 : 160
+  const toMegabytes = (length: number) => Math.ceil((length * kbps) / 8 / 1024)
+  const megabytes = toMegabytes(seconds)
   const download = useMutation({
     mutationFn: () =>
       api('artist-batches', batchSchema, {
@@ -190,8 +196,12 @@ export function ArtistDownloadButton({
         onClose={() => setOpened(false)}
         footer={
           <>
+            {brokenTarget && !download.isSuccess && (
+              <ErrorBanner role="alert">{DESTINATION_PROBLEM}</ErrorBanner>
+            )}
+            {download.isError && <ErrorBanner role="alert">{download.error.message}</ErrorBanner>}
             {download.isSuccess ? (
-              <p role="status">
+              <p role="status" className="mr-auto">
                 {download.data.jobs.length} songs queued from {download.data.albums}{' '}
                 {allMusic ? 'releases' : 'albums'}.{' '}
                 <Link to="/downloads" onClick={() => dialog.current?.close()}>
@@ -199,27 +209,37 @@ export function ArtistDownloadButton({
                 </Link>
               </p>
             ) : (
-              <Button
-                variant="primary"
-                disabled={
-                  !songs ||
-                  plan.isFetching ||
-                  plan.isError ||
-                  download.isPending ||
-                  !chosenTarget ||
-                  brokenTarget
-                }
-                onClick={() => download.mutate()}
-              >
-                {download.isPending
-                  ? `Adding ${allMusic ? 'music' : 'albums'}…`
-                  : `Download ${plural(albumCount, allMusic ? 'release' : 'album')} (${plural(songs, 'song')})`}
-              </Button>
+              <>
+                {plan.data && (
+                  <div className="mr-auto min-w-[180px] flex-1" aria-live="polite">
+                    <div className="font-semibold">
+                      {plural(albumCount, allMusic ? 'release' : 'album')} · {plural(songs, 'song')}{' '}
+                      · ~{megabytes.toLocaleString()} MB
+                    </div>
+                    <div className="mt-[2px] font-mono text-tiny text-faint uppercase [overflow-wrap:anywhere]">
+                      → {chosenTarget || '(not set)'} · {formatLabel(chosenFormat)} · estimated
+                    </div>
+                  </div>
+                )}
+                <Button
+                  variant="primary"
+                  disabled={
+                    !songs ||
+                    plan.isFetching ||
+                    plan.isError ||
+                    download.isPending ||
+                    !chosenTarget ||
+                    brokenTarget
+                  }
+                  onClick={() => download.mutate()}
+                >
+                  <ArrowDownToLine size={15} aria-hidden="true" />
+                  {download.isPending
+                    ? `Adding ${allMusic ? 'music' : 'albums'}…`
+                    : 'Queue downloads'}
+                </Button>
+              </>
             )}
-            {brokenTarget && !download.isSuccess && (
-              <ErrorBanner role="alert">{DESTINATION_PROBLEM}</ErrorBanner>
-            )}
-            {download.isError && <ErrorBanner role="alert">{download.error.message}</ErrorBanner>}
           </>
         }
       >
@@ -232,48 +252,42 @@ export function ArtistDownloadButton({
         )}
         {plan.data && (
           <>
-            <div
-              className="my-[16px] grid gap-[8px] rounded-[10px] bg-good-bg p-[18px] max-phone:p-[14px]"
-              aria-live="polite"
-            >
-              <strong className="text-[24px] max-phone:text-[20px]">
-                {plural(albumCount, allMusic ? 'release' : 'album')} · {plural(songs, 'song')}
-              </strong>
-              <span className="text-small text-muted">
-                About {megabytes.toLocaleString()} MB · estimated at{' '}
-                {chosenFormat === 'mp3' ? 320 : 160} kbps
+            <label className="flex cursor-pointer items-center gap-[12px] border-b border-line pb-[12px]">
+              <span className="grid min-w-0 flex-1 gap-[2px]">
+                <span className="font-medium">Skip songs already in my library</span>
+                <span className="text-small text-muted">
+                  Queued songs are always left out.{' '}
+                  {allMusic
+                    ? 'Every release type is included.'
+                    : 'Singles and EPs are not included.'}
+                </span>
               </span>
-              <small className="text-small text-muted">
-                {plural(owned, 'song')} already in library · {queued} already queued
-              </small>
-            </div>
-            <ReviewOptions>
-              <label className="flex max-w-full min-w-0 items-center gap-[8px] coarse:min-h-11">
-                <input
-                  type="checkbox"
-                  className="accent-accent coarse:h-[20px] coarse:w-[20px]"
-                  checked={missingOnly}
+              <Switch
+                checked={missingOnly}
+                disabled={download.isPending}
+                onChange={(e) => setMissingOnly(e.target.checked)}
+              />
+            </label>
+            <div className="my-[12px]">
+              <ReviewOptions>
+                <FormatSelect
+                  value={chosenFormat}
                   disabled={download.isPending}
-                  onChange={(e) => setMissingOnly(e.target.checked)}
+                  onChange={setFormat}
                 />
-                Skip songs already in my library
-              </label>
-              <FormatSelect
-                value={chosenFormat}
-                disabled={download.isPending}
-                onChange={setFormat}
-              />
-              <TargetSelect
-                value={chosenTarget}
-                disabled={download.isPending}
-                onChange={setTarget}
-                disks={mounts.data?.disks.slice(1) ?? []}
-              />
-            </ReviewOptions>
+                <TargetSelect
+                  value={chosenTarget}
+                  disabled={download.isPending}
+                  onChange={setTarget}
+                  disks={mounts.data?.disks.slice(1) ?? []}
+                />
+              </ReviewOptions>
+            </div>
             <p className="text-small text-muted">
+              {plural(owned, 'song')} already in library · {queued} already queued.{' '}
               {allMusic
-                ? 'Includes every release type and alternative edition. Uncheck releases you don’t want.'
-                : 'Includes albums and alternative editions. Singles and EPs are excluded. Uncheck editions you don’t want.'}
+                ? 'Uncheck releases you don’t want.'
+                : 'Alternative editions are included. Uncheck editions you don’t want.'}
             </p>
             {albums.some((album) => album.error) && (
               <ErrorBanner>
@@ -310,6 +324,13 @@ export function ArtistDownloadButton({
                       ? ` · ${album.error}`
                       : ` · ${counts.get(album.id) ?? 0} of ${album.tracks.length} songs to download`
                   }`}
+                  badge={
+                    <span className="shrink-0 font-mono text-tiny text-muted">
+                      {albumSeconds.get(album.id)
+                        ? `~${toMegabytes(albumSeconds.get(album.id) ?? 0).toLocaleString()} MB`
+                        : '—'}
+                    </span>
+                  }
                 />
               ))}
             </fieldset>
