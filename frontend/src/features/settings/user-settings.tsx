@@ -119,6 +119,7 @@ const same = (a: Theme, b: Theme): boolean => JSON.stringify(a) === JSON.stringi
  * a change made on the stage shows up here. Every control applies as it is chosen, like themes.
  */
 function VisualizerSettings() {
+  const room = useLayout() === 'room'
   const {
     view,
     setView,
@@ -190,7 +191,9 @@ function VisualizerSettings() {
             <option value="visualizer">Visualizer</option>
           </FieldSelect>
           <p id="visualizer-view-note" className="text-tiny">
-            The Visualizer button on the stage changes this same setting.
+            {room
+              ? 'The Art / MilkDrop switch on the stage changes this same setting.'
+              : 'The Visualizer button on the stage changes this same setting.'}
           </p>
         </div>
         <div className="grid gap-[6px]">
@@ -575,7 +578,9 @@ export function UserSettingsPage() {
                       family={family}
                       active={activeFamily === family}
                       mode={
-                        activeFamily === family
+                        // With Follow system on the device decides, so every card shows the half
+                        // on screen rather than the one last chosen for it.
+                        following || activeFamily === family
                           ? active.scheme
                           : (modes[family.id] ?? active.scheme)
                       }

@@ -278,9 +278,7 @@ test('a library detail header puts the cover beside the text, actions below, and
   expect(playAll.y).toBeGreaterThanOrEqual(meta.y + meta.height)
   expect(Math.abs(playAll.x - cover.x)).toBeLessThan(2)
   // Two lines at most, so a long title never pushes the actions off the first screen.
-  const lines = await title
-    .locator('span')
-    .evaluate((element) => getComputedStyle(element).webkitLineClamp)
+  const lines = await title.evaluate((element) => getComputedStyle(element).webkitLineClamp)
   expect(lines).toBe('2')
   expect(await pageOverflow(page)).toBe(0)
 })

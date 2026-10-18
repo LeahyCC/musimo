@@ -2,6 +2,8 @@
 
 This is the build plan for the UI refactor designed in Claude Design (project "Musimo", file `Musimo Refactor.dc.html`). The exported prototypes live in [design/ui-refactor](design/ui-refactor/). They are the visual spec. This file is the build spec: what we ship, in what order, and who owns which files.
 
+**Status, 18 October 2026: every phase below is done.** Phases 0 to 2 merged into `feature/ui-refactor` card by card, and Phase 3, the final check, is recorded in [ui-verification.md](ui-verification.md#both-layouts-18-october-2026). The one PR from `feature/ui-refactor` into `main` is what is left.
+
 All work lands on the `feature/ui-refactor` branch. Each card opens its own PR into that branch. When every card is merged, one PR takes `feature/ui-refactor` into `main`.
 
 ## What we ship
@@ -63,7 +65,7 @@ Foundation ───► ├ Library browse ──► Library detail             
 
 Each box is one Kungfu card and one PR into `feature/ui-refactor`. A card starts only once the cards it depends on are merged.
 
-### Phase 0: Foundation
+### Phase 0: Foundation (done)
 
 Owns: `src/style.css` tokens, `src/theme/*`, `src/ui/*` (new primitives), `src/lib/layout.ts` (new), `src/app/routes.tsx`, `src/app/shell.tsx` (split only), `package.json`.
 
@@ -81,14 +83,14 @@ Owns: `src/style.css` tokens, `src/theme/*`, `src/ui/*` (new primitives), `src/l
 - Shell split: `src/app/shell.tsx` becomes a switcher that renders `ClassicShell` (`src/app/shell/classic.tsx`) or `RoomShell` (`src/app/shell/room.tsx`). Both start as today's shell so nothing breaks. Phase 1 restyles them.
 - Route changes (decision 6). The Home route renders a placeholder `features/home/home.tsx` that the Home card fills in.
 
-### Phase 1: Shells
+### Phase 1: Shells (done)
 
 | Card                 | Owns                                                                                                  |
 | -------------------- | ----------------------------------------------------------------------------------------------------- |
 | Classic shell        | `src/app/shell/classic.tsx`, `features/player/player.tsx` (footer and mini player look), shell styles |
 | Listening room shell | `src/app/shell/room.tsx`, new `features/player/player-dock.tsx` (art, waveform, transport, Up next)   |
 
-### Phase 2: Screens
+### Phase 2: Screens (done)
 
 Every screen card builds both layouts of its screen, switching on `useLayout()`. Shared parts go in the feature folder, not in a layout file.
 
@@ -106,11 +108,12 @@ Every screen card builds both layouts of its screen, switching on `useLayout()`.
 
 Library detail waits for Library browse because both edit `library.tsx`.
 
-### Phase 3: Final check
+### Phase 3: Final check (done)
 
 - Walk every route in both layouts at 1280×800, 390×844 and 360×800, dark and light theme.
 - `scripts/check.sh browser`, axe on every route, the themed walk.
-- Update [ui-verification.md](ui-verification.md), [testing.md](testing.md), [tailwind-migration.md](tailwind-migration.md) layout contract, and the README screenshots in `docs/assets/`.
+- Update [ui-verification.md](ui-verification.md), [testing.md](testing.md), [tailwind-migration.md](tailwind-migration.md) layout contract, [settings.md](settings.md), and the README screenshots in `docs/assets/`.
+- Done: the walk ran on 276 pages (23 routes, three sizes, two themes, both layouts), the themed walk and axe specs run in both layouts, and the docs and screenshots are brought up to date.
 
 ## Rules for every card
 

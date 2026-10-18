@@ -174,7 +174,8 @@ function RoomHeader({
   const parallel = settings.data?.concurrency.value
   return (
     <>
-      <h1 className="mb-[16px] text-display font-semibold tracking-[-0.7px]">Downloads</h1>
+      {/* The room header already names the page; the heading stays for screen readers. */}
+      <h1 className="sr-only">Downloads</h1>
       <div
         role="group"
         aria-label="Download views"

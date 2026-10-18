@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+### Final check of the two layouts
+
+- Walk every route in Classic and the Listening room at 1280x800, 390x844 and 360x800, dark and light. `e2e/themed-walk.spec.ts` and `e2e/a11y.spec.ts` now run each route in both layouts.
+- Show the page name once in the Listening room. Downloads, Settings, Your settings and Diagnostics kept their own heading under the header's title; it is now for screen readers only.
+- Keep focus on the chosen layout when it is changed from the keyboard in Settings, Yours, and label the two layout radios as a group.
+- Announce the half of a theme that is on screen when Follow system is on, not the half last chosen for that family.
+- Say "Ready to download" with the check counts, and not "All systems ready", on the Diagnostics banner when some checks are only notes.
+- Name the Art / MilkDrop switch, not the Visualizer button, in the hint under Show on Now Playing when the Listening room is on.
+- Show one toast, not two, when the queue cannot be saved in the Listening room, and take it away once Retry saves the queue.
+- Raise the contrast of the song count under a playlist on the Listening room's Home in dark themes.
+- Let `scripts/check.sh browser` take `MUSIMO_CI_PROJECT` and `MUSIMO_CI_PORT` from the environment, so two runs do not collide.
+- Retake the README screenshots in Classic and add one of the Listening room.
+
 ### Search and catalog pages
 
 - Restyle search and the album, artist and podcast pages for both layouts. Search has pill tabs, a top-result card (Classic) or banner (Listening room) showing how much of the best-matching artist is in the library with a button to get the missing albums, and status badges and download icons on every track row. The album, artist and podcast pages open with a hero showing a coverage bar of what is in the library, what is another edition, queued or missing, with the primary action and destination folder. The artist page now lists Popular, Albums and Singles & EPs, and its release filter starts on all releases. A podcast has "Download latest" for its newest episodes

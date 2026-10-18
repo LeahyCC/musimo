@@ -2112,7 +2112,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function retryQueueSave() {
     void saveQueue(true).then((saved) => {
-      if (saved) setNoticeText((now) => (now === QUEUE_SAVE_FAILED ? LIBRARY_NOTICE : now))
+      if (!saved) return
+      setNoticeText((now) => (now === QUEUE_SAVE_FAILED ? LIBRARY_NOTICE : now))
+      // The failure's toast says the queue is not saved; it must not outlive the save that fixed it.
+      toasts.current.get(QUEUE_SAVE_FAILED)?.()
+      toasts.current.delete(QUEUE_SAVE_FAILED)
     })
   }
 

@@ -44,11 +44,15 @@ full() {
 }
 
 browser() {
-  project=musimo-ci
+  # Two runs at once need their own project and port: MUSIMO_CI_PROJECT and MUSIMO_CI_PORT.
+  project="${MUSIMO_CI_PROJECT:-musimo-ci}"
+  port="${MUSIMO_CI_PORT:-18765}"
+  export MUSIMO_CI_PORT="$port" MUSIMO_CI_PROJECT="$project"
+  export PLAYWRIGHT_BASE_URL="${PLAYWRIGHT_BASE_URL:-http://127.0.0.1:$port}"
   compose="docker compose -f compose.ci.yaml -p $project"
   trap "$compose down --volumes" EXIT
   step $compose up -d --build --wait --wait-timeout 120
-  step uv run python scripts/smoke.py --url http://127.0.0.1:18765 --restart --compose-file compose.ci.yaml --project-name "$project"
+  step uv run python scripts/smoke.py --url "http://127.0.0.1:$port" --restart --compose-file compose.ci.yaml --project-name "$project"
   step npm run --silent test:e2e --prefix frontend
 }
 

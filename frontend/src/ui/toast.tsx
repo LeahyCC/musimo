@@ -96,9 +96,19 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
  * and Classic's follow `--player-height` and `--dock-height`, so it drops to the edge when the
  * footer is hidden and stacks above the floating download pill.
  */
-export function ToastProvider({ children }: { children: ReactNode }) {
+export function ToastProvider({ children, page }: { children: ReactNode; page?: string }) {
   const [toasts, setToasts] = useState<Toast[]>([])
   const nextId = useRef(0)
+
+  // A toast that only confirms something belongs to the page it was said on. Moving to another
+  // page drops it, so it does not sit over that page's controls (on a phone it covers the bottom
+  // of the screen). One with an action, such as Retry, stays until it is used or dismissed.
+  useEffect(() => {
+    setToasts((current) => {
+      const kept = current.filter((toast) => toast.action)
+      return kept.length === current.length ? current : kept
+    })
+  }, [page])
 
   const dismiss = useCallback((id: number) => {
     setToasts((current) => current.filter((toast) => toast.id !== id))
