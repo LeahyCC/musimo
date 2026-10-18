@@ -367,7 +367,7 @@ class ShownMemoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(part(part(new, "snapshot"), "shown")["memory_revision"], 1)
         # And the capabilities say which versions are accepted.
         found = await self.http.get("/api/music-bot/capabilities")
-        self.assertEqual(payload(found)["supported_versions"], [1, 2, 3, 4])
+        self.assertEqual(payload(found)["supported_versions"], [1, 2, 3, 4, 5])
 
     async def test_a_different_memory_revision_is_a_different_snapshot(self) -> None:
         body = PLAIN | {"seed": 5, "filters": {"limit": 6}}

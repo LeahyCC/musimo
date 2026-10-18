@@ -1432,17 +1432,34 @@ class Store:
         )
 
     def save_proposal(
-        self, proposal_id: str | None, base: int, row: dict[str, object]
-    ) -> tuple[str, int] | None:
+        self,
+        proposal_id: str | None,
+        base: int,
+        row: dict[str, object],
+        edit: dict[str, object] | None = None,
+    ) -> tuple[str, int] | dict[str, object] | None:
         """Store revision 1 of a new proposal when `proposal_id` is None, otherwise the
         revision after `base`. None when `base` is no longer the latest, so two refinements of
         one revision cannot both land. Proposals and revisions past the limits go in the same
-        transaction."""
+        transaction.
+
+        `edit` is an edit's receipt (its operation id and body). It is written with the
+        revision, so a retried edit finds it; when its operation id already has a receipt,
+        nothing is written and that first receipt is returned instead."""
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
                 now = self._timestamp()
                 revision = base + 1
+                if edit is not None:
+                    found = self.db.execute(
+                        "SELECT receipt FROM bot_receipts WHERE operation_id=?",
+                        (edit["operation_id"],),
+                    ).fetchone()
+                    if found is not None:
+                        self.db.rollback()
+                        first: dict[str, object] = json.loads(found[0])
+                        return first
                 if proposal_id is None:
                     proposal_id = "pr-" + secrets.token_hex(8)
                     self.db.execute(
@@ -1469,6 +1486,17 @@ class Store:
                         now,
                     ),
                 )
+                if edit is not None:
+                    receipt = edit | {"made": revision, "created": now}
+                    self.db.execute(
+                        "INSERT INTO bot_receipts VALUES (?,?,?,?,?)",
+                        (edit["operation_id"], proposal_id, base, "edit", json.dumps(receipt)),
+                    )
+                    self.db.execute(
+                        "DELETE FROM bot_receipts WHERE rowid NOT IN "
+                        "(SELECT rowid FROM bot_receipts ORDER BY rowid DESC LIMIT ?)",
+                        (RECEIPT_LIMIT,),
+                    )
                 self.db.execute(
                     "DELETE FROM bot_proposal_revisions WHERE proposal_id=? AND revision<=?",
                     (proposal_id, revision - REVISION_LIMIT),

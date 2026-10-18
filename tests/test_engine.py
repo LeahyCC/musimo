@@ -39,7 +39,7 @@ from backend.library.engine_contract import (
     registry,
 )
 from backend.library.index import Library
-from backend.library.music_bot import ARTIST_CAP, BotRequest, MusicBot, SearchPlan
+from backend.library.music_bot import ARTIST_CAP, BotRequest, Kept, MusicBot, SearchPlan
 from backend.library.player import Player
 from backend.library.selection import RELEVANCE_RATIO, SEED_LIMIT, SHOWN_LIMIT
 
@@ -147,7 +147,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             ([], "malformed_request"),
             ("search", "malformed_request"),
             ({"action": "search"}, "malformed_request"),
-            ({"contract_version": 5, "action": "search"}, "unsupported_version"),
+            ({"contract_version": 6, "action": "search"}, "unsupported_version"),
             ({"contract_version": "1", "action": "search"}, "unsupported_version"),
             ({"contract_version": True, "action": "search"}, "unsupported_version"),
             (PLAIN | {"duration_mode": "about"}, "unknown_field"),
@@ -354,8 +354,8 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             body = (await client.get("/api/music-bot/capabilities")).json()
         self.assertEqual(body["contract_version"], CONTRACT_VERSION)
         self.assertEqual(body["engine_version"], ENGINE_VERSION)
-        self.assertEqual(body["supported_versions"], [1, 2, 3, CONTRACT_VERSION])
-        self.assertEqual(CONTRACT_VERSION, 4)
+        self.assertEqual(body["supported_versions"], [1, 2, 3, 4, CONTRACT_VERSION])
+        self.assertEqual(CONTRACT_VERSION, 5)
         found = {item["id"]: item["available"] for item in body["capabilities"]}
         self.assertTrue(found["total_length"])
         self.assertNotIn("duration_comparators", found)
@@ -542,8 +542,9 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             request: BotRequest,
             now: datetime | None = None,
             total_length: TotalLength | None = None,
+            kept: Kept | None = None,
         ) -> dict[str, object]:
-            reply = real(plan, request, now, total_length)
+            reply = real(plan, request, now, total_length, kept)
             calls.append(1)
             with self.store.lock:
                 self.store.db.execute("UPDATE library_files SET play_count=play_count+1")
@@ -563,8 +564,9 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             request: BotRequest,
             now: datetime | None = None,
             total_length: TotalLength | None = None,
+            kept: Kept | None = None,
         ) -> dict[str, object]:
-            reply = real(plan, request, now, total_length)
+            reply = real(plan, request, now, total_length, kept)
             if not calls:
                 calls.append(1)
                 self.store.bump_library_revision()
@@ -826,7 +828,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(self.report(first)["met"])
 
     def test_a_bare_target_keeps_todays_fill(self) -> None:
-        for version in (1, 2, 3, 4):
+        for version in (1, 2, 3, 4, 5):
             with self.subTest(version=version):
                 result = self.run_at(
                     parse_intent(
@@ -965,7 +967,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
                 CANDIDATE_CAP,
                 WORK_LIMIT,
             ),
-            (3, 2, 4.0, 500, 2**53, 300, 600, 50_000),
+            (4, 2, 4.0, 500, 2**53, 300, 600, 50_000),
         )
 
 

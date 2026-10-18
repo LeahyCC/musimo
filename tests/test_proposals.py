@@ -264,7 +264,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         cases: list[tuple[JsonObject, str]] = [
             ({"action": "pause"}, "invalid_intent"),
             ({"filters": {"limit": 501}}, "selection_too_large"),
-            ({"contract_version": 5}, "unsupported_version"),
+            ({"contract_version": 6}, "unsupported_version"),
             ({"extra": 1}, "unknown_field"),
         ]
         for body, expected in cases:
@@ -714,7 +714,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         body = payload(await self.http.get("/api/music-bot/capabilities"))
         found = {item["id"]: item["available"] for item in body["capabilities"]}  # type: ignore[attr-defined]
         self.assertTrue(found["proposal_commit"])
-        self.assertEqual(body["supported_versions"], [1, 2, 3, 4])
+        self.assertEqual(body["supported_versions"], [1, 2, 3, 4, 5])
 
 
 if __name__ == "__main__":

@@ -16,8 +16,13 @@ from backend.library.engine import ATTEMPTS, Engine, _digest, _row, parse_body, 
 from backend.library.engine_contract import (
     COMMIT_VERSIONS,
     CONTRACT_VERSION,
+    EDIT_VERSIONS,
     ENGINE_VERSION,
+    EXCLUDE_LIMIT,
+    AddSongs,
+    Another,
     Commit,
+    Edit,
     EngineError,
     ErrorField,
     Intent,
@@ -25,6 +30,7 @@ from backend.library.engine_contract import (
     Presented,
     Receipt,
     Refine,
+    RemoveSongs,
 )
 from backend.library.music_bot import MusicBot
 from backend.library.player import LibraryView
@@ -92,6 +98,35 @@ class Proposals:
             intent = intent.model_copy(update={"context": context})
         return self._save(proposal_id, body.revision, intent, cancelled)
 
+    def edit(
+        self, proposal_id: str, raw: object, cancelled: Callable[[], bool]
+    ) -> dict[str, object]:
+        """Another set, more songs, or fewer, as the next revision. The new intent is written
+        here from the stored one, so every filter and the length carry over untouched and the
+        client cannot change them by accident. An operation id is answered once: a retry after
+        a lost reply gets the revision the first attempt made, so an add never lands twice."""
+        body = parse_body(Edit, raw, EDIT_VERSIONS, "invalid_request")
+        wanted: dict[str, object] = {
+            "operation_id": body.operation_id,
+            "proposal_id": proposal_id,
+            "revision": body.revision,
+            "target": "edit",
+            "edit": body.edit.model_dump(),
+        }
+        first = self.bot.store.proposal_receipt(body.operation_id)
+        if first is not None:
+            return self._edit_replayed(first, wanted)
+        base = self._revision(proposal_id, body.revision)
+        latest = base["latest"]
+        assert isinstance(latest, int)
+        if body.revision != latest:
+            raise self._superseded(latest)
+        intent = _edited(Intent.model_validate(base["intent"]), _ids(base), body.edit)
+        saved = self._save(proposal_id, body.revision, intent, cancelled, wanted)
+        if "replayed" in saved:
+            return saved
+        return saved | {"replayed": False}
+
     def read(self, proposal_id: str, revision: int | None) -> dict[str, object]:
         return self._public(self._revision(proposal_id, revision), self.bot.player.view())
 
@@ -105,7 +140,9 @@ class Proposals:
         intent = Intent.model_validate(stored["intent"])
         ids = stored["ids"]
         assert isinstance(ids, list)
-        if intent.action != "search" or intent.scope != "library" or not ids:
+        # Removing songs draws nothing new, so nothing new was shown.
+        drew = intent.context.add_count != 0
+        if intent.action != "search" or intent.scope != "library" or not ids or not drew:
             return self.memory(False)
         if cancelled():
             raise Cancelled
@@ -215,7 +252,12 @@ class Proposals:
         return self._receipt(saved, False)
 
     def _save(
-        self, proposal_id: str | None, base: int, intent: Intent, cancelled: Callable[[], bool]
+        self,
+        proposal_id: str | None,
+        base: int,
+        intent: Intent,
+        cancelled: Callable[[], bool],
+        edit: dict[str, object] | None = None,
     ) -> dict[str, object]:
         if intent.action != "search":
             raise EngineError(
@@ -253,7 +295,11 @@ class Proposals:
         }
         if cancelled():
             raise Cancelled
-        saved = self.bot.store.save_proposal(proposal_id, base, row)
+        saved = self.bot.store.save_proposal(proposal_id, base, row, edit)
+        if isinstance(saved, dict):
+            # The same edit ran at the same time and was written first.
+            assert edit is not None
+            return self._edit_replayed(saved, edit)
         if saved is None:
             stored = self.bot.store.proposal_revision(proposal_id or "", None)
             if stored is None:
@@ -404,6 +450,22 @@ class Proposals:
             )
         return self._receipt(first, True)
 
+    def _edit_replayed(
+        self, first: dict[str, object], wanted: dict[str, object]
+    ) -> dict[str, object]:
+        """The revision a retried edit made the first time, or a refusal when the operation id
+        was used for something else."""
+        if {key: first.get(key) for key in wanted} != wanted:
+            raise EngineError(
+                "operation_conflict",
+                "That operation id already did something else. Use a new one.",
+                409,
+                [ErrorField(field="operation_id", message="Already used")],
+            )
+        made = first.get("made")
+        assert isinstance(made, int)
+        return self.read(str(wanted["proposal_id"]), made) | {"replayed": True}
+
     def _receipt(self, receipt: dict[str, object], replayed: bool) -> dict[str, object]:
         return {
             "contract_version": CONTRACT_VERSION,
@@ -457,3 +519,102 @@ class Proposals:
             # Only the proposal tables were written. Nothing was played, queued or saved.
             "state_changed": False,
         }
+
+
+def _ids(stored: dict[str, object]) -> list[str]:
+    ids = stored["ids"]
+    assert isinstance(ids, list)
+    return [str(sid) for sid in ids]
+
+
+def _edited(intent: Intent, ids: list[str], edit: Another | AddSongs | RemoveSongs) -> Intent:
+    """The next revision's intent. Filters, the length and the scope stay as they were; only
+    the kept, pinned and excluded songs, the number to add and the seed change. Pinned songs
+    keep their order in the revision."""
+    context, filters = intent.context, intent.filters
+    named: list[str] = []
+    if isinstance(edit, RemoveSongs):
+        named = edit.ids
+    elif isinstance(edit, Another):
+        named = edit.pinned_ids or []
+    stray = [sid for sid in named if sid not in ids]
+    if stray:
+        raise EngineError(
+            "invalid_edit",
+            "Those songs are not in this revision.",
+            422,
+            [ErrorField(field=f"edit.{sid}", message="Not in the revision") for sid in stray[:10]],
+        )
+    library = intent.scope == "library"
+    # A new draw keeps reading the shown-song memory, as a fresh search does.
+    fresh = {"seed": None, "contract_version": CONTRACT_VERSION}
+    if isinstance(edit, RemoveSongs):
+        gone = set(edit.ids)
+        rest = [sid for sid in ids if sid not in gone]
+        if not rest:
+            raise EngineError(
+                "invalid_edit", "That would leave no songs. Start a new search instead.", 422
+            )
+        excluded = list(dict.fromkeys([*filters.exclude_ids, *edit.ids]))
+        if len(excluded) > EXCLUDE_LIMIT:
+            raise EngineError(
+                "selection_too_large",
+                f"A proposal can rule out at most {EXCLUDE_LIMIT} songs. Start a new search.",
+                422,
+            )
+        new_filters = filters.model_copy(update={"exclude_ids": excluded})
+        if library:
+            # Nothing is drawn: the same seed, the rest kept as they are, none added.
+            return intent.model_copy(
+                update={
+                    "contract_version": CONTRACT_VERSION,
+                    "filters": new_filters,
+                    "context": context.model_copy(
+                        update={
+                            "keep_ids": rest,
+                            "pinned_ids": [sid for sid in context.pinned_ids if sid not in gone],
+                            "add_count": 0,
+                        }
+                    ),
+                }
+            )
+        # A refinement of a proposal or the queue refines what is left, in its order.
+        return intent.model_copy(
+            update={
+                "contract_version": CONTRACT_VERSION,
+                "scope": "proposal",
+                "filters": new_filters,
+                "context": context.model_copy(update={"proposal_ids": rest, "queue_ids": []}),
+            }
+        )
+    if not library:
+        raise EngineError(
+            "edit_unsupported",
+            "This revision narrows a list rather than searching the library, so there is "
+            "nothing to draw more songs from. Ask for a new search.",
+            422,
+        )
+    if isinstance(edit, AddSongs):
+        return intent.model_copy(
+            update=fresh
+            | {
+                "context": context.model_copy(
+                    update={
+                        "keep_ids": ids,
+                        "pinned_ids": [sid for sid in context.pinned_ids if sid in ids],
+                        "add_count": edit.count,
+                        "shown_ids": None,
+                    }
+                ),
+            }
+        )
+    wanted = set(edit.pinned_ids if edit.pinned_ids is not None else context.pinned_ids)
+    pins = [sid for sid in ids if sid in wanted]
+    return intent.model_copy(
+        update=fresh
+        | {
+            "context": context.model_copy(
+                update={"keep_ids": pins, "pinned_ids": pins, "add_count": None, "shown_ids": None}
+            ),
+        }
+    )

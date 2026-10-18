@@ -22,26 +22,33 @@ from backend.library.selection import SEED_LIMIT, SHOWN_LIMIT
 # echoed intent. Version 3 added filters.total_length and the result's duration report. An
 # intent without total_length is unchanged, so it may still say 1 or 2. Version 4: an omitted
 # context.shown_ids means the server's memory of presented results, where it meant none
-# before. An intent that says 3 or lower keeps the old meaning.
-CONTRACT_VERSION = 4
-SUPPORTED_VERSIONS = (1, 2, 3, 4)
+# before. An intent that says 3 or lower keeps the old meaning. Version 5 added the edits of a
+# proposal: filters.exclude_ids and context.keep_ids, pinned_ids and add_count, and the edit
+# route. An intent without them is unchanged.
+CONTRACT_VERSION = 5
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5)
 # The first version with total_length.
 TOTAL_LENGTH_VERSION = 3
 # The first version where an omitted shown_ids reads the server's memory.
 MEMORY_VERSION = 4
+# The first version with kept, pinned and excluded songs.
+EDIT_VERSION = 5
 # A commit body has not changed since proposals arrived in version 2.
-COMMIT_VERSIONS = (2, 3, 4)
+COMMIT_VERSIONS = (2, 3, 4, 5)
 # The rules that order and choose songs: the gates in resolve, the artist cap and the draw in
 # selection.py. Bump when any of them changes, so a replay across versions is not mistaken
 # for a replay of the same engine. tests/test_engine.py pins the constants that feed it.
 # Version 2 added the total-length search in duration.py. Version 3: a library search with no
-# shown_ids reads the server's memory of presented results.
-ENGINE_VERSION = 3
+# shown_ids reads the server's memory of presented results. Version 4: kept songs go first as
+# they are, excluded songs are never picked, and a set number of songs can follow the kept ones.
+ENGINE_VERSION = 4
 
 # Stripped first, so a blank name cannot match every untagged song.
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
 # The most songs a selection, a proposal or a queue holds. More is refused, never cut.
 SELECTION_LIMIT = 500
+# The most songs a proposal can have ruled out by removing them.
+EXCLUDE_LIMIT = 1000
 
 Action = Literal["search", "pause", "resume", "skip", "clarify", "unsupported"]
 Scope = Literal["library", "proposal", "queue"]
@@ -76,6 +83,8 @@ class Filters(BaseModel):
     energy_compared: Literal["", "calmer", "more_intense"] = ""
     tempo_compared: Literal["", "slower", "faster"] = ""
     sound: str = Field(default="", max_length=120)
+    # Songs never picked, in any scope: the ones a person removed. Version 5.
+    exclude_ids: list[SongId] = Field(default_factory=list, max_length=EXCLUDE_LIMIT)
 
 
 class Context(BaseModel):
@@ -93,6 +102,15 @@ class Context(BaseModel):
     # version 3 or lower one uses an empty list). A list, even an empty one, is used as given
     # and the memory is left unread.
     shown_ids: list[SongId] | None = Field(default=None, max_length=SHOWN_LIMIT)
+    # Version 5, library search only. Kept songs go first, in this order, as they are: they
+    # are not filtered again and must still play. They count towards the limit, a length, the
+    # artist cap and the title rule. Pinned songs are those of them the person protected; an
+    # edit that replaces songs keeps those and redraws the rest. add_count None fills after the
+    # kept songs as the filters say; a number adds at most that many, and the limit and a
+    # target_seconds fill add no more (0 keeps exactly the kept songs).
+    keep_ids: list[SongId] = Field(default_factory=list, max_length=SELECTION_LIMIT)
+    pinned_ids: list[SongId] = Field(default_factory=list, max_length=SELECTION_LIMIT)
+    add_count: int | None = Field(default=None, ge=0, le=SELECTION_LIMIT)
 
 
 class Intent(BaseModel):
@@ -136,6 +154,50 @@ class Presented(BaseModel):
     # memory was forgotten after it, the result is not recorded. None for a result built without
     # the memory, which has nothing to compare.
     memory_revision: int | None = Field(default=None, ge=0)
+
+
+class Another(BaseModel):
+    """Same filters and exclusions, a fresh seed: the pinned songs stay and the rest are drawn
+    again. `pinned_ids` replaces the revision's pins; omitted, they stay as they are."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    kind: Literal["another"]
+    pinned_ids: list[SongId] | None = Field(default=None, max_length=SELECTION_LIMIT)
+
+
+class AddSongs(BaseModel):
+    """Keep every song and add up to `count` new ones that fit the same filters."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    kind: Literal["add"]
+    count: int = Field(default=1, ge=1, le=SELECTION_LIMIT)
+
+
+class RemoveSongs(BaseModel):
+    """Take songs out, keep the rest in order, and never pick them again in this proposal."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    kind: Literal["remove"]
+    ids: list[SongId] = Field(min_length=1, max_length=SELECTION_LIMIT)
+
+
+class Edit(BaseModel):
+    """A change to the latest revision, stored as the next one. The server writes the new
+    intent from the stored one, so the filters and length carry over untouched."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    contract_version: int
+    revision: int = Field(ge=1)
+    operation_id: OperationId
+    edit: Annotated[Another | AddSongs | RemoveSongs, Field(discriminator="kind")]
+
+
+# The edit route arrived in version 5.
+EDIT_VERSIONS = (5,)
 
 
 class PlaylistTarget(BaseModel):
@@ -238,6 +300,13 @@ def registry(scalar: Recipe | None, embedding: Recipe | None) -> list[Capability
         Capability("unsupported", "action", True, "Carries a refusal. No search runs."),
         Capability("library", "scope", True, "All library songs."),
         Capability("proposal", "scope", True, "Refines the given proposal in its order."),
+        Capability(
+            "proposal_edit",
+            "action",
+            True,
+            "Another set (pinned songs kept), add songs, or remove songs, as the next revision "
+            "with the filters and length carried over. Once per operation id. Contract version 5.",
+        ),
         Capability("queue", "scope", True, "Refines the given queue in its order."),
         Capability(
             "proposal_commit",
@@ -279,6 +348,7 @@ def registry(scalar: Recipe | None, embedding: Recipe | None) -> list[Capability
             text,
             "Needs a text-aligned embedding recipe, and a phrase that is not only a negation.",
         ),
+        Capability("exclude_ids", "filter", True, "Never picked. Contract version 5."),
         Capability("seed", "context", True, "Repeats a library selection. Library scope only."),
         Capability("current_id", "context", True, "The playing song, for comparisons."),
         Capability("reference_id", "context", True, "The song to compare with."),
@@ -291,6 +361,24 @@ def registry(scalar: Recipe | None, embedding: Recipe | None) -> list[Capability
             "Shown songs go last. Never excluded. Library scope only. Omitted, contract "
             "version 4 uses the server's memory of presented results and version 3 or lower an "
             "empty list.",
+        ),
+        Capability(
+            "keep_ids",
+            "context",
+            True,
+            "Kept first as they are, and must still play. Library scope. Contract version 5.",
+        ),
+        Capability(
+            "pinned_ids",
+            "context",
+            True,
+            "The kept songs another set keeps. Library scope. Contract version 5.",
+        ),
+        Capability(
+            "add_count",
+            "context",
+            True,
+            "At most this many new songs after the kept ones. Library scope. Contract version 5.",
         ),
         *NOT_BUILT,
     ]
