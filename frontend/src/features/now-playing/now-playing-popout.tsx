@@ -238,6 +238,12 @@ export function PopoutProvider({ children }: { children: ReactNode }) {
       .catch(() => setNotice('The popout could not open.'))
   }, [])
 
+  // The layout's fonts key on `data-layout` on the root, which the shell only sets in the tab.
+  const layout = useLayout()
+  useEffect(() => {
+    if (pipWindow) pipWindow.document.documentElement.dataset.layout = layout
+  }, [pipWindow, layout])
+
   const closePopout = useCallback(() => pipWindow?.close(), [pipWindow])
 
   // A popout cannot go fullscreen itself, so the request travels back to the

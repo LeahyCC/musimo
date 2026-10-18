@@ -819,6 +819,15 @@ function ClassicNowPlaying({ track, large, lyricsView, onLyricsView }: LayoutPro
  */
 function RoomNowPlaying({ track, large, phone, lyricsView, onLyricsView }: LayoutProps) {
   const beside = !large && !phone
+  const tabs = (className?: string) => (
+    <NowPlayingTabs
+      track={track}
+      tone="room"
+      lyricsView={lyricsView}
+      onLyricsView={onLyricsView}
+      className={className}
+    />
+  )
   return (
     // The card's padding and type follow its own width, so the wrapper is the size container.
     <div className="[container-type:inline-size]">
@@ -839,19 +848,15 @@ function RoomNowPlaying({ track, large, phone, lyricsView, onLyricsView }: Layou
             <NowPlayingStage fit="width" />
           </div>
           {/* Beside the art the tabs are laid out over the row rather than in it, so the art alone
-              sets the row's height and a long queue scrolls inside instead of stretching it. */}
-          <div className={cx('min-w-0', beside ? 'relative' : 'order-last')}>
-            <NowPlayingTabs
-              track={track}
-              tone="room"
-              lyricsView={lyricsView}
-              onLyricsView={onLyricsView}
-              className={beside ? 'absolute inset-0' : large ? 'h-[min(70dvh,560px)]' : undefined}
-            />
-          </div>
+              sets the row's height and a long queue scrolls inside instead of stretching it.
+              Stacked, they come after the controls in the page too, so Tab follows the screen. */}
+          {beside && <div className="relative min-w-0">{tabs('absolute inset-0')}</div>}
           <div className={cx('min-w-0', beside && 'col-span-2')}>
             <RoomControls track={track} />
           </div>
+          {!beside && (
+            <div className="min-w-0">{tabs(large ? 'h-[min(70dvh,560px)]' : undefined)}</div>
+          )}
         </div>
       </div>
     </div>
