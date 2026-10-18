@@ -9,9 +9,12 @@ import {
   ListPlus,
   ListRestart,
   ListStart,
+  Minus,
+  Music,
   Pin,
   Play,
   Plus,
+  Save,
   Shuffle,
   Undo2,
   X,
@@ -21,6 +24,7 @@ import type { BotReply } from '../../api'
 import { cx } from '../../lib/cx'
 import { useTheme } from '../../theme/store'
 import { Button, Field } from '../../ui'
+import { cover } from '../library/collection-items'
 import { durationText, usePlayer } from '../player/player'
 import { useBotChat } from './bot-chat'
 import { appliedText, filterChips, lengthText, loosenChips, shortMinutes } from './bot-replies'
@@ -35,7 +39,23 @@ const SCOPE_LABELS = {
 const FIRST_SONGS = 5
 
 const chipClassName =
-  'inline-flex h-[26px] items-center gap-[2px] rounded-pill border border-line-strong bg-hover py-0 pr-[2px] pl-[10px] text-tiny whitespace-nowrap text-text coarse:h-11'
+  'inline-flex h-[26px] items-center gap-[2px] rounded-pill bg-active py-0 pr-[2px] pl-[10px] text-tiny whitespace-nowrap text-text coarse:h-11'
+
+/** A song's cover at 36px, or a note where it has none. */
+function SongArt({ coverArt }: { coverArt?: string }) {
+  return (
+    <span
+      aria-hidden="true"
+      className="grid size-[36px] shrink-0 place-items-center overflow-hidden rounded-[6px] bg-hover text-faint"
+    >
+      {coverArt ? (
+        <img src={cover(coverArt)} alt="" loading="lazy" className="size-full object-cover" />
+      ) : (
+        <Music size={15} />
+      )}
+    </span>
+  )
+}
 
 /**
  * A result stays a preview until one of its actions is pressed. Every card says so, says what it
@@ -43,7 +63,15 @@ const chipClassName =
  * revision shows what its songs add up to and about six that stand for a long list, with the
  * whole list one press away. A short one is shown whole. Every action confirms that revision.
  */
-export function ResultCard({ reply }: { reply: BotReply }) {
+export function ResultCard({
+  reply,
+  variant = 'inline',
+}: {
+  reply: BotReply
+  /** `draft` is the Listening room's side panel: every song, numbered, with a remove on each. */
+  variant?: 'inline' | 'draft'
+}) {
+  const draft = variant === 'draft'
   const chat = useBotChat()
   const win95 = useTheme().skin === 'win95'
   const [showAll, setShowAll] = useState(false)
@@ -70,7 +98,7 @@ export function ResultCard({ reply }: { reply: BotReply }) {
   const sample = reply.tracks.filter((track) => sampleIds.includes(track.id))
   const opening = preview ? (sample.length ? sample : []) : reply.tracks.slice(0, FIRST_SONGS)
   const foldable = opening.length > 0 && opening.length < reply.tracks.length
-  const songs = showAll || !foldable ? reply.tracks : opening
+  const songs = showAll || !foldable || draft ? reply.tracks : opening
   // Another set and Add a song need a library search to draw from; the server refuses them on a
   // refinement of a list, so they are not offered there. Nor on a preview that names songs the
   // library lost, which has to be refreshed first.
@@ -81,27 +109,72 @@ export function ResultCard({ reply }: { reply: BotReply }) {
   const freed = problem?.kind === 'unavailable' ? problem.songs : []
   const pinnedHere = reply.tracks.filter((track) => pinned.has(track.id)).length
   const replaceRest = pinnedHere > 0 && pinnedHere < reply.tracks.length
+  // A row is: [number] art, title and artist, [pin], length, [remove], more. The draft numbers its
+  // rows and puts a remove on each; the pin is only there for a library search.
+  const columns = [
+    draft && '20px',
+    '36px',
+    'minmax(0,1fr)',
+    editable && 'auto',
+    'auto',
+    draft && 'auto',
+    'auto',
+  ]
+    .filter(Boolean)
+    .join(' ')
 
   return (
     <div
       data-bot="card"
-      className="relative grid min-w-0 gap-[12px] rounded-[12px] border border-line-strong bg-sunken p-[14px] text-small text-text"
+      data-variant={variant}
+      className={cx(
+        'relative grid min-w-0 gap-[12px] text-small text-text',
+        draft
+          ? 'min-h-full content-start p-[18px]'
+          : 'rounded-[12px] border border-line bg-raised p-[14px]',
+      )}
     >
-      <div className="flex items-center justify-between gap-[10px] text-micro tracking-[1.2px] text-faint">
-        <span className="font-semibold whitespace-nowrap" data-bot="eyebrow">
-          {win95
-            ? applied
-              ? 'In your queue'
-              : 'Preview - nothing changed yet'
-            : applied
-              ? 'IN YOUR QUEUE'
-              : 'PREVIEW, NOT APPLIED'}
-        </span>
-        <span className="whitespace-nowrap">
-          {SCOPE_LABELS[reply.plan.scope]}
-          {preview && preview.revision > 1 ? ` · REVISION ${preview.revision}` : ''}
-        </span>
-      </div>
+      {draft ? (
+        <div className="grid gap-[10px]">
+          <div className="flex items-center gap-[8px] font-mono text-[10.5px] tracking-[0.6px]">
+            <span
+              className="rounded-[5px] bg-partial-bg px-[7px] py-[3px] whitespace-nowrap text-partial"
+              data-bot="eyebrow"
+            >
+              {applied ? 'IN YOUR QUEUE' : 'DRAFT · NOT PLAYING'}
+            </span>
+            <span className="text-faint">REV {preview?.revision ?? 1}</span>
+            <span className="ml-auto whitespace-nowrap text-faint">
+              {SCOPE_LABELS[reply.plan.scope]}
+            </span>
+          </div>
+          <h3 className="m-0 text-[20px] leading-[1.2] font-semibold tracking-[-0.4px]">
+            {defaultPlaylistName(
+              chips.map((chip) => chip.value),
+              'Your selection',
+            )}
+          </h3>
+        </div>
+      ) : (
+        <div className="flex items-center justify-between gap-[10px] text-micro tracking-[1.2px] text-faint">
+          <span
+            className={cx('font-semibold whitespace-nowrap', !win95 && !applied && 'text-partial')}
+            data-bot="eyebrow"
+          >
+            {win95
+              ? applied
+                ? 'In your queue'
+                : 'Preview - nothing changed yet'
+              : applied
+                ? 'IN YOUR QUEUE'
+                : 'PREVIEW, NOT APPLIED'}
+          </span>
+          <span className="whitespace-nowrap">
+            {SCOPE_LABELS[reply.plan.scope]}
+            {preview && preview.revision > 1 ? ` · REVISION ${preview.revision}` : ''}
+          </span>
+        </div>
+      )}
       <p className="m-0 leading-[1.5] text-pretty">{reply.summary}</p>
       {chips.length > 0 && (
         <ul aria-label="Active filters" className="m-0 flex list-none flex-wrap gap-[6px] p-0">
@@ -161,16 +234,18 @@ export function ResultCard({ reply }: { reply: BotReply }) {
             />
           ) : (
             <ol aria-label="Proposed songs" className="m-0 grid list-none border-t border-line p-0">
-              {songs.map((track) => (
+              {songs.map((track, index) => (
                 <li
                   key={track.id}
-                  className={cx(
-                    'relative grid items-center gap-[10px] border-b border-line py-[7px] pr-0 pl-[2px]',
-                    editable
-                      ? 'grid-cols-[minmax(0,1fr)_auto_auto_32px] coarse:grid-cols-[minmax(0,1fr)_auto_auto_44px]'
-                      : 'grid-cols-[minmax(0,1fr)_auto_32px] coarse:grid-cols-[minmax(0,1fr)_auto_44px]',
-                  )}
+                  style={{ gridTemplateColumns: columns }}
+                  className="relative grid items-center gap-[10px] border-b border-line py-[7px] pr-0 pl-[2px]"
                 >
+                  {draft && (
+                    <span className="font-mono text-[11px] text-faint tabular-nums">
+                      {index + 1}
+                    </span>
+                  )}
+                  <SongArt coverArt={track.coverArt} />
                   <span className="grid min-w-0 gap-[2px]">
                     <strong className="truncate text-small font-medium">{track.title}</strong>
                     <small className="truncate text-tiny text-muted">{track.artist}</small>
@@ -186,6 +261,17 @@ export function ResultCard({ reply }: { reply: BotReply }) {
                   <time className="text-tiny whitespace-nowrap text-muted tabular-nums">
                     {durationText(track.duration)}
                   </time>
+                  {draft && (
+                    <button
+                      type="button"
+                      aria-label={`Remove ${track.title}`}
+                      disabled={changing && !freed.includes(track.id)}
+                      onClick={() => void chat.removeSong(track.id)}
+                      className="grid size-[28px] place-items-center rounded-[6px] border-0 bg-transparent p-0 text-faint hover:bg-hover hover:text-text disabled:opacity-50 coarse:size-11"
+                    >
+                      <Minus size={14} aria-hidden="true" />
+                    </button>
+                  )}
                   <SongMenu
                     title={track.title}
                     open={menuFor === track.id}
@@ -204,7 +290,7 @@ export function ResultCard({ reply }: { reply: BotReply }) {
             </ol>
           )}
           <div className="flex items-baseline justify-between gap-[10px] text-tiny text-muted">
-            {foldable ? (
+            {foldable && !draft ? (
               <button
                 type="button"
                 className="border-0 bg-transparent p-0 text-small whitespace-nowrap text-accent underline-offset-2 hover:underline coarse:min-h-11"
@@ -268,22 +354,34 @@ export function ResultCard({ reply }: { reply: BotReply }) {
       <ProblemPanel />
       <SavedLine />
       {!applied && !problem && !preview?.missing && reply.tracks.length > 0 && (
-        <div className="grid gap-[8px]">
+        <div
+          data-bot="actions"
+          className={cx(
+            'grid gap-[8px]',
+            // A bar along the foot of the card, the way both prototypes draw it.
+            !win95 &&
+              (draft
+                ? 'sticky bottom-0 -mx-[18px] -mb-[18px] mt-[6px] bg-sunken px-[18px] py-[12px]'
+                : '-mx-[14px] -mb-[14px] mt-[2px] rounded-b-[12px] border-t border-line bg-sunken px-[14px] py-[12px]'),
+          )}
+        >
           <div className="flex flex-wrap gap-[8px]">
             <Button variant="primary" disabled={busy} onClick={() => void chat.apply('play')}>
-              <Play size={14} aria-hidden="true" />
-              Play
+              <Play size={14} aria-hidden="true" fill={win95 ? 'none' : 'currentColor'} />
+              {draft || win95 ? 'Play' : 'Play now'}
             </Button>
             <Button disabled={busy} onClick={() => void chat.apply('next')}>
               <ListStart size={14} aria-hidden="true" />
               Play next
             </Button>
-            <Button disabled={busy} onClick={() => void chat.apply('append')}>
+            <Button
+              disabled={busy}
+              aria-label={draft ? 'Add to queue' : undefined}
+              onClick={() => void chat.apply('append')}
+            >
               <ListPlus size={14} aria-hidden="true" />
-              Add to queue
+              {draft ? 'Queue' : 'Add to queue'}
             </Button>
-          </div>
-          <div className="flex flex-wrap gap-[8px]">
             <Button
               disabled={busy}
               title="Keeps the song that is playing now"
@@ -295,6 +393,8 @@ export function ResultCard({ reply }: { reply: BotReply }) {
             <Button
               disabled={busy}
               aria-expanded={saving}
+              aria-label={draft ? 'Save as playlist' : undefined}
+              className={draft ? 'ml-auto' : undefined}
               onClick={() => {
                 setPlaylistName(
                   (old) => old || defaultPlaylistName(chips.map((chip) => chip.value)),
@@ -302,8 +402,12 @@ export function ResultCard({ reply }: { reply: BotReply }) {
                 setSaving((value) => !value)
               }}
             >
-              <ListMusic size={14} aria-hidden="true" />
-              {win95 ? 'Save as playlist...' : 'Save as playlist'}
+              {draft ? (
+                <Save size={14} aria-hidden="true" />
+              ) : (
+                <ListMusic size={14} aria-hidden="true" />
+              )}
+              {draft ? 'Save' : win95 ? 'Save as playlist...' : 'Save as playlist'}
             </Button>
           </div>
           {saving && (
@@ -378,9 +482,9 @@ export function ResultCard({ reply }: { reply: BotReply }) {
   )
 }
 
-function defaultPlaylistName(filters: string[]): string {
+function defaultPlaylistName(filters: string[], fallback = 'Music bot selection'): string {
   const name = filters.slice(0, 3).join(', ')
-  return (name || 'Music bot selection').slice(0, 200)
+  return (name || fallback).slice(0, 200)
 }
 
 /** The Windows 95 list view: a table with column headers, as the skin's design draws it. */

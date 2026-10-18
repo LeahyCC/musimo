@@ -6,6 +6,7 @@ import {
   bodyNumber,
   bodyText,
   closeLibraryFilters,
+  libraryShow,
   librarySong,
   openLibraryFilters,
   playerFixtures,
@@ -99,6 +100,7 @@ test('the liked playlist leads the list and cannot be deleted from it', async ({
 }) => {
   await playlistFixtures(page)
   await page.goto('/library/playlists')
+  await showListView(page, isMobile)
 
   const rows = page.locator('.library-list-row')
   await expect(rows).toHaveCount(2)
@@ -117,17 +119,23 @@ test('the liked playlist leads the list and cannot be deleted from it', async ({
   await expect.poll(() => trash.evaluate((element) => getComputedStyle(element).opacity)).toBe('1')
 
   await openLibraryFilters(page, isMobile)
-  // A phone has this select twice in the document: the toolbar's, hidden there, and the sheet's.
-  await page.locator('select[aria-label="Filter playlists"]:visible').selectOption('private')
+  await libraryShow(page, 'Filter playlists').selectOption('private')
   await closeLibraryFilters(page, isMobile)
   await expect(rows).toHaveCount(1)
   await expect(rows.first()).toContainText('Liked')
 })
 
+/** The rows carry the controls these specs measure, so they look at the list rather than the cards. */
+async function showListView(page: Page, isMobile: boolean) {
+  await openLibraryFilters(page, isMobile)
+  await page.getByRole('button', { name: 'List view' }).click()
+  await closeLibraryFilters(page, isMobile)
+}
+
 const LONG_NAME =
   'An Unreasonably Long Title That Keeps Going Well Past Any Sensible Width (Deluxe Remastered Anniversary Edition)'
 
-test('a long playlist name stops short of its controls', async ({ page }) => {
+test('a long playlist name stops short of its controls', async ({ page, isMobile }) => {
   await playlistFixtures(page)
   await page.route(
     (url) => url.pathname === '/api/library/playlists',
@@ -150,6 +158,7 @@ test('a long playlist name stops short of its controls', async ({ page }) => {
       }),
   )
   await page.goto('/library/playlists')
+  await showListView(page, isMobile)
   const row = page.locator('.library-list-row').first()
   await expect(row).toContainText('An Unreasonably')
   const name = await row.locator('.library-list-open strong').boundingBox()
@@ -244,7 +253,7 @@ async function openPicker(page: Page, isMobile: boolean, title: string) {
   await page.getByRole('button', { name: 'Add to playlist' }).click()
 }
 
-test('the playlist picker centres, toggles membership and removes other songs', async ({
+test('the playlist picker sits at the top on a desktop, toggles membership and removes other songs', async ({
   page,
   isMobile,
 }) => {
@@ -259,14 +268,25 @@ test('the playlist picker centres, toggles membership and removes other songs', 
   const box = await sheet.boundingBox()
   const viewport = page.viewportSize()
   if (!box || !viewport) throw new Error('Missing dialog or viewport measurements')
-  // Centred means the gaps above and below match, and the same left and right.
-  expect(Math.abs(box.y - (viewport.height - box.y - box.height))).toBeLessThan(2)
+  // Centred left to right. Hung from the top on a desktop, sat on the bottom edge on a phone.
   expect(Math.abs(box.x - (viewport.width - box.x - box.width))).toBeLessThan(2)
+  if (isMobile) {
+    expect(box.x).toBe(0)
+    expect(box.width).toBe(viewport.width)
+    expect(Math.abs(box.y + box.height - viewport.height)).toBeLessThan(2)
+  } else {
+    expect(box.y).toBeGreaterThan(0)
+    expect(box.y).toBeLessThan(viewport.height / 3)
+    expect(box.width).toBeLessThanOrEqual(520)
+  }
+  await expect(sheet.getByRole('button', { name: 'New playlist with this song' })).toBeVisible()
 
   const row = sheet.locator('.playlist-picker-row').filter({ hasText: 'Road trip' })
   await expect(row).toContainText('1 song')
   await row.getByRole('button', { name: 'Add Beacon to Road trip' }).click()
-  await expect(row.getByRole('button', { name: 'Remove Beacon from Road trip' })).toBeVisible()
+  await expect(row.getByRole('button', { name: 'Added, remove Beacon from Road trip' })).toHaveText(
+    'Added',
+  )
   await expect(row).toContainText('2 songs')
 
   await row.getByRole('button', { name: 'Show songs in Road trip' }).click()

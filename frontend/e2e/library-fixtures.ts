@@ -1,4 +1,4 @@
-import type { Page, Route } from '@playwright/test'
+import type { Locator, Page, Route } from '@playwright/test'
 
 import type { LibraryTrack } from '../src/api'
 import { ORIGIN } from './env'
@@ -53,6 +53,64 @@ export async function openLibraryFilters(page: Page, isMobile: boolean): Promise
 /** The other half: the sheet is modal, so the page behind it waits until Done. */
 export async function closeLibraryFilters(page: Page, isMobile: boolean): Promise<void> {
   if (isMobile) await page.getByRole('button', { name: 'Done', exact: true }).click()
+}
+
+/**
+ * The library's sort control. A desktop toolbar has one called "Sort", the phone's Filter sheet one
+ * called "Sort <view>", and only the one on screen exists.
+ */
+export function librarySort(page: Page, view: string): Locator {
+  return page.locator(`select[aria-label="Sort ${view}"], select[aria-label="Sort"]`)
+}
+
+/**
+ * Switches between library views the way a person does on that screen: a chip in the phone's row.
+ * A wide Classic screen switches from the sidebar, which these specs stand in for with a
+ * client-side navigation, so the player keeps playing and the view reopens with the choices it had.
+ */
+export async function openLibraryView(
+  page: Page,
+  isMobile: boolean,
+  view: 'Albums' | 'Artists' | 'Tracks' | 'Playlists',
+): Promise<void> {
+  if (isMobile) {
+    await page
+      .getByRole('navigation', { name: 'Library views' })
+      .getByRole('button', { name: view, exact: true })
+      .click()
+
+    return
+  }
+  await page.evaluate((path) => {
+    history.pushState(history.state, '', path)
+    dispatchEvent(new PopStateEvent('popstate', { state: history.state }))
+  }, `/library/${view.toLowerCase()}`)
+}
+
+/**
+ * The "Show" filter of the artists and playlists views: a chip in the desktop toolbar, and in the
+ * phone's sheet a select named for what it filters.
+ */
+export function libraryShow(page: Page, sheetLabel: string): Locator {
+  return page.locator(`select[aria-label="${sheetLabel}"], select[aria-label="Show"]`)
+}
+
+/**
+ * Opens or closes the Genre or Year picker. A desktop toolbar draws it as a chip named "Genre", and
+ * the phone's sheet as a row that reads "All genres", or "Genres (1)" once one is picked.
+ */
+export async function toggleLibraryFacet(
+  page: Page,
+  isMobile: boolean,
+  facet: 'Genre' | 'Year',
+  picked = 0,
+): Promise<void> {
+  if (!isMobile) {
+    await page.getByRole('button', { name: new RegExp(`^${facet}`) }).click()
+    return
+  }
+  const plural = `${facet.toLowerCase()}s`
+  await page.getByText(picked ? `${facet}s (${picked})` : `All ${plural}`, { exact: true }).click()
 }
 
 /** Read a request body as data rather than casting it to a shape it may not have. */

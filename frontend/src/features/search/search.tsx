@@ -8,26 +8,37 @@ import {
   useQuery,
 } from '@tanstack/react-query'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
-import { Headphones, Music2, Pause, Play } from 'lucide-react'
+import { Music2 } from 'lucide-react'
 
 import { albumSchema, api, searchPageSchema, yearsSchema } from '../../api'
 import type { MusicResult } from '../../api'
 import { InfiniteScroll } from '../../components/infinite-scroll'
 import { cx } from '../../lib/cx'
-import { Button, EmptyPanel, ErrorBanner, Field, FieldSelect, textLinkClassName } from '../../ui'
-import { durationText, usePlayer, usePreviewPlayback } from '../player/player'
+import { useLayout } from '../../lib/layout'
+import {
+  Button,
+  EmptyPanel,
+  ErrorBanner,
+  Field,
+  FieldSelect,
+  SelectChip,
+  textLinkClassName,
+} from '../../ui'
 import { PodcastResults } from '../podcasts/podcasts'
 import { HomeShelves } from './home-shelves'
 import { addSearch, readSearches, writeSearches } from './recent-searches'
 import {
   AlbumDestination,
+  AlbumRows,
   CardGrid,
   CatalogTrackList,
   resultsHeadingClassName,
   resultsTitleClassName,
 } from './results'
+import { SearchField } from './search-field'
 import { saveLastSearch, sorts, tabs, validateSearch } from './search-params'
 import type { SearchState } from './search-params'
+import { TopResult } from './top-result'
 
 /** How long a query must stand before the home page remembers it. */
 const RECENT_SETTLE_MS = 1200
@@ -75,6 +86,7 @@ function ResultsSection({
   compact: boolean
   change: (patch: Partial<SearchState>) => void
 }) {
+  const room = useLayout() === 'room'
   const query = useInfiniteQuery(searchResultsQuery(state.q, kind))
   const raw = useMemo(() => query.data?.pages.flatMap((page) => page.items) ?? [], [query.data])
   // Subscribe at the filter level too: verified coverage must change which albums are shown.
@@ -200,10 +212,12 @@ function ResultsSection({
           : (b[sort] ?? -1) - (a[sort] ?? -1)
       })
     }
-    return compact ? filtered.slice(0, kind === 'track' ? 5 : 6) : filtered
-  }, [raw, yearQuery.data, state, kind, compact, coverage])
+    return compact
+      ? filtered.slice(0, kind === 'track' || (room && kind === 'album') ? 5 : 6)
+      : filtered
+  }, [raw, yearQuery.data, state, kind, compact, coverage, room])
   return (
-    <section className="mb-[36px]" aria-label={labels[kind]}>
+    <section className="mb-[30px]" aria-label={labels[kind]}>
       {/* On its own tab the heading only repeats the chosen tab, and on a phone that row is a
           good part of what keeps the first result off the first screen. It stays for a screen
           reader; the Top tab keeps it, where it tells the sections apart. */}
@@ -258,7 +272,11 @@ function ResultsSection({
         ) : (
           <>
             {kind === 'album' && <AlbumDestination />}
-            <CardGrid items={items} />
+            {room && compact && kind === 'album' ? (
+              <AlbumRows items={items} />
+            ) : (
+              <CardGrid items={items} />
+            )}
           </>
         ))}
       {!query.isPending && !query.isError && !items.length && (
@@ -274,34 +292,11 @@ function ResultsSection({
           onLoadMore={() => void query.fetchNextPage()}
         />
       )}
-      {compact && kind === 'track' && items[0] && (
-        <div className="mt-[22px] flex items-center gap-[20px] rounded-lg border border-good-line bg-[linear-gradient(110deg,var(--color-good-bg),var(--color-raised))] p-[24px] max-phone:gap-[10px] max-phone:p-[18px]">
-          <Headphones size={27} className="max-phone:hidden" />
-          <div className="flex-1">
-            <small className="block text-caption tracking-[1.5px] text-accent">TOP TRACK</small>
-            <strong className="my-[7px] block text-subtitle">{items[0].title}</strong>
-            <span className="block text-small text-muted">
-              {items[0].artist} · {durationText(items[0].duration)}
-            </span>
-          </div>
-          <PreviewButton item={items[0]} />
-        </div>
-      )}
     </section>
   )
 }
 
-function PreviewButton({ item }: { item: MusicResult }) {
-  const player = usePlayer()
-  const active = usePreviewPlayback(item.id).playing
-  return (
-    <Button variant="primary" onClick={() => player.play(item)}>
-      {active ? <Pause size={16} /> : <Play size={16} />} {active ? 'Pause' : 'Preview'}
-    </Button>
-  )
-}
-
-export function SearchPage() {
+function SearchBody({ room }: { room: boolean }) {
   const location = useRouterState({ select: (state) => state.location })
   const state = validateSearch(Object.fromEntries(new URLSearchParams(location.searchStr)))
   const navigate = useNavigate()
@@ -413,16 +408,26 @@ export function SearchPage() {
           </h1>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-[16px] border-b border-line pb-[18px] max-phone:gap-[8px] max-phone:pb-[10px]">
-        <div className="mr-auto flex flex-wrap gap-[6px] max-phone:w-full" aria-label="Search type">
+      <div className="mb-[24px] flex items-center gap-[8px] max-phone:mb-[16px] max-phone:flex-wrap">
+        <div
+          className="flex min-w-0 flex-none items-center gap-[6px] overflow-x-auto [scrollbar-width:none] max-phone:w-full"
+          role="group"
+          aria-label="Search type"
+        >
           {tabs.map((value) => (
             <button
               key={value}
               data-ui="tab"
               aria-pressed={tab === value}
               className={cx(
-                'rounded-pill border-0 px-[17px] py-[10px] whitespace-nowrap coarse:min-h-11 max-phone:flex-1 max-phone:p-[9px]',
-                tab === value ? 'bg-accent text-accent-ink' : 'bg-transparent text-muted',
+                'h-[32px] flex-none rounded-pill px-[14px] text-body font-medium whitespace-nowrap coarse:min-h-11 max-phone:px-[12px]',
+                room
+                  ? tab === value
+                    ? 'border-0 bg-text text-canvas'
+                    : 'border-0 bg-raised text-muted hover:text-text'
+                  : tab === value
+                    ? 'border border-good-line bg-active text-text'
+                    : 'border border-line bg-transparent text-muted hover:text-text',
               )}
               onClick={() => change({ tab: value })}
             >
@@ -430,28 +435,29 @@ export function SearchPage() {
             </button>
           ))}
         </div>
-        {music && (
-          <>
+        <div className="flex-1" />
+        {music ? (
+          <div className="flex flex-none items-center gap-[8px] max-phone:w-full">
             <Button aria-expanded={filters} onClick={() => setFilters(!filters)}>
               Filters
             </Button>
-            <label className="flex items-center gap-[10px] text-body text-muted max-phone:ml-auto">
-              Sort{' '}
-              <FieldSelect
-                tone="sunken"
-                fullWidth={false}
-                value={state.sort ?? 'relevance'}
-                onChange={(e) => change({ sort: sorts.find((value) => value === e.target.value) })}
-              >
-                {sorts.map((value) => (
-                  <option key={value} value={value}>
-                    {value[0]?.toUpperCase()}
-                    {value.slice(1)}
-                  </option>
-                ))}
-              </FieldSelect>
-            </label>
-          </>
+            <SelectChip
+              label="Sort"
+              value={state.sort ?? 'relevance'}
+              defaultValue="relevance"
+              options={sorts.map((value) => ({
+                value,
+                label: `${value[0]?.toUpperCase()}${value.slice(1)}`,
+              }))}
+              onChange={(sort) => change({ sort })}
+              className="max-phone:ml-auto"
+            />
+          </div>
+        ) : null}
+        {!room && music && (
+          <span className="flex-none text-small text-faint max-tablet:hidden">
+            Checked against your library
+          </span>
         )}
       </div>
       {filtersShown && (
@@ -587,21 +593,86 @@ export function SearchPage() {
         <p className="py-[30px]" role="status">
           No results for “{state.q}”. Check the spelling or try a shorter search.
         </p>
+      ) : tab === 'top' ? (
+        <TopTab
+          state={state}
+          room={room}
+          topArtist={artistResults.data?.pages[0]?.items[0]}
+          change={change}
+        />
       ) : (
         kinds.length > 0 && (
-          <div className="pt-[20px] max-phone:pt-[14px]">
+          <div className="pt-[4px]">
             {kinds.map((kind) => (
               <ResultsSection
                 key={kind}
                 kind={kind}
                 state={state}
-                compact={tab === 'top'}
+                compact={false}
                 change={change}
               />
             ))}
           </div>
         )
       )}
+    </>
+  )
+}
+
+/**
+ * The Top tab. Classic sets the best-matching artist beside the first tracks and runs the albums
+ * under both as covers; the Listening room opens with the artist as a banner, then tracks and
+ * albums side by side, the albums as rows.
+ */
+function TopTab({
+  state,
+  room,
+  topArtist,
+  change,
+}: {
+  state: SearchState
+  room: boolean
+  topArtist: MusicResult | undefined
+  change: (patch: Partial<SearchState>) => void
+}) {
+  const section = (kind: ResultKind) => (
+    <ResultsSection kind={kind} state={state} compact change={change} />
+  )
+  if (room)
+    return (
+      <>
+        {topArtist && <TopResult artist={topArtist} room />}
+        <div className="flex flex-wrap gap-x-[24px]">
+          <div className="min-w-0 flex-[3_1_560px]">{section('track')}</div>
+          <div className="min-w-0 flex-[2_1_300px]">{section('album')}</div>
+        </div>
+        {section('artist')}
+      </>
+    )
+  return (
+    <>
+      <div className="flex flex-wrap gap-x-[24px]">
+        {topArtist && (
+          <div className="mb-[30px] min-w-0 flex-[1_1_300px]">
+            <TopResult artist={topArtist} room={false} />
+          </div>
+        )}
+        {/* A track row's fixed columns take about 400px, so below 560px the titles shrink to a
+            letter or two. Under that the tracks drop below the top result instead. */}
+        <div className="min-w-0 flex-[2_1_560px]">{section('track')}</div>
+      </div>
+      {section('album')}
+      {section('artist')}
+    </>
+  )
+}
+
+export function SearchPage() {
+  const room = useLayout() === 'room'
+  return (
+    <>
+      <SearchField room={room} />
+      <SearchBody room={room} />
     </>
   )
 }

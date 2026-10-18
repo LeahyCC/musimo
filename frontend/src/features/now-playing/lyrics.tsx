@@ -98,33 +98,54 @@ function useOffset(id: string) {
 const scrollBehavior = (): ScrollBehavior =>
   window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'
 
-// The same lines are drawn in two places: the tab beside the stage, and the view that takes over
-// the page's content area (`LyricsView`), where they are large, centred and in a wide column.
-type Variant = 'panel' | 'view'
+// The same lines are drawn in three places: Classic's tab beside the stage, the Listening room's
+// tab beside the art, where they are larger, and the view that takes over the page's content area
+// (`LyricsView`), where they are large, centred and in a wide column.
+type Variant = 'panel' | 'room' | 'view'
 
 const regionClassName = (variant: Variant) =>
   variant === 'view'
     ? 'relative mx-auto min-h-0 w-full max-w-[1200px] flex-1 overflow-auto overscroll-contain'
     : 'relative min-h-0 flex-1 overflow-auto overscroll-contain max-phone:max-h-[60dvh] max-phone:flex-none'
-const lineSizeClassName = (variant: Variant) =>
-  variant === 'view'
-    ? 'text-center text-[clamp(1.75rem,3.2vw,3rem)] leading-tight'
-    : 'text-left text-section'
+/* In the tabs the current line is a size up from the rest, as the prototypes draw it. The room's
+   sizes follow the stage card's width (`cqi`), which is a size container for them. */
+const lineSizeClassName = (variant: Variant, active: boolean) => {
+  if (variant === 'view') return 'text-center text-[clamp(1.75rem,3.2vw,3rem)] leading-tight'
+  if (variant === 'room')
+    return cx(
+      'text-left leading-[1.2] font-semibold tracking-[-0.6px]',
+      active ? 'text-[clamp(24px,3.2cqi,34px)]' : 'text-[clamp(20px,2.6cqi,28px)]',
+    )
+  return cx(
+    'text-left leading-[1.3] font-semibold tracking-[-0.3px]',
+    active ? 'text-[24px]' : 'text-[20px]',
+  )
+}
 
 type LineProps = {
   text: string
   /** Where the line starts in the track, in seconds, nudge included. */
   time: number | undefined
   active: boolean
+  /** Sung already. In the tabs it is a step dimmer than the lines still to come. */
+  passed: boolean
   variant: Variant
   onSeek: (seconds: number) => void
 }
 
-// Memoised so a tick that keeps the current line redraws nothing but the list around it.
-const SyncedLine = memo(function SyncedLine({ text, time, active, variant, onSeek }: LineProps) {
+// Memoised so a tick that keeps the current line redraws nothing but the list around it; a new
+// current line redraws it and the one before it.
+const SyncedLine = memo(function SyncedLine({
+  text,
+  time,
+  active,
+  passed,
+  variant,
+  onSeek,
+}: LineProps) {
   if (time === undefined)
     return (
-      <p className={cx('px-[8px] py-[6px] text-muted', lineSizeClassName(variant))}>
+      <p className={cx('px-[8px] py-[6px] text-muted', lineSizeClassName(variant, false))}>
         {text || '♪'}
       </p>
     )
@@ -136,8 +157,12 @@ const SyncedLine = memo(function SyncedLine({ text, time, active, variant, onSee
       aria-label={text ? undefined : `Instrumental break at ${durationText(at)}`}
       className={cx(
         'block w-full rounded-md border-0 bg-transparent px-[8px] py-[6px] transition-colors motion-reduce:transition-none',
-        lineSizeClassName(variant),
-        active ? 'font-semibold text-text' : 'text-muted hover:text-text',
+        lineSizeClassName(variant, active),
+        active
+          ? 'font-semibold text-text'
+          : passed && variant !== 'view'
+            ? 'text-faint hover:text-text'
+            : 'text-muted hover:text-text',
       )}
       onClick={() => onSeek(at)}
     >
@@ -261,6 +286,7 @@ function SyncedLines({
           text={line.value}
           time={starts[index]}
           active={index === active}
+          passed={index < active}
           variant={variant}
           onSeek={seek}
         />
@@ -291,7 +317,10 @@ function PlainLines({
       className={regionClassName(variant)}
     >
       {lines.map((line, index) => (
-        <p key={index} className={cx('px-[8px] py-[6px] text-text', lineSizeClassName(variant))}>
+        <p
+          key={index}
+          className={cx('px-[8px] py-[6px] text-text', lineSizeClassName(variant, false))}
+        >
           {line.value || '♪'}
         </p>
       ))}
@@ -442,6 +471,8 @@ type LyricsPanelProps = {
   /** Whether the lyrics view is open. The page owns it, since it hides the page under the view. */
   large: boolean
   onToggleLarge: () => void
+  /** Classic's tab, or the Listening room's, whose lines are larger. */
+  tone?: 'classic' | 'room'
 }
 
 /**
@@ -454,7 +485,9 @@ export const LyricsPanel = memo(function LyricsPanel({
   visible,
   large,
   onToggleLarge,
+  tone = 'classic',
 }: LyricsPanelProps) {
+  const variant: Variant = tone === 'room' ? 'room' : 'panel'
   const lyrics = useQuery({
     queryKey: ['lyrics', track.id],
     queryFn: ({ signal }) =>
@@ -525,9 +558,9 @@ export const LyricsPanel = memo(function LyricsPanel({
         </IconButton>
       </div>
       {synced ? (
-        <SyncedLines lines={lines} offset={offset} visible={visible} variant="panel" />
+        <SyncedLines lines={lines} offset={offset} visible={visible} variant={variant} />
       ) : (
-        <PlainLines lines={lines} variant="panel" />
+        <PlainLines lines={lines} variant={variant} />
       )}
     </div>
   )

@@ -6,6 +6,7 @@ import { ChevronLeft, ListMusic, Pause, Play, Settings, SkipForward, Trash2, X }
 
 import type { BotScope } from '../../api'
 import { cx } from '../../lib/cx'
+import { usePhone } from '../../lib/use-phone'
 import { Button, FieldSelect } from '../../ui'
 import { usePlayer } from '../player/player'
 import { useBotChat } from './bot-chat'
@@ -17,6 +18,7 @@ import { ChatSettings } from './chat-settings'
 import { Pet } from './pet'
 import type { PetState } from './pet-mood'
 import { ResultCard } from './result-card'
+import { LIKE_STARTER, STARTERS } from './starters'
 import { usePetLook, usePetState } from './use-pet'
 
 export type ChatLayout = 'popover' | 'sheet' | 'page'
@@ -26,13 +28,6 @@ const SCOPES: readonly { id: BotScope; label: string }[] = [
   { id: 'proposal', label: 'This selection' },
   { id: 'queue', label: 'Up next' },
 ]
-
-const STARTERS = [
-  'An hour of my favourite 90s music',
-  'Play some hip hop',
-  'Something like this song',
-  'Songs I haven’t played yet',
-] as const
 
 type ChatPanelProps = {
   layout: ChatLayout
@@ -176,9 +171,9 @@ export function ChatPanel({
   )
 }
 
-const DOT = { accent: 'bg-accent', warn: 'bg-warn', danger: 'bg-danger' } as const
+export const DOT = { accent: 'bg-accent', warn: 'bg-warn', danger: 'bg-danger' } as const
 
-function statusLine(
+export function statusLine(
   chat: ReturnType<typeof useBotChat>,
   settings: boolean,
 ): { text: string; tone: keyof typeof DOT } {
@@ -289,7 +284,21 @@ function ScopeBar() {
   )
 }
 
-function Conversation({ petState, autoFocus }: { petState: PetState; autoFocus: boolean }) {
+export type CardPlace = 'inline' | 'draft'
+
+export function Conversation({
+  petState,
+  autoFocus,
+  card = 'inline',
+  flush = false,
+}: {
+  petState: PetState
+  autoFocus: boolean
+  /** On the page the log sits straight on the canvas, so it takes no side padding of its own. */
+  flush?: boolean
+  /** Where the live result is drawn. 'draft' leaves a pointer in the chat; the page shows the card. */
+  card?: CardPlace
+}) {
   const chat = useBotChat()
   const look = usePetLook()
   const player = usePlayer()
@@ -328,7 +337,10 @@ function Conversation({ petState, autoFocus }: { petState: PetState; autoFocus: 
       aria-label="Conversation"
       aria-live="polite"
       data-bot="log"
-      className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto px-[14px] pt-[14px] pb-[18px] [overflow-wrap:anywhere]"
+      className={cx(
+        'flex min-h-0 flex-1 flex-col overflow-y-auto pb-[18px] [overflow-wrap:anywhere]',
+        flush ? 'gap-[18px] pt-[20px]' : 'gap-[14px] px-[14px] pt-[14px]',
+      )}
     >
       {chat.locked ? (
         <Locked petState={petState} />
@@ -353,7 +365,7 @@ function Conversation({ petState, autoFocus }: { petState: PetState; autoFocus: 
           </p>
           <div className="mt-[4px] grid w-full max-w-[320px] gap-[8px]">
             {STARTERS.map((starter) => {
-              const like = starter === 'Something like this song'
+              const like = starter === LIKE_STARTER
               if (like && !player.libraryTrack) return null
               return (
                 <button
@@ -382,7 +394,7 @@ function Conversation({ petState, autoFocus }: { petState: PetState; autoFocus: 
         </Centered>
       ) : (
         chat.log.map((entry) => (
-          <Entry key={entry.id} entry={entry} latest={entry === latest} small={small} />
+          <Entry key={entry.id} entry={entry} latest={entry === latest} small={small} card={card} />
         ))
       )}
       {!chat.locked && chat.thinking && <Waiting small={small} />}
@@ -394,10 +406,12 @@ function Entry({
   entry,
   latest,
   small,
+  card,
 }: {
   entry: LogEntry
   latest: boolean
   small: (state: PetState) => ReactNode
+  card: CardPlace
 }) {
   const chat = useBotChat()
   const win95 = usePetLook().pixel
@@ -410,7 +424,9 @@ function Entry({
           <strong className="font-bold">{entry.kind === 'user' ? 'You:' : `${chat.name}:`}</strong>{' '}
           {entry.text}
         </p>
-        {entry.kind === 'reply' && <ReplyExtras entry={entry} latest={latest} busy={busy} />}
+        {entry.kind === 'reply' && (
+          <ReplyExtras entry={entry} latest={latest} busy={busy} card={card} />
+        )}
       </div>
     )
 
@@ -432,7 +448,7 @@ function Entry({
         {small(entry.mood === 'talking' ? 'idle' : entry.mood)}
         <div className="grid min-w-0 gap-[10px]" data-bot="bot">
           <p className="m-0 leading-[1.5]">{entry.text}</p>
-          <ReplyExtras entry={entry} latest={latest} busy={busy} />
+          <ReplyExtras entry={entry} latest={latest} busy={busy} card={card} />
         </div>
       </div>
     )
@@ -488,17 +504,30 @@ function ReplyExtras({
   entry,
   latest,
   busy,
+  card,
 }: {
   entry: Extract<LogEntry, { kind: 'reply' }>
   latest: boolean
   busy: boolean
+  card: CardPlace
 }) {
   const chat = useBotChat()
+  const phone = usePhone()
   return (
     <>
       {entry.card &&
         (entry.id === chat.cardId && chat.reply ? (
-          <ResultCard reply={chat.reply} />
+          card === 'draft' ? (
+            <p
+              className="m-0 flex items-center gap-[8px] text-tiny text-muted"
+              data-bot="draft-note"
+            >
+              <ListMusic size={14} aria-hidden="true" className="shrink-0" />
+              The draft is {phone ? 'below' : 'on the right'}. Nothing plays until you say so.
+            </p>
+          ) : (
+            <ResultCard reply={chat.reply} />
+          )
         ) : (
           <div className="flex items-center gap-[10px] rounded-[10px] border border-dashed border-line-strong px-[11px] py-[8px] text-tiny text-muted">
             <ListMusic size={14} aria-hidden="true" className="shrink-0" />

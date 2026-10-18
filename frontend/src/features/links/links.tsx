@@ -3,22 +3,23 @@ import type { ClipboardEvent, ReactNode } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { LoaderCircle, Music2 } from 'lucide-react'
+import { ArrowDownToLine, Info, LoaderCircle, Music2 } from 'lucide-react'
 import { z } from 'zod'
 
 import { api, diagnosticsSchema, jobSchema, settingsSchema } from '../../api'
 import {
+  Fact,
   FormatSelect,
   plural,
   ReviewDialog,
-  ReviewOptions,
+  ReviewFacts,
   ReviewRow,
   SelectAllNone,
   TargetSelect,
 } from '../../components/review-sheet'
 import { formatDuration } from '../../lib/format'
-import { Button, ErrorBanner, Ownership } from '../../ui'
-import { DESTINATION_PROBLEM, destinationBroken, formatLabel } from '../downloads/download-target'
+import { Button, ErrorBanner, Ownership, Tag } from '../../ui'
+import { DESTINATION_PROBLEM, destinationBroken } from '../downloads/download-target'
 import { updateJob } from '../downloads/jobs'
 
 const entrySchema = z.object({
@@ -283,6 +284,15 @@ function LinkSheet({
   } else {
     footer = (
       <>
+        {brokenTarget && <ErrorBanner role="alert">{DESTINATION_PROBLEM}</ErrorBanner>}
+        {queue.isError && <ErrorBanner role="alert">{queue.error.message}</ErrorBanner>}
+        <Button
+          disabled={busy}
+          className="border-transparent bg-transparent"
+          onClick={() => dialog.current?.close()}
+        >
+          Cancel
+        </Button>
         <Button
           variant="primary"
           disabled={!chosen.length || busy || !chosenTarget || brokenTarget}
@@ -290,14 +300,13 @@ function LinkSheet({
             queue.mutate({ token: preview.token, entry_ids: chosen.map((entry) => entry.id) })
           }
         >
+          <ArrowDownToLine size={15} aria-hidden="true" />
           {busy
             ? 'Adding…'
             : preview.single
               ? 'Download'
               : `Download ${plural(chosen.length, 'song')}`}
         </Button>
-        {brokenTarget && <ErrorBanner role="alert">{DESTINATION_PROBLEM}</ErrorBanner>}
-        {queue.isError && <ErrorBanner role="alert">{queue.error.message}</ErrorBanner>}
       </>
     )
   }
@@ -307,7 +316,7 @@ function LinkSheet({
       dialogRef={dialog}
       titleId={titleId}
       titleRef={title}
-      eyebrow={preview?.site ?? (sheet.host || 'Link')}
+      eyebrow={preview ? 'Pasted link' : sheet.host || 'Link'}
       title={heading}
       closeLabel="Close link review"
       closeDisabled={busy}
@@ -330,70 +339,82 @@ function LinkSheet({
       {sheet.phase === 'error' && <ErrorBanner role="alert">{sheet.message}</ErrorBanner>}
       {preview && (
         <>
-          <div
-            className="my-[16px] grid gap-[8px] rounded-[10px] bg-good-bg p-[18px] max-phone:p-[14px]"
-            aria-live="polite"
-          >
-            {preview.single && first ? (
-              <div className="flex items-start gap-[16px] max-phone:gap-[12px]">
-                {first.art ? (
-                  <img
-                    src={first.art}
-                    alt=""
-                    className="h-[96px] w-[96px] shrink-0 rounded-md object-cover max-phone:h-[72px] max-phone:w-[72px]"
-                  />
-                ) : (
-                  <Music2
-                    size={40}
-                    aria-hidden="true"
-                    className="h-[96px] w-[96px] shrink-0 rounded-md bg-active p-[28px] text-accent max-phone:h-[72px] max-phone:w-[72px] max-phone:p-[20px]"
-                  />
-                )}
-                <div className="grid min-w-0 gap-[6px]">
-                  <strong className="text-[20px] [overflow-wrap:anywhere] max-phone:text-lead">
-                    {first.title}
-                  </strong>
-                  <span className="text-small text-muted [overflow-wrap:anywhere]">
-                    {[first.artist, first.album].filter(Boolean).join(' · ') || preview.site}
-                  </span>
-                  <span className="text-small text-muted">
-                    {[first.duration ? formatDuration(first.duration) : '', first.date]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </span>
-                  {first.owned && <Ownership variant="owned">In library</Ownership>}
-                </div>
-              </div>
-            ) : (
-              <>
-                <strong className="text-[24px] max-phone:text-[20px]">
-                  {chosen.length} of {plural(entries.length, 'song')} selected
-                </strong>
-                <span className="text-small text-muted">
-                  {seconds ? `${formatDuration(seconds)} · ` : ''}
-                  {plural(owned, 'song')} already in library
+          {preview.single && first ? (
+            <div className="flex items-center gap-[14px]">
+              {first.art ? (
+                <img
+                  src={first.art}
+                  alt=""
+                  className="aspect-video w-[120px] shrink-0 rounded-[8px] object-cover max-phone:w-[96px]"
+                />
+              ) : (
+                <span
+                  aria-hidden="true"
+                  className="grid aspect-video w-[120px] shrink-0 place-items-center rounded-[8px] bg-active text-accent max-phone:w-[96px]"
+                >
+                  <Music2 size={32} />
                 </span>
-              </>
-            )}
-            <small className="text-small text-muted">
-              to {chosenTarget || '(not set)'} · {formatLabel(chosenFormat)}
-            </small>
-            {landing && (
-              <small className="text-small text-muted [overflow-wrap:anywhere]">{landing}</small>
-            )}
-            {preview.quality_note && (
-              <p className="text-small text-muted">{preview.quality_note}</p>
-            )}
+              )}
+              <div className="grid min-w-0 gap-[4px]" aria-live="polite">
+                <strong className="text-lead leading-[1.35] [overflow-wrap:anywhere]">
+                  {first.title}
+                </strong>
+                <span className="text-small text-muted [overflow-wrap:anywhere]">
+                  {[first.artist, first.album].filter(Boolean).join(' · ') || preview.site}
+                </span>
+                <span className="text-small text-muted">
+                  {[first.duration ? formatDuration(first.duration) : '', first.date]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </span>
+                <span className="mt-[2px] flex flex-wrap items-center gap-[8px]">
+                  <Tag>{preview.site}</Tag>
+                  {first.owned && <Ownership variant="owned">In library</Ownership>}
+                </span>
+              </div>
+            </div>
+          ) : (
+            <div className="grid gap-[4px]" aria-live="polite">
+              <strong className="text-section">
+                {chosen.length} of {plural(entries.length, 'song')} selected
+              </strong>
+              <span className="text-small text-muted">
+                {seconds ? `${formatDuration(seconds)} · ` : ''}
+                {plural(owned, 'song')} already in library
+              </span>
+              <span className="mt-[2px] flex">
+                <Tag>{preview.site}</Tag>
+              </span>
+            </div>
+          )}
+          <div className="mt-[16px]">
+            <ReviewFacts>
+              {(preview.single || landing) && (
+                <Fact label="Saved as">
+                  {landing
+                    ? landing.replace(/^Saved as /, '').replace(/^Saved under /, 'Under ')
+                    : 'A song, filed like the rest of your library'}
+                </Fact>
+              )}
+              <TargetSelect
+                fact
+                value={chosenTarget}
+                disabled={busy}
+                onChange={setTarget}
+                disks={mounts.data?.disks.slice(1) ?? []}
+              />
+              <FormatSelect fact value={chosenFormat} disabled={busy} onChange={setFormat} />
+              <Fact label="Tags">Title, artist and cover come from {preview.site}.</Fact>
+            </ReviewFacts>
           </div>
-          <ReviewOptions>
-            <FormatSelect value={chosenFormat} disabled={busy} onChange={setFormat} />
-            <TargetSelect
-              value={chosenTarget}
-              disabled={busy}
-              onChange={setTarget}
-              disks={mounts.data?.disks.slice(1) ?? []}
-            />
-          </ReviewOptions>
+          {preview.quality_note && (
+            <p className="mt-[12px] text-small text-muted">{preview.quality_note}</p>
+          )}
+          <p className="mt-[12px] flex gap-[10px] rounded-[10px] bg-warn-bg p-[12px_14px] text-small leading-[1.5]">
+            <Info size={15} aria-hidden="true" className="mt-[2px] shrink-0 text-warn" />
+            Only download what you have the rights to keep. Some sites ask the server to sign in; a
+            cookies file can be added in Settings.
+          </p>
           {!preview.single && (
             <>
               <p className="my-[12px] text-small text-muted">

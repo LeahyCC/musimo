@@ -2,7 +2,11 @@ import type { KeyboardEvent } from 'react'
 
 import { cx } from '../lib/cx'
 
-export type TabItem<Id extends string> = { id: Id; label: string }
+/**
+ * `count` draws a pill after the label. A phone hides the pill to keep a row of tabs on one line,
+ * and the tab's name still says it, e.g. "Queue (3)".
+ */
+export type TabItem<Id extends string> = { id: Id; label: string; count?: number }
 
 /** The ids a tab and its panel point at each other with, from one shared prefix. */
 export const tabId = (base: string, id: string) => `${base}-tab-${id}`
@@ -16,6 +20,8 @@ type TabListProps<Id extends string> = {
   tabs: readonly TabItem<Id>[]
   value: Id
   onChange: (id: Id) => void
+  /** `underline` is Classic's row over a rule; `pill` is the Listening room's rounded group. */
+  variant?: 'underline' | 'pill'
   className?: string
 }
 
@@ -30,8 +36,11 @@ export function TabList<Id extends string>({
   tabs,
   value,
   onChange,
+  variant = 'underline',
   className,
 }: TabListProps<Id>) {
+  const pill = variant === 'pill'
+
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     // Alt and the arrows are the browser's Back and Forward.
     if (event.altKey || event.ctrlKey || event.metaKey) return
@@ -67,7 +76,13 @@ export function TabList<Id extends string>({
       role="tablist"
       aria-label={label}
       data-ui="tab-list"
-      className={cx('flex gap-[22px] border-b border-line', className)}
+      data-variant={variant}
+      className={cx(
+        pill
+          ? 'flex w-max max-w-full gap-[4px] overflow-x-auto rounded-pill bg-text/8 p-[3px]'
+          : 'flex gap-[22px] border-b border-line',
+        className,
+      )}
       onKeyDown={onKeyDown}
     >
       {tabs.map((tab) => {
@@ -83,14 +98,35 @@ export function TabList<Id extends string>({
             tabIndex={selected ? 0 : -1}
             data-ui="tab"
             className={cx(
-              '-mb-px border-0 border-b-2 bg-transparent px-[2px] py-[10px] text-body font-medium coarse:min-h-11',
-              selected
-                ? 'border-accent text-text'
-                : 'border-transparent text-muted hover:text-text',
+              pill
+                ? cx(
+                    'h-[30px] shrink-0 rounded-pill border-0 px-[13px] text-small font-medium whitespace-nowrap coarse:min-h-11',
+                    selected ? 'bg-text text-canvas' : 'bg-transparent text-muted hover:text-text',
+                  )
+                : cx(
+                    '-mb-px border-0 border-b-2 bg-transparent px-[2px] py-[10px] text-body font-medium whitespace-nowrap coarse:min-h-11',
+                    selected
+                      ? 'border-accent text-text'
+                      : 'border-transparent text-muted hover:text-text',
+                  ),
             )}
             onClick={() => onChange(tab.id)}
           >
             {tab.label}
+            {tab.count !== undefined && (
+              <>
+                <span
+                  aria-hidden="true"
+                  className={cx(
+                    'ml-[7px] inline-grid h-[18px] min-w-[20px] place-items-center rounded-pill px-[6px] text-tiny max-phone:hidden',
+                    selected ? 'bg-accent text-accent-ink' : 'bg-hover text-muted',
+                  )}
+                >
+                  {tab.count}
+                </span>
+                <span className="sr-only"> ({tab.count})</span>
+              </>
+            )}
           </button>
         )
       })}

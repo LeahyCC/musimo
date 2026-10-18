@@ -2,6 +2,7 @@ import { expect, test } from '@playwright/test'
 import type { Page, Route } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
+import { libraryLink } from './nav'
 
 const queue = [
   librarySong('song-1', { title: 'First Light', duration: 30 }),
@@ -115,7 +116,7 @@ test('the keyboard and the pointer seek as they did without the peaks', async ({
   expect(Math.abs(Number(/([\d.]+)%/.exec(clipped)?.[1]) - (100 - played))).toBeLessThan(1)
 })
 
-test('the played part is the accent and the rest is muted, both read from the theme tokens', async ({
+test('the played part is the accent and the rest is the strong line color, both read from the theme tokens', async ({
   page,
 }) => {
   await openNowPlaying(page, answerWithPeaks)
@@ -140,7 +141,7 @@ test('the played part is the accent and the rest is muted, both read from the th
   // A theme is only token values on <html>, and the bars follow them with no drawing code.
   await page.evaluate(() => {
     document.documentElement.style.setProperty('--color-accent', 'rgb(255, 0, 0)')
-    document.documentElement.style.setProperty('--color-muted', 'rgb(0, 0, 255)')
+    document.documentElement.style.setProperty('--color-line-strong', 'rgb(0, 0, 255)')
   })
   const after = await fills()
   expect(after.played).toBe('rgb(255, 0, 0)')
@@ -193,10 +194,7 @@ test('the footer player keeps the plain bar', async ({ page }) => {
   await openNowPlaying(page, answerWithPeaks)
   await expect(seekBar(page)).toHaveAttribute('data-seek-bar', 'waveform')
 
-  await page
-    .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('link', { name: 'Library' })
-    .click()
+  await libraryLink(page).click()
   const footer = page.getByRole('contentinfo')
   await expect(footer).toContainText('First Light')
   await expect(footer.getByRole('slider', { name: 'Playback position' })).toBeVisible()

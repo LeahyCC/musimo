@@ -240,6 +240,9 @@ const settingsRoute = createRoute({
 const musicBotRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/music-bot',
+  // Home's Octive chips pass what to ask as ?prompt=.
+  validateSearch: (search: Record<string, unknown>): { prompt?: string } =>
+    typeof search.prompt === 'string' && search.prompt.trim() ? { prompt: search.prompt } : {},
   component: MusicBotPage,
 })
 const userSettingsRoute = createRoute({

@@ -3,6 +3,7 @@ import { expect, test } from '@playwright/test'
 import type { Page } from '@playwright/test'
 
 import { BUILT_IN_THEMES, DEFAULT_THEME } from '../src/theme/themes'
+import { mainNav } from './nav'
 import { LIGHT_THEME, rgb, themeVars } from './theme-fixtures'
 
 /* The page background is declared on `:root`, so `html` is the element that carries it. `body` only
@@ -80,7 +81,7 @@ test('the app keeps the stored theme once it has loaded', async ({ page }) => {
   await page.addInitScript(seed, stored)
 
   await page.goto('/')
-  await expect(page.getByRole('link', { name: 'Library', exact: true }).first()).toBeVisible()
+  await expect(mainNav(page)).toBeVisible()
 
   await expect(page.locator(backdrop)).toHaveCSS(
     'background-color',
@@ -136,7 +137,7 @@ test('a saved theme that no longer exists stops being painted', async ({ page })
   )
 
   await page.goto('/')
-  await expect(page.getByRole('link', { name: 'Library', exact: true }).first()).toBeVisible()
+  await expect(mainNav(page)).toBeVisible()
 
   const left = await page.evaluate(
     (keys: string[]) => keys.map((key) => localStorage.getItem(key)),
@@ -168,7 +169,7 @@ test('one unreadable saved theme does not cost the others', async ({ page }) => 
   )
 
   await page.goto('/')
-  await expect(page.getByRole('link', { name: 'Library', exact: true }).first()).toBeVisible()
+  await expect(mainNav(page)).toBeVisible()
 
   // The theme with a token this build has never heard of still loads and paints, and the boot
   // script's copy, which was never written, now is.
@@ -378,24 +379,25 @@ test('a second tab follows a theme saved in the first', async ({ page, context }
   await other.close()
 })
 
-test('the command palette opens the page', async ({ page }) => {
+test('the command palette opens the page', async ({ page, isMobile }) => {
   await page.goto('/')
   // The shortcut is a window listener an effect adds, so the shell has to be on screen first.
   // Pressing straight after goto is a race WebKit loses.
-  await page.getByRole('link', { name: 'Library', exact: true }).first().waitFor()
+  await mainNav(page).waitFor()
   await page.keyboard.press('ControlOrMeta+k')
   await page.getByRole('dialog', { name: 'Command palette' }).waitFor()
 
-  await page.getByRole('button', { name: 'Change theme' }).click()
+  await page.getByRole('option', { name: 'Change theme' }).click()
 
   await expect(page.getByRole('heading', { name: 'Your settings' })).toBeVisible()
   await expect(page).toHaveURL(/\/settings\/user$/)
-  // One Settings entry in the chrome, and it is highlighted here as well as on /settings.
-  await expect(
-    page
-      .getByRole('navigation', { name: 'Main navigation' })
-      .getByRole('link', { name: 'Settings' }),
-  ).toHaveAttribute('aria-current', 'page')
+  // One Settings entry in the chrome, and it is highlighted here as well as on /settings. A
+  // phone's bar has no Settings tab (Home carries it).
+  if (!isMobile)
+    await expect(mainNav(page).getByRole('link', { name: 'Settings' })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
 })
 
 test('the Settings guard still fires when switching to Yours', async ({ page }) => {
