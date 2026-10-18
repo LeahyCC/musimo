@@ -144,8 +144,18 @@ type Walk = {
 
 const ROUTES: Walk[] = [
   {
-    name: 'discover',
+    name: 'home',
     path: '/',
+    ready: (page) =>
+      page.getByRole('heading', {
+        level: 1,
+        name: /^(Good (morning|afternoon|evening)|Home|Let.s find your music)$/,
+      }),
+    cardless: true,
+  },
+  {
+    name: 'discover',
+    path: '/search',
     ready: (page) => page.getByRole('heading', { level: 1, name: /Find it/ }),
     cardless: true,
   },
@@ -180,12 +190,7 @@ const ROUTES: Walk[] = [
   {
     name: 'artist',
     path: '/artists/7',
-    ready: (page) => page.getByRole('heading', { name: 'Discography' }),
-  },
-  {
-    name: 'library',
-    path: '/library',
-    ready: (page) => page.getByRole('button', { name: 'Open Clear Water' }),
+    ready: (page) => page.getByRole('heading', { name: 'Albums', level: 2 }),
   },
   {
     name: 'library-albums',
@@ -270,6 +275,8 @@ const ROUTES: Walk[] = [
     name: 'music-bot',
     path: '/music-bot',
     ready: (page) => page.getByRole('heading', { name: 'Music bot', level: 1 }),
+    // With no model chosen the page is the empty-state prompt and the composer, with no card.
+    cardless: true,
   },
   {
     name: 'settings-user',
@@ -318,63 +325,86 @@ test.beforeEach(async ({ page }) => {
   )
 })
 
-for (const route of ROUTES) {
-  test(`${route.name} repaints under a light theme`, async ({
-    page,
-    browserName,
-    isMobile,
-  }, info) => {
-    // One engine at each of the two widths: Chromium at 1280x800, the phone project at 390x844.
-    test.skip(browserName !== 'chromium', 'Walked on Chromium and the phone project.')
-    if (!isMobile) await page.setViewportSize({ width: 1280, height: 800 })
+const LAYOUTS = ['classic', 'room'] as const
 
-    await page.goto(route.path)
-    await expect(route.ready(page)).toBeVisible()
-    if (route.header) {
-      const header = page.locator('.collection-header')
-      await expect(header).toContainText(route.header.eyebrow)
-      await expect(header.locator('.collection-cover img').first()).toBeVisible()
-      if (route.header.link)
-        await expect(header.getByRole('link', { name: route.header.link.name })).toHaveAttribute(
-          'href',
-          route.header.link.href,
-        )
-    }
-    const player = page.locator('footer.live-player')
-    if (route.playerHidden) await expect(player).toBeHidden()
-    else await expect(player).toContainText('First Light')
+for (const layout of LAYOUTS) {
+  for (const route of ROUTES) {
+    test(`${route.name} repaints under a light theme (${layout})`, async ({
+      page,
+      browserName,
+      isMobile,
+    }, info) => {
+      // One engine at each of the two widths: Chromium at 1280x800, the phone project at 390x844.
+      test.skip(browserName !== 'chromium', 'Walked on Chromium and the phone project.')
+      if (!isMobile) await page.setViewportSize({ width: 1280, height: 800 })
+      await page.addInitScript((value) => localStorage.setItem('musimo.layout', value), layout)
 
-    const colors = DEFAULT_THEME.colors
-    const chrome = {
-      body: await backgroundOf(page.locator('body')),
-      nav: await backgroundOf(page.locator('.sidebar')),
-      player: route.playerHidden ? undefined : await backgroundOf(player),
-    }
-    // The light values themselves for the chrome, not only "not the dark ones": a surface that
-    // went clear would show the light canvas through and pass a weaker check. A card may sit on
-    // the canvas by design (the library grid does), so it is held to not being any dark surface.
-    expect(chrome.body).toBe(rgb(LIGHT_THEME.colors['--color-canvas']))
-    expect(chrome.nav).toBe(rgb(LIGHT_THEME.colors['--color-sidebar']))
-    if (!route.playerHidden) expect(chrome.player).toBe(rgb(LIGHT_THEME.colors['--color-raised']))
-
-    // A card is whichever boxed surface the route has first: a music or library card, a panel.
-    // Only the routes that say so have none; anywhere else a missing card is a missing surface.
-    const card = page
-      .locator("#main article, #main [data-ui='panel'], #main [data-ui='empty-panel']")
-      .first()
-    if (!route.cardless) {
-      await expect(card, `${route.name} card`).toHaveCount(1)
-      const background = await backgroundOf(card)
-      for (const token of ['--color-canvas', '--color-raised', '--color-sunken'] as const) {
-        expect(background, `${route.name} card`).not.toBe(rgb(colors[token]))
+      await page.goto(route.path)
+      await expect(route.ready(page)).toBeVisible()
+      if (route.header) {
+        const header = page.locator('.collection-header')
+        await expect(header).toContainText(route.header.eyebrow)
+        await expect(header.locator('.collection-cover img').first()).toBeVisible()
+        if (route.header.link)
+          await expect(header.getByRole('link', { name: route.header.link.name })).toHaveAttribute(
+            'href',
+            route.header.link.href,
+          )
       }
-    }
+      // Classic's player is the footer; the room's is the dock on a wide window, or its mini player.
+      const player =
+        layout === 'room'
+          ? page.locator('aside[aria-label="Player"], section[data-room-mini]')
+          : page.locator('footer.live-player')
+      if (route.playerHidden) await expect(player).toBeHidden()
+      else await expect(player).toContainText('First Light')
 
-    const shot = info.outputPath(`${route.name}-${isMobile ? 'phone' : 'desktop'}.png`)
-    await page.screenshot({ path: shot, fullPage: true })
-    await info.attach(route.name, { path: shot, contentType: 'image/png' })
+      const colors = DEFAULT_THEME.colors
+      const chrome = {
+        body: await backgroundOf(page.locator('body')),
+        nav: await backgroundOf(page.locator('.sidebar')),
+        player: route.playerHidden ? undefined : await backgroundOf(player),
+      }
+      // The light values themselves for the chrome, not only "not the dark ones": a surface that
+      // went clear would show the light canvas through and pass a weaker check. A card may sit on
+      // the canvas by design (the library grid does), so it is held to not being any dark surface.
+      expect(chrome.body).toBe(rgb(LIGHT_THEME.colors['--color-canvas']))
+      // The room's phone tab bar is on the canvas; everywhere else the nav is on the sidebar token.
+      const navToken = layout === 'room' && isMobile ? '--color-canvas' : '--color-sidebar'
+      expect(chrome.nav).toBe(rgb(LIGHT_THEME.colors[navToken]))
+      // Classic's phone mini player is in the hover surface, not the desktop footer's raised one.
+      // The room's dock is sunken on a wide window and its floating mini player is raised.
+      const playerToken =
+        layout === 'room'
+          ? isMobile
+            ? '--color-raised'
+            : '--color-sunken'
+          : isMobile
+            ? '--color-hover'
+            : '--color-raised'
+      if (!route.playerHidden) expect(chrome.player).toBe(rgb(LIGHT_THEME.colors[playerToken]))
 
-    const results = await new AxeBuilder({ page }).analyze()
-    expect(results.violations).toEqual([])
-  })
+      // A card is whichever boxed surface the route has first: a music or library card, a panel.
+      // Only the routes that say so have none; anywhere else a missing card is a missing surface.
+      const card = page
+        .locator(
+          "#main article, #main [data-ui='panel'], #main [data-ui='card'], #main [data-ui='empty-panel']",
+        )
+        .first()
+      if (!route.cardless) {
+        await expect(card, `${route.name} card`).toHaveCount(1)
+        const background = await backgroundOf(card)
+        for (const token of ['--color-canvas', '--color-raised', '--color-sunken'] as const) {
+          expect(background, `${route.name} card`).not.toBe(rgb(colors[token]))
+        }
+      }
+
+      const shot = info.outputPath(`${route.name}-${layout}-${isMobile ? 'phone' : 'desktop'}.png`)
+      await page.screenshot({ path: shot, fullPage: true })
+      await info.attach(route.name, { path: shot, contentType: 'image/png' })
+
+      const results = await new AxeBuilder({ page }).analyze()
+      expect(results.violations).toEqual([])
+    })
+  }
 }

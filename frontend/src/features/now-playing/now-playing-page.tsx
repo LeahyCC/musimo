@@ -12,7 +12,7 @@ import {
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { ChevronDown, ChevronUp, Disc3, ListMusic, Trash2, X } from 'lucide-react'
+import { ChevronDown, ChevronUp, Disc3, GripVertical, ListPlus, Trash2, X } from 'lucide-react'
 
 import {
   api,
@@ -24,6 +24,7 @@ import {
 import type { LibraryTrack } from '../../api'
 import { RowMenu } from '../../components/row-menu'
 import { cx } from '../../lib/cx'
+import { useLayout } from '../../lib/layout'
 import { relativeTime } from '../../lib/relative-time'
 import {
   Button,
@@ -32,7 +33,6 @@ import {
   ErrorBanner,
   Field,
   IconButton,
-  Panel,
   sectionCaptionClassName,
   tabId,
   TabList,
@@ -51,22 +51,38 @@ import {
 import { queueActions } from '../player/queue-actions'
 import { AboutPanel } from './about-track'
 import { LyricsPanel } from './lyrics'
-import { NowPlayingControls } from './now-playing-controls'
+import { ClassicControls, RoomControls } from './now-playing-controls'
 import { NowPlayingStage, useNowPlayingPopout } from './now-playing-popout'
 import { pageKeyIsFree, ShortcutsDialog, usePageShortcuts } from './now-playing-shortcuts'
 import { NowPlayingWash } from './now-playing-wash'
 
-const lyricLineClassName = 'py-[8px] text-section text-text'
+const lyricLineClassName = 'px-[8px] py-[8px] text-section text-text'
+/* The queue's Save and Clear: small outlined buttons on the panel's own surface. */
+const smallOutlinedClassName = (iconOnly = false) =>
+  cx(
+    'inline-flex h-[30px] shrink-0 items-center gap-[6px] rounded-[7px] border border-line-strong bg-transparent text-small hover:bg-hover disabled:opacity-50 coarse:min-h-11 coarse:min-w-11',
+    iconOnly ? 'w-[30px] justify-center p-0 text-muted' : 'px-[10px] text-text',
+  )
+
+/** Classic's look, or the Listening room's. The tabs and their rows take it from the page. */
+type Tone = 'classic' | 'room'
 
 /* Up next, Lyrics, About and History share one panel, so none starts below the fold and Lyrics is
-   a tap away however long the queue is. */
-const PANEL_TABS = [
+   a tap away however long the queue is. Classic leads with Up next; the Listening room sets the
+   lyrics beside the art, so it leads with Lyrics. */
+const CLASSIC_TABS = [
   { id: 'up-next', label: 'Up next' },
   { id: 'lyrics', label: 'Lyrics' },
   { id: 'about', label: 'About' },
   { id: 'history', label: 'History' },
 ] as const
-type PanelTab = (typeof PANEL_TABS)[number]['id']
+type PanelTab = (typeof CLASSIC_TABS)[number]['id']
+const ROOM_TABS: readonly { id: PanelTab; label: string }[] = [
+  { id: 'lyrics', label: 'Lyrics' },
+  { id: 'up-next', label: 'Up next' },
+  { id: 'about', label: 'About' },
+  { id: 'history', label: 'History' },
+]
 const PANEL_TAB_KEY = 'musimo.now-playing-tab'
 /** Where a history row starts its track, so Up next can say what the queue came from. */
 const HISTORY_SOURCE = 'history'
@@ -74,6 +90,23 @@ const HISTORY_SOURCE = 'history'
    panel just grows. */
 const tabPanelClassName =
   'min-h-0 flex-1 overflow-auto overscroll-contain max-phone:overflow-visible'
+/* A row of Up next or History: the whole row is the play button. The hover is the page's in
+   Classic, and a wash of the text color in the room, whose card is tinted by the cover. */
+const rowButtonClassName = (tone: Tone) =>
+  cx(
+    'grid min-w-0 flex-1 grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-[10px] rounded-[8px] border-0 bg-transparent px-[8px] py-[6px] text-left text-inherit coarse:min-h-11',
+    tone === 'room' ? 'hover:bg-text/8' : 'hover:bg-hover',
+  )
+
+/** A row's cover, or an empty square where the track has none. */
+function RowArt({ track }: { track: LibraryTrack }) {
+  const art = artUrl(track)
+  return art ? (
+    <img src={art} alt="" loading="lazy" className="size-[36px] rounded-[5px] object-cover" />
+  ) : (
+    <span aria-hidden="true" className="size-[36px] rounded-[5px] bg-raised" />
+  )
+}
 
 /**
  * What the queue was started from, worded for after "Playing from", or an empty string where the
@@ -136,7 +169,7 @@ const DRAG_STEP = 14
  * handle, and the same move is on the keyboard as Alt with an arrow key on the row, or as the
  * move buttons. Each change is announced, since a reordered list looks the same to a screen reader.
  */
-function UpNext() {
+function UpNext({ tone }: { tone: Tone }) {
   const player = usePlayer()
   const client = useQueryClient()
   const list = useRef<HTMLDivElement>(null)
@@ -264,8 +297,8 @@ function UpNext() {
 
   return (
     <>
-      <div className="mb-[8px] flex items-baseline justify-between gap-[12px]">
-        <p className="min-w-0 truncate text-small">
+      <div className="mb-[8px] flex flex-wrap items-center gap-[8px] px-[8px]">
+        <p className="min-w-0 flex-1 truncate text-small text-muted">
           {playingFrom && (
             <>
               Playing from <span className="text-text">{playingFrom}</span>
@@ -275,18 +308,27 @@ function UpNext() {
         <span className={cx(sectionCaptionClassName, 'shrink-0')}>
           {player.queue.length} {player.queue.length === 1 ? 'TRACK' : 'TRACKS'}
         </span>
-      </div>
-      <div className="mb-[8px] flex flex-wrap items-center gap-[8px]">
-        <Button onClick={clear} disabled={!upcoming.length}>
-          <Trash2 size={15} /> Clear queue
-        </Button>
-        <Button
+        <button
+          type="button"
+          className={smallOutlinedClassName()}
+          // The word on the button is short; the name says what it saves.
+          aria-label="Save as playlist"
           aria-expanded={naming}
           disabled={!player.queue.length}
           onClick={() => setNaming(!naming)}
         >
-          <ListMusic size={15} /> Save as playlist
-        </Button>
+          <ListPlus size={14} /> Save
+        </button>
+        <button
+          type="button"
+          className={smallOutlinedClassName(true)}
+          aria-label="Clear queue"
+          title="Clear queue"
+          disabled={!upcoming.length}
+          onClick={clear}
+        >
+          <Trash2 size={14} />
+        </button>
       </div>
       {naming && (
         <form
@@ -327,7 +369,7 @@ function UpNext() {
                 data-entry={key}
                 data-queue-index={index}
                 className={cx(
-                  'flex items-center gap-[2px] border-b border-line',
+                  'group/row flex items-center gap-[2px] rounded-[8px]',
                   drag?.from === index && 'opacity-50',
                   // A line where the row would land: above this row, or below the last one.
                   drag?.slot === index && 'shadow-[inset_0_2px_0_0_var(--color-accent)]',
@@ -339,18 +381,18 @@ function UpNext() {
                 {/* Pointer only. The keyboard moves a row with the buttons or Alt and an arrow. */}
                 <span
                   aria-hidden="true"
-                  className="grid w-[22px] flex-none cursor-grab touch-none place-items-center self-stretch text-faint select-none hover:text-muted active:cursor-grabbing coarse:w-[28px]"
+                  className="grid w-[18px] flex-none cursor-grab touch-none place-items-center self-stretch text-line-strong select-none hover:text-muted active:cursor-grabbing coarse:w-[28px]"
                   onPointerDown={(event) => startDrag(event, index)}
                   onPointerMove={moveDrag}
                   onPointerUp={endDrag}
                   onPointerCancel={() => updateDrag(null)}
                 >
-                  ⠿
+                  <GripVertical size={14} />
                 </span>
                 <button
                   type="button"
                   data-control="play"
-                  className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-[12px] rounded-md border-0 bg-transparent px-[8px] py-[10px] text-left text-inherit hover:bg-hover coarse:min-h-11"
+                  className={rowButtonClassName(tone)}
                   aria-label={`Play ${track.title}`}
                   aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                   onClick={() => player.playLibrary(player.queue, index, player.source)}
@@ -361,39 +403,50 @@ function UpNext() {
                     moveTo(index, index + (event.key === 'ArrowUp' ? -1 : 1), 'play')
                   }}
                 >
-                  <span className="grid min-w-0 gap-[3px]">
-                    <strong className="truncate">{track.title}</strong>
+                  <RowArt track={track} />
+                  <span className="grid min-w-0 gap-[2px]">
+                    <strong className="truncate font-medium">{track.title}</strong>
                     <small className="truncate text-small text-muted">{track.artist}</small>
                   </span>
-                  <time className="text-small text-muted max-phone:hidden">
+                  <time
+                    className={cx(
+                      'text-small text-faint max-phone:hidden',
+                      tone === 'room' && 'font-mono text-tiny',
+                    )}
+                  >
                     {durationText(track.duration)}
                   </time>
                 </button>
-                <IconButton
-                  data-control="up"
-                  size="compact"
-                  aria-label={`Move ${track.title} up`}
-                  disabled={position === 0}
-                  onClick={() => moveTo(index, index - 1, 'up')}
-                >
-                  <ChevronUp size={16} />
-                </IconButton>
-                <IconButton
-                  data-control="down"
-                  size="compact"
-                  aria-label={`Move ${track.title} down`}
-                  disabled={last}
-                  onClick={() => moveTo(index, index + 1, 'down')}
-                >
-                  <ChevronDown size={16} />
-                </IconButton>
+                {/* The moves are for the keyboard and for a touch screen; a mouse drags the grip, so
+                    with a fine pointer they wait for the row to be hovered or focused. */}
+                <span className="flex opacity-0 group-focus-within/row:opacity-100 group-hover/row:opacity-100 coarse:opacity-100">
+                  <IconButton
+                    data-control="up"
+                    size="compact"
+                    aria-label={`Move ${track.title} up`}
+                    disabled={position === 0}
+                    onClick={() => moveTo(index, index - 1, 'up')}
+                  >
+                    <ChevronUp size={15} />
+                  </IconButton>
+                  <IconButton
+                    data-control="down"
+                    size="compact"
+                    aria-label={`Move ${track.title} down`}
+                    disabled={last}
+                    onClick={() => moveTo(index, index + 1, 'down')}
+                  >
+                    <ChevronDown size={15} />
+                  </IconButton>
+                </span>
                 <IconButton
                   data-control="remove"
                   size="compact"
+                  className="hover:text-danger"
                   aria-label={`Remove ${track.title} from the queue`}
                   onClick={() => remove(index)}
                 >
-                  <X size={16} />
+                  <X size={14} />
                 </IconButton>
               </div>
             )
@@ -413,7 +466,7 @@ function UpNext() {
 const HISTORY_TICK = 60_000
 
 /** What this browser has played, newest first. A row plays the track again. */
-function History({ visible }: { visible: boolean }) {
+function History({ visible, tone }: { visible: boolean; tone: Tone }) {
   const player = usePlayer()
   const [now, setNow] = useState(() => Date.now())
   // Clearing asks in place, where the button was, rather than in the browser's own dialog.
@@ -473,7 +526,7 @@ function History({ visible }: { visible: boolean }) {
       <div
         ref={bar}
         tabIndex={-1}
-        className="mb-[8px] flex flex-wrap items-center justify-between gap-[8px] outline-none"
+        className="mb-[8px] flex flex-wrap items-center justify-between gap-[8px] px-[8px] outline-none"
         onKeyDown={(event) => {
           if (asking && event.key === 'Escape') {
             event.stopPropagation()
@@ -513,13 +566,10 @@ function History({ visible }: { visible: boolean }) {
         player.history.map((entry) => {
           const track = historyTrack(entry)
           return (
-            <div
-              key={`${entry.playedAt}-${entry.id}`}
-              className="flex items-center gap-[2px] border-b border-line"
-            >
+            <div key={`${entry.playedAt}-${entry.id}`} className="flex items-center gap-[2px]">
               <button
                 type="button"
-                className="grid min-w-0 flex-1 grid-cols-[minmax(0,1fr)_auto] items-center gap-[12px] rounded-md border-0 bg-transparent px-[8px] py-[10px] text-left text-inherit hover:bg-hover coarse:min-h-11"
+                className={rowButtonClassName(tone)}
                 aria-label={`Play ${entry.title}`}
                 onClick={() => {
                   // With a queue loaded, the song slots in after the playing one and plays, so
@@ -530,12 +580,13 @@ function History({ visible }: { visible: boolean }) {
                   } else player.playLibrary([track], 0, HISTORY_SOURCE)
                 }}
               >
-                <span className="grid min-w-0 gap-[3px]">
-                  <strong className="truncate">{entry.title}</strong>
+                <RowArt track={track} />
+                <span className="grid min-w-0 gap-[2px]">
+                  <strong className="truncate font-medium">{entry.title}</strong>
                   <small className="truncate text-small text-muted">{entry.artist}</small>
                 </span>
                 <time
-                  className="text-small text-muted"
+                  className={cx('text-small text-faint', tone === 'room' && 'font-mono text-tiny')}
                   dateTime={new Date(entry.playedAt).toISOString()}
                 >
                   {relativeTime(entry.playedAt, now)}
@@ -559,24 +610,31 @@ function History({ visible }: { visible: boolean }) {
   )
 }
 
-// Up next, Lyrics, About and History in one panel that fills the column beside the stage, or a
-// screen's height of its own under a large stage. `className` sets which.
+// Up next, Lyrics, About and History in one panel. Classic draws it as a sunken box with underline
+// tabs, beside the stage or a screen's height of its own under a large stage; the Listening room
+// draws it with no box, a pill of tabs over the content, beside the art in its card. `className`
+// sets where it sits.
 function NowPlayingTabs({
   track,
+  tone,
   className,
   lyricsView,
   onLyricsView,
 }: {
   track: LibraryTrack
+  tone: Tone
   className?: string
   /** Whether the lyrics view (large type) is open. The page owns it, to hide itself beneath it. */
   lyricsView: boolean
   onLyricsView: Dispatch<SetStateAction<boolean>>
 }) {
   const idBase = useId()
+  const tabs = tone === 'room' ? ROOM_TABS : CLASSIC_TABS
   const [tab, setTab] = useState<PanelTab>(() => {
-    const saved = stored(PANEL_TAB_KEY, 'up-next')
-    return PANEL_TABS.find((item) => item.id === saved)?.id ?? 'up-next'
+    // Each layout starts on its first tab until one has been chosen.
+    const first = tabs[0]?.id ?? 'up-next'
+    const saved = stored(PANEL_TAB_KEY, first)
+    return tabs.find((item) => item.id === saved)?.id ?? first
   })
   const choose = (next: PanelTab) => {
     setTab(next)
@@ -609,18 +667,29 @@ function NowPlayingTabs({
     return () => window.removeEventListener('keydown', onKey)
   }, [tab, onLyricsView])
 
+  const room = tone === 'room'
+  // The list tabs' rows carry their own side padding, so they line up with the header above them.
+  const listPad = room ? 'pt-[4px]' : 'px-[10px] pt-[14px] pb-[10px]'
+  const textPad = room ? 'pt-[4px]' : 'px-[18px] pt-[16px] pb-[14px]'
   return (
-    <Panel className={cx('flex min-w-0 flex-col', className)}>
+    <section
+      className={cx(
+        'flex min-w-0 flex-col',
+        room ? 'gap-[18px]' : 'overflow-hidden rounded-[14px] border border-line bg-sunken',
+        className,
+      )}
+    >
       <TabList
         label="Now Playing panel"
         idBase={idBase}
-        tabs={PANEL_TABS}
+        tabs={tabs}
         value={tab}
         onChange={choose}
-        className="mb-[14px]"
+        variant={room ? 'pill' : 'underline'}
+        className={room ? 'shrink-0' : 'shrink-0 gap-[20px] px-[18px]'}
       />
-      {/* Both panels stay in the document, so every tab's `aria-controls` names something that
-          exists; the one not chosen is hidden. */}
+      {/* Every panel stays in the document, so every tab's `aria-controls` names something that
+          exists; the ones not chosen are hidden. */}
       <div
         role="tabpanel"
         id={tabPanelId(idBase, 'up-next')}
@@ -628,16 +697,16 @@ function NowPlayingTabs({
         // A box that scrolls has to be reachable from the keyboard.
         tabIndex={0}
         hidden={tab !== 'up-next'}
-        className={tabPanelClassName}
+        className={cx(tabPanelClassName, listPad)}
       >
-        <UpNext />
+        <UpNext tone={tone} />
       </div>
       <div
         role="tabpanel"
         id={tabPanelId(idBase, 'lyrics')}
         aria-labelledby={tabId(idBase, 'lyrics')}
         hidden={tab !== 'lyrics'}
-        className="min-h-0 flex-1"
+        className={cx('min-h-0 flex-1', textPad)}
       >
         {/* The lines scroll in a box of their own inside the panel, so the timing controls stay in
             view; the box is what takes focus. */}
@@ -647,6 +716,7 @@ function NowPlayingTabs({
           visible={tab === 'lyrics'}
           large={lyricsView}
           onToggleLarge={toggleLarge}
+          tone={tone}
         />
       </div>
       <div
@@ -655,7 +725,7 @@ function NowPlayingTabs({
         aria-labelledby={tabId(idBase, 'about')}
         tabIndex={0}
         hidden={tab !== 'about'}
-        className={tabPanelClassName}
+        className={cx(tabPanelClassName, textPad)}
       >
         <AboutPanel key={track.id} track={track} visible={tab === 'about'} />
       </div>
@@ -665,11 +735,11 @@ function NowPlayingTabs({
         aria-labelledby={tabId(idBase, 'history')}
         tabIndex={0}
         hidden={tab !== 'history'}
-        className={tabPanelClassName}
+        className={cx(tabPanelClassName, listPad)}
       >
-        <History visible={tab === 'history'} />
+        <History visible={tab === 'history'} tone={tone} />
       </div>
-    </Panel>
+    </section>
   )
 }
 
@@ -677,9 +747,126 @@ function NowPlayingTabs({
 const nowPlayingScreenClassName =
   'h-[calc(100dvh_-_var(--topbar-height)_-_var(--safe-top)_-_var(--page-pad))]'
 
+type LayoutProps = {
+  track: LibraryTrack
+  large: boolean
+  phone: boolean
+  lyricsView: boolean
+  onLyricsView: Dispatch<SetStateAction<boolean>>
+}
+
+/**
+ * Classic: two columns that together fit the window under the top bar, the stage (up to 520px)
+ * and its controls on the left, one tabbed panel on the right that scrolls inside itself. `main`
+ * pads its bottom by 130px to clear the footer player, which this page hides, so the columns take
+ * back all but 24px of it. A phone stacks them and lets the page scroll.
+ *
+ * A large stage stacks them too, but keeps a window's height for the stage and its controls, so
+ * the stage takes what is left above them, and the panel gets a window's height of its own to
+ * scroll in. The page scrolls to reach it. Only classes differ from the small layout, so the stage
+ * is not remounted and its visualizer keeps running through the switch.
+ */
+function ClassicNowPlaying({ track, large, lyricsView, onLyricsView }: LayoutProps) {
+  return (
+    <div
+      className={cx(
+        '-mb-[106px] grid gap-x-[32px] gap-y-[24px] [--page-pad:60px] wide:[--page-pad:72px] max-phone:mb-0 max-phone:h-auto max-phone:grid-cols-1 max-phone:grid-rows-none',
+        large
+          ? 'grid-cols-1'
+          : cx(
+              nowPlayingScreenClassName,
+              'grid-cols-[minmax(0,520px)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]',
+            ),
+      )}
+    >
+      <NowPlayingWash art={artUrl(track)} />
+      {/* Under the lyrics view the columns stay laid out, so the page is where it was on return,
+          but `invisible` takes them out of sight, the tab order, the pointer and the accessibility
+          tree. The wash is left showing through the view. */}
+      <div
+        className={cx(
+          'flex min-w-0 flex-col gap-[22px]',
+          large ? cx(nowPlayingScreenClassName, 'min-h-[520px]') : 'min-h-0',
+          lyricsView && 'invisible',
+        )}
+      >
+        <NowPlayingStage />
+        <ClassicControls track={track} />
+      </div>
+      <NowPlayingTabs
+        track={track}
+        tone="classic"
+        lyricsView={lyricsView}
+        onLyricsView={onLyricsView}
+        className={cx(
+          large ? cx(nowPlayingScreenClassName, 'min-h-[420px]') : 'min-h-0',
+          lyricsView && 'invisible',
+        )}
+      />
+    </div>
+  )
+}
+
+/**
+ * The Listening room: one card tinted from the cover. The art and the tabs (Lyrics first) share its
+ * top row, the tabs as tall as the art and scrolling inside it; the title, chips, waveform and
+ * transport run across the card under them. A large stage takes the card's width, with the
+ * controls under it and the tabs under those, as Classic's does; so does a phone, which scrolls.
+ *
+ * Beside the tabs the art is up to 440px, and smaller on a short window: the window less about
+ * 440px, which is the top bar, the card's padding and the controls under the art, so a laptop
+ * screen holds the whole card. It never goes under 240px.
+ */
+function RoomNowPlaying({ track, large, phone, lyricsView, onLyricsView }: LayoutProps) {
+  const beside = !large && !phone
+  const tabs = (className?: string) => (
+    <NowPlayingTabs
+      track={track}
+      tone="room"
+      lyricsView={lyricsView}
+      onLyricsView={onLyricsView}
+      className={className}
+    />
+  )
+  return (
+    // The card's padding and type follow its own width, so the wrapper is the size container.
+    <div className="[container-type:inline-size]">
+      <div className="relative isolate rounded-[22px] p-[clamp(18px,3cqi,36px)]">
+        {/* Inside the card, behind everything in it. It stays in sight under the lyrics view, as
+            Classic's page wash does. */}
+        <NowPlayingWash art={artUrl(track)} place="card" />
+        <div
+          className={cx(
+            'grid gap-x-[clamp(20px,4cqi,48px)] gap-y-[clamp(20px,3cqi,32px)]',
+            beside
+              ? 'grid-cols-[minmax(240px,min(440px,calc(100dvh_-_440px)))_minmax(0,1fr)]'
+              : 'grid-cols-1',
+            lyricsView && 'invisible',
+          )}
+        >
+          <div className="min-w-0">
+            <NowPlayingStage fit="width" />
+          </div>
+          {/* Beside the art the tabs are laid out over the row rather than in it, so the art alone
+              sets the row's height and a long queue scrolls inside instead of stretching it.
+              Stacked, they come after the controls in the page too, so Tab follows the screen. */}
+          {beside && <div className="relative min-w-0">{tabs('absolute inset-0')}</div>}
+          <div className={cx('min-w-0', beside && 'col-span-2')}>
+            <RoomControls track={track} />
+          </div>
+          {!beside && (
+            <div className="min-w-0">{tabs(large ? 'h-[min(70dvh,560px)]' : undefined)}</div>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function NowPlayingPage() {
   const player = usePlayer()
   const popout = useNowPlayingPopout()
+  const layout = useLayout()
   const track = player.libraryTrack
   const [help, setHelp] = useState(false)
   const openHelp = useCallback(() => setHelp(true), [])
@@ -717,57 +904,21 @@ export function NowPlayingPage() {
         ) : (
           <h1>Nothing playing yet.</h1>
         )}
-        <Link data-ui="button" className={buttonClassName('primary', 'mx-auto')} to="/library">
+        <Link
+          data-ui="button"
+          className={buttonClassName('primary', 'mx-auto')}
+          to="/library/albums"
+        >
           Open your library
         </Link>
       </EmptyPanel>
     )
 
-  // Two columns that together fit the window under the top bar: the stage and its controls on
-  // the left, one tabbed panel on the right that scrolls inside itself. `main` pads its bottom by
-  // 130px to clear the footer player, which this page hides, so the columns take back all but
-  // 24px of it. A phone stacks them and lets the page scroll.
-  //
-  // A large stage stacks them too, but keeps a window's height for the stage and its controls, so
-  // the stage takes what is left above them, and the panel gets a window's height of its own to
-  // scroll in. The page scrolls to reach it. Only classes differ from the small layout, so the
-  // stage is not remounted and its visualizer keeps running through the switch.
+  const props = { track, large, phone: popout.phone, lyricsView, onLyricsView: setLyricsView }
   return (
-    <div
-      className={cx(
-        '-mb-[106px] grid gap-x-[40px] gap-y-[24px] [--page-pad:60px] wide:[--page-pad:72px] max-phone:mb-0 max-phone:h-auto max-phone:grid-cols-1 max-phone:grid-rows-none',
-        large
-          ? 'grid-cols-1'
-          : cx(
-              nowPlayingScreenClassName,
-              'grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)] grid-rows-[minmax(0,1fr)]',
-            ),
-      )}
-    >
-      <NowPlayingWash art={artUrl(track)} />
-      {/* Under the lyrics view the columns stay laid out, so the page is where it was on return,
-          but `invisible` takes them out of sight, the tab order, the pointer and the accessibility
-          tree. The wash is left showing through the view. */}
-      <div
-        className={cx(
-          'flex min-w-0 flex-col gap-[16px]',
-          large ? cx(nowPlayingScreenClassName, 'min-h-[520px]') : 'min-h-0',
-          lyricsView && 'invisible',
-        )}
-      >
-        <NowPlayingStage />
-        <NowPlayingControls track={track} />
-      </div>
-      <NowPlayingTabs
-        track={track}
-        lyricsView={lyricsView}
-        onLyricsView={setLyricsView}
-        className={cx(
-          large ? cx(nowPlayingScreenClassName, 'min-h-[420px]') : 'min-h-0',
-          lyricsView && 'invisible',
-        )}
-      />
+    <>
+      {layout === 'room' ? <RoomNowPlaying {...props} /> : <ClassicNowPlaying {...props} />}
       <ShortcutsDialog open={help} onClose={closeHelp} />
-    </div>
+    </>
   )
 }

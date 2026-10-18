@@ -12,9 +12,13 @@ Search tracks, albums, artists and podcasts. Hear a preview, see what you alread
 
 </div>
 
-<img src="docs/assets/now-playing.png" alt="Now Playing with the MilkDrop visualizer on, playing Singularity by Culprate. The title, format, waveform seek bar and transport sit under the stage." width="100%" />
+<img src="docs/assets/now-playing.png" alt="Now Playing in the Classic layout. Album art on the stage, the title, artist and album under it, a seek bar and the transport. Up next, Lyrics, About and History tabs sit beside the stage." width="100%" />
 
 <p align="center"><b>Now Playing.</b> The file you are hearing, as artwork or a MilkDrop visualizer.</p>
+
+<img src="docs/assets/listening-room.png" alt="The Listening room layout. A slim icon rail on the left, the Home page in the middle with the track you left off on, new albums, playlists and Ask Octive, and the player docked on the right with the artwork, transport and Up next." width="100%" />
+
+<p align="center"><b>Listening room.</b> The other layout, picked in Settings, Yours: a slim rail, with the player and Up next docked on the right.</p>
 
 <table>
 <tr>
@@ -31,7 +35,7 @@ Search tracks, albums, artists and podcasts. Hear a preview, see what you alread
 </tr>
 </table>
 
-<img src="docs/assets/diagnostics.png" alt="Diagnostics. A banner says Ready to download, all systems ready, version 0.4.0. Library root, download destination, library scan and the player are ready. Last download has not been tested." width="100%" />
+<img src="docs/assets/diagnostics.png" alt="Diagnostics. A banner says Ready to download, 4 of 5 checks pass. Library root, download destination, library scan and the player are ready. Last download has not been tested." width="100%" />
 
 <p align="center"><b>Diagnostics.</b> Ready means the folders, the scan and the player.</p>
 

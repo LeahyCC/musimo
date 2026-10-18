@@ -62,15 +62,24 @@ The popout copies every live stylesheet into the new document (`copyStyles` in `
 
 ## Layout contract that must survive
 
-These rules were paid for in [UI verification](ui-verification.md) and `e2e/phone.spec.ts`. A migrated screen that regresses any of them is not done.
+These rules were paid for in [UI verification](ui-verification.md) and `e2e/phone.spec.ts`. They hold in both layouts; the first group is Classic's chrome and the second is the Listening room's. A migrated screen that regresses any of them is not done.
 
 **Chrome**
 
-- Desktop: 215 px sidebar (184 px under 1100 px), sticky 87 px top bar, footer player 75 px tall, queue dock above the player. On Now Playing the footer is hidden while a library track shows (the page has every control it has), so nothing there may assume the player is on screen. Now Playing also hands back `main`'s 130 px bottom padding, which is there for the footer, with a negative margin so its two columns fit the window; the two numbers move together. The sidebar's last row is Now Playing (cover thumbnail, no icon), present only while a library track is loaded.
-- Phone (max 767 px): sidebar becomes a 64 px bottom bar; brand, caption and sidebar footer hide; Downloads shows a count badge; the floating queue dock is hidden. The bar holds exactly five items (Search, Library, Downloads, Settings, Diagnostics) and the desktop Now Playing row is hidden there; the mini player's cover is the phone's way in.
+- Classic, desktop: 224 px sidebar (200 px under 1100 px), sticky 60 px top bar, footer player 76 px tall, queue dock above the player, and toasts stacked above the dock (the dock publishes `--dock-height`, which the toast region adds to its offset). On Now Playing the footer is hidden while a library track shows (the page has every control it has), so nothing there may assume the player is on screen. Now Playing also hands back `main`'s 130 px bottom padding, which is there for the footer, with a negative margin so its two columns fit the window; the two numbers move together. The sidebar has Home, Search and Octive; a LIBRARY group (Albums with its count, Artists, Tracks, Playlists); a PLAYLISTS group of Liked and the most recently changed playlists, three in all; then Downloads (with the active count), Settings and Diagnostics, and a line with the live status, the version and Support. Now Playing is a row after the playlists (cover thumbnail, no icon), present only while a library track is loaded.
+- Classic, phone (max 767 px): sidebar becomes a 64 px bottom bar; Downloads shows a count badge; the floating queue dock is hidden. The bar holds exactly five tabs (Home, Search, Library, Octive, Downloads) and the desktop Now Playing row is not drawn there; the mini player's cover is the phone's way in. Home's header carries Settings and Diagnostics buttons on a phone.
 - `--player-height`, `--nav-height` and the `env(safe-area-inset-*)` variables keep `main` padding, the Settings save bar, the queue dock and virtual lists clear of the player, bottom bar, notch and home indicator. `--player-height` is `0px` while the footer is hidden, so a calc that adds it needs no special case.
-- Phone footer is a one-row mini player with a full-width seek bar on its top edge, hidden while idle and on Now Playing. Previous, shuffle, repeat, like, volume and add-to-playlist live on the Now Playing page.
+- Phone footer is a one-row mini player, a rounded card 6 px above the bottom bar, with a 2 px seek line on its top edge, hidden while idle and on Now Playing. `--player-height` includes that 6 px gap. Previous, shuffle, repeat, like, volume and add-to-playlist live on the Now Playing page.
 - The playlist picker is rendered beside the footer, never inside it, so hiding the footer cannot take an open dialog with it.
+
+**Chrome in the Listening room** (`app/shell/room.tsx`, `features/player/player-dock.tsx`; the shell sets `data-layout="room"` on `html`, and the measurements below are in `style.css`)
+
+- Wide window: an 8px gutter around three panes, a 72px icon rail (Home, Search, Library, Octive, Queue, with Settings and Diagnostics at its foot), the page pane with its own 72px header (the page name and a mono line, search, ⌘K) that scrolls inside it, and the player dock on the right, `clamp(280px, 24vw, 340px)` wide (`--dock-width`). `--sidebar-width` is 88px (the rail plus the gutters) and `--topbar-height` is 72px, so a calc written for Classic still adds up. The Classic footer is not drawn (`display: none`; it stays in the page for the audio elements it holds), so `--player-height` still reads 76px but means nothing on a wide window.
+- The dock stands down on Now Playing, as the Classic footer does, because the page has every control the dock has. A preview has no Now Playing, so it keeps the dock there.
+- Under 1100px (the tablet edge) the dock lies down as a 76px bar under the page, and the rail runs the full height beside both.
+- Phone (max 767px): no rail and no dock. A sticky 56px header (`--topbar-height`), a 68px bottom tab bar (`--nav-height`) of five tabs (Home, Search, Library, Octive, Queue), and a floating mini player (`section[data-room-mini]`, 58px high, 10px in from each side, 8px above the bar). While it shows, `--player-height` is 66px (its height and gap); otherwise 0px. Queue is the phone's way to Downloads and carries the active count. Settings and Diagnostics are buttons in the header.
+- The page's own title is the header's. A page keeps one h1 for screen readers (`sr-only`), never two visible titles. `PageTitle` does this for the pages that use it; Home, Library, Octive and Downloads do it themselves.
+- Toasts sit at the bottom right, left of the dock (`--toast-right` adds the dock's width), and above the mini player and tab bar on a phone (`--toast-bottom`).
 
 **Touch and text**
 
@@ -131,6 +140,13 @@ Phase 1 added three more, because nothing above could express them:
 | `--color-partial-line` | Border of a part-way or not-yet-tested chip, beside `--color-partial`              | `#4b4b3a` |
 | `--color-media`        | Solid backing behind artwork and the visualizer                                    | `#020305` |
 | `--color-on-media`     | Text and icons over artwork or the scrim; stays light when the page text goes dark | `#ffffff` |
+
+The UI refactor's Foundation card added two more (see the mapping in [ui-refactor-plan.md](ui-refactor-plan.md#colour-tokens)):
+
+| Token                | Role                                                            | Value     |
+| -------------------- | --------------------------------------------------------------- | --------- |
+| `--color-warn-line`  | Border of a warning toast, banner or row, beside `--color-warn` | `#5a4b2a` |
+| `--color-chart-idle` | Chart bars that are not picked out                              | `#3d4b43` |
 
 If a later pass finds a color that none of these can express, add a token with a role name and list it here. Do not name a token after a screen.
 

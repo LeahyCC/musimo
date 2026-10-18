@@ -46,7 +46,10 @@
   /* The group box line: a shadow line with a hilight line one pixel below and right of it. */
   --bevel-etched: inset 1px 1px var(--bevel-hilight), 1px 1px var(--bevel-hilight);
 
-  font-family: 'WIN95FA', sans-serif;
+  /* Set as the variable too, so a `font-sans` utility gets it, and in either layout: this selector
+     outweighs the Listening room's font swap in style.css. */
+  --font-sans: 'WIN95FA', sans-serif;
+  font-family: var(--font-sans);
   /* The font is drawn on a pixel grid. Smoothing it only blurs it. */
   -webkit-font-smoothing: none;
   -moz-osx-font-smoothing: grayscale;
@@ -368,7 +371,7 @@
 }
 /* The sidebar's title bar, flush to the window frame the way a real one is. */
 :root[data-skin='win95'] .brand {
-  margin: -30px -16px 0;
+  margin: -18px -10px 0;
   padding: 3px 4px;
   background: var(--highlight);
   color: var(--highlight-ink);
@@ -378,11 +381,6 @@
 }
 :root[data-skin='win95'] .brand span {
   color: inherit;
-}
-@media (width < theme(--breakpoint-tablet)) {
-  :root[data-skin='win95'] .brand {
-    margin-inline: -10px;
-  }
 }
 /* The links under the sidebar are push buttons. */
 :root[data-skin='win95'] .sidebar footer a {
@@ -461,11 +459,11 @@
   }
 }
 
-/* The phone footer's thin seek bar keeps its size from `style.css`, but its thumb goes square. */
-:root[data-skin='win95'] .live-player .playback-controls input[type='range']::-webkit-slider-thumb {
+/* The footer's seek and volume bars keep their size from `style.css`, but the thumb goes square. */
+:root[data-skin='win95'] .live-player input[type='range']::-webkit-slider-thumb {
   border-radius: 0;
 }
-:root[data-skin='win95'] .live-player .playback-controls input[type='range']::-moz-range-thumb {
+:root[data-skin='win95'] .live-player input[type='range']::-moz-range-thumb {
   border-radius: 0;
 }
 

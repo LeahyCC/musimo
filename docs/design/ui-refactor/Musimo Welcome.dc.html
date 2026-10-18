@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./icon.js"></script>
+<style>html{color-scheme:dark}*{scrollbar-color:#2a3630 transparent;scrollbar-width:thin}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a3630;border-radius:10px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-corner{background:transparent}
+body{margin:0;background:#111716;font-family:Inter,-apple-system,sans-serif}a{color:#c3e4a2;text-decoration:none}button{font:inherit;cursor:pointer}</style>
+</helmet>
+<div style="max-width:760px;margin:0 auto;padding:24px 0 40px;color:#e8ece8;font-size:13px">
+  <div style="display:flex;align-items:center;gap:16px;margin-bottom:28px">
+    <span style="position:relative;width:56px;height:56px;flex:none">
+      <span style="position:absolute;left:14%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(30% 0,100% 78%,0 100%);transform:rotate(-4deg)"></span>
+      <span style="position:absolute;left:56%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(70% 0,100% 100%,0 78%);transform:rotate(4deg)"></span>
+      <span style="position:absolute;left:12%;top:26%;width:76%;height:66%;background:#c3e4a2;border-radius:46% 46% 40% 40%/52% 52% 42% 42%"></span>
+      <span style="position:absolute;left:28.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+      <span style="position:absolute;left:60.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+      <span style="position:absolute;left:43%;top:62%;width:14%;height:6%;background:#172014;border-radius:0 0 50% 50%/0 0 100% 100%"></span>
+    </span>
+    <div>
+      <h1 style="margin:0;font-size:30px;font-weight:600;letter-spacing:-0.8px">Let's find your music</h1>
+      <p style="margin:6px 0 0;font-size:14px;color:#93a39b;line-height:1.5">Musimo is running, but its library is empty. Three steps and Home fills in.</p>
+    </div>
+  </div>
+  <div style="display:grid;gap:10px">
+    <sc-for list="{{ steps }}" as="st" hint-placeholder-count="3">
+      <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto;gap:14px;align-items:flex-start;padding:16px 18px;border-radius:14px;border:1px solid {{ st.line }};background:{{ st.bg }}">
+        <span style="width:32px;height:32px;border-radius:50%;display:grid;place-items:center;background:{{ st.dotBg }};color:{{ st.dotFg }};font-weight:700">{{ st.mark }}</span>
+        <div style="min-width:0">
+          <div style="font-weight:600;font-size:14px">{{ st.t }}</div>
+          <div style="margin-top:4px;font-size:12.5px;color:#93a39b;line-height:1.55">{{ st.d }}</div>
+          <sc-if value="{{ st.code }}" hint-placeholder-val="{{ false }}"><pre style="margin:10px 0 0;padding:10px 12px;border-radius:8px;background:#0e1312;border:1px solid #2a3630;font:12px/1.6 ui-monospace,Menlo,monospace;color:#c3e4a2;overflow:auto">{{ st.code }}</pre></sc-if>
+        </div>
+        <sc-if value="{{ st.cta }}" hint-placeholder-val="{{ false }}"><button style="height:34px;padding:0 14px;border-radius:8px;border:0;background:{{ st.ctaBg }};color:{{ st.ctaFg }};font-size:12.5px;font-weight:600;white-space:nowrap">{{ st.cta }}</button></sc-if>
+      </div>
+    </sc-for>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin-top:24px;padding-top:18px;border-top:1px solid #2a3630;font-size:12.5px;color:#93a39b">
+    <span style="flex:1;min-width:240px">Coming from Navidrome? Bring playlists, likes and play counts across.</span>
+    <a href="#">Import from Navidrome</a>
+    <span style="color:#344035">·</span>
+    <a href="#">Or start by searching the catalog</a>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 900, &quot;height&quot;: 760}}">
+class Component extends DCLogic {
+  renderVals() {
+    const S = [
+      ['done', 'Folders are mounted', '/music is readable and writable · 5,201 GB free.', '', ''],
+      ['now', 'Point Musimo at your existing collection', 'Mount it read-only in compose.override.yaml, then list it in MUSIMO_LIBRARY_ROOTS. Musimo never moves or renames files there.', 'volumes:\n  - /srv/music:/collection:ro\nMUSIMO_LIBRARY_ROOTS: /music:/collection', 'I’ve done this'],
+      ['next', 'Scan the library', 'Reads tags from every file once. 60k songs takes about 10 minutes; you can browse while it runs.', '', 'Start scan'],
+    ]
+    return {
+      steps: S.map(([st, t, d, code, cta], i) => ({ t, d, code, cta,
+        mark: st === 'done' ? '✓' : String(i + 1),
+        line: st === 'now' ? '#4b6743' : '#2a3630', bg: st === 'now' ? '#17201b' : 'transparent',
+        dotBg: st === 'done' ? '#c3e4a2' : st === 'now' ? '#263327' : '#1e2a23', dotFg: st === 'done' ? '#172014' : st === 'now' ? '#c3e4a2' : '#819088',
+        ctaBg: st === 'now' ? '#c3e4a2' : '#1e2a23', ctaFg: st === 'now' ? '#172014' : '#e8ece8' })),
+    }
+  }
+}
+
+</script>
+</body>
+</html>

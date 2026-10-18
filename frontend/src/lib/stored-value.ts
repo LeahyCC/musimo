@@ -30,18 +30,22 @@ export function storedValue<T>(load: () => T, equal: (a: T, b: T) => boolean = O
     notify()
   }
 
+  // One `storage` listener per value, shared by every subscriber. It is removed only when the
+  // last one leaves: removing it on any unsubscribe would stop a tab hearing other tabs while
+  // components that read the value are still on screen.
   const subscribe = (listener: () => void) => {
     listeners.add(listener)
-    window.addEventListener('storage', refresh)
+    if (listeners.size === 1) window.addEventListener('storage', refresh)
 
     return () => {
       listeners.delete(listener)
-      window.removeEventListener('storage', refresh)
+      if (listeners.size === 0) window.removeEventListener('storage', refresh)
     }
   }
 
   return {
     get: snapshot,
+    subscribe,
     set(next: T) {
       snapshot()
       value = next

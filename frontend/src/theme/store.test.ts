@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { HEX_COLOR } from './schema'
-import { draftTheme, exportTheme, resolveVars } from './store'
+import { draftTheme, exportTheme, resolveSystemVars, resolveVars, THEME_FAMILIES } from './store'
 import { BUILT_IN_THEMES, DEFAULT_THEME } from './themes'
 import { COLOR_TOKENS } from './tokens'
 
@@ -54,6 +54,28 @@ describe('resolveVars', () => {
     const stored = JSON.parse(JSON.stringify(resolveVars(light))) as unknown
 
     expect(stored).toEqual(resolveVars(light))
+  })
+})
+
+describe('resolveSystemVars', () => {
+  // The boot script picks `dark` or `light` and reads it as it would a single saved theme.
+  it('holds a whole saved theme for each half of the family', () => {
+    const slate = THEME_FAMILIES.find((family) => family.id === 'slate')
+    if (!slate) throw new Error('No Slate family')
+    const pair = resolveSystemVars(slate)
+
+    expect(pair.dark).toEqual(resolveVars(slate.dark))
+    expect(pair.light).toEqual(resolveVars(slate.light))
+    expect(pair.dark.scheme).toBe('dark')
+    expect(pair.light.scheme).toBe('light')
+  })
+
+  it('survives the round trip through the stored string', () => {
+    for (const family of THEME_FAMILIES) {
+      const pair = resolveSystemVars(family)
+
+      expect(JSON.parse(JSON.stringify(pair)) as unknown).toEqual(pair)
+    }
   })
 })
 

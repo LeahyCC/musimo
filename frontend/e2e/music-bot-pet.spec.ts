@@ -110,7 +110,7 @@ async function fixtures(page: Page, { restore = true, theme, pet }: Options = {}
   const found: Theme | undefined = BUILT_IN_THEMES.find((entry) => entry.id === theme)
   if (found) {
     await page.goto('/settings/user')
-    await page.getByText(found.name, { exact: true }).first().click()
+    await page.getByRole('radio', { name: found.name }).check()
     await expect(page.locator('html')).toHaveCSS('color-scheme', found.scheme)
   }
   return saves
@@ -188,7 +188,7 @@ test.describe('desktop', () => {
     )
     await shot(page, 'desktop-dark-result')
 
-    await card(page).getByRole('button', { name: 'Play', exact: true }).click()
+    await card(page).getByRole('button', { name: 'Play now', exact: true }).click()
     await expect.poll(() => saves.at(-1)?.ids).toEqual([first.id, second.id])
     await expect(card(page)).toContainText('IN YOUR QUEUE')
     await shot(page, 'desktop-dark-played')
@@ -417,7 +417,7 @@ test.describe('desktop', () => {
     await expect(page.locator('[data-pet="perch"]')).toHaveCount(0)
     const row = page
       .getByRole('navigation', { name: 'Main navigation' })
-      .getByRole('link', { name: /Music bot/ })
+      .getByRole('link', { name: /Octive/ })
     await expect(row.locator('[data-pet="face"]')).toBeVisible()
     await shot(page, 'desktop-dark-hidden')
     await row.click()
@@ -516,7 +516,7 @@ test.describe('phone', () => {
     const size = await button.boundingBox()
     expect(size?.width).toBeGreaterThanOrEqual(44)
     expect(size?.height).toBeGreaterThanOrEqual(44)
-    // The mini player's seek strip reaches 6px above its top edge, so the pet stops above that.
+    // The mini player's seek strip reaches 5px above its top edge, so the pet stops above that.
     await clearOf(button, page.locator('footer.live-player'), 6)
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true)
     await shot(page, 'phone-dark-mini')
@@ -526,7 +526,9 @@ test.describe('phone', () => {
     await expect(sheet).toBeVisible()
     await expect(box(page)).toBeFocused()
     await ask(page)
-    const action = await card(page).getByRole('button', { name: 'Play', exact: true }).boundingBox()
+    const action = await card(page)
+      .getByRole('button', { name: 'Play now', exact: true })
+      .boundingBox()
     expect(action?.height).toBeGreaterThanOrEqual(44)
     await shot(page, 'phone-dark-sheet')
     await sheet.getByRole('button', { name: 'Close chat' }).first().click()
@@ -539,7 +541,7 @@ test.describe('phone', () => {
     await fixtures(page, { restore: false })
     await page.goto('/search')
     await expect(page.locator('[data-pet="perch"]')).toHaveCount(0)
-    const link = page.getByRole('banner').getByRole('link', { name: /Music bot/ })
+    const link = page.getByRole('banner').getByRole('link', { name: /Octive/ })
     await expect(link.locator('[data-pet="face"]')).toBeVisible()
     await shot(page, 'phone-dark-idle')
     await link.click()

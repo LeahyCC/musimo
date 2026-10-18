@@ -4,6 +4,7 @@ import type { Page } from '@playwright/test'
 
 import { settingsSchema } from '../src/api'
 import { generatedPlayerAudio, librarySong, playerFixtures, requestBody } from './library-fixtures'
+import { mainNav } from './nav'
 import { proposalFixtures } from './proposal-fixtures'
 import type { ProposalMock } from './proposal-fixtures'
 
@@ -179,7 +180,7 @@ test('Undo restores a 701-song shuffle and playback continues beyond its 500-son
     })
   })
   await page.goto('/music-bot')
-  await expect(page.getByText('Queue restored. Press play to continue.').first()).toBeVisible()
+  await expect(page.getByRole('contentinfo')).toContainText(/Deck \d+/)
   await ask(page)
   await page.getByRole('button', { name: 'Replace upcoming' }).click()
   await expect
@@ -268,7 +269,7 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
   const saves = await fixtures(page)
   if (isMobile) await page.setViewportSize({ width: 390, height: 844 })
   await page.goto('/music-bot')
-  await expect(page.getByText('Queue restored. Press play to continue.').first()).toBeVisible()
+  await expect(page.getByRole('contentinfo')).toContainText('Playing Song')
   await ask(page)
   await expect(
     page.getByRole('list', { name: 'Proposed songs' }).getByRole('listitem'),
@@ -466,7 +467,8 @@ test('cancellation and navigation suppress late playback commands', async ({ pag
   await expect(page.getByText('Cancelled. Nothing changed.')).toBeVisible()
   expect(saves).toHaveLength(0)
   await say(page, 'skip')
-  await page.getByRole('link', { name: 'Settings', exact: true }).first().click()
+  // Search is in the sidebar and in a phone's bar; Settings is not in the bar.
+  await mainNav(page).getByRole('link', { name: 'Search', exact: true }).click()
   release?.()
   expect(saves).toHaveLength(0)
 })
@@ -510,7 +512,7 @@ test('autoplay refusal is honest and Undo restores an empty queue', async ({ pag
   })
   await page.goto('/music-bot')
   await ask(page)
-  await page.getByRole('main').getByRole('button', { name: 'Play', exact: true }).click()
+  await page.getByRole('main').getByRole('button', { name: 'Play now', exact: true }).click()
   await expect(page.getByText('Press play when you are ready.').first()).toBeVisible()
   // Loaded, not claimed as playing: the browser refused to start it.
   await expect(card(page).getByRole('status')).toContainText('These 2 songs replaced your queue.')
@@ -590,7 +592,7 @@ test('a full queue refuses additions and a failed save is reported', async ({ pa
   )
   await expect(page.getByText('No room on the shelf!')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Replace upcoming instead' })).toBeVisible()
-  await page.getByRole('main').getByRole('button', { name: 'Play', exact: true }).click()
+  await page.getByRole('main').getByRole('button', { name: 'Play now', exact: true }).click()
   await expect(
     page.getByText('The queue changed here but could not be saved.').first(),
   ).toBeVisible()
@@ -1130,4 +1132,12 @@ test('a stale or unsettled preview cannot have a song taken off it, and Refresh 
   await expect(problem.getByRole('button', { name: 'Refresh preview' })).toBeDisabled()
   release?.()
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeVisible()
+})
+
+test('a prompt in the address is sent once and then dropped from it', async ({ page }) => {
+  await fixtures(page, false)
+  await page.goto('/music-bot?prompt=Play%20some%20hip%20hop')
+  await expect(page.getByRole('list', { name: 'Proposed songs' })).toBeVisible()
+  await expect(page.locator('[data-bot="you"]')).toHaveText('Play some hip hop')
+  await expect(page).toHaveURL(/\/music-bot$/)
 })

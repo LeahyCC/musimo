@@ -18,3 +18,5 @@ htmlcov
 coverage.xml
 # Working notes for in-progress branches. Formatting them is optional.
 todo
+# Claude Design prototypes, kept as exported.
+docs/design

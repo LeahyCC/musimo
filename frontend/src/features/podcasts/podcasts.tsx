@@ -2,14 +2,24 @@ import { useState } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link, useParams } from '@tanstack/react-router'
-import { ArrowDownToLine, Check, Podcast as PodcastIcon, RotateCcw } from 'lucide-react'
+import {
+  ArrowDownToLine,
+  Check,
+  CircleDashed,
+  Clock,
+  Podcast as PodcastIcon,
+  RotateCcw,
+} from 'lucide-react'
 
 import { api, jobSchema, podcastDetailSchema, podcastsSchema } from '../../api'
 import type { DownloadJob, Episode, Podcast } from '../../api'
 import { cx } from '../../lib/cx'
-import { ErrorBanner, Field, IconButton, Ownership, textLinkClassName } from '../../ui'
+import { useLayout } from '../../lib/layout'
+import { Button, ErrorBanner, Field, IconButton, Ownership } from '../../ui'
 import { DownloadTarget } from '../downloads/download-target'
 import { activeJob, failureMessage, updateJob, useJobs } from '../downloads/jobs'
+import { CatalogHero, HeroDestination } from '../search/catalog-hero'
+import { BackToSearch } from '../search/results'
 
 /** "58 min" or "4 h 1 min": episodes run long enough that m:ss reads badly. */
 export function episodeLength(seconds: number): string {
@@ -27,11 +37,20 @@ function episodeDate(date: string): string {
     : parsed.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
-function Cover({ src, className }: { src: string; className?: string }) {
+function Cover({
+  src,
+  className,
+  rounded = 'rounded-[7px]',
+}: {
+  src: string
+  className?: string
+  rounded?: string
+}) {
   return (
     <div
       className={cx(
-        'flex shrink-0 items-center justify-center overflow-hidden rounded-[7px] bg-active',
+        'flex shrink-0 items-center justify-center overflow-hidden bg-active',
+        rounded,
         className,
       )}
     >
@@ -106,8 +125,57 @@ function jobLabel(job: DownloadJob): string {
       : job.stage.replaceAll('_', ' ').replace(/^./, (letter) => letter.toUpperCase())
 }
 
-function EpisodeRow({ episode, job }: { episode: Episode; job?: DownloadJob }) {
+/** How many of the newest episodes the hero's "Download latest" queues at once. */
+const LATEST_COUNT = 5
+
+function EpisodeStatus({ job }: { job?: DownloadJob }) {
+  const room = useLayout() === 'room'
+  const failed = job?.stage === 'failed' ? job : undefined
+  const done = job?.stage === 'done'
+  const variant = failed ? 'failed' : done ? 'owned' : 'missing'
+  const label = job ? jobLabel(job) : 'Not in library'
+  const title = failed ? failed.error_hint || failureMessage(failed) : job?.final_path
+  const Icon = done ? Check : failed ? null : job ? Clock : CircleDashed
+  if (room)
+    return (
+      <span
+        data-ui="ownership"
+        data-variant={variant}
+        title={title}
+        className={cx(
+          'inline-flex items-center gap-[6px] text-small whitespace-nowrap',
+          failed ? 'text-danger' : done ? 'text-accent' : 'text-muted',
+        )}
+      >
+        <i
+          aria-hidden="true"
+          className={cx(
+            'size-[7px] rounded-pill',
+            failed ? 'bg-danger' : done ? 'bg-accent' : 'bg-faint',
+          )}
+        />
+        {label}
+      </span>
+    )
+  return (
+    <Ownership variant={variant} title={title}>
+      {Icon && <Icon size={12} />}
+      {label}
+    </Ownership>
+  )
+}
+
+function EpisodeRow({
+  episode,
+  job,
+  number,
+}: {
+  episode: Episode
+  job?: DownloadJob
+  number: number
+}) {
   const client = useQueryClient()
+  const room = useLayout() === 'room'
   const failed = job?.stage === 'failed' ? job : undefined
   const busy = job ? activeJob(job) : false
   const done = job?.stage === 'done'
@@ -123,18 +191,27 @@ function EpisodeRow({ episode, job }: { episode: Episode; job?: DownloadJob }) {
     onSuccess: (saved) => updateJob(client, saved),
   })
   return (
-    <li className="flex items-center gap-[14px] border-b border-line p-[8px] text-small hover:bg-hover max-phone:gap-[10px] max-phone:px-0">
-      <div className="min-w-0 flex-1">
+    <li
+      className={cx(
+        'grid grid-cols-[34px_minmax(0,1fr)_auto_40px] items-center gap-[14px] px-[10px] py-[6px] text-small',
+        'max-phone:grid-cols-[minmax(0,1fr)_auto_40px] max-phone:gap-[10px] max-phone:px-0',
+        room
+          ? 'rounded-[10px] hover:bg-raised'
+          : 'border-t border-line first:border-t-0 hover:bg-sunken',
+      )}
+    >
+      <span className="text-right font-mono text-tiny text-faint max-phone:hidden">{number}</span>
+      <div className="min-w-0">
         <strong className="block overflow-hidden text-ellipsis whitespace-nowrap text-lead font-medium">
           {episode.title}
         </strong>
-        <span className="mt-[5px] block text-body text-muted">
+        <span className="mt-[3px] block text-body text-muted">
           {[episodeDate(episode.date), episode.duration ? episodeLength(episode.duration) : '']
             .filter(Boolean)
             .join(' · ')}
         </span>
         {episode.description && (
-          <p className="mt-[5px] line-clamp-2 text-small text-muted max-phone:hidden">
+          <p className="mt-[3px] line-clamp-1 text-small text-faint max-phone:hidden">
             {episode.description}
           </p>
         )}
@@ -144,15 +221,7 @@ function EpisodeRow({ episode, job }: { episode: Episode; job?: DownloadJob }) {
           </p>
         )}
       </div>
-      {job && (
-        <Ownership
-          variant={failed ? 'failed' : done ? 'owned' : 'partial'}
-          title={failed ? failed.error_hint || failureMessage(failed) : job.final_path}
-        >
-          {done && <Check size={12} />}
-          {jobLabel(job)}
-        </Ownership>
-      )}
+      <EpisodeStatus job={job} />
       <IconButton
         aria-label={
           busy
@@ -167,8 +236,10 @@ function EpisodeRow({ episode, job }: { episode: Episode; job?: DownloadJob }) {
         disabled={busy || done || mutation.isPending}
         onClick={() => mutation.mutate()}
       >
-        {busy || done ? (
+        {done ? (
           <Check size={17} />
+        ) : busy ? (
+          <Clock size={17} />
         ) : failed ? (
           <RotateCcw size={17} />
         ) : (
@@ -181,6 +252,8 @@ function EpisodeRow({ episode, job }: { episode: Episode; job?: DownloadJob }) {
 
 export function PodcastPage() {
   const { podcastId } = useParams({ from: '/podcasts/$podcastId' })
+  const client = useQueryClient()
+  const room = useLayout() === 'room'
   const [filter, setFilter] = useState('')
   const query = useQuery({
     queryKey: ['podcast', podcastId],
@@ -197,6 +270,21 @@ export function PodcastPage() {
     }
     return latest
   })
+  const latest = useMutation({
+    mutationFn: (batch: Episode[]) =>
+      Promise.all(
+        batch.map((episode) =>
+          api('podcast-episodes', jobSchema, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ podcast_id: episode.podcast_id, episode_id: episode.id }),
+          }),
+        ),
+      ),
+    onSuccess: (saved) => {
+      for (const job of saved) updateJob(client, job)
+    },
+  })
   if (query.isError)
     return (
       <ErrorBanner role="alert">
@@ -205,35 +293,66 @@ export function PodcastPage() {
       </ErrorBanner>
     )
   if (!query.data) return <p role="status">Loading podcast…</p>
-  const { podcast, episodes } = query.data
+  const { podcast } = query.data
+  // Newest first, whatever order the directory sent them in. Dates are ISO days, so they sort as text.
+  const episodes = [...query.data.episodes].sort((a, b) => b.date.localeCompare(a.date))
   const needle = filter.trim().toLocaleLowerCase()
   const shown = needle
     ? episodes.filter((episode) => episode.title.toLocaleLowerCase().includes(needle))
     : episodes
+  const total = Math.max(podcast.episode_count, episodes.length)
+  const states = episodes.map((episode) => jobs.data?.get(episode.id))
+  const done = states.filter((job) => job?.stage === 'done').length
+  const queued = states.filter((job) => job && activeJob(job)).length
+  // Only an episode with no job at all is offered again; a failed one has its own Retry.
+  const fresh = episodes.filter((episode) => !jobs.data?.get(episode.id)).slice(0, LATEST_COUNT)
   return (
-    <>
-      <Link
-        to="/search"
-        search={{ q: podcast.title, tab: 'podcast' }}
-        className={textLinkClassName()}
-      >
-        ← Podcast search
-      </Link>
-      <div className="mt-[24px] mb-[32px] flex items-center gap-[28px] max-phone:items-start max-phone:gap-[16px]">
-        <Cover src={podcast.art} className="aspect-square w-[210px] max-phone:w-[95px]" />
-        <div className="min-w-0">
-          <span className="text-micro font-semibold tracking-[2px] text-faint max-phone:text-caption">
-            PODCAST{podcast.genre ? ` · ${podcast.genre.toUpperCase()}` : ''}
-          </span>
-          <h1 className="my-[12px] max-phone:text-[24px]">{podcast.title}</h1>
-          {podcast.author && <p>{podcast.author}</p>}
-          <p className="my-[15px] text-body">
-            {episodes.length} episode{episodes.length === 1 ? '' : 's'} listed
-            {podcast.episode_count > episodes.length ? ` (latest of ${podcast.episode_count})` : ''}
-          </p>
-          <DownloadTarget format="original" />
-        </div>
-      </div>
+    <div className="[container-type:inline-size]">
+      <BackToSearch fallback={{ q: podcast.title, tab: 'podcast' }} />
+      <CatalogHero
+        cover={
+          <Cover
+            src={podcast.art}
+            rounded="rounded-[14px]"
+            className="aspect-square w-full shadow-[0_24px_50px_-24px_color-mix(in_oklab,var(--color-shadow)_80%,transparent)]"
+          />
+        }
+        eyebrow={`Podcast${podcast.genre ? ` · ${podcast.genre}` : ''}`}
+        source="Apple Podcasts"
+        title={podcast.title}
+        byline={podcast.author ? <span>{podcast.author}</span> : undefined}
+        meta={`${episodes.length} episode${episodes.length === 1 ? '' : 's'} listed${podcast.episode_count > episodes.length ? ` (latest of ${podcast.episode_count})` : ''}`}
+        coverage={
+          episodes.length
+            ? {
+                owned: done,
+                otherEdition: 0,
+                queued,
+                missing: Math.max(0, episodes.length - done - queued),
+              }
+            : undefined
+        }
+        actions={
+          <>
+            <Button
+              variant="primary"
+              disabled={fresh.length === 0 || latest.isPending}
+              onClick={() => latest.mutate(fresh)}
+            >
+              <ArrowDownToLine size={16} />
+              {fresh.length > 0 ? `Download latest ${fresh.length}` : 'Download latest'}
+            </Button>
+            <HeroDestination>
+              <DownloadTarget format="original" />
+            </HeroDestination>
+            {latest.isError && (
+              <span role="alert" className="w-full text-small text-danger">
+                {latest.error.message}
+              </span>
+            )}
+          </>
+        }
+      />
       <label className="mb-[16px] flex max-w-[420px] flex-col gap-[5px] text-small text-muted">
         Find an episode
         <Field
@@ -244,20 +363,39 @@ export function PodcastPage() {
         />
       </label>
       {shown.length ? (
-        <ul aria-label="Episodes" className="m-0 list-none p-0">
-          {shown.map((episode) => (
-            <EpisodeRow key={episode.id} episode={episode} job={jobs.data?.get(episode.id)} />
-          ))}
-        </ul>
+        <>
+          <div
+            aria-hidden="true"
+            className={cx(
+              'grid grid-cols-[34px_minmax(0,1fr)_auto_40px] gap-[14px] border-b border-line px-[10px] pb-[8px] text-caption tracking-[0.6px] text-faint max-phone:hidden',
+              room && 'font-mono',
+            )}
+          >
+            <span className="text-right">#</span>
+            <span>EPISODE</span>
+            <span>STATUS</span>
+            <span />
+          </div>
+          <ul aria-label="Episodes" className="m-0 list-none p-0 pt-[6px]">
+            {shown.map((episode) => (
+              <EpisodeRow
+                key={episode.id}
+                episode={episode}
+                job={jobs.data?.get(episode.id)}
+                number={total - episodes.indexOf(episode)}
+              />
+            ))}
+          </ul>
+        </>
       ) : (
         <p className="py-[30px]">
           {episodes.length ? 'No episodes match that title.' : 'No downloadable episodes listed.'}
         </p>
       )}
-      <p className="mt-[20px] text-small text-muted">
+      <p className="mt-[18px] border-t border-line pt-[14px] text-small text-faint">
         Episodes save to Podcasts/show name/date - title in the chosen folder, in the file format
-        the show publishes.
+        the show publishes. Counts cover the episodes listed here and the ones you have downloaded.
       </p>
-    </>
+    </div>
   )
 }

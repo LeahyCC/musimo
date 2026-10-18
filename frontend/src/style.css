@@ -1,4 +1,10 @@
 @import 'tailwindcss';
+/* Self-hosted, because the Content-Security-Policy and the privacy policy both rule out a font
+   CDN. Each file only declares its faces; the browser fetches one when a layout first uses it, so
+   Classic never downloads Geist and the Listening room never downloads Inter. */
+@import '@fontsource-variable/inter';
+@import '@fontsource-variable/geist';
+@import '@fontsource-variable/geist-mono';
 /* The Windows 95 skin. It does nothing until a theme sets data-skin="win95" on <html>. */
 @import './theme/win95.css';
 
@@ -31,6 +37,8 @@
   /* Lines */
   --color-line: #2a3630;
   --color-line-strong: #344035;
+  /* The bars of a chart that are not the one picked out: past weeks, other years. */
+  --color-chart-idle: #3d4b43;
 
   /* Accent */
   --color-accent: #c3e4a2;
@@ -43,6 +51,7 @@
   --color-good-line: #4b6743;
   --color-warn: #f8ca76;
   --color-warn-bg: #342e1d;
+  --color-warn-line: #5a4b2a;
   --color-danger: #efbaa2;
   --color-danger-bg: #39251f;
   --color-danger-line: #674343;
@@ -57,6 +66,10 @@
      opacity modifier or a color-mix so a theme can tint them. */
   --color-scrim: #000000;
   --color-shadow: #000000;
+
+  /* Classic's fonts. The Listening room swaps both below, on `data-layout`, which the shell sets. */
+  --font-sans: 'Inter Variable', Inter, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
 
   /* The sizes the screens actually use, so no screen has to invent 13.5px. */
   --text-micro: 9px;
@@ -91,6 +104,7 @@
   --z-index-chat: 25; /* the music bot's chat popover and phone sheet */
   --z-index-skip: 30; /* the skip link */
   --z-index-dock: 45; /* the floating queue pill */
+  --z-index-toast: 50; /* toasts, which sit where the queue pill does */
 
   /* Three named widths. `phone` is 48rem so `max-phone:` cuts at 767px, where the sidebar becomes
      a bottom bar; `tablet` keeps the narrow sidebar and stacks the Now Playing columns. The
@@ -110,25 +124,30 @@
    seek input carries --progress, and several calc()s add these together. A Tailwind spacing key
    would be readable by neither. */
 :root {
-  font-family:
-    Inter,
-    -apple-system,
-    BlinkMacSystemFont,
-    'Segoe UI',
-    sans-serif;
+  font-family: var(--font-sans);
   color: var(--color-text);
   background: var(--color-canvas);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   color-scheme: dark;
-  --sidebar-width: 215px;
-  --topbar-height: 87px;
+  --sidebar-width: 224px;
+  --topbar-height: 60px;
   /* The phone layout turns the sidebar into a bottom bar of this height; 0 elsewhere. */
   --nav-height: 0px;
   /* The footer player publishes its measured height here so bars and docks can clear it. */
-  --player-height: 75px;
+  --player-height: 76px;
+  /* The floating download pill publishes its height here, plus a gap, while it shows, so a toast
+     stacks above it instead of covering it. */
+  --dock-height: 0px;
   /* How much of the seek bar sits behind the playhead. The footer sets it on the range input. */
   --progress: 0%;
+  /* Where the toast region's corner sits. The Listening room moves it clear of its own player. */
+  --toast-right: calc(20px + var(--safe-right));
+  /* Classic's floating download pill shares the corner and publishes its height, so toasts stack
+     above it. The Listening room has no pill. */
+  --toast-bottom: calc(
+    var(--player-height) + var(--nav-height) + var(--safe-bottom) + 16px + var(--dock-height)
+  );
   /* The border a row, card or link lights up with. Derived, so a theme does not have to name it. */
   --line-hover: color-mix(in oklab, var(--color-line-strong), var(--color-muted) 35%);
   /* Notch and home-indicator insets; 0 until viewport-fit=cover meets a device that has them. */
@@ -137,11 +156,17 @@
   --safe-bottom: env(safe-area-inset-bottom, 0px);
   --safe-left: env(safe-area-inset-left, 0px);
 }
+/* The Listening room's fonts. `:where` keeps this at the weight of a bare `:root`, so the Windows 95
+   skin's own font still wins whichever layout is picked. */
+:root:where([data-layout='room']) {
+  --font-sans: 'Geist Variable', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, monospace;
+}
 /* The same edges as `max-tablet:` and `max-phone:`, so the variables and the utilities switch at
    the same pixel, including at zoomed, fractional widths. */
 @media (width < theme(--breakpoint-tablet)) {
   :root {
-    --sidebar-width: 184px;
+    --sidebar-width: 200px;
   }
 }
 @media (width < theme(--breakpoint-phone)) {
@@ -149,6 +174,41 @@
     --sidebar-width: 0px;
     --nav-height: 64px;
     --topbar-height: 60px;
+  }
+}
+
+/* The Listening room (`app/shell/room.tsx`). On a wide window its pages scroll inside the page pane,
+   between a rail and the player dock, so the measurements the pages add up are the gutter plus the
+   rail and the gutter plus the header. The Classic footer never shows here; it stays in the page
+   only for the audio elements it holds, and the dock or the floating mini player stands in for it.
+   Under the tablet edge the dock becomes a 76px bar under the page. A phone scrolls the document,
+   as Classic does, and `--player-height` is the floating mini player and its gap while one shows. */
+:root:where([data-layout='room']) {
+  --dock-width: clamp(280px, 24vw, 340px);
+  --sidebar-width: 88px;
+  --topbar-height: 72px;
+  --toast-right: calc(var(--dock-width) + 28px + var(--safe-right));
+  --toast-bottom: calc(24px + var(--safe-bottom));
+}
+:root[data-layout='room'] footer.live-player {
+  display: none !important;
+}
+@media (width < theme(--breakpoint-tablet)) {
+  :root:where([data-layout='room']) {
+    --toast-right: calc(28px + var(--safe-right));
+    --toast-bottom: calc(96px + var(--safe-bottom));
+  }
+}
+@media (width < theme(--breakpoint-phone)) {
+  :root:where([data-layout='room']) {
+    --sidebar-width: 0px;
+    --topbar-height: 56px;
+    --nav-height: 68px;
+    --player-height: 0px !important;
+    --toast-bottom: calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 12px);
+  }
+  :root:where([data-layout='room']):has([data-room-mini]) {
+    --player-height: 66px !important;
   }
 }
 
@@ -324,54 +384,76 @@ meter::-webkit-meter-optimum-value {
   }
 }
 
-/* Dialog backdrops: the command palette, the queue sheet and the playlist picker. */
-.command-palette::backdrop {
-  background: color-mix(in oklab, var(--color-scrim) 73%, transparent);
-  backdrop-filter: blur(4px);
-}
-.queue-sheet::backdrop,
-.playlist-picker-sheet::backdrop {
+/* The queue sheet's backdrop. The overlays in components/review-sheet.tsx style their own. */
+.queue-sheet::backdrop {
   background: color-mix(in oklab, var(--color-scrim) 53%, transparent);
 }
 
-/* The phone footer's seek bar. A range input's track and thumb are only reachable through vendor
-   pseudo-elements, and WebKit has none for the played portion, so the bar paints it from
-   --progress, which the footer sets on the input. The input's own box is utilities in player.tsx. */
+/* The footer player's seek and volume bars. A range input's track and thumb are only reachable
+   through vendor pseudo-elements, and WebKit has none for the played portion, so the bar paints it
+   from --progress, which the footer sets on the input. The input's own box is utilities in
+   player.tsx. The thumb is there to grab, so it shows on hover and focus and stays out of the way
+   otherwise. A phone's seek bar is the mini player's 2px top line, and has its thumb always. */
+.live-player input[type='range'] {
+  --bar-height: 4px;
+}
+.live-player input[type='range']::-webkit-slider-runnable-track {
+  height: var(--bar-height);
+  border-radius: var(--bar-height);
+  background: linear-gradient(
+    to right,
+    var(--color-accent) var(--progress, 0%),
+    var(--color-line-strong) var(--progress, 0%)
+  );
+}
+.live-player input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 12px;
+  height: 12px;
+  margin-top: calc((var(--bar-height) - 12px) / 2);
+  border-radius: 50%;
+  background: var(--color-accent);
+  opacity: 0;
+}
+.live-player input[type='range']:hover::-webkit-slider-thumb,
+.live-player input[type='range']:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+.live-player input[type='range']::-moz-range-track {
+  height: var(--bar-height);
+  border-radius: var(--bar-height);
+  background: var(--color-line-strong);
+}
+.live-player input[type='range']::-moz-range-progress {
+  height: var(--bar-height);
+  border-radius: var(--bar-height);
+  background: var(--color-accent);
+}
+.live-player input[type='range']::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: var(--color-accent);
+  opacity: 0;
+}
+.live-player input[type='range']:hover::-moz-range-thumb,
+.live-player input[type='range']:focus-visible::-moz-range-thumb {
+  opacity: 1;
+}
 @media (width < theme(--breakpoint-phone)) {
+  .live-player .playback-controls input[type='range'] {
+    --bar-height: 2px;
+  }
   /* Inset, because the bar runs edge to edge and a ring outside it would be cut off. */
   .live-player .playback-controls input[type='range']:focus-visible {
     outline-offset: -2px;
   }
-  .live-player .playback-controls input[type='range']::-webkit-slider-runnable-track {
-    height: 3px;
-    background: linear-gradient(
-      to right,
-      var(--color-accent) var(--progress, 0%),
-      var(--color-line-strong) var(--progress, 0%)
-    );
-  }
-  .live-player .playback-controls input[type='range']::-webkit-slider-thumb {
-    appearance: none;
-    width: 11px;
-    height: 11px;
-    margin-top: -4px;
-    border-radius: 50%;
-    background: var(--color-accent);
-  }
-  .live-player .playback-controls input[type='range']::-moz-range-track {
-    height: 3px;
-    background: var(--color-line-strong);
-  }
-  .live-player .playback-controls input[type='range']::-moz-range-progress {
-    height: 3px;
-    background: var(--color-accent);
-  }
+  .live-player .playback-controls input[type='range']::-webkit-slider-thumb,
   .live-player .playback-controls input[type='range']::-moz-range-thumb {
     width: 11px;
     height: 11px;
-    border: 0;
-    border-radius: 50%;
-    background: var(--color-accent);
+    opacity: 1;
   }
 }
 
@@ -729,7 +811,8 @@ meter::-webkit-meter-optimum-value {
     min-height: 44px;
     font-size: 16px;
   }
-  input[type='checkbox'] {
+  /* A `Switch` is a see-through checkbox sized to its own 44px hit area, so it is left out. */
+  input[type='checkbox']:not([role='switch']) {
     width: 20px;
     height: 20px;
   }

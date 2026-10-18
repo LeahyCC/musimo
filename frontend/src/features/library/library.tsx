@@ -9,10 +9,11 @@ import {
 } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
+  ChevronLeft,
   Disc3,
-  Heart,
   Library,
   ListMusic,
+  ListPlus,
   Pencil,
   Plus,
   Search,
@@ -40,10 +41,10 @@ import {
 } from '../../api'
 import type { LibraryAlbum, LibraryArtist, LibraryPlaylist, LibraryTrack } from '../../api'
 import { InfiniteScroll } from '../../components/infinite-scroll'
-import { PageTitle } from '../../components/page-title'
 import { ReviewDialog } from '../../components/review-sheet'
 import { RowMenu } from '../../components/row-menu'
 import { cx } from '../../lib/cx'
+import { useLayout } from '../../lib/layout'
 import { usePhone } from '../../lib/use-phone'
 import {
   Button,
@@ -52,11 +53,10 @@ import {
   ErrorBanner,
   Field,
   FieldSelect,
+  IconButton,
   InlineError,
   sectionCaptionClassName,
   sectionHeadingClassName,
-  sectionTitleClassName,
-  Tag,
   textLinkClassName,
 } from '../../ui'
 import { remember, songCount, stored, usePlayer, usePlaylistSongs } from '../player/player'
@@ -66,17 +66,20 @@ import { CollectionCover, CollectionHeader } from './collection-header'
 import {
   AlbumItem,
   ArtistItem,
+  browseGridClass,
+  browseListClass,
   collectionArtClass,
   CollectionPlayButton,
   collectionRowClass,
   cover,
   FilterMenu,
-  type Layout,
   LayoutToggle,
   PlaylistRow,
+  type ViewMode,
 } from './collection-items'
 import { artistPageLocation, useArtistSort, useLibraryBrowse } from './library-browse'
 import { artistAlbumSorts, artistSongSorts, librarySortValues } from './library-params'
+import { LibraryHeading, LibraryToolbar, SearchField, type TabCounts } from './library-toolbar'
 import { PopularityChart } from './popularity-chart'
 import { TrackList } from './track-list'
 
@@ -167,6 +170,14 @@ const totalLength = (seconds: number) => {
   return `${Math.floor(minutes / 60)} hr${minutes % 60 ? ` ${minutes % 60} min` : ''}`
 }
 
+/** What a playlist's footer says, from what the playlist really is. */
+const playlistFooter = (isPublic: boolean, liked: boolean) =>
+  liked
+    ? 'Every song you give a thumbs up lands here. Liked can be renamed but never deleted.'
+    : isPublic
+      ? 'Public playlist. Add songs from the search below, or remove one with the cross on its row.'
+      : 'Private to you. Add songs from the search below, or remove one with the cross on its row.'
+
 const sumDuration = (songs: LibraryTrack[]) => songs.reduce((sum, song) => sum + song.duration, 0)
 
 const textCompare = (left = '', right = '') =>
@@ -224,13 +235,16 @@ export function LibraryPage({
   const client = useQueryClient()
   const navigate = useNavigate()
   const tab = view
+  const shell = useLayout()
+  const room = shell === 'room'
   const phone = usePhone()
   const filterSheet = useRef<HTMLDialogElement>(null)
   const filterSheetTitle = useId()
   const editionsSheet = useRef<HTMLDialogElement>(null)
+  const addSongsSearch = useRef<HTMLInputElement>(null)
   const editionsSheetTitle = useId()
   const [openGroupKey, setOpenGroupKey] = useState('')
-  const [layout, setLayout] = useState<Layout>(() =>
+  const [layout, setLayout] = useState<ViewMode>(() =>
     stored('musimo.library-layout', 'grid') === 'list' ? 'list' : 'grid',
   )
   const showBrowser = !albumId && !artistId && !playlistId
@@ -240,7 +254,7 @@ export function LibraryPage({
     artistId && !albumId ? (artistSongsMode ? 'songs' : 'albums') : null,
     artistId,
   )
-  const { deferredQuery, query } = browse
+  const { deferredQuery } = browse
   const sort = browse.sort
   const selectedGenres = browse.genres
   const selectedYears = browse.years
@@ -314,10 +328,27 @@ export function LibraryPage({
     // new page lands, which on a large library is seconds.
     placeholderData: keepPreviousData,
   })
+  // The Listening room's view strip shows every view's size, so it asks each list for its total
+  // (one row is enough, the total rides on the page).
+  // The playlist count comes from the shared playlist list instead, which everything that makes
+  // a playlist (the picker, Now Playing, the music bot) refreshes, so the strip never lags it.
+  const stripShown = ready && shell === 'room' && showBrowser
+  const viewCounts = useQuery({
+    queryKey: ['library-view-counts'],
+    queryFn: async ({ signal }): Promise<Omit<TabCounts, 'playlists'>> => {
+      const [albumPage, artistPage, trackPage] = await Promise.all([
+        api('library/albums?size=1', libraryAlbumsSchema, { signal }),
+        api('library/artists?size=1', libraryArtistsSchema, { signal }),
+        api('library/tracks?size=1', libraryTracksSchema, { signal }),
+      ])
+      return { albums: albumPage.total, artists: artistPage.total, tracks: trackPage.total }
+    },
+    enabled: stripShown,
+  })
   const playlists = useQuery({
     queryKey: ['library-playlists'],
     queryFn: ({ signal }) => api('library/playlists', libraryPlaylistsSchema, { signal }),
-    enabled: ready && (tab === 'playlists' || Boolean(playlistId)),
+    enabled: ready && (tab === 'playlists' || Boolean(playlistId) || stripShown),
   })
   const albumDetail = useQuery({
     queryKey: ['library-album', albumId],
@@ -494,6 +525,12 @@ export function LibraryPage({
     const sheet = editionsSheet.current
     if (openEditions && sheet && !sheet.open) sheet.showModal()
   }, [openEditions])
+  // The five most played songs, whatever order the song list below is sorted in.
+  const topSongs = useMemo(
+    () =>
+      [...(artistTracks.data?.items ?? [])].sort((a, b) => b.playCount - a.playCount).slice(0, 5),
+    [artistTracks.data],
+  )
   const artistSongs = useMemo(
     () => sortArtistSongs(artistTracks.data?.items ?? [], artistOrdering.sort),
     [artistTracks.data, artistOrdering.sort],
@@ -572,6 +609,11 @@ export function LibraryPage({
     .map(cover)
   if (!playlistCovers.length && playlist?.coverArt) playlistCovers.push(cover(playlist.coverArt))
   const detailTitle = playlist?.name ?? albumDetail.data?.name ?? ''
+  // The closing line under the songs. Only what the data says: an album's release year and genre,
+  // and what a playlist's visibility means.
+  const foot = playlist
+    ? playlistFooter(playlist.public, playlistLiked)
+    : [album?.year ? `Released ${album.year}` : '', album?.genre].filter(Boolean).join(' · ')
   const detailSource = playlist ? `playlist:${playlist.id}` : `album:${albumId}`
   const detailError = playlistId ? playlistDetail.error : albumId ? albumDetail.error : null
   const busy =
@@ -632,37 +674,49 @@ export function LibraryPage({
       </EmptyPanel>
     )
 
-  // A detail page starts with its own header, so the page heading goes and the view tabs shrink to
-  // a slim row that carries the way back.
+  // A detail page starts with its own header, so it gets a slim row that carries the way back.
   const backLabel = albumParent?.name ?? (playlistId ? 'playlists' : albumId ? 'albums' : 'artists')
   const browsing = tab === 'home' ? 'albums' : tab
-
-  const searchField = (className: string) => (
-    <label
-      className={cx(
-        'flex items-center rounded-[8px] border border-line bg-sunken px-[12px] text-muted coarse:min-h-11',
-        className,
-      )}
-    >
-      <Search size={17} className="flex-none" />
-      <input
-        className="w-full min-w-0 border-0 bg-transparent p-[11px] text-inherit outline-0 coarse:text-base"
-        aria-label={`Search ${browsing}`}
-        value={query}
-        onChange={(event) => browse.setQuery(event.target.value)}
-        placeholder={`Search ${browsing}`}
-      />
-      {query && (
-        <button
-          className="grid place-items-center border-0 bg-none p-[7px] text-muted coarse:min-h-11 coarse:min-w-11"
-          aria-label="Clear search"
-          onClick={() => browse.setQuery('')}
+  // Classic prints the count of what the active view matches. The Listening room prints every
+  // view's whole-library count in its strip: `viewCounts`, plus the playlist list's length.
+  const activeTotal =
+    browsing === 'artists'
+      ? artistTotal
+      : browsing === 'tracks'
+        ? trackTotal
+        : browsing === 'playlists'
+          ? playlistItems.length
+          : albumTotal
+  const activeLoaded = !activeQuery.isLoading && !activeQuery.isError
+  const tabCounts: TabCounts =
+    shell === 'room'
+      ? { ...viewCounts.data, playlists: playlists.data?.items.length }
+      : activeLoaded
+        ? { [browsing]: activeTotal }
+        : {}
+  const headingActions =
+    tab === 'tracks' ? (
+      <>
+        <CollectionPlayButton
+          source={trackSource}
+          text="Play all"
+          variant="primary"
+          size={15}
+          disabled={busy || !trackTotal}
+          onPlay={() => playTracks.mutate({ shuffled: false })}
+        />
+        <Button
+          onClick={() => playTracks.mutate({ shuffled: true })}
+          disabled={busy || !trackTotal}
         >
-          <X size={15} />
-        </button>
-      )}
-    </label>
-  )
+          <Shuffle size={15} /> Shuffle
+        </Button>
+      </>
+    ) : tab === 'playlists' && shell === 'classic' && !phone ? (
+      <Button variant="primary" onClick={() => setShowPlaylistForm(true)}>
+        <Plus size={16} /> New playlist
+      </Button>
+    ) : undefined
 
   // What the sort, filter and view controls are, in one column. A phone keeps them here rather than
   // in a toolbar, so the first album is on the first screen.
@@ -717,14 +771,12 @@ export function LibraryPage({
       {facetsShown && (
         <>
           <FilterMenu
-            inline
             label="Genres"
             options={genres}
             selected={selectedGenres}
             onToggle={(value) => browse.toggleGenre(value)}
           />
           <FilterMenu
-            inline
             label="Years"
             options={years}
             selected={selectedYears}
@@ -754,66 +806,43 @@ export function LibraryPage({
   return (
     <>
       {showBrowser && (
-        <PageTitle compact eyebrow="YOUR MUSIC, READY TO PLAY" title="Library">
-          <Tag role="status" className="max-phone:shrink-0">
-            {/* Both labels share one cell so the tag keeps its width while the busy one shows. */}
-            <span className="grid">
-              <span className="[grid-area:1/1]" style={{ visibility: busy ? 'hidden' : undefined }}>
-                LIBRARY READY
-              </span>
-              {busy && <span className="[grid-area:1/1]">Opening music…</span>}
-            </span>
-          </Tag>
-        </PageTitle>
+        <LibraryHeading
+          shell={shell}
+          tab={browsing}
+          counts={tabCounts}
+          onOpen={changeTab}
+          actions={headingActions}
+        />
       )}
-      <div
-        className={
-          showBrowser
-            ? 'contents'
-            : 'mb-[18px] flex flex-wrap items-center justify-between gap-x-[16px] border-b border-line max-phone:mb-[14px]'
-        }
-      >
-        {!showBrowser && (
+      {!showBrowser && (
+        <div className="mb-[18px] flex flex-wrap items-center justify-between gap-x-[16px] border-b border-line max-phone:mb-[14px]">
           <button
             type="button"
             data-ui="text-link"
-            className={textLinkClassName()}
+            className={cx(
+              textLinkClassName('gap-[6px]'),
+              'my-[8px] h-[32px] rounded-md pr-[10px] pl-[6px] !text-muted hover:bg-raised hover:!text-text',
+            )}
             onClick={() => {
               if (albumParent) void navigate(artistPageLocation('albums', albumParent.id))
               else changeTab(playlistId ? 'playlists' : albumId ? 'albums' : 'artists')
             }}
           >
-            ← Back to {backLabel}
+            <ChevronLeft size={16} />
+            {/* The words are the button's name, so voice control can say what it sees. */}
+            {room && !albumParent ? 'Back to Library' : `Back to ${backLabel}`}
           </button>
-        )}
-        <nav
-          className={cx(
-            'flex min-w-0 gap-[6px] overflow-x-auto max-phone:gap-0 max-phone:overflow-visible',
-            showBrowser ? 'border-b border-line mb-[28px] max-phone:mb-[14px]' : 'max-phone:w-full',
-          )}
-          aria-label="Library views"
-        >
-          {(['home', 'albums', 'artists', 'tracks', 'playlists'] as Tab[]).map((item) => (
-            <button
-              data-ui="tab"
-              className={cx(
-                'border-0 border-b-2 bg-none px-[14px] capitalize coarse:min-h-11 max-phone:min-w-0 max-phone:flex-1 max-phone:px-[2px] max-phone:py-[12px] max-phone:text-body max-phone:text-center',
-                showBrowser ? 'py-[11px]' : 'py-[7px]',
-                tab === item ? 'border-accent text-text' : 'border-transparent text-muted',
-              )}
-              key={item}
-              aria-pressed={tab === item}
-              onClick={() => changeTab(item)}
-            >
-              {item.charAt(0).toUpperCase() + item.slice(1)}
-            </button>
-          ))}
-        </nav>
-      </div>
+        </div>
+      )}
       {showBrowser && phone && (
         <>
           <div className="mb-[14px] flex items-center gap-[10px]">
-            {searchField('min-w-0 flex-1')}
+            <SearchField
+              browse={browse}
+              noun={browsing}
+              room={shell === 'room'}
+              className="min-w-0 flex-1"
+            />
             <Button
               className="flex-none"
               aria-haspopup="dialog"
@@ -854,90 +883,18 @@ export function LibraryPage({
         </>
       )}
       {showBrowser && !phone && (
-        <div className="flex flex-wrap items-center gap-[10px] mb-[22px]">
-          {searchField('w-[min(420px,100%)]')}
-          <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
-            <SlidersHorizontal size={16} />
-            <select
-              className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
-              aria-label={`Sort ${tab}`}
-              value={sort}
-              onChange={(event) => browse.setSort(event.target.value)}
-            >
-              {viewSorts[tab].map((option) => (
-                <option value={option.value} key={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          {tab === 'playlists' && (
-            <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
-              <select
-                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
-                aria-label="Filter playlists"
-                value={visibility}
-                onChange={(event) => browse.setVisibility(event.target.value)}
-              >
-                <option value="all">All playlists</option>
-                <option value="public">Public</option>
-                <option value="private">Private</option>
-              </select>
-            </label>
-          )}
-          {tab === 'artists' && (
-            <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
-              <select
-                className="max-w-[180px] border-0 bg-sunken py-[9px] pr-[22px] pl-[2px] text-text coarse:min-h-11 coarse:text-base"
-                aria-label="Show artists"
-                value={artistShow}
-                onChange={(event) => browse.setShow(event.target.value)}
-              >
-                <option value="">All artists</option>
-                <option value="favourites">Favourites</option>
-                <option value="played">Played</option>
-                <option value="unplayed">Never played</option>
-              </select>
-            </label>
-          )}
-          {facetsShown && (
-            <>
-              <FilterMenu
-                label="Genres"
-                options={genres}
-                selected={selectedGenres}
-                onToggle={(value) => browse.toggleGenre(value)}
-              />
-              <FilterMenu
-                label="Years"
-                options={years}
-                selected={selectedYears}
-                onToggle={(value) => browse.toggleYear(value)}
-              />
-              {(selectedGenres.length > 0 || selectedYears.length > 0 || artistShow) && (
-                <button
-                  type="button"
-                  data-ui="text-link"
-                  className={textLinkClassName('px-[5px] py-[9px]')}
-                  onClick={browse.clearFilters}
-                >
-                  Clear filters
-                </button>
-              )}
-            </>
-          )}
-          <div className="ml-auto flex items-center gap-[10px]">
-            <span className="library-count text-small whitespace-nowrap text-muted">
-              {loadedText}
-            </span>
-            {tab !== 'tracks' && <LayoutToggle layout={layout} onChange={setLayout} />}
-          </div>
-          {tab === 'playlists' && (
-            <Button variant="primary" onClick={() => setShowPlaylistForm(true)}>
-              <Plus size={16} /> New playlist
-            </Button>
-          )}
-        </div>
+        <LibraryToolbar
+          shell={shell}
+          tab={browsing}
+          browse={browse}
+          sorts={viewSorts[browsing]}
+          genres={genres}
+          years={years}
+          facetsShown={facetsShown}
+          view={layout}
+          onView={setLayout}
+          loadedText={loadedText}
+        />
       )}
       {showBrowser && tab === 'playlists' && showPlaylistForm && (
         <form
@@ -983,13 +940,31 @@ export function LibraryPage({
             <CollectionHeader
               cover={
                 <CollectionCover
+                  liked={playlistLiked}
                   urls={playlist ? playlistCovers : album?.coverArt ? [cover(album.coverArt)] : []}
                   fallback={playlist ? <ListMusic /> : <Disc3 />}
                 />
               }
-              eyebrow={playlist ? 'PLAYLIST' : ['ALBUM', album?.year].filter(Boolean).join(' · ')}
+              eyebrow={
+                playlist
+                  ? `PLAYLIST · ${playlistLiked ? 'LINKED TO THUMBS UP' : playlist.public ? 'PUBLIC' : 'PRIVATE'}`
+                  : ['ALBUM', album?.year].filter(Boolean).join(' · ')
+              }
               title={detailTitle}
-              titleIcon={playlistLiked ? <Heart size={22} fill="currentColor" /> : undefined}
+              titleAction={
+                playlist ? (
+                  <IconButton
+                    aria-label="Rename playlist"
+                    aria-expanded={renaming}
+                    onClick={() => {
+                      setRenameValue(playlist.name)
+                      setRenaming(!renaming)
+                    }}
+                  >
+                    <Pencil size={15} />
+                  </IconButton>
+                ) : undefined
+              }
               byline={
                 playlist ? (
                   playlist.owner ? (
@@ -1011,7 +986,6 @@ export function LibraryPage({
                 ? [
                     songCount(detailTracks.length),
                     totalLength(playlist.duration || sumDuration(detailTracks)),
-                    playlist.public ? 'Public' : 'Private',
                   ]
                 : [
                     songCount(detailTracks.length),
@@ -1036,6 +1010,24 @@ export function LibraryPage({
               >
                 <Shuffle size={15} /> Shuffle
               </Button>
+              {album && (
+                <Button
+                  onClick={() => player.addToQueue(detailTracks)}
+                  disabled={!detailTracks.length}
+                >
+                  <ListPlus size={15} /> Queue
+                </Button>
+              )}
+              {playlist && (
+                <Button
+                  onClick={() => {
+                    addSongsSearch.current?.scrollIntoView({ block: 'center' })
+                    addSongsSearch.current?.focus()
+                  }}
+                >
+                  <Plus size={15} /> Add songs
+                </Button>
+              )}
               <RowMenu
                 label={`More actions for ${detailTitle}`}
                 disabled={!detailTracks.length}
@@ -1044,17 +1036,6 @@ export function LibraryPage({
                   () => player.addToQueue(detailTracks),
                 )}
               />
-              {playlist && (
-                <Button
-                  onClick={() => {
-                    setRenameValue(playlist.name)
-                    setRenaming(!renaming)
-                  }}
-                  aria-expanded={renaming}
-                >
-                  <Pencil size={15} /> Rename
-                </Button>
-              )}
               {playlist && !playlistLiked && (
                 <Button
                   variant="danger"
@@ -1113,6 +1094,9 @@ export function LibraryPage({
             </InlineError>
           )}
           <TrackList
+            detail
+            thirdColumn={playlist ? 'album' : 'genre'}
+            thumbs={Boolean(playlist)}
             tracks={detailTracks}
             source={detailSource}
             // A playlist is in the order its owner chose, so its rows count places in it. An album's
@@ -1126,6 +1110,11 @@ export function LibraryPage({
                 : undefined
             }
           />
+          {foot && detailTracks.length > 0 && (
+            <p className="library-foot border-t border-line pt-[14px] text-small leading-[1.7] text-faint">
+              {foot}
+            </p>
+          )}
           {playlist && (
             <section className="border-t border-line pt-[12px]">
               <div className={sectionHeadingClassName}>
@@ -1136,6 +1125,7 @@ export function LibraryPage({
                 <Search size={17} />
                 <input
                   className="w-full border-0 bg-transparent p-[11px] text-inherit outline-0"
+                  ref={addSongsSearch}
                   aria-label="Search songs to add"
                   value={playlistTrackQuery}
                   onChange={(event) => setPlaylistTrackQuery(event.target.value)}
@@ -1263,6 +1253,32 @@ export function LibraryPage({
               <ListMusic size={15} /> {artistSongsMode ? 'Albums' : 'All songs'}
             </Button>
           </CollectionHeader>
+          {!artistSongsMode && (
+            <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-[16px] max-[900px]:grid-cols-1">
+              {topSongs.length > 0 && (
+                <section className="library-top-songs min-w-0">
+                  <div className="mb-[10px] flex items-baseline justify-between">
+                    <h2 className="text-strong">Top songs</h2>
+                    <button
+                      type="button"
+                      className="border-0 bg-transparent text-small text-muted hover:text-text coarse:min-h-11"
+                      onClick={() => void navigate(artistPageLocation('songs', artistId))}
+                    >
+                      All {artistSongs.length} songs
+                    </button>
+                  </div>
+                  <TrackList
+                    detail
+                    numbering="position"
+                    tracks={topSongs}
+                    source={`artist:${artistId}:top`}
+                  />
+                </section>
+              )}
+              <PopularityChart albums={artistDetail.data.album} />
+            </div>
+          )}
+          {!artistSongsMode && <h2 className="mt-[12px] text-strong">Albums</h2>}
           <div className="flex flex-wrap items-center gap-[10px] mt-[4px] mb-[12px]">
             <label className="flex min-h-[42px] items-center gap-[7px] rounded-[8px] border border-line bg-sunken px-[10px] text-muted">
               <SlidersHorizontal size={16} />
@@ -1292,7 +1308,7 @@ export function LibraryPage({
           )}
           {artistSongsMode && artistTracks.isLoading && <p role="status">Loading songs…</p>}
           {artistSongsMode ? (
-            <TrackList tracks={artistSongs} source={`artist:${artistId}`} />
+            <TrackList detail tracks={artistSongs} source={`artist:${artistId}`} />
           ) : (
             <>
               <div
@@ -1396,35 +1412,15 @@ export function LibraryPage({
                     ))}
                 </ul>
               </ReviewDialog>
-              <section className="grid gap-[10px] mt-[26px]">
-                <div className={sectionHeadingClassName}>
-                  <h2 className="text-strong">Popularity</h2>
-                  <span className={sectionCaptionClassName}>Play counts by release year</span>
-                </div>
-                <PopularityChart albums={artistDetail.data.album} />
-              </section>
             </>
           )}
         </section>
       )}
       {(tab === 'home' || tab === 'albums') && showBrowser && (
-        <section>
-          <div className={sectionHeadingClassName}>
-            <h2 className={sectionTitleClassName}>
-              {deferredQuery
-                ? 'Album results'
-                : tab === 'home'
-                  ? 'Fresh in your library'
-                  : 'Albums'}
-            </h2>
-          </div>
+        <section aria-label={deferredQuery ? 'Album results' : 'Albums'}>
           {libraryLoadError}
           <div
-            className={
-              layout === 'grid'
-                ? 'library-grid grid grid-cols-[repeat(auto-fill,minmax(145px,1fr))] gap-x-[16px] gap-y-[22px]'
-                : 'grid grid-cols-1 gap-[6px]'
-            }
+            className={layout === 'grid' ? browseGridClass('album', room) : browseListClass(room)}
           >
             {albumItems.map((album) => (
               <AlbumItem
@@ -1456,11 +1452,7 @@ export function LibraryPage({
         <div>
           {libraryLoadError}
           <div
-            className={
-              layout === 'grid'
-                ? 'library-artist-grid grid grid-cols-[repeat(auto-fill,minmax(145px,1fr))] gap-x-[16px] gap-y-[22px]'
-                : 'grid grid-cols-1 gap-[6px]'
-            }
+            className={layout === 'grid' ? browseGridClass('artist', room) : browseListClass(room)}
           >
             {artistItems.map((artist: LibraryArtist) => (
               <ArtistItem
@@ -1486,43 +1478,21 @@ export function LibraryPage({
         </div>
       )}
       {tab === 'tracks' && showBrowser && (
-        <section className="library-detail grid gap-[16px]">
+        <section className="library-detail grid gap-[12px]">
           {libraryLoadError}
-          <div className="library-list-actions flex items-center gap-[4px]">
-            <div className="flex flex-col gap-[6px]">
-              <CollectionPlayButton
-                source={trackSource}
-                text="Play all"
-                variant="primary"
-                size={15}
-                disabled={busy || !trackTotal}
-                onPlay={() => playTracks.mutate({ shuffled: false })}
-              />
-              {trackTotal > 500 && (
-                <small className="text-small text-muted">
-                  Plays the first 500 of {trackTotal.toLocaleString()} matching songs.
-                </small>
-              )}
+          {/* Play all and Shuffle sit in the heading. This note covers both when the whole
+              selection fits; past 500 songs, Play all is capped by the saved queue and Shuffle
+              keeps going, so each gets its own. */}
+          {trackTotal > 500 ? (
+            <div className="grid gap-[2px] text-small text-muted">
+              <small>Plays the first 500 of {trackTotal.toLocaleString()} matching songs.</small>
+              <small>
+                Shuffles all {trackTotal.toLocaleString()} matching songs. Each plays once before
+                any repeat.
+              </small>
             </div>
-            <div className="flex flex-col gap-[6px]">
-              <Button
-                onClick={() => playTracks.mutate({ shuffled: true })}
-                disabled={busy || !trackTotal}
-              >
-                <Shuffle size={15} /> Shuffle
-              </Button>
-              {trackTotal > 500 && (
-                <small className="text-small text-muted">
-                  Shuffles all {trackTotal.toLocaleString()} matching songs. Each plays once before
-                  any repeat.
-                </small>
-              )}
-            </div>
-          </div>
-          {/* Both buttons share one note when the whole selection fits. Past 500 songs, Play all
-              is capped by the saved queue and Shuffle keeps going. */}
-          {trackTotal <= 500 && (
-            <small className="block text-small text-muted mt-[8px] mb-[16px]">
+          ) : (
+            <small className="block text-small text-muted">
               Covers every matching song, not just the loaded ones.
             </small>
           )}
@@ -1530,6 +1500,7 @@ export function LibraryPage({
           {/* A song's number on its own album means nothing beside songs from other albums, so it
               is shown only when the list is in album order. */}
           <TrackList
+            table
             tracks={trackItems}
             source={trackSource}
             numbering={sort === 'album' ? 'track' : 'none'}
@@ -1541,11 +1512,21 @@ export function LibraryPage({
           {libraryLoadError}
           <div
             className={
-              layout === 'grid'
-                ? 'library-list grid grid-cols-[repeat(auto-fill,minmax(330px,1fr))] gap-[10px]'
-                : 'grid grid-cols-1 gap-[6px]'
+              layout === 'grid' ? browseGridClass('playlist', room) : browseListClass(room)
             }
           >
+            {room && !phone && (
+              <button
+                type="button"
+                className={cx(
+                  'flex items-center justify-center gap-[8px] border border-dashed border-line-strong bg-transparent font-medium text-muted hover:text-text coarse:min-h-11',
+                  layout === 'grid' ? 'min-h-[84px] rounded-[16px]' : 'min-h-[56px] rounded-[10px]',
+                )}
+                onClick={() => setShowPlaylistForm(true)}
+              >
+                <Plus size={16} /> New playlist
+              </button>
+            )}
             {playlistItems.map((item: LibraryPlaylist) => (
               <PlaylistRow
                 key={item.id}

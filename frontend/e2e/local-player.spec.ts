@@ -99,7 +99,7 @@ test('local files play, seek, restore their queue and persist playlist edits', a
 
   await expect(
     picker.getByRole('button', {
-      name: `Remove Local Second Light from ${playlistName}`,
+      name: `Added, remove Local Second Light from ${playlistName}`,
       exact: true,
     }),
   ).toBeVisible()

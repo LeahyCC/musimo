@@ -5,6 +5,7 @@ import type { LibraryTrack } from '../src/api'
 import { DEFAULT_THEME } from '../src/theme/themes'
 import type { Theme } from '../src/theme/themes'
 import { librarySong, playerFixtures } from './library-fixtures'
+import { libraryLink } from './nav'
 import { LIGHT_THEME, rgb, themeVars } from './theme-fixtures'
 
 const song = librarySong('song-1', { title: 'First Light', duration: 30 })
@@ -242,10 +243,7 @@ test('on a desktop the stage and its controls sit beside one tabbed panel, all i
   await page.getByRole('button', { name: 'Close playlist picker' }).click()
 
   // Leaving brings the footer back and its height with it.
-  await page
-    .getByRole('navigation', { name: 'Main navigation' })
-    .getByRole('link', { name: 'Library' })
-    .click()
+  await libraryLink(page).click()
   await expect(page.getByRole('contentinfo')).toContainText('First Light')
   await expect.poll(() => playerHeight(page)).not.toBe('0px')
 })

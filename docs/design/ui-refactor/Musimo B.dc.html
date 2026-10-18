@@ -1,0 +1,938 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Musimo · Direction B</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="./icon.js"></script>
+<script src="./viz.js"></script>
+<style>html{color-scheme:dark}*{scrollbar-color:#2a3630 transparent;scrollbar-width:thin}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a3630;border-radius:10px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-corner{background:transparent}
+
+body{margin:0;background:#0e1312}
+*{box-sizing:border-box}
+a{color:#c3e4a2;text-decoration:none}
+a:hover{color:#d9ff73}
+button{font:inherit;cursor:pointer}
+input,select{font:inherit}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2a3630;border-radius:10px;border:3px solid transparent;background-clip:padding-box}
+</style>
+</helmet>
+<div style="height:{{ rootH }};width:100%;display:flex;gap:{{ gutter }};padding:{{ gutter }};background:#0e1312;color:#e8ece8;font-family:Geist,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;position:relative;overflow:hidden">
+
+  <!-- Rail -->
+  <sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+    <nav style="width:72px;flex:none;display:flex;flex-direction:column;align-items:center;gap:4px;padding:10px 0">
+      <div style="height:48px;display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:700;letter-spacing:-1px;margin-bottom:10px">m<span style="color:#c3e4a2">.</span></div>
+      <sc-for list="{{ rail }}" as="n" hint-placeholder-count="5">
+        <button onClick="{{ n.go }}" style="position:relative;width:60px;height:56px;flex:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:5px;border:0;border-radius:14px;background:{{ n.bg }};color:{{ n.fg }};font-size:10.5px;font-weight:500" style-hover="color:#e8ece8">
+          <m-i n="{{ n.icon }}" s="20"></m-i>{{ n.label }}
+          <sc-if value="{{ n.badge }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:6px;right:10px;min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#d9ff73;color:#172014;font-size:10px;font-weight:700;display:grid;place-items:center">3</span></sc-if>
+        </button>
+      </sc-for>
+      <div style="flex:1"></div>
+      <sc-for list="{{ railSys }}" as="n" hint-placeholder-count="2">
+        <button onClick="{{ n.go }}" aria-label="{{ n.label }}" style="position:relative;width:44px;height:44px;flex:none;display:grid;place-items:center;border:0;border-radius:12px;background:{{ n.bg }};color:{{ n.fg }}" style-hover="color:#e8ece8">
+          <m-i n="{{ n.icon }}" s="19"></m-i>
+          <sc-if value="{{ n.dot }}" hint-placeholder-val="{{ false }}"><i style="position:absolute;top:10px;right:10px;width:7px;height:7px;border-radius:50%;background:#c3e4a2;box-shadow:0 0 0 2px #0e1312"></i></sc-if>
+        </button>
+      </sc-for>
+    </nav>
+  </sc-if>
+
+  <!-- Main pane -->
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;background:#111716;border-radius:{{ paneR }};overflow:hidden;position:relative">
+    <header style="flex:none;height:{{ headH }};display:flex;align-items:center;gap:12px;padding:0 clamp(16px,2.4vw,28px)">
+      <div style="flex:1;min-width:0;display:flex;align-items:baseline;gap:10px">
+        <span style="font-size:{{ titleFs }};font-weight:600;letter-spacing:-0.4px;white-space:nowrap">{{ title }}</span>
+        <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;letter-spacing:0.4px;color:#819088;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ subtitle }}</span>
+      </div>
+      <sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+        <button onClick="{{ openPalette }}" style="width:min(340px,40%);height:38px;display:flex;align-items:center;gap:10px;padding:0 8px 0 12px;border-radius:10px;border:1px solid #2a3630;background:#151c19;color:#819088;font-size:13px;text-align:left" style-hover="border-color:#344035">
+          <m-i n="search" s="16"></m-i><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Search or paste a link</span>
+          <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;padding:2px 6px;border-radius:5px;background:#1e2a23;color:#93a39b">⌘K</span>
+        </button>
+      </sc-if>
+      <sc-if value="{{ phone }}" hint-placeholder-val="{{ false }}">
+        <button onClick="{{ goSettings }}" aria-label="Settings" style="width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:12px;background:#151c19;color:#93a39b"><m-i n="settings-2" s="18"></m-i></button>
+        <button onClick="{{ goDiag }}" aria-label="Server" style="position:relative;width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:12px;background:#151c19;color:#93a39b">
+          <m-i n="server" s="18"></m-i><i style="position:absolute;top:9px;right:9px;width:7px;height:7px;border-radius:50%;background:#c3e4a2"></i>
+        </button>
+      </sc-if>
+    </header>
+
+    <main style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;container-type:inline-size">
+      <div style="padding:4px clamp(16px,2.4vw,28px) {{ padBottom }}">
+
+        <!-- ============ HOME ============ -->
+        <sc-if value="{{ firstRun }}" hint-placeholder-val="{{ false }}"><dc-import name="Musimo Welcome" hint-size="100%,700px"></dc-import></sc-if>
+        <sc-if value="{{ homeFull }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:28px">
+            <sc-if value="{{ hs.continue }}" hint-placeholder-val="{{ true }}"><section style="flex:3 1 440px;min-width:0;position:relative;display:flex;flex-wrap:wrap;gap:22px;padding:20px;border-radius:18px;background:radial-gradient(120% 140% at 0% 0%, oklch(0.32 0.06 330) 0%, #17201b 60%);overflow:hidden">
+              <div style="width:clamp(120px,22cqi,200px);aspect-ratio:1;border-radius:12px;flex:none;background:{{ np.art }};box-shadow:0 20px 40px -16px rgba(0,0,0,.7)"></div>
+              <div style="flex:1 1 220px;min-width:0;display:flex;flex-direction:column">
+                <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;letter-spacing:0.6px;color:#c3e4a2">● PLAYING · TRACK 4 / 79</span>
+                <div style="margin-top:12px;font-size:28px;font-weight:600;letter-spacing:-0.8px;line-height:1.1">{{ np.title }}</div>
+                <div style="margin-top:6px;color:#93a39b;font-size:14px">{{ np.artist }} — {{ np.album }}</div>
+                <div style="flex:1;min-height:18px"></div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <button onClick="{{ togglePlay }}" aria-label="Play" style="width:48px;height:48px;border-radius:50%;border:0;display:grid;place-items:center;background:#e8ece8;color:#111716"><m-i n="{{ playIcon }}" s="20" fill></m-i></button>
+                  <button aria-label="Next" style="width:40px;height:40px;border-radius:50%;border:0;display:grid;place-items:center;background:rgba(232,236,232,.08);color:#e8ece8"><m-i n="skip-forward" s="17" fill></m-i></button>
+                  <div style="flex:1;min-width:60px;height:3px;border-radius:3px;background:rgba(232,236,232,.15);margin-left:8px"><div style="width:31%;height:100%;border-radius:3px;background:#e8ece8"></div></div>
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#93a39b">0:58 / 3:08</span>
+                </div>
+              </div>
+            </section></sc-if>
+            <sc-if value="{{ hs.stats }}" hint-placeholder-val="{{ true }}"><section style="flex:2 1 300px;min-width:0;display:grid;grid-template-columns:1fr 1fr;gap:12px">
+              <sc-for list="{{ stats }}" as="st" hint-placeholder-count="4">
+                <div style="padding:16px;border-radius:18px;background:#17201b;display:flex;flex-direction:column;justify-content:space-between;min-height:104px">
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;letter-spacing:0.6px;color:#819088">{{ st.k }}</span>
+                  <span style="font-size:26px;font-weight:600;letter-spacing:-0.8px">{{ st.v }}</span>
+                  <span style="font-size:12px;color:{{ st.dc }}">{{ st.d }}</span>
+                </div>
+              </sc-for>
+            </section></sc-if>
+          </div>
+
+          <sc-if value="{{ hs.fresh }}" hint-placeholder-val="{{ true }}"><section style="margin-bottom:28px">
+            <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:12px">
+              <h2 style="margin:0;font-size:17px;font-weight:600;letter-spacing:-0.2px">New in your library</h2>
+              <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#819088">46 THIS WEEK</span>
+              <div style="flex:1"></div>
+              <button onClick="{{ goLib }}" style="border:0;background:none;color:#93a39b;font-size:12px;display:inline-flex;align-items:center;gap:4px" style-hover="color:#e8ece8">All albums<m-i n="arrow-right" s="13"></m-i></button>
+            </div>
+            <div style="display:grid;grid-auto-flow:column;grid-auto-columns:minmax(150px,180px);gap:14px;overflow-x:auto;scrollbar-width:none;padding-bottom:4px">
+              <sc-for list="{{ fresh }}" as="al" hint-placeholder-count="8">
+                <div style="min-width:0;cursor:pointer" onClick="{{ goAlbum }}">
+                  <div style="position:relative;aspect-ratio:1;border-radius:12px;background:{{ al.art }}">
+                    <span style="position:absolute;left:8px;top:8px;font-family:'Geist Mono',ui-monospace,monospace;font-size:10px;padding:2px 6px;border-radius:5px;background:rgba(14,19,18,.75);color:#e8ece8">{{ al.y }}</span>
+                  </div>
+                  <div style="margin-top:9px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.t }}</div>
+                  <div style="margin-top:2px;font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.a }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </section></sc-if>
+
+          <div style="display:flex;flex-wrap:wrap;gap:12px">
+            <sc-if value="{{ hs.mostPlayed }}" hint-placeholder-val="{{ true }}"><section style="flex:1 1 320px;min-width:0;padding:18px;border-radius:18px;background:#17201b">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px">
+                <h2 style="margin:0;font-size:15px;font-weight:600">Most played · October</h2>
+                <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#819088">PLAYS</span>
+              </div>
+              <sc-for list="{{ repeatTracks }}" as="tr" hint-placeholder-count="5">
+                <div style="display:grid;grid-template-columns:20px 36px minmax(0,1fr) 70px 28px;align-items:center;gap:10px;padding:6px 0">
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#819088">{{ tr.n }}</span>
+                  <span style="width:36px;height:36px;border-radius:6px;background:{{ tr.art }}"></span>
+                  <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ tr.t }}</span><span style="display:block;font-size:12px;color:#93a39b">{{ tr.a }}</span></span>
+                  <span style="height:4px;border-radius:4px;background:#2a3630"><span style="display:block;height:100%;border-radius:4px;width:{{ tr.w }};background:#c3e4a2"></span></span>
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#93a39b;text-align:right">{{ tr.plays }}</span>
+                </div>
+              </sc-for>
+            </section></sc-if>
+            <sc-if value="{{ hs.jump }}" hint-placeholder-val="{{ true }}"><section style="flex:1 1 280px;min-width:0;padding:18px;border-radius:18px;background:#17201b">
+              <h2 style="margin:0 0 12px;font-size:15px;font-weight:600">Playlists</h2>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">
+                <sc-for list="{{ playlistsShort }}" as="pl" hint-placeholder-count="4">
+                  <div style="display:flex;align-items:center;gap:10px;padding:6px;border-radius:12px;background:#1e2a23;min-width:0">
+                    <span style="width:40px;height:40px;flex:none;border-radius:8px;background:{{ pl.a1 }};display:grid;place-items:center;color:#172014"><sc-if value="{{ pl.liked }}" hint-placeholder-val="{{ false }}"><m-i n="heart" s="16" fill></m-i></sc-if></span>
+                    <span style="min-width:0"><span style="display:block;font-weight:600;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ pl.name }}</span><span style="display:block;font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#819088;margin-top:2px">{{ pl.n }}</span></span>
+                  </div>
+                </sc-for>
+              </div>
+            </section></sc-if>
+            <sc-if value="{{ hs.octive }}" hint-placeholder-val="{{ true }}"><section style="flex:1 1 280px;min-width:0;padding:18px;border-radius:18px;background:#1e2a23;display:flex;flex-direction:column;gap:12px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <span style="position:relative;width:34px;height:34px;flex:none">
+                  <span style="position:absolute;left:14%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(30% 0,100% 78%,0 100%);transform:rotate(-4deg)"></span>
+                  <span style="position:absolute;left:56%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(70% 0,100% 100%,0 78%);transform:rotate(4deg)"></span>
+                  <span style="position:absolute;left:12%;top:26%;width:76%;height:66%;background:#c3e4a2;border-radius:46% 46% 40% 40%/52% 52% 42% 42%"></span>
+                  <span style="position:absolute;left:28.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+                  <span style="position:absolute;left:60.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+                  <span style="position:absolute;left:46.5%;top:58%;width:7%;height:5.5%;background:#172014;border-radius:45% 45% 60% 60%"></span>
+                </span>
+                <span style="font-weight:600;font-size:15px">Ask Octive</span>
+              </div>
+              <button onClick="{{ goBot }}" style="height:42px;display:flex;align-items:center;gap:8px;padding:0 6px 0 12px;border-radius:12px;border:1px solid #344035;background:#111716;color:#819088;font-size:13px;text-align:left">
+                <span style="flex:1">Songs I haven't played in a year…</span>
+                <span style="width:30px;height:30px;border-radius:8px;display:grid;place-items:center;background:#c3e4a2;color:#172014"><m-i n="arrow-up" s="15"></m-i></span>
+              </button>
+              <div style="display:flex;flex-wrap:wrap;gap:6px">
+                <sc-for list="{{ prompts }}" as="pr" hint-placeholder-count="3">
+                  <button onClick="{{ goBot }}" style="height:28px;padding:0 10px;border-radius:999px;border:0;background:#263327;color:#e8ece8;font-size:12px">{{ pr }}</button>
+                </sc-for>
+              </div>
+            </section></sc-if>
+          </div>
+        </sc-if>
+
+        <!-- ============ LIBRARY ============ -->
+        <sc-if value="{{ s.library }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:4px;padding:4px;border-radius:14px;background:#151c19;margin-bottom:16px;overflow-x:auto;scrollbar-width:none">
+            <sc-for list="{{ libTabs }}" as="t" hint-placeholder-count="4">
+              <button onClick="{{ t.go }}" style="flex:1 0 auto;height:{{ t.h }};display:flex;align-items:center;justify-content:center;gap:8px;padding:0 14px;border:0;border-radius:10px;background:{{ t.bg }};color:{{ t.fg }};font-size:13px;font-weight:600">{{ t.label }}<span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;font-weight:400;color:#819088">{{ t.n }}</span></button>
+            </sc-for>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:20px">
+            <label style="flex:1 1 200px;max-width:300px;height:36px;display:flex;align-items:center;gap:8px;padding:0 11px;border-radius:10px;background:#151c19;color:#819088">
+              <m-i n="search" s="15"></m-i><input placeholder="Filter" style="flex:1;min-width:0;border:0;background:transparent;color:#e8ece8;font-size:13px;outline:0">
+            </label>
+            <span style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 6px 0 11px;border-radius:999px;background:#263327;color:#e8ece8;font-size:12px"><span style="color:#93a39b">Genre</span>Latin<m-i n="x" s="13"></m-i></span>
+            <span style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 6px 0 11px;border-radius:999px;background:#263327;color:#e8ece8;font-size:12px"><span style="color:#93a39b">Genre</span>Funk<m-i n="x" s="13"></m-i></span>
+            <button style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 11px;border-radius:999px;border:1px dashed #344035;background:transparent;color:#93a39b;font-size:12px"><m-i n="plus" s="13"></m-i>Year</button>
+            <button style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 11px;border-radius:999px;border:1px dashed #344035;background:transparent;color:#93a39b;font-size:12px"><m-i n="plus" s="13"></m-i>Format</button>
+            <div style="flex:1"></div>
+            <button style="height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border-radius:10px;border:0;background:transparent;color:#e8ece8;font-size:13px"><m-i n="arrow-down-wide-narrow" s="15"></m-i>Recently added</button>
+            <div style="display:flex;border-radius:10px;background:#151c19;padding:2px">
+              <button onClick="{{ setGrid }}" aria-label="Grid" style="width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:8px;background:{{ gridBg }};color:{{ gridFg }}"><m-i n="layout-grid" s="15"></m-i></button>
+              <button onClick="{{ setList }}" aria-label="List" style="width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:8px;background:{{ listBg }};color:{{ listFg }}"><m-i n="rows-3" s="15"></m-i></button>
+            </div>
+          </div>
+          <sc-if value="{{ lt.albumsGrid }}" hint-placeholder-val="{{ true }}">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:22px 14px">
+              <sc-for list="{{ albums }}" as="al" hint-placeholder-count="12">
+                <div style="min-width:0;cursor:pointer" onClick="{{ goAlbum }}">
+                  <div style="position:relative;aspect-ratio:1;border-radius:12px;background:{{ al.art }}" style-hover="transform:translateY(-2px)">
+                    <span style="position:absolute;left:8px;top:8px;font-family:'Geist Mono',ui-monospace,monospace;font-size:10px;padding:2px 6px;border-radius:5px;background:rgba(14,19,18,.75);color:#e8ece8">{{ al.y }}</span>
+                  </div>
+                  <div style="margin-top:9px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.t }}</div>
+                  <div style="margin-top:2px;font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.a }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ lt.list }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;gap:2px">
+              <div style="display:grid;grid-template-columns:28px minmax(0,2fr) minmax(0,1.3fr) 60px 52px;gap:14px;padding:0 12px 8px;font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;letter-spacing:0.6px;color:#819088">
+                <span>#</span><span>TITLE</span><span>ALBUM</span><span style="text-align:right">PLAYS</span><span style="text-align:right">TIME</span>
+              </div>
+              <sc-for list="{{ trackRows }}" as="tr" hint-placeholder-count="10">
+                <div style="display:grid;grid-template-columns:28px minmax(0,2fr) minmax(0,1.3fr) 60px 52px;align-items:center;gap:14px;padding:7px 12px;border-radius:10px;background:{{ tr.bg }}" style-hover="background:#17201b">
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:{{ tr.nc }}">{{ tr.n }}</span>
+                  <span style="min-width:0;display:flex;align-items:center;gap:10px"><span style="width:36px;height:36px;border-radius:6px;flex:none;background:{{ tr.art }}"></span><span style="min-width:0"><span style="display:block;font-weight:500;color:{{ tr.tc }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ tr.t }}</span><span style="display:block;font-size:12px;color:#93a39b">{{ tr.a }}</span></span></span>
+                  <span style="font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ tr.al }}</span>
+                  <span style="text-align:right;font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#819088">{{ tr.plays }}</span>
+                  <span style="text-align:right;font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#93a39b">{{ tr.d }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ lt.artists }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(130px,1fr));gap:22px 14px">
+              <sc-for list="{{ artists }}" as="ar" hint-placeholder-count="12">
+                <div style="min-width:0;text-align:center;cursor:pointer" onClick="{{ goArtist }}"><div style="aspect-ratio:1;border-radius:50%;background:{{ ar.art }}"></div><div style="margin-top:10px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ar.name }}</div><div style="margin-top:2px;font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#819088">{{ ar.n }}</div></div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ lt.playlists }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:12px">
+              <div style="display:flex;align-items:center;justify-content:center;gap:8px;min-height:84px;border-radius:16px;border:1px dashed #344035;color:#93a39b;font-weight:500"><m-i n="plus" s="16"></m-i>New playlist</div>
+              <sc-for list="{{ playlists }}" as="pl" hint-placeholder-count="7">
+                <div onClick="{{ pl.go }}" style="cursor:pointer;display:flex;align-items:center;gap:12px;padding:10px;border-radius:16px;background:#17201b;min-width:0" style-hover="background:#1e2a23">
+                  <span style="width:64px;height:64px;flex:none;border-radius:10px;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;position:relative">
+                    <span style="background:{{ pl.a1 }}"></span><span style="background:{{ pl.a2 }}"></span><span style="background:{{ pl.a3 }}"></span><span style="background:{{ pl.a4 }}"></span>
+                    <sc-if value="{{ pl.liked }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;inset:0;display:grid;place-items:center;background:#c3e4a2;color:#172014"><m-i n="heart" s="24" fill></m-i></span></sc-if>
+                  </span>
+                  <span style="flex:1;min-width:0"><span style="display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ pl.name }}</span><span style="display:block;margin-top:4px;font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#819088">{{ pl.meta }}</span></span>
+                  <button aria-label="Play" style="width:36px;height:36px;flex:none;border-radius:50%;border:0;display:grid;place-items:center;background:#263327;color:#c3e4a2"><m-i n="play" s="14" fill></m-i></button>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <!-- ============ DETAIL ============ -->
+        <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="Musimo Collection" kind="{{ detailKind }}" playlist-id="{{ plId }}" mono="'Geist Mono',ui-monospace,monospace" back-label="Library" on-back="{{ detailBack }}" on-play="{{ goNP }}" hint-size="100%,900px"></dc-import>
+        </sc-if>
+
+        <!-- ============ CATALOG PAGES ============ -->
+        <sc-if value="{{ isCatalog }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="Musimo Catalog" kind="{{ catKind }}" mono="'Geist Mono',ui-monospace,monospace" on-back="{{ goSearch }}" on-open-artist="{{ goCArtist }}" on-open-album="{{ goCAlbum }}" on-download-all="{{ openArtistDl }}" hint-size="100%,900px"></dc-import>
+        </sc-if>
+
+        <!-- ============ SEARCH ============ -->
+        <sc-if value="{{ s.search }}" hint-placeholder-val="{{ false }}">
+          <label style="height:52px;display:flex;align-items:center;gap:12px;padding:0 14px;border-radius:14px;background:#151c19;border:1px solid #344035;color:#819088;margin-bottom:14px">
+            <m-i n="search" s="19"></m-i>
+            <input value="{{ query }}" onChange="{{ onQuery }}" placeholder="Search the catalog or paste a link" style="flex:1;min-width:0;border:0;background:transparent;color:#e8ece8;font-size:17px;outline:0">
+            <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#819088">DEEZER · LIBRARY-AWARE</span>
+          </label>
+          <div style="display:flex;gap:6px;margin-bottom:20px;overflow-x:auto;scrollbar-width:none">
+            <sc-for list="{{ searchTabs }}" as="c" hint-placeholder-count="5">
+              <button onClick="{{ c.go }}" style="flex:none;height:32px;padding:0 14px;border-radius:999px;border:0;background:{{ c.bg }};color:{{ c.fg }};font-size:13px;font-weight:500">{{ c.label }}</button>
+            </sc-for>
+          </div>
+          <section style="display:flex;flex-wrap:wrap;align-items:center;gap:18px 24px;padding:18px 20px;border-radius:18px;background:#17201b;margin-bottom:24px">
+            <button onClick="{{ goCArtist }}" aria-label="Open Khruangbin" style="width:72px;height:72px;border:0;padding:0;border-radius:50%;flex:none;background:{{ topArt }}"></button>
+            <div style="flex:1 1 220px;min-width:0">
+              <div style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;letter-spacing:0.6px;color:#819088">ARTIST · TOP RESULT</div>
+              <div onClick="{{ goCArtist }}" style="cursor:pointer;font-size:24px;font-weight:600;letter-spacing:-0.6px;margin-top:4px">Khruangbin</div>
+              <div style="display:flex;height:8px;border-radius:8px;overflow:hidden;margin-top:12px;gap:2px;max-width:420px">
+                <span style="flex:61;background:#c3e4a2"></span><span style="flex:9;background:#e4cc9c"></span><span style="flex:4;background:#93a39b"></span><span style="flex:20;background:#2a3630"></span>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:8px;font-size:12px;color:#93a39b">
+                <span><b style="color:#c3e4a2;font-weight:600">61</b> owned</span><span><b style="color:#e4cc9c;font-weight:600">9</b> other edition</span><span><b style="color:#e8ece8;font-weight:600">4</b> queued</span><span><b style="color:#e8ece8;font-weight:600">20</b> missing of 94</span>
+              </div>
+            </div>
+            <button onClick="{{ openArtistDl }}" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:10px;border:0;background:#c3e4a2;color:#172014;font-size:13px;font-weight:600"><m-i n="arrow-down-to-line" s="16"></m-i>Get the 20 missing</button>
+          </section>
+          <div style="display:flex;flex-wrap:wrap;gap:24px">
+            <section style="flex:3 1 420px;min-width:0">
+              <h2 style="margin:0 0 10px;font-size:15px;font-weight:600">Tracks</h2>
+              <sc-for list="{{ catTracks }}" as="ct" hint-placeholder-count="5">
+                <div style="display:grid;grid-template-columns:40px minmax(0,1fr) auto 44px 36px;align-items:center;gap:12px;padding:6px 8px;border-radius:10px" style-hover="background:#17201b">
+                  <span style="width:40px;height:40px;border-radius:7px;background:{{ ct.art }};display:grid;place-items:center;color:#e8ece8"><m-i n="play" s="14" fill></m-i></span>
+                  <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ct.t }}</span><span style="display:block;font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ct.a }}</span></span>
+                  <span style="display:inline-flex;align-items:center;gap:6px;font-size:12px;color:{{ ct.bfg }};white-space:nowrap"><i style="width:7px;height:7px;border-radius:50%;background:{{ ct.bfg }}"></i>{{ ct.badge }}</span>
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#819088;text-align:right">{{ ct.d }}</span>
+                  <button aria-label="Download" style="width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:{{ ct.dc }}" style-hover="background:#1e2a23"><m-i n="{{ ct.di }}" s="16"></m-i></button>
+                </div>
+              </sc-for>
+            </section>
+            <section style="flex:2 1 300px;min-width:0">
+              <h2 style="margin:0 0 10px;font-size:15px;font-weight:600">Albums</h2>
+              <div style="display:grid;gap:8px">
+                <sc-for list="{{ catAlbums }}" as="ca" hint-placeholder-count="5">
+                  <div onClick="{{ goCAlbum }}" style="cursor:pointer;display:grid;grid-template-columns:52px minmax(0,1fr) auto;align-items:center;gap:12px;padding:8px;border-radius:12px;background:#17201b">
+                    <span style="width:52px;height:52px;border-radius:8px;background:{{ ca.art }}"></span>
+                    <span style="min-width:0"><span style="display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ca.t }}</span><span style="display:block;font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#819088;margin-top:3px">{{ ca.y }} · {{ ca.k }} · {{ ca.own }}</span><span style="display:block;height:3px;border-radius:3px;background:#2a3630;margin-top:7px"><span style="display:block;height:100%;border-radius:3px;width:{{ ca.pct }};background:{{ ca.pc }}"></span></span></span>
+                    <button aria-label="Get" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:9px;background:#1e2a23;color:{{ ca.pc }}"><m-i n="{{ ca.icon }}" s="15"></m-i></button>
+                  </div>
+                </sc-for>
+              </div>
+            </section>
+          </div>
+        </sc-if>
+
+        <!-- ============ NOW PLAYING (stage) ============ -->
+        <sc-if value="{{ s.nowplaying }}" hint-placeholder-val="{{ false }}">
+          <div style="position:relative;border-radius:22px;overflow:hidden;background:radial-gradient(90% 120% at 15% 10%, oklch(0.36 0.08 330) 0%, oklch(0.22 0.04 330) 45%, #111716 100%);padding:clamp(18px,3cqi,36px)">
+            <div style="display:flex;flex-wrap:wrap;gap:clamp(20px,4cqi,48px);align-items:center">
+              <div style="flex:0 1 440px;min-width:240px;aspect-ratio:1;border-radius:16px;background:{{ np.art }};box-shadow:0 40px 80px -30px rgba(0,0,0,.85);position:relative">
+                <sc-if value="{{ npViz }}" hint-placeholder-val="{{ false }}">
+                  <div style="position:absolute;inset:0;border-radius:16px;overflow:hidden;background:#020305"><m-viz preset="{{ vizPreset }}" style="position:absolute;inset:0"></m-viz></div>
+                </sc-if>
+                <div style="position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:6px;padding:5px 5px 5px 6px;border-radius:999px;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);color:#fff">
+                  <div style="display:flex;padding:2px;border-radius:999px;background:rgba(255,255,255,.1)">
+                    <button onClick="{{ showArt }}" style="height:26px;padding:0 10px;border:0;border-radius:999px;background:{{ artBg }};color:{{ artFg }};font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px">ART</button>
+                    <button onClick="{{ showViz }}" style="height:26px;padding:0 10px;border:0;border-radius:999px;background:{{ vizBg }};color:{{ vizFg }};font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px">MILKDROP</button>
+                  </div>
+                  <span style="flex:1;min-width:0;font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;opacity:.8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ vizName }}</span>
+                  <sc-if value="{{ npViz }}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{ vizPrev }}" aria-label="Previous preset" style="width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#fff"><m-i n="chevron-left" s="14"></m-i></button>
+                    <button onClick="{{ vizNext }}" aria-label="Next preset" style="width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#fff"><m-i n="chevron-right" s="14"></m-i></button>
+                  </sc-if>
+                  <button aria-label="Pop out" style="width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#fff"><m-i n="picture-in-picture-2" s="14"></m-i></button>
+                  <button aria-label="Full screen" style="width:26px;height:26px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#fff"><m-i n="maximize-2" s="13"></m-i></button>
+                </div>
+              </div>
+              <div style="flex:1 1 300px;min-width:0">
+                <div style="display:flex;gap:4px;padding:3px;border-radius:999px;background:rgba(0,0,0,.25);width:max-content;margin-bottom:22px">
+                  <sc-for list="{{ npTabs }}" as="t" hint-placeholder-count="4">
+                    <button onClick="{{ t.go }}" style="height:30px;padding:0 13px;border:0;border-radius:999px;background:{{ t.bg }};color:{{ t.fg }};font-size:12px;font-weight:500">{{ t.label }}</button>
+                  </sc-for>
+                </div>
+                <sc-if value="{{ npTab.lyrics }}" hint-placeholder-val="{{ true }}">
+                  <div style="display:grid;gap:12px">
+                    <sc-for list="{{ lyrics }}" as="l" hint-placeholder-count="7">
+                      <div style="font-size:{{ l.fs }};font-weight:600;letter-spacing:-0.6px;line-height:1.2;color:{{ l.c }}">{{ l.t }}</div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ npTab.queue }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:grid;gap:2px;max-height:380px;overflow:auto">
+                    <sc-for list="{{ queue }}" as="q" hint-placeholder-count="8">
+                      <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;padding:6px 8px;border-radius:10px;background:{{ q.bg2 }}" style-hover="background:rgba(0,0,0,.25)">
+                        <span style="width:36px;height:36px;border-radius:6px;background:{{ q.art }}"></span>
+                        <span style="min-width:0"><span style="display:block;font-weight:500;color:{{ q.tc }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ q.t }}</span><span style="display:block;font-size:12px;color:rgba(255,255,255,.6)">{{ q.a }}</span></span>
+                        <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:rgba(255,255,255,.6)">{{ q.d }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ npTab.about }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:grid;grid-template-columns:auto 1fr;gap:12px 24px">
+                    <sc-for list="{{ about }}" as="ab" hint-placeholder-count="8">
+                      <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;letter-spacing:0.5px;color:rgba(255,255,255,.55);padding-top:2px">{{ ab.kU }}</span><span style="min-width:0;overflow-wrap:anywhere">{{ ab.v }}</span>
+                    </sc-for>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ npTab.history }}" hint-placeholder-val="{{ false }}">
+                  <div style="display:grid;gap:2px">
+                    <sc-for list="{{ history }}" as="q" hint-placeholder-count="6">
+                      <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;padding:6px 8px;border-radius:10px">
+                        <span style="width:36px;height:36px;border-radius:6px;background:{{ q.art }}"></span><span style="font-weight:500">{{ q.t }}</span><span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:rgba(255,255,255,.6)">{{ q.when }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+              </div>
+            </div>
+            <div style="margin-top:clamp(20px,3cqi,32px)">
+              <div style="display:flex;align-items:flex-end;flex-wrap:wrap;gap:12px 20px">
+                <div style="flex:1 1 260px;min-width:0">
+                  <div style="font-size:clamp(22px,3.4cqi,34px);font-weight:600;letter-spacing:-1px;line-height:1.1">{{ np.title }}</div>
+                  <div style="margin-top:6px;font-size:15px;color:rgba(255,255,255,.75)">{{ np.artist }} — {{ np.album }}</div>
+                </div>
+                <div style="display:flex;gap:6px;flex-wrap:wrap">
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;padding:4px 8px;border-radius:6px;background:rgba(0,0,0,.28);color:rgba(255,255,255,.8)">OPUS 132K</span>
+                  <button aria-label="Like" style="width:38px;height:38px;border-radius:50%;border:0;display:grid;place-items:center;background:rgba(0,0,0,.28);color:#c3e4a2"><m-i n="thumbs-up" s="16" fill></m-i></button>
+                  <button onClick="{{ openPicker }}" aria-label="Add to playlist" style="width:38px;height:38px;border-radius:50%;border:0;display:grid;place-items:center;background:rgba(0,0,0,.28);color:#fff"><m-i n="list-plus" s="16"></m-i></button>
+                  <button onClick="{{ goBot }}" aria-label="More like this" style="width:38px;height:38px;border-radius:50%;border:0;display:grid;place-items:center;background:rgba(0,0,0,.28);color:#fff"><m-i n="sparkles" s="16"></m-i></button>
+                </div>
+              </div>
+              <div style="display:flex;align-items:center;gap:12px;margin-top:18px">
+                <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:rgba(255,255,255,.7)">0:58</span>
+                <div style="flex:1;height:40px;display:flex;align-items:center;gap:2px">
+                  <sc-for list="{{ wave }}" as="b" hint-placeholder-count="80">
+                    <span style="flex:1;height:{{ b.h }};border-radius:2px;background:{{ b.c2 }}"></span>
+                  </sc-for>
+                </div>
+                <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:rgba(255,255,255,.7)">3:08</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-top:14px;position:relative">
+                <button aria-label="Shuffle" style="width:42px;height:42px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#c3e4a2"><m-i n="shuffle" s="18"></m-i></button>
+                <button aria-label="Previous" style="width:46px;height:46px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#fff"><m-i n="skip-back" s="22" fill></m-i></button>
+                <button onClick="{{ togglePlay }}" aria-label="Play" style="width:64px;height:64px;display:grid;place-items:center;border:0;border-radius:50%;background:#fff;color:#111716"><m-i n="{{ playIcon }}" s="26" fill></m-i></button>
+                <button aria-label="Next" style="width:46px;height:46px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:#fff"><m-i n="skip-forward" s="22" fill></m-i></button>
+                <button aria-label="Repeat" style="width:42px;height:42px;display:grid;place-items:center;border:0;border-radius:50%;background:transparent;color:rgba(255,255,255,.7)"><m-i n="repeat" s="18"></m-i></button>
+              </div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ============ MUSIC BOT ============ -->
+        <sc-if value="{{ s.bot }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-wrap:wrap;gap:16px;align-items:stretch">
+            <section style="flex:1 1 360px;min-width:0;display:flex;flex-direction:column;gap:16px">
+              <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <span style="display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 10px;border-radius:999px;background:#17201b;font-size:12px"><i style="width:6px;height:6px;border-radius:50%;background:#c3e4a2"></i>qwen3.5:9b<m-i n="chevron-down" s="12"></m-i></span>
+                <div style="display:flex;padding:3px;border-radius:999px;background:#17201b">
+                  <sc-for list="{{ scopes }}" as="sc" hint-placeholder-count="3">
+                    <button onClick="{{ sc.go }}" style="height:26px;padding:0 11px;border:0;border-radius:999px;background:{{ sc.bg }};color:{{ sc.fg }};font-size:12px;font-weight:500">{{ sc.label }}</button>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="display:flex;gap:10px">
+                <span style="position:relative;width:32px;height:32px;flex:none">
+                  <span style="position:absolute;left:14%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(30% 0,100% 78%,0 100%);transform:rotate(-4deg)"></span>
+                  <span style="position:absolute;left:56%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(70% 0,100% 100%,0 78%);transform:rotate(4deg)"></span>
+                  <span style="position:absolute;left:12%;top:26%;width:76%;height:66%;background:#c3e4a2;border-radius:46% 46% 40% 40%/52% 52% 42% 42%"></span>
+                  <span style="position:absolute;left:28.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+                  <span style="position:absolute;left:60.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+                </span>
+                <div style="font-size:14px;line-height:1.55;padding-top:4px">Hi, I'm Octive. Tell me what you're after and I'll dig it out of your library. I go by tags, likes and play history — I can't hear the songs.</div>
+              </div>
+              <div style="align-self:flex-end;max-width:85%;padding:10px 14px;border-radius:16px 16px 4px 16px;background:#263327;font-size:14px">An hour of my favourite 90s music</div>
+              <div style="display:flex;gap:10px">
+                <span style="width:32px;flex:none"></span>
+                <div style="font-size:14px;line-height:1.55">Found 16 liked songs from 1990–1999, 61 minutes. The draft is on the right — trim it, then play or save.</div>
+              </div>
+              <div style="align-self:flex-end;max-width:85%;padding:10px 14px;border-radius:16px 16px 4px 16px;background:#263327;font-size:14px">Fewer Radiohead</div>
+              <div style="display:flex;gap:10px;align-items:center">
+                <span style="width:32px;flex:none"></span>
+                <span style="display:inline-flex;gap:4px"><i style="width:6px;height:6px;border-radius:50%;background:#93a39b"></i><i style="width:6px;height:6px;border-radius:50%;background:#93a39b;opacity:.6"></i><i style="width:6px;height:6px;border-radius:50%;background:#93a39b;opacity:.3"></i></span>
+                <span style="font-size:12px;color:#819088">Revising the draft…</span>
+              </div>
+              <div style="flex:1"></div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px;border-radius:14px;background:#151c19;border:1px solid #344035">
+                <input placeholder="Refine, or ask for something new" style="flex:1;min-width:0;border:0;background:transparent;color:#e8ece8;font-size:14px;outline:0;height:36px">
+                <button aria-label="Send" style="width:38px;height:38px;display:grid;place-items:center;border:0;border-radius:10px;background:#c3e4a2;color:#172014"><m-i n="arrow-up" s="18"></m-i></button>
+              </div>
+            </section>
+            <section style="flex:1 1 360px;min-width:0;border-radius:18px;background:#17201b;display:flex;flex-direction:column;overflow:hidden">
+              <div style="padding:16px 18px 12px">
+                <div style="display:flex;align-items:center;gap:8px">
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;letter-spacing:0.6px;padding:3px 7px;border-radius:5px;background:#3a3224;color:#e4cc9c">DRAFT · NOT PLAYING</span>
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#819088">REV 2</span>
+                </div>
+                <div style="margin-top:10px;font-size:20px;font-weight:600;letter-spacing:-0.4px">90s favourites</div>
+                <div style="margin-top:4px;font-size:12px;color:#93a39b">16 songs · 61 min · 9 artists</div>
+                <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:12px">
+                  <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 10px;border-radius:999px;background:#263327;font-size:12px">Liked<m-i n="x" s="12"></m-i></span>
+                  <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 10px;border-radius:999px;background:#263327;font-size:12px">1990–1999<m-i n="x" s="12"></m-i></span>
+                  <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 10px;border-radius:999px;background:#263327;font-size:12px">≤ 2 Radiohead<m-i n="x" s="12"></m-i></span>
+                </div>
+              </div>
+              <div style="flex:1;padding:0 8px;overflow:auto">
+                <sc-for list="{{ botTracks }}" as="bt" hint-placeholder-count="6">
+                  <div style="display:grid;grid-template-columns:20px 36px minmax(0,1fr) auto 28px;align-items:center;gap:10px;padding:6px 10px;border-radius:10px" style-hover="background:#1e2a23">
+                    <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#819088">{{ bt.n }}</span>
+                    <span style="width:36px;height:36px;border-radius:6px;background:{{ bt.art }}"></span>
+                    <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bt.t }}</span><span style="display:block;font-size:12px;color:#93a39b">{{ bt.a }} · {{ bt.y }}</span></span>
+                    <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#819088">{{ bt.d }}</span>
+                    <button aria-label="Remove" style="width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:6px;background:transparent;color:#819088"><m-i n="minus" s="14"></m-i></button>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 14px;background:#151c19">
+                <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;border-radius:10px;border:0;background:#c3e4a2;color:#172014;font-size:13px;font-weight:600"><m-i n="play" s="14" fill></m-i>Play</button>
+                <button style="height:36px;padding:0 12px;border-radius:10px;border:0;background:#263327;color:#e8ece8;font-size:13px">Play next</button>
+                <button style="height:36px;padding:0 12px;border-radius:10px;border:0;background:#263327;color:#e8ece8;font-size:13px">Queue</button>
+                <div style="flex:1"></div>
+                <button style="height:36px;padding:0 12px;border-radius:10px;border:0;background:transparent;color:#e8ece8;font-size:13px;display:inline-flex;align-items:center;gap:6px"><m-i n="save" s="14"></m-i>Save</button>
+              </div>
+            </section>
+          </div>
+        </sc-if>
+
+        <!-- ============ DOWNLOADS ============ -->
+        <sc-if value="{{ s.downloads }}" hint-placeholder-val="{{ false }}">
+          <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(130px,1fr));gap:10px;margin-bottom:18px">
+            <sc-for list="{{ dlStats }}" as="d" hint-placeholder-count="4">
+              <button onClick="{{ d.go }}" style="text-align:left;padding:14px 16px;border-radius:16px;border:1px solid {{ d.line }};background:{{ d.bg }};color:#e8ece8">
+                <div style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;letter-spacing:0.6px;color:{{ d.kc }}">{{ d.k }}</div>
+                <div style="margin-top:8px;font-size:26px;font-weight:600;letter-spacing:-0.8px">{{ d.v }}</div>
+              </button>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
+            <span style="font-size:12px;color:#93a39b">Saving to <span style="font-family:'Geist Mono',ui-monospace,monospace;color:#e8ece8">/music</span> as <span style="color:#e8ece8">M4A</span> · 2 at a time</span>
+            <div style="flex:1"></div>
+            <button style="height:34px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border-radius:10px;border:0;background:#1e2a23;color:#e8ece8;font-size:12.5px"><m-i n="pause" s="14"></m-i>Pause all</button>
+            <button onClick="{{ dlHistory }}" style="height:34px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border-radius:10px;border:0;background:{{ dlHBg }};color:#e8ece8;font-size:12.5px"><m-i n="history" s="14"></m-i>History</button>
+          </div>
+          <sc-if value="{{ dlOther }}" hint-placeholder-val="{{ false }}"><dc-import name="Musimo Jobs" tab="{{ dlTabName }}" mono="'Geist Mono',ui-monospace,monospace" hint-size="100%,700px"></dc-import></sc-if>
+          <sc-if value="{{ dlQueue }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;gap:12px">
+            <sc-for list="{{ batches }}" as="b" hint-placeholder-count="2">
+              <section style="border-radius:18px;background:#17201b;overflow:hidden">
+                <div style="display:flex;align-items:center;gap:14px;padding:14px 16px;flex-wrap:wrap">
+                  <span style="width:52px;height:52px;border-radius:9px;flex:none;background:{{ b.art }}"></span>
+                  <div style="flex:1 1 200px;min-width:0">
+                    <div style="font-weight:600;font-size:14px">{{ b.t }}</div>
+                    <div style="font-size:12px;color:#93a39b;margin-top:2px">{{ b.a }}</div>
+                  </div>
+                  <div style="flex:0 1 260px;min-width:160px">
+                    <div style="display:flex;justify-content:space-between;font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#93a39b;margin-bottom:6px"><span>{{ b.prog }}</span><span style="color:{{ b.ec }}">{{ b.errs }}</span></div>
+                    <div style="display:flex;gap:2px;height:6px">
+                      <sc-for list="{{ b.segs }}" as="sg" hint-placeholder-count="10"><span style="flex:1;border-radius:2px;background:{{ sg.c }}"></span></sc-for>
+                    </div>
+                  </div>
+                  <button aria-label="Pause batch" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:9px;background:#1e2a23;color:#e8ece8"><m-i n="pause" s="14"></m-i></button>
+                </div>
+                <div style="padding:0 8px 8px">
+                  <sc-for list="{{ b.jobs }}" as="j" hint-placeholder-count="3">
+                    <div style="display:grid;grid-template-columns:22px minmax(0,1fr) minmax(120px,200px) 34px;align-items:center;gap:12px;padding:7px 8px;border-radius:10px;background:{{ j.bg }}">
+                      <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:11px;color:#819088">{{ j.n }}</span>
+                      <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ j.t }}</span><span style="display:block;font-size:12px;color:{{ j.sc }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ j.stage }}</span></span>
+                      <span style="display:flex;gap:3px">
+                        <sc-for list="{{ j.pipe }}" as="p" hint-placeholder-count="5"><span title="{{ p.k }}" style="flex:1;height:4px;border-radius:2px;background:{{ p.c }}"></span></sc-for>
+                      </span>
+                      <button aria-label="{{ j.act }}" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:{{ j.ac }}" style-hover="background:#1e2a23"><m-i n="{{ j.icon }}" s="15"></m-i></button>
+                    </div>
+                  </sc-for>
+                </div>
+              </section>
+            </sc-for>
+          </div>
+        </sc-if>
+        </sc-if>
+
+        <!-- ============ SETTINGS ============ -->
+        <sc-if value="{{ s.settings }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:4px;padding:4px;border-radius:14px;background:#151c19;margin-bottom:20px;width:max-content">
+            <button onClick="{{ setServerTab }}" style="height:34px;padding:0 16px;border:0;border-radius:10px;background:{{ stServer.bg }};color:{{ stServer.fg }};font-size:13px;font-weight:600">Server</button>
+            <button onClick="{{ setYoursTab }}" style="height:34px;padding:0 16px;border:0;border-radius:10px;background:{{ stYours.bg }};color:{{ stYours.fg }};font-size:13px;font-weight:600">Appearance & you</button>
+          </div>
+          <sc-if value="{{ setServer }}" hint-placeholder-val="{{ true }}">
+          <div style="display:grid;gap:28px">
+            <sc-for list="{{ setSections }}" as="sec" hint-placeholder-count="3">
+              <section style="display:flex;flex-wrap:wrap;gap:12px 32px">
+                <div style="flex:0 1 220px;min-width:180px">
+                  <h2 style="margin:0;font-size:15px;font-weight:600">{{ sec.title }}</h2>
+                  <p style="margin:6px 0 0;font-size:12px;line-height:1.5;color:#93a39b">{{ sec.desc }}</p>
+                </div>
+                <div style="flex:1 1 380px;min-width:0;border-radius:16px;background:#17201b">
+                  <sc-for list="{{ sec.rows }}" as="r" hint-placeholder-count="3">
+                    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:10px 20px;padding:14px 18px;border-top:1px solid {{ r.sep }}">
+                      <div style="flex:1 1 200px;min-width:0">
+                        <div style="font-weight:500;display:flex;align-items:center;gap:8px">{{ r.label }}<sc-if value="{{ r.locked }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:4px;font-family:'Geist Mono',ui-monospace,monospace;font-size:10px;padding:2px 6px;border-radius:4px;background:#342e1d;color:#f8ca76"><m-i n="lock-keyhole" s="10"></m-i>ENV</span></sc-if></div>
+                        <div style="margin-top:3px;font-size:12px;color:#93a39b;line-height:1.5">{{ r.help }}</div>
+                      </div>
+                      <sc-if value="{{ r.isToggle }}" hint-placeholder-val="{{ false }}">
+                        <span style="width:40px;height:24px;border-radius:999px;background:{{ r.tbg }};position:relative;flex:none"><span style="position:absolute;top:3px;left:{{ r.tx }};width:18px;height:18px;border-radius:50%;background:{{ r.tk }}"></span></span>
+                      </sc-if>
+                      <sc-if value="{{ r.isField }}" hint-placeholder-val="{{ true }}">
+                        <div style="flex:0 1 260px;min-width:170px;height:38px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 10px 0 12px;border-radius:10px;background:#111716;color:#e8ece8;font-family:{{ r.ff }};font-size:13px"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.value }}</span><sc-if value="{{ r.select }}" hint-placeholder-val="{{ false }}"><m-i n="chevrons-up-down" s="14"></m-i></sc-if></div>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </div>
+              </section>
+            </sc-for>
+          </div>
+        </sc-if>
+          <sc-if value="{{ setYours }}" hint-placeholder-val="{{ false }}">
+            <div style="max-width:900px">
+              <dc-import name="Musimo Appearance" mono="'Geist Mono',ui-monospace,monospace" layout="{{ layoutName }}" home="{{ homeRaw }}" on-layout="{{ onLayout }}" on-home-toggle="{{ onHomeToggle }}" on-home-reset="{{ onHomeReset }}" hint-size="100%,1100px"></dc-import>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <!-- ============ DIAGNOSTICS ============ -->
+        <sc-if value="{{ s.diagnostics }}" hint-placeholder-val="{{ false }}">
+          <section style="padding:20px;border-radius:18px;background:#17201b;margin-bottom:16px">
+            <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:18px">
+              <span style="font-size:17px;font-weight:600">Everything that plays and downloads is ready</span>
+              <div style="flex:1"></div>
+              <button style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border-radius:9px;border:0;background:#263327;color:#e8ece8;font-size:12.5px"><m-i n="refresh-cw" s="13"></m-i>Recheck</button>
+              <button style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border-radius:9px;border:0;background:#263327;color:#e8ece8;font-size:12.5px"><m-i n="download" s="13"></m-i>Export</button>
+            </div>
+            <div style="display:flex;align-items:stretch;flex-wrap:wrap;gap:8px">
+              <sc-for list="{{ pipeline }}" as="p" hint-placeholder-count="5">
+                <div style="flex:1 1 120px;min-width:0;padding:12px;border-radius:14px;background:#111716;border:1px solid {{ p.line }}">
+                  <div style="display:flex;align-items:center;gap:8px;color:{{ p.c }}"><m-i n="{{ p.icon }}" s="16"></m-i><i style="margin-left:auto;width:8px;height:8px;border-radius:50%;background:{{ p.c }}"></i></div>
+                  <div style="margin-top:10px;font-weight:600">{{ p.name }}</div>
+                  <div style="margin-top:2px;font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#93a39b">{{ p.d }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+          <div style="display:flex;flex-wrap:wrap;gap:16px">
+            <section style="flex:3 1 400px;min-width:0;border-radius:18px;background:#17201b;padding:6px 0">
+              <sc-for list="{{ checks }}" as="c" hint-placeholder-count="6">
+                <div style="display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:14px;padding:12px 18px;border-top:1px solid {{ c.sep }}">
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10px;letter-spacing:0.5px;padding:3px 7px;border-radius:5px;background:{{ c.bg }};color:{{ c.fg }};min-width:84px;text-align:center">{{ c.stateU }}</span>
+                  <span style="min-width:0"><span style="display:block;font-weight:500">{{ c.name }}</span><span style="display:block;font-size:12px;color:#93a39b;margin-top:2px">{{ c.detail }}</span></span>
+                  <sc-if value="{{ c.action }}" hint-placeholder-val="{{ false }}"><button style="height:30px;padding:0 11px;border-radius:8px;border:0;background:#263327;color:#e8ece8;font-size:12px">{{ c.action }}</button></sc-if>
+                </div>
+              </sc-for>
+            </section>
+            <section style="flex:2 1 300px;min-width:0;border-radius:18px;background:#151c19;padding:16px 18px">
+              <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px"><h2 style="margin:0;font-size:15px;font-weight:600">Activity</h2><button style="border:0;background:none;color:#93a39b;font-size:12px">Clear</button></div>
+              <sc-for list="{{ activity }}" as="ev" hint-placeholder-count="5">
+                <div style="display:grid;grid-template-columns:60px minmax(0,1fr);gap:10px;padding:8px 0;font-size:12.5px">
+                  <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#819088;padding-top:2px">{{ ev.when }}</span>
+                  <span style="display:flex;gap:8px;align-items:baseline"><i style="width:6px;height:6px;border-radius:50%;flex:none;background:{{ ev.c }};transform:translateY(-1px)"></i>{{ ev.t }}</span>
+                </div>
+              </sc-for>
+            </section>
+          </div>
+        </sc-if>
+
+      </div>
+    </main>
+
+    <!-- Phone: floating mini player + tab bar -->
+    <sc-if value="{{ phone }}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{ showMini }}" hint-placeholder-val="{{ true }}">
+        <div style="position:absolute;left:10px;right:10px;bottom:76px;z-index:20;display:flex;align-items:center;gap:10px;padding:7px 7px 7px 7px;border-radius:16px;background:oklch(0.3 0.05 330);box-shadow:0 12px 30px rgba(0,0,0,.5)">
+          <button onClick="{{ goNP }}" style="width:42px;height:42px;flex:none;border:0;padding:0;border-radius:10px;background:{{ np.art }}"></button>
+          <button onClick="{{ goNP }}" style="flex:1;min-width:0;border:0;padding:0;background:none;text-align:left;color:#fff">
+            <span style="display:block;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ np.title }}</span>
+            <span style="display:block;font-size:12px;color:rgba(255,255,255,.7);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ np.artist }}</span>
+          </button>
+          <button onClick="{{ togglePlay }}" aria-label="Play" style="width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:50%;background:#fff;color:#111716"><m-i n="{{ playIcon }}" s="18" fill></m-i></button>
+        </div>
+      </sc-if>
+      <nav style="flex:none;height:68px;display:grid;grid-template-columns:repeat(4,1fr);background:#111716;border-top:1px solid #2a3630">
+        <sc-for list="{{ phoneTabs }}" as="n" hint-placeholder-count="4">
+          <button onClick="{{ n.go }}" style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:0;background:transparent;color:{{ n.fg }};font-size:11px;font-weight:500"><m-i n="{{ n.icon }}" s="21"></m-i>{{ n.label }}</button>
+        </sc-for>
+      </nav>
+    </sc-if>
+  </div>
+
+  <!-- Player dock (desktop) -->
+  <sc-if value="{{ showDock }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:{{ dockW }};flex:none;display:flex;flex-direction:column;background:#151c19;border-radius:18px;overflow:hidden">
+      <div style="padding:16px 16px 0">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px">
+          <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;letter-spacing:0.6px;color:#819088">NOW PLAYING</span>
+          <div style="flex:1"></div>
+          <button onClick="{{ goNP }}" aria-label="Open stage" style="width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#93a39b" style-hover="background:#1e2a23;color:#e8ece8"><m-i n="maximize-2" s="15"></m-i></button>
+        </div>
+        <button onClick="{{ goNP }}" style="display:block;width:100%;aspect-ratio:1;border:0;padding:0;border-radius:14px;background:{{ np.art }};box-shadow:0 24px 50px -24px rgba(0,0,0,.8)"></button>
+        <div style="display:flex;align-items:flex-start;gap:8px;margin-top:14px">
+          <div style="flex:1;min-width:0">
+            <div style="font-size:16px;font-weight:600;letter-spacing:-0.3px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ np.title }}</div>
+            <div style="margin-top:3px;font-size:12.5px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ np.artist }} — {{ np.album }}</div>
+          </div>
+          <button aria-label="Like" style="width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#c3e4a2"><m-i n="thumbs-up" s="16" fill></m-i></button>
+        </div>
+        <div style="display:flex;align-items:center;gap:2px;height:26px;margin-top:12px">
+          <sc-for list="{{ waveSmall }}" as="b" hint-placeholder-count="48"><span style="flex:1;height:{{ b.h }};border-radius:1px;background:{{ b.c }}"></span></sc-for>
+        </div>
+        <div style="display:flex;justify-content:space-between;font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#819088;margin-top:4px"><span>0:58</span><span>3:08</span></div>
+        <div style="display:flex;align-items:center;justify-content:space-between;margin-top:8px">
+          <button aria-label="Shuffle" style="width:36px;height:36px;display:grid;place-items:center;border:0;background:transparent;color:#c3e4a2"><m-i n="shuffle" s="16"></m-i></button>
+          <button aria-label="Previous" style="width:36px;height:36px;display:grid;place-items:center;border:0;background:transparent;color:#e8ece8"><m-i n="skip-back" s="18" fill></m-i></button>
+          <button onClick="{{ togglePlay }}" aria-label="Play" style="width:48px;height:48px;display:grid;place-items:center;border:0;border-radius:50%;background:#e8ece8;color:#111716"><m-i n="{{ playIcon }}" s="20" fill></m-i></button>
+          <button aria-label="Next" style="width:36px;height:36px;display:grid;place-items:center;border:0;background:transparent;color:#e8ece8"><m-i n="skip-forward" s="18" fill></m-i></button>
+          <button aria-label="Repeat" style="width:36px;height:36px;display:grid;place-items:center;border:0;background:transparent;color:#93a39b"><m-i n="repeat" s="16"></m-i></button>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;margin:6px 0 14px;color:#93a39b">
+          <m-i n="volume-2" s="15"></m-i><div style="flex:1;height:3px;border-radius:3px;background:#344035"><div style="width:70%;height:100%;border-radius:3px;background:#93a39b"></div></div>
+          <button aria-label="Sleep timer" style="width:30px;height:30px;display:grid;place-items:center;border:0;background:transparent;color:inherit"><m-i n="moon" s="15"></m-i></button>
+          <button onClick="{{ openPicker }}" aria-label="Add to playlist" style="width:30px;height:30px;display:grid;place-items:center;border:0;background:transparent;color:inherit"><m-i n="list-plus" s="15"></m-i></button>
+        </div>
+      </div>
+      <div style="flex:1;min-height:0;display:flex;flex-direction:column;border-top:1px solid #2a3630">
+        <div style="display:flex;align-items:center;gap:8px;padding:12px 16px 6px">
+          <span style="font-weight:600">Up next</span>
+          <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#819088">79</span>
+          <div style="flex:1"></div>
+          <button aria-label="Save queue" style="width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:#93a39b"><m-i n="save" s="14"></m-i></button>
+          <button aria-label="Clear queue" style="width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:#93a39b"><m-i n="trash-2" s="14"></m-i></button>
+        </div>
+        <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+          <div style="margin:4px 12px 6px;display:flex;align-items:center;gap:8px;padding:8px 8px 8px 10px;border-radius:10px;background:#342e1d;color:#f8ca76;font-size:12px">
+            <m-i n="cloud-off" s="14"></m-i><span style="flex:1;color:#e8ece8">Queue not saved to server</span>
+            <button onClick="{{ hideToast }}" style="height:26px;padding:0 8px;border:0;border-radius:6px;background:rgba(248,202,118,.15);color:#f8ca76;font-size:12px;font-weight:500">Retry</button>
+          </div>
+        </sc-if>
+        <div style="flex:1;overflow-y:auto;overflow-x:hidden;padding:0 8px 10px">
+          <sc-for list="{{ upNext }}" as="q" hint-placeholder-count="8">
+            <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:10px;padding:5px 8px;border-radius:10px" style-hover="background:#1e2a23">
+              <span style="width:36px;height:36px;border-radius:6px;background:{{ q.art }}"></span>
+              <span style="min-width:0"><span style="display:block;font-weight:500;font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ q.t }}</span><span style="display:block;font-size:11.5px;color:#93a39b">{{ q.a }}</span></span>
+              <span style="font-family:'Geist Mono',ui-monospace,monospace;font-size:10.5px;color:#819088">{{ q.d }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </div>
+    </aside>
+  </sc-if>
+    <!-- Overlay -->
+    <sc-if value="{{ ovOn }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;z-index:60;display:flex;justify-content:center;align-items:{{ ovAlign }};padding:{{ ovPad }}">
+        <button onClick="{{ closeOverlay }}" aria-label="Close" style="position:absolute;inset:0;border:0;padding:0;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);cursor:default"></button>
+        <div style="position:relative;display:flex;justify-content:center;width:100%">
+          <dc-import name="Musimo Overlay" kind="{{ overlay }}" device="{{ deviceName }}" mono="'Geist Mono',ui-monospace,monospace" on-close="{{ closeOverlay }}" on-open="{{ openOverlay }}" on-navigate="{{ navTo }}" on-switch-layout="{{ switchLayout }}" hint-size="640px,480px"></dc-import>
+        </div>
+      </div>
+    </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;device&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;desktop&quot;, &quot;phone&quot;], &quot;default&quot;: &quot;desktop&quot;, &quot;tsType&quot;: &quot;'desktop' | 'phone'&quot;}, &quot;screen&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;home&quot;, &quot;search&quot;, &quot;library&quot;, &quot;albums&quot;, &quot;artists&quot;, &quot;tracks&quot;, &quot;playlists&quot;, &quot;nowplaying&quot;, &quot;bot&quot;, &quot;downloads&quot;, &quot;settings&quot;, &quot;diagnostics&quot;], &quot;default&quot;: &quot;home&quot;, &quot;tsType&quot;: &quot;string&quot;}}">
+const ALB = [
+  ['Boleros Psicodélicos', 'Adrian Quesada', 2022, 12, 330],
+  ['Mordechai', 'Khruangbin', 2020, 10, 40],
+  ['Phoenix Rise', 'Sunny Jain', 2021, 1, 10],
+  ["Don't Stay Silent", 'Paul & The Tall Trees', 2021, 1, 260],
+  ["I've Got Soul", 'Adrian Quesada', 2021, 1, 25],
+  ['Con Todo El Mundo', 'Khruangbin', 2018, 10, 95],
+  ['Little Girl Blue', 'Nina Simone', 1959, 11, 220],
+  ['In Rainbows', 'Radiohead', 2007, 10, 300],
+  ['Discovery', 'Daft Punk', 2001, 14, 200],
+  ['Texas Moon', 'Khruangbin & Leon Bridges', 2022, 5, 60],
+  ['Look At My Soul', 'Adrian Quesada', 2021, 13, 180],
+  ['Singularity', 'Culprate', 2017, 9, 280],
+  ['Hasta El Cielo', 'Khruangbin', 2019, 10, 120],
+  ['Wild Is the Wind', 'Nina Simone', 1966, 11, 350],
+  ['Kid A', 'Radiohead', 2000, 10, 230],
+  ['Random Access Memories', 'Daft Punk', 2013, 13, 70],
+  ['Ventura', 'Anderson .Paak', 2019, 11, 20],
+  ['The Infinite Pause', 'Adrian Quesada', 2023, 8, 160],
+]
+const art = (h) => `repeating-linear-gradient(135deg, oklch(0.42 0.07 ${h}) 0 2px, oklch(0.35 0.06 ${h}) 2px 10px)`
+const QUEUE = [
+  ['Eso No Lo He Dicho Yo', '3:08'], ['Esclavo Y Amo', '3:35'], ['Ya No Me Quieres', '0:49'], ['El León', '2:46'],
+  ['El Muchacho De Los Ojos Tristes', '3:40'], ['Reflection with Two Children', '0:30'], ['Noble Metals', '3:32'],
+  ['Rise of the Have Nots', '4:55'], ['Spirits', '3:12'], ['Primos', '3:41'],
+]
+const C = { accent: '#c3e4a2', text: '#e8ece8', muted: '#93a39b', faint: '#819088', active: '#263327', line: '#2a3630', lineS: '#344035', warn: '#f8ca76', danger: '#efbaa2', partial: '#e4cc9c' }
+const TITLES = { calbum: ['Album', 'CATALOG · DEEZER'], cartist: ['Artist', 'CATALOG · DEEZER'], podcast: ['Podcast', 'APPLE PODCASTS'], album: ['Album', 'LIBRARY · ALBUMS'], artist: ['Artist', 'LIBRARY · ARTISTS'], playlist: ['Playlist', 'LIBRARY · PLAYLISTS'], home: ['Home', 'SUN 17 OCT · 8,503 ALBUMS'], search: ['Search', 'CATALOG · CHECKED AGAINST YOUR LIBRARY'], library: ['Library', '61,204 SONGS · 4,112 H'], nowplaying: ['Now playing', 'FROM ARTIST · ADRIAN QUESADA'], bot: ['Octive', 'BUILDS QUEUES FROM YOUR TAGS'], downloads: ['Downloads', '3 ACTIVE · 11 QUEUED'], settings: ['Settings', 'SAVED TO THIS SERVER'], diagnostics: ['Diagnostics', 'v0.4.0 · DB v8 · CHECKED 2 MIN AGO'] }
+
+class Component extends DCLogic {
+  componentDidMount() {
+    this.onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); this.setState({ overlay: 'palette' }) }
+      else if (e.key === 'Escape' && this.state.overlay) this.setState({ overlay: null })
+    }
+    window.addEventListener('keydown', this.onKey)
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this.onKey) }
+  state = { plId: null, npViz: null, viz: 0, dlTab: null, overlay: null, setTab: null, home: {}, layoutLocal: 'room', screen: null, playing: true, layout: 'grid', libTab: null, npTab: 'lyrics', scope: 'library', toast: true, query: 'khruangbin', sTab: 'top' }
+
+  renderVals() {
+    const phone = (this.props.device ?? 'desktop') === 'phone'
+    let sc = this.state.screen ?? this.props.screen ?? 'home'
+    if (['albums', 'artists', 'tracks', 'playlists'].includes(sc)) sc = 'library'
+    const libTab = this.state.libTab ?? (['albums', 'artists', 'tracks', 'playlists'].includes(this.props.screen) ? this.props.screen : 'albums')
+    const go = (k) => () => { this.setState({ screen: k }); this.props.onNavigate?.(k === 'library' ? libTab : k) }
+    const PARENT = { album: 'albums', artist: 'artists', playlist: 'playlists' }
+    const npViz = this.state.npViz ?? this.props.npMode === 'visualizer'
+    const dlTab = this.state.dlTab ?? this.props.dlTab ?? 'queue'
+    const PLID = ['liked', 'late', 'sunday', 'boleros', 'run', 'octive', 'car']
+    const openPl = (id) => () => { this.setState({ plId: id, screen: 'playlist' }); this.props.onNavigate?.('playlist') }
+    const setDl = (t) => () => this.setState({ dlTab: dlTab === t ? 'queue' : t })
+    const CAT = { calbum: 'album', cartist: 'artist', podcast: 'podcast' }
+    const act = (k) => sc === k || (k === 'library' && !!PARENT[sc]) || (k === 'search' && !!CAT[sc])
+    const setTab = this.state.setTab ?? this.props.settingsTab ?? 'server'
+    const homeRaw = this.props.home ?? this.state.home
+    const hs = {}
+    ;['continue', 'stats', 'jump', 'fresh', 'mostPlayed', 'octive'].forEach((k) => (hs[k] = homeRaw[k] !== false))
+    const tabSel = (on) => ({ bg: on ? '#263327' : 'transparent', fg: on ? C.text : C.muted })
+    const pickTab = (t) => () => { this.setState({ setTab: t }); this.props.onSettingsTab?.(t) }
+    const s = {}
+    Object.keys(TITLES).forEach((k) => (s[k] = sc === k))
+    const rail = (k, label, icon, extra = {}) => ({ label, icon, go: go(k), bg: act(k) ? C.active : 'transparent', fg: act(k) ? C.accent : C.muted, ...extra })
+    const albums = ALB.map(([t, a, y, n, h]) => ({ t, a, y, n, art: art(h) }))
+    const np = { title: 'Eso No Lo He Dicho Yo', artist: 'Adrian Quesada', album: 'Boleros Psicodélicos', art: art(330) }
+    const waveOf = (len, played) => Array.from({ length: len }, (_, i) => {
+      const x = i * (84 / len)
+      const v = 0.35 + 0.65 * Math.abs(Math.sin(x * 0.37) * 0.6 + Math.sin(x * 0.13 + 1) * 0.4)
+      return { h: `${Math.round(v * 100)}%`, c: i < played ? C.accent : '#344035', c2: i < played ? '#ffffff' : 'rgba(255,255,255,.22)' }
+    })
+    const PL = [['Liked', '128 SONGS · 8H 41M', true], ['Late night', '42 SONGS · 2H 50M'], ['Sunday cooking', '31 SONGS · 1H 58M'], ['Boleros', '22 SONGS · 1H 14M'], ['Run club', '60 SONGS · 3H 30M'], ['Octive · 90s favourites', '16 SONGS · 61M'], ['Car', '88 SONGS · 5H 6M']]
+    const plArt = (o) => ({ a1: art(ALB[o % 18][4]), a2: art(ALB[(o + 3) % 18][4]), a3: art(ALB[(o + 7) % 18][4]), a4: art(ALB[(o + 11) % 18][4]) })
+    const toggle = (on) => ({ isToggle: true, isField: false, tbg: on ? C.accent : '#344035', tk: on ? '#172014' : C.muted, tx: on ? '19px' : '3px' })
+    const field = (value, o = {}) => ({ isToggle: false, isField: true, value, ff: 'inherit', select: false, ...o })
+    const sep = (rows) => rows.map((r, i) => ({ ...r, sep: i === 0 ? 'transparent' : C.line }))
+    const pipeK = ['Match', 'Download', 'Convert', 'Tag', 'Move']
+    const pipe = (done, cur, col) => pipeK.map((k, i) => ({ k, c: i < done ? C.accent : i === cur ? col : '#2a3630' }))
+    const job = (n, t, stage, done, cur, col, icon, act, extra = {}) => ({ n, t, stage, sc: col === '#2a3630' ? C.faint : col, pipe: pipe(done, cur, col), icon, act, ac: C.muted, bg: 'transparent', ...extra })
+    const batches = [
+      { t: 'Mordechai', a: 'Khruangbin · 10 tracks · Bandcamp, YouTube', art: art(40), prog: '6 OF 10 DONE', errs: '1 FAILED', ec: C.danger,
+        segs: [1, 1, 1, 1, 1, 1, 2, 2, 3, 0].map((v) => ({ c: [ '#2a3630', C.accent, '#7d9468', C.danger ][v] })),
+        jobs: [
+          job('07', 'Time (You and I)', 'Downloading · 62% · Bandcamp', 1, 1, C.accent, 'pause', 'Pause'),
+          job('08', 'Pelota', 'Converting opus → m4a', 2, 2, C.accent, 'pause', 'Pause'),
+          job('09', 'Dearest Alfred', 'YouTube asked this server to sign in · Add cookies →', 1, 1, C.danger, 'rotate-ccw', 'Retry', { ac: C.danger, bg: 'rgba(239,186,162,.06)' }),
+          job('10', 'If There Is No Question', 'Queued', 0, -1, '#2a3630', 'arrow-up', 'Move up'),
+        ] },
+      { t: 'Con Todo El Mundo', a: 'Khruangbin · 3 missing tracks', art: art(95), prog: '0 OF 3 DONE', errs: '', ec: C.muted,
+        segs: [2, 0, 0].map((v) => ({ c: [ '#2a3630', C.accent, C.warn ][v] })),
+        jobs: [
+          job('04', 'Maria También', 'Low-confidence match · pick one of 3', 0, 0, C.warn, 'list', 'Pick match', { ac: C.warn }),
+          job('06', 'Lady and Man', 'Queued', 0, -1, '#2a3630', 'arrow-up', 'Move up'),
+        ] },
+    ]
+    const good = { bg: '#283a28', fg: C.accent }, warn = { bg: '#342e1d', fg: C.warn }, idle = { bg: '#1e2a23', fg: C.muted }
+    const checks = sep([
+      { name: 'Library root', stateU: 'READY', ...good, detail: '/music · read and write · 5,201 GB free' },
+      { name: 'Download destination', stateU: 'READY', ...good, detail: '/music · test write passed 2 days ago', action: 'Test write' },
+      { name: 'Library scan', stateU: 'READY', ...good, detail: '61,204 files · native watcher · 2h ago', action: 'Rescan' },
+      { name: 'Player', stateU: 'READY', ...good, detail: 'Streams from the music folders · gapless' },
+      { name: 'YouTube helper', stateU: 'OFF', ...warn, detail: 'Optional · docker compose --profile youtube up', action: 'How to' },
+      { name: 'Last download', stateU: 'NOT TESTED', ...idle, detail: 'No download attempted yet' },
+    ])
+    const catTracks = [
+      ['Time (You and I)', 'Mordechai', '4:17', 'Owned', 40],
+      ['Maria También', 'Con Todo El Mundo', '3:08', 'Other edition', 95],
+      ['So We Won’t Forget', 'Mordechai', '4:15', 'Queued', 40],
+      ['Texas Sun', 'Texas Sun EP', '4:12', 'Missing', 60],
+      ['White Gloves', 'The Universe Smiles Upon You', '5:21', 'Missing', 200],
+    ].map(([t, a, d, badge, h]) => {
+      const m = { Owned: [C.accent, 'check', C.accent], 'Other edition': [C.partial, 'arrow-down-to-line', C.text], Queued: [C.muted, 'clock', C.muted], Missing: [C.faint, 'arrow-down-to-line', C.text] }[badge]
+      return { t, a, d, badge, art: art(h), bfg: m[0], di: m[1], dc: m[2] }
+    })
+    const catAlbums = [['Mordechai', 2020, 'ALBUM', '10/10', 100, 40], ['Con Todo El Mundo', 2018, 'ALBUM', '7/10', 70, 95], ['Texas Moon', 2022, 'EP', '0/5', 0, 60], ['The Universe Smiles Upon You', 2015, 'ALBUM', '0/12', 0, 200]]
+      .map(([t, y, k, own, p, h]) => ({ t, y, k, own, art: art(h), pct: p + '%', pc: p === 100 ? C.accent : p > 0 ? C.partial : C.faint, icon: p === 100 ? 'check' : 'arrow-down-to-line' }))
+    const libT = [['albums', 'Albums', '8,503'], ['artists', 'Artists', '1,912'], ['tracks', 'Tracks', '61,204'], ['playlists', 'Playlists', '7']]
+    const [title, subtitle] = TITLES[sc]
+
+    return {
+      rootH: this.props.device ? '100%' : '100vh',
+      gutter: phone ? '0px' : '8px', paneR: phone ? '0px' : '18px', headH: phone ? '56px' : '64px', titleFs: phone ? '20px' : '18px',
+      dockW: 'clamp(280px,24vw,340px)', padBottom: phone ? '96px' : '32px',
+      phone, desktop: !phone, s, title, subtitle: phone ? '' : subtitle,
+      rail: [rail('home', 'Home', 'house'), rail('search', 'Search', 'search'), rail('library', 'Library', 'library'), rail('bot', 'Octive', 'sparkles'), rail('downloads', 'Queue', 'arrow-down-to-line', { badge: true })],
+      railSys: [rail('settings', 'Settings', 'settings-2'), rail('diagnostics', 'Diagnostics', 'activity', { dot: true })],
+      phoneTabs: [['home', 'Home', 'house'], ['search', 'Search', 'search'], ['library', 'Library', 'library'], ['bot', 'Octive', 'sparkles']].map(([k, label, icon]) => ({ label, icon, go: go(k), fg: act(k) ? C.accent : C.muted })),
+      goSearch: go('search'), goBot: go('bot'), goNP: go('nowplaying'), goLib: go('library'), goDiag: go('diagnostics'),
+      togglePlay: () => this.setState({ playing: !this.state.playing }),
+      playIcon: this.state.playing ? 'pause' : 'play',
+      np, wave: waveOf(96, 30), waveSmall: waveOf(52, 16),
+      stats: [{ k: 'LISTENED THIS WEEK', v: '14h 22m', d: '+3h vs last week', dc: C.accent }, { k: 'PLAYS', v: '312', d: '41 of them Primos', dc: C.muted }, { k: 'NEW ALBUMS', v: '46', d: '12 not played yet', dc: C.muted }, { k: 'TOP GENRE', v: 'Latin funk', d: '28% of plays', dc: C.muted }],
+      fresh: albums.slice(0, 9),
+      repeatTracks: [['Primos', 'Adrian Quesada', 41, 330], ['Time (You and I)', 'Khruangbin', 33, 40], ['Ain’t Got No, I Got Life', 'Nina Simone', 27, 220], ['Reckoner', 'Radiohead', 22, 300], ['Digital Love', 'Daft Punk', 19, 200]].map(([t, a, plays, h], i) => ({ n: String(i + 1).padStart(2, '0'), t, a, plays, w: Math.round((plays / 41) * 100) + '%', art: art(h) })),
+      playlistsShort: PL.slice(0, 4).map(([name, meta, liked], i) => ({ name, n: meta.split(' · ')[0], liked: !!liked, ...plArt(i * 2), a1: liked ? C.accent : plArt(i * 2).a1 })),
+      prompts: ['90s favourites', 'Hip hop', 'More like Primos'],
+      libTabs: libT.map(([k, label, n]) => ({ label, n, go: () => { this.setState({ libTab: k, screen: 'library' }); this.props.onNavigate?.(k) }, h: '38px', bg: libTab === k ? '#263327' : 'transparent', fg: libTab === k ? C.text : C.muted })),
+      lt: { albumsGrid: libTab === 'albums' && this.state.layout === 'grid', list: libTab === 'tracks' || (libTab === 'albums' && this.state.layout === 'list'), artists: libTab === 'artists', playlists: libTab === 'playlists' },
+      setGrid: () => this.setState({ layout: 'grid' }), setList: () => this.setState({ layout: 'list' }),
+      gridBg: this.state.layout === 'grid' ? '#263327' : 'transparent', gridFg: this.state.layout === 'grid' ? C.accent : C.muted,
+      listBg: this.state.layout === 'list' ? '#263327' : 'transparent', listFg: this.state.layout === 'list' ? C.accent : C.muted,
+      albums,
+      trackRows: QUEUE.map(([t, d], i) => ({ n: String(i + 1).padStart(2, '0'), t, d, a: 'Adrian Quesada', al: 'Boleros Psicodélicos', plays: 41 - i * 3, art: art(330 + i * 6), bg: i === 0 ? '#17201b' : 'transparent', tc: i === 0 ? C.accent : C.text, nc: i === 0 ? C.accent : C.faint })),
+      artists: [['Adrian Quesada', '5 ALBUMS', 330], ['Khruangbin', '6 ALBUMS', 40], ['Nina Simone', '14 ALBUMS', 220], ['Radiohead', '9 ALBUMS', 300], ['Daft Punk', '4 ALBUMS', 200], ['Sunny Jain', '2 ALBUMS', 10], ['Culprate', '3 ALBUMS', 280], ['Anderson .Paak', '4 ALBUMS', 20], ['Leon Bridges', '3 ALBUMS', 60], ['Paul & The Tall Trees', '1 ALBUM', 260], ['Victor Axelrod', '2 ALBUMS', 150], ['Black Pumas', '2 ALBUMS', 120]].map(([name, n, h]) => ({ name, n, art: art(h) })),
+      playlists: PL.map(([name, meta, liked], i) => ({ name, meta, liked: !!liked, go: openPl(PLID[i]), ...plArt(i * 2) })),
+      query: this.state.query, onQuery: (e) => this.setState({ query: e.target.value }),
+      searchTabs: [['top', 'Top'], ['tracks', 'Tracks'], ['albums', 'Albums'], ['artists', 'Artists'], ['podcasts', 'Podcasts']].map(([k, l]) => ({ label: l, go: k === 'podcasts' ? go('podcast') : () => this.setState({ sTab: k }), bg: this.state.sTab === k ? C.text : '#17201b', fg: this.state.sTab === k ? '#111716' : C.muted })),
+      topArt: art(40), catTracks, catAlbums,
+      npTabs: [['lyrics', 'Lyrics'], ['queue', 'Up next'], ['about', 'About'], ['history', 'History']].map(([k, l]) => ({ label: l, go: () => this.setState({ npTab: k }), bg: this.state.npTab === k ? 'rgba(255,255,255,.9)' : 'transparent', fg: this.state.npTab === k ? '#111716' : 'rgba(255,255,255,.75)' })),
+      npTab: { queue: this.state.npTab === 'queue', lyrics: this.state.npTab === 'lyrics', about: this.state.npTab === 'about', history: this.state.npTab === 'history' },
+      lyrics: ['Eso no lo he dicho yo', 'ni lo pienso decir', 'si me quieres, quiéreme', 'como yo te quiero a ti', 'Las palabras se las lleva', 'el viento de abril', 'y lo que queda en la noche'].map((t, i) => ({ t, c: i === 2 ? '#ffffff' : i < 2 ? 'rgba(255,255,255,.3)' : 'rgba(255,255,255,.5)', fs: i === 2 ? 'clamp(24px,3.2cqi,34px)' : 'clamp(20px,2.6cqi,28px)' })),
+      queue: QUEUE.map(([t, d], i) => ({ t, d, a: 'Adrian Quesada', art: art(330 + i * 6), bg2: i === 0 ? 'rgba(0,0,0,.25)' : 'transparent', tc: i === 0 ? C.accent : '#fff' })),
+      upNext: QUEUE.slice(1).map(([t, d], i) => ({ t, d, a: 'Adrian Quesada', art: art(336 + i * 6) })),
+      about: [['Album', 'Boleros Psicodélicos · 2022'], ['Track', '4 of 12'], ['Genre', 'Latin, Psychedelic soul'], ['Format', 'Opus · 132 kbps · 48 kHz'], ['Plays', '18 · yesterday'], ['File', '/music/Adrian Quesada/Boleros Psicodélicos/04 Eso No Lo He Dicho Yo.opus']].map(([k, v]) => ({ kU: k.toUpperCase(), v })),
+      history: [['Primos', '2M', 330], ['El León', '6M', 336], ['Time (You and I)', '1H', 40], ['Reckoner', '1H', 300], ['Digital Love', '1D', 200], ['Wild Is the Wind', '1D', 350]].map(([t, when, h]) => ({ t, when, art: art(h) })),
+      scopes: [['library', 'Whole library'], ['selection', 'Selection'], ['next', 'Up next']].map(([k, l]) => ({ label: l, go: () => this.setState({ scope: k }), bg: this.state.scope === k ? '#263327' : 'transparent', fg: this.state.scope === k ? C.text : C.muted })),
+      botTracks: [['Glory Box', 'Portishead', 1994, '5:01', 280], ['Teardrop', 'Massive Attack', 1998, '5:29', 220], ['No Surprises', 'Radiohead', 1997, '3:49', 300], ['Da Funk', 'Daft Punk', 1995, '5:28', 200], ['Linger', 'The Cranberries', 1993, '4:34', 120], ['Protection', 'Massive Attack', 1994, '7:51', 230], ['Hyperballad', 'Björk', 1995, '5:21', 160]].map(([t, a, y, d, h], i) => ({ n: String(i + 1).padStart(2, '0'), t, a, y, d, art: art(h) })),
+      dlStats: [['ACTIVE', '3', C.accent, 'queue'], ['NO MATCH', '3', C.muted, 'nomatch'], ['DONE TODAY', '48', C.muted, 'done'], ['NEEDS YOU', '2', C.danger, 'errors']].map(([k, v, kc, t]) => ({ k, v, kc, go: t === 'queue' ? () => this.setState({ dlTab: 'queue' }) : setDl(t), bg: t === 'errors' ? '#39251f' : dlTab === t ? '#263327' : '#17201b', line: dlTab === t ? (t === 'errors' ? '#efbaa2' : '#c3e4a2') : t === 'errors' ? '#674343' : 'transparent' })),
+      dlQueue: dlTab === 'queue', dlOther: dlTab !== 'queue', dlTabName: dlTab, dlHistory: setDl('history'), dlHBg: dlTab === 'history' ? '#263327' : '#1e2a23',
+      batches,
+      setSections: [
+        { title: 'Your library', desc: 'Where music lives and how new files are named.', rows: sep([
+          { label: 'Download to', help: 'Only roots in MUSIMO_LIBRARY_ROOTS can receive files.', ...field('/music · 5,201 GB free', { select: true }) },
+          { label: 'File naming', help: 'Khruangbin/Mordechai/01 First Class.m4a', ...field('{artist}/{album}/{track:02} {title}', { ff: "'Geist Mono',ui-monospace,monospace" }) },
+          { label: 'Library label', help: 'Shown in the browser tab.', locked: true, ...field('Home') },
+        ]) },
+        { title: 'Audio quality', desc: 'Applies to newly queued tracks.', rows: sep([
+          { label: 'Format', help: 'Original avoids re-encoding when it can.', ...field('Original', { select: true }) },
+          { label: 'Embed cover art', help: 'Writes the catalog cover into the tags.', ...toggle(true) },
+        ]) },
+        { title: 'Sources', desc: 'Tried top to bottom for every song. A blocked source pauses on its own.', rows: sep([
+          { label: '1 · Deezer account', help: 'Your account first. Cookie pasted Oct 2.', ...toggle(true) },
+          { label: '2 · Bandcamp', help: 'Original files where allowed · 2 retries', ...toggle(true) },
+          { label: '3 · YouTube', help: 'Paused: asked to sign in · add cookies', ...toggle(true) },
+          { label: '4 · Internet Archive', help: 'Live sets, public domain · 1 retry', ...toggle(true) },
+        ]) },
+        { title: 'Music bot', desc: 'Octive runs on your own Ollama server.', rows: sep([
+          { label: 'Ollama address', help: 'Connected · 6 models · 41 ms', ...field('http://host.docker.internal:11434', { ff: "'Geist Mono',ui-monospace,monospace" }) },
+          { label: 'Music time zone', help: 'For “songs I played this morning”.', ...field('Europe/London', { select: true }) },
+        ]) },
+        { title: 'Queue & retries', desc: 'How hard Musimo tries before giving up.', rows: sep([
+          { label: 'Parallel downloads', help: 'More than 3 often trips rate limits.', ...field('2', { select: true }) },
+          { label: 'Rest between groups', help: '5 minutes after every 25 tracks.', ...toggle(false) },
+        ]) },
+      ],
+      pipeline: [['Catalog', 'globe', 'Deezer · 41 ms', C.accent], ['Sources', 'radio', '4 of 5 on', C.warn], ['Worker', 'cpu', '2 slots · idle', C.accent], ['Library', 'hard-drive', '61,204 files', C.accent], ['Player', 'play', 'gapless', C.accent]].map(([name, icon, d, c]) => ({ name, icon, d, c, line: c === C.warn ? '#5a4b2a' : C.line })),
+      checks,
+      activity: [['Scan finished · 214 new files', '2H', C.accent], ['Mordechai · 8 of 10 downloaded', '3H', C.accent], ['YouTube asked for sign-in', '3H', C.warn], ['Parallel downloads 3 → 2', '1D', C.muted], ['Imported 7 playlists from Navidrome', 'OCT 12', C.muted]].map(([t, when, c]) => ({ t, when, c })),
+      toast: this.state.toast,
+      hideToast: () => this.setState({ toast: false }),
+      showDock: !phone && sc !== 'nowplaying',
+      isCatalog: !!CAT[sc], catKind: CAT[sc] ?? 'album', goCArtist: go('cartist'), goCAlbum: go('calbum'),
+      ovOn: !!this.state.overlay, overlay: this.state.overlay ?? 'palette', deviceName: phone ? 'phone' : 'desktop',
+      ovAlign: phone ? 'flex-end' : 'flex-start', ovPad: phone ? '0' : '72px 24px 24px',
+      openOverlay: (k) => this.setState({ overlay: k }), closeOverlay: () => this.setState({ overlay: null }),
+      openPalette: () => this.setState({ overlay: 'palette' }), openPicker: () => this.setState({ overlay: 'picker' }), openArtistDl: () => this.setState({ overlay: 'artistDl' }),
+      navTo: (k) => go(['albums', 'artists', 'tracks', 'playlists'].includes(k) ? 'library' : k)(),
+      switchLayout: () => this.props.onLayout?.((this.props.layout ?? 'room') === 'classic' ? 'room' : 'classic'),
+      isDetail: !!PARENT[sc], detailKind: PARENT[sc] ? sc : 'album', detailBack: go('library'),
+      goAlbum: go('album'), goArtist: go('artist'), goPlaylist: go('playlist'),
+      plId: this.state.plId ?? this.props.playlistId ?? 'late',
+      firstRun: s.home && !!this.props.firstRun, homeFull: s.home && !this.props.firstRun,
+      npViz, vizPreset: String(this.state.viz),
+      vizName: npViz ? ['martin — mandelbox explorer', 'flexi — mindblob mix', 'geiss — cosmic dust', 'shifter — tumbling cubes'][this.state.viz % 4] : 'BOLEROS PSICODÉLICOS · 2022',
+      showArt: () => this.setState({ npViz: false }), showViz: () => this.setState({ npViz: true }),
+      artBg: npViz ? 'transparent' : '#fff', artFg: npViz ? '#fff' : '#111716', vizBg: npViz ? '#fff' : 'transparent', vizFg: npViz ? '#111716' : '#fff',
+      vizPrev: () => this.setState({ viz: (this.state.viz + 3) % 4 }), vizNext: () => this.setState({ viz: (this.state.viz + 1) % 4 }), goSettings: go('settings'),
+      hs, homeRaw,
+      setServer: setTab === 'server', setYours: setTab === 'yours', stServer: tabSel(setTab === 'server'), stYours: tabSel(setTab === 'yours'),
+      setServerTab: pickTab('server'), setYoursTab: pickTab('yours'),
+      layoutName: this.props.layout ?? this.state.layoutLocal,
+      onLayout: (k) => (this.props.onLayout ? this.props.onLayout(k) : this.setState({ layoutLocal: k })),
+      onHomeToggle: (k) => (this.props.onHomeToggle ? this.props.onHomeToggle(k) : this.setState({ home: { ...this.state.home, [k]: this.state.home[k] === false } })),
+      onHomeReset: () => (this.props.onHomeReset ? this.props.onHomeReset() : this.setState({ home: {} })),
+      showMini: sc !== 'nowplaying',
+    }
+  }
+}
+
+</script>
+</body>
+</html>

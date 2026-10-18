@@ -3,9 +3,13 @@ import type { Page } from '@playwright/test'
 
 import {
   closeLibraryFilters,
+  libraryShow,
   librarySong,
+  librarySort,
   openLibraryFilters,
+  openLibraryView,
   playerFixtures,
+  toggleLibraryFacet,
 } from './library-fixtures'
 
 const library = [
@@ -68,7 +72,7 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
     1,
   )
   await openLibraryFilters(page, isMobile)
-  await page.getByLabel('Sort tracks').selectOption('duration')
+  await librarySort(page, 'tracks').selectOption('duration')
   await closeLibraryFilters(page, isMobile)
   await page.getByLabel('Search tracks').fill('cinder')
   await expect
@@ -80,7 +84,7 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
 
   await page.getByLabel('Search tracks').fill('')
   await openLibraryFilters(page, isMobile)
-  await page.getByText('All genres', { exact: true }).click()
+  await toggleLibraryFacet(page, isMobile, 'Genre')
   // Filter choices come from the whole library, not only the rows on screen.
   await expect(page.getByLabel('Rock')).toBeVisible()
   // The open menu stays inside the viewport at phone widths instead of forcing a sideways scroll.
@@ -98,7 +102,7 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
     await openLibraryFilters(page, isMobile)
   }
   // Close the panel first: at narrow widths it sits over the rest of the toolbar.
-  await page.getByText('Genres (1)', { exact: true }).click()
+  await toggleLibraryFacet(page, isMobile, 'Genre', 1)
   await page.getByRole('button', { name: 'Clear filters' }).click()
   await closeLibraryFilters(page, isMobile)
 
@@ -115,8 +119,9 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
 test('loading states name what is on the way and hold the counts back', async ({ page }) => {
   await libraryFixtures(page)
   await page.route('**/api/library/albums?**', () => new Promise(() => undefined))
+  // The bare library address opens Albums, so that is what it says while waiting.
   await page.goto('/library')
-  // The home view loads albums, so that is what it says while waiting.
+  await expect(page).toHaveURL(/\/library\/albums$/)
   await expect(page.getByText('Loading albums…')).toBeVisible()
 
   await page.route('**/api/library/albums/album-1', () => new Promise(() => undefined))
@@ -163,20 +168,19 @@ test('an album page opens with its cover, year, artist link and meta line', asyn
     '/library/artists/artist-1',
   )
   await expect(header.locator('.library-count')).toHaveText('2 songs · 7 min · Ambient')
-  for (const name of ['Play all', 'Shuffle', 'More actions for Clear Water'])
+  for (const name of ['Play all', 'Shuffle', 'Queue', 'More actions for Clear Water'])
     await expect(header.getByRole('button', { name })).toBeVisible()
 
-  // The page heading and its eyebrow give way to the header; the tabs stay as a slim row with the
-  // way back, so the album starts right under them.
-  await expect(page.getByRole('heading', { name: 'Library', exact: true })).toHaveCount(0)
-  await expect(page.getByText('YOUR MUSIC, READY TO PLAY')).toHaveCount(0)
-  const tabs = page.getByRole('navigation', { name: 'Library views' })
-  await expect(tabs).toBeVisible()
-  await expect(page.getByRole('button', { name: 'Back to albums' })).toBeVisible()
-  const tabsBox = await tabs.boundingBox()
+  // The browse heading and the view switcher give way to the header; a slim row carries the way
+  // back, so the album starts right under it.
+  await expect(page.getByRole('heading', { name: 'Albums', exact: true })).toHaveCount(0)
+  await expect(page.getByRole('navigation', { name: 'Library views' })).toHaveCount(0)
+  const back = page.getByRole('button', { name: 'Back to albums' })
+  await expect(back).toBeVisible()
+  const backBox = await back.boundingBox()
   const headerBox = await header.boundingBox()
-  if (!tabsBox || !headerBox) throw new Error('Missing header measurements')
-  expect(headerBox.y - (tabsBox.y + tabsBox.height)).toBeLessThan(60)
+  if (!backBox || !headerBox) throw new Error('Missing header measurements')
+  expect(headerBox.y - (backBox.y + backBox.height)).toBeLessThan(60)
 })
 
 test('a failed load reports under the heading it belongs to', async ({ page }) => {
@@ -184,9 +188,9 @@ test('a failed load reports under the heading it belongs to', async ({ page }) =
   await page.route('**/api/library/albums?**', (route) =>
     route.fulfill({ status: 500, json: { detail: 'The library index is unavailable.' } }),
   )
-  await page.goto('/library')
+  await page.goto('/library/albums')
 
-  const heading = page.getByRole('heading', { name: 'Fresh in your library' })
+  const heading = page.getByRole('heading', { name: 'Albums', exact: true })
   const error = page.getByRole('alert')
   await expect(heading).toBeVisible()
   await expect(error).toContainText('The library index is unavailable.')
@@ -215,9 +219,9 @@ test('a filtered selection is its own queue, not the one already playing', async
 
   // A different filter is a different selection, so the control cannot claim to be playing it.
   await openLibraryFilters(page, isMobile)
-  await page.getByText('All genres', { exact: true }).click()
+  await toggleLibraryFacet(page, isMobile, 'Genre')
   await page.getByLabel('Rock').check()
-  await page.getByText('Genres (1)', { exact: true }).click()
+  await toggleLibraryFacet(page, isMobile, 'Genre', 1)
   await closeLibraryFilters(page, isMobile)
   await expect(actions.getByRole('button', { name: 'Play all' })).toBeVisible()
 })
@@ -269,7 +273,7 @@ test('tracks A to Z has no number column, and a long album name stops at two lin
 
   // Album order is the one sort where a song's number on its album still reads right.
   await openLibraryFilters(page, isMobile)
-  await page.getByLabel('Sort tracks').selectOption('album')
+  await librarySort(page, 'tracks').selectOption('album')
   await closeLibraryFilters(page, isMobile)
   await expect(rows.first().locator('.library-track-play > span:first-child')).toHaveText('9')
 })
@@ -346,6 +350,12 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await expect.poll(names).toEqual(['Stone Lines', 'Clear Water'])
 
   await expect(page.getByRole('img', { name: /Clear Water leads with 30 plays/ })).toBeVisible()
+  // The most played songs lead the page, most played first, and link on to the whole list.
+  await expect(page.getByRole('heading', { name: 'Top songs' })).toBeVisible()
+  await expect(page.locator('.library-top-songs .library-track-play strong').first()).toHaveText(
+    'Cinder',
+  )
+  await expect(page.getByRole('button', { name: 'All 3 songs' })).toBeVisible()
   await page.getByRole('button', { name: 'All songs' }).click()
   await expect(page.getByLabel('Sort songs')).toBeVisible()
   // All songs keeps the same header rather than shrinking to a bare count.
@@ -373,17 +383,16 @@ test('a tracks sort stays in the address and comes back with the tab', async ({
   )
   await page.goto('/library/tracks')
   await openLibraryFilters(page, isMobile)
-  await page.getByLabel('Sort tracks').selectOption('duration')
+  await librarySort(page, 'tracks').selectOption('duration')
   await closeLibraryFilters(page, isMobile)
   await expect(page).toHaveURL(/\/library\/tracks\?sort=duration/)
 
-  const views = page.getByRole('navigation', { name: 'Library views' })
-  await views.getByRole('button', { name: /^artists$/i }).click()
+  await openLibraryView(page, isMobile, 'Artists')
   await expect(page).toHaveURL(/\/library\/artists$/)
-  await views.getByRole('button', { name: /^tracks$/i }).click()
+  await openLibraryView(page, isMobile, 'Tracks')
   await expect(page).toHaveURL(/\/library\/tracks\?sort=duration/)
   await openLibraryFilters(page, isMobile)
-  await expect(page.getByLabel('Sort tracks')).toHaveValue('duration')
+  await expect(librarySort(page, 'tracks')).toHaveValue('duration')
 })
 
 test('an album sort stays after opening the album and going back', async ({ page, isMobile }) => {
@@ -425,7 +434,7 @@ test('an album sort stays after opening the album and going back', async ({ page
   )
   await page.goto('/library/albums')
   await openLibraryFilters(page, isMobile)
-  await page.getByLabel('Sort albums').selectOption('title')
+  await librarySort(page, 'albums').selectOption('title')
   await closeLibraryFilters(page, isMobile)
   await expect(page).toHaveURL(/sort=title/)
 
@@ -438,7 +447,7 @@ test('an album sort stays after opening the album and going back', async ({ page
   await page.getByRole('button', { name: 'Back to albums' }).click()
   await expect(page).toHaveURL(/\/library\/albums\?sort=title/)
   await openLibraryFilters(page, isMobile)
-  await expect(page.getByLabel('Sort albums')).toHaveValue('title')
+  await expect(librarySort(page, 'albums')).toHaveValue('title')
 })
 
 test('an artist page folds the editions of one album into a single card', async ({ page }) => {
@@ -552,10 +561,10 @@ test('the artists view sends its filters to the server and keeps favourites', as
 
   await expect(page.getByText('2 of 2 loaded')).toBeVisible()
   await openLibraryFilters(page, isMobile)
-  await page.getByLabel('Sort artists').selectOption('recent')
-  await page.getByLabel('Show artists').selectOption('unplayed')
+  await librarySort(page, 'artists').selectOption('recent')
+  await libraryShow(page, 'Show artists').selectOption('unplayed')
   await expect(page.getByText('1 of 1 loaded')).toBeVisible()
-  await page.getByText('All genres', { exact: true }).click()
+  await toggleLibraryFacet(page, isMobile, 'Genre')
   // The genre choices are the whole library's, sent back with the first page.
   await page.getByLabel('Jazz').check()
   await expect
@@ -564,9 +573,9 @@ test('the artists view sends its filters to the server and keeps favourites', as
       return [latest?.get('sort'), latest?.get('show'), latest?.getAll('genre')]
     })
     .toEqual(['recent', 'unplayed', ['Jazz']])
-  await page.getByText('Genres (1)', { exact: true }).click()
+  await toggleLibraryFacet(page, isMobile, 'Genre', 1)
   await page.getByRole('button', { name: 'Clear filters' }).click()
-  await expect(page.getByLabel('Show artists')).toHaveValue('')
+  await expect(libraryShow(page, 'Show artists')).toHaveValue('')
   await closeLibraryFilters(page, isMobile)
   // The unfiltered list was fetched before, so clearing may reuse it rather than ask again.
   await expect(page.getByText('2 of 2 loaded')).toBeVisible()
@@ -580,23 +589,121 @@ test('the artists view sends its filters to the server and keeps favourites', as
   expect(favourites).toEqual(['PUT', 'DELETE'])
 })
 
-test('library view tabs have aria-pressed state', async ({ page }) => {
+test('the phone switches library views from a row of chips with aria-pressed state', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, 'A wide Classic screen switches view from the sidebar, not from the page')
   await libraryFixtures(page)
-  await page.goto('/library')
+  await page.goto('/library/albums')
 
-  const homeTab = page.getByRole('button', { name: 'Home', exact: true })
-  const albumsTab = page.getByRole('button', { name: 'Albums', exact: true })
-  const artistsTab = page.getByRole('button', { name: 'Artists', exact: true })
-  const tracksTab = page.getByRole('button', { name: 'Tracks', exact: true })
-  const playlistsTab = page.getByRole('button', { name: 'Playlists', exact: true })
+  const views = page.getByRole('navigation', { name: 'Library views' })
+  // Home is the dashboard at `/` now, not a library view.
+  await expect(views.getByRole('button', { name: 'Home', exact: true })).toHaveCount(0)
+  const albumsTab = views.getByRole('button', { name: 'Albums', exact: true })
+  const artistsTab = views.getByRole('button', { name: 'Artists', exact: true })
+  const tracksTab = views.getByRole('button', { name: 'Tracks', exact: true })
+  const playlistsTab = views.getByRole('button', { name: 'Playlists', exact: true })
 
-  await expect(homeTab).toHaveAttribute('aria-pressed', 'true')
-  await expect(albumsTab).toHaveAttribute('aria-pressed', 'false')
+  await expect(albumsTab).toHaveAttribute('aria-pressed', 'true')
   await expect(artistsTab).toHaveAttribute('aria-pressed', 'false')
   await expect(tracksTab).toHaveAttribute('aria-pressed', 'false')
   await expect(playlistsTab).toHaveAttribute('aria-pressed', 'false')
 
-  await albumsTab.click()
-  await expect(homeTab).toHaveAttribute('aria-pressed', 'false')
-  await expect(albumsTab).toHaveAttribute('aria-pressed', 'true')
+  await artistsTab.click()
+  await expect(albumsTab).toHaveAttribute('aria-pressed', 'false')
+  await expect(artistsTab).toHaveAttribute('aria-pressed', 'true')
+})
+
+const albumPage = {
+  items: [
+    {
+      id: 'album-1',
+      name: 'Clear Water',
+      artist: 'Harbor Static',
+      coverArt: 'cover-1',
+      year: 2011,
+    },
+    {
+      id: 'album-2',
+      name: 'Stone Lines',
+      artist: 'Harbor Static',
+      coverArt: 'cover-1',
+      year: 1999,
+    },
+  ],
+  next_offset: null,
+  total: 2,
+  genres: ['Ambient', 'Jazz'],
+  years: [2011, 1999],
+}
+
+async function browseFixtures(page: Page) {
+  await libraryFixtures(page)
+  await page.route(
+    (url) => url.pathname === '/api/library/albums',
+    (route) => route.fulfill({ json: albumPage }),
+  )
+
+  await page.route(
+    (url) => url.pathname === '/api/library/artists',
+    (route) =>
+      route.fulfill({
+        json: { items: [], next_offset: null, total: 7, genres: [], years: [] },
+      }),
+  )
+
+  await page.route('**/api/library/playlists', (route) =>
+    route.fulfill({ json: { items: [], liked_id: '' } }),
+  )
+}
+
+test('Classic names the view with its count and lays its toolbar out in 36px chips', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'A phone keeps these controls in the Filter sheet')
+  await browseFixtures(page)
+  await page.goto('/library/albums')
+
+  await expect(page.getByRole('heading', { name: 'Albums', exact: true })).toBeVisible()
+  await expect(page.getByText('2 albums', { exact: true })).toBeVisible()
+  // The view switcher is a phone's chip row. A wide screen has the sidebar.
+  await expect(page.getByRole('navigation', { name: 'Library views' })).toBeHidden()
+
+  const chips = page.locator('[data-ui="select-chip"]')
+  await expect(chips).toHaveCount(3)
+  for (const chip of await chips.all()) expect((await chip.boundingBox())?.height).toBe(36)
+  await expect(page.getByRole('button', { name: 'Grid view' })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+})
+
+test('the Listening room shows one Library page with counted tabs and removable filter chips', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'A phone keeps its filters in the Filter sheet')
+  await page.addInitScript(() => localStorage.setItem('musimo.layout', 'room'))
+  await browseFixtures(page)
+  await page.goto('/library/albums?genre=%5B%22Jazz%22%5D')
+
+  const views = page.getByRole('navigation', { name: 'Library views' })
+  const artists = views.getByRole('button', { name: /^Artists/ })
+  await expect(artists).toContainText('7')
+  await expect(views.getByRole('button', { name: /^Albums/ })).toHaveAttribute(
+    'aria-pressed',
+    'true',
+  )
+
+  // A filter that is on is a chip that removes itself, and the address follows.
+  await page.getByRole('button', { name: 'Remove filter Genre: Jazz' }).click()
+  await expect(page).toHaveURL(/\/library\/albums$/)
+  await expect(page.getByRole('button', { name: /Remove filter/ })).toHaveCount(0)
+
+  // One that is off is a dashed chip that opens its choices.
+  await page.getByRole('button', { name: 'Year' }).click()
+  await page.getByLabel('1999').click()
+  await expect(page.getByRole('button', { name: 'Remove filter Year: 1999' })).toBeVisible()
 })

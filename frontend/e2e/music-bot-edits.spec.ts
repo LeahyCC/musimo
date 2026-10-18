@@ -593,7 +593,7 @@ test('the Windows 95 list pins and edits too', async ({ page, isMobile }) => {
   const win95 = BUILT_IN_THEMES.find((entry) => entry.id === 'win95-light')
   if (!win95) throw new Error('No Windows 95 theme')
   await page.goto('/settings/user')
-  await page.getByText(win95.name, { exact: true }).first().click()
+  await page.getByRole('radio', { name: win95.name }).check()
   await expect(page.locator('html')).toHaveAttribute('data-skin', 'win95')
   await open(page, false)
   await expect(page.locator('[data-bot="list-view"]')).toBeVisible()
@@ -927,4 +927,21 @@ test('Check again on a proposal that was pruned says it changed, not that the id
   await problem.getByRole('button', { name: 'Check again' }).click()
   await expect(problem).toContainText('This preview changed.')
   expect(proposals.creates).toHaveLength(1)
+})
+
+test('the Listening room keeps the result in a Draft panel, numbered, with a remove on each song', async ({
+  page,
+  isMobile,
+}) => {
+  await page.addInitScript(() => localStorage.setItem('musimo.layout', 'room'))
+  await fixtures(page)
+  await open(page, isMobile)
+  const draft = page.locator('[data-bot="draft"]')
+  await expect(card(page)).toHaveAttribute('data-variant', 'draft')
+  await expect(draft).toContainText('DRAFT · NOT PLAYING')
+  await expect(draft).toContainText('REV 1')
+  await draft.getByRole('button', { name: 'Remove Song B' }).click()
+  await expect(rows(page)).toHaveCount(2)
+  await expect(draft).toContainText('REV 2')
+  await expect(draft.getByRole('button', { name: 'Add to queue' })).toBeVisible()
 })

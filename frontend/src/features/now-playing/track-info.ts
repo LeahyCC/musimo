@@ -47,6 +47,19 @@ export function fileSummary(song: SongDetail) {
     .join(', ')
 }
 
+/**
+ * The chips under the title: format, sample rate, bitrate and year, each only where the file or
+ * the queue's copy of the track has one. The same facts as `fileSummary`, plus the year, one each.
+ */
+export function formatChips(song: SongDetail | undefined, track: LibraryTrack) {
+  return [
+    song ? formatName(song) : undefined,
+    shown(song?.samplingRate, sampleRateText),
+    shown(song?.bitRate, bitrateText),
+    counted(song?.year ?? track.year),
+  ].filter((chip): chip is string => Boolean(chip))
+}
+
 /** A lossy file whose bitrate is known and under LOW_BITRATE_KBPS. */
 export function isLowQualityLossy(song: SongDetail) {
   const bitrate = positive(song.bitRate)

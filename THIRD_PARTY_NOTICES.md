@@ -18,6 +18,10 @@ FFmpeg's applicable licence depends on its build configuration. The project's [l
 
 Before publishing binary/container releases, complete the dependency and source-distribution steps in [Releasing](docs/releasing.md). A source repository and a redistributed container are different distribution artifacts.
 
+## Fonts
+
+The Classic layout uses Inter, Copyright 2016 The Inter Project Authors. The Listening room layout uses Geist and Geist Mono, Copyright 2024 The Geist Project Authors. All three are licensed under the SIL Open Font License 1.1 and installed from the `@fontsource-variable/inter`, `@fontsource-variable/geist` and `@fontsource-variable/geist-mono` npm packages, which carry the licence text. They are served from the app itself, not from a font service.
+
 ## Windows 95 theme
 
 The Windows 95 themes use the W95FA typeface by Alina Sava, licensed under the SIL Open Font License 1.1 and installed from the `@fontsource/win95fa` npm package, which carries the licence text. The bevel recipes in `frontend/src/theme/win95.css` follow [98.css](https://github.com/jdan/98.css), Copyright (c) 2020 Jordan Scales, MIT licence. Windows and Windows 95 are trademarks of Microsoft; the themes are an homage and imply no affiliation or endorsement.
