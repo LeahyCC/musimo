@@ -748,6 +748,68 @@ test('while an edit has no answer the chat cannot start another request', async 
   await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
 })
 
+test('a cancelled Check again still offers Check again with the same operation id', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  proposals.editFault = (_body, count) => (count <= 2 ? 'drop-before' : undefined)
+  await addSong(page).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  const check = problem.getByRole('button', { name: 'Check again' })
+  await expect(check).toBeVisible()
+  let release: (() => void) | undefined
+  proposals.holdEdit = new Promise<void>((resolve) => {
+    release = resolve
+  })
+  await check.click()
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(page.getByText('Cancelled. Nothing changed.')).toBeVisible()
+  // Whether the cancelled check landed is still not known, so the hold stays and so does its id.
+  await expect(check).toBeEnabled()
+  await expect(addSong(page)).toBeDisabled()
+  release?.()
+  proposals.holdEdit = undefined
+  await expect.poll(() => proposals.edits.length).toBe(3)
+  await check.click()
+  await expect(card(page)).toContainText('REVISION 2')
+  expect(new Set(proposals.edits.map((body) => body.operation_id)).size).toBe(1)
+  expect(proposals.written).toHaveLength(1)
+})
+
+test('a Check again that is refused ends the hold, so the chat is not left waiting', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  proposals.editFault = (_body, count) => (count <= 2 ? 'drop-before' : undefined)
+  await addSong(page).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('I can’t tell if that went through.')
+  // A definite answer that nothing was edited: the library changed while it ran.
+  await page.route(/\/api\/music-bot\/proposals\/pr-[0-9a-f]{16}\/edits$/, (route) =>
+    route.fulfill({
+      status: 409,
+      json: {
+        contract_version: 5,
+        status: 'error',
+        error: {
+          code: 'snapshot_changed',
+          message: 'The library changed while the request ran. Try again.',
+          fields: [],
+        },
+      },
+    }),
+  )
+  await problem.getByRole('button', { name: 'Check again' }).click()
+  await expect(problem).toHaveCount(0)
+  await expect(addSong(page)).toBeEnabled()
+  await box(page).fill('add a song')
+  await expect(page.getByRole('button', { name: 'Send', exact: true })).toBeEnabled()
+})
+
 test('every press makes its own operation id, even for the same edit of the same revision', async ({
   page,
   isMobile,

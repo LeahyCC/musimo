@@ -364,11 +364,13 @@ export async function commitProposal(
       },
     })
   } catch (problem) {
-    // A reply that cannot be read may be the receipt of a write that happened, so it is not a
-    // refusal: the same operation id is asked again.
+    // A reply that cannot be read may be the receipt of a write that happened, and 499 is what a
+    // dropped connection leaves behind, so neither is a refusal: the same operation id is asked
+    // again.
     if (
       problem instanceof ProposalError &&
       problem.status < 500 &&
+      problem.status !== 499 &&
       problem.code !== 'invalid_response'
     )
       throw problem

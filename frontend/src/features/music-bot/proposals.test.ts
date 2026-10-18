@@ -488,6 +488,8 @@ describe('the proposal routes', () => {
     await expect(commitProposal(proposal.id, request)).rejects.toBeInstanceOf(UnknownOutcome)
     answer(500, { status: 'error', error: { code: 'internal_error', message: 'Failed.' } })
     await expect(commitProposal(proposal.id, request)).rejects.toBeInstanceOf(UnknownOutcome)
+    answer(499, { detail: 'Client closed the request.' })
+    await expect(commitProposal(proposal.id, request)).rejects.toBeInstanceOf(UnknownOutcome)
   })
 
   it('calls a commit reply it cannot read unknown, since the write may have happened', async () => {

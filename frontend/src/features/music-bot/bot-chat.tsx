@@ -94,7 +94,10 @@ export type Preview = z.infer<typeof previewSchema>
 export type Problem =
   /** `gone` are the songs it says left the library. */
   | { kind: 'stale'; changes: string[]; gone: string[] }
-  | { kind: 'unknown'; what: 'save' | 'queue' | 'edit' }
+  | { kind: 'unknown'; what: 'save' | 'queue' }
+  /** The edit that got no answer travels with the problem, so Check again sends its id even after
+   *  a cancelled check, and the hold ends only with a definite answer. */
+  | { kind: 'unknown'; what: 'edit'; attempt: EditAttempt }
   | { kind: 'repeat'; what: 'save' | 'queue' }
   /** The server recorded a queue confirmation, but the card cannot apply it as recorded. */
   | { kind: 'recorded' }
@@ -638,8 +641,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       if (problem instanceof UnknownOutcome) {
         // An add whose answer never came. Whether it landed is not known, so the same operation id
         // is asked again from the card rather than a new edit being made.
-        setProblem({ kind: 'unknown', what: 'edit' })
-        landed('sorry')
+        holdEdit()
         return
       }
       const unplayable = unavailableSongs(problem)
@@ -773,13 +775,24 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         await new Promise((resolve) => setTimeout(resolve, RECONCILE_DELAY))
         done = await ask()
       }
-      editAttempt.current = null
+      if (editAttempt.current === sending) editAttempt.current = null
       return done
     } catch (problem) {
       // Only a definite refusal ends the attempt. Without an answer it is asked again, same id.
-      if (!(problem instanceof UnknownOutcome)) editAttempt.current = null
+      // An edit that was superseded leaves alone the attempt of the one that replaced it.
+      if (!(problem instanceof UnknownOutcome) && editAttempt.current === sending)
+        editAttempt.current = null
       throw problem
     }
+  }
+
+  /** An edit got no answer: the card offers Check again with its id, and nothing else starts. */
+  function holdEdit() {
+    const open = editAttempt.current
+    // Never expected, since the attempt is kept for exactly this, but a hold with no id to send
+    // could not be ended from the card, so it offers the current revision instead.
+    setProblem(open ? { kind: 'unknown', what: 'edit', attempt: open } : { kind: 'changed' })
+    landed('sorry')
   }
 
   /** Starts a request that supersedes any other. The one before is aborted and its waiting state
@@ -874,8 +887,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         }
 
         if (problem instanceof UnknownOutcome) {
-          setProblem({ kind: 'unknown', what: 'edit' })
-          landed('sorry')
+          holdEdit()
           return null
         }
         const unplayable = unavailableSongs(problem)
@@ -891,6 +903,8 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
           const at = latestPreview.current
           if (at && (await learnMissing(at, signal))) return null
         }
+        // A definite refusal: nothing was edited, so a Check again that got one holds no longer.
+        setProblem((now) => (now?.kind === 'unknown' && now.what === 'edit' ? null : now))
         throw problem
       }
     }
@@ -903,7 +917,8 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
    * passes the attempt that got no answer, sends an id again.
    */
   async function editPreview(change: ProposalEdit, again?: EditAttempt): Promise<boolean> {
-    const at = latestPreview.current
+    // Check again asks about the revision the first attempt was sent against.
+    const at = again?.preview ?? latestPreview.current
     if (!reply || !at || committing.current) return false
     const kept = reply
     const operationId = again?.operationId ?? newOperationId()
@@ -1155,8 +1170,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     else if (problem.kind === 'unknown' && problem.what === 'edit') {
       // The same edit with the same operation id: the server returns the revision the first
       // attempt made if it landed, and makes it now if it did not.
-      const open = editAttempt.current
-      if (open) void editPreview(open.edit, open)
+      void editPreview(problem.attempt.edit, problem.attempt)
     } else if (problem.kind === 'unknown') {
       const open = attempt.current
       if (open) void confirm(open.command, open.repeat)
