@@ -33,3 +33,5 @@ export {
   sectionTitleClassName,
   sectionCaptionClassName,
 } from './section-heading'
+export { Select, readOptions, stepOption, matchOption } from './select'
+export type { PickerOption } from './select'

@@ -4,7 +4,7 @@ import type { ReactNode, RefObject } from 'react'
 import { X } from 'lucide-react'
 
 import { cx } from '../lib/cx'
-import { IconButton, textLinkClassName } from '../ui'
+import { IconButton, Select, textLinkClassName } from '../ui'
 
 export const plural = (count: number, noun: string) => `${count} ${noun}${count === 1 ? '' : 's'}`
 
@@ -181,7 +181,7 @@ type SelectFieldProps = {
 function SelectField({ label, fact, value, onChange, disabled, children }: SelectFieldProps) {
   const id = useId()
   const select = (
-    <select
+    <Select
       id={id}
       className={fact ? factSelectClassName : selectClassName}
       value={value}
@@ -189,7 +189,7 @@ function SelectField({ label, fact, value, onChange, disabled, children }: Selec
       onChange={(e) => onChange(e.target.value)}
     >
       {children}
-    </select>
+    </Select>
   )
   if (fact)
     return (

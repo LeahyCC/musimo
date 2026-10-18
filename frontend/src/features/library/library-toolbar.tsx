@@ -4,7 +4,7 @@ import { ArrowDownWideNarrow, Plus, Search, X } from 'lucide-react'
 
 import { cx } from '../../lib/cx'
 import type { Layout } from '../../lib/layout'
-import { FilterChip, SelectChip, textLinkClassName } from '../../ui'
+import { FilterChip, Select, SelectChip, textLinkClassName } from '../../ui'
 import { FacetChip, LayoutToggle, type ViewMode } from './collection-items'
 import type { useLibraryBrowse } from './library-browse'
 import type { LibraryTab } from './library-params'
@@ -195,7 +195,7 @@ function SortButton({
     <span className="relative inline-flex h-[36px] shrink-0 items-center gap-[6px] rounded-[10px] px-[10px] text-body whitespace-nowrap text-text has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent has-[:focus-visible]:outline-solid coarse:min-h-11">
       <ArrowDownWideNarrow aria-hidden="true" size={15} />
       <span aria-hidden="true">{options.find((option) => option.value === value)?.label}</span>
-      <select
+      <Select
         aria-label="Sort"
         value={value}
         onChange={(event) => onChange(event.target.value)}
@@ -206,7 +206,7 @@ function SortButton({
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
     </span>
   )
 }
@@ -231,7 +231,7 @@ function AddSelect({
         <Plus size={13} />
         {label}
       </span>
-      <select
+      <Select
         aria-label={label}
         value=""
         onChange={(event) => onChange(event.target.value)}
@@ -245,7 +245,7 @@ function AddSelect({
             {option.label}
           </option>
         ))}
-      </select>
+      </Select>
     </span>
   )
 }
