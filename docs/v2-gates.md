@@ -1,8 +1,8 @@
 # V2 gates: interpreter, persona and audio evidence
 
-Status: proposed 17 October 2026, waiting for Colin's sign-off. Part of [#179](https://github.com/LeahyCC/musimo/issues/179), packages 2A, 3A and 4A. Nothing here is built, downloaded, scanned or benchmarked. These are the decisions and pass marks to freeze before any candidate is evaluated, so no threshold is chosen after seeing a result.
+Status: signed off by Colin, 17 October 2026. Part of [#179](https://github.com/LeahyCC/musimo/issues/179), packages 2A, 3A and 4A. Nothing here is built, downloaded, scanned or benchmarked. These are the decisions and pass marks to freeze before any candidate is evaluated, so no threshold is chosen after seeing a result.
 
-Owner answers are marked **Colin**. Everything else is a recommendation Colin asked for and can change before sign-off. Once signed off, a change to a threshold needs a dated note here saying why, made before the run it affects.
+Owner answers are marked **Colin**. Everything else is a recommendation Colin asked for and signed off. A change to a threshold needs a dated note here saying why, made before the run it affects.
 
 ## 2A: local interpreter
 
@@ -94,7 +94,7 @@ Missing, failed or stale rows count as abstentions, never as a negative label. A
 
 ## What happens next
 
-1. Colin signs off this page, changing any number first.
+1. Colin signed off this page on 17 October 2026.
 2. 2A: write the prompt suite and seal its held-out part. Colin installs the shortlisted models on the Ollama computer. Then one evaluation run per model, reported with the SHA, model digests, settings, results and failures.
 3. 3A starts after a 2A model passes.
 4. 4A: build the 120-clip blind set and seal its held-out part, then run the frozen candidates once.
