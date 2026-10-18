@@ -4,6 +4,7 @@ import asyncio
 import base64
 import contextlib
 import io
+import json
 import sqlite3
 import struct
 import tempfile
@@ -209,6 +210,15 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
                 "SELECT song_id, status, attempts FROM audio_job ORDER BY rowid"
             )
         ]
+
+    def test_a_lease_never_carries_an_infinite_length(self) -> None:
+        # An older scan could store inf, and the lease reply is JSON.
+        self.store.db.execute("UPDATE library_files SET duration=9e999")
+        self.store.db.commit()
+        self.assertEqual(enqueue(self.store, SCALAR_RECIPE, 1), 1)
+        job = self.lease()
+        self.assertEqual(job["duration"], 0.0)
+        json.dumps(job, allow_nan=False)
 
     def test_enqueue_lease_and_a_done_result_round_trip(self) -> None:
         self.assertEqual(enqueue(self.store, SCALAR_RECIPE, 2), 2)

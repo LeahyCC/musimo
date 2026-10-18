@@ -23,6 +23,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from backend.core.audio_recipes import Recipe, recipe_for, text_encoder
 from backend.core.store import Store
+from backend.library.tags import track_length
 
 LEASE_SECONDS = 180
 # A song whose lease lapses or whose analysis fails this many times is written as failed.
@@ -359,7 +360,8 @@ class AudioProfiles:
                         "path": str(row["path"]),
                         "size": int(row["size"]),
                         "mtime_ns": int(row["mtime_ns"]),
-                        "duration": float(row["duration"]),
+                        # A row an older scan stored can hold inf, which JSON cannot carry.
+                        "duration": track_length(row["duration"]),
                         "genre": str(row["genre"]),
                         "genres": _strings(row["genres"]),
                     }
