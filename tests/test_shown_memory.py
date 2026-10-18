@@ -162,6 +162,37 @@ class ShownMemoryTests(unittest.IsolatedAsyncioTestCase):
                 refused = await self.http.post("/api/music-bot/memory/shown", json=body)
                 self.assertEqual(refused.status_code, 422)
 
+    async def edit(self, proposal: JsonObject, edit: JsonObject, operation: str) -> JsonObject:
+        response = await self.http.post(
+            f"/api/music-bot/proposals/{proposal['id']}/edits",
+            json={
+                "contract_version": 5,
+                "revision": proposal["revision"],
+                "operation_id": operation,
+                "edit": edit,
+            },
+        )
+        self.assertEqual(response.status_code, 200, response.text)
+        return part(payload(response), "proposal")
+
+    async def test_a_remove_edit_draws_nothing_new_so_it_is_not_recorded(self) -> None:
+        proposal = await self.library_result(seed=1, filters={"limit": 6})
+        ids = self.ids_of(proposal)
+        removed = await self.edit(proposal, {"kind": "remove", "ids": [ids[0]]}, "op-remove-001")
+        self.assertEqual(self.ids_of(removed), ids[1:])
+        # Nothing was shown by taking a song away, so the memory stays empty.
+        self.assertEqual((await self.present(removed))["recorded"], False)
+        self.assertEqual((await self.memory())["revision"], 0)
+        # Adding draws new songs, so that result is remembered, kept songs and all.
+        added = await self.edit(removed, {"kind": "add", "count": 2}, "op-add-0000001")
+        recorded = await self.present(added)
+        self.assertEqual((recorded["recorded"], recorded["songs"]), (True, 7))
+        self.assertEqual(self.store.shown_memory()[1], self.ids_of(added))
+        # Taking one away again changes nothing in what is remembered.
+        again = await self.edit(added, {"kind": "remove", "ids": [ids[1]]}, "op-remove-002")
+        self.assertEqual((await self.present(again))["recorded"], False)
+        self.assertEqual(self.store.shown_memory()[1], self.ids_of(added))
+
     async def test_a_cancelled_presentation_is_not_recorded(self) -> None:
         proposal = await self.library_result(seed=1, filters={"limit": 4})
         body = {"proposal_id": proposal["id"], "revision": proposal["revision"]}

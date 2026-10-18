@@ -881,8 +881,9 @@ class MusicBot:
         # A fixed number of new songs after the kept ones: the limit and the fill add no more.
         fixed = kept.new_songs
         adding = fixed if fixed is not None else plan.add_count
-        if kept.ids:
-            # The engine checked that each is still in the library with a file.
+        if kept.ids or fixed is not None:
+            # The engine checked that each is still in the library with a file. A number with
+            # nothing kept still means "this many", so it caps the limit the same way.
             if any(sid not in view.stored for sid in kept.ids):
                 raise BotError("A kept song is no longer in the library.", 409)
             retained = [view.stored[sid] for sid in kept.ids]
@@ -956,7 +957,7 @@ class MusicBot:
         if plan.exclude_played_days:
             summary += f" Recent plays excluded using {self.store.current().music_timezone}."
         if duration is not None:
-            summary += _duration_sentence(duration)
+            summary += _duration_sentence(duration, fixed)
         elif shortfall:
             summary += f" {round(shortfall / 60, 1)} minutes short; no exclusions were relaxed."
         if adding and len(tracks) < len(retained) + adding:
@@ -1378,8 +1379,10 @@ def _span(seconds: float) -> str:
     return f"{round(seconds / 60, 1)} minutes"
 
 
-def _duration_sentence(report: dict[str, object]) -> str:
-    """The total-length outcome in words. The structured fields say the same."""
+def _duration_sentence(report: dict[str, object], fixed: int | None = None) -> str:
+    """The total-length outcome in words. The structured fields say the same. `fixed` is the
+    number of songs an edit was asked to add: nothing was searched for a closer total then, so
+    "found within the search limit" would claim a search that did not happen."""
     target = report["target_seconds"]
     deviation = report["deviation_seconds"]
     unknown = report["unknown_length"]
@@ -1392,6 +1395,13 @@ def _duration_sentence(report: dict[str, object]) -> str:
         sentence = f" Asked for {asked}: {off}."
     elif report["unmet_reason"] == "proven":
         sentence = f" No selection of whole songs here can be {asked}; no filters were relaxed."
+        if report["kept"]:
+            sentence = f" No selection that keeps those songs can be {asked}; none were dropped."
+    elif fixed is not None:
+        sentence = (
+            f" Adding {fixed} {'song' if fixed == 1 else 'songs'} did not make it {asked}; "
+            "the kept songs stayed as they were and no filters were relaxed."
+        )
     else:
         sentence = (
             f" No selection that is {asked} was found within the search limit "

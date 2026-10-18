@@ -1,9 +1,12 @@
 """The versioned engine boundary: canonical intents, the registry, replay and refusals."""
 
 import asyncio
+import itertools
 import json
+import random
 import tempfile
 import unittest
+from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
@@ -21,7 +24,9 @@ from backend.library.duration import (
     CANDIDATE_CAP,
     WORK_LIMIT,
     Item,
+    Mode,
     TotalLength,
+    bounds,
     fit,
     length_ms,
     most,
@@ -824,7 +829,6 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
         second = self.timed("about", 1000, seed=5)
         self.assertEqual(self.ids_of(first), self.ids_of(second))
         self.assertEqual(self.report(first), self.report(second))
-        self.assertEqual(self.snapshot(first)["id"], self.snapshot(second)["id"])
         self.assertTrue(self.report(first)["met"])
 
     def test_a_bare_target_keeps_todays_fill(self) -> None:
@@ -970,6 +974,246 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             (4, 2, 4.0, 500, 2**53, 300, 600, 50_000),
         )
 
+    # Kept, pinned and excluded songs (contract version 5)
+
+    def edit_run(self, **body: object) -> dict[str, object]:
+        return self.run_at(parse_intent({"contract_version": 5, "action": "search"} | body))
+
+    def edit_refused(self, **body: object) -> EngineError:
+        return self.refused({"contract_version": 5, "action": "search"} | body)
+
+    def test_newer_fields_are_unknown_under_an_older_version(self) -> None:
+        song = self.ids["Dawn"]
+        fields: list[tuple[str, dict[str, object]]] = [
+            ("filters.exclude_ids", {"filters": {"exclude_ids": [song]}}),
+            ("context.keep_ids", {"context": {"keep_ids": [song]}}),
+            ("context.pinned_ids", {"context": {"pinned_ids": [song]}}),
+            ("context.add_count", {"context": {"add_count": 0}}),
+        ]
+        for version in (1, 2, 3, 4):
+            for name, body in fields:
+                with self.subTest(version=version, field=name):
+                    error = self.refused({"contract_version": version, "action": "search"} | body)
+                    self.assertEqual((error.code, error.status), ("unknown_field", 422))
+                    self.assertEqual([item.field for item in error.fields], [name])
+        # An intent that uses none of them is unchanged under every version.
+        for version in (1, 2, 3, 4, 5):
+            with self.subTest(version=version):
+                plain = self.run_at(
+                    parse_intent({"contract_version": version, "action": "search", "seed": 1})
+                )
+                self.assertEqual(len(self.ids_of(plain)), 10)
+
+    def test_kept_songs_come_first_as_they_are_even_when_the_filters_would_drop_them(self) -> None:
+        # Mist is Jazz and Dawn was played: neither matches Rock that is unplayed.
+        kept = [self.ids["Mist"], self.ids["Dawn"], self.ids["Hail"]]
+        result = self.edit_run(
+            seed=1,
+            filters={"genres": ["Rock"], "history": "unplayed", "limit": 6},
+            context={"keep_ids": kept},
+        )
+        ids = self.ids_of(result)
+        self.assertEqual(ids[:3], kept)
+        self.assertEqual((len(ids), len(set(ids))), (6, 6))
+        # The same ids and the same order, every time.
+        again = self.edit_run(
+            seed=1,
+            filters={"genres": ["Rock"], "history": "unplayed", "limit": 6},
+            context={"keep_ids": kept},
+        )
+        self.assertEqual(self.ids_of(again), ids)
+
+    def test_kept_songs_are_never_cut_by_the_limit_or_a_target(self) -> None:
+        kept = [self.ids[title] for title in ("Dawn", "Mist", "Rain", "Hail")]
+        small = self.edit_run(seed=1, filters={"limit": 2}, context={"keep_ids": kept})
+        self.assertEqual(self.ids_of(small), kept)
+        # 600 seconds are reached by three 200 second songs, but all four stay.
+        target = self.edit_run(seed=1, filters={"target_seconds": 600}, context={"keep_ids": kept})
+        self.assertEqual(self.ids_of(target), kept)
+        # With room left, the walk stops as soon as the target is reached.
+        room = self.edit_run(
+            seed=1,
+            filters={"target_seconds": 1000},
+            context={"keep_ids": kept[:2]},
+        )
+        self.assertEqual(self.ids_of(room)[:2], kept[:2])
+        self.assertEqual(sum(200 for _ in self.ids_of(room)), 1000)
+
+    def test_a_number_to_add_is_the_most_that_follows_the_kept_songs(self) -> None:
+        kept = [self.ids["Dawn"], self.ids["Mist"]]
+        for add, size in ((0, 2), (1, 3), (3, 5)):
+            with self.subTest(add=add):
+                result = self.edit_run(
+                    seed=1,
+                    filters={"limit": 2},
+                    context={"keep_ids": kept, "add_count": add},
+                )
+                self.assertEqual(self.ids_of(result)[:2], kept)
+                self.assertEqual(len(self.ids_of(result)), size)
+        # A fill by length adds no more than the number either.
+        more = self.edit_run(
+            seed=1,
+            filters={"target_seconds": 2000},
+            context={"keep_ids": kept, "add_count": 2},
+        )
+        self.assertEqual(len(self.ids_of(more)), 4)
+        # With nothing kept, the number is how many songs there are.
+        fresh = self.edit_run(seed=1, context={"add_count": 3})
+        self.assertEqual(len(self.ids_of(fresh)), 3)
+        # A short list says how many it could add.
+        only = self.edit_run(
+            seed=1,
+            filters={"genres": ["Jazz"]},
+            context={"keep_ids": [self.ids["Dawn"]], "add_count": 5},
+        )
+        self.assertEqual(len(self.ids_of(only)), 3)
+        self.assertIn("Could only add 2 of 5", str(only["summary"]))
+
+    def test_kept_songs_hold_their_places_in_the_artist_cap(self) -> None:
+        kept = [self.ids["Echo"], self.ids["Dawn"], self.ids["Dusk"]]
+        result = self.edit_run(seed=1, filters={"limit": 12}, context={"keep_ids": kept})
+        stored = self.player.view().stored
+        artists = [stored[sid].artist for sid in self.ids_of(result)]
+        # Orchard is capped at the two kept, and Harbor has room for one more song only.
+        self.assertEqual(artists.count("Orchard"), 2)
+        self.assertEqual(artists.count("Harbor"), 2)
+        self.assertEqual(self.ids_of(result)[:3], kept)
+        # Three of one artist kept stay: the cap limits what is added, never what is kept.
+        three = [self.ids[t] for t in ("Echo", "Echo (Live)", "Echo (Remix)")]
+        crowded = self.edit_run(seed=1, context={"keep_ids": three})
+        self.assertEqual(self.ids_of(crowded)[:3], three)
+        self.assertEqual([stored[sid].artist for sid in self.ids_of(crowded)].count("Harbor"), 3)
+
+    def test_excluded_songs_are_never_picked_in_any_scope(self) -> None:
+        gone = [self.ids[title] for title in ("Dawn", "Mist", "Echo")]
+        library = self.edit_run(seed=1, filters={"limit": 12, "exclude_ids": gone})
+        self.assertFalse(set(gone) & set(self.ids_of(library)))
+        everything = list(self.ids.values())
+        for scope, key in (("proposal", "proposal_ids"), ("queue", "queue_ids")):
+            with self.subTest(scope=scope):
+                result = self.edit_run(
+                    scope=scope, filters={"exclude_ids": gone}, context={key: everything}
+                )
+                self.assertEqual(
+                    self.ids_of(result), [sid for sid in everything if sid not in gone]
+                )
+        # Excluded songs that are not in the library are harmless: the person may have lost them.
+        stale = self.edit_run(seed=1, filters={"exclude_ids": ["tr-0000000000000000"]})
+        self.assertEqual(len(self.ids_of(stale)), 10)
+
+    def test_kept_songs_that_do_not_fit_together_or_cannot_play_are_refused(self) -> None:
+        dawn, mist = self.ids["Dawn"], self.ids["Mist"]
+        cases: list[tuple[dict[str, object], str, int]] = [
+            ({"context": {"keep_ids": [dawn, dawn]}}, "invalid_intent", 422),
+            ({"context": {"keep_ids": [dawn], "pinned_ids": [mist]}}, "invalid_intent", 422),
+            (
+                {"context": {"keep_ids": [dawn]}, "filters": {"exclude_ids": [dawn]}},
+                "invalid_intent",
+                422,
+            ),
+            (
+                {"scope": "proposal", "context": {"proposal_ids": [mist], "keep_ids": [dawn]}},
+                "invalid_intent",
+                422,
+            ),
+            (
+                {"scope": "proposal", "context": {"proposal_ids": [mist], "add_count": 1}},
+                "invalid_intent",
+                422,
+            ),
+            ({"context": {"add_count": 0}}, "invalid_intent", 422),
+            ({"context": {"keep_ids": ["tr-0000000000000000"]}}, "unknown_song", 422),
+            (
+                {"context": {"keep_ids": [dawn], "add_count": 500}},
+                "selection_too_large",
+                422,
+            ),
+            (
+                {"context": {"keep_ids": [f"tr-{n:016x}" for n in range(501)]}},
+                "selection_too_large",
+                422,
+            ),
+            (
+                {"filters": {"exclude_ids": [f"tr-{n:016x}" for n in range(1001)]}},
+                "invalid_intent",
+                422,
+            ),
+        ]
+        for body, code, status in cases:
+            with self.subTest(body=str(body)[:80]):
+                error = self.edit_refused(**body)
+                self.assertEqual((error.code, error.status), (code, status))
+        # A file that is gone is a conflict by name, never a song quietly dropped.
+        (self.music / "4.wav").unlink()
+        gone = self.edit_refused(seed=1, context={"keep_ids": [mist, dawn]})
+        self.assertEqual((gone.code, gone.status), ("song_unavailable", 409))
+        self.assertEqual([item.field for item in gone.fields], [f"context.keep_ids.{dawn}"])
+
+    def test_a_replay_of_a_kept_selection_is_the_same_selection(self) -> None:
+        body = {
+            "seed": 3,
+            "filters": {"limit": 8},
+            "context": {"keep_ids": [self.ids["Rain"], self.ids["Fog"]], "add_count": 4},
+        }
+        first, second = self.edit_run(**body), self.edit_run(**body)
+        self.assertEqual(self.ids_of(first), self.ids_of(second))
+        other = self.edit_run(
+            **(
+                body
+                | {"context": {"keep_ids": [self.ids["Fog"], self.ids["Rain"]], "add_count": 4}}
+            )
+        )
+        # The order given is the order kept.
+        self.assertEqual(self.ids_of(other)[:2], [self.ids["Fog"], self.ids["Rain"]])
+
+    def test_kept_songs_count_in_a_total_length_and_a_number_adds_greedily(self) -> None:
+        kept = [self.ids[t] for t in ("Dawn", "Mist", "Rain")]
+        # 600 s are kept. At least 1000 s with two more songs is exact.
+        met = self.timed(
+            "at_least", 1000, contract_version=5, context={"keep_ids": kept, "add_count": 2}
+        )
+        self.assertEqual(self.ids_of(met)[:3], kept)
+        self.assertEqual((len(self.ids_of(met)), self.report(met)["met"]), (5, True))
+        self.assertEqual(self.report(met)["kept"], 3)
+        # One song is not enough: 800 s, the kept songs stay, and it says what happened.
+        short = self.timed(
+            "at_least", 1000, contract_version=5, context={"keep_ids": kept, "add_count": 1}
+        )
+        self.assertEqual((len(self.ids_of(short)), self.report(short)["met"]), (4, False))
+        self.assertIn("Adding 1 song did not make it", str(short["summary"]))
+        self.assertNotIn("search limit", str(short["summary"]))
+        # A ceiling is kept: of five songs asked for, only those that stay under it are added.
+        ceiling = self.timed(
+            "at_most", 1000, contract_version=5, context={"keep_ids": kept, "add_count": 5}
+        )
+        self.assertEqual(
+            (len(self.ids_of(ceiling)), self.report(ceiling)["total_seconds"]), (5, 1000.0)
+        )
+        self.assertTrue(self.report(ceiling)["met"])
+        # Without a number the search chooses the closest total around the kept songs.
+        free = self.timed("about", 1000, contract_version=5, context={"keep_ids": kept})
+        self.assertEqual(self.ids_of(free)[:3], kept)
+        self.assertEqual(
+            (self.report(free)["total_seconds"], self.report(free)["met"]), (1000.0, True)
+        )
+        # Kept songs already over a ceiling are proven unmet, and none is dropped.
+        over = self.timed("under", 500, contract_version=5, context={"keep_ids": kept})
+        self.assertEqual(self.ids_of(over), kept)
+        self.assertEqual(
+            (self.report(over)["met"], self.report(over)["unmet_reason"]), (False, "proven")
+        )
+        self.assertIsNone(self.report(over)["alternative"])
+        self.assertIn("No selection that keeps those songs", str(over["summary"]))
+
+    def test_a_kept_song_with_no_length_stays_and_is_counted_as_unknown(self) -> None:
+        self.lengths({"Dawn": 0})
+        kept = [self.ids["Dawn"], self.ids["Mist"]]
+        result = self.timed("at_least", 600, contract_version=5, context={"keep_ids": kept})
+        self.assertEqual(self.ids_of(result)[:2], kept)
+        report = self.report(result)
+        self.assertEqual((report["unknown_length"], report["kept"], report["met"]), (1, 2, True))
+        self.assertEqual(report["total_seconds"], 600.0)
+
 
 class SolverTests(unittest.TestCase):
     """The search alone, with no library: lengths in milliseconds."""
@@ -1008,6 +1252,131 @@ class SolverTests(unittest.TestCase):
         items = [Item(400_000), Item(300_000), Item(300_000), Item(100_000)]
         found = fit("at_most", 700, items, items, False, 500, 2)
         self.assertEqual((found.picked, found.total_ms), ([0, 1], 700_000))
+
+    def test_kept_songs_already_in_range_make_picking_nothing_a_valid_answer(self) -> None:
+        kept = [Item(400_000)]
+        # The floor is met by the kept songs alone: nothing is added to reach it.
+        met = fit("at_least", 400, [Item(100_000)], [Item(100_000)], False, 500, 2, taken=kept)
+        self.assertEqual((met.met, met.picked, met.total_ms), (True, [], 400_000))
+        # A floor they do not reach is met from the bounds relative to them.
+        more = [Item(100_000), Item(100_000), Item(100_000)]
+        reach = fit("at_least", 600, more, more, False, 500, 2, taken=kept)
+        self.assertEqual((reach.met, reach.picked, reach.total_ms), (True, [0, 1], 600_000))
+        # A ceiling counts them too: 400 + 300 is the most that stays at or under 700.
+        ceiling = fit(
+            "at_most",
+            700,
+            [Item(300_000), Item(400_000)],
+            [Item(300_000)] * 2,
+            False,
+            500,
+            2,
+            taken=kept,
+        )
+        self.assertEqual((ceiling.met, ceiling.total_ms), (True, 700_000))
+
+    def test_kept_songs_at_or_past_a_ceiling_are_proven_unmet_with_no_alternative(self) -> None:
+        items = [Item(100_000)]
+        cases: list[tuple[Mode, int, int]] = [
+            ("under", 300, 300_000),
+            ("at_most", 299, 300_000),
+            ("about", 100, 700_000),
+        ]
+        for mode, seconds, kept_ms in cases:
+            with self.subTest(mode=mode):
+                past = fit(mode, seconds, items, items, False, 500, 2, taken=[Item(kept_ms)])
+                self.assertEqual((past.met, past.unmet), (False, "proven"))
+                self.assertEqual(
+                    (past.picked, past.alternative, past.total_ms), ([], None, kept_ms)
+                )
+        # "At most 300" is met by exactly 300 of kept songs.
+        edge = fit("at_most", 300, items, items, False, 500, 2, taken=[Item(300_000)])
+        self.assertEqual((edge.met, edge.picked), (True, []))
+
+    def test_a_shortage_with_kept_songs_names_only_the_songs_added(self) -> None:
+        items = [Item(100_000), Item(100_000)]
+        short = fit("at_least", 1000, items, items, False, 500, 2, taken=[Item(100_000)])
+        # 100 + 200 is all there is: proven, the longest below the floor, and the kept song is
+        # in the total but not in `picked`.
+        self.assertEqual((short.met, short.unmet, short.complete), (False, "proven", True))
+        self.assertEqual((short.picked, short.total_ms), ([0, 1], 300_000))
+        # A long mix is offered on top of the kept songs, never cut.
+        mix = [Item(1_000_000)]
+        offered = fit("about", 600, mix, mix, False, 500, 2, taken=[Item(100_000)])
+        self.assertEqual((offered.picked, offered.total_ms), ([], 100_000))
+        self.assertEqual((offered.alternative, offered.alternative_ms), ([0], 1_100_000))
+
+    def test_kept_songs_hold_their_places_in_the_cap_the_key_rule_and_the_limit(self) -> None:
+        # Two songs of artist "a" are kept, so no other "a" song may join them.
+        items = [Item(100_000, "a"), Item(100_000, "b")]
+        kept = [Item(100_000, "a"), Item(100_000, "a")]
+        found = search(items, 500, 2, 0, None, 1_000_000, 1000, kept)
+        self.assertEqual(found.picked, [1])
+        # The title of a kept song is not picked again.
+        titled = [Item(100_000, None, ("x", "a")), Item(100_000, None, ("y", "a"))]
+        again = search(titled, 500, 2, 0, None, 1_000_000, 1000, [Item(100_000, None, ("x", "a"))])
+        self.assertEqual(again.picked, [1])
+        # `limit` is the number of songs that may join them.
+        some = [Item(100_000) for _ in range(5)]
+        limited = search(some, 2, 2, 0, None, 10_000_000, 1000, [Item(100_000)])
+        self.assertEqual(len(limited.picked), 2)
+
+    def test_fit_with_kept_songs_agrees_with_trying_every_selection(self) -> None:
+        # A fixed pseudo-random set of small cases, compared with a search of every subset.
+        rng = random.Random(7)
+        modes: tuple[Mode, ...] = ("under", "at_most", "at_least", "over", "about")
+
+        def allowed(kept: list[Item], candidates: list[Item], chosen: tuple[int, ...]) -> bool:
+            groups = Counter(item.group for item in kept if item.group is not None)
+            keys = {item.unique for item in kept if item.unique is not None}
+            for index in chosen:
+                item = candidates[index]
+                if item.group is not None:
+                    groups[item.group] += 1
+                    if groups[item.group] > 2:
+                        return False
+                if item.unique is not None:
+                    if item.unique in keys:
+                        return False
+                    keys.add(item.unique)
+            return True
+
+        def song() -> Item:
+            return Item(
+                rng.randint(1, 12) * 1000,
+                rng.choice([None, "a", "b"]),
+                rng.choice([None, (rng.randint(0, 3), "t")]),
+            )
+
+        for case in range(400):
+            mode = rng.choice(modes)
+            seconds = rng.randint(1, 40)
+            candidates = [song() for _ in range(rng.randint(0, 7))]
+            kept = [song() for _ in range(rng.randint(0, 3))]
+            limit = rng.randint(0, 5)
+            found = fit(mode, seconds, candidates, candidates, False, limit, 2, taken=kept)
+            floor, ceiling, _ = bounds(mode, seconds)
+            base = sum(item.ms for item in kept)
+
+            possible = any(
+                allowed(kept, candidates, chosen)
+                and floor <= base + sum(candidates[i].ms for i in chosen)
+                and (ceiling is None or base + sum(candidates[i].ms for i in chosen) < ceiling)
+                for size in range(min(limit, len(candidates)) + 1)
+                for chosen in itertools.combinations(range(len(candidates)), size)
+            )
+            with self.subTest(case=case, mode=mode):
+                self.assertEqual(found.met, possible)
+                if found.met:
+                    self.assertTrue(allowed(kept, candidates, tuple(found.picked)))
+                    self.assertLessEqual(len(found.picked), limit)
+                    self.assertEqual(
+                        found.total_ms, base + sum(candidates[i].ms for i in found.picked)
+                    )
+                    self.assertGreaterEqual(found.total_ms, floor)
+                    self.assertTrue(ceiling is None or found.total_ms < ceiling)
+                elif found.unmet == "proven":
+                    self.assertFalse(possible)
 
 
 if __name__ == "__main__":

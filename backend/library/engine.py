@@ -406,6 +406,7 @@ class Engine:
                 ("reference_id", [context.reference_id] if context.reference_id else []),
                 ("proposal_ids", context.proposal_ids),
                 ("queue_ids", context.queue_ids),
+                ("keep_ids", context.keep_ids),
             )
             if any(sid not in view.stored for sid in ids)
         ]
@@ -445,6 +446,10 @@ class Engine:
             bad.append(ErrorField(field="context.keep_ids", message="A song is listed twice"))
         if not set(context.pinned_ids) <= set(context.keep_ids):
             bad.append(ErrorField(field="context.pinned_ids", message="Must be kept songs"))
+        if context.add_count == 0 and not context.keep_ids:
+            bad.append(
+                ErrorField(field="context.add_count", message="Nothing kept and nothing added")
+            )
         if set(filters.exclude_ids) & set(context.keep_ids):
             bad.append(ErrorField(field="filters.exclude_ids", message="A kept song is excluded"))
         if bad:
