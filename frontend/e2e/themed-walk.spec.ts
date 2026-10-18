@@ -146,7 +146,11 @@ const ROUTES: Walk[] = [
   {
     name: 'home',
     path: '/',
-    ready: (page) => page.getByRole('heading', { level: 1, name: 'Home' }),
+    ready: (page) =>
+      page.getByRole('heading', {
+        level: 1,
+        name: /^(Good (morning|afternoon|evening)|Home|Let.s find your music)$/,
+      }),
     cardless: true,
   },
   {
