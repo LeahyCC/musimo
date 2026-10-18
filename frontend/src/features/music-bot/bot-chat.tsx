@@ -26,7 +26,7 @@ import {
 import type { BotFailure } from './bot-replies'
 import type { ChatOutcome } from './pet-mood'
 import { usePetSettings } from './pet-settings'
-import { editNote, refreshedNote, staleGone, staleLines } from './preview-text'
+import { droppedNote, editNote, refreshedNote, staleGone, staleLines } from './preview-text'
 import {
   commitProposal,
   createProposal,
@@ -615,6 +615,10 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
           card: cardLine(result),
         })
         setCardId(entry)
+        // A refinement of a list leaves out the songs the library lost, and says so, since the
+        // narrowed list alone would not show which went for that reason.
+        const dropped = made?.proposal.dropped_ids.length ?? 0
+        if (dropped) push({ kind: 'note', text: droppedNote(dropped) })
         landed(result.tracks.length ? 'talking' : 'sorry')
       } else {
         const asking = action === 'clarify'
@@ -931,7 +935,10 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     )
     if (!made) return false
     attempt.current = null
-    const before = kept.tracks.map((track) => track.id)
+    // A song the server dropped because the library lost it is said apart from the edit, so it is
+    // not also counted as one the edit removed (the card may still have shown it).
+    const lost = new Set(made.proposal.dropped_ids)
+    const before = kept.tracks.map((track) => track.id).filter((song) => !lost.has(song))
     setReply(shownReply(kept, made))
     // Another set sent the pins, so the server's are the card's. An add or a remove cannot carry a
     // pin the server has not seen yet, so the card keeps its own that are still in the list: a pin
@@ -948,6 +955,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         change.kind,
         idChanges(before, made.proposal.ids),
         change.kind === 'another' ? change.pinnedIds?.length : 0,
+        made.proposal.dropped_ids.length,
       ),
     })
     // A remove draws nothing, so nothing new was shown. The server counts it the same way.
@@ -1187,7 +1195,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     // the ones the card knows are gone, and the ones a stale commit just named.
     const gone = [...at.missingIds, ...(problem?.kind === 'stale' ? problem.gone : [])]
     const left = new Set(gone)
-    const dropped = at.intent.context.keep_ids.filter((song) => left.has(song)).length
+    const leftOut = at.intent.context.keep_ids.filter((song) => left.has(song)).length
     const made = await working(
       onOpenRevision((signal) =>
         refineProposal(at.id, at.revision, refreshIntent(at.intent, gone), signal),
@@ -1207,10 +1215,14 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       kind: 'note',
       text: refreshedNote(
         idChanges(
-          kept.tracks.map((track) => track.id),
+          // The songs the server dropped are counted once, as dropped, not also as left.
+          kept.tracks
+            .map((track) => track.id)
+            .filter((song) => !made.proposal.dropped_ids.includes(song)),
           made.tracks.map((track) => track.id),
         ),
-        dropped,
+        // A refined list's songs are the server's to leave out, and it says which.
+        leftOut + made.proposal.dropped_ids.length,
       ),
     })
     landed('happy')
