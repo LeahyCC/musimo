@@ -717,6 +717,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Bumped on every queue save so an older response cannot count as the latest one.
   const queueSave = useRef(0)
   const queueWriter = useRef<QueueWriter | null>(null)
+  // The queue saves itself every 10 seconds while music plays, so a server that is down would
+  // raise the same toast each time. It is said once per kind, until a save goes through again.
+  const queueFailureShown = useRef<'failed' | 'replaced' | null>(null)
   // The collection that filled the queue. Edits leave it alone; `queueSource` says what it counts as.
   const sourceRef = useRef('')
   const editedRef = useRef(false)
@@ -981,23 +984,34 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   // Retry saves the queue as it is now, not as it was when the failure happened.
+  // With nothing loaded there is no queue for Retry to send, so the toast goes without it.
   function queueSaveFailed() {
-    setNotice(QUEUE_SAVE_FAILED, 'warn', { label: 'Retry', run: () => void saveQueue(true) })
+    setNotice(
+      QUEUE_SAVE_FAILED,
+      'warn',
+      libraryCurrent.current ? { label: 'Retry', run: () => void saveQueue(true) } : undefined,
+    )
   }
 
   // `announce` is for an edit the listener just made: it is the one save whose failure they need
   // to hear about, since the queue on screen would then differ from the one that restores.
   function persistQueue(body: string): Promise<Response | null> {
-    queueWriter.current ??= new QueueWriter((replaced) =>
-      replaced
-        ? setNotice(
-            'Another browser saved the queue. Refresh to restore it before saving more changes.',
-            'warn',
-          )
-        : queueSaveFailed(),
-    )
+    queueWriter.current ??= new QueueWriter((replaced) => {
+      const kind = replaced ? 'replaced' : 'failed'
+      if (queueFailureShown.current === kind) return
+      queueFailureShown.current = kind
+      if (replaced)
+        setNotice(
+          'Another browser saved the queue. Refresh to restore it before saving more changes.',
+          'warn',
+        )
+      else queueSaveFailed()
+    })
 
-    return queueWriter.current.save(body)
+    return queueWriter.current.save(body).then((response) => {
+      if (response?.ok) queueFailureShown.current = null
+      return response
+    })
   }
 
   function saveQueue(announce = false): Promise<boolean> {

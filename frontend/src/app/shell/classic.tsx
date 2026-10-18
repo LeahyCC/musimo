@@ -97,8 +97,10 @@ const SUPPORT_LINKS = [
   { href: 'https://github.com/LeahyCC/musimo', label: 'Star on GitHub', icon: Star },
 ] as const
 
+// No height or text size here: each row sets its own, since `cx` does not merge two classes for
+// the same property and the one Tailwind prints later would win.
 const rowClassName = cx(
-  'flex flex-none items-center gap-[11px] rounded-[8px] px-[10px] text-lead',
+  'flex flex-none items-center gap-[11px] rounded-[8px] px-[10px]',
   'coarse:min-h-11',
 )
 const litProps = { 'className': 'bg-active text-accent', 'aria-current': 'page' } as const
@@ -120,9 +122,9 @@ function DownloadsBadge({ count, phone }: { count: number; phone: boolean }) {
   return (
     <span
       className={cx(
-        'nav-badge grid place-items-center rounded-pill font-bold text-accent-ink',
+        'nav-badge grid place-items-center rounded-pill text-accent-ink',
         phone
-          ? 'absolute top-[5px] left-[calc(50%+6px)] h-[18px] min-w-[18px] bg-accent-hot px-[5px] text-caption'
+          ? 'absolute top-[5px] left-[calc(50%+6px)] h-[18px] min-w-[18px] bg-accent-hot px-[5px] text-caption font-bold'
           : 'ml-auto h-[18px] min-w-[20px] bg-accent px-[6px] text-tiny font-[650]',
       )}
     >
@@ -143,7 +145,7 @@ function NowPlayingRow({ pathname }: { pathname: string }) {
   return (
     <Link
       to="/now-playing"
-      className={cx(rowClassName, 'h-[36px]')}
+      className={cx(rowClassName, 'h-[36px] text-lead')}
       activeProps={lookOf(startsWithPath(pathname, '/now-playing'))}
       inactiveProps={lookOf(startsWithPath(pathname, '/now-playing'))}
     >
@@ -236,7 +238,7 @@ function SidebarFooter({ status }: { status: string }) {
       </span>
       <button
         type="button"
-        className="ml-auto inline-flex items-center gap-[5px] border-0 bg-transparent p-0 text-faint hover:text-danger"
+        className="ml-auto inline-flex items-center gap-[5px] border-0 bg-transparent p-0 text-faint hover:text-danger coarse:min-h-11"
         onClick={() => dialog.current?.showModal()}
       >
         <Heart size={12} />
@@ -309,7 +311,7 @@ function Sidebar({
             key={to}
             to={to}
             activeOptions={{ exact: true }}
-            className={cx(rowClassName, 'h-[36px]')}
+            className={cx(rowClassName, 'h-[36px] text-lead')}
             activeProps={lookOf(lit(pathname))}
             inactiveProps={lookOf(lit(pathname))}
           >
@@ -331,7 +333,7 @@ function Sidebar({
               key={to}
               to={to}
               activeOptions={{ exact: true }}
-              className={cx(rowClassName, 'h-[36px]')}
+              className={cx(rowClassName, 'h-[36px] text-lead')}
               activeProps={lookOf(lit)}
               inactiveProps={lookOf(lit)}
             >
@@ -412,6 +414,7 @@ export function ClassicShell() {
   // keeps progress ticks from re-rendering the whole shell.
   const activeDownloads = useJobs(activeCount).data ?? 0
   const perched = usePerchShown()
+  const petHidden = usePetSettings().hidden
 
   useEffect(() => {
     clearTimeout(debounce.current)
@@ -437,8 +440,9 @@ export function ClassicShell() {
 
   const octiveIcon: ReactNode =
     // On a phone with nothing playing there is no mini player to perch on, so the pet tucks into
-    // the Ask Octive pill. A wide window always has the footer.
-    phone && !perched ? <PetFace size={22} /> : <Sparkles size={16} />
+    // the Ask Octive pill. A wide window always has the footer. A hidden pet already shows its
+    // face in the Octive tab, and two faces would announce each reply twice.
+    phone && !perched && !petHidden ? <PetFace size={22} /> : <Sparkles size={16} />
 
   return (
     <div className="min-h-screen">
@@ -523,7 +527,7 @@ export function ClassicShell() {
           <button
             type="button"
             aria-label="Command palette"
-            className="inline-flex h-[34px] shrink-0 items-center gap-[6px] rounded-[9px] border border-line bg-transparent px-[10px] text-small text-muted hover:border-line-strong hover:text-text max-phone:hidden"
+            className="inline-flex h-[34px] shrink-0 items-center gap-[6px] rounded-[9px] border border-line bg-transparent px-[10px] text-small text-muted hover:border-line-strong hover:text-text max-phone:hidden coarse:h-11"
             onClick={openPalette}
           >
             <Command size={14} />K
