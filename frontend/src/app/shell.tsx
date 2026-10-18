@@ -1,7 +1,6 @@
 import { useEffect } from 'react'
 
 import { useLayout } from '../lib/layout'
-import { ToastProvider } from '../ui'
 import { ClassicShell } from './shell/classic'
 import { RoomShell } from './shell/room'
 
@@ -16,5 +15,5 @@ export function Shell() {
     document.documentElement.dataset.layout = layout
   }, [layout])
 
-  return <ToastProvider>{layout === 'room' ? <RoomShell /> : <ClassicShell />}</ToastProvider>
+  return layout === 'room' ? <RoomShell /> : <ClassicShell />
 }

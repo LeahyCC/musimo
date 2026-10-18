@@ -30,7 +30,7 @@ import { SearchPage } from '../features/search/search'
 import { validateArtistSearch, validateSearch } from '../features/search/search-params'
 import { SettingsPage } from '../features/settings/server-settings'
 import { UserSettingsPage } from '../features/settings/user-settings'
-import { EmptyPanel } from '../ui'
+import { EmptyPanel, ToastProvider } from '../ui'
 import { Shell } from './shell'
 
 const LibraryPage = lazy(() =>
@@ -44,15 +44,18 @@ const NowPlayingPage = lazy(() =>
 
 const rootRoute = createRootRoute({
   component: () => (
-    <PlayerProvider>
-      <MusicBotProvider>
-        <PopoutProvider>
-          <PetHostProvider>
-            <Shell />
-          </PetHostProvider>
-        </PopoutProvider>
-      </MusicBotProvider>
-    </PlayerProvider>
+    // Toasts sit outermost so the player and the music bot can raise one, not just the shell.
+    <ToastProvider>
+      <PlayerProvider>
+        <MusicBotProvider>
+          <PopoutProvider>
+            <PetHostProvider>
+              <Shell />
+            </PetHostProvider>
+          </PopoutProvider>
+        </MusicBotProvider>
+      </PlayerProvider>
+    </ToastProvider>
   ),
   notFoundComponent: () => (
     <EmptyPanel>
