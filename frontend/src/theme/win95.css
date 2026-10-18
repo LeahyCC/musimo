@@ -46,7 +46,10 @@
   /* The group box line: a shadow line with a hilight line one pixel below and right of it. */
   --bevel-etched: inset 1px 1px var(--bevel-hilight), 1px 1px var(--bevel-hilight);
 
-  font-family: 'WIN95FA', sans-serif;
+  /* Set as the variable too, so a `font-sans` utility gets it, and in either layout: this selector
+     outweighs the Listening room's font swap in style.css. */
+  --font-sans: 'WIN95FA', sans-serif;
+  font-family: var(--font-sans);
   /* The font is drawn on a pixel grid. Smoothing it only blurs it. */
   -webkit-font-smoothing: none;
   -moz-osx-font-smoothing: grayscale;

@@ -33,3 +33,15 @@
        stylesheet, so there is nothing to recover from. */
   }
 })()
+
+/* The layout picks the fonts, so a Listening room page should not draw its first frame in the
+   Classic font. `src/lib/layout.ts` writes the key and `src/app/shell.tsx` takes over once the app
+   has loaded. Anything but `room` is Classic, which is what the stylesheet already draws. */
+;(function () {
+  try {
+    if (localStorage.getItem('musimo.layout') === 'room')
+      document.documentElement.setAttribute('data-layout', 'room')
+  } catch {
+    /* Storage is blocked, so the layout is Classic. */
+  }
+})()

@@ -28,7 +28,7 @@ test('a new install offers the four starter artists and nothing else', async ({ 
   await page.route('**/api/library/albums*', (route) =>
     route.fulfill({ json: { items: [], next_offset: null, total: 0, genres: [], years: [] } }),
   )
-  await page.goto('/')
+  await page.goto('/search')
 
   for (const name of ['Daft Punk', 'Khruangbin', 'Nina Simone', 'Radiohead'])
     await expect(page.getByRole('button', { name })).toBeVisible()
@@ -42,7 +42,7 @@ test('recent searches come back as chips, and can be cleared', async ({ page }) 
     route.fulfill({ json: { items: [], total: 0, next_index: null, cached: false } }),
   )
   await rememberSearches(page, ['Portishead', 'Massive Attack'])
-  await page.goto('/')
+  await page.goto('/search')
 
   await expect(page.getByRole('heading', { name: 'Recent searches' })).toBeVisible()
   await expect(page.getByRole('button', { name: 'Portishead' })).toBeVisible()
@@ -53,7 +53,7 @@ test('recent searches come back as chips, and can be cleared', async ({ page }) 
   await page.getByRole('button', { name: 'Portishead' }).click()
   await expect(page).toHaveURL(/\/search\?q=Portishead/)
 
-  await page.goto('/')
+  await page.goto('/search')
   await page.getByRole('button', { name: 'Clear', exact: true }).click()
   await expect(page.getByRole('heading', { name: 'Recent searches' })).toHaveCount(0)
   await expect(page.getByRole('button', { name: 'Radiohead' })).toBeVisible()
@@ -89,11 +89,48 @@ test('fresh albums show under the hero when the library is set up', async ({ pag
       },
     }),
   )
-  await page.goto('/')
+  await page.goto('/search')
 
   const shelf = page.getByRole('region', { name: 'Fresh in your library' })
   await expect(shelf.getByRole('link')).toHaveCount(2)
   await expect(shelf.getByRole('link', { name: /Clear Water/ })).toBeVisible()
   await shelf.getByRole('link', { name: /Low Tide/ }).click()
   await expect(page).toHaveURL(/\/library\/albums\/a2$/)
+})
+
+test('home is at the root and search has its own address', async ({ page }) => {
+  await playerFixtures(page)
+  await page.route('**/api/library/albums*', (route) =>
+    route.fulfill({
+      json: {
+        items: [album('a1', 'Clear Water')],
+        next_offset: null,
+        total: 1,
+        genres: [],
+        years: [],
+      },
+    }),
+  )
+  await page.goto('/')
+
+  await expect(page.getByRole('heading', { name: 'Home', level: 1 })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /Find it/ })).toHaveCount(0)
+  await expect(
+    page.getByRole('region', { name: 'Fresh in your library' }).getByRole('link'),
+  ).toHaveCount(1)
+  // A starter artist still searches from here, on the search page.
+  await page.getByRole('button', { name: 'Radiohead' }).click()
+  await expect(page).toHaveURL(/\/search\?q=Radiohead/)
+
+  // The bare library address has no page of its own; it opens Albums and lights Library.
+  await page.goto('/library')
+  await expect(page).toHaveURL(/\/library\/albums$/)
+  const nav = page.getByRole('navigation', { name: 'Main navigation' })
+  await expect(nav.getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page')
+  await page
+    .getByRole('navigation', { name: 'Library views' })
+    .getByRole('button', { name: 'Artists' })
+    .click()
+  await expect(page).toHaveURL(/\/library\/artists$/)
+  await expect(nav.getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page')
 })

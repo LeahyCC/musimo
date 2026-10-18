@@ -144,8 +144,14 @@ type Walk = {
 
 const ROUTES: Walk[] = [
   {
-    name: 'discover',
+    name: 'home',
     path: '/',
+    ready: (page) => page.getByRole('heading', { level: 1, name: 'Home' }),
+    cardless: true,
+  },
+  {
+    name: 'discover',
+    path: '/search',
     ready: (page) => page.getByRole('heading', { level: 1, name: /Find it/ }),
     cardless: true,
   },
@@ -181,11 +187,6 @@ const ROUTES: Walk[] = [
     name: 'artist',
     path: '/artists/7',
     ready: (page) => page.getByRole('heading', { name: 'Discography' }),
-  },
-  {
-    name: 'library',
-    path: '/library',
-    ready: (page) => page.getByRole('button', { name: 'Open Clear Water' }),
   },
   {
     name: 'library-albums',

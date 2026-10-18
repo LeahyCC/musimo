@@ -5,12 +5,14 @@ import {
   createRoute,
   createRouter,
   Link,
+  redirect,
   useParams,
   useSearch,
 } from '@tanstack/react-router'
 
 import { DiagnosticsPage } from '../features/diagnostics/diagnostics'
 import { DownloadsPage } from '../features/downloads/downloads'
+import { HomePage } from '../features/home/home'
 import {
   validateArtistAlbumSearch,
   validateArtistSongSearch,
@@ -28,7 +30,7 @@ import { SearchPage } from '../features/search/search'
 import { validateArtistSearch, validateSearch } from '../features/search/search-params'
 import { SettingsPage } from '../features/settings/server-settings'
 import { UserSettingsPage } from '../features/settings/user-settings'
-import { EmptyPanel } from '../ui'
+import { EmptyPanel, ToastProvider } from '../ui'
 import { Shell } from './shell'
 
 const LibraryPage = lazy(() =>
@@ -42,27 +44,30 @@ const NowPlayingPage = lazy(() =>
 
 const rootRoute = createRootRoute({
   component: () => (
-    <PlayerProvider>
-      <MusicBotProvider>
-        <PopoutProvider>
-          <PetHostProvider>
-            <Shell />
-          </PetHostProvider>
-        </PopoutProvider>
-      </MusicBotProvider>
-    </PlayerProvider>
+    // Toasts sit outermost so the player and the music bot can raise one, not just the shell.
+    <ToastProvider>
+      <PlayerProvider>
+        <MusicBotProvider>
+          <PopoutProvider>
+            <PetHostProvider>
+              <Shell />
+            </PetHostProvider>
+          </PopoutProvider>
+        </MusicBotProvider>
+      </PlayerProvider>
+    </ToastProvider>
   ),
   notFoundComponent: () => (
     <EmptyPanel>
       <h1>Page not found</h1>
-      <Link to="/search">Back to Musimo</Link>
+      <Link to="/">Back to Musimo</Link>
     </EmptyPanel>
   ),
 })
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  component: SearchPage,
+  component: HomePage,
 })
 const searchRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -130,11 +135,17 @@ function LibraryScreen({
   )
 }
 
+// Library has no page of its own. An old link or bookmark lands on Albums, keeping its filters.
 const libraryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library',
-  validateSearch: (search: Record<string, unknown>) => validateLibrarySearch('home', search),
-  component: () => <LibraryScreen />,
+  beforeLoad: ({ search }) => {
+    throw redirect({
+      to: '/library/albums',
+      search: validateLibrarySearch('albums', search),
+      replace: true,
+    })
+  },
 })
 const libraryAlbumsRoute = createRoute({
   getParentRoute: () => rootRoute,

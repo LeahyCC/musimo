@@ -32,14 +32,21 @@ async function libraryFixtures(page: Page) {
 }
 
 test.describe('Accessibility', () => {
-  test('search page should not have accessibility violations', async ({ page }) => {
+  test('home page should not have accessibility violations', async ({ page }) => {
     await page.goto('/')
+    await page.getByRole('heading', { name: 'Home', level: 1 }).waitFor()
+    const results = await new AxeBuilder({ page }).analyze()
+    expect(results.violations).toEqual([])
+  })
+
+  test('search page should not have accessibility violations', async ({ page }) => {
+    await page.goto('/search')
     const results = await new AxeBuilder({ page }).analyze()
     expect(results.violations).toEqual([])
   })
 
   test('library page should not have accessibility violations', async ({ page }) => {
-    await page.goto('/library')
+    await page.goto('/library/albums')
     await page.waitForSelector('h1')
     const results = await new AxeBuilder({ page }).analyze()
     expect(results.violations).toEqual([])
