@@ -37,13 +37,28 @@ function useCoverColor(art: string): Rgb | null {
   return color
 }
 
-// One flat wash, strongest at the top and gone by the bottom. The color is a runtime value handed
-// over as a custom property, so no color is written in this file.
-function WashLayer({ color, leaving }: { color: string; leaving?: boolean }) {
+/** Where the wash is drawn: behind the whole page (Classic), or inside the Listening room's card. */
+type WashPlace = 'page' | 'card'
+
+// One flat wash. On the page it is strongest at the top and gone by the bottom; in the room's card
+// it spreads from the top left, where the artwork sits, into the canvas. The color is a runtime
+// value handed over as a custom property, so no color is written in this file.
+function WashLayer({
+  color,
+  place,
+  leaving,
+}: {
+  color: string
+  place: WashPlace
+  leaving?: boolean
+}) {
   return (
     <div
       className={cx(
-        'absolute inset-0 bg-linear-to-b from-(--now-wash) to-transparent',
+        'absolute inset-0',
+        place === 'page'
+          ? 'bg-linear-to-b from-(--now-wash) to-transparent'
+          : 'bg-[radial-gradient(90%_120%_at_15%_10%,var(--now-wash)_0%,var(--now-wash)_35%,var(--color-canvas)_100%)]',
         leaving && 'leaving',
       )}
       style={{ '--now-wash': color, ...(leaving ? leavingStyle : {}) } as CSSProperties}
@@ -52,12 +67,14 @@ function WashLayer({ color, leaving }: { color: string; leaving?: boolean }) {
 }
 
 /**
- * A soft wash behind the Now Playing page, taken from the cover. It covers the content area under
- * the top bar and beside the sidebar, and sits behind the page: negative stacking order, no
- * pointer events, and hidden from assistive technology. `washFor` mixes the cover into the theme's
- * canvas until the text on it still reads, so it changes with the theme as well as the cover.
+ * A soft wash taken from the cover. On the page (`place="page"`) it covers the content area under
+ * the top bar and beside the sidebar and sits behind the page; in the Listening room it fills its
+ * parent, the stage card, which has to be `relative` and `isolate`. Either way it has no pointer
+ * events and is hidden from assistive technology. `washFor` mixes the cover into the theme's
+ * canvas until the text on it still reads, so it changes with the theme as well as the cover, and
+ * the card's text keeps the same contrast the page's does.
  */
-export function NowPlayingWash({ art }: { art: string }) {
+export function NowPlayingWash({ art, place = 'page' }: { art: string; place?: WashPlace }) {
   const theme = useTheme()
   const cover = useCoverColor(art)
   const wash = useMemo(() => (cover ? washFor(cover, theme.colors) : null), [cover, theme])
@@ -67,10 +84,15 @@ export function NowPlayingWash({ art }: { art: string }) {
     <div
       aria-hidden="true"
       data-now-playing-wash={wash ?? ''}
-      className="pointer-events-none fixed top-[calc(var(--topbar-height)+var(--safe-top))] right-0 bottom-0 left-[calc(var(--sidebar-width)+var(--safe-left))] -z-10 max-phone:left-0"
+      className={cx(
+        'pointer-events-none -z-10',
+        place === 'page'
+          ? 'fixed top-[calc(var(--topbar-height)+var(--safe-top))] right-0 bottom-0 left-[calc(var(--sidebar-width)+var(--safe-left))] max-phone:left-0'
+          : 'absolute inset-0 overflow-hidden rounded-[inherit] bg-canvas',
+      )}
     >
-      {wash && <WashLayer color={wash} />}
-      {leaving?.value && <WashLayer color={leaving.value} leaving />}
+      {wash && <WashLayer color={wash} place={place} />}
+      {leaving?.value && <WashLayer color={leaving.value} place={place} leaving />}
     </div>
   )
 }

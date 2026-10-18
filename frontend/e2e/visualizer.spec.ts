@@ -243,3 +243,42 @@ test('a preset left by the old visualizer starts on the default', async ({ page,
   await stage.hover()
   await expect(stage.getByRole('combobox', { name: 'Preset' })).toHaveValue(DEFAULT_PRESET)
 })
+
+test('the preset bar steps the presets, and Auto or Hold is the stored choice', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'The stage controls are checked on desktop.')
+  await showVisualizerFirst(page)
+  const stage = await openNowPlaying(page)
+  test.skip(!(await hasWebGl2(page)), 'No WebGL 2 in this browser.')
+
+  await stage.hover()
+  const picker = stage.getByRole('combobox', { name: 'Preset' })
+  const names = await picker
+    .locator('option')
+    .evaluateAll((options) => options.map((option) => (option as HTMLOptionElement).value))
+  const next = names[names.indexOf(DEFAULT_PRESET) + 1] ?? ''
+
+  // Nothing stored and no reduced motion: the preset changes with the music.
+  const auto = stage.getByRole('button', { name: 'Change with the music' })
+  await expect(auto).toHaveAttribute('aria-pressed', 'true')
+  await expect(stage.getByText('· changes with the music')).toBeVisible()
+  await auto.click()
+  await expect(auto).toHaveAttribute('aria-pressed', 'false')
+  await expect(auto).toHaveText('HOLD')
+  await expect(stage.getByText('· held')).toBeVisible()
+  expect(await page.evaluate(() => localStorage.getItem('musimo.visualizer-auto'))).toBe('off')
+
+  // The arrows are the same walk as [ and ].
+  await stage.getByRole('button', { name: 'Next preset' }).click()
+  await expect(picker).toHaveValue(next)
+  await stage.getByRole('button', { name: 'Previous preset' }).click()
+  await expect(picker).toHaveValue(DEFAULT_PRESET)
+
+  await page.reload()
+  await page.locator('.stage').hover()
+  await expect(
+    page.locator('.stage').getByRole('button', { name: 'Change with the music' }),
+  ).toHaveAttribute('aria-pressed', 'false')
+})

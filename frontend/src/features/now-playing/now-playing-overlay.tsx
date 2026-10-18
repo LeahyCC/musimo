@@ -1,7 +1,10 @@
-import { useEffect, useRef, useState } from 'react'
-import type { RefObject } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
+import type { ReactNode, RefObject } from 'react'
 
 import {
+  AudioLines,
+  ChevronLeft,
+  ChevronRight,
   Disc3,
   Maximize2,
   Minimize2,
@@ -13,7 +16,6 @@ import {
   Shuffle,
   SkipBack,
   SkipForward,
-  Sparkles,
   Square,
   ThumbsUp,
   Volume2,
@@ -21,7 +23,8 @@ import {
 } from 'lucide-react'
 
 import { cx } from '../../lib/cx'
-import { IconButton, Kbd } from '../../ui'
+import type { Layout } from '../../lib/layout'
+import { IconButton } from '../../ui'
 import type { IconButtonProps } from '../../ui'
 import { artUrl, durationText, usePlayer } from '../player/player'
 import { PRESET_NAMES, presetLabel } from '../visualizer/visualizer-presets'
@@ -32,6 +35,9 @@ export type StageView = 'artwork' | 'visualizer'
 export type StageSize = 'small' | 'large'
 
 type OverlayProps = {
+  /** Classic draws its buttons at the top right and the preset bar along the bottom; the Listening
+      room puts all of them in one pill along the bottom. */
+  layout: Layout
   placement: StagePlacement
   fullscreen: boolean
   /**
@@ -47,9 +53,16 @@ type OverlayProps = {
   onSize?: () => void
   /** Undefined where the visualizer is not available, so no toggle is shown. */
   view?: StageView
-  onToggleView?: () => void
+  onView?: (view: StageView) => void
   preset?: string
   onPreset?: (name: string) => void
+  /** Walks the preset list: -1 and 1, the same keys as `[` and `]`. */
+  onCyclePreset?: (delta: number) => void
+  /** Whether the preset changes with the music (`musimo.visualizer-auto`), and its switch. */
+  autoPresets: boolean
+  onAutoPresets: (on: boolean) => void
+  /** What the room's pill says over the artwork: the album and its year. */
+  artLabel: string
 }
 
 const IDLE_MS = 2500
@@ -60,14 +73,30 @@ function StageButton(props: IconButtonProps) {
   return <IconButton variant="on-media" size="compact" {...props} />
 }
 
-/* `idle` on the stage (its `group`) fades the two bars and stops them catching the pointer. The
-   visualizer control sits outside them, so it can stay on screen when they have gone. */
-const stageBarClassName =
-  'pointer-events-auto flex items-center transition-opacity duration-250 group-[.idle]:pointer-events-none group-[.idle]:opacity-0'
-/* The visualizer control is always over the picture, so it draws on the media color and not on
-   the page's. */
-const viewControlClassName =
-  'inline-flex h-[32px] items-center rounded-[8px] border border-on-media/30 bg-media/70 text-small text-on-media coarse:min-h-11'
+/* `idle` on the stage (its `group`) fades every bar and stops them catching the pointer, so the
+   picture is clean once the pointer leaves. */
+const fadeClassName =
+  'transition-opacity duration-250 group-[.idle]:pointer-events-none group-[.idle]:opacity-0'
+const stageBarClassName = cx('pointer-events-auto flex items-center', fadeClassName)
+
+/* Everything here sits on artwork or the visualizer, never on the page, so it is drawn in the
+   on-media color over a dark scrim whatever the theme. */
+const classicButtonClassName = (active = false) =>
+  cx(
+    'grid size-[34px] place-items-center rounded-[8px] border-0 p-0 coarse:size-11',
+    active ? 'bg-accent text-accent-ink' : 'bg-scrim/45 text-on-media hover:bg-scrim/65',
+  )
+const classicStepClassName =
+  'grid size-[28px] shrink-0 place-items-center rounded-[7px] border-0 bg-transparent p-0 text-on-media hover:bg-on-media/15 coarse:size-11'
+const roomButtonClassName =
+  'grid size-[28px] shrink-0 place-items-center rounded-pill border-0 bg-transparent p-0 text-on-media hover:bg-on-media/15 coarse:size-11'
+const monoClassName = 'font-mono text-tiny'
+/* The preset's name is the select itself, so a click opens the list natively. It carries no box of
+   its own; the bar around it is the box. */
+const presetSelectClassName = cx(
+  'min-w-[10ch] cursor-pointer truncate border-0 bg-transparent p-0 text-on-media [&>option]:bg-raised [&>option]:text-text',
+  monoClassName,
+)
 
 // The overlay fades out after a short still spell while music plays, and the
 // cursor goes with it. It stays while paused, while the pointer rests on a
@@ -329,7 +358,164 @@ function StageControls() {
   )
 }
 
+type BarButtonProps = {
+  label: string
+  onClick: () => void
+  className: string
+  /** A key that does the same, for `aria-keyshortcuts` and the tooltip. */
+  keys?: string
+  pressed?: boolean
+  children: ReactNode
+}
+
+function BarButton({ label, onClick, className, keys, pressed, children }: BarButtonProps) {
+  return (
+    <button
+      type="button"
+      className={className}
+      aria-label={label}
+      aria-pressed={pressed}
+      aria-keyshortcuts={keys}
+      title={keys ? `${label} (${keys})` : label}
+      onClick={onClick}
+    >
+      {children}
+    </button>
+  )
+}
+
+/** The chosen preset by its short name; hovering shows the full name, which credits its authors. */
+function PresetSelect({
+  preset,
+  onPreset,
+  className,
+}: {
+  preset: string
+  onPreset: (name: string) => void
+  className?: string
+}) {
+  return (
+    <select
+      className={cx(presetSelectClassName, className)}
+      aria-label="Preset"
+      title={preset}
+      value={preset}
+      onChange={(event) => onPreset(event.target.value)}
+    >
+      {PRESET_NAMES.map((name) => (
+        <option key={name} value={name}>
+          {presetLabel(name)}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+/**
+ * The room's Art | MilkDrop switch. Real radios under the look, as `Segmented` does, so the arrow
+ * keys and what a screen reader says are the browser's; it is drawn here rather than with
+ * `Segmented` because it sits on the picture and takes the on-media colors.
+ */
+function ViewSwitch({ view, onView }: { view: StageView; onView: (view: StageView) => void }) {
+  const name = useId()
+  return (
+    <div
+      role="radiogroup"
+      aria-label="Show on the stage"
+      className="flex shrink-0 rounded-pill bg-on-media/10 p-[2px]"
+    >
+      {(['artwork', 'visualizer'] as const).map((option) => (
+        <label
+          key={option}
+          className={cx(
+            'grid h-[26px] cursor-pointer place-items-center rounded-pill px-[10px] uppercase coarse:min-h-11',
+            'has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-accent has-[:focus-visible]:outline-solid',
+            monoClassName,
+            view === option ? 'bg-on-media text-media' : 'text-on-media',
+          )}
+        >
+          <input
+            type="radio"
+            className="sr-only"
+            name={name}
+            checked={view === option}
+            // V is the same switch, so both radios say so.
+            aria-keyshortcuts="V"
+            onChange={() => onView(option)}
+          />
+          {option === 'artwork' ? 'Art' : 'MilkDrop'}
+        </label>
+      ))}
+    </div>
+  )
+}
+
+/** Auto lets the music change the preset; Hold keeps the one showing. One button that says which. */
+function AutoHold({
+  on,
+  onChange,
+  className,
+}: {
+  on: boolean
+  onChange: (on: boolean) => void
+  className?: string
+}) {
+  return (
+    <button
+      type="button"
+      // Pressed is Auto, so the name stays put and the state says which way it is.
+      aria-label="Change with the music"
+      aria-pressed={on}
+      title={
+        on
+          ? 'Changes with the music. Press to hold this preset.'
+          : 'Held. Press to let the music change it.'
+      }
+      className={cx(
+        'h-[28px] shrink-0 border-0 px-[10px] text-tiny font-semibold tracking-[0.5px] coarse:min-h-11',
+        on ? 'bg-accent/90 text-accent-ink' : 'bg-on-media/15 text-on-media',
+        className,
+      )}
+      onClick={() => onChange(!on)}
+    >
+      {on ? 'AUTO' : 'HOLD'}
+    </button>
+  )
+}
+
+function PresetSteps({
+  onCyclePreset,
+  className,
+  size,
+}: {
+  onCyclePreset: (delta: number) => void
+  className: string
+  size: number
+}) {
+  return (
+    <>
+      <BarButton
+        label="Previous preset"
+        keys="["
+        className={className}
+        onClick={() => onCyclePreset(-1)}
+      >
+        <ChevronLeft size={size} />
+      </BarButton>
+      <BarButton
+        label="Next preset"
+        keys="]"
+        className={className}
+        onClick={() => onCyclePreset(1)}
+      >
+        <ChevronRight size={size} />
+      </BarButton>
+    </>
+  )
+}
+
 export function NowPlayingOverlay({
+  layout,
   placement,
   fullscreen,
   controls,
@@ -338,9 +524,13 @@ export function NowPlayingOverlay({
   size,
   onSize,
   view,
-  onToggleView,
+  onView,
   preset,
   onPreset,
+  onCyclePreset,
+  autoPresets,
+  onAutoPresets,
+  artLabel,
 }: OverlayProps) {
   const player = usePlayer()
   const fullscreenLabel =
@@ -349,94 +539,160 @@ export function NowPlayingOverlay({
       : fullscreen
         ? 'Exit full screen'
         : 'Full screen'
+  const visualizer = view === 'visualizer'
+  const presetControls = visualizer && preset && onPreset && onCyclePreset
+
+  // Pop out, stage size and full screen, in that order, in both layouts. The size button's label
+  // says where the press goes, as the full screen button's does.
+  const windowButtons = (className: string, icon: number) => (
+    <>
+      {onPopout && (
+        <BarButton label="Pop out player" className={className} onClick={onPopout}>
+          <PictureInPicture2 size={icon} />
+        </BarButton>
+      )}
+      {size && onSize && (
+        <BarButton
+          label={size === 'large' ? 'Small stage' : 'Large stage'}
+          keys="S"
+          className={className}
+          onClick={onSize}
+        >
+          {size === 'large' ? <Square size={icon} /> : <RectangleHorizontal size={icon} />}
+        </BarButton>
+      )}
+      <BarButton label={fullscreenLabel} keys="F" className={className} onClick={onFullscreen}>
+        {fullscreen ? <Minimize2 size={icon} /> : <Maximize2 size={icon} />}
+      </BarButton>
+    </>
+  )
+
+  // Playing or Paused. Docked, the page's own play button says it, so it is only heard; full
+  // screen and the popout have nothing else that says it, so there it shows.
+  const status = (
+    <span
+      className={cx(
+        'min-w-0 flex-1 truncate text-caption tracking-[1.5px] text-on-media/65 uppercase [text-shadow:0_1px_6px_var(--color-shadow)]',
+        !controls && 'sr-only',
+      )}
+      role="status"
+    >
+      {player.playing ? 'Playing' : 'Paused'}
+    </span>
+  )
+
+  if (layout === 'room')
+    return (
+      <div className="stage-overlay pointer-events-none absolute inset-0 flex flex-col justify-between">
+        <div className={cx('stage-top px-[16px] pt-[14px] pb-[24px]', stageBarClassName)}>
+          {status}
+        </div>
+        <div className="grid gap-[8px]">
+          {/* One pill along the bottom: Art or MilkDrop, what is showing, the preset steps and
+              Auto or Hold while it is MilkDrop, then the window buttons. It fades with the rest. */}
+          <div
+            className={cx(
+              'stage-view-control pointer-events-auto mx-[12px] flex min-w-0 flex-wrap items-center gap-[6px] rounded-pill max-phone:rounded-[20px] bg-scrim/50 py-[5px] pr-[5px] pl-[6px] text-on-media backdrop-blur-[6px]',
+              !controls && 'mb-[12px]',
+              fadeClassName,
+            )}
+          >
+            {view && onView && <ViewSwitch view={view} onView={onView} />}
+            <span className="flex min-w-0 flex-1 items-center opacity-80 max-phone:order-first max-phone:basis-full max-phone:px-[6px]">
+              {presetControls ? (
+                <PresetSelect preset={preset} onPreset={onPreset} className="max-w-full" />
+              ) : (
+                <span className={cx('truncate uppercase', monoClassName)}>{artLabel}</span>
+              )}
+            </span>
+            {presetControls && (
+              <>
+                <PresetSteps
+                  onCyclePreset={onCyclePreset}
+                  className={roomButtonClassName}
+                  size={14}
+                />
+                <AutoHold on={autoPresets} onChange={onAutoPresets} className="rounded-pill" />
+              </>
+            )}
+            {windowButtons(roomButtonClassName, 14)}
+          </div>
+          {controls && <StageControls />}
+        </div>
+      </div>
+    )
+
   return (
     <div className="stage-overlay pointer-events-none absolute inset-0 flex flex-col justify-between">
       <div
         className={cx(
-          'stage-top justify-between gap-[8px] bg-linear-to-b from-scrim/67 to-transparent px-[16px] pt-[14px] pb-[24px]',
+          'stage-top justify-between gap-[8px] px-[12px] pt-[12px] pb-[24px]',
+          controls && 'bg-linear-to-b from-scrim/67 to-transparent',
           stageBarClassName,
         )}
       >
-        <span
-          className="min-w-0 flex-1 truncate text-caption tracking-[1.5px] text-on-media/65 uppercase [text-shadow:0_1px_6px_var(--color-shadow)]"
-          role="status"
-        >
-          {player.playing ? 'Playing' : 'Paused'}
-        </span>
-        <div className="flex gap-[4px]">
-          {onPopout && (
-            <StageButton aria-label="Pop out player" onClick={onPopout}>
-              <PictureInPicture2 size={17} />
-            </StageButton>
-          )}
-          {/* The label says where the press goes, as the full screen button's does. */}
-          {size && onSize && (
-            <StageButton
-              aria-label={size === 'large' ? 'Small stage' : 'Large stage'}
-              onClick={onSize}
+        {status}
+        <div className="ml-auto flex gap-[6px]">
+          {view && onView && (
+            <BarButton
+              label="Visualizer"
+              keys="V"
+              pressed={visualizer}
+              className={classicButtonClassName(visualizer)}
+              onClick={() => onView(visualizer ? 'artwork' : 'visualizer')}
             >
-              {size === 'large' ? <Square size={17} /> : <RectangleHorizontal size={17} />}
-            </StageButton>
+              <AudioLines size={16} />
+            </BarButton>
           )}
-          <StageButton aria-label={fullscreenLabel} onClick={onFullscreen}>
-            {fullscreen ? <Minimize2 size={17} /> : <Maximize2 size={17} />}
-          </StageButton>
+          {windowButtons(classicButtonClassName(), 15)}
         </div>
       </div>
-      {/* Outside both bars, but it fades with them when the stage goes idle, so the visuals are
-          clean once the pointer leaves. Hovering the stage brings it back. */}
-      {view && onToggleView && (
-        <div
-          className={cx(
-            'stage-view-control pointer-events-auto absolute top-[56px] left-[16px] flex max-w-[calc(100%-32px)] flex-wrap items-center gap-[6px] transition-opacity duration-250 group-[.idle]:pointer-events-none group-[.idle]:opacity-0',
-          )}
-        >
-          <button
-            type="button"
-            className={cx(viewControlClassName, 'gap-[6px] pr-[4px] pl-[10px]')}
-            aria-pressed={view === 'visualizer'}
-            onClick={onToggleView}
+      <div className="grid gap-[8px]">
+        {/* Over the artwork, a hint that the visualizer is a key away; over the visualizer, the
+            preset bar. Either fades with the top bar when the stage goes idle. */}
+        {presetControls ? (
+          <div
+            className={cx(
+              'stage-view-control pointer-events-auto mx-[12px] flex min-w-0 items-center gap-[6px] rounded-[10px] bg-scrim/50 py-[6px] pr-[6px] pl-[12px] text-on-media backdrop-blur-[6px]',
+              !controls && 'mb-[12px]',
+              fadeClassName,
+            )}
           >
-            <Sparkles size={15} />
-            Visualizer
-            {/* `aria-pressed` already says which way it is, so the badge and the key are for the eye. */}
+            <span className="flex min-w-0 flex-1 items-center gap-[4px]">
+              {/* At most a little over half the bar, so the caption beside it still shows. */}
+              <PresetSelect
+                preset={preset}
+                onPreset={onPreset}
+                className="max-w-[55%] max-phone:max-w-full"
+              />
+              <span
+                className={cx(
+                  'min-w-0 shrink-[4] truncate text-on-media/70 max-phone:hidden',
+                  monoClassName,
+                )}
+              >
+                · {autoPresets ? 'changes with the music' : 'held'}
+              </span>
+            </span>
+            <AutoHold on={autoPresets} onChange={onAutoPresets} className="rounded-[7px]" />
+            <PresetSteps onCyclePreset={onCyclePreset} className={classicStepClassName} size={15} />
+          </div>
+        ) : (
+          view && (
             <span
-              aria-hidden="true"
               className={cx(
-                'rounded-[6px] px-[6px] text-tiny font-semibold',
-                view === 'visualizer' ? 'bg-on-media text-media' : 'bg-on-media/20',
+                'stage-view-control mx-[14px] text-on-media/60 [text-shadow:0_1px_6px_var(--color-shadow)]',
+                !controls && 'mb-[12px]',
+                monoClassName,
+                fadeClassName,
               )}
             >
-              {view === 'visualizer' ? 'On' : 'Off'}
+              album art · V for visualizer
             </span>
-            <Kbd aria-hidden="true" className="border-on-media/40! text-on-media/80">
-              V
-            </Kbd>
-          </button>
-          {view === 'visualizer' && preset && onPreset && (
-            <>
-              <Kbd className="border-on-media/40! text-on-media/80">[</Kbd>
-              {/* The name is the select's own text, so a click opens the list natively. */}
-              <select
-                className={cx(viewControlClassName, 'max-w-[180px] truncate px-[8px]')}
-                aria-label="Preset"
-                // The label leaves the authors out; hovering shows the full name, which credits them.
-                title={preset}
-                value={preset}
-                onChange={(event) => onPreset(event.target.value)}
-              >
-                {PRESET_NAMES.map((name) => (
-                  <option key={name} value={name}>
-                    {presetLabel(name)}
-                  </option>
-                ))}
-              </select>
-              <Kbd className="border-on-media/40! text-on-media/80">]</Kbd>
-            </>
-          )}
-        </div>
-      )}
-      {controls && <StageControls />}
+          )
+        )}
+        {controls && <StageControls />}
+      </div>
     </div>
   )
 }

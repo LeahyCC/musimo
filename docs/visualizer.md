@@ -39,7 +39,7 @@ A preset's full name is its authors, its title and years of mix notes (`Geiss - 
 
 Hovering either picker shows the chosen preset's full name as a tooltip, which credits its authors.
 
-The way into all of this is a labeled Visualizer control on the stage (On or Off, with a `V` hint), and while it is on, the preset's name between `[` and `]` hints, where the name is the preset select. It fades with the rest of the overlay when the stage goes idle, and hovering the stage brings it back (`e2e/now-playing-chrome.spec.ts` checks the docked stage). See [the popout note](now-playing-popout.md#now-playing).
+The way into all of this is on the stage. In Classic it is a Visualizer button at the top right (pressed while it shows, V for a key), and while the visualizer shows, a bar along the bottom with the preset's name (the preset select), `changes with the music` or `held`, an Auto / Hold button and previous and next preset. In the Listening room the same controls sit in one pill along the bottom, with an Art | MilkDrop switch in place of the button. Auto / Hold reads and writes `musimo.visualizer-auto` through the provider's `setAutoPresets`, so it and Change with the music in Your settings are one setting; the arrows call `cyclePreset`, the same as `[` and `]`. It all fades with the rest of the overlay when the stage goes idle, and hovering the stage brings it back (`e2e/now-playing-chrome.spec.ts` checks the docked stage and the room's pill, `e2e/visualizer.spec.ts` the preset bar and Auto / Hold). See [the popout note](now-playing-popout.md#two-layouts).
 
 ## Changing with the music
 

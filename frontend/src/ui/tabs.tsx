@@ -20,6 +20,8 @@ type TabListProps<Id extends string> = {
   tabs: readonly TabItem<Id>[]
   value: Id
   onChange: (id: Id) => void
+  /** `underline` is Classic's row over a rule; `pill` is the Listening room's rounded group. */
+  variant?: 'underline' | 'pill'
   className?: string
 }
 
@@ -34,8 +36,11 @@ export function TabList<Id extends string>({
   tabs,
   value,
   onChange,
+  variant = 'underline',
   className,
 }: TabListProps<Id>) {
+  const pill = variant === 'pill'
+
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     // Alt and the arrows are the browser's Back and Forward.
     if (event.altKey || event.ctrlKey || event.metaKey) return
@@ -71,7 +76,13 @@ export function TabList<Id extends string>({
       role="tablist"
       aria-label={label}
       data-ui="tab-list"
-      className={cx('flex gap-[22px] border-b border-line', className)}
+      data-variant={variant}
+      className={cx(
+        pill
+          ? 'flex w-max max-w-full gap-[4px] overflow-x-auto rounded-pill bg-text/8 p-[3px]'
+          : 'flex gap-[22px] border-b border-line',
+        className,
+      )}
       onKeyDown={onKeyDown}
     >
       {tabs.map((tab) => {
@@ -87,10 +98,17 @@ export function TabList<Id extends string>({
             tabIndex={selected ? 0 : -1}
             data-ui="tab"
             className={cx(
-              '-mb-px border-0 border-b-2 bg-transparent px-[2px] py-[10px] text-body font-medium whitespace-nowrap coarse:min-h-11',
-              selected
-                ? 'border-accent text-text'
-                : 'border-transparent text-muted hover:text-text',
+              pill
+                ? cx(
+                    'h-[30px] shrink-0 rounded-pill border-0 px-[13px] text-small font-medium whitespace-nowrap coarse:min-h-11',
+                    selected ? 'bg-text text-canvas' : 'bg-transparent text-muted hover:text-text',
+                  )
+                : cx(
+                    '-mb-px border-0 border-b-2 bg-transparent px-[2px] py-[10px] text-body font-medium whitespace-nowrap coarse:min-h-11',
+                    selected
+                      ? 'border-accent text-text'
+                      : 'border-transparent text-muted hover:text-text',
+                  ),
             )}
             onClick={() => onChange(tab.id)}
           >

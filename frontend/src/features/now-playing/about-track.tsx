@@ -17,6 +17,7 @@ import { durationText } from '../player/player'
 import {
   fileRows,
   fileSummary,
+  formatChips,
   isLowQualityLossy,
   otherAlbums,
   playedAt,
@@ -42,11 +43,42 @@ function useSongDetail(id: string) {
   })
 }
 
-/** "FLAC, 44.1 kHz, 1,012 kbps" under the artist line, or nothing while it is unknown. */
-export function TrackFormatLine({ trackId }: { trackId: string }) {
-  const song = useSongDetail(trackId).data
-  const summary = song ? fileSummary(song) : ''
-  return summary ? <p className="mt-[2px] text-small text-muted">{summary}</p> : null
+/**
+ * FLAC, 44.1 kHz, 1,012 kbps and the year as chips under the artist line, or nothing while none is
+ * known. Classic outlines them; the Listening room sets them on a soft fill, in mono. The list is
+ * named for the whole summary, so it is read as one line.
+ */
+export function TrackFormatChips({
+  track,
+  tone = 'classic',
+}: {
+  track: LibraryTrack
+  tone?: 'classic' | 'room'
+}) {
+  const song = useSongDetail(track.id).data
+  const chips = formatChips(song, track)
+  if (!chips.length) return null
+  return (
+    <ul
+      aria-label={song ? fileSummary(song) || 'File' : 'File'}
+      data-format-chips=""
+      className="m-0 flex list-none flex-wrap gap-[6px] p-0"
+    >
+      {chips.map((chip) => (
+        <li
+          key={chip}
+          className={cx(
+            'text-tiny whitespace-nowrap',
+            tone === 'classic'
+              ? 'rounded-[4px] border border-line-strong px-[7px] py-[3px] text-muted'
+              : 'rounded-[6px] bg-text/8 px-[8px] py-[4px] font-mono text-muted',
+          )}
+        >
+          {chip}
+        </li>
+      ))}
+    </ul>
+  )
 }
 
 type Fact = { label: string; value: ReactNode }
