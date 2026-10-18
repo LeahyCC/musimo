@@ -448,6 +448,43 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.count("bot_receipts"), 0)
         self.assertEqual(len(self.playlists()), 1)  # Liked only
 
+    async def test_refining_a_list_leaves_out_songs_deleted_from_the_library(self) -> None:
+        created = await self.create(filters={"artists": ["Orchard"]}, seed=1)
+        proposal_id = part(created, "proposal")["id"]
+        dawn, dusk = self.ids["Dawn"], self.ids["Dusk"]
+        self.assertEqual(set(self.song_ids(created)), {dawn, dusk})
+        (self.music / "4.wav").unlink()
+        self.library.scan()
+        # The refinement reads the stored revision's songs, which still name Dawn. It used to
+        # be refused as unknown_song every time, with nothing the client could send instead.
+        refined = await self.refine(proposal_id, 1, scope="proposal")
+        self.assertEqual(refined.status_code, 200, refined.text)
+        body = payload(refined)
+        self.assertEqual(self.song_ids(body), [dusk])
+        self.assertEqual(part(body, "proposal")["dropped_ids"], [dawn])
+        self.assertEqual(body["missing_ids"], [])
+        self.assertEqual(part(self.intent_of(body), "context")["proposal_ids"], [dusk])
+        # The report is part of the stored revision, so a later read says the same.
+        read = payload(await self.http.get(f"/api/music-bot/proposals/{proposal_id}"))
+        self.assertEqual(part(read, "proposal")["dropped_ids"], [dawn])
+        # A queue refinement naming the deleted song is narrowed the same way.
+        queued = await self.refine(
+            proposal_id, 2, scope="queue", context={"queue_ids": [dawn, dusk]}
+        )
+        self.assertEqual(queued.status_code, 200, queued.text)
+        self.assertEqual(self.song_ids(payload(queued)), [dusk])
+        self.assertEqual(part(payload(queued), "proposal")["dropped_ids"], [dawn])
+        # The narrowed revision commits, since every song in it is still there.
+        done = await self.commit(proposal_id, revision=3, target={"kind": "queue"})
+        self.assertEqual(done.status_code, 200, done.text)
+        self.assertEqual(part(payload(done), "receipt")["ids"], [dusk])
+        # A list with nothing left is refused, and nothing is written.
+        empty = await self.refine(proposal_id, 3, scope="queue", context={"queue_ids": [dawn]})
+        self.assertEqual((empty.status_code, code(empty)), (422, "no_selection"))
+        self.assertEqual(self.count("bot_proposal_revisions"), 3)
+        # A library search drops nothing: its kept songs are refused by name instead.
+        self.assertEqual(part(created, "proposal")["dropped_ids"], [])
+
     async def test_a_song_already_unplayable_when_stored_is_still_refused(self) -> None:
         created = await self.create(filters={"artists": ["Orchard"]}, seed=1)
         proposal_id = part(created, "proposal")["id"]
@@ -954,6 +991,25 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.song_ids(from_queue), ids[1:])
         self.assertEqual(self.intent_of(from_queue)["scope"], "proposal")
         self.assertEqual(part(self.intent_of(from_queue), "context")["queue_ids"], [])
+
+    async def test_removing_from_a_refined_list_leaves_out_a_song_deleted_from_the_library(
+        self,
+    ) -> None:
+        created = await self.create(seed=1, filters={"limit": 4})
+        proposal_id = part(created, "proposal")["id"]
+        await self.refine(proposal_id, 1, scope="proposal")
+        ids = self.song_ids(created)
+        stored = self.player.view().stored
+        titles = [song[0] for song in test_engine.SONGS]
+        lost = ids[1]
+        (self.music / f"{titles.index(stored[lost].title)}.wav").unlink()
+        self.library.scan()
+        done = await self.edited(proposal_id, 2, {"kind": "remove", "ids": [ids[0]]})
+        self.assertEqual(self.song_ids(done), ids[2:])
+        self.assertEqual(part(done, "proposal")["dropped_ids"], [lost])
+        # A retry with the same operation id gets the same revision and the same report.
+        again = await self.edited(proposal_id, 2, {"kind": "remove", "ids": [ids[0]]})
+        self.assertEqual(part(again, "proposal")["dropped_ids"], [lost])
 
     async def test_another_and_add_need_a_library_search(self) -> None:
         created = await self.create(seed=1, filters={"limit": 8})

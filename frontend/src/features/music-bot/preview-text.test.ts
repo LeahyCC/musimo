@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { editNote, overviewFacts, refreshedNote, staleGone, staleLines } from './preview-text'
+import {
+  droppedNote,
+  editNote,
+  overviewFacts,
+  refreshedNote,
+  staleGone,
+  staleLines,
+} from './preview-text'
 import type { Overview } from './proposals'
 
 const song = (n: number) => `tr-${n.toString(16).padStart(16, '0')}`
@@ -205,14 +212,14 @@ describe('staleGone', () => {
   })
 })
 
-describe('refreshedNote with dropped kept songs', () => {
-  it('says how many kept songs left the library and were dropped', () => {
+describe('refreshedNote with dropped songs', () => {
+  it('says how many songs left the library and were dropped', () => {
     expect(refreshedNote({ added: 0, removed: 0 }, 1)).toBe(
-      'Refreshed. The same songs are still there. 1 kept song no longer in your library was dropped.',
+      'Refreshed. The same songs are still there. 1 song no longer in your library was dropped.',
     )
 
     expect(refreshedNote({ added: 1, removed: 0 }, 2)).toMatch(
-      /2 kept songs no longer in your library were dropped\.$/,
+      /2 songs no longer in your library were dropped\.$/,
     )
     expect(refreshedNote({ added: 0, removed: 1 })).not.toMatch(/dropped/)
   })
@@ -225,6 +232,17 @@ describe('editNote', () => {
     )
     expect(editNote('remove', { added: 0, removed: 2 })).toMatch(/^Removed 2 songs\. They won’t/)
     expect(editNote('add', { added: 1, removed: 0 })).toBe('Added 1 song that fit these filters.')
+  })
+
+  it('says dropped songs in a note of their own, and nothing when there were none', () => {
+    expect(droppedNote(2)).toBe('2 songs no longer in your library were dropped.')
+    expect(droppedNote(0)).toBe('')
+  })
+
+  it('says how many songs a remove from a refined list left out because they left the library', () => {
+    expect(editNote('remove', { added: 0, removed: 1 }, 0, 1)).toBe(
+      'Removed 1 song. It won’t come back in this preview. 1 song no longer in your library was dropped.',
+    )
   })
 
   it('says so when an add found nothing, rather than reporting an add', () => {

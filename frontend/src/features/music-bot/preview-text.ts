@@ -113,8 +113,18 @@ export function staleGone(fields: readonly { field: string; message: string }[])
   )
 }
 
+/** Said when songs that had left the library were taken out: kept songs by the card, or the
+ *  songs of a refined list by the server (its `dropped_ids`). Empty when there were none. */
+export function droppedNote(dropped: number): string {
+  return dropped
+    ? `${plural(dropped, 'song')} no longer in your library ${dropped === 1 ? 'was' : 'were'} dropped.`
+    : ''
+}
+
+const droppedLine = (dropped: number) => (dropped ? ` ${droppedNote(dropped)}` : '')
+
 /** What a refresh did to the list, said after it so nothing changes silently. `dropped` is how
- *  many kept songs had left the library and were taken out of the request. */
+ *  many songs had left the library and were taken out of the list. */
 export function refreshedNote(change: { added: number; removed: number }, dropped = 0): string {
   const base =
     !change.added && !change.removed
@@ -123,20 +133,20 @@ export function refreshedNote(change: { added: number; removed: number }, droppe
           ...(change.removed ? [`${plural(change.removed, 'song')} left`] : []),
           ...(change.added ? [`${plural(change.added, 'song')} came in`] : []),
         ].join(', ')}. Check it before you confirm.`
-  return dropped
-    ? `${base} ${plural(dropped, 'kept song')} no longer in your library ${dropped === 1 ? 'was' : 'were'} dropped.`
-    : base
+  return base + droppedLine(dropped)
 }
 
 /** What an edit did to the list, said after it so a change is never silent. `pinned` is how many
- *  songs an Another set protected. */
+ *  songs an Another set protected. `dropped` is how many songs a remove from a refined list left
+ *  out because the library no longer had them. */
 export function editNote(
   edit: 'another' | 'add' | 'remove',
   change: { added: number; removed: number },
   pinned = 0,
+  dropped = 0,
 ): string {
   if (edit === 'remove')
-    return `Removed ${plural(change.removed, 'song')}. ${change.removed === 1 ? 'It' : 'They'} won’t come back in this preview.`
+    return `Removed ${plural(change.removed, 'song')}. ${change.removed === 1 ? 'It' : 'They'} won’t come back in this preview.${droppedLine(dropped)}`
   if (edit === 'add')
     return change.added
       ? `Added ${plural(change.added, 'song')} that fit these filters.`

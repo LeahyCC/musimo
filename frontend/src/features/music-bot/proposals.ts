@@ -114,6 +114,9 @@ const proposalSchema = z.object({
   total_seconds: z.number(),
   shortfall_seconds: z.number(),
   summary: z.string(),
+  // Songs a refined list held that the library no longer had, which the server left out of this
+  // revision. Always empty for a library search, whose kept songs are refused by name instead.
+  dropped_ids: idList.default([]),
   overview: overviewSchema,
   sample: z.object({ ids: idList, complete: z.boolean() }),
   snapshot: z.object({

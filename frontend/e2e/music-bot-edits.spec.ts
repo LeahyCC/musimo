@@ -628,10 +628,66 @@ test('Refresh preview leaves out a kept song that left the library, and says so'
   const sent = record(record(proposals.refines.at(-1)?.body.intent).context)
   expect(strings(sent.keep_ids)).not.toContain(b.id)
   expect(strings(sent.keep_ids).length).toBeGreaterThan(0)
-  await expect(page.getByText('1 kept song no longer in your library was dropped.')).toBeVisible()
+  await expect(page.getByText('1 song no longer in your library was dropped.')).toBeVisible()
   await expect(problem).toHaveCount(0)
   // What is left of the kept songs. The stand-in's search adds nothing to them.
   expect(await titles(rows(page))).toEqual(['Song A', 'Song C'])
+})
+
+test('Refresh preview on a refined list leaves out a song that left the library, and says so', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  await page.route('**/api/music-bot/chat', (route) =>
+    route.fulfill({
+      json: { ...answer, plan: { ...plan, scope: 'proposal' } },
+    }),
+  )
+  // A refinement of the list on the card. The stand-in keeps every song of it.
+  await say(page, 'just these')
+  await expect(card(page)).toContainText('REVISION 2')
+  expect(await titles(rows(page))).toEqual(['Song A', 'Song B', 'Song C'])
+  // The file is deleted. A refinement must leave proposal_ids out, so the card cannot drop the
+  // song itself: the server leaves it out of the stored list and says which.
+  deleted.add(c.id)
+  proposals.deleteSong(c.id)
+  await card(page).getByRole('button', { name: 'Add to queue', exact: true }).click()
+  const problem = card(page).locator('[data-bot="problem"]')
+  await expect(problem).toContainText('Song C: not in the library')
+  await problem.getByRole('button', { name: 'Refresh preview' }).click()
+  await expect(card(page)).toContainText('REVISION 3')
+  expect(record(proposals.refines.at(-1)?.body.intent)).toMatchObject({
+    scope: 'proposal',
+    context: { proposal_ids: [] },
+  })
+  await expect(page.getByText('1 song no longer in your library was dropped.')).toBeVisible()
+  await expect(problem).toHaveCount(0)
+  await expect(card(page).locator('[data-bot="missing"]')).toHaveCount(0)
+  expect(await titles(rows(page))).toEqual(['Song A', 'Song B'])
+  // And it confirms.
+  await card(page).getByRole('button', { name: 'Add to queue', exact: true }).click()
+  await expect.poll(() => proposals.handed.at(-1)).toEqual([a.id, b.id])
+})
+
+test('a chat follow-up that refines a list says which songs left the library', async ({
+  page,
+  isMobile,
+}) => {
+  await fixtures(page)
+  await open(page, isMobile)
+  await page.route('**/api/music-bot/chat', (route) =>
+    route.fulfill({ json: { ...answer, plan: { ...plan, scope: 'proposal' } } }),
+  )
+  await say(page, 'just these')
+  await expect(card(page)).toContainText('REVISION 2')
+  deleted.add(c.id)
+  proposals.deleteSong(c.id)
+  await say(page, 'just these again')
+  await expect(card(page)).toContainText('REVISION 3')
+  await expect(page.getByText('1 song no longer in your library was dropped.')).toBeVisible()
+  expect(await titles(rows(page))).toEqual(['Song A', 'Song B'])
 })
 
 test('an edit refused because a kept song left the library lists it, and Refresh preview leaves it out', async ({

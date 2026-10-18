@@ -96,7 +96,8 @@ class Proposals:
             assert isinstance(ids, list)
             context = intent.context.model_copy(update={"proposal_ids": ids})
             intent = intent.model_copy(update={"context": context})
-        return self._save(proposal_id, body.revision, intent, cancelled)
+        intent, dropped = self._in_library(intent)
+        return self._save(proposal_id, body.revision, intent, cancelled, dropped=dropped)
 
     def edit(
         self, proposal_id: str, raw: object, cancelled: Callable[[], bool]
@@ -126,7 +127,8 @@ class Proposals:
                 return self._edit_replayed(first, wanted)
             raise self._superseded(latest)
         intent = _edited(Intent.model_validate(base["intent"]), _ids(base), body.edit)
-        saved = self._save(proposal_id, body.revision, intent, cancelled, wanted)
+        intent, dropped = self._in_library(intent)
+        saved = self._save(proposal_id, body.revision, intent, cancelled, wanted, dropped)
         if "replayed" in saved:
             return saved
         return saved | {"replayed": False}
@@ -262,6 +264,7 @@ class Proposals:
         intent: Intent,
         cancelled: Callable[[], bool],
         edit: dict[str, object] | None = None,
+        dropped: list[str] | None = None,
     ) -> dict[str, object]:
         if intent.action != "search":
             raise EngineError(
@@ -295,6 +298,7 @@ class Proposals:
                 "shortfall_seconds": result["shortfall_seconds"],
                 "duration": result["duration"],
                 "summary": result["summary"],
+                "dropped_ids": dropped or [],
             },
         }
         if cancelled():
@@ -331,6 +335,33 @@ class Proposals:
                 [ErrorField(field="revision", message=f"Latest is {found['latest']}")],
             )
         return found
+
+    def _in_library(self, intent: Intent) -> tuple[Intent, list[str]]:
+        """A refinement of a list without the songs the library no longer has, and those songs.
+
+        The list comes from a stored revision (or the queue it named), so a song deleted since
+        would make the engine refuse the whole request as unknown, every time, with nothing the
+        client can send to get past it. Leaving it out is safe here because nothing is drawn:
+        the refinement only narrows what is left. A library search's kept songs are not touched,
+        since those are the person's choice and are refused by name instead."""
+        if intent.scope == "library":
+            return intent, []
+        field = "proposal_ids" if intent.scope == "proposal" else "queue_ids"
+        ids: list[str] = getattr(intent.context, field)
+        stored = self.bot.player.view().stored
+        gone = [sid for sid in ids if sid not in stored]
+        if not gone:
+            return intent, []
+        left = [sid for sid in ids if sid in stored]
+        if not left:
+            raise EngineError(
+                "no_selection",
+                "None of the songs in this list are in your library now. Search the library.",
+                422,
+                [ErrorField(field=f"context.{field}", message="All removed from the library")],
+            )
+        context = intent.context.model_copy(update={field: left})
+        return intent.model_copy(update={"context": context}), gone
 
     def _checks(self, intent: Intent, ids: list[str], view: LibraryView) -> dict[str, str]:
         """What the approved songs depend on, keyed by part: each song's file, tags and length,
@@ -506,6 +537,9 @@ class Proposals:
                 "ids": ids,
                 # A revision stored before contract version 3 has no duration report.
                 "duration": None,
+                # Songs the refinement's list held that the library no longer had, so they were
+                # left out of this revision. Empty for a library search or an older revision.
+                "dropped_ids": [],
                 **totals,
                 # What the revision holds, from its songs: requested, measured and unknown.
                 "overview": summarize(

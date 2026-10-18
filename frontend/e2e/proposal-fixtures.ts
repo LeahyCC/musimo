@@ -136,21 +136,27 @@ export async function proposalFixtures(page: Page, start: LibraryTrack[]): Promi
   }
   const proposals = new Map<string, Stored>()
 
-  /** The rules the real engine applies to kept songs, on any intent that reaches it (a create, a
-   *  refinement, or the intent an edit writes). Null when the intent passes. */
+  /** The rules the real engine applies to the songs an intent names, on any intent that reaches
+   *  it (a create, a refinement, or the intent an edit writes). Null when the intent passes. */
   function refuseKept(intent: Record<string, unknown>) {
     const context = object(intent.context)
     const filters = object(intent.filters)
     const keep = strings(context.keep_ids)
     const pinned = strings(context.pinned_ids)
     const count = context.add_count ?? null
-    const unknown = keep.filter((song) => !byId.has(song))
+    // Every list of songs a request names must be in the library, one field per list. A
+    // refinement leaves the gone songs out of its list before it gets here, as the real one does.
+    const unknown = (['proposal_ids', 'queue_ids', 'keep_ids'] as const).filter((name) =>
+      strings(context[name]).some((song) => !byId.has(song)),
+    )
     if (unknown.length)
       return {
         status: 422,
-        body: envelope('unknown_song', 'Those song ids are not in the library.', [
-          { field: 'context.keep_ids', message: 'Not in the library' },
-        ]),
+        body: envelope(
+          'unknown_song',
+          'Those song ids are not in the library.',
+          unknown.map((name) => ({ field: `context.${name}`, message: 'Not in the library' })),
+        ),
       }
     if (!keep.length && !pinned.length && count === null) return null
     const bad: { field: string; message: string }[] = []
@@ -211,6 +217,37 @@ export async function proposalFixtures(page: Page, start: LibraryTrack[]): Promi
     forgotten = revision
     kept.length = 0
   }
+
+  // The songs each revision's list left out because the library no longer had them, by
+  // `proposal:revision`, so a read or a replay reports them as the real route does.
+  const droppedAt = new Map<string, string[]>()
+
+  /** A refinement's list without the songs the library no longer has, and those songs, as the
+   *  real route leaves them out. A library search is untouched: its kept songs are refused. Null
+   *  when nothing would be left. */
+  function inLibrary(
+    intent: Record<string, unknown>,
+  ): { intent: Record<string, unknown>; dropped: string[] } | null {
+    if (intent.scope !== 'proposal' && intent.scope !== 'queue') return { intent, dropped: [] }
+    const name = intent.scope === 'proposal' ? 'proposal_ids' : 'queue_ids'
+    const context = object(intent.context)
+    const ids = strings(context[name])
+    const dropped = ids.filter((song) => !byId.has(song))
+    if (!dropped.length) return { intent, dropped }
+    const left = ids.filter((song) => byId.has(song))
+    if (!left.length) return null
+    return { intent: { ...intent, context: { ...context, [name]: left } }, dropped }
+  }
+
+  const nothingLeft = (route: Route, name: string) =>
+    route.fulfill({
+      status: 422,
+      json: envelope(
+        'no_selection',
+        'None of the songs in this list are in your library now. Search the library.',
+        [{ field: `context.${name}`, message: 'All removed from the library' }],
+      ),
+    })
 
   const receipts = new Map<string, Record<string, unknown>>()
   const went = new Set<string>()
@@ -292,6 +329,7 @@ export async function proposalFixtures(page: Page, start: LibraryTrack[]): Promi
         ids,
         total_seconds: total,
         shortfall_seconds: short,
+        dropped_ids: droppedAt.get(`${id}:${revision}`) ?? [],
         summary:
           `${tracks.length} ${tracks.length === 1 ? 'song' : 'songs'}, ${minutes(total)} minutes. ` +
           'Based on saved library tags.' +
@@ -411,19 +449,30 @@ export async function proposalFixtures(page: Page, start: LibraryTrack[]): Promi
         ]),
       })
     if (!accepted(intent.contract_version, [1, 2, 3, 4, 5])) return refuseVersion(route)
-    const refused = refuseKept(intent)
+    // The stored songs are the list, less any the library has lost since.
+    const filled =
+      intent.scope === 'proposal'
+        ? { ...intent, context: { ...object(intent.context), proposal_ids: base } }
+        : intent
+    const narrowed = inLibrary(filled)
+    if (!narrowed)
+      return nothingLeft(route, intent.scope === 'proposal' ? 'proposal_ids' : 'queue_ids')
+    const echoed = narrowed.intent
+    const refused = refuseKept(echoed)
     if (refused) return route.fulfill({ status: refused.status, json: refused.body })
-    const ids = [...choose(intent, base).map((song) => song.id), ...mock.ghosts]
+    const list = strings(object(echoed.context).proposal_ids)
+    const ids = [...choose(echoed, list).map((song) => song.id), ...mock.ghosts]
     stored.latest += 1
     stored.revisions.set(stored.latest, ids)
+    // Ghosts come back in every list, so they are not reported as dropped from it.
+    droppedAt.set(
+      `${id}:${stored.latest}`,
+      narrowed.dropped.filter((song) => !mock.ghosts.includes(song)),
+    )
     if (intent.scope === 'library') {
       libraryRevisions.add(`${id}:${stored.latest}`)
       builtAt.set(`${id}:${stored.latest}`, revision)
     }
-    const echoed =
-      intent.scope === 'proposal'
-        ? { ...intent, context: { ...object(intent.context), proposal_ids: base } }
-        : intent
     const ran = { ...echoed, seed: intent.seed ?? 7 }
     stored.intents.set(stored.latest, ran)
     return route.fulfill({ json: reply(id, stored.latest, ran, ids) })
@@ -587,11 +636,17 @@ export async function proposalFixtures(page: Page, start: LibraryTrack[]): Promi
         context: { ...context, keep_ids: pins, pinned_ids: pins, add_count: null },
       }
     }
+    // A remove from a refined list leaves out the songs the library lost, as a refinement does.
+    const narrowed = inLibrary(intent)
+    if (!narrowed) return nothingLeft(route, 'proposal_ids')
+    intent = narrowed.intent
+    if (narrowed.dropped.length) next = next.filter((song) => byId.has(song))
     // The intent an edit writes goes through the same checks as any other.
     const refused = refuseKept(intent)
     if (refused) return route.fulfill({ status: refused.status, json: refused.body })
     stored.latest += 1
     stored.revisions.set(stored.latest, next)
+    droppedAt.set(`${id}:${stored.latest}`, narrowed.dropped)
     stored.intents.set(stored.latest, { ...intent, seed: intent.seed ?? 7 })
     if (searched && edit.kind !== 'remove') {
       libraryRevisions.add(`${id}:${stored.latest}`)
