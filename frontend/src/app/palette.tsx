@@ -19,6 +19,11 @@ const pages = [
 
 type Command = { label: string; run: () => void }
 
+const OPEN_EVENT = 'musimo:open-palette'
+
+/** Opens the palette from a button, such as the Listening room's header search. */
+export const openCommandPalette = () => window.dispatchEvent(new Event(OPEN_EVENT))
+
 const commandClassName =
   'rounded-md border-0 bg-transparent p-[10px] text-left text-inherit hover:bg-active focus-visible:bg-active'
 
@@ -86,16 +91,24 @@ export function CommandPalette() {
     ...visualizerCommands,
   ]
   useEffect(() => {
+    const open = () => {
+      setText('')
+      if (!dialog.current?.open) dialog.current?.showModal()
+      input.current?.focus()
+    }
+
     const key = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 'k') {
         event.preventDefault()
-        setText('')
-        dialog.current?.showModal()
-        input.current?.focus()
+        open()
       }
     }
     window.addEventListener('keydown', key)
-    return () => window.removeEventListener('keydown', key)
+    window.addEventListener(OPEN_EVENT, open)
+    return () => {
+      window.removeEventListener('keydown', key)
+      window.removeEventListener(OPEN_EVENT, open)
+    }
   }, [])
   const options = commands.filter((command) =>
     command.label.toLowerCase().includes(text.toLowerCase()),

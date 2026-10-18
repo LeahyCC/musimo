@@ -155,6 +155,8 @@ type Playback = {
   sleep: SleepStatus | null
   /** Starts a sleep timer, replacing any running one. Null cancels it. */
   setSleep: (choice: SleepChoice | null) => void
+  /** Saves the queue again after a failed save. One that lands takes the failure notice away. */
+  retryQueueSave: () => void
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -202,12 +204,16 @@ const PlayerContext = createContext<Playback>({
   stop: () => undefined,
   sleep: null,
   setSleep: () => undefined,
+  retryQueueSave: () => undefined,
 })
 export const usePlayer = () => useContext(PlayerContext)
 
 const LIBRARY_NOTICE = 'Your music library'
 const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
-const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
+/** The notices a failed queue save leaves, so the Listening room can show them in Up next too. */
+export const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
+export const QUEUE_REPLACED =
+  'Another browser saved the queue. Refresh to restore it before saving more changes.'
 const SLEEP_ENDED_NOTICE = 'Sleep timer ended. Playback paused.'
 const SLEEP_CANCELLED_NOTICE = 'Sleep timer cancelled.'
 const SLEEP_QUEUE_LOST_NOTICE =
@@ -964,11 +970,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // to hear about, since the queue on screen would then differ from the one that restores.
   function persistQueue(body: string): Promise<Response | null> {
     queueWriter.current ??= new QueueWriter((replaced) =>
-      setNotice(
-        replaced
-          ? 'Another browser saved the queue. Refresh to restore it before saving more changes.'
-          : QUEUE_SAVE_FAILED,
-      ),
+      setNotice(replaced ? QUEUE_REPLACED : QUEUE_SAVE_FAILED),
     )
 
     return queueWriter.current.save(body)
@@ -2174,6 +2176,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  function retryQueueSave() {
+    void saveQueue(true).then((saved) => {
+      if (saved) setNotice((now) => (now === QUEUE_SAVE_FAILED ? LIBRARY_NOTICE : now))
+    })
+  }
+
   function submitNewPlaylist(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
     if (!libraryTrack) return
@@ -2236,6 +2244,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         stop,
         sleep,
         setSleep: startSleep,
+        retryQueueSave,
       }}
     >
       {children}

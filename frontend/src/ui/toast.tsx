@@ -92,7 +92,8 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
  * Short messages that are not tied to a spot on the page, such as a queue that could not be saved.
  * There is one `role="status"` region, always in the page so a screen reader is already listening
  * when the first toast arrives. It sits bottom right on a wide window and above the mini player on
- * a phone; both follow `--player-height`, so it drops to the edge when the footer is hidden.
+ * a phone. Its edges are `--toast-right` and `--toast-bottom` in style.css. Each layout sets its own,
+ * and Classic's follow `--player-height`, so it drops to the edge when the footer is hidden.
  */
 export function ToastProvider({ children }: { children: ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
@@ -120,7 +121,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
         role="status"
         data-ui="toast-region"
         className={cx(
-          'pointer-events-none fixed right-[calc(20px+var(--safe-right))] bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+16px)] z-toast grid w-[min(420px,calc(100%-40px))] gap-[8px]',
+          'pointer-events-none fixed right-[var(--toast-right)] bottom-[var(--toast-bottom)] z-toast grid w-[min(420px,calc(100%-40px))] gap-[8px]',
           'max-phone:right-[calc(12px+var(--safe-right))] max-phone:left-[calc(12px+var(--safe-left))] max-phone:w-auto',
         )}
       >

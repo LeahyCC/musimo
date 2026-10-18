@@ -138,6 +138,9 @@
   --player-height: 75px;
   /* How much of the seek bar sits behind the playhead. The footer sets it on the range input. */
   --progress: 0%;
+  /* Where the toast region's corner sits. The Listening room moves it clear of its own player. */
+  --toast-right: calc(20px + var(--safe-right));
+  --toast-bottom: calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 16px);
   /* The border a row, card or link lights up with. Derived, so a theme does not have to name it. */
   --line-hover: color-mix(in oklab, var(--color-line-strong), var(--color-muted) 35%);
   /* Notch and home-indicator insets; 0 until viewport-fit=cover meets a device that has them. */
@@ -164,6 +167,41 @@
     --sidebar-width: 0px;
     --nav-height: 64px;
     --topbar-height: 60px;
+  }
+}
+
+/* The Listening room (`app/shell/room.tsx`). On a wide window its pages scroll inside the page pane,
+   between a rail and the player dock, so the measurements the pages add up are the gutter plus the
+   rail and the gutter plus the header. The Classic footer never shows here; it stays in the page
+   only for the audio elements it holds, and the dock or the floating mini player stands in for it.
+   Under the tablet edge the dock becomes a 76px bar under the page. A phone scrolls the document,
+   as Classic does, and `--player-height` is the floating mini player and its gap while one shows. */
+:root:where([data-layout='room']) {
+  --dock-width: clamp(280px, 24vw, 340px);
+  --sidebar-width: 88px;
+  --topbar-height: 72px;
+  --toast-right: calc(var(--dock-width) + 28px + var(--safe-right));
+  --toast-bottom: calc(24px + var(--safe-bottom));
+}
+:root[data-layout='room'] footer.live-player {
+  display: none !important;
+}
+@media (width < theme(--breakpoint-tablet)) {
+  :root:where([data-layout='room']) {
+    --toast-right: calc(28px + var(--safe-right));
+    --toast-bottom: calc(96px + var(--safe-bottom));
+  }
+}
+@media (width < theme(--breakpoint-phone)) {
+  :root:where([data-layout='room']) {
+    --sidebar-width: 0px;
+    --topbar-height: 56px;
+    --nav-height: 68px;
+    --player-height: 0px !important;
+    --toast-bottom: calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 12px);
+  }
+  :root:where([data-layout='room']):has([data-room-mini]) {
+    --player-height: 66px !important;
   }
 }
 

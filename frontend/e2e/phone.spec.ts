@@ -557,3 +557,63 @@ test('the artist download selection is a bottom sheet', async ({ page }) => {
   expect(rect.y + rect.height).toBeCloseTo(viewport.height, 0)
   expect(await pageOverflow(page)).toBe(0)
 })
+
+test.describe('Listening room', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem('musimo.layout', 'room'))
+  })
+
+  test('five tabs, header buttons, and a floating mini player above the tab bar', async ({
+    page,
+  }) => {
+    await catalogFixtures(page, [activeJob])
+    await libraryFixtures(page)
+    await page.goto('/library/albums/album-1')
+    const nav = page.locator('.sidebar')
+    const tabs = await box(nav)
+    expect(tabs.height).toBe(68)
+    for (const name of ['Home', 'Search', 'Library', 'Octive', 'Queue']) {
+      const tab = await box(nav.getByRole('link', { name: new RegExp(`^${name}`) }))
+      expect(tab.y).toBeGreaterThanOrEqual(tabs.y)
+      expect(tab.y + tab.height).toBeLessThanOrEqual(tabs.y + tabs.height)
+    }
+    await expect(nav.getByRole('link', { name: 'Library' })).toHaveAttribute('aria-current', 'page')
+    // The active download count rides on the Queue tab, so there is no floating queue pill.
+    await expect(nav.getByRole('link', { name: /^Queue/ })).toContainText('1')
+    await expect(page.getByRole('button', { name: /Open queue/ })).toHaveCount(0)
+    const header = page.getByRole('banner')
+    await expect(header.getByRole('link', { name: 'Settings' })).toBeVisible()
+    await expect(header.getByRole('link', { name: 'Diagnostics' })).toBeVisible()
+
+    const mini = page.getByRole('region', { name: 'Player' })
+    await expect(mini).toBeHidden()
+    await page.getByRole('button', { name: 'Play all' }).click()
+    await expect(mini).toContainText('Beacon')
+    const rect = await box(mini)
+    expect(rect.y + rect.height).toBeLessThanOrEqual(tabs.y)
+    const play = await box(mini.getByRole('button', { name: 'Pause' }))
+    expect(play.width).toBe(44)
+    expect(play.height).toBe(44)
+    // The page is padded past the mini player and the tab bar, so the last row is never under them.
+    const padding = await page.evaluate(() =>
+      parseFloat(getComputedStyle(document.querySelector('main')!).paddingBottom),
+    )
+    expect(padding).toBeGreaterThanOrEqual(rect.height + tabs.height)
+    expect(await pageOverflow(page)).toBe(0)
+
+    await mini.getByRole('link', { name: 'Beacon' }).click()
+    await expect(page.getByRole('heading', { name: 'Beacon' })).toBeVisible()
+    await expect(mini).toBeHidden()
+  })
+
+  test('the save bar clears the tab bar', async ({ page }) => {
+    await catalogFixtures(page)
+    await page.goto('/settings')
+    await page.getByLabel('Library label').fill('Changed')
+    const saveBar = page.locator('.save-bar')
+    await saveBar.scrollIntoViewIfNeeded()
+    const nav = await box(page.locator('.sidebar'))
+    const bar = await box(saveBar)
+    expect(bar.y + bar.height).toBeLessThanOrEqual(nav.y)
+  })
+})

@@ -1398,3 +1398,117 @@ test('diagnostics shows not ready when components need attention', async ({ page
   const healthStrip = page.locator('.health-strip')
   await expect(healthStrip).toBeVisible()
 })
+
+test.describe('Listening room layout', () => {
+  test.skip(({ isMobile }) => isMobile, 'The phone half is in phone.spec.ts.')
+
+  /** Three songs restored, the first loaded, and every queue save answered with `saved()`. */
+  async function roomQueue(page: Page, saved: () => number = () => 204) {
+    await page.addInitScript(() => localStorage.setItem('musimo.layout', 'room'))
+    await playerFixtures(page)
+    await page.route('**/api/player/queue', (route) =>
+      route.fulfill(
+        route.request().method() === 'GET'
+          ? {
+              json: {
+                current: 'song-1',
+                position: 0,
+                entry: ['song-1', 'song-2', 'song-3'].map((id) => librarySong(id)),
+              },
+            }
+          : { status: saved() },
+      ),
+    )
+  }
+
+  test('a rail, a page pane and a player dock with Up next', async ({ page }) => {
+    await roomQueue(page)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const nav = page.getByRole('navigation', { name: 'Main navigation' })
+    for (const name of ['Home', 'Search', 'Library', 'Octive', 'Queue', 'Settings', 'Diagnostics'])
+      await expect(nav.getByRole('link', { name, exact: true })).toBeVisible()
+    await expect(nav.getByRole('link', { name: 'Home', exact: true })).toHaveAttribute(
+      'aria-current',
+      'page',
+    )
+
+    // The dock stands in for the Classic footer, which stays only for its audio elements.
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    await expect(dock).toContainText('Song song-1')
+    await expect(page.getByRole('contentinfo')).toBeHidden()
+    const play = await dock.getByRole('button', { name: 'Play', exact: true }).boundingBox()
+    expect(play?.width).toBe(48)
+    expect(play?.height).toBe(48)
+    // Beside the page, not over it.
+    const main = await page.locator('main').boundingBox()
+    const dockBox = await dock.boundingBox()
+    expect(main && dockBox && main.x + main.width <= dockBox.x).toBe(true)
+
+    const upNext = dock.getByRole('region', { name: 'Up next' })
+    const rows = upNext.getByRole('button', { name: /^Play Song/ })
+    await expect(rows).toHaveCount(2)
+    await upNext.getByRole('button', { name: 'Play Song song-2' }).press('Alt+ArrowDown')
+    await expect(rows.first()).toHaveAccessibleName('Play Song song-3')
+    await rows.first().hover()
+    await upNext.getByRole('button', { name: 'Remove Song song-3 from the queue' }).click()
+    await expect(rows).toHaveCount(1)
+
+    await page.getByRole('button', { name: 'Search or paste a link' }).click()
+    await expect(page.getByRole('dialog', { name: 'Command palette' })).toBeVisible()
+    await page.keyboard.press('Escape')
+
+    // Now Playing has every control the dock has, so the dock steps aside there.
+    await dock.getByRole('link', { name: 'Open Now Playing' }).first().click()
+    await expect(page).toHaveURL(/\/now-playing$/)
+    await expect(dock).toBeHidden()
+  })
+
+  test('a failed queue save shows in Up next and as a toast, and Retry clears both', async ({
+    page,
+  }) => {
+    let status = 500
+    await roomQueue(page, () => status)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    await dock.getByRole('button', { name: 'Clear queue' }).click()
+    const strip = dock.getByText('Queue not saved to server')
+    const toast = page.locator('[data-ui="toast"]')
+    await expect(strip).toBeVisible()
+    await expect(toast).toContainText('Queue not saved to the server.')
+    // The toast sits over the page's corner, clear of the dock and its Up next.
+    const toastBox = await toast.boundingBox()
+    const dockBox = await dock.boundingBox()
+    expect(toastBox && dockBox && toastBox.x + toastBox.width <= dockBox.x).toBe(true)
+
+    status = 204
+    await dock.getByRole('button', { name: 'Retry' }).click()
+    await expect(strip).toBeHidden()
+    await expect(toast).toHaveCount(0)
+  })
+
+  test('under the tablet edge the dock is a bar under the page with Up next above it', async ({
+    page,
+  }) => {
+    await roomQueue(page)
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    await expect(dock).toContainText('Song song-1')
+    const main = await page.locator('main').boundingBox()
+    const bar = await dock.boundingBox()
+    expect(main && bar && bar.y >= main.y + main.height).toBe(true)
+    expect(bar?.height).toBe(76)
+    for (const name of ['Previous track', 'Play', 'Next track'])
+      await expect(dock.getByRole('button', { name, exact: true })).toBeVisible()
+
+    await dock.getByRole('button', { name: 'Up next, 2 songs' }).click()
+    const upNext = dock.getByRole('region', { name: 'Up next' })
+    await expect(upNext.getByRole('button', { name: /^Play Song/ })).toHaveCount(2)
+    const panel = await upNext.boundingBox()
+    expect(panel && bar && panel.y + panel.height <= bar.y).toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(upNext).toBeHidden()
+  })
+})
