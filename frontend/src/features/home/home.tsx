@@ -1,41 +1,35 @@
-import { Link, useNavigate } from '@tanstack/react-router'
-import { Activity, Settings2 } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 
-import { PageTitle } from '../../components/page-title'
-import { iconButtonClassName } from '../../ui'
-import { HomeShelves } from '../search/home-shelves'
+import { HOME_SECTIONS, useHomeSections, useLayout } from '../../lib/layout'
+import { ClassicHome } from './classic-home'
+import { RoomHome } from './room-home'
+import { useLibraryState } from './use-home-data'
+import { Welcome } from './welcome'
 
 /**
- * The Home dashboard at `/`. For now it holds the shelves the search page already shows, so the
- * page is not empty; the Home dashboard card replaces it with the sections from Settings › Yours.
+ * The Home dashboard at `/`. An empty library gets the first-run steps instead; otherwise the
+ * layout from Settings › Yours picks how the sections Settings › Yours leaves on are drawn.
  */
 export function HomePage() {
-  const navigate = useNavigate()
+  const layout = useLayout()
+  const sections = useHomeSections()
+  const library = useLibraryState()
+
+  if (library === 'loading') return <h1 className="sr-only">Home</h1>
+  if (library === 'empty') return <Welcome />
 
   return (
     <>
-      <PageTitle eyebrow="YOUR MUSIC, AT HOME" title="Home">
-        {/* The phone's tab bar has no room for Settings and Diagnostics, so Home carries them. */}
-        <div className="hidden gap-[4px] max-phone:flex">
-          <Link
-            to="/settings"
-            data-ui="icon-button"
-            aria-label="Settings"
-            className={iconButtonClassName(false, undefined, 'compact', 'outlined')}
-          >
-            <Settings2 size={18} />
+      {layout === 'room' ? <RoomHome sections={sections} /> : <ClassicHome sections={sections} />}
+      {HOME_SECTIONS.every((key) => !sections[key]) && (
+        <p className="text-muted">
+          Every Home section is turned off.{' '}
+          <Link to="/settings/user" className="text-accent">
+            Turn some back on in Settings
           </Link>
-          <Link
-            to="/diagnostics"
-            data-ui="icon-button"
-            aria-label="Diagnostics"
-            className={iconButtonClassName(false, undefined, 'compact', 'outlined')}
-          >
-            <Activity size={18} />
-          </Link>
-        </div>
-      </PageTitle>
-      <HomeShelves onSearch={(q) => void navigate({ to: '/search', search: { q } })} />
+          .
+        </p>
+      )}
     </>
   )
 }

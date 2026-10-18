@@ -68,18 +68,42 @@ type SeekBarProps = {
   length: number
   ready: boolean
   onSeek: (seconds: number) => void
+  /** Classic plays in the accent over the strong line color; the Listening room in the text color
+      over a faint copy of it, as its card is tinted by the cover. */
+  tone?: 'classic' | 'room'
+  /** The box's height, which the bars fill. */
+  className?: string
 }
+
+const TONES = {
+  classic: {
+    rest: 'fill-line-strong',
+    played: 'fill-accent',
+    head: 'bg-accent',
+    plain: 'accent-accent',
+  },
+  room: { rest: 'fill-text/22', played: 'fill-text', head: 'bg-text', plain: 'accent-text' },
+} as const
 
 /**
  * Now Playing's seek bar. The range input is the whole of the control, as it always was: the
  * keyboard, the pointer, the screen reader and the disabled state are all its own. When the track's
  * peaks arrive they are drawn behind it and the input is made invisible over them, so nothing
  * about how it is used changes. It is the same element throughout, so a focus in progress
- * survives the peaks arriving. The played part is the accent and the rest the muted token, so a
+ * survives the peaks arriving. The played and unplayed parts are theme tokens (see `TONES`), so a
  * theme reaches it with no drawing code. The box keeps its height in both states, so the
  * controls below it do not move.
  */
-export function SeekBar({ trackId, position, length, ready, onSeek }: SeekBarProps) {
+export function SeekBar({
+  trackId,
+  position,
+  length,
+  ready,
+  onSeek,
+  tone = 'classic',
+  className = 'h-[36px]',
+}: SeekBarProps) {
+  const colors = TONES[tone]
   const peaks = useWaveform(trackId)
   const box = useRef<HTMLDivElement>(null)
   const width = useWidth(box)
@@ -95,7 +119,8 @@ export function SeekBar({ trackId, position, length, ready, onSeek }: SeekBarPro
       ref={box}
       data-seek-bar={drawn ? 'waveform' : 'plain'}
       className={cx(
-        'relative flex h-[32px] min-w-0 flex-1 items-center',
+        'relative flex min-w-0 flex-1 items-center',
+        className,
         // The invisible input cannot show its own focus ring, so the box shows it.
         drawn &&
           'has-[:disabled]:opacity-50 has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-4 has-[:focus-visible]:outline-accent',
@@ -103,16 +128,19 @@ export function SeekBar({ trackId, position, length, ready, onSeek }: SeekBarPro
     >
       {drawn && (
         <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-          <Bars path={path} count={bars.length} className="fill-muted/60" />
+          <Bars path={path} count={bars.length} className={colors.rest} />
           <div
             className="absolute inset-0"
             data-seek-played=""
             style={{ clipPath: `inset(0 ${100 - played}% 0 0)` }}
           >
-            <Bars path={path} count={bars.length} className="fill-accent" />
+            <Bars path={path} count={bars.length} className={colors.played} />
           </div>
           <div
-            className="absolute top-0 bottom-0 w-[2px] -translate-x-1/2 rounded-pill bg-accent"
+            className={cx(
+              'absolute top-0 bottom-0 w-[2px] -translate-x-1/2 rounded-pill',
+              colors.head,
+            )}
             style={{ left: `${played}%` }}
           />
         </div>
@@ -123,7 +151,7 @@ export function SeekBar({ trackId, position, length, ready, onSeek }: SeekBarPro
         className={
           drawn
             ? 'absolute inset-0 h-full w-full cursor-pointer opacity-0 [&::-moz-range-thumb]:h-0 [&::-moz-range-thumb]:w-0 [&::-moz-range-thumb]:border-0 [&::-webkit-slider-thumb]:h-0 [&::-webkit-slider-thumb]:w-0 [&::-webkit-slider-thumb]:appearance-none'
-            : 'w-full accent-accent'
+            : cx('w-full', colors.plain)
         }
         aria-label="Playback position"
         type="range"

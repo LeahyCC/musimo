@@ -73,9 +73,11 @@ async function openNowPlaying(page: Page, song: Record<string, unknown> | null, 
   await expect(page.getByRole('heading', { level: 1, name: 'Alpha' })).toBeVisible()
 }
 
-test('the file is summed up in one line under the artist', async ({ page }) => {
+test('the file is summed up in chips under the artist, read as one line', async ({ page }) => {
   await openNowPlaying(page, flac, 'up-next')
-  await expect(page.getByText('FLAC, 44.1 kHz, 1,012 kbps')).toBeVisible()
+  const chips = page.getByRole('list', { name: 'FLAC, 44.1 kHz, 1,012 kbps' })
+  await expect(chips).toBeVisible()
+  await expect(chips.getByRole('listitem')).toHaveText(['FLAC', '44.1 kHz', '1,012 kbps', '2020'])
 })
 
 test('About lists the file, the release, the listening and what else is owned', async ({
