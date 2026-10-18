@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<script src="./icon.js"></script>
+<style>html{color-scheme:dark}*{scrollbar-color:#2a3630 transparent;scrollbar-width:thin}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a3630;border-radius:10px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-corner{background:transparent}
+body{margin:0;background:#111716;font-family:Inter,-apple-system,sans-serif}a{color:#c3e4a2;text-decoration:none}button{font:inherit;cursor:pointer}</style>
+</helmet>
+<div style="color:#e8ece8;font-size:13px;container-type:inline-size">
+  <button onClick="{{ back }}" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px 0 6px;margin:0 0 16px -6px;border:0;border-radius:8px;background:transparent;color:#93a39b;font-size:13px" style-hover="background:#17201b;color:#e8ece8"><m-i n="chevron-left" s="16"></m-i>{{ backLabel }}</button>
+
+  <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:20px 28px;margin-bottom:28px">
+    <div style="position:relative;width:clamp(120px,24cqi,220px);aspect-ratio:1;flex:none;border-radius:{{ coverR }};overflow:hidden;display:grid;grid-template-columns:1fr 1fr;box-shadow:0 24px 50px -24px rgba(0,0,0,.8)">
+      <sc-if value="{{ isLiked }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;inset:0;display:grid;place-items:center;color:#172014;z-index:1"><m-i n="heart" s="64" fill></m-i></span></sc-if>
+      <sc-for list="{{ cover }}" as="c" hint-placeholder-count="1"><span style="grid-column:{{ c.span }};grid-row:{{ c.span }};background:{{ c.bg }}"></span></sc-for>
+    </div>
+    <div style="flex:1 1 280px;min-width:0">
+      <div style="font-family:{{ mono }};font-size:11px;letter-spacing:0.8px;color:#819088">{{ info.eyebrow }}</div>
+      <h1 style="margin:8px 0 0;font-size:clamp(26px,4.4cqi,40px);font-weight:600;letter-spacing:-1px;line-height:1.08;display:flex;align-items:center;gap:10px">{{ info.title }}<sc-if value="{{ info.editable }}" hint-placeholder-val="{{ false }}"><button aria-label="Rename" style="width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#819088" style-hover="background:#17201b;color:#e8ece8"><m-i n="pencil" s="15"></m-i></button></sc-if></h1>
+      <div style="margin-top:8px;font-size:14px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center">
+        <sc-if value="{{ info.by }}" hint-placeholder-val="{{ false }}"><a href="#">{{ info.by }}</a><span style="color:#344035">·</span></sc-if>
+        <span style="color:#93a39b">{{ info.meta }}</span>
+      </div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:18px">
+        <button onClick="{{ play }}" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 18px;border-radius:10px;border:0;background:#c3e4a2;color:#172014;font-size:13px;font-weight:600"><m-i n="play" s="15" fill></m-i>Play</button>
+        <button style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:10px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px;font-weight:500"><m-i n="shuffle" s="15"></m-i>Shuffle</button>
+        <sc-for list="{{ info.extra }}" as="x" hint-placeholder-count="2">
+          <button aria-label="{{ x.label }}" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 12px;border-radius:10px;border:1px solid #344035;background:transparent;color:#e8ece8;font-size:13px"><m-i n="{{ x.icon }}" s="15"></m-i>{{ x.text }}</button>
+        </sc-for>
+      </div>
+    </div>
+  </div>
+
+  <sc-if value="{{ isArtist }}" hint-placeholder-val="{{ false }}">
+    <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:32px">
+      <section style="flex:3 1 380px;min-width:0">
+        <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px"><h2 style="margin:0;font-size:16px;font-weight:600">Top songs</h2><button style="border:0;background:none;color:#93a39b;font-size:12px">All 63 songs</button></div>
+        <sc-for list="{{ top }}" as="t" hint-placeholder-count="5">
+          <div style="display:grid;grid-template-columns:22px 40px minmax(0,1fr) 54px 40px;align-items:center;gap:12px;padding:6px 8px;border-radius:10px" style-hover="background:#17201b">
+            <span style="font-family:{{ mono }};font-size:11px;color:#819088;text-align:right">{{ t.n }}</span>
+            <span style="width:40px;height:40px;border-radius:6px;background:{{ t.art }}"></span>
+            <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.t }}</span><span style="display:block;font-size:12px;color:#93a39b">{{ t.al }}</span></span>
+            <span style="font-family:{{ mono }};font-size:11px;color:#819088;text-align:right">{{ t.plays }}</span>
+            <span style="font-family:{{ mono }};font-size:11px;color:#93a39b;text-align:right">{{ t.d }}</span>
+          </div>
+        </sc-for>
+      </section>
+      <section style="flex:2 1 280px;min-width:0;padding:16px 18px;border-radius:14px;background:#17201b;border:1px solid #2a3630">
+        <div style="display:flex;align-items:baseline;justify-content:space-between"><h2 style="margin:0;font-size:15px;font-weight:600">Popularity</h2><span style="font-size:11px;color:#819088">Plays by release year</span></div>
+        <div style="display:flex;align-items:flex-end;gap:8px;height:150px;margin-top:16px">
+          <sc-for list="{{ pop }}" as="p" hint-placeholder-count="6">
+            <div style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:6px">
+              <span style="font-family:{{ mono }};font-size:10px;color:#93a39b">{{ p.v }}</span>
+              <div style="flex:none;width:100%;height:{{ p.h }};border-radius:4px 4px 2px 2px;background:{{ p.c }}"></div>
+              <span style="font-family:{{ mono }};font-size:10px;color:#819088">{{ p.y }}</span>
+            </div>
+          </sc-for>
+        </div>
+      </section>
+    </div>
+    <section>
+      <h2 style="margin:0 0 14px;font-size:16px;font-weight:600">Albums</h2>
+      <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:22px 16px">
+        <sc-for list="{{ discog }}" as="al" hint-placeholder-count="5">
+          <div style="min-width:0"><div style="aspect-ratio:1;border-radius:10px;background:{{ al.art }}"></div><div style="margin-top:9px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.t }}</div><div style="margin-top:2px;font-size:12px;color:#93a39b">{{ al.y }} · {{ al.n }} songs</div></div>
+        </sc-for>
+      </div>
+    </section>
+  </sc-if>
+
+  <sc-if value="{{ hasTracks }}" hint-placeholder-val="{{ true }}">
+    <div style="display:grid;grid-template-columns:{{ cols }};gap:14px;padding:0 12px 8px;border-bottom:1px solid #2a3630;font-family:{{ mono }};font-size:10.5px;letter-spacing:0.6px;color:#819088">
+      <span style="text-align:right">#</span><span>TITLE</span><span>{{ col3 }}</span><span style="text-align:right">PLAYS</span><span style="text-align:right">TIME</span>
+    </div>
+    <div style="padding-top:6px">
+      <sc-for list="{{ tracks }}" as="t" hint-placeholder-count="10">
+        <div style="display:grid;grid-template-columns:{{ cols }};align-items:center;gap:14px;padding:7px 12px;border-radius:10px;background:{{ t.bg }}" style-hover="background:#17201b">
+          <span style="font-family:{{ mono }};font-size:11px;text-align:right;color:{{ t.nc }}">{{ t.n }}</span>
+          <span style="min-width:0;display:flex;align-items:center;gap:10px">
+            <sc-if value="{{ t.thumb }}" hint-placeholder-val="{{ false }}"><span style="width:36px;height:36px;border-radius:5px;flex:none;background:{{ t.art }}"></span></sc-if>
+            <span style="min-width:0"><span style="display:flex;align-items:center;gap:6px;font-weight:500;color:{{ t.tc }}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.t }}</span><sc-if value="{{ t.liked }}" hint-placeholder-val="{{ false }}"><span style="color:#c3e4a2;display:inline-flex"><m-i n="thumbs-up" s="12" fill></m-i></span></sc-if></span><span style="display:block;font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.a }}</span></span>
+          </span>
+          <span style="font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ t.c3 }}</span>
+          <span style="font-family:{{ mono }};font-size:11px;color:#819088;text-align:right">{{ t.plays }}</span>
+          <span style="font-family:{{ mono }};font-size:11px;color:#93a39b;text-align:right">{{ t.d }}</span>
+        </div>
+      </sc-for>
+    </div>
+    <div style="margin-top:20px;padding-top:14px;border-top:1px solid #2a3630;font-size:12px;color:#819088;line-height:1.7">{{ info.foot }}</div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1000, &quot;height&quot;: 900}, &quot;kind&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;album&quot;, &quot;artist&quot;, &quot;playlist&quot;], &quot;default&quot;: &quot;album&quot;, &quot;tsType&quot;: &quot;'album' | 'artist' | 'playlist'&quot;}, &quot;playlistId&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;liked&quot;, &quot;late&quot;, &quot;sunday&quot;, &quot;boleros&quot;, &quot;run&quot;, &quot;octive&quot;, &quot;car&quot;], &quot;default&quot;: &quot;late&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;mono&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;ui-monospace, Menlo, monospace&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;backLabel&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;onBack&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}, &quot;onPlay&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}}">
+const art = (h) => `repeating-linear-gradient(135deg, oklch(0.42 0.07 ${h}) 0 2px, oklch(0.35 0.06 ${h}) 2px 10px)`
+const ALBUM = [['Mi Amor No Se Olvida', '3:01'], ['Esclavo Y Amo', '3:35'], ['Ya No Me Quieres', '0:49'], ['Eso No Lo He Dicho Yo', '3:08'], ['El León', '2:46'], ['El Muchacho De Los Ojos Tristes', '3:40'], ['Mentira Salomé', '3:12'], ['Puedes Decir de Mí', '3:22'], ['Tú Me Acostumbraste', '2:58'], ['Cariño Malo', '3:30'], ['Noble Metals', '3:32'], ['Paso La Vida Pensando', '4:01']]
+const PLAYLIST = [['Primos', 'Adrian Quesada', 'Look At My Soul', '3:41', 330], ['Time (You and I)', 'Khruangbin', 'Mordechai', '4:17', 40], ['Reckoner', 'Radiohead', 'In Rainbows', '4:50', 300], ['Wild Is the Wind', 'Nina Simone', 'Wild Is the Wind', '6:57', 350], ['Teardrop', 'Massive Attack', 'Mezzanine', '5:29', 220], ['Digital Love', 'Daft Punk', 'Discovery', '4:58', 200], ['Texas Sun', 'Khruangbin & Leon Bridges', 'Texas Sun', '4:12', 60], ['Colors', 'Black Pumas', 'Black Pumas', '4:08', 120]]
+const PLS = {
+  liked: { eyebrow: 'PLAYLIST · LINKED TO THUMBS UP', title: 'Liked', by: '', meta: '128 songs · 8h 41m · always first', liked: true, hues: [], foot: 'Every song you give a thumbs up lands here, newest first. Liked can be renamed but never deleted.' },
+  late: { eyebrow: 'PLAYLIST · PRIVATE', title: 'Late night', by: '', meta: '42 songs · 2h 50m · updated yesterday', hues: [260, 40, 300, 350], foot: 'Drag rows to reorder. Changes save as you go.' },
+  sunday: { eyebrow: 'PLAYLIST · PUBLIC', title: 'Sunday cooking', by: '', meta: '31 songs · 1h 58m · updated Oct 12', hues: [95, 120, 25, 60], foot: 'Public playlists can be read by Subsonic clients on your network.' },
+  boleros: { eyebrow: 'PLAYLIST · PRIVATE', title: 'Boleros', by: '', meta: '22 songs · 1h 14m', hues: [330, 336, 180, 25], foot: 'Drag rows to reorder. Changes save as you go.' },
+  run: { eyebrow: 'PLAYLIST · PRIVATE', title: 'Run club', by: '', meta: '60 songs · 3h 30m', hues: [20, 200, 70, 280], foot: 'Drag rows to reorder. Changes save as you go.' },
+  octive: { eyebrow: 'PLAYLIST · MADE WITH OCTIVE', title: '90s favourites', by: '', meta: '16 songs · 61 min · from “An hour of my favourite 90s music”', hues: [280, 220, 300, 200], foot: 'Saved from a music bot preview. Edit it like any other playlist.' },
+  car: { eyebrow: 'PLAYLIST · IMPORTED FROM NAVIDROME', title: 'Car', by: '', meta: '88 songs · 5h 6m', hues: [280, 150, 230, 10], foot: 'Imported Oct 12 with play counts and likes.' },
+}
+class Component extends DCLogic {
+  renderVals() {
+    try { return this.vals() } catch (e) { console.warn('COLL ERR ' + e.message + ' ' + e.stack) ; return {} }
+  }
+  vals() {
+    const kind = this.props.kind ?? 'album'
+    const mono = this.props.mono ?? 'ui-monospace, Menlo, monospace'
+    const one = (h) => [{ span: '1 / span 2', bg: art(h) }]
+    const D = {
+      album: { eyebrow: 'ALBUM · 2022', title: 'Boleros Psicodélicos', by: 'Adrian Quesada', meta: '12 songs · 38 min · Opus 132 kbps', extra: [{ icon: 'list-plus', text: 'Queue', label: 'Add to queue' }, { icon: 'ellipsis', text: '', label: 'More' }], foot: 'Released 2022 · ATO Records · Latin, Psychedelic soul · /music/Adrian Quesada/Boleros Psicodélicos' },
+      artist: { eyebrow: 'ARTIST', title: 'Adrian Quesada', by: '', meta: '5 albums · 63 songs · 412 plays', extra: [{ icon: 'list-music', text: 'All songs', label: 'All songs' }, { icon: 'heart', text: '', label: 'Favourite' }], foot: '' },
+      playlist: { ...PLS[this.props.playlistId ?? 'late'] ?? PLS.late, editable: (this.props.playlistId ?? 'late') !== 'liked', extra: [{ icon: 'plus', text: 'Add songs', label: 'Add songs' }, { icon: 'ellipsis', text: '', label: 'More' }], foot: 'Drag rows to reorder. Changes save as you go.' },
+    }[kind]
+    const pl = PLS[this.props.playlistId ?? 'late'] ?? PLS.late
+    const cover = kind === 'playlist' ? (pl.liked ? [{ span: '1 / span 2', bg: 'linear-gradient(160deg,#c3e4a2,#7fa86a)' }] : pl.hues.map((h) => ({ span: 'auto', bg: art(h) }))) : one(330)
+    const tracks = kind === 'album'
+      ? ALBUM.map(([t, d], i) => ({ n: i + 1, t, d, a: i === 0 ? 'Adrian Quesada feat. Gabe Vega' : 'Adrian Quesada', c3: ['Bolero', 'Latin', 'Soul'][i % 3], plays: [9, 14, 3, 18, 22, 11, 6, 4, 8, 5, 12, 7][i], liked: [1, 3, 4].includes(i), thumb: false, bg: i === 3 ? '#17201b' : 'transparent', tc: i === 3 ? '#c3e4a2' : '#e8ece8', nc: i === 3 ? '#c3e4a2' : '#819088' }))
+      : PLAYLIST.map(([t, a, al, d, h], i) => ({ n: i + 1, t, a, d, c3: al, plays: [41, 33, 22, 27, 15, 19, 12, 9][i], liked: i < 3, thumb: true, art: art(h), bg: 'transparent', tc: '#e8ece8', nc: '#819088' }))
+    const popRaw = [[2019, 34], [2020, 58], [2021, 142], [2022, 128], [2023, 50]]
+    return {
+      mono, info: D, cover, isLiked: kind === 'playlist' && !!pl.liked, coverR: kind === 'artist' ? '50%' : '14px',
+      back: () => this.props.onBack?.(), backLabel: this.props.backLabel ?? { album: 'Albums', artist: 'Artists', playlist: 'Playlists' }[kind],
+      play: () => this.props.onPlay?.(),
+      isArtist: kind === 'artist', hasTracks: kind !== 'artist', tracks,
+      cols: kind === 'album' ? '28px minmax(0,2fr) minmax(0,0.8fr) 52px 52px' : '28px minmax(0,2fr) minmax(0,1.2fr) 52px 52px',
+      col3: kind === 'album' ? 'GENRE' : 'ALBUM',
+      top: [['Primos', 'Look At My Soul', 41, '3:41', 180], ['Eso No Lo He Dicho Yo', 'Boleros Psicodélicos', 18, '3:08', 330], ['El León', 'Boleros Psicodélicos', 22, '2:46', 330], ['I’ve Got Soul', 'I’ve Got Soul', 15, '3:20', 25], ['Mentira Salomé', 'Boleros Psicodélicos', 11, '3:12', 330]].map(([t, al, plays, d, h], i) => ({ n: i + 1, t, al, plays, d, art: art(h) })),
+      pop: popRaw.map(([y, v]) => ({ y, v, h: Math.round((v / 142) * 78) + '%', c: v === 142 ? '#c3e4a2' : '#3d4b43' })),
+      discog: [['The Infinite Pause', 2023, 8, 160], ['Boleros Psicodélicos', 2022, 12, 330], ['Look At My Soul', 2021, 13, 180], ['I’ve Got Soul', 2021, 1, 25], ['Jaguar Sound', 2019, 10, 150]].map(([t, y, n, h]) => ({ t, y, n, art: art(h) })),
+    }
+  }
+}
+
+</script>
+</body>
+</html>

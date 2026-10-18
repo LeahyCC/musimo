@@ -1,0 +1,1096 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Musimo · Direction A</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700&display=swap" rel="stylesheet">
+<script src="./icon.js"></script>
+<script src="./viz.js"></script>
+<style>html{color-scheme:dark}*{scrollbar-color:#2a3630 transparent;scrollbar-width:thin}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a3630;border-radius:10px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-corner{background:transparent}
+
+body{margin:0;background:#111716}
+*{box-sizing:border-box}
+a{color:#c3e4a2;text-decoration:none}
+a:hover{color:#d9ff73}
+button{font:inherit;cursor:pointer}
+input,select{font:inherit}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#2a3630;border-radius:10px;border:3px solid transparent;background-clip:padding-box}
+</style>
+</helmet>
+<div style="height:{{ rootH }};width:100%;display:flex;background:#111716;color:#e8ece8;font-family:Inter,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;position:relative;overflow:hidden;font-feature-settings:'tnum' 1,'cv11' 1">
+
+  <!-- Desktop sidebar -->
+  <sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+    <aside style="width:224px;flex:none;display:flex;flex-direction:column;gap:2px;background:#0e1312;border-right:1px solid #2a3630;padding:20px 12px 14px;overflow-y:auto;overflow-x:hidden">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:0 10px 18px">
+        <span style="font-size:22px;font-weight:650;letter-spacing:-0.8px">musimo<span style="color:#c3e4a2">.</span></span>
+      </div>
+      <sc-for list="{{ navTop }}" as="n" hint-placeholder-count="3">
+        <button onClick="{{ n.go }}" style="flex:none;display:flex;align-items:center;gap:11px;height:36px;padding:0 10px;border:0;border-radius:8px;background:{{ n.bg }};color:{{ n.fg }};font-size:14px;text-align:left" style-hover="color:#e8ece8">
+          <m-i n="{{ n.icon }}" s="18"></m-i><span style="flex:1">{{ n.label }}</span>
+          <span style="font-size:11px;color:#819088">{{ n.hint }}</span>
+        </button>
+      </sc-for>
+      <div style="padding:20px 10px 8px;font-size:11px;font-weight:600;letter-spacing:0.6px;color:#819088">LIBRARY</div>
+      <sc-for list="{{ navLib }}" as="n" hint-placeholder-count="4">
+        <button onClick="{{ n.go }}" style="flex:none;display:flex;align-items:center;gap:11px;height:36px;padding:0 10px;border:0;border-radius:8px;background:{{ n.bg }};color:{{ n.fg }};font-size:14px;text-align:left" style-hover="color:#e8ece8">
+          <m-i n="{{ n.icon }}" s="18"></m-i><span style="flex:1">{{ n.label }}</span>
+          <span style="font-size:11px;color:#819088">{{ n.hint }}</span>
+        </button>
+      </sc-for>
+      <div style="padding:20px 10px 8px;font-size:11px;font-weight:600;letter-spacing:0.6px;color:#819088">PINNED</div>
+      <sc-for list="{{ pinned }}" as="p" hint-placeholder-count="3">
+        <button onClick="{{ p.go }}" style="flex:none;display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:#93a39b;font-size:13px;text-align:left" style-hover="background:#151c19;color:#e8ece8">
+          <span style="width:20px;height:20px;border-radius:4px;flex:none;display:grid;place-items:center;background:{{ p.art }};color:#172014"><sc-if value="{{ p.liked }}" hint-placeholder-val="{{ false }}"><m-i n="heart" s="11" fill></m-i></sc-if></span>
+          <span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ p.name }}</span>
+        </button>
+      </sc-for>
+      <div style="flex:1;min-height:20px"></div>
+      <sc-for list="{{ navSys }}" as="n" hint-placeholder-count="3">
+        <button onClick="{{ n.go }}" style="flex:none;display:flex;align-items:center;gap:11px;height:34px;padding:0 10px;border:0;border-radius:8px;background:{{ n.bg }};color:{{ n.fg }};font-size:13px;text-align:left" style-hover="color:#e8ece8">
+          <m-i n="{{ n.icon }}" s="17"></m-i><span style="flex:1">{{ n.label }}</span>
+          <sc-if value="{{ n.badge }}" hint-placeholder-val="{{ false }}"><span style="min-width:20px;height:18px;padding:0 6px;border-radius:999px;background:#c3e4a2;color:#172014;font-size:11px;font-weight:650;display:grid;place-items:center">3</span></sc-if>
+        </button>
+      </sc-for>
+      <div style="display:flex;align-items:center;gap:8px;margin:12px 10px 0;padding-top:12px;border-top:1px solid #2a3630;font-size:11px;color:#819088">
+        <i style="width:6px;height:6px;border-radius:50%;background:#c3e4a2"></i>Live · v0.4.0
+        <a href="#" style="margin-left:auto;display:inline-flex;align-items:center;gap:5px;color:#819088" style-hover="color:#efbaa2"><m-i n="heart" s="12"></m-i>Support</a>
+      </div>
+    </aside>
+  </sc-if>
+
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column;position:relative">
+    <!-- Desktop top bar -->
+    <sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+      <header style="flex:none;height:60px;display:flex;align-items:center;gap:16px;padding:0 32px;border-bottom:1px solid #2a3630;background:#111716">
+        <label style="flex:1;max-width:560px;height:38px;display:flex;align-items:center;gap:10px;padding:0 12px;border-radius:10px;background:#151c19;border:1px solid #2a3630;color:#819088">
+          <m-i n="search" s="17"></m-i>
+          <input value="{{ query }}" onChange="{{ onQuery }}" onFocus="{{ goSearch }}" placeholder="Search the catalog, your library, or paste a link" style="flex:1;min-width:0;border:0;background:transparent;color:#e8ece8;font-size:13px;outline:0">
+          <kbd style="font-family:inherit;font-size:11px;color:#819088;border:1px solid #344035;border-radius:4px;padding:1px 6px">/</kbd>
+        </label>
+        <div style="flex:1"></div>
+        <button onClick="{{ openPalette }}" aria-label="Command palette" style="display:inline-flex;align-items:center;gap:6px;height:34px;padding:0 10px;border-radius:9px;border:1px solid #2a3630;background:transparent;color:#93a39b;font-size:12px" style-hover="border-color:#344035;color:#e8ece8"><m-i n="command" s="14"></m-i>K</button>
+        <button onClick="{{ goBot }}" style="display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 12px 0 6px;border-radius:999px;border:1px solid #2a3630;background:transparent;color:#e8ece8;font-size:12px" style-hover="border-color:#4b6743">
+          <span style="position:relative;width:24px;height:24px;flex:none">
+            <span style="position:absolute;left:14%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(30% 0,100% 78%,0 100%);transform:rotate(-4deg)"></span>
+            <span style="position:absolute;left:56%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(70% 0,100% 100%,0 78%);transform:rotate(4deg)"></span>
+            <span style="position:absolute;left:12%;top:26%;width:76%;height:66%;background:#c3e4a2;border-radius:46% 46% 40% 40%/52% 52% 42% 42%"></span>
+            <span style="position:absolute;left:28.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+            <span style="position:absolute;left:60.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+          </span>
+          Ask Octive
+        </button>
+      </header>
+    </sc-if>
+
+    <main style="flex:1;min-height:0;overflow-y:auto;overflow-x:hidden;container-type:inline-size">
+      <div style="max-width:1320px;margin:0 auto;padding:{{ padTop }} clamp(16px,3.2cqi,40px) 40px">
+
+        <!-- ============ HOME ============ -->
+        <sc-if value="{{ firstRun }}" hint-placeholder-val="{{ false }}"><dc-import name="Musimo Welcome" hint-size="100%,700px"></dc-import></sc-if>
+        <sc-if value="{{ homeFull }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;margin-bottom:24px">
+            <div>
+              <h1 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-0.7px">Good evening</h1>
+              <p style="margin:6px 0 0;color:#93a39b;font-size:13px">8,503 albums · 61,204 songs · 1,912 artists</p>
+            </div>
+            <sc-if value="{{ phone }}" hint-placeholder-val="{{ false }}">
+              <div style="display:flex;gap:4px">
+                <button onClick="{{ goDiag }}" aria-label="Diagnostics" style="width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:10px;background:#151c19;color:#93a39b"><m-i n="activity" s="18"></m-i></button>
+                <button onClick="{{ goSettings }}" aria-label="Settings" style="width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:10px;background:#151c19;color:#93a39b"><m-i n="settings-2" s="18"></m-i></button>
+              </div>
+            </sc-if>
+          </div>
+
+          <div style="display:flex;flex-wrap:wrap;gap:16px;margin-bottom:32px">
+            <sc-if value="{{ hs.continue }}" hint-placeholder-val="{{ true }}"><section style="flex:2 1 420px;min-width:0;display:flex;gap:20px;padding:18px;border-radius:14px;background:#17201b;border:1px solid #2a3630;flex-wrap:wrap">
+              <div style="width:148px;aspect-ratio:1;border-radius:10px;flex:none;background:{{ np.art }};position:relative;overflow:hidden">
+                <span style="position:absolute;left:8px;bottom:6px;font:10px ui-monospace,Menlo,monospace;color:#e8ece8;opacity:.6">album art</span>
+              </div>
+              <div style="flex:1 1 200px;min-width:0;display:flex;flex-direction:column">
+                <div style="font-size:11px;font-weight:600;letter-spacing:0.6px;color:#819088">CONTINUE LISTENING</div>
+                <div style="margin-top:8px;font-size:20px;font-weight:600;letter-spacing:-0.3px">{{ np.title }}</div>
+                <div style="margin-top:4px;color:#93a39b">{{ np.artist }} · {{ np.album }}</div>
+                <div style="margin-top:6px;color:#819088;font-size:12px">Track 4 of 79 · from artist Adrian Quesada</div>
+                <div style="flex:1;min-height:16px"></div>
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span style="font-size:11px;color:#819088">0:58</span>
+                  <div style="flex:1;height:4px;border-radius:4px;background:#344035"><div style="width:31%;height:100%;border-radius:4px;background:#c3e4a2"></div></div>
+                  <span style="font-size:11px;color:#819088">3:08</span>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:14px;flex-wrap:wrap">
+                  <button onClick="{{ togglePlay }}" style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;border-radius:8px;border:0;background:#c3e4a2;color:#172014;font-size:13px;font-weight:600"><m-i n="{{ playIcon }}" s="15" fill></m-i>{{ playLabel }}</button>
+                  <button onClick="{{ goNP }}" style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px;font-weight:500">Open Now Playing</button>
+                </div>
+              </div>
+            </section></sc-if>
+            <sc-if value="{{ hs.stats }}" hint-placeholder-val="{{ true }}"><section style="flex:1 1 280px;min-width:0;padding:18px;border-radius:14px;background:#17201b;border:1px solid #2a3630">
+              <div style="display:flex;justify-content:space-between;align-items:baseline">
+                <div style="font-size:11px;font-weight:600;letter-spacing:0.6px;color:#819088">THIS WEEK</div>
+                <span style="font-size:11px;color:#819088">Oct 11 – 17</span>
+              </div>
+              <div style="display:grid;grid-template-columns:1fr 1fr;gap:18px 16px;margin-top:16px">
+                <sc-for list="{{ stats }}" as="st" hint-placeholder-count="4">
+                  <div>
+                    <div style="font-size:24px;font-weight:600;letter-spacing:-0.6px">{{ st.v }}</div>
+                    <div style="margin-top:2px;font-size:12px;color:#93a39b">{{ st.k }}</div>
+                  </div>
+                </sc-for>
+              </div>
+              <div style="display:flex;align-items:flex-end;gap:5px;height:44px;margin-top:18px">
+                <sc-for list="{{ week }}" as="w" hint-placeholder-count="7">
+                  <div style="flex:1;height:100%;display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:4px">
+                    <div style="flex:none;width:100%;height:{{ w.h }};border-radius:3px;background:{{ w.c }}"></div>
+                    <span style="font-size:10px;color:#819088">{{ w.d }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </section></sc-if>
+          </div>
+
+          <sc-if value="{{ hs.jump }}" hint-placeholder-val="{{ true }}"><section style="margin-bottom:32px">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
+              <h2 style="margin:0;font-size:16px;font-weight:600">Jump back in</h2>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:8px">
+              <sc-for list="{{ recent }}" as="r" hint-placeholder-count="6">
+                <button onClick="{{ r.go }}" style="display:flex;align-items:center;gap:12px;padding:0 12px 0 0;height:56px;border-radius:10px;border:0;background:#17201b;color:#e8ece8;text-align:left;overflow:hidden" style-hover="background:#1e2a23">
+                  <span style="width:56px;height:56px;flex:none;background:{{ r.art }};display:grid;place-items:center;color:#172014"><sc-if value="{{ r.liked }}" hint-placeholder-val="{{ false }}"><m-i n="heart" s="20" fill></m-i></sc-if></span>
+                  <span style="min-width:0;flex:1">
+                    <span style="display:block;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.t }}</span>
+                    <span style="display:block;font-size:12px;color:#93a39b;margin-top:2px">{{ r.k }}</span>
+                  </span>
+                </button>
+              </sc-for>
+            </div>
+          </section></sc-if>
+
+          <sc-if value="{{ hs.fresh }}" hint-placeholder-val="{{ true }}"><section style="margin-bottom:32px">
+            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
+              <h2 style="margin:0;font-size:16px;font-weight:600">Recently added</h2>
+              <button onClick="{{ goAlbums }}" style="border:0;background:none;color:#93a39b;font-size:12px" style-hover="color:#c3e4a2">See all albums</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:20px 16px">
+              <sc-for list="{{ fresh }}" as="al" hint-placeholder-count="6">
+                <div style="min-width:0;cursor:pointer" onClick="{{ goAlbum }}">
+                  <div style="aspect-ratio:1;border-radius:10px;background:{{ al.art }}"></div>
+                  <div style="margin-top:9px;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.t }}</div>
+                  <div style="margin-top:2px;font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.a }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </section></sc-if>
+
+          <div style="display:flex;flex-wrap:wrap;gap:16px">
+            <sc-if value="{{ hs.mostPlayed }}" hint-placeholder-val="{{ true }}"><section style="flex:3 1 420px;min-width:0">
+              <h2 style="margin:0 0 14px;font-size:16px;font-weight:600">On repeat this month</h2>
+              <div style="border-radius:12px;border:1px solid #2a3630;overflow:hidden">
+                <sc-for list="{{ repeatTracks }}" as="tr" hint-placeholder-count="5">
+                  <div style="display:grid;grid-template-columns:24px 40px minmax(0,1fr) auto;align-items:center;gap:12px;padding:8px 14px;border-top:1px solid #2a3630" style-hover="background:#151c19">
+                    <span style="color:#819088;font-size:12px;text-align:right">{{ tr.n }}</span>
+                    <span style="width:40px;height:40px;border-radius:6px;background:{{ tr.art }}"></span>
+                    <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ tr.t }}</span><span style="display:block;font-size:12px;color:#93a39b">{{ tr.a }}</span></span>
+                    <span style="font-size:12px;color:#819088">{{ tr.plays }} plays</span>
+                  </div>
+                </sc-for>
+              </div>
+            </section></sc-if>
+            <sc-if value="{{ hs.octive }}" hint-placeholder-val="{{ true }}"><section style="flex:2 1 300px;min-width:0;padding:18px;border-radius:14px;background:#151c19;border:1px solid #2a3630;align-self:flex-start">
+              <div style="display:flex;align-items:center;gap:12px">
+                <span style="position:relative;width:40px;height:40px;flex:none">
+                  <span style="position:absolute;left:14%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(30% 0,100% 78%,0 100%);transform:rotate(-4deg)"></span>
+                  <span style="position:absolute;left:56%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(70% 0,100% 100%,0 78%);transform:rotate(4deg)"></span>
+                  <span style="position:absolute;left:12%;top:26%;width:76%;height:66%;background:#c3e4a2;border-radius:46% 46% 40% 40%/52% 52% 42% 42%"></span>
+                  <span style="position:absolute;left:28.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+                  <span style="position:absolute;left:60.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+                  <span style="position:absolute;left:46.5%;top:58%;width:7%;height:5.5%;background:#172014;border-radius:45% 45% 60% 60%"></span>
+                </span>
+                <div><div style="font-weight:600;font-size:14px">Octive can build a queue</div><div style="font-size:12px;color:#93a39b;margin-top:2px">From your tags, likes and play history.</div></div>
+              </div>
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:16px">
+                <sc-for list="{{ prompts }}" as="pr" hint-placeholder-count="4">
+                  <button onClick="{{ goBot }}" style="height:32px;padding:0 12px;border-radius:999px;border:1px solid #344035;background:#17201b;color:#e8ece8;font-size:12px" style-hover="border-color:#4b6743;color:#c3e4a2">{{ pr }}</button>
+                </sc-for>
+              </div>
+            </section></sc-if>
+          </div>
+        </sc-if>
+
+        <!-- ============ LIBRARY COLLECTION PAGES ============ -->
+        <sc-if value="{{ isLib }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px">
+            <div>
+              <h1 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-0.7px">{{ lib.title }}</h1>
+              <p style="margin:6px 0 0;color:#93a39b;font-size:13px">{{ lib.count }}</p>
+            </div>
+            <div style="display:flex;gap:8px">
+              <sc-if value="{{ s.tracks }}" hint-placeholder-val="{{ false }}">
+                <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;border-radius:8px;border:0;background:#c3e4a2;color:#172014;font-size:13px;font-weight:600"><m-i n="play" s="15" fill></m-i>Play all</button>
+                <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px;font-weight:500"><m-i n="shuffle" s="15"></m-i>Shuffle</button>
+              </sc-if>
+              <sc-if value="{{ s.playlists }}" hint-placeholder-val="{{ false }}">
+                <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 16px;border-radius:8px;border:0;background:#c3e4a2;color:#172014;font-size:13px;font-weight:600"><m-i n="plus" s="16"></m-i>New playlist</button>
+              </sc-if>
+            </div>
+          </div>
+          <sc-if value="{{ phone }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;gap:6px;margin:0 -16px 14px;padding:0 16px;overflow-x:auto;scrollbar-width:none">
+              <sc-for list="{{ libChips }}" as="c" hint-placeholder-count="4">
+                <button onClick="{{ c.go }}" style="flex:none;height:36px;padding:0 14px;border-radius:999px;border:1px solid {{ c.line }};background:{{ c.bg }};color:{{ c.fg }};font-size:13px;font-weight:500">{{ c.label }}</button>
+              </sc-for>
+            </div>
+          </sc-if>
+          <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:22px">
+            <label style="flex:1 1 220px;max-width:340px;height:36px;display:flex;align-items:center;gap:8px;padding:0 11px;border-radius:8px;border:1px solid #2a3630;background:#151c19;color:#819088">
+              <m-i n="search" s="15"></m-i>
+              <input placeholder="{{ lib.search }}" style="flex:1;min-width:0;border:0;background:transparent;color:#e8ece8;font-size:13px;outline:0">
+            </label>
+            <sc-for list="{{ lib.filters }}" as="f" hint-placeholder-count="3">
+              <button style="height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 10px 0 12px;border-radius:8px;border:1px solid {{ f.line }};background:{{ f.bg }};color:#e8ece8;font-size:13px">
+                <span style="color:#93a39b">{{ f.k }}</span>{{ f.v }}<m-i n="chevron-down" s="14"></m-i>
+              </button>
+            </sc-for>
+            <div style="flex:1"></div>
+            <sc-if value="{{ lib.toggle }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;padding:2px;border-radius:8px;border:1px solid #2a3630;background:#151c19">
+                <button onClick="{{ setGrid }}" aria-label="Grid" style="width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:6px;background:{{ gridBg }};color:{{ gridFg }}"><m-i n="grid-2x2" s="15"></m-i></button>
+                <button onClick="{{ setList }}" aria-label="List" style="width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:6px;background:{{ listBg }};color:{{ listFg }}"><m-i n="list" s="15"></m-i></button>
+              </div>
+            </sc-if>
+          </div>
+
+          <!-- Albums -->
+          <sc-if value="{{ albumsGrid }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(156px,1fr));gap:24px 18px">
+              <sc-for list="{{ albums }}" as="al" hint-placeholder-count="12">
+                <div style="min-width:0;cursor:pointer" onClick="{{ goAlbum }}">
+                  <div style="position:relative;aspect-ratio:1;border-radius:10px;background:{{ al.art }}" style-hover="filter:brightness(1.12)">
+                    <span style="position:absolute;right:8px;bottom:8px;width:36px;height:36px;border-radius:50%;background:#c3e4a2;color:#172014;display:grid;place-items:center;box-shadow:0 6px 16px rgba(0,0,0,.4)"><m-i n="play" s="15" fill></m-i></span>
+                  </div>
+                  <div style="margin-top:9px;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.t }}</div>
+                  <div style="margin-top:2px;font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.a }} · {{ al.y }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+          <sc-if value="{{ albumsList }}" hint-placeholder-val="{{ false }}">
+            <div style="border-radius:12px;border:1px solid #2a3630;overflow:hidden">
+              <sc-for list="{{ albums }}" as="al" hint-placeholder-count="10">
+                <div style="display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:12px;padding:8px 8px 8px 12px;border-top:1px solid #2a3630" style-hover="background:#151c19">
+                  <span style="width:44px;height:44px;border-radius:6px;background:{{ al.art }}"></span>
+                  <span style="min-width:0"><span style="display:block;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ al.t }}</span><span style="display:block;font-size:12px;color:#93a39b;margin-top:2px">{{ al.a }} · {{ al.y }} · {{ al.n }} songs</span></span>
+                  <span style="display:flex;color:#93a39b">
+                    <button aria-label="Play" style="width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:inherit" style-hover="background:#1e2a23;color:#c3e4a2"><m-i n="play" s="16" fill></m-i></button>
+                    <button aria-label="Shuffle" style="width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:inherit" style-hover="background:#1e2a23;color:#e8ece8"><m-i n="shuffle" s="16"></m-i></button>
+                    <button aria-label="More" style="width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:inherit" style-hover="background:#1e2a23;color:#e8ece8"><m-i n="ellipsis" s="16"></m-i></button>
+                  </span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- Artists -->
+          <sc-if value="{{ s.artists }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:24px 18px">
+              <sc-for list="{{ artists }}" as="ar" hint-placeholder-count="12">
+                <div style="min-width:0;text-align:center;cursor:pointer" onClick="{{ goArtist }}">
+                  <div style="aspect-ratio:1;border-radius:50%;background:{{ ar.art }}"></div>
+                  <div style="margin-top:10px;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ar.name }}</div>
+                  <div style="margin-top:2px;font-size:12px;color:#93a39b">{{ ar.n }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- Tracks -->
+          <sc-if value="{{ s.tracks }}" hint-placeholder-val="{{ false }}">
+            <div style="border-radius:12px;border:1px solid #2a3630;overflow:hidden">
+              <div style="display:grid;grid-template-columns:28px minmax(0,2fr) minmax(0,1.4fr) 56px 56px;gap:14px;padding:10px 14px;font-size:11px;font-weight:600;letter-spacing:0.5px;color:#819088;background:#151c19">
+                <span style="text-align:right">#</span><span>TITLE</span><span>ALBUM</span><span style="text-align:right">PLAYS</span><span style="text-align:right">TIME</span>
+              </div>
+              <sc-for list="{{ trackRows }}" as="tr" hint-placeholder-count="10">
+                <div style="display:grid;grid-template-columns:28px minmax(0,2fr) minmax(0,1.4fr) 56px 56px;align-items:center;gap:14px;padding:8px 14px;border-top:1px solid #2a3630;background:{{ tr.bg }}" style-hover="background:#151c19">
+                  <span style="text-align:right;font-size:12px;color:{{ tr.nc }}">{{ tr.n }}</span>
+                  <span style="min-width:0;display:flex;align-items:center;gap:10px">
+                    <span style="width:36px;height:36px;border-radius:5px;flex:none;background:{{ tr.art }}"></span>
+                    <span style="min-width:0"><span style="display:block;font-weight:500;color:{{ tr.tc }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ tr.t }}</span><span style="display:block;font-size:12px;color:#93a39b">{{ tr.a }}</span></span>
+                  </span>
+                  <span style="font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ tr.al }}</span>
+                  <span style="text-align:right;font-size:12px;color:#819088">{{ tr.plays }}</span>
+                  <span style="text-align:right;font-size:12px;color:#93a39b">{{ tr.d }}</span>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+
+          <!-- Playlists -->
+          <sc-if value="{{ s.playlists }}" hint-placeholder-val="{{ false }}">
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(170px,1fr));gap:24px 18px">
+              <sc-for list="{{ playlists }}" as="pl" hint-placeholder-count="8">
+                <div style="min-width:0;cursor:pointer" onClick="{{ pl.go }}">
+                  <div style="position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;display:grid;grid-template-columns:1fr 1fr;grid-template-rows:1fr 1fr;background:#17201b">
+                    <span style="background:{{ pl.a1 }}"></span><span style="background:{{ pl.a2 }}"></span><span style="background:{{ pl.a3 }}"></span><span style="background:{{ pl.a4 }}"></span>
+                    <sc-if value="{{ pl.liked }}" hint-placeholder-val="{{ false }}">
+                      <span style="position:absolute;inset:0;display:grid;place-items:center;background:linear-gradient(160deg,#c3e4a2,#7fa86a);color:#172014"><m-i n="heart" s="44" fill></m-i></span>
+                    </sc-if>
+                  </div>
+                  <div style="margin-top:9px;font-weight:600;font-size:13px;display:flex;align-items:center;gap:6px">{{ pl.name }}</div>
+                  <div style="margin-top:2px;font-size:12px;color:#93a39b">{{ pl.meta }}</div>
+                </div>
+              </sc-for>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <!-- ============ DETAIL ============ -->
+        <sc-if value="{{ isDetail }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="Musimo Collection" kind="{{ detailKind }}" playlist-id="{{ plId }}" on-back="{{ detailBack }}" on-play="{{ goNP }}" hint-size="100%,900px"></dc-import>
+        </sc-if>
+
+        <!-- ============ CATALOG PAGES ============ -->
+        <sc-if value="{{ isCatalog }}" hint-placeholder-val="{{ false }}">
+          <dc-import name="Musimo Catalog" kind="{{ catKind }}" on-back="{{ goSearch }}" on-open-artist="{{ goCArtist }}" on-open-album="{{ goCAlbum }}" on-download-all="{{ openArtistDl }}" hint-size="100%,900px"></dc-import>
+        </sc-if>
+
+        <!-- ============ SEARCH ============ -->
+        <sc-if value="{{ s.search }}" hint-placeholder-val="{{ false }}">
+          <sc-if value="{{ phone }}" hint-placeholder-val="{{ false }}">
+            <label style="height:44px;display:flex;align-items:center;gap:10px;padding:0 12px;border-radius:10px;background:#151c19;border:1px solid #2a3630;color:#819088;margin-bottom:16px">
+              <m-i n="search" s="18"></m-i>
+              <input value="{{ query }}" onChange="{{ onQuery }}" placeholder="Search or paste a link" style="flex:1;min-width:0;border:0;background:transparent;color:#e8ece8;font-size:16px;outline:0">
+            </label>
+          </sc-if>
+          <div style="display:flex;align-items:center;gap:6px;margin-bottom:24px;overflow-x:auto;scrollbar-width:none">
+            <sc-for list="{{ searchTabs }}" as="c" hint-placeholder-count="5">
+              <button onClick="{{ c.go }}" style="flex:none;height:32px;padding:0 14px;border-radius:999px;border:1px solid {{ c.line }};background:{{ c.bg }};color:{{ c.fg }};font-size:13px;font-weight:500">{{ c.label }}</button>
+            </sc-for>
+            <div style="flex:1"></div>
+            <span style="flex:none;font-size:12px;color:#819088">Checked against your library</span>
+          </div>
+          <div style="display:flex;flex-wrap:wrap;gap:24px;margin-bottom:32px">
+            <section style="flex:1 1 300px;min-width:0">
+              <h2 style="margin:0 0 14px;font-size:16px;font-weight:600">Top result</h2>
+              <div onClick="{{ goCArtist }}" style="cursor:pointer;padding:20px;border-radius:14px;background:#17201b;border:1px solid #2a3630" style-hover="border-color:#4b6743">
+                <div style="width:96px;height:96px;border-radius:50%;background:{{ topArt }}"></div>
+                <div style="margin-top:16px;font-size:24px;font-weight:600;letter-spacing:-0.5px">Khruangbin</div>
+                <div style="display:flex;align-items:center;gap:8px;margin-top:6px;color:#93a39b;font-size:12px">Artist · 9 releases
+                  <span style="display:inline-flex;align-items:center;gap:4px;padding:3px 7px;border-radius:4px;background:#2a3a27;color:#c3e4a2;font-size:11px"><m-i n="check" s="11"></m-i>6 in library</span>
+                </div>
+                <div style="display:flex;gap:8px;margin-top:18px;flex-wrap:wrap">
+                  <button onClick="{{ openArtistDl }}" style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px;font-weight:500"><m-i n="arrow-down-to-line" s="15"></m-i>Get missing albums</button>
+                </div>
+              </div>
+            </section>
+            <section style="flex:2 1 420px;min-width:0">
+              <h2 style="margin:0 0 14px;font-size:16px;font-weight:600">Tracks</h2>
+              <div style="border-radius:12px;border:1px solid #2a3630;overflow:hidden">
+                <sc-for list="{{ catTracks }}" as="ct" hint-placeholder-count="5">
+                  <div style="display:grid;grid-template-columns:40px minmax(0,1fr) auto 40px auto;align-items:center;gap:12px;padding:8px 10px 8px 12px;border-top:1px solid #2a3630" style-hover="background:#151c19">
+                    <span style="position:relative;width:40px;height:40px;border-radius:6px;background:{{ ct.art }};display:grid;place-items:center;color:#e8ece8"><m-i n="play" s="14" fill></m-i></span>
+                    <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ct.t }}</span><span style="display:block;font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ct.a }}</span></span>
+                    <span style="padding:3px 7px;border-radius:4px;font-size:11px;white-space:nowrap;background:{{ ct.bbg }};color:{{ ct.bfg }}">{{ ct.badge }}</span>
+                    <span style="font-size:12px;color:#819088;text-align:right">{{ ct.d }}</span>
+                    <button aria-label="Download" style="width:36px;height:36px;display:grid;place-items:center;border:1px solid #2a3630;border-radius:8px;background:transparent;color:{{ ct.dc }}" style-hover="border-color:#4b6743"><m-i n="{{ ct.di }}" s="16"></m-i></button>
+                  </div>
+                </sc-for>
+              </div>
+            </section>
+          </div>
+          <section>
+            <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:14px">
+              <h2 style="margin:0;font-size:16px;font-weight:600">Albums</h2>
+              <button style="border:0;background:none;color:#93a39b;font-size:12px">View all 9</button>
+            </div>
+            <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(156px,1fr));gap:24px 18px">
+              <sc-for list="{{ catAlbums }}" as="ca" hint-placeholder-count="5">
+                <div style="min-width:0;cursor:pointer" onClick="{{ goCAlbum }}">
+                  <div style="position:relative;aspect-ratio:1;border-radius:10px;background:{{ ca.art }}">
+                    <span style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:8px;display:grid;place-items:center;background:rgba(17,23,22,.85);color:#c3e4a2"><m-i n="{{ ca.icon }}" s="15"></m-i></span>
+                  </div>
+                  <div style="margin-top:9px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ ca.t }}</div>
+                  <div style="margin-top:2px;font-size:12px;color:#93a39b">{{ ca.y }} · {{ ca.k }}</div>
+                  <div style="display:flex;align-items:center;gap:8px;margin-top:8px">
+                    <div style="flex:1;height:3px;border-radius:3px;background:#344035"><div style="height:100%;border-radius:3px;width:{{ ca.pct }};background:{{ ca.pc }}"></div></div>
+                    <span style="font-size:11px;color:{{ ca.pc }}">{{ ca.own }}</span>
+                  </div>
+                </div>
+              </sc-for>
+            </div>
+          </section>
+        </sc-if>
+
+        <!-- ============ NOW PLAYING ============ -->
+        <sc-if value="{{ s.nowplaying }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;flex-wrap:wrap;gap:32px;align-items:flex-start">
+            <section style="flex:1 1 360px;min-width:0;max-width:620px">
+              <div style="position:relative;width:100%;max-width:520px;aspect-ratio:1;border-radius:14px;background:{{ np.art }};box-shadow:0 30px 80px -30px rgba(0,0,0,.8)">
+                <sc-if value="{{ npViz }}" hint-placeholder-val="{{ false }}">
+                  <div style="position:absolute;inset:0;border-radius:14px;overflow:hidden;background:#020305"><m-viz preset="{{ vizPreset }}" style="position:absolute;inset:0"></m-viz></div>
+                  <div style="position:absolute;left:12px;right:12px;bottom:12px;display:flex;align-items:center;gap:6px;padding:6px 6px 6px 12px;border-radius:10px;background:rgba(0,0,0,.5);backdrop-filter:blur(6px);color:#fff">
+                    <span style="flex:1;min-width:0;font:11px ui-monospace,Menlo,monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ vizName }}</span>
+                    <button onClick="{{ vizAuto }}" style="height:28px;padding:0 10px;border:0;border-radius:7px;background:{{ vizAutoBg }};color:{{ vizAutoFg }};font-size:11px;font-weight:600">{{ vizAutoLabel }}</button>
+                    <button onClick="{{ vizPrev }}" aria-label="Previous preset" style="width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:#fff"><m-i n="chevron-left" s="15"></m-i></button>
+                    <button onClick="{{ vizNext }}" aria-label="Next preset" style="width:28px;height:28px;display:grid;place-items:center;border:0;border-radius:7px;background:transparent;color:#fff"><m-i n="chevron-right" s="15"></m-i></button>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ npArt }}" hint-placeholder-val="{{ true }}"><span style="position:absolute;left:14px;bottom:12px;font:11px ui-monospace,Menlo,monospace;color:#e8ece8;opacity:.6">album art · V for visualizer</span></sc-if>
+                <div style="position:absolute;top:12px;right:12px;display:flex;gap:6px">
+                  <button onClick="{{ toggleViz }}" aria-label="Visualizer" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;background:{{ vizBtnBg }};color:{{ vizBtnFg }}"><m-i n="audio-lines" s="16"></m-i></button>
+                  <button aria-label="Pop out" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;background:rgba(0,0,0,.45);color:#fff"><m-i n="picture-in-picture-2" s="15"></m-i></button>
+                  <button aria-label="Full screen" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;background:rgba(0,0,0,.45);color:#fff"><m-i n="maximize-2" s="15"></m-i></button>
+                </div>
+              </div>
+              <div style="display:flex;align-items:flex-start;gap:12px;margin-top:22px;max-width:520px">
+                <div style="flex:1;min-width:0">
+                  <h1 style="margin:0;font-size:26px;font-weight:600;letter-spacing:-0.6px;line-height:1.15">{{ np.title }}</h1>
+                  <div style="margin-top:6px;font-size:14px"><a href="#">{{ np.artist }}</a><span style="color:#819088"> · </span><a href="#">{{ np.album }}</a></div>
+                  <div style="display:flex;gap:6px;margin-top:10px">
+                    <span style="padding:3px 7px;border-radius:4px;border:1px solid #344035;font-size:11px;color:#93a39b">OPUS</span>
+                    <span style="padding:3px 7px;border-radius:4px;border:1px solid #344035;font-size:11px;color:#93a39b">132 kbps</span>
+                    <span style="padding:3px 7px;border-radius:4px;border:1px solid #344035;font-size:11px;color:#93a39b">2022</span>
+                  </div>
+                </div>
+                <button aria-label="Like" style="width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:10px;background:#1e2a23;color:#c3e4a2"><m-i n="thumbs-up" s="18" fill></m-i></button>
+                <button onClick="{{ openPicker }}" aria-label="Add to playlist" style="width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:10px;background:#1e2a23;color:#e8ece8"><m-i n="list-plus" s="18"></m-i></button>
+              </div>
+              <div style="display:flex;align-items:center;gap:10px;margin-top:20px;max-width:520px">
+                <span style="font-size:11px;color:#93a39b;width:30px">0:58</span>
+                <div style="flex:1;height:36px;display:flex;align-items:center;gap:2px">
+                  <sc-for list="{{ wave }}" as="b" hint-placeholder-count="80">
+                    <span style="flex:1;height:{{ b.h }};border-radius:2px;background:{{ b.c }}"></span>
+                  </sc-for>
+                </div>
+                <span style="font-size:11px;color:#93a39b;width:30px;text-align:right">3:08</span>
+              </div>
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-top:16px;max-width:520px">
+                <button aria-label="Shuffle" style="width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:#c3e4a2"><m-i n="shuffle" s="18"></m-i></button>
+                <div style="display:flex;align-items:center;gap:14px">
+                  <button aria-label="Previous" style="width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:#e8ece8"><m-i n="skip-back" s="22" fill></m-i></button>
+                  <button onClick="{{ togglePlay }}" aria-label="Play" style="width:60px;height:60px;display:grid;place-items:center;border:0;border-radius:50%;background:#c3e4a2;color:#172014"><m-i n="{{ playIcon }}" s="24" fill></m-i></button>
+                  <button aria-label="Next" style="width:44px;height:44px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:#e8ece8"><m-i n="skip-forward" s="22" fill></m-i></button>
+                </div>
+                <button aria-label="Repeat" style="width:40px;height:40px;display:grid;place-items:center;border:0;border-radius:10px;background:transparent;color:#93a39b"><m-i n="repeat" s="18"></m-i></button>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:14px;max-width:520px;color:#93a39b">
+                <button aria-label="Sleep timer" style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:inherit;font-size:12px" style-hover="background:#1e2a23"><m-i n="moon" s="15"></m-i>Sleep</button>
+                <button onClick="{{ goBot }}" style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:0;border-radius:8px;background:transparent;color:inherit;font-size:12px" style-hover="background:#1e2a23"><m-i n="sparkles" s="15"></m-i>More like this</button>
+                <div style="flex:1"></div>
+                <m-i n="volume-2" s="16"></m-i>
+                <div style="width:96px;height:4px;border-radius:4px;background:#344035"><div style="width:70%;height:100%;border-radius:4px;background:#c3e4a2"></div></div>
+              </div>
+            </section>
+
+            <section style="flex:1 1 380px;min-width:0;border-radius:14px;border:1px solid #2a3630;background:#151c19;overflow:hidden">
+              <div style="display:flex;gap:20px;padding:0 18px;border-bottom:1px solid #2a3630">
+                <sc-for list="{{ npTabs }}" as="t" hint-placeholder-count="4">
+                  <button onClick="{{ t.go }}" style="height:46px;padding:0 2px;border:0;border-bottom:2px solid {{ t.line }};margin-bottom:-1px;background:transparent;color:{{ t.fg }};font-size:13px;font-weight:500">{{ t.label }}</button>
+                </sc-for>
+              </div>
+              <sc-if value="{{ npTab.queue }}" hint-placeholder-val="{{ true }}">
+                <div style="display:flex;align-items:center;gap:8px;padding:14px 18px 10px">
+                  <div style="flex:1;min-width:0;font-size:12px;color:#93a39b">Playing from <a href="#">Adrian Quesada</a> · 79 songs</div>
+                  <button style="height:30px;display:inline-flex;align-items:center;gap:6px;padding:0 10px;border:1px solid #344035;border-radius:7px;background:transparent;color:#e8ece8;font-size:12px"><m-i n="list-plus" s="14"></m-i>Save</button>
+                  <button aria-label="Clear queue" style="width:30px;height:30px;display:grid;place-items:center;border:1px solid #344035;border-radius:7px;background:transparent;color:#93a39b"><m-i n="trash-2" s="14"></m-i></button>
+                </div>
+                <div style="padding:0 8px 10px">
+                  <sc-for list="{{ queue }}" as="q" hint-placeholder-count="9">
+                    <div style="display:grid;grid-template-columns:16px 36px minmax(0,1fr) auto 30px;align-items:center;gap:10px;padding:6px 10px;border-radius:8px;background:{{ q.bg }}" style-hover="background:#1e2a23">
+                      <span style="color:#344035;display:grid;place-items:center"><m-i n="grip-vertical" s="14"></m-i></span>
+                      <span style="width:36px;height:36px;border-radius:5px;background:{{ q.art }};display:grid;place-items:center;color:#172014"><sc-if value="{{ q.now }}" hint-placeholder-val="{{ false }}"><span style="width:100%;height:100%;border-radius:5px;display:grid;place-items:center;background:rgba(195,228,162,.85)"><m-i n="audio-lines" s="16"></m-i></span></sc-if></span>
+                      <span style="min-width:0"><span style="display:block;font-weight:500;color:{{ q.tc }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ q.t }}</span><span style="display:block;font-size:12px;color:#93a39b">{{ q.a }}</span></span>
+                      <span style="font-size:12px;color:#819088">{{ q.d }}</span>
+                      <button aria-label="Remove" style="width:30px;height:30px;display:grid;place-items:center;border:0;border-radius:6px;background:transparent;color:#819088" style-hover="color:#efbaa2"><m-i n="x" s="14"></m-i></button>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ npTab.lyrics }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:24px 22px;display:grid;gap:14px">
+                  <sc-for list="{{ lyrics }}" as="l" hint-placeholder-count="8">
+                    <div style="font-size:{{ l.fs }};font-weight:600;letter-spacing:-0.3px;color:{{ l.c }};line-height:1.3">{{ l.t }}</div>
+                  </sc-for>
+                  <div style="font-size:11px;color:#819088;margin-top:8px">Synced lyrics from LRCLIB · click a line to seek</div>
+                </div>
+              </sc-if>
+              <sc-if value="{{ npTab.about }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:18px 22px;display:grid;grid-template-columns:auto 1fr;gap:12px 24px;font-size:13px">
+                  <sc-for list="{{ about }}" as="ab" hint-placeholder-count="8">
+                    <span style="color:#819088">{{ ab.k }}</span><span style="min-width:0;overflow-wrap:anywhere">{{ ab.v }}</span>
+                  </sc-for>
+                </div>
+              </sc-if>
+              <sc-if value="{{ npTab.history }}" hint-placeholder-val="{{ false }}">
+                <div style="padding:10px 8px">
+                  <sc-for list="{{ history }}" as="q" hint-placeholder-count="6">
+                    <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:10px;padding:6px 10px;border-radius:8px" style-hover="background:#1e2a23">
+                      <span style="width:36px;height:36px;border-radius:5px;background:{{ q.art }}"></span>
+                      <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ q.t }}</span><span style="display:block;font-size:12px;color:#93a39b">{{ q.a }}</span></span>
+                      <span style="font-size:12px;color:#819088">{{ q.when }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </sc-if>
+            </section>
+          </div>
+        </sc-if>
+
+        <!-- ============ MUSIC BOT ============ -->
+        <sc-if value="{{ s.bot }}" hint-placeholder-val="{{ false }}">
+          <div style="max-width:820px;margin:0 auto;display:flex;flex-direction:column;min-height:100%">
+            <div style="display:flex;align-items:center;gap:14px;flex-wrap:wrap;padding-bottom:16px;border-bottom:1px solid #2a3630">
+              <span style="position:relative;width:44px;height:44px;flex:none">
+                <span style="position:absolute;left:14%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(30% 0,100% 78%,0 100%);transform:rotate(-4deg)"></span>
+                <span style="position:absolute;left:56%;top:8%;width:30%;height:34%;background:#c3e4a2;clip-path:polygon(70% 0,100% 100%,0 78%);transform:rotate(4deg)"></span>
+                <span style="position:absolute;left:12%;top:26%;width:76%;height:66%;background:#c3e4a2;border-radius:46% 46% 40% 40%/52% 52% 42% 42%"></span>
+                <span style="position:absolute;left:28.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+                <span style="position:absolute;left:60.5%;top:44.5%;width:11%;height:11%;background:#172014;border-radius:50%"></span>
+                <span style="position:absolute;left:46.5%;top:58%;width:7%;height:5.5%;background:#172014;border-radius:45% 45% 60% 60%"></span>
+                <span style="position:absolute;left:43%;top:66.5%;width:14%;height:6%;background:#172014;border-radius:0 0 50% 50%/0 0 100% 100%"></span>
+              </span>
+              <div style="flex:1;min-width:160px">
+                <div style="font-size:18px;font-weight:600">Octive</div>
+                <div style="display:flex;align-items:center;gap:6px;margin-top:3px;font-size:12px;color:#93a39b"><i style="width:6px;height:6px;border-radius:50%;background:#c3e4a2"></i>Ready · <span style="display:inline-flex;align-items:center;gap:3px;color:#e8ece8;white-space:nowrap">qwen3.5:9b<m-i n="chevron-down" s="12"></m-i></span></div>
+              </div>
+              <div style="display:flex;padding:3px;border-radius:9px;background:#151c19;border:1px solid #2a3630">
+                <sc-for list="{{ scopes }}" as="sc" hint-placeholder-count="3">
+                  <button onClick="{{ sc.go }}" style="height:30px;padding:0 12px;border:0;border-radius:6px;background:{{ sc.bg }};color:{{ sc.fg }};font-size:12px;font-weight:500">{{ sc.label }}</button>
+                </sc-for>
+              </div>
+              <div style="display:flex">
+                <button aria-label="Bot settings" style="width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#93a39b" style-hover="background:#1e2a23"><m-i n="settings-2" s="17"></m-i></button>
+                <button aria-label="Clear chat" style="width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#93a39b" style-hover="background:#1e2a23"><m-i n="trash-2" s="17"></m-i></button>
+              </div>
+            </div>
+
+            <div style="flex:1;display:flex;flex-direction:column;gap:18px;padding:24px 0">
+              <div style="align-self:flex-end;max-width:80%;padding:10px 14px;border-radius:14px 14px 4px 14px;background:#263327;color:#e8ece8;font-size:14px">An hour of my favourite 90s music</div>
+              <div style="max-width:92%">
+                <div style="font-size:14px;line-height:1.55;color:#e8ece8">Here's 61 minutes from songs you've liked, released 1990–1999. Nothing plays until you say so.</div>
+                <div style="margin-top:12px;border-radius:12px;border:1px solid #2a3630;background:#17201b;overflow:hidden">
+                  <div style="display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:12px 14px;border-bottom:1px solid #2a3630">
+                    <span style="font-size:11px;font-weight:600;letter-spacing:0.6px;color:#e4cc9c">PREVIEW</span>
+                    <span style="font-size:12px;color:#93a39b">16 songs · 61 min · 9 artists</span>
+                    <div style="flex:1"></div>
+                    <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 10px;border-radius:999px;background:#263327;font-size:12px">Favourites<m-i n="x" s="12"></m-i></span>
+                    <span style="display:inline-flex;align-items:center;gap:6px;height:26px;padding:0 6px 0 10px;border-radius:999px;background:#263327;font-size:12px">1990–1999<m-i n="x" s="12"></m-i></span>
+                  </div>
+                  <sc-for list="{{ botTracks }}" as="bt" hint-placeholder-count="5">
+                    <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto;align-items:center;gap:12px;padding:7px 14px" style-hover="background:#1e2a23">
+                      <span style="width:36px;height:36px;border-radius:5px;background:{{ bt.art }}"></span>
+                      <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ bt.t }}</span><span style="display:block;font-size:12px;color:#93a39b">{{ bt.a }} · {{ bt.y }}</span></span>
+                      <span style="font-size:12px;color:#819088">{{ bt.d }}</span>
+                    </div>
+                  </sc-for>
+                  <div style="padding:6px 14px 4px;font-size:12px;color:#93a39b">+ 11 more</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:8px;padding:12px 14px;border-top:1px solid #2a3630;background:#151c19">
+                    <button style="display:inline-flex;align-items:center;gap:8px;height:34px;padding:0 14px;border-radius:8px;border:0;background:#c3e4a2;color:#172014;font-size:13px;font-weight:600"><m-i n="play" s="14" fill></m-i>Play now</button>
+                    <button style="height:34px;padding:0 12px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px">Play next</button>
+                    <button style="height:34px;padding:0 12px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px">Add to queue</button>
+                    <button style="height:34px;padding:0 12px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px">Save as playlist</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div style="position:sticky;bottom:0;padding:12px 0 4px;background:linear-gradient(transparent,#111716 30%)">
+              <div style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:10px">
+                <sc-for list="{{ prompts }}" as="pr" hint-placeholder-count="4">
+                  <button style="flex:none;height:30px;padding:0 12px;border-radius:999px;border:1px solid #344035;background:#151c19;color:#93a39b;font-size:12px" style-hover="color:#e8ece8">{{ pr }}</button>
+                </sc-for>
+              </div>
+              <div style="display:flex;align-items:center;gap:8px;padding:6px 6px 6px 14px;border-radius:12px;border:1px solid #344035;background:#151c19">
+                <input placeholder="Ask Octive for music" style="flex:1;min-width:0;border:0;background:transparent;color:#e8ece8;font-size:14px;outline:0;height:36px">
+                <button aria-label="Send" style="width:38px;height:38px;display:grid;place-items:center;border:0;border-radius:9px;background:#c3e4a2;color:#172014"><m-i n="arrow-up" s="18"></m-i></button>
+              </div>
+              <div style="margin-top:8px;font-size:11px;color:#819088">Goes by your tags and play history. Can't hear the music, so moods and tempos are off the menu.</div>
+            </div>
+          </div>
+        </sc-if>
+
+        <!-- ============ DOWNLOADS ============ -->
+        <sc-if value="{{ s.downloads }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px">
+            <div>
+              <h1 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-0.7px">Downloads</h1>
+              <p style="margin:6px 0 0;color:#93a39b;font-size:13px">3 downloading · 11 queued · saving to <span style="font-family:ui-monospace,Menlo,monospace;color:#e8ece8">/music</span> as M4A</p>
+            </div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap">
+              <button style="height:36px;display:inline-flex;align-items:center;gap:6px;padding:0 10px 0 12px;border-radius:8px;border:1px solid #2a3630;background:#151c19;color:#e8ece8;font-size:13px"><span style="color:#93a39b">Parallel</span>2<m-i n="chevron-down" s="14"></m-i></button>
+              <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px;font-weight:500"><m-i n="pause" s="14"></m-i>Pause all</button>
+              <button aria-label="Download settings" onClick="{{ goSettings }}" style="width:36px;height:36px;display:grid;place-items:center;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8"><m-i n="settings-2" s="16"></m-i></button>
+            </div>
+          </div>
+          <div style="display:flex;gap:20px;border-bottom:1px solid #2a3630;margin-bottom:16px;overflow-x:auto;overflow-y:hidden;scrollbar-width:none">
+            <sc-for list="{{ dlTabs }}" as="t" hint-placeholder-count="5">
+              <button onClick="{{ t.go }}" style="flex:none;height:42px;display:inline-flex;align-items:center;gap:7px;padding:0 2px;border:0;border-bottom:2px solid {{ t.line }};margin-bottom:-1px;background:transparent;color:{{ t.fg }};font-size:13px;font-weight:500">{{ t.label }}<span style="min-width:20px;height:18px;padding:0 6px;border-radius:999px;background:{{ t.cbg }};color:{{ t.cfg }};font-size:11px;display:grid;place-items:center">{{ t.n }}</span></button>
+            </sc-for>
+          </div>
+          <sc-if value="{{ dlOther }}" hint-placeholder-val="{{ false }}"><dc-import name="Musimo Jobs" tab="{{ dlTabName }}" hint-size="100%,700px"></dc-import></sc-if>
+          <sc-if value="{{ dlQueue }}" hint-placeholder-val="{{ true }}">
+          <sc-if value="{{ dlErrors }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:10px;background:#39251f;border:1px solid #674343;color:#efbaa2;margin-bottom:12px">
+              <m-i n="triangle-alert" s="16"></m-i>
+              <div style="flex:1;min-width:200px;font-size:13px">2 tracks failed. YouTube is rate-limiting this server; Bandcamp and the Internet Archive are still running.</div>
+              <button style="height:32px;padding:0 12px;border-radius:7px;border:1px solid #674343;background:transparent;color:#efbaa2;font-size:12px;font-weight:500">Retry errors</button>
+              <button style="height:32px;padding:0 12px;border-radius:7px;border:0;background:transparent;color:#efbaa2;font-size:12px;text-decoration:underline">Clear</button>
+            </div>
+          </sc-if>
+          <div style="display:grid;gap:8px">
+            <sc-for list="{{ jobs }}" as="j" hint-placeholder-count="6">
+              <div style="display:grid;grid-template-columns:44px minmax(0,1fr) auto;align-items:center;gap:14px;padding:10px 10px 10px 12px;border-radius:12px;border:1px solid {{ j.line }};background:#17201b">
+                <span style="width:44px;height:44px;border-radius:6px;background:{{ j.art }}"></span>
+                <div style="min-width:0">
+                  <div style="display:flex;align-items:baseline;gap:8px;min-width:0">
+                    <span style="font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ j.t }}</span>
+                    <span style="font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ j.a }}</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:10px;margin-top:7px">
+                    <span style="font-size:12px;color:{{ j.sc }};white-space:nowrap">{{ j.stage }}</span>
+                    <div style="flex:1;max-width:320px;height:4px;border-radius:4px;background:#2a3630"><div style="height:100%;border-radius:4px;width:{{ j.pct }};background:{{ j.sc }}"></div></div>
+                    <span style="font-size:11px;color:#819088;white-space:nowrap">{{ j.src }}</span>
+                  </div>
+                  <sc-if value="{{ j.err }}" hint-placeholder-val="{{ false }}">
+                    <div style="margin-top:6px;font-size:12px;color:#93a39b">{{ j.reason }} <a href="#">{{ j.fix }}</a></div>
+                  </sc-if>
+                </div>
+                <div style="display:flex;color:#93a39b">
+                  <button aria-label="{{ j.act }}" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:inherit" style-hover="background:#1e2a23;color:#e8ece8"><m-i n="{{ j.icon }}" s="16"></m-i></button>
+                  <button aria-label="Cancel" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:inherit" style-hover="background:#1e2a23;color:#efbaa2"><m-i n="x" s="16"></m-i></button>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+        </sc-if>
+
+        <!-- ============ SETTINGS ============ -->
+        <sc-if value="{{ s.settings }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:24px">
+            <div>
+              <h1 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-0.7px">Settings</h1>
+              <p style="margin:6px 0 0;color:#93a39b;font-size:13px">{{ setSub }}</p>
+            </div>
+            <div style="display:flex;padding:3px;border-radius:9px;background:#151c19;border:1px solid #2a3630">
+              <button onClick="{{ setServerTab }}" style="height:30px;padding:0 14px;border:0;border-radius:6px;background:{{ stServer.bg }};color:{{ stServer.fg }};font-size:12px;font-weight:500">Server</button>
+              <button onClick="{{ setYoursTab }}" style="height:30px;padding:0 14px;border:0;border-radius:6px;background:{{ stYours.bg }};color:{{ stYours.fg }};font-size:12px;font-weight:500">Yours</button>
+            </div>
+          </div>
+          <sc-if value="{{ setServer }}" hint-placeholder-val="{{ true }}">
+          <div style="display:flex;gap:40px;align-items:flex-start">
+            <sc-if value="{{ desktop }}" hint-placeholder-val="{{ true }}">
+              <nav style="position:sticky;top:0;width:170px;flex:none;display:grid;gap:2px">
+                <sc-for list="{{ setIndex }}" as="si" hint-placeholder-count="5">
+                  <a href="#" style="height:32px;display:flex;align-items:center;gap:10px;padding:0 10px;border-radius:7px;color:{{ si.fg }};background:{{ si.bg }};font-size:13px"><m-i n="{{ si.icon }}" s="15"></m-i>{{ si.label }}</a>
+                </sc-for>
+                <div style="margin:16px 10px 0;padding:10px 12px;border-radius:8px;background:#283a28;color:#c3e4a2;font-size:12px;display:flex;align-items:center;gap:8px"><m-i n="circle-check" s="14"></m-i>System ready</div>
+              </nav>
+            </sc-if>
+            <div style="flex:1;min-width:0;display:grid;gap:20px">
+              <sc-for list="{{ setSections }}" as="sec" hint-placeholder-count="3">
+                <section style="border-radius:14px;border:1px solid #2a3630;background:#151c19;overflow:hidden">
+                  <div style="padding:16px 20px;border-bottom:1px solid #2a3630">
+                    <h2 style="margin:0;font-size:15px;font-weight:600">{{ sec.title }}</h2>
+                    <p style="margin:4px 0 0;font-size:12px;color:#93a39b">{{ sec.desc }}</p>
+                  </div>
+                  <sc-for list="{{ sec.rows }}" as="r" hint-placeholder-count="3">
+                    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:12px 24px;padding:14px 20px;border-top:1px solid #2a3630">
+                      <div style="flex:1 1 240px;min-width:0">
+                        <div style="font-size:13px;font-weight:500;display:flex;align-items:center;gap:8px">{{ r.label }}<sc-if value="{{ r.locked }}" hint-placeholder-val="{{ false }}"><span style="display:inline-flex;align-items:center;gap:4px;padding:2px 6px;border-radius:4px;background:#342e1d;color:#f8ca76;font-size:11px;font-weight:500"><m-i n="lock-keyhole" s="11"></m-i>Set by environment</span></sc-if></div>
+                        <div style="margin-top:3px;font-size:12px;color:#93a39b;line-height:1.5">{{ r.help }}</div>
+                      </div>
+                      <sc-if value="{{ r.isToggle }}" hint-placeholder-val="{{ false }}">
+                        <span style="width:38px;height:22px;border-radius:999px;background:{{ r.tbg }};position:relative;flex:none"><span style="position:absolute;top:3px;left:{{ r.tx }};width:16px;height:16px;border-radius:50%;background:{{ r.tk }}"></span></span>
+                      </sc-if>
+                      <sc-if value="{{ r.isField }}" hint-placeholder-val="{{ true }}">
+                        <div style="flex:0 1 280px;min-width:180px;height:36px;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:0 10px 0 12px;border-radius:8px;border:1px solid {{ r.line }};background:#111716;color:#e8ece8;font-size:13px;font-family:{{ r.ff }}"><span style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.value }}</span><sc-if value="{{ r.select }}" hint-placeholder-val="{{ false }}"><m-i n="chevron-down" s="14"></m-i></sc-if></div>
+                      </sc-if>
+                    </div>
+                  </sc-for>
+                </section>
+              </sc-for>
+            </div>
+          </div>
+          <div style="position:sticky;bottom:12px;margin-top:20px;display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 10px 10px 16px;border-radius:12px;background:#263327;border:1px solid #4b6743;box-shadow:0 12px 30px rgba(0,0,0,.4)">
+            <span style="flex:1;font-size:13px">2 unsaved changes</span>
+            <button style="height:34px;padding:0 12px;border-radius:8px;border:0;background:transparent;color:#e8ece8;font-size:13px">Discard</button>
+            <button style="height:34px;padding:0 16px;border-radius:8px;border:0;background:#c3e4a2;color:#172014;font-size:13px;font-weight:600">Save changes</button>
+          </div>
+        </sc-if>
+          <sc-if value="{{ setYours }}" hint-placeholder-val="{{ false }}">
+            <div style="max-width:900px">
+              <dc-import name="Musimo Appearance" layout="{{ layoutName }}" home="{{ homeRaw }}" on-layout="{{ onLayout }}" on-home-toggle="{{ onHomeToggle }}" on-home-reset="{{ onHomeReset }}" hint-size="100%,1100px"></dc-import>
+            </div>
+          </sc-if>
+        </sc-if>
+
+        <!-- ============ DIAGNOSTICS ============ -->
+        <sc-if value="{{ s.diagnostics }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;align-items:flex-end;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:20px">
+            <div>
+              <h1 style="margin:0;font-size:28px;font-weight:600;letter-spacing:-0.7px">Diagnostics</h1>
+              <p style="margin:6px 0 0;color:#93a39b;font-size:13px">Checked 2 minutes ago · v0.4.0 · database v8</p>
+            </div>
+            <div style="display:flex;gap:8px">
+              <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px;font-weight:500"><m-i n="refresh-cw" s="14"></m-i>Recheck</button>
+              <button style="display:inline-flex;align-items:center;gap:8px;height:36px;padding:0 14px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px;font-weight:500"><m-i n="download" s="14"></m-i>Export</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;gap:16px;padding:18px 20px;border-radius:14px;background:#283a28;border:1px solid #4b6743;margin-bottom:20px;flex-wrap:wrap">
+            <span style="width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:#c3e4a2;color:#172014;flex:none"><m-i n="check" s="20"></m-i></span>
+            <div style="flex:1;min-width:200px"><div style="font-size:16px;font-weight:600;color:#e8ece8">Ready to play and download</div><div style="margin-top:3px;font-size:13px;color:#c3e4a2">5 of 6 checks pass. The YouTube helper is optional and not running.</div></div>
+          </div>
+          <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;margin-bottom:32px">
+            <sc-for list="{{ checks }}" as="c" hint-placeholder-count="6">
+              <div style="padding:16px 18px;border-radius:12px;border:1px solid #2a3630;background:#17201b;display:flex;flex-direction:column;gap:10px">
+                <div style="display:flex;align-items:center;gap:10px">
+                  <span style="color:#93a39b"><m-i n="{{ c.icon }}" s="17"></m-i></span>
+                  <span style="flex:1;font-weight:600">{{ c.name }}</span>
+                  <span style="display:inline-flex;align-items:center;gap:5px;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:600;background:{{ c.bg }};color:{{ c.fg }}"><i style="width:6px;height:6px;border-radius:50%;background:{{ c.fg }}"></i>{{ c.state }}</span>
+                </div>
+                <div style="font-size:12px;color:#93a39b;line-height:1.5">{{ c.detail }}</div>
+                <sc-if value="{{ c.meter }}" hint-placeholder-val="{{ false }}">
+                  <div style="height:4px;border-radius:4px;background:#2a3630"><div style="width:38%;height:100%;border-radius:4px;background:#c3e4a2"></div></div>
+                </sc-if>
+                <sc-if value="{{ c.action }}" hint-placeholder-val="{{ false }}">
+                  <button style="align-self:flex-start;height:30px;padding:0 12px;border-radius:7px;border:1px solid #344035;background:transparent;color:#e8ece8;font-size:12px">{{ c.action }}</button>
+                </sc-if>
+              </div>
+            </sc-for>
+          </div>
+          <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:12px">
+            <h2 style="margin:0;font-size:16px;font-weight:600">Recent activity</h2>
+            <button style="border:0;background:none;color:#93a39b;font-size:12px">Clear all</button>
+          </div>
+          <div style="border-radius:12px;border:1px solid #2a3630;overflow:hidden">
+            <sc-for list="{{ activity }}" as="ev" hint-placeholder-count="5">
+              <div style="display:grid;grid-template-columns:8px minmax(0,1fr) auto;align-items:center;gap:14px;padding:11px 16px;border-top:1px solid #2a3630">
+                <i style="width:8px;height:8px;border-radius:50%;background:{{ ev.c }}"></i>
+                <span style="min-width:0;font-size:13px">{{ ev.t }}</span>
+                <span style="font-size:12px;color:#819088">{{ ev.when }}</span>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
+
+      </div>
+    </main>
+
+    <!-- Toast -->
+    <sc-if value="{{ toast }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;right:20px;bottom:{{ toastBottom }};z-index:30;display:flex;align-items:center;gap:12px;max-width:min(420px,calc(100% - 40px));padding:10px 10px 10px 14px;border-radius:12px;background:#342e1d;border:1px solid #5a4b2a;color:#f8ca76;box-shadow:0 14px 36px rgba(0,0,0,.5)">
+        <m-i n="cloud-off" s="16"></m-i>
+        <span style="flex:1;font-size:13px;color:#e8ece8">Queue changed here but couldn't be saved.</span>
+        <button style="height:30px;padding:0 10px;border-radius:7px;border:1px solid #5a4b2a;background:transparent;color:#f8ca76;font-size:12px;font-weight:500">Retry</button>
+        <button onClick="{{ hideToast }}" aria-label="Dismiss" style="width:28px;height:28px;display:grid;place-items:center;border:0;background:transparent;color:#93a39b"><m-i n="x" s="14"></m-i></button>
+      </div>
+    </sc-if>
+
+    <!-- Desktop player -->
+    <sc-if value="{{ showDesktopPlayer }}" hint-placeholder-val="{{ true }}">
+      <footer style="flex:none;height:76px;display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.3fr) minmax(0,1fr);align-items:center;gap:20px;padding:0 20px;border-top:1px solid #344035;background:#17201b;position:relative">
+        <div style="display:flex;align-items:center;gap:12px;min-width:0">
+          <button onClick="{{ goNP }}" aria-label="Open Now Playing" style="width:48px;height:48px;flex:none;border:0;padding:0;border-radius:7px;background:{{ np.art }};box-shadow:0 0 0 2px rgba(195,228,162,.55)"></button>
+          <div style="min-width:0">
+            <div style="font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ np.title }}</div>
+            <div style="margin-top:3px;font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ np.artist }} · {{ np.album }}</div>
+          </div>
+          <button aria-label="Like" style="width:32px;height:32px;flex:none;display:grid;place-items:center;border:0;background:transparent;color:#c3e4a2"><m-i n="thumbs-up" s="16" fill></m-i></button>
+        </div>
+        <div style="display:flex;flex-direction:column;align-items:center;gap:6px">
+          <div style="display:flex;align-items:center;gap:10px;color:#93a39b">
+            <button aria-label="Shuffle" style="width:32px;height:32px;display:grid;place-items:center;border:0;background:transparent;color:#c3e4a2"><m-i n="shuffle" s="16"></m-i></button>
+            <button aria-label="Previous" style="width:32px;height:32px;display:grid;place-items:center;border:0;background:transparent;color:#e8ece8"><m-i n="skip-back" s="17" fill></m-i></button>
+            <button onClick="{{ togglePlay }}" aria-label="Play" style="width:38px;height:38px;display:grid;place-items:center;border:0;border-radius:50%;background:#c3e4a2;color:#172014"><m-i n="{{ playIcon }}" s="17" fill></m-i></button>
+            <button aria-label="Next" style="width:32px;height:32px;display:grid;place-items:center;border:0;background:transparent;color:#e8ece8"><m-i n="skip-forward" s="17" fill></m-i></button>
+            <button aria-label="Repeat" style="width:32px;height:32px;display:grid;place-items:center;border:0;background:transparent;color:inherit"><m-i n="repeat" s="16"></m-i></button>
+          </div>
+          <div style="width:100%;max-width:520px;display:flex;align-items:center;gap:10px;font-size:11px;color:#819088">
+            <span>0:58</span><div style="flex:1;height:4px;border-radius:4px;background:#344035"><div style="width:31%;height:100%;border-radius:4px;background:#c3e4a2"></div></div><span>3:08</span>
+          </div>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:flex-end;gap:4px;color:#93a39b">
+          <button onClick="{{ openPicker }}" aria-label="Add to playlist" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:inherit" style-hover="background:#1e2a23;color:#e8ece8"><m-i n="list-plus" s="17"></m-i></button>
+          <button onClick="{{ goNP }}" aria-label="Queue" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:inherit" style-hover="background:#1e2a23;color:#e8ece8"><m-i n="list-music" s="17"></m-i></button>
+          <m-i n="volume-2" s="17"></m-i>
+          <div style="width:90px;height:4px;border-radius:4px;background:#344035;margin:0 6px"><div style="width:70%;height:100%;border-radius:4px;background:#c3e4a2"></div></div>
+          <button onClick="{{ goNP }}" aria-label="Expand" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:inherit" style-hover="background:#1e2a23;color:#e8ece8"><m-i n="maximize-2" s="16"></m-i></button>
+        </div>
+      </footer>
+    </sc-if>
+
+    <!-- Phone mini player + tab bar -->
+    <sc-if value="{{ phone }}" hint-placeholder-val="{{ false }}">
+      <sc-if value="{{ showMini }}" hint-placeholder-val="{{ true }}">
+        <div style="flex:none;margin:0 8px 6px;position:relative;display:flex;align-items:center;gap:10px;padding:8px 8px 8px 8px;border-radius:12px;background:#1e2a23;overflow:hidden">
+          <div style="position:absolute;left:0;right:0;top:0;height:2px;background:#344035"><div style="width:31%;height:100%;background:#c3e4a2"></div></div>
+          <button onClick="{{ goNP }}" style="width:40px;height:40px;flex:none;border:0;padding:0;border-radius:6px;background:{{ np.art }}"></button>
+          <button onClick="{{ goNP }}" style="flex:1;min-width:0;border:0;padding:0;background:none;text-align:left;color:#e8ece8">
+            <span style="display:block;font-weight:600;font-size:13px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ np.title }}</span>
+            <span style="display:block;font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ np.artist }}</span>
+          </button>
+          <button onClick="{{ togglePlay }}" aria-label="Play" style="width:44px;height:44px;display:grid;place-items:center;border:0;background:transparent;color:#e8ece8"><m-i n="{{ playIcon }}" s="20" fill></m-i></button>
+          <button aria-label="Next" style="width:44px;height:44px;display:grid;place-items:center;border:0;background:transparent;color:#e8ece8"><m-i n="skip-forward" s="20" fill></m-i></button>
+        </div>
+      </sc-if>
+      <nav style="flex:none;height:64px;display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid #2a3630;background:#0e1312">
+        <sc-for list="{{ phoneTabs }}" as="n" hint-placeholder-count="5">
+          <button onClick="{{ n.go }}" style="position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;border:0;background:transparent;color:{{ n.fg }};font-size:11px;font-weight:500">
+            <m-i n="{{ n.icon }}" s="20"></m-i>{{ n.label }}
+            <sc-if value="{{ n.badge }}" hint-placeholder-val="{{ false }}"><span style="position:absolute;top:8px;left:calc(50% + 6px);min-width:16px;height:16px;padding:0 4px;border-radius:999px;background:#d9ff73;color:#172014;font-size:10px;font-weight:700;display:grid;place-items:center">3</span></sc-if>
+          </button>
+        </sc-for>
+      </nav>
+    </sc-if>
+  </div>
+    <!-- Overlay -->
+    <sc-if value="{{ ovOn }}" hint-placeholder-val="{{ false }}">
+      <div style="position:absolute;inset:0;z-index:60;display:flex;justify-content:center;align-items:{{ ovAlign }};padding:{{ ovPad }}">
+        <button onClick="{{ closeOverlay }}" aria-label="Close" style="position:absolute;inset:0;border:0;padding:0;background:rgba(0,0,0,.55);backdrop-filter:blur(3px);cursor:default"></button>
+        <div style="position:relative;display:flex;justify-content:center;width:100%">
+          <dc-import name="Musimo Overlay" kind="{{ overlay }}" device="{{ deviceName }}" on-close="{{ closeOverlay }}" on-open="{{ openOverlay }}" on-navigate="{{ navTo }}" on-switch-layout="{{ switchLayout }}" hint-size="640px,480px"></dc-import>
+        </div>
+      </div>
+    </sc-if>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;device&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;desktop&quot;, &quot;phone&quot;], &quot;default&quot;: &quot;desktop&quot;, &quot;tsType&quot;: &quot;'desktop' | 'phone'&quot;}, &quot;screen&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;home&quot;, &quot;search&quot;, &quot;albums&quot;, &quot;artists&quot;, &quot;tracks&quot;, &quot;playlists&quot;, &quot;nowplaying&quot;, &quot;bot&quot;, &quot;downloads&quot;, &quot;settings&quot;, &quot;diagnostics&quot;], &quot;default&quot;: &quot;home&quot;, &quot;tsType&quot;: &quot;string&quot;}}">
+const ALB = [
+  ['Boleros Psicodélicos', 'Adrian Quesada', 2022, 12, 330],
+  ['Mordechai', 'Khruangbin', 2020, 10, 40],
+  ['Phoenix Rise', 'Sunny Jain', 2021, 1, 10],
+  ["Don't Stay Silent", 'Paul & The Tall Trees', 2021, 1, 260],
+  ["I've Got Soul", 'Adrian Quesada', 2021, 1, 25],
+  ['Con Todo El Mundo', 'Khruangbin', 2018, 10, 95],
+  ['Little Girl Blue', 'Nina Simone', 1959, 11, 220],
+  ['In Rainbows', 'Radiohead', 2007, 10, 300],
+  ['Discovery', 'Daft Punk', 2001, 14, 200],
+  ['Texas Moon', 'Khruangbin & Leon Bridges', 2022, 5, 60],
+  ['Look At My Soul', 'Adrian Quesada', 2021, 13, 180],
+  ['Singularity', 'Culprate', 2017, 9, 280],
+  ['Hasta El Cielo', 'Khruangbin', 2019, 10, 120],
+  ['Wild Is the Wind', 'Nina Simone', 1966, 11, 350],
+  ['Kid A', 'Radiohead', 2000, 10, 230],
+  ['Random Access Memories', 'Daft Punk', 2013, 13, 70],
+  ['Ventura', 'Anderson .Paak', 2019, 11, 20],
+  ['The Infinite Pause', 'Adrian Quesada', 2023, 8, 160],
+]
+const art = (h, round) =>
+  `repeating-linear-gradient(135deg, oklch(0.42 0.07 ${h}) 0 2px, oklch(0.35 0.06 ${h}) 2px 10px)`
+const QUEUE = [
+  ['Eso No Lo He Dicho Yo', '3:08'], ['Esclavo Y Amo', '3:35'], ['Ya No Me Quieres', '0:49'], ['El León', '2:46'],
+  ['El Muchacho De Los Ojos Tristes', '3:40'], ['Reflection with Two Children', '0:30'], ['Noble Metals', '3:32'],
+  ['Rise of the Have Nots', '4:55'], ['Spirits', '3:12'], ['Primos', '3:41'],
+]
+const SCREENS = ['home', 'search', 'albums', 'artists', 'tracks', 'playlists', 'nowplaying', 'bot', 'downloads', 'settings', 'diagnostics', 'album', 'artist', 'playlist', 'calbum', 'cartist', 'podcast']
+const C = { accent: '#c3e4a2', text: '#e8ece8', muted: '#93a39b', faint: '#819088', active: '#263327', line: '#2a3630', lineS: '#344035', sunken: '#151c19' }
+
+class Component extends DCLogic {
+  componentDidMount() {
+    this.onKey = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'k') { e.preventDefault(); this.setState({ overlay: 'palette' }) }
+      else if (e.key === 'Escape' && this.state.overlay) this.setState({ overlay: null })
+    }
+    window.addEventListener('keydown', this.onKey)
+  }
+  componentWillUnmount() { window.removeEventListener('keydown', this.onKey) }
+  state = { plId: null, npViz: null, viz: 0, vizAuto: true, overlay: null, setTab: null, home: {}, layoutLocal: 'classic', screen: null, playing: true, layout: 'grid', npTab: 'queue', dlTab: null, scope: 'library', toast: true, query: 'khruangbin', sTab: 'top' }
+
+  renderVals() {
+    const phone = (this.props.device ?? 'desktop') === 'phone'
+    const sc = this.state.screen ?? this.props.screen ?? 'home'
+    const go = (k) => () => { this.setState({ screen: k }); this.props.onNavigate?.(k) }
+    const PARENT = { album: 'albums', artist: 'artists', playlist: 'playlists' }
+    const npViz = this.state.npViz ?? this.props.npMode === 'visualizer'
+    const dlTab = this.state.dlTab ?? this.props.dlTab ?? 'queue'
+    const PLID = ['liked', 'late', 'sunday', 'boleros', 'run', 'octive', 'car']
+    const openPl = (id) => () => { this.setState({ plId: id, screen: 'playlist' }); this.props.onNavigate?.('playlist') }
+    const CAT = { calbum: 'album', cartist: 'artist', podcast: 'podcast' }
+    const act = (k) => sc === k || PARENT[sc] === k || (k === 'search' && !!CAT[sc])
+    const setTab = this.state.setTab ?? this.props.settingsTab ?? 'server'
+    const homeRaw = this.props.home ?? this.state.home
+    const hs = {}
+    ;['continue', 'stats', 'jump', 'fresh', 'mostPlayed', 'octive'].forEach((k) => (hs[k] = homeRaw[k] !== false))
+    const tabSel = (on) => ({ bg: on ? '#263327' : 'transparent', fg: on ? C.text : C.muted })
+    const pickTab = (t) => () => { this.setState({ setTab: t }); this.props.onSettingsTab?.(t) }
+    const s = {}
+    SCREENS.forEach((k) => (s[k] = sc === k))
+    const item = (k, label, icon, extra = {}) => ({ label, icon, go: go(k), bg: act(k) ? C.active : 'transparent', fg: act(k) ? C.accent : C.muted, hint: '', ...extra })
+    const pill = (on, label, onClick) => ({ label, go: onClick, bg: on ? '#263327' : 'transparent', fg: on ? C.text : C.muted, line: on ? '#4b6743' : C.line })
+    const tab = (on, label, onClick, n) => ({ label, go: onClick, n, line: on ? C.accent : 'transparent', fg: on ? C.text : C.muted, cbg: n === '' || n === undefined ? 'transparent' : on ? '#283a28' : '#1e2a23', cfg: on ? C.accent : C.muted })
+    const albums = ALB.map(([t, a, y, n, h]) => ({ t, a, y, n, art: art(h) }))
+    const isLib = ['albums', 'artists', 'tracks', 'playlists'].includes(sc)
+    const libMeta = {
+      albums: { title: 'Albums', count: '8,503 albums · sorted by recently added', search: 'Search albums', toggle: true, filters: [['Sort', 'Recently added'], ['Genre', 'Latin, Funk'], ['Year', 'Any']] },
+      artists: { title: 'Artists', count: '1,912 artists', search: 'Search artists', toggle: true, filters: [['Sort', 'A to Z'], ['Show', 'All artists'], ['Genre', 'Any']] },
+      tracks: { title: 'Tracks', count: '61,204 songs · 4,112 hours', search: 'Search songs', toggle: false, filters: [['Sort', 'Most played'], ['Genre', 'Any'], ['Year', 'Any']] },
+      playlists: { title: 'Playlists', count: '7 playlists · Liked always comes first', search: 'Search playlists', toggle: true, filters: [['Sort', 'A to Z'], ['Show', 'All']] },
+    }
+    const lm = libMeta[sc] ?? libMeta.albums
+    const lib = { ...lm, filters: lm.filters.map(([k, v]) => ({ k, v: ' ' + v, bg: v.includes(',') ? '#263327' : C.sunken, line: v.includes(',') ? '#4b6743' : C.line })) }
+    const np = { title: 'Eso No Lo He Dicho Yo', artist: 'Adrian Quesada', album: 'Boleros Psicodélicos', art: art(330) }
+    const wave = Array.from({ length: 84 }, (_, i) => {
+      const v = 0.35 + 0.65 * Math.abs(Math.sin(i * 0.37) * 0.6 + Math.sin(i * 0.13 + 1) * 0.4)
+      return { h: `${Math.round(v * 100)}%`, c: i < 26 ? C.accent : '#3d4b43' }
+    })
+    const q = QUEUE.map(([t, d], i) => ({ t, d, a: 'Adrian Quesada', art: art(330 + i * 6), now: i === 0, bg: i === 0 ? '#1e2a23' : 'transparent', tc: i === 0 ? C.accent : C.text }))
+    const playlistArt = (o) => ({ a1: art(ALB[o % 18][4]), a2: art(ALB[(o + 3) % 18][4]), a3: art(ALB[(o + 7) % 18][4]), a4: art(ALB[(o + 11) % 18][4]) })
+    const PL = [['Liked', '128 songs · 8h 41m', true], ['Late night', '42 songs · 2h 50m'], ['Sunday cooking', '31 songs · 1h 58m'], ['Boleros', '22 songs · 1h 14m'], ['Run club', '60 songs · 3h 30m'], ['Octive · 90s favourites', '16 songs · 61m'], ['Car', '88 songs · 5h 6m']]
+    const jobs = [
+      { t: 'Time (You and I)', a: 'Khruangbin · Mordechai', stage: 'Downloading 62%', pct: '62%', sc: C.accent, src: 'Bandcamp · original', icon: 'pause', act: 'Pause', h: 40 },
+      { t: 'Pelota', a: 'Khruangbin · Mordechai', stage: 'Converting to M4A', pct: '88%', sc: C.accent, src: 'YouTube · opus → m4a', icon: 'pause', act: 'Pause', h: 40 },
+      { t: 'So We Won’t Forget', a: 'Khruangbin · Mordechai', stage: 'Matching · low confidence', pct: '20%', sc: '#f8ca76', src: '3 candidates', icon: 'list', act: 'Pick a match', h: 40 },
+      { t: 'If There Is No Question', a: 'Khruangbin · Mordechai', stage: 'Queued', pct: '0%', sc: C.faint, src: 'Next up', icon: 'arrow-up', act: 'Move up', h: 40 },
+      { t: 'Dearest Alfred', a: 'Khruangbin · Mordechai', stage: 'Failed at download', pct: '100%', sc: '#efbaa2', src: 'YouTube · 3 attempts', icon: 'rotate-ccw', act: 'Retry', h: 40, err: true, reason: 'YouTube asked this server to sign in.', fix: 'Add a cookies file' },
+    ].map((j) => ({ ...j, art: art(j.h), line: j.err ? '#674343' : C.line }))
+    const toggle = (on) => ({ isToggle: true, isField: false, tbg: on ? C.accent : '#344035', tk: on ? '#172014' : C.muted, tx: on ? '19px' : '3px' })
+    const field = (value, o = {}) => ({ isToggle: false, isField: true, value, line: C.lineS, ff: 'inherit', select: false, ...o })
+    const setSections = [
+      { title: 'Your library', desc: 'Where music lives and how new files are named.', rows: [
+        { label: 'Download to', help: 'Only folders listed in MUSIMO_LIBRARY_ROOTS can receive downloads.', ...field('/music · 5,201 GB free', { select: true }) },
+        { label: 'Folder and file naming', help: 'Preview: Khruangbin/Mordechai/01 First Class.m4a', ...field('{artist}/{album}/{track:02} {title}', { ff: 'ui-monospace,Menlo,monospace', line: '#4b6743' }) },
+        { label: 'Library label', help: 'Shown in the browser tab and on shared links.', locked: true, ...field('Home') },
+      ] },
+      { title: 'Audio quality', desc: 'Applies to newly queued tracks.', rows: [
+        { label: 'Audio format', help: 'Original avoids re-encoding when the source allows it.', ...field('Original · no re-encoding', { select: true }) },
+        { label: 'Album art in files', help: 'Embed the catalog cover in each file’s tags.', ...toggle(true) },
+      ] },
+      { title: 'Queue & retries', desc: 'How hard Musimo tries before giving up on a song.', rows: [
+        { label: 'Parallel downloads', help: 'More than 3 often trips source rate limits.', ...field('2', { select: true }) },
+        { label: 'Pause between groups', help: 'Wait 5 minutes after every 25 finished tracks.', ...toggle(false) },
+      ] },
+    ]
+    setSections.push(
+      { title: 'Sources', desc: 'Tried in this order for every song. A blocked source pauses alone; the rest keep going.', rows: [
+        { label: '1 · Deezer account', help: 'Saves catalog tracks from your account first. Cookie pasted Oct 2.', ...toggle(true) },
+        { label: '2 · Bandcamp', help: 'Original files where the artist allows it. 2 retries.', ...toggle(true) },
+        { label: '3 · YouTube', help: 'Needs the helper container. Paused: asked to sign in.', locked: false, ...toggle(true) },
+        { label: '4 · Internet Archive', help: 'Live sets and public-domain recordings. 1 retry.', ...toggle(true) },
+        { label: 'Audiomack, TuneIn', help: 'Off: the download tool cannot read them today.', ...toggle(false) },
+      ] },
+      { title: 'Music bot', desc: 'Octive runs on your own Ollama server. Nothing leaves your network.', rows: [
+        { label: 'Ollama server address', help: 'Connected · 6 models installed · 41 ms', ...field('http://host.docker.internal:11434', { ff: 'ui-monospace,Menlo,monospace' }) },
+        { label: 'Music time zone', help: 'Used for “songs I played this morning”.', ...field('Europe/London', { select: true }) },
+      ] })
+    const setIndex = [['Library', 'folder', true], ['Audio quality', 'audio-lines'], ['Queue & retries', 'repeat'], ['Sources', 'radio'], ['Music bot', 'sparkles']].map(([label, icon, on]) => ({ label, icon, fg: on ? C.text : C.muted, bg: on ? '#1e2a23' : 'transparent' }))
+    const good = { bg: '#283a28', fg: C.accent }, warn = { bg: '#342e1d', fg: '#f8ca76' }, idle = { bg: '#1e2a23', fg: C.muted }
+    const checks = [
+      { icon: 'folder', name: 'Library root', state: 'Ready', ...good, detail: '/music · read and write · 5,201 GB free of 8 TB', meter: true },
+      { icon: 'arrow-down-to-line', name: 'Download destination', state: 'Ready', ...good, detail: '/music · last test write 2 days ago', action: 'Test write' },
+      { icon: 'database', name: 'Library scan', state: 'Ready', ...good, detail: '61,204 files indexed · watcher: native · finished 2h ago', action: 'Rescan' },
+      { icon: 'play', name: 'Player', state: 'Ready', ...good, detail: 'Streams from the music folders · gapless on' },
+      { icon: 'radio', name: 'YouTube helper', state: 'Not running', ...warn, detail: 'Optional. Start with docker compose --profile youtube up.', action: 'How to start' },
+      { icon: 'clock', name: 'Last download', state: 'Not tested', ...idle, detail: 'No download attempted yet on this install.' },
+    ]
+    const catTracks = [
+      ['Time (You and I)', 'Khruangbin · Mordechai', '4:17', 'In library', 40],
+      ['Maria También', 'Khruangbin · Con Todo El Mundo', '3:08', 'Other edition', 95],
+      ['So We Won’t Forget', 'Khruangbin · Mordechai', '4:15', 'Queued', 40],
+      ['Texas Sun', 'Khruangbin & Leon Bridges', '4:12', 'Not in library', 60],
+      ['White Gloves', 'Khruangbin · The Universe Smiles Upon You', '5:21', 'Not in library', 200],
+    ].map(([t, a, d, badge, h]) => {
+      const m = { 'In library': ['#2a3a27', C.accent, 'check', C.accent], 'Other edition': ['#3a3224', '#e4cc9c', 'arrow-down-to-line', C.text], Queued: ['#1e2a23', C.muted, 'clock', C.muted], 'Not in library': ['transparent', C.faint, 'arrow-down-to-line', C.text] }[badge]
+      return { t, a, d, badge, art: art(h), bbg: m[0], bfg: m[1], di: m[2], dc: m[3] }
+    })
+    const catAlbums = [['Mordechai', 2020, 'Album', '10/10', 100, 40], ['Con Todo El Mundo', 2018, 'Album', '7/10', 70, 95], ['Hasta El Cielo', 2019, 'Album', '10/10', 100, 120], ['Texas Moon', 2022, 'EP', '0/5', 0, 60], ['The Universe Smiles Upon You', 2015, 'Album', '0/12', 0, 200]]
+      .map(([t, y, k, own, p, h]) => ({ t, y, k, own, art: art(h), pct: p + '%', pc: p === 100 ? C.accent : p > 0 ? '#e4cc9c' : C.faint, icon: p === 100 ? 'check' : 'arrow-down-to-line' }))
+
+    return {
+      rootH: this.props.device ? '100%' : '100vh',
+      phone, desktop: !phone, s, isLib,
+      padTop: phone ? '20px' : '28px',
+      navTop: [item('home', 'Home', 'house'), item('search', 'Search', 'search', { hint: '/' }), item('bot', 'Octive', 'sparkles')],
+      navLib: [item('albums', 'Albums', 'disc-3', { hint: '8.5k' }), item('artists', 'Artists', 'mic-vocal'), item('tracks', 'Tracks', 'music'), item('playlists', 'Playlists', 'list-music')],
+      navSys: [item('downloads', 'Downloads', 'arrow-down-to-line', { badge: true }), item('settings', 'Settings', 'settings-2'), item('diagnostics', 'Diagnostics', 'activity')],
+      pinned: [{ name: 'Liked', liked: true, art: C.accent, go: openPl('liked') }, { name: 'Late night', art: art(260), go: openPl('late') }, { name: 'Sunday cooking', art: art(95), go: openPl('sunday') }],
+      phoneTabs: [
+        { label: 'Home', icon: 'house', k: 'home' }, { label: 'Search', icon: 'search', k: 'search' }, { label: 'Library', icon: 'library', k: 'albums', alt: ['artists', 'tracks', 'playlists', 'album', 'artist', 'playlist'] },
+        { label: 'Octive', icon: 'sparkles', k: 'bot' }, { label: 'Downloads', icon: 'arrow-down-to-line', k: 'downloads', badge: true },
+      ].map((t) => ({ ...t, go: go(t.k), fg: sc === t.k || (t.alt ?? []).includes(sc) ? C.accent : C.muted })),
+      libChips: [['albums', 'Albums'], ['artists', 'Artists'], ['tracks', 'Tracks'], ['playlists', 'Playlists']].map(([k, l]) => pill(sc === k, l, go(k))),
+      searchTabs: [['top', 'Top'], ['tracks', 'Tracks'], ['albums', 'Albums'], ['artists', 'Artists'], ['podcasts', 'Podcasts']].map(([k, l]) => pill(this.state.sTab === k, l, k === 'podcasts' ? go('podcast') : () => this.setState({ sTab: k }))),
+      query: this.state.query,
+      onQuery: (e) => this.setState({ query: e.target.value }),
+      goSearch: go('search'), goBot: go('bot'), goNP: go('nowplaying'), goAlbums: go('albums'), goSettings: go('settings'), goDiag: go('diagnostics'),
+      togglePlay: () => this.setState({ playing: !this.state.playing }),
+      playIcon: this.state.playing ? 'pause' : 'play',
+      playLabel: this.state.playing ? 'Pause' : 'Resume',
+      np, wave, queue: q,
+      stats: [{ v: '14h 22m', k: 'Listened' }, { v: '312', k: 'Plays' }, { v: '46', k: 'Albums added' }, { v: 'Latin funk', k: 'Top genre' }],
+      week: [['M', 40], ['T', 62], ['W', 35], ['T', 80], ['F', 100], ['S', 72], ['S', 54]].map(([d, v], i) => ({ d, h: Math.round(v * 0.68) + '%', c: i === 6 ? C.accent : '#3d4b43' })),
+      recent: [
+        { t: 'Liked', k: 'Playlist · 128 songs', liked: true, art: `linear-gradient(160deg,#c3e4a2,#7fa86a)`, go: go('playlists') },
+        { t: 'Boleros Psicodélicos', k: 'Album · Adrian Quesada', art: art(330), go: go('album') },
+        { t: 'Khruangbin', k: 'Artist · 6 albums', art: art(40), go: go('artists') },
+        { t: 'Late night', k: 'Playlist · 42 songs', art: art(260), go: go('playlists') },
+        { t: 'In Rainbows', k: 'Album · Radiohead', art: art(300), go: go('albums') },
+        { t: 'Octive · 90s favourites', k: 'Playlist · 16 songs', art: art(200), go: go('bot') },
+      ],
+      fresh: albums.slice(0, 6),
+      repeatTracks: [['Primos', 'Adrian Quesada', 41, 330], ['Time (You and I)', 'Khruangbin', 33, 40], ['Ain’t Got No, I Got Life', 'Nina Simone', 27, 220], ['Reckoner', 'Radiohead', 22, 300], ['Digital Love', 'Daft Punk', 19, 200]].map(([t, a, plays, h], i) => ({ n: i + 1, t, a, plays, art: art(h) })),
+      prompts: ['An hour of my favourite 90s music', 'Play some hip hop', 'Songs I haven’t played yet', 'More like Primos'],
+      lib, albums,
+      albumsGrid: s.albums && this.state.layout === 'grid', albumsList: s.albums && this.state.layout === 'list',
+      setGrid: () => this.setState({ layout: 'grid' }), setList: () => this.setState({ layout: 'list' }),
+      gridBg: this.state.layout === 'grid' ? '#263327' : 'transparent', gridFg: this.state.layout === 'grid' ? C.accent : C.muted,
+      listBg: this.state.layout === 'list' ? '#263327' : 'transparent', listFg: this.state.layout === 'list' ? C.accent : C.muted,
+      artists: [['Adrian Quesada', '5 albums', 330], ['Khruangbin', '6 albums', 40], ['Nina Simone', '14 albums', 220], ['Radiohead', '9 albums', 300], ['Daft Punk', '4 albums', 200], ['Sunny Jain', '2 albums', 10], ['Culprate', '3 albums', 280], ['Anderson .Paak', '4 albums', 20], ['Leon Bridges', '3 albums', 60], ['Paul & The Tall Trees', '1 album', 260], ['Victor Axelrod', '2 albums', 150], ['Black Pumas', '2 albums', 120]].map(([name, n, h]) => ({ name, n, art: art(h) })),
+      trackRows: QUEUE.map(([t, d], i) => ({ n: i + 1, t, d, a: 'Adrian Quesada', al: 'Boleros Psicodélicos', plays: 41 - i * 3, art: art(330 + i * 6), bg: i === 0 ? '#1e2a23' : 'transparent', tc: i === 0 ? C.accent : C.text, nc: i === 0 ? C.accent : C.faint })),
+      playlists: PL.map(([name, meta, liked], i) => ({ name, meta, liked: !!liked, go: openPl(PLID[i]), ...playlistArt(i * 2) })),
+      topArt: art(40), catTracks, catAlbums,
+      npTabs: [['queue', 'Up next'], ['lyrics', 'Lyrics'], ['about', 'About'], ['history', 'History']].map(([k, l]) => tab(this.state.npTab === k, l, () => this.setState({ npTab: k }))),
+      npTab: { queue: this.state.npTab === 'queue', lyrics: this.state.npTab === 'lyrics', about: this.state.npTab === 'about', history: this.state.npTab === 'history' },
+      lyrics: ['Eso no lo he dicho yo', 'ni lo pienso decir', 'si me quieres, quiéreme', 'como yo te quiero a ti', 'Las palabras se las lleva', 'el viento de abril', 'y lo que queda en la noche', 'es lo que siento por ti'].map((t, i) => ({ t, c: i === 2 ? C.text : i < 2 ? '#56645c' : C.muted, fs: i === 2 ? '24px' : '20px' })),
+      about: [['Title', 'Eso No Lo He Dicho Yo'], ['Artist', 'Adrian Quesada'], ['Album', 'Boleros Psicodélicos · 2022'], ['Track', '4 of 12 · disc 1'], ['Genre', 'Latin, Psychedelic soul'], ['Format', 'Opus · 132 kbps · 48 kHz'], ['Plays', '18 · last played yesterday'], ['File', '/music/Adrian Quesada/Boleros Psicodélicos/04 Eso No Lo He Dicho Yo.opus']].map(([k, v]) => ({ k, v })),
+      history: [['Primos', '2 min ago', 330], ['El León', '6 min ago', 336], ['Time (You and I)', '1 h ago', 40], ['Reckoner', '1 h ago', 300], ['Digital Love', 'Yesterday', 200], ['Wild Is the Wind', 'Yesterday', 350]].map(([t, when, h]) => ({ t, when, a: '', art: art(h) })),
+      scopes: [['library', 'Whole library'], ['selection', 'This selection'], ['next', 'Up next']].map(([k, l]) => ({ label: l, go: () => this.setState({ scope: k }), bg: this.state.scope === k ? '#263327' : 'transparent', fg: this.state.scope === k ? C.text : C.muted })),
+      botTracks: [['Glory Box', 'Portishead', 1994, '5:01', 280], ['Teardrop', 'Massive Attack', 1998, '5:29', 220], ['No Surprises', 'Radiohead', 1997, '3:49', 300], ['Da Funk', 'Daft Punk', 1995, '5:28', 200], ['Linger', 'The Cranberries', 1993, '4:34', 120]].map(([t, a, y, d, h]) => ({ t, a, y, d, art: art(h) })),
+      dlTabs: [['queue', 'Queue', 14], ['done', 'Done', 48], ['nomatch', 'No match', 3], ['errors', 'Errors', 2], ['history', 'History', '']].map(([k, l, n]) => tab(dlTab === k, l, () => this.setState({ dlTab: k }), n)),
+      dlErrors: true, jobs,
+      setSections, setIndex, checks,
+      activity: [['Scan finished · 214 new files', '2h ago', C.accent], ['Downloaded Mordechai (8 of 10 tracks)', '3h ago', C.accent], ['YouTube asked for sign-in · 2 tracks paused', '3h ago', '#f8ca76'], ['Settings saved · parallel downloads 3 → 2', 'Yesterday', C.muted], ['Imported 7 playlists from Navidrome', 'Oct 12', C.muted]].map(([t, when, c]) => ({ t, when, c })),
+      toast: this.state.toast && sc === 'nowplaying',
+      toastBottom: sc === 'nowplaying' ? (phone ? '76px' : '20px') : phone ? '150px' : '92px',
+      hideToast: () => this.setState({ toast: false }),
+      showDesktopPlayer: !phone && sc !== 'nowplaying',
+      isCatalog: !!CAT[sc], catKind: CAT[sc] ?? 'album', goCArtist: go('cartist'), goCAlbum: go('calbum'),
+      ovOn: !!this.state.overlay, overlay: this.state.overlay ?? 'palette', deviceName: phone ? 'phone' : 'desktop',
+      ovAlign: phone ? 'flex-end' : 'flex-start', ovPad: phone ? '0' : '72px 24px 24px',
+      openOverlay: (k) => this.setState({ overlay: k }), closeOverlay: () => this.setState({ overlay: null }),
+      openPalette: () => this.setState({ overlay: 'palette' }), openPicker: () => this.setState({ overlay: 'picker' }), openArtistDl: () => this.setState({ overlay: 'artistDl' }),
+      navTo: (k) => go(k)(),
+      switchLayout: () => this.props.onLayout?.((this.props.layout ?? 'classic') === 'classic' ? 'room' : 'classic'),
+      isDetail: !!PARENT[sc], detailKind: PARENT[sc] ? sc : 'album', detailBack: go(PARENT[sc] ?? 'albums'),
+      goAlbum: go('album'), goArtist: go('artist'), goPlaylist: go('playlist'),
+      plId: this.state.plId ?? this.props.playlistId ?? 'late',
+      firstRun: s.home && !!this.props.firstRun, homeFull: s.home && !this.props.firstRun,
+      npViz: npViz, npArt: !npViz, vizPreset: String(this.state.viz),
+      vizName: ['martin — mandelbox explorer', 'flexi — mindblob mix', 'geiss — cosmic dust', 'shifter — tumbling cubes'][this.state.viz % 4] + (this.state.vizAuto ? ' · changes with the music' : ' · held'),
+      toggleViz: () => this.setState({ npViz: !npViz }), vizBtnBg: npViz ? '#c3e4a2' : 'rgba(0,0,0,.45)', vizBtnFg: npViz ? '#172014' : '#fff',
+      vizPrev: () => this.setState({ viz: (this.state.viz + 3) % 4 }), vizNext: () => this.setState({ viz: (this.state.viz + 1) % 4 }),
+      vizAuto: () => this.setState({ vizAuto: !this.state.vizAuto }), vizAutoLabel: this.state.vizAuto ? 'AUTO' : 'HOLD', vizAutoBg: this.state.vizAuto ? 'rgba(195,228,162,.9)' : 'rgba(255,255,255,.15)', vizAutoFg: this.state.vizAuto ? '#172014' : '#fff',
+      dlQueue: dlTab === 'queue', dlOther: dlTab !== 'queue', dlTabName: dlTab,
+      hs, homeRaw,
+      setServer: setTab === 'server', setYours: setTab === 'yours', stServer: tabSel(setTab === 'server'), stYours: tabSel(setTab === 'yours'),
+      setServerTab: pickTab('server'), setYoursTab: pickTab('yours'),
+      setSub: setTab === 'server' ? 'Saved to this server. Changes apply without a restart.' : 'Saved in this browser. Move them to another browser with Export.',
+      layoutName: this.props.layout ?? this.state.layoutLocal,
+      onLayout: (k) => (this.props.onLayout ? this.props.onLayout(k) : this.setState({ layoutLocal: k })),
+      onHomeToggle: (k) => (this.props.onHomeToggle ? this.props.onHomeToggle(k) : this.setState({ home: { ...this.state.home, [k]: this.state.home[k] === false } })),
+      onHomeReset: () => (this.props.onHomeReset ? this.props.onHomeReset() : this.setState({ home: {} })),
+      showMini: sc !== 'nowplaying',
+    }
+  }
+}
+
+</script>
+</body>
+</html>

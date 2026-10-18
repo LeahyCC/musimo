@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<title>Musimo · UI refactor</title>
+<meta name="design_doc_mode" content="canvas">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#0a0d0c}
+a{color:#c3e4a2;text-decoration:none}
+a:hover{color:#d9ff73}
+</style>
+</helmet>
+<section id="turn-3" style="padding:64px 64px 0;display:flex;flex-direction:column;gap:28px;font-family:Inter,-apple-system,sans-serif;color:#e8ece8">
+  <div style="max-width:960px">
+    <div style="font-size:12px;letter-spacing:1.4px;color:#819088;font-weight:600">ROUND 3 · EVERY SCREEN</div>
+    <h1 style="margin:10px 0 0;font-size:40px;font-weight:600;letter-spacing:-1.2px">Screen inventory</h1>
+    <p style="margin:12px 0 0;font-size:16px;line-height:1.6;color:#93a39b;text-wrap:pretty">Every page and state, shown at half size in both layouts. Static captures keep this board light. The live prototype is <a href="#2a">2a</a>. New this round: the <b style="color:#e8ece8">MilkDrop visualizer</b> on Now Playing (art/visualizer switch, preset name, previous/next, auto or hold). <b style="color:#e8ece8">Selected playlists</b> now open their own page (Liked, Late night, Octive's 90s favourites, imported Car). Downloads now has <b style="color:#e8ece8">Done, No match, Errors and History</b> tabs. Settings gains <b style="color:#e8ece8">Sources and Music bot</b> sections. There's a <b style="color:#e8ece8">first-run</b> Home for an empty library.</p>
+  </div>
+  <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+    <div id="{{ g.id }}" style="display:flex;flex-direction:column;gap:16px">
+      <div style="display:flex;align-items:center;gap:14px">
+        <span style="font-size:13px;font-weight:700;padding:5px 10px;border-radius:7px;background:#c3e4a2;color:#172014">{{ g.id }}</span>
+        <span style="font-size:22px;font-weight:600;letter-spacing:-0.4px">{{ g.title }}</span>
+      </div>
+      <div style="display:grid;grid-template-columns:repeat(4,720px);gap:36px 28px">
+        <sc-for list="{{ g.boards }}" as="b" hint-placeholder-count="8">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:12px;color:#93a39b;font-weight:600;letter-spacing:0.4px">{{ b.label }}</span>
+            <div style="width:720px;height:450px;border-radius:10px;overflow:hidden;outline:1px solid #2a3630;box-shadow:0 16px 40px rgba(0,0,0,.5)">
+              <img src="{{ b.img }}" alt="{{ b.label }}" loading="lazy" style="display:block;width:720px;height:450px;object-fit:cover;object-position:left top;background:#111716">
+            </div>
+          </div>
+        </sc-for>
+      </div>
+      <span style="font-size:12px;color:#819088;font-weight:600;letter-spacing:0.6px;margin-top:8px">PHONE</span>
+      <div style="display:flex;gap:28px;flex-wrap:wrap">
+        <sc-for list="{{ g.phones }}" as="b" hint-placeholder-count="6">
+          <div style="display:flex;flex-direction:column;gap:8px">
+            <span style="font-size:12px;color:#93a39b;font-weight:600;letter-spacing:0.4px">{{ b.label }}</span>
+            <div style="width:390px;height:844px;border-radius:40px;overflow:hidden;outline:6px solid #1e2a23;box-shadow:0 16px 40px rgba(0,0,0,.5)">
+              <img src="{{ b.img }}" alt="{{ b.label }}" loading="lazy" style="display:block;width:390px;height:844px;object-fit:cover;object-position:left top;background:#111716">
+            </div>
+          </div>
+        </sc-for>
+      </div>
+    </div>
+  </sc-for>
+</section>
+<section id="turn-2" style="padding:64px 64px 0;display:flex;flex-direction:column;gap:20px;font-family:Inter,-apple-system,sans-serif;color:#e8ece8">
+  <div style="max-width:900px">
+    <div style="font-size:12px;letter-spacing:1.4px;color:#819088;font-weight:600">ROUND 2</div>
+    <h1 style="margin:10px 0 0;font-size:40px;font-weight:600;letter-spacing:-1.2px">Both layouts, picked in Settings</h1>
+    <p style="margin:12px 0 0;font-size:16px;line-height:1.6;color:#93a39b;text-wrap:pretty">Settings › Yours now has a <b style="color:#e8ece8">Layout</b> picker (Classic is <a href="#1a">1a</a>, Listening room is <a href="#1b">1b</a>). It also has <b style="color:#e8ece8">Home page</b> switches for each dashboard section, and the existing theme list. Switching layout keeps your page. New pages: album, artist and playlist detail. Click any album, artist or playlist card to open one.</p>
+    <p style="margin:10px 0 0;font-size:16px;line-height:1.6;color:#93a39b;text-wrap:pretty"><b style="color:#e8ece8">Round 2.1:</b> each theme is now one card with a dark/light toggle, plus a Follow system switch. New catalog pages: from Search, open the Khruangbin top result or any album, or the Podcasts tab, to get a <b style="color:#e8ece8">catalog artist</b>, <b style="color:#e8ece8">album</b> and <b style="color:#e8ece8">podcast</b> page, each showing how much is already in your library. New overlays: <b style="color:#e8ece8">⌘K command palette</b> (paste a URL into it to open the <b style="color:#e8ece8">link review</b> sheet), an <b style="color:#e8ece8">add to playlist</b> picker (any list-plus button) and the <b style="color:#e8ece8">download all albums</b> sheet.</p>
+  </div>
+  <div id="2a" style="display:flex;flex-direction:column;gap:14px">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-size:13px;font-weight:700;padding:5px 10px;border-radius:7px;background:#c3e4a2;color:#172014">2a</span>
+      <span style="font-size:22px;font-weight:600;letter-spacing:-0.4px">One app, two layouts</span>
+    </div>
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span style="font-size:12px;color:#819088;font-weight:600;letter-spacing:0.6px">DESKTOP · OPENS ON SETTINGS › YOURS</span>
+        <div style="width:1440px;height:900px;border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);outline:1px solid #2a3630">
+          <dc-import name="Musimo" embedded="{{ true }}" device="desktop" screen="settings" settings-tab="yours" hint-size="1440px,900px" style="width:1440px;height:900px"></dc-import>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span style="font-size:12px;color:#819088;font-weight:600;letter-spacing:0.6px">PHONE</span>
+        <div style="width:390px;height:844px;border-radius:44px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);outline:8px solid #1e2a23">
+          <dc-import name="Musimo" embedded="{{ true }}" device="phone" screen="settings" settings-tab="yours" hint-size="390px,844px" style="width:390px;height:844px"></dc-import>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+<section id="turn-1" style="padding:64px;display:flex;flex-direction:column;gap:48px;font-family:Inter,-apple-system,sans-serif;color:#e8ece8">
+  <div style="max-width:900px">
+    <div style="font-size:12px;letter-spacing:1.4px;color:#819088;font-weight:600">MUSIMO · UI REFACTOR · ROUND 1</div>
+    <h1 style="margin:10px 0 0;font-size:40px;font-weight:600;letter-spacing:-1.2px">Two directions, same tokens</h1>
+    <p style="margin:12px 0 0;font-size:16px;line-height:1.6;color:#93a39b;text-wrap:pretty">Both directions are clickable: use the nav to move between all 11 screens. <a href="#1a">1a</a> keeps today's shell and fixes it. <a href="#1b">1b</a> restructures it around a player that's always visible. Both use the musimo-dark color tokens, so the existing themes keep working.</p>
+  </div>
+
+  <div id="1a" style="display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-size:13px;font-weight:700;padding:5px 10px;border-radius:7px;background:#c3e4a2;color:#172014">1a</span>
+      <span style="font-size:22px;font-weight:600;letter-spacing:-0.4px">Evolve: same shell, fixed</span>
+    </div>
+    <p style="margin:0;max-width:980px;font-size:14px;line-height:1.65;color:#93a39b;text-wrap:pretty">Library tabs move into the sidebar, so each one becomes a real page. One search lives in the top bar. Support links shrink to a single footer line. Every toolbar control is 36px and shares one select-chip style, which removes the ▶ disclosure arrows. The page eyebrows and the LIBRARY READY tag are gone. Home is now a dashboard. Up next rows are compact. Errors show up as toasts instead of lines of text in the player. The footer player puts the transport in the middle.</p>
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span style="font-size:12px;color:#819088;font-weight:600;letter-spacing:0.6px">DESKTOP · 1440 × 900</span>
+        <div style="width:1440px;height:900px;border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);outline:1px solid #2a3630">
+          <dc-import name="Musimo A" device="desktop" screen="home" hint-size="1440px,900px" style="width:1440px;height:900px"></dc-import>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span style="font-size:12px;color:#819088;font-weight:600;letter-spacing:0.6px">PHONE · 390 × 844</span>
+        <div style="width:390px;height:844px;border-radius:44px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);outline:8px solid #1e2a23">
+          <dc-import name="Musimo A" device="phone" screen="home" hint-size="390px,844px" style="width:390px;height:844px"></dc-import>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="1b" style="display:flex;flex-direction:column;gap:20px">
+    <div style="display:flex;align-items:center;gap:14px">
+      <span style="font-size:13px;font-weight:700;padding:5px 10px;border-radius:7px;background:#c3e4a2;color:#172014">1b</span>
+      <span style="font-size:22px;font-weight:600;letter-spacing:-0.4px">Rethink: listening room</span>
+    </div>
+    <p style="margin:0;max-width:980px;font-size:14px;line-height:1.65;color:#93a39b;text-wrap:pretty">Three floating panes: an icon rail, the page, and a player dock that's always there and replaces the footer bar. Now Playing becomes a full stage with lyrics beside the art. Geist with Geist Mono is used for metadata, counts and durations. Search shows how much of an artist you already own. Octive has its chat next to an editable draft queue. Downloads are grouped by album, with a five-step progress bar for each track. Diagnostics reads as a pipeline.</p>
+    <div style="display:flex;gap:40px;align-items:flex-start;flex-wrap:wrap">
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span style="font-size:12px;color:#819088;font-weight:600;letter-spacing:0.6px">DESKTOP · 1440 × 900</span>
+        <div style="width:1440px;height:900px;border-radius:14px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);outline:1px solid #2a3630">
+          <dc-import name="Musimo B" device="desktop" screen="home" hint-size="1440px,900px" style="width:1440px;height:900px"></dc-import>
+        </div>
+      </div>
+      <div style="display:flex;flex-direction:column;gap:10px">
+        <span style="font-size:12px;color:#819088;font-weight:600;letter-spacing:0.6px">PHONE · 390 × 844</span>
+        <div style="width:390px;height:844px;border-radius:44px;overflow:hidden;box-shadow:0 30px 80px rgba(0,0,0,.6);outline:8px solid #1e2a23">
+          <dc-import name="Musimo B" device="phone" screen="home" hint-size="390px,844px" style="width:390px;height:844px"></dc-import>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+</x-dc>
+<script type="text/x-dc" data-dc-script>
+const BOARDS = [
+  ['Home', 'home'], ['Home · first run', 'home', { fr: true }], ['Search results', 'search'], ['Catalog artist', 'cartist'],
+  ['Catalog album', 'calbum'], ['Podcast', 'podcast'], ['Albums', 'albums'], ['Artists', 'artists'],
+  ['Tracks', 'tracks'], ['Playlists', 'playlists'], ['Playlist · Liked', 'playlist', { pl: 'liked' }], ['Playlist · Late night', 'playlist', { pl: 'late' }],
+  ['Album', 'album'], ['Artist', 'artist'], ['Now Playing · art', 'nowplaying'], ['Now Playing · visualizer', 'nowplaying', { np: 'visualizer' }],
+  ['Octive', 'bot'], ['Downloads · queue', 'downloads'], ['Downloads · errors', 'downloads', { dl: 'errors' }], ['Downloads · no match', 'downloads', { dl: 'nomatch' }],
+  ['Downloads · history', 'downloads', { dl: 'history' }], ['Settings · server', 'settings', { st: 'server' }], ['Settings · yours', 'settings'], ['Diagnostics', 'diagnostics'],
+]
+const PHONES = [['Home', 'home'], ['Albums', 'albums'], ['Playlist · Liked', 'playlist', { pl: 'liked' }], ['Now Playing · visualizer', 'nowplaying', { np: 'visualizer' }], ['Octive', 'bot'], ['Downloads · errors', 'downloads', { dl: 'errors' }]]
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/-$/, '')
+const mk = (layout, dev) => ([label, screen, o = {}]) => ({ label, screen, layout, st: 'yours', np: 'art', dl: 'queue', pl: 'late', fr: false, ...o, img: `shots/inv/${layout}-${dev}-${slug(label)}.jpg` })
+class Component extends DCLogic {
+  renderVals() {
+    return {
+      groups: [
+        { id: '3a', title: 'Classic layout', boards: BOARDS.map(mk('classic', 'd')), phones: PHONES.map(mk('classic', 'p')) },
+        { id: '3b', title: 'Listening room layout', boards: BOARDS.map(mk('room', 'd')), phones: PHONES.map(mk('room', 'p')) },
+      ],
+    }
+  }
+}
+
+</script>
+</body>
+</html>
