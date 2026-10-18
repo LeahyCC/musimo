@@ -4,6 +4,7 @@
 
 ### Music bot
 
+- Keep a refined list usable after one of its songs is deleted. Refresh preview, Remove and a chat follow-up leave the deleted song out and say how many were dropped, where they used to fail every time (#200)
 - Pin songs, replace the rest, add a song and remove one from a result card as edits of the same proposal. A library search shows a Pin toggle per song, Another set (Replace the rest while some songs are pinned) and Add a song, each a new revision the server picks, and Remove makes a new revision that keeps the song from coming back. A chat follow-up keeps removed songs out, and keeps pinned ones first when it is a library search. A preview refined elsewhere says it changed and offers Refresh preview instead of starting a new proposal, and an edit whose reply was lost is sent again with the same operation id while the chat waits. Refresh preview leaves a kept song that left the library out of the request and says so, and a kept song that cannot play is named and can be removed
 - Edit a proposal's songs from the structured entry point (contract version 5): `POST /api/music-bot/proposals/{id}/edits` gives another set (the songs you pinned stay, in their order, and the rest are drawn again), adds up to N songs that fit the same filters, or removes songs and never draws them again in that proposal. The filters and length carry over untouched. Kept songs are not cut by the limit, a length target or the artist cap, and one that can't play is a named error instead of being dropped. A retried operation id returns the revision it made and adds nothing twice. New intent fields `filters.exclude_ids` and `context.keep_ids`, `pinned_ids` and `add_count`. "Less aggressive, keep the tempo" still needs energy measurements, which are off, so it is refused
 - Store a length a broken file reports as infinite or not a number as unknown when scanning, and read one an older scan stored the same way. One such song used to make a chat fill to a length, or any reply listing it, fail with a server error. A fill to a length now skips it
@@ -83,6 +84,7 @@
 
 ### Testing and CI
 
+- Add the 2A interpreter suite: 128 labelled music bot requests against an invented library, the held-out part sealed by checksum, and a test that checks every label against the engine contract (#199)
 - Add a Vitest unit test runner for the frontend (#49)
 - Pin the stage view in the Now Playing popout test, which passed headless and failed on any machine with a WebGPU adapter (#62)
 - Keep prettier out of `.git` and the agent worktrees under `.claude`, so `npm run format` finishes instead of dying on a plugin it cannot resolve (#62)
