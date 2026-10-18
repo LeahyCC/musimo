@@ -618,15 +618,23 @@ export function NowPlayingStage({ fit = 'column' }: { fit?: StageFit }) {
   }
 
   return (
-    <div className="flex min-h-0 min-w-0 flex-1 flex-col gap-[10px]">
+    <div
+      className={cx(
+        'flex min-h-0 min-w-0 flex-1 flex-col gap-[10px]',
+        fit === 'column' && '[container-type:inline-size]',
+      )}
+    >
       {/* The stage's size container: it takes the height the column leaves and sets the square at
           its top left, so the art's edge lines up with the title and controls under it when a short
-          window makes the square narrower than the column (Large fills it instead). A phone has no
-          height to hand out, so there it is only a block. */}
+          window makes the square narrower than the column (Large fills it instead). It is never
+          taller than the column is wide: the square cannot use more, and on a tall window the rest
+          was an empty gap between the art and the title. A phone has no height to hand out, so
+          there it is only a block. */}
       <div
         className={cx(
           'relative grid min-h-0 flex-1 place-items-start',
-          fit === 'column' && '[container-type:size] max-phone:[container-type:normal]',
+          fit === 'column' &&
+            'max-h-[100cqi] [container-type:size] max-phone:max-h-none max-phone:[container-type:normal]',
         )}
       >
         {/* Before the stage, so the stage is painted over it. It is the stage's own size and reaches
@@ -661,6 +669,48 @@ export function NowPlayingStage({ fit = 'column' }: { fit?: StageFit }) {
         <span className="text-small text-muted" role="status">
           {popout.notice}
         </span>
+      )}
+    </div>
+  )
+}
+
+/**
+ * The Listening room dock's picture: its cover, or the visualizer when the stage would show it.
+ * It follows the same Art / visualizer choice, preset and Auto / Hold as Now Playing, so switching
+ * in either place switches both.
+ *
+ * There is one butterchurn instance, which draws into whichever canvas mounted last. The dock is
+ * never on screen with the page's own stage (it steps aside on Now Playing), but it can be with
+ * the popout window, so the dock keeps its cover while the popout is open: two canvases would
+ * fight over the one picture. A catalog preview has nothing for the visualizer to hear, so it
+ * keeps its cover too.
+ */
+export function DockStage({ cover, className }: { cover: ReactNode; className?: string }) {
+  const player = usePlayer()
+  const popout = useNowPlayingPopout()
+  const box = useRef<HTMLDivElement>(null)
+  const seen = useStageVisible(box, false, player.playing)
+  const live =
+    popout.canVisualize &&
+    popout.view === 'visualizer' &&
+    !popout.popout &&
+    Boolean(player.libraryTrack) &&
+    seen
+  return (
+    <div ref={box} className={cx('relative overflow-hidden', className)}>
+      {live ? (
+        <Suspense fallback={cover}>
+          <MilkdropStage
+            preset={popout.preset}
+            onUnsupported={popout.markUnsupported}
+            onMoment={popout.autoPresets ? popout.matchPreset : undefined}
+            progress={
+              player.length > 0 ? Math.min(1, Math.max(0, player.position / player.length)) : 0
+            }
+          />
+        </Suspense>
+      ) : (
+        cover
       )}
     </div>
   )

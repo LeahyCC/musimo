@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Phones, other computers and the dock
+
+- Accept the app's own writes from a phone, another computer or a reverse proxy such as Tailscale Serve. The cross-origin check now trusts the browser's `Sec-Fetch-Site`, which a page cannot fake, and only falls back to comparing Origin with Host for browsers that do not send it. A page on another site is still refused.
+- Keep Now Playing's stage controls on screen on a touch screen while music plays, so the visualizer switch and the preset buttons can be tapped. A tap used to hide them before it landed.
+- Add a visualizer switch to the Listening room's dock. The dock's cover becomes the live visualizer, with the same choice, preset and Auto / Hold as Now Playing.
+- Stop Classic's Now Playing stretching on a tall window: no gap under the art, and the Up next panel ends with the column.
+- Give Home's Octive card an "Ask Octive" heading, so it lines up with On repeat beside it.
+
 ### Styled dropdowns
 
 - Open every dropdown (Sort, Show, Genre, settings fields, download format and folder, visualizer presets) in a list that follows the theme, instead of the browser's own menu. Keyboard use is the same, and a phone keeps its own picker.

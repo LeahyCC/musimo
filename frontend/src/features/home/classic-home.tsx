@@ -321,30 +321,33 @@ function MostPlayed() {
 function Octive() {
   const ask = useAskOctive()
   return (
-    <section
-      aria-labelledby="home-octive"
-      className="min-w-0 flex-[2_1_300px] self-start rounded-[14px] border border-line bg-sunken p-[18px]"
-    >
-      <div className="flex items-center gap-[12px]">
-        <PetFace size={40} />
-        <div>
-          <h2 id="home-octive" className="m-0 text-lead font-semibold">
-            Octive can build a queue
-          </h2>
-          <p className="mt-[2px] text-small text-muted">From your tags, likes and play history.</p>
+    // A heading above the card, like On repeat's, so the two cards beside it start level.
+    <section aria-labelledby="home-octive" className="min-w-0 flex-[2_1_300px]">
+      <h2 id="home-octive" className={cx(sectionTitleClassName, 'mb-[14px]')}>
+        Ask Octive
+      </h2>
+      <div className="rounded-[14px] border border-line bg-sunken p-[18px]">
+        <div className="flex items-center gap-[12px]">
+          <PetFace size={40} />
+          <div>
+            <p className="m-0 text-lead font-semibold">Octive can build a queue</p>
+            <p className="mt-[2px] text-small text-muted">
+              From your tags, likes and play history.
+            </p>
+          </div>
         </div>
-      </div>
-      <div className="mt-[16px] flex flex-wrap gap-[8px]">
-        {OCTIVE_PROMPTS.map((prompt) => (
-          <button
-            key={prompt}
-            type="button"
-            onClick={() => ask(prompt)}
-            className="min-h-[32px] rounded-full border border-line-strong bg-raised px-[12px] text-small text-text hover:border-good-line hover:text-accent coarse:min-h-11"
-          >
-            {prompt}
-          </button>
-        ))}
+        <div className="mt-[16px] flex flex-wrap gap-[8px]">
+          {OCTIVE_PROMPTS.map((prompt) => (
+            <button
+              key={prompt}
+              type="button"
+              onClick={() => ask(prompt)}
+              className="min-h-[32px] rounded-full border border-line-strong bg-raised px-[12px] text-small text-text hover:border-good-line hover:text-accent coarse:min-h-11"
+            >
+              {prompt}
+            </button>
+          ))}
+        </div>
       </div>
     </section>
   )

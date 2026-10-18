@@ -101,6 +101,11 @@ const presetSelectClassName = cx(
 // The overlay fades out after a short still spell while music plays, and the
 // cursor goes with it. It stays while paused, while the pointer rests on a
 // control, and comes back on any movement or key.
+//
+// A touch screen keeps it: there is no pointer to rest or move, and every tap
+// ends with a `pointerleave`, which used to hide the controls between the tap
+// landing and the click, so the stage's buttons could not be pressed while a
+// song played.
 export function useOverlayIdle(container: RefObject<HTMLDivElement | null>, playing: boolean) {
   const [idle, setIdle] = useState(false)
 
@@ -109,8 +114,9 @@ export function useOverlayIdle(container: RefObject<HTMLDivElement | null>, play
     if (!element) return
     const win = element.ownerDocument.defaultView ?? window
     let timer = 0
+    const touchOnly = win.matchMedia('(hover: none)').matches
     const rest = () => {
-      if (!playing) return
+      if (!playing || touchOnly) return
       if (element.querySelector('.stage-overlay :hover')) {
         timer = win.setTimeout(rest, IDLE_MS)
         return
@@ -124,9 +130,10 @@ export function useOverlayIdle(container: RefObject<HTMLDivElement | null>, play
       if (playing) timer = win.setTimeout(rest, IDLE_MS)
     }
 
-    const leave = () => {
+    const leave = (event: PointerEvent) => {
+      if (event.pointerType === 'touch') return
       win.clearTimeout(timer)
-      if (playing) setIdle(true)
+      if (playing && !touchOnly) setIdle(true)
     }
 
     element.addEventListener('pointermove', wake)
@@ -687,7 +694,7 @@ export function NowPlayingOverlay({
                 fadeClassName,
               )}
             >
-              album art · V for visualizer
+              album art<span className="no-hover:hidden"> · V for visualizer</span>
             </span>
           )
         )}

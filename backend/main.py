@@ -6,7 +6,7 @@ import platform
 import re
 import subprocess
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import asynccontextmanager
 from pathlib import Path
 from urllib.parse import urlsplit
@@ -50,6 +50,29 @@ LIBRARY_SPA_PATH = re.compile(
     rf"^library/(?:(?:albums|playlists)(?:/{LIBRARY_ITEM})?|tracks|"
     rf"artists(?:/{LIBRARY_ITEM}(?:/(?:albums/{LIBRARY_ITEM}|songs))?)?)$"
 )
+
+
+def cross_origin_write(headers: Mapping[str, str], scheme: str) -> bool:
+    """Whether a write came from a page on another site, which the app refuses (CSRF).
+
+    A browser says where a request came from in `Sec-Fetch-Site`, and a page cannot set that
+    header itself, so when it is there it decides. That holds behind a reverse proxy or Tailscale
+    Serve, and when a phone or another computer reaches the app by a different name or address,
+    where the Host the app sees and the Origin the browser sends need not match even though the
+    page is the app's own. `none` is a request the person started themselves.
+
+    Only a browser too old to send it falls back to comparing Origin with Host and scheme. A
+    client that sends neither header, such as curl or the audio worker, is not a page and is let
+    through as before.
+    """
+    site = headers.get("sec-fetch-site")
+    if site is not None:
+        return site not in ("same-origin", "none")
+    origin = headers.get("origin")
+    if origin is None:
+        return False
+    parts = urlsplit(origin)
+    return parts.netloc != headers.get("host") or parts.scheme != scheme
 
 
 def runtime_versions() -> dict[str, str]:
@@ -167,14 +190,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     async def same_origin(request: Request, call_next: RequestResponseEndpoint) -> Response:
         # LAN applications still need CSRF protection against pages opened elsewhere in the browser.
         if request.method not in ("GET", "HEAD", "OPTIONS"):
-            origin = request.headers.get("origin")
-            if request.headers.get("sec-fetch-site") == "cross-site" or (
-                origin is not None
-                and (
-                    urlsplit(origin).netloc != request.headers.get("host")
-                    or urlsplit(origin).scheme != request.url.scheme
-                )
-            ):
+            if cross_origin_write(request.headers, request.url.scheme):
                 return JSONResponse(
                     {"detail": "Cross-origin writes are not allowed"}, status_code=403
                 )

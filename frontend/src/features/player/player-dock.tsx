@@ -4,6 +4,7 @@ import type { FormEvent, PointerEvent as ReactPointerEvent } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
+  AudioLines,
   ChevronDown,
   ChevronUp,
   CloudOff,
@@ -30,6 +31,7 @@ import { api, libraryPlaylistDetailSchema } from '../../api'
 import { cx } from '../../lib/cx'
 import { Button, ErrorBanner, Field, IconButton, iconButtonClassName } from '../../ui'
 import { PetSpot } from '../music-bot/pet-host'
+import { DockStage, useNowPlayingPopout } from '../now-playing/now-playing-popout'
 import { SleepTimerControl } from '../now-playing/sleep-timer-control'
 import { SeekBar } from '../now-playing/waveform-seek'
 import {
@@ -650,13 +652,34 @@ function UpNext({ className }: { className?: string }) {
 
 const dockClassName = 'rounded-[18px] bg-sunken text-text'
 
+/**
+ * Switches the dock's picture between the cover and the visualizer. It is the same choice as Now
+ * Playing's Art / MilkDrop switch, so it is only offered where the visualizer can run at all.
+ */
+function ViewToggle() {
+  const popout = useNowPlayingPopout()
+  if (!popout.canVisualize) return null
+  const on = popout.view === 'visualizer'
+  return (
+    <IconButton
+      size="compact"
+      aria-label="Visualizer"
+      active={on}
+      title={on ? 'Show the cover' : 'Show the visualizer'}
+      onClick={() => popout.setView(on ? 'artwork' : 'visualizer')}
+    >
+      <AudioLines size={16} />
+    </IconButton>
+  )
+}
+
 /** The wide window's dock: a column to the right of the page. */
 function DockColumn() {
   const { art, isLibrary } = useNowPlaying()
   const cover = (
-    <Cover
-      art={art}
-      className="mx-auto block aspect-square w-full max-w-[34dvh] rounded-[14px] shadow-[0_24px_50px_-24px_color-mix(in_oklab,var(--color-shadow)_80%,transparent)]"
+    <DockStage
+      cover={<Cover art={art} className="block size-full" />}
+      className="mx-auto aspect-square w-full max-w-[34dvh] rounded-[14px] bg-media shadow-[0_24px_50px_-24px_color-mix(in_oklab,var(--color-shadow)_80%,transparent)]"
     />
   )
   return (
@@ -668,6 +691,7 @@ function DockColumn() {
         <div className="mb-[8px] flex items-center gap-[4px]">
           <span className={cx(monoCaptionClassName, 'flex-1')}>NOW PLAYING</span>
           <PetSpot size={28} />
+          {isLibrary && <ViewToggle />}
           <ClosePlayer />
           <OpenStage />
         </div>
