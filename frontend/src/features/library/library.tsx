@@ -319,28 +319,25 @@ export function LibraryPage({
   })
   // The Listening room's view strip shows every view's size, so it asks each list for its total
   // (one row is enough, the total rides on the page).
+  // The playlist count comes from the shared playlist list instead, which everything that makes
+  // a playlist (the picker, Now Playing, the music bot) refreshes, so the strip never lags it.
+  const stripShown = ready && shell === 'room' && showBrowser
   const viewCounts = useQuery({
     queryKey: ['library-view-counts'],
-    queryFn: async ({ signal }): Promise<TabCounts> => {
-      const [albumPage, artistPage, trackPage, playlistPage] = await Promise.all([
+    queryFn: async ({ signal }): Promise<Omit<TabCounts, 'playlists'>> => {
+      const [albumPage, artistPage, trackPage] = await Promise.all([
         api('library/albums?size=1', libraryAlbumsSchema, { signal }),
         api('library/artists?size=1', libraryArtistsSchema, { signal }),
         api('library/tracks?size=1', libraryTracksSchema, { signal }),
-        api('library/playlists', libraryPlaylistsSchema, { signal }),
       ])
-      return {
-        albums: albumPage.total,
-        artists: artistPage.total,
-        tracks: trackPage.total,
-        playlists: playlistPage.items.length,
-      }
+      return { albums: albumPage.total, artists: artistPage.total, tracks: trackPage.total }
     },
-    enabled: ready && shell === 'room' && showBrowser,
+    enabled: stripShown,
   })
   const playlists = useQuery({
     queryKey: ['library-playlists'],
     queryFn: ({ signal }) => api('library/playlists', libraryPlaylistsSchema, { signal }),
-    enabled: ready && (tab === 'playlists' || Boolean(playlistId)),
+    enabled: ready && (tab === 'playlists' || Boolean(playlistId) || stripShown),
   })
   const albumDetail = useQuery({
     queryKey: ['library-album', albumId],
@@ -392,7 +389,6 @@ export function LibraryPage({
       }),
     onSuccess: (playlist) => {
       void client.invalidateQueries({ queryKey: ['library-playlists'] })
-      void client.invalidateQueries({ queryKey: ['library-view-counts'] })
       setShowPlaylistForm(false)
       setNewName('')
       void navigate({
@@ -423,7 +419,6 @@ export function LibraryPage({
     onSuccess: () => {
       browse.open('playlists')
       void client.invalidateQueries({ queryKey: ['library-playlists'] })
-      void client.invalidateQueries({ queryKey: ['library-view-counts'] })
     },
   })
   const favouriteArtist = useMutation({
@@ -661,7 +656,7 @@ export function LibraryPage({
   const backLabel = albumParent?.name ?? (playlistId ? 'playlists' : albumId ? 'albums' : 'artists')
   const browsing = tab === 'home' ? 'albums' : tab
   // Classic prints the count of what the active view matches. The Listening room prints every
-  // view's whole-library count in its strip, which `viewCounts` fetches.
+  // view's whole-library count in its strip: `viewCounts`, plus the playlist list's length.
   const activeTotal =
     browsing === 'artists'
       ? artistTotal
@@ -672,7 +667,11 @@ export function LibraryPage({
           : albumTotal
   const activeLoaded = !activeQuery.isLoading && !activeQuery.isError
   const tabCounts: TabCounts =
-    shell === 'room' ? (viewCounts.data ?? {}) : activeLoaded ? { [browsing]: activeTotal } : {}
+    shell === 'room'
+      ? { ...viewCounts.data, playlists: playlists.data?.items.length }
+      : activeLoaded
+        ? { [browsing]: activeTotal }
+        : {}
   const headingActions =
     tab === 'tracks' ? (
       <>

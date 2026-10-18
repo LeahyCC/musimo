@@ -82,6 +82,7 @@ export function LibraryHeading({
             <button
               key={item}
               type="button"
+              data-ui="tab"
               aria-pressed={tab === item}
               onClick={() => onOpen(item)}
               className={cx(
@@ -121,6 +122,7 @@ export function LibraryHeading({
           <button
             key={item}
             type="button"
+            data-ui="tab"
             aria-pressed={tab === item}
             onClick={() => onOpen(item)}
             className={cx(
