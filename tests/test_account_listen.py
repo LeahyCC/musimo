@@ -224,7 +224,8 @@ class AccountListenTests(unittest.TestCase):
 
             thread = threading.Thread(target=probe)
             thread.start()
-            self.assertTrue(thread.join(5) is None and not thread.is_alive())
+            thread.join(5)
+            self.assertFalse(thread.is_alive())
             target = folder / "source.mp3"
             target.write_bytes(b"playable-audio")
             (folder / "account.bin").unlink(missing_ok=True)
