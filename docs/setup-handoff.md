@@ -52,6 +52,8 @@ The default address is http://127.0.0.1:8765. Keep the loopback bind initially. 
 
 Save my destination and format. Scan the mounted collection and wait for completion. the library is separate and is not included in this Compose stack. If I want it, reuse my existing installation or install it from its current official instructions. Both apps must see the same host music folder. Choose watcher mode when its watcher works, or configure API scanning using the documented library ID and a credentials file mounted read-only from outside the checkout. Keep passwords out of chat, logs and Git. Verify connectivity from inside Musimo: localhost there refers to the container itself.
 
+Deezer account downloads save the account file as it arrived. The program that turns that file into audio is separate: https://github.com/LeahyCC/musimo-account-file. Do not clone it or set Command for the account file during this installation. Leave that setting empty. An account file that does not already play then fails that source, and the next source runs. After this setup is finished, the handoff in that repository mounts the program into this Musimo and saves the command. A Deezer cookie remains optional and is pasted in Settings, never into the chat.
+
 4. Set up remote access only if requested.
 
 Musimo currently has no built-in login. For Tailscale access, keep Musimo on loopback and configure private Tailscale Serve on the host. Check current official Serve documentation and installed CLI help. Inspect existing Serve/Funnel configuration first; preserve other apps' routes. Use an available HTTPS listener serving Musimo at its root, unless the current app explicitly supports a subpath. Do not enable public Funnel or router port forwarding for a private setup.
@@ -64,7 +66,7 @@ Test through the final HTTPS address, including saving a setting and live queue 
 
 - Open search, find an artist, open an album and play an available preview.
 - Confirm an existing known file is indexed and gets the expected library badge, if I have a collection.
-- Download one recording I have permission to obtain. Use my selected example or a verified permitted fixture. Confirm the job finishes, the full audio file plays, its tags are sensible, and it exists in the intended host folder. Report missing optional artwork or lyrics honestly. A preview clip or a queued job is not a successful full download.
+- Download one recording I have permission to obtain. Use my selected example or a verified permitted fixture. Confirm the job finishes, the full audio file plays, its tags are sensible, and it exists in the intended host folder. Report missing optional artwork or lyrics honestly. A preview clip or a queued job is not a successful full download. If the Deezer account was tried and the file did not already play, that source failing before another source saves the song is expected while Command for the account file is empty.
 - Confirm the new file is indexed in Musimo and, if configured, appears and plays in the library.
 - Open Download all albums on an artist. Check selection and album/song counts without submitting an entire discography just to test installation.
 - Once the test job has finished, restart only this Musimo service. Confirm health, saved preferences, library index and history survive, and the page reconnects to live updates.
@@ -74,7 +76,7 @@ Use an isolated instance for repository tests that seed jobs, change settings or
 
 6. Leave a usable handoff.
 
-Write a short private setup note outside tracked source, such as runtime/setup-notes.md, with the installed revision, checkout path, exact Compose project/files/profiles, URLs, host-to-container music mappings, actual data volume, selected integrations and tested results. Include start, stop, logs and update commands for this installation, plus a backup/restore procedure. Backups must cover application state, music and private configuration. Stop Musimo for a consistent database copy or use SQLite's backup API; do not copy only a live database file while ignoring its WAL. Never use docker compose down -v as an update step.
+Write a short private setup note outside tracked source, such as runtime/setup-notes.md, with the installed revision, checkout path, exact Compose project/files/profiles, URLs, host-to-container music mappings, actual data volume, selected integrations and tested results. Record that Command for the account file was left empty for the later account-file handoff. Include start, stop, logs and update commands for this installation, plus a backup/restore procedure. Backups must cover application state, music and private configuration. Stop Musimo for a consistent database copy or use SQLite's backup API; do not copy only a live database file while ignoring its WAL. Never use docker compose down -v as an update step.
 
 Finish with my working URL, where music and state are stored, what passed, and any remaining action. Call the requested setup complete only when its checks pass. If a login, device test or provider issue blocks completion, say exactly what is still needed and keep the completed work intact.
 ```
