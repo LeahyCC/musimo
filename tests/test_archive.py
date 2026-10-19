@@ -389,7 +389,7 @@ class FormatTests(unittest.TestCase):
 
 # DJ mixes and radio shows are other people's copyrighted work, and none of them carries a licence
 # a person can point to, so the probe has nothing it may fairly download for these sites.
-UNPROBED = {"mixcloud", "nts", "hearthis", "bbc", "tunein"}
+UNPROBED = {"mixcloud", "nts", "hearthis", "bbc"}
 
 
 class ProbeListTests(unittest.TestCase):

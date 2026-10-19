@@ -51,7 +51,6 @@ class SiteTests(unittest.TestCase):
             "nts": ("radio", {"nts.live", "mixcloud", "soundcloud"}),
             "hearthis": ("mix", {"HearThisAt"}),
             "bbc": ("radio", {"bbc.co.uk"}),
-            "tunein": ("radio", {"tunein:podcast", "tunein:podcast:program"}),
         }
         from yt_dlp.extractor import gen_extractor_classes  # type: ignore[import-untyped]
 
@@ -70,8 +69,6 @@ class SiteTests(unittest.TestCase):
             "bbc.co.uk:playlist",
         ):
             self.assertNotIn(name, site_of("bbc").extractors)
-        for name in ("tunein:station", "tunein:embed", "tunein:shortener"):
-            self.assertNotIn(name, site_of("tunein").extractors)
 
     def test_good_links_reach_their_row(self) -> None:
         for url, source in {
@@ -84,7 +81,6 @@ class SiteTests(unittest.TestCase):
             "https://www.bbc.co.uk/programmes/b00772lv": "bbc",
             "https://bbc.co.uk/programmes/m0031c9v": "bbc",
             "https://www.bbc.co.uk/sounds/play/m0031c9v": "bbc",
-            "https://tunein.com/podcasts/Music-Podcasts/Some-Show-p123/": "tunein",
         }.items():
             with self.subTest(url=url):
                 self.assertEqual(matches(url), source)
@@ -118,18 +114,6 @@ class SiteTests(unittest.TestCase):
             sources.refusal("https://www.bbc.co.uk/news/videos/c1234abcd"),
             "Musimo only takes programme and Sounds pages from BBC Sounds.",
         )
-
-    def test_a_tunein_station_is_refused_as_live_and_a_podcast_is_not(self) -> None:
-        for url in (
-            "https://tunein.com/radio/BBC-Radio-1-s24939/",
-            "https://tunein.com/radio/NTS-Radio-s123456",
-        ):
-            with self.subTest(url=url):
-                self.assertIsNone(sources.match(url))
-                self.assertEqual(sources.refusal(url), sources.LIVE_MESSAGE)
-        podcast = "https://tunein.com/podcasts/Comedy-Podcasts/A-Show-p1111/"
-        self.assertEqual(matches(podcast), "tunein")
-        self.assertIsNone(sources.match("https://tunein.com/embed/player/s24939/"))
 
     def test_live_channels_of_the_other_sites_are_refused_as_live(self) -> None:
         for url in (
@@ -170,22 +154,20 @@ class SiteTests(unittest.TestCase):
         )
         self.assertFalse(sources.reaches(site_of("bandcamp"), "https://www.mixcloud.com/dj/a-mix/"))
 
-    def test_a_site_that_does_not_work_is_left_out_and_refused(self) -> None:
-        self.assertFalse(site_of("audiomack").working)
-        self.assertFalse(site_of("tunein").working)
-        for source in ("youtube", "archive", "bandcamp", "soundcloud", "audius", "jamendo"):
-            self.assertTrue(site_of(source).working, source)
+    def test_every_listed_site_works_and_is_named(self) -> None:
+        for site in sources.SITES:
+            self.assertTrue(site.working, site.source)
         listed = sources.labels().split(", ")
-        self.assertNotIn("Audiomack", listed)
-        self.assertNotIn("TuneIn", listed)
         for label in ("Mixcloud", "NTS", "HearThisAt", "BBC Sounds", "Bandcamp"):
             self.assertIn(label, listed)
-        self.assertEqual(
-            sources.unavailable(site_of("audiomack")),
-            "Audiomack links don't work right now. The tool Musimo uses can't read that site.",
-        )
-        # It still matches, so its tests and probe keep running.
-        self.assertEqual(matches("https://audiomack.com/a/song/b"), "audiomack")
+        self.assertNotIn("Audiomack", listed)
+        self.assertNotIn("TuneIn", listed)
+        for url in (
+            "https://audiomack.com/a/song/b",
+            "https://tunein.com/podcasts/Comedy-Podcasts/A-Show-p1111/",
+            "https://tunein.com/radio/BBC-Radio-1-s24939/",
+        ):
+            self.assertIsNone(matches(url))
 
 
 class KindTests(unittest.TestCase):
@@ -531,13 +513,15 @@ class PreviewTests(Harness):
             ("NTS Radio", "NTS Radio", "Absolute Fiction", "Radio", ""),
         )
 
-    async def test_a_site_that_does_not_work_is_refused_before_anything_runs(self) -> None:
+    async def test_a_link_outside_the_table_is_refused_before_anything_runs(self) -> None:
         for url, message in {
-            "https://audiomack.com/a/song/b": sources.unavailable(site_of("audiomack")),
-            "https://tunein.com/podcasts/Comedy-Podcasts/A-Show-p1111/": sources.unavailable(
-                site_of("tunein")
+            "https://audiomack.com/a/song/b": sources.refusal("https://audiomack.com/a/song/b"),
+            "https://tunein.com/podcasts/Comedy-Podcasts/A-Show-p1111/": sources.refusal(
+                "https://tunein.com/podcasts/Comedy-Podcasts/A-Show-p1111/"
             ),
-            "https://tunein.com/radio/BBC-Radio-1-s24939/": sources.LIVE_MESSAGE,
+            "https://tunein.com/radio/BBC-Radio-1-s24939/": sources.refusal(
+                "https://tunein.com/radio/BBC-Radio-1-s24939/"
+            ),
             "https://www.bbc.co.uk/iplayer/episode/b00yng5w/x": (
                 "Musimo only takes programme and Sounds pages from BBC Sounds."
             ),

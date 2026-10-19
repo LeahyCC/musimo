@@ -46,8 +46,8 @@ describe('what is ticked when a link sheet opens', () => {
 
   it('ticks a lone track even when a copy is owned, and even on a profile flag', () => {
     const owned = { single: true, entries: [entry('a', true)] }
-    expect(initialSelection(preview('Audiomack', owned))).toEqual(new Set(['a']))
-    expect(initialSelection(preview('Audiomack', { ...owned, profile: true }))).toEqual(
+    expect(initialSelection(preview('Jamendo', owned))).toEqual(new Set(['a']))
+    expect(initialSelection(preview('Jamendo', { ...owned, profile: true }))).toEqual(
       new Set(['a']),
     )
   })

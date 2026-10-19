@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+### Pasted links
+
+- Remove Audiomack and TuneIn. The pinned yt-dlp still cannot read either site, and no later release has fixed them.
+
 ### Phones, other computers and the dock
 
 - Accept the app's own writes from a phone, another computer or a reverse proxy such as Tailscale Serve. The cross-origin check now trusts the browser's `Sec-Fetch-Site`, which a page cannot fake, and only falls back to comparing Origin with Host for browsers that do not send it. A page on another site is still refused.

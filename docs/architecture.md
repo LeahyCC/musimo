@@ -189,7 +189,6 @@ Not yet implemented:
 
 - Catalog imports from Spotify or Apple Music links. A pasted one is refused with "Catalog imports are not built yet."
 - AcoustID identification of a pasted link whose metadata is junk.
-- Audiomack and TuneIn links. Their rows are in the site table with `working` off, because yt-dlp cannot read either site today.
 - Source test UI.
 - Notification test endpoints.
 - Updater controls.

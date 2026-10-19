@@ -65,7 +65,7 @@ Not yet in a release; the [changelog](../CHANGELOG.md#unreleased) has the full l
 - ✓ Home shows recent searches and the newest library albums, with the four starter artists as the fallback for a new install
 - ✓ Library Tracks A to Z has no track number column and clamps album names to two lines; playlists number rows by place
 
-Two sites are in the list but switched off because yt-dlp cannot read them today: Audiomack and TuneIn. The SoundCloud match source has not been run against the live site or measured. [More sources](more-sources.md) records what was checked against real sites and what was not.
+The SoundCloud match source has not been run against the live site or measured. [More sources](more-sources.md) records what was checked against real sites and what was not.
 
 ## Finish the existing journey first
 

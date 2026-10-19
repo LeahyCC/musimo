@@ -211,24 +211,6 @@ SITES: tuple[Site, ...] = (
         ),
     ),
     Site(
-        source="audiomack",
-        label="Audiomack",
-        kind="music",
-        extractors=("audiomack", "audiomack:album"),
-        items=("audiomack",),
-        hosts=("audiomack.com", "www.audiomack.com"),
-        art_hosts=("assets.audiomack.com",),
-        audio_format=KEPT_AUDIO,
-        album_lists=("audiomack:album",),
-        # yt-dlp 2026.8.19 stops with "Failed to parse JSON" on the live site (19 September 2026).
-        # TODO: check whether yt-dlp PR 17258 has merged (the Audiomack extractor rewrite).
-        working=False,
-        quality_note=(
-            "Audiomack does not say what quality its streams are. Expect a standard "
-            "stream, not lossless."
-        ),
-    ),
-    Site(
         source="audius",
         label="Audius",
         kind="music",
@@ -321,22 +303,6 @@ SITES: tuple[Site, ...] = (
         # BBC titles read "Show, Episode".
         title_show=r"(?P<show>[^,]+),\s.+",
         quality_note="BBC Sounds streams are AAC. They only play in the UK.",
-    ),
-    Site(
-        source="tunein",
-        label="TuneIn",
-        kind="radio",
-        extractors=("tunein:podcast", "tunein:podcast:program"),
-        items=("tunein:podcast",),
-        hosts=("tunein.com",),
-        # A station is live, and `/radio/` is where they all are.
-        paths=(r"/podcasts/.+",),
-        only="podcast pages",
-        live_paths=(r"/radio/.+",),
-        # yt-dlp 2026.8.19 gets "HTTP Error 400" and then "Items" from TuneIn's own API for every
-        # programme tried (19 September 2026).
-        working=False,
-        quality_note="TuneIn podcasts play the publisher's own file.",
     ),
 )
 

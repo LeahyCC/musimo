@@ -1,4 +1,4 @@
-"""The indie sites (Bandcamp, SoundCloud, Audiomack, Audius, Jamendo) as pasted-link sites, from
+"""The indie sites (Bandcamp, SoundCloud, Audius, Jamendo) as pasted-link sites, from
 canned yt-dlp answers. Nothing here touches the network."""
 
 import asyncio
@@ -75,8 +75,6 @@ class HostTests(unittest.TestCase):
             "https://www.soundcloud.com/artist/sets/album": "soundcloud",
             "https://m.soundcloud.com/artist": "soundcloud",
             "https://api-v2.soundcloud.com/tracks/123": "soundcloud",
-            "https://audiomack.com/artist/song/title": "audiomack",
-            "https://www.audiomack.com/artist/album/title": "audiomack",
             "https://audius.co/artist/track-1": "audius",
             "https://www.jamendo.com/track/1/title": "jamendo",
             "https://jamendo.com/album/1/title": "jamendo",
@@ -88,8 +86,8 @@ class HostTests(unittest.TestCase):
             "https://soundcloud.com.evil.test/a/b",
             "https://evil.soundcloud.com/a/b",
             "https://on.soundcloud.com/abc",
-            "https://audiomack.com.evil.test/a/song/b",
-            "https://music.audiomack.com/a.mp3",
+            "https://audiomack.com/artist/song/title",
+            "https://www.audiomack.com/artist/album/title",
             "https://audius.co.evil.test/a/b",
             "https://api.audius.co/v1/tracks/1",
             "https://jamendo.com.evil.test/track/1",
@@ -131,7 +129,6 @@ class HostTests(unittest.TestCase):
                 "soundcloud:playlist",
                 "soundcloud:user",
             },
-            "audiomack": {"audiomack", "audiomack:album"},
             "audius": {"Audius", "audius:track", "audius:playlist", "audius:artist"},
             "jamendo": {"Jamendo", "JamendoAlbum"},
         }
@@ -207,7 +204,6 @@ class HostTests(unittest.TestCase):
                     "https://audius.co/artist/album/a-record",
                 ],
             ),
-            "audiomack": ([], ["https://audiomack.com/artist", "https://audiomack.com/a/song/b"]),
             "jamendo": (
                 [],
                 ["https://www.jamendo.com/track/1/x", "https://www.jamendo.com/album/1/x"],
@@ -680,23 +676,6 @@ class OtherSitesMappingTests(unittest.TestCase):
         )
         self.assertEqual({row["date"] for row in rows}, {"2013-05-09"})
         self.assertEqual({row["album_list"] for row in rows}, {True})
-
-    def test_an_audiomack_song_takes_its_uploader_as_the_artist(self) -> None:
-        raw = {
-            "id": "55",
-            "extractor": "audiomack",
-            "title": "Cylinder Four",
-            "uploader": "Chris",
-            "url": "https://music.audiomack.com/song.mp3",
-            "webpage_url": "https://audiomack.com/chris/song/cylinder-four",
-        }
-        preview = captured("audiomack", "https://audiomack.com/chris/song/cylinder-four", raw)
-        (row,) = entries_of(preview)
-        self.assertEqual(
-            (row["title"], row["artist"], row["album_list"]), ("Cylinder Four", "Chris", False)
-        )
-        # The address kept is the page, which is on the site, not the file address.
-        self.assertEqual(row["url"], "https://audiomack.com/chris/song/cylinder-four")
 
     def test_release_dates_come_from_seconds_since_1970_when_no_date_field_is_there(self) -> None:
         self.assertEqual(resolver.day({"release_timestamp": 1743724800.0}), "2025-04-04")

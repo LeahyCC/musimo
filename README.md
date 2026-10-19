@@ -72,7 +72,7 @@ Search and library features:
 
 - Deezer catalog search with Top, Tracks, Albums and Artists views.
 - Podcast search and episode downloads from Apple's podcast directory, saved under `Podcasts/<show>`.
-- Paste a link into the search box to review it and download it directly. It works with YouTube, the Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, Mixcloud, NTS, HearThisAt and BBC Sounds. DJ mixes and radio shows are saved under `Mixes/<uploader>`. Audiomack and TuneIn are in the code but switched off, because the download tool cannot read them today.
+- Paste a link into the search box to review it and download it directly. It works with YouTube, the Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, Mixcloud, NTS, HearThisAt and BBC Sounds. DJ mixes and radio shows are saved under `Mixes/<uploader>`.
 - Typeahead, independent result sections, pagination, filters and sorting.
 - Search state in the URL, so refresh and browser Back preserve the query.
 - Album pages and artist discographies grouped by catalog release type.
