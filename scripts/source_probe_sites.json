@@ -24,12 +24,6 @@
     "why": "One track by Scott Buckley whose title carries CC-BY and whose description says it is released under Creative Commons Attribution 4.0, with the credit line to use. The licence field on the SoundCloud page itself reads all-rights-reserved, so the artist's own statement in the description is what makes it safe to use, not that field."
   },
   {
-    "source": "audiomack",
-    "url": "https://audiomack.com/chris-zabriskie/song/cylinder-four",
-    "format": "bestaudio[acodec!=?alac][acodec!=?wav][acodec!=?aiff]/best[acodec!=?alac][acodec!=?wav][acodec!=?aiff]",
-    "why": "Cylinder Four by Chris Zabriskie, on his verified Audiomack account. Audiomack has no licence field, so what makes it safe is the artist's own release of the same catalog under Creative Commons Attribution 4.0 (creativecommons.org/licenses/by/4.0), stated on his Bandcamp album pages. The yt-dlp extractor for this site failed against the live site on 19 September 2026."
-  },
-  {
     "source": "audius",
     "url": "https://audius.co/kochunterzz/huntin-koch-creative-commons-remix-354365",
     "format": "bestaudio[acodec!=?alac][acodec!=?wav][acodec!=?aiff]/best[acodec!=?alac][acodec!=?wav][acodec!=?aiff]",

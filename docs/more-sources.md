@@ -14,7 +14,7 @@ Spotify, Apple Music and Tidal audio are DRM and stay out. A pasted Spotify or A
 
 ## What was checked
 
-Against the pinned yt-dlp 2026.8.19 on 19 September 2026, every extractor below exists and reports itself as working. That flag only means upstream has not marked it broken. Nine sites were then downloaded from for real: YouTube (one pasted link, on a Windows install without the PO token provider), the Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, HearThisAt, NTS (through the Mixcloud copy of the show) and BBC Sounds. Audiomack and TuneIn failed and are switched off in the site table (`working`). Mixcloud was read but not downloaded on its own; NTS's download went through Mixcloud's extractor, so it is covered that way. The YouTube entry of the probe site list was not run, because the probe expects the PO token provider, and SoundCloud as a match source was not run against the live site at all.
+Against the pinned yt-dlp 2026.8.19 on 19 September 2026, every extractor below exists and reports itself as working. That flag only means upstream has not marked it broken. Nine sites were then downloaded from for real: YouTube (one pasted link, on a Windows install without the PO token provider), the Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, HearThisAt, NTS (through the Mixcloud copy of the show) and BBC Sounds. Audiomack and TuneIn failed the same day and were later removed from the site table. Mixcloud was read but not downloaded on its own; NTS's download went through Mixcloud's extractor, so it is covered that way. The YouTube entry of the probe site list was not run, because the probe expects the PO token provider, and SoundCloud as a match source was not run against the live site at all.
 
 The table is the site table in `backend/core/sources.py`, in its order.
 
@@ -24,14 +24,12 @@ The table is the site table in `backend/core/sources.py`, in its order.
 | Internet Archive | `music` | `archive.org`                                                            | Downloaded. Multi-file items, one row per track. FLAC is kept when the item has it.                |
 | Bandcamp         | `music` | `Bandcamp`, `Bandcamp:album`, `Bandcamp:user`                            | Downloaded: 128 kbps stream, or FLAC when the artist offers a free download.                       |
 | SoundCloud       | `music` | `soundcloud`, `soundcloud:set`, `soundcloud:playlist`, `soundcloud:user` | Downloaded: 160 kbps AAC. `soundcloud:search` is not allowed. A track over 20 minutes is a mix.    |
-| Audiomack        | `music` | `audiomack`, `audiomack:album`                                           | **Failed**: yt-dlp cannot read the live site. Switched off.                                        |
 | Audius           | `music` | `Audius`, `audius:track`, `audius:playlist`, `audius:artist`             | Downloaded: 320 kbps MP3. No cover art.                                                            |
 | Jamendo          | `music` | `Jamendo`, `JamendoAlbum`                                                | Downloaded: FLAC. Creative Commons music, named in the brief. No cover art in an album list.       |
 | Mixcloud         | `mix`   | `mixcloud`, `mixcloud:playlist`, `mixcloud:user`                         | Read for real, not downloaded on its own. A user list is read in full, so a big account times out. |
 | NTS              | `radio` | `nts.live`, then `mixcloud` or `soundcloud`                              | Downloaded, through the Mixcloud copy of the episode.                                              |
 | HearThisAt       | `mix`   | `HearThisAt`                                                             | Downloaded: 320 kbps MP3. The data names no uploader.                                              |
 | BBC Sounds       | `radio` | `bbc.co.uk`                                                              | Downloaded: 318 kbps AAC (HLS, so FFmpeg does the transport). UK only.                             |
-| TuneIn           | `radio` | `tunein:podcast`, `tunein:podcast:program`                               | **Failed**: yt-dlp gets HTTP 400 from TuneIn's API. Switched off. Stations are live and refused.   |
 
 ### Internet Archive, checked for real
 
@@ -48,13 +46,12 @@ Not checked: an item whose originals are FLAC (the FLAC choice is covered by tes
 
 On 19 September 2026 with yt-dlp 2026.8.19, no cookies, from a Windows machine. Every URL is an openly licensed one, and `scripts/source_probe_sites.json` says why each is safe to use.
 
-| Site       | Probe (`--site-list --only`, one attempt) | What the file was                                                                                                      |
-| ---------- | ----------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| Bandcamp   | 7.447 s, ok                               | A 60 s FLAC. The artist has switched on free downloads.                                                                |
-| SoundCloud | 6.300 s, ok                               | 160 kbps AAC (`hls_aac_160k`), 199 s.                                                                                  |
-| Audiomack  | 1.598 s, **failed**                       | Nothing. yt-dlp's Audiomack extractor stops with "Failed to parse JSON" on the live site, for a song and for an album. |
-| Audius     | 4.282 s, ok                               | 320 kbps MP3 (320,089 bps measured), 274 s.                                                                            |
-| Jamendo    | 20.521 s, ok                              | FLAC of 460,687 bps, 210 s.                                                                                            |
+| Site       | Probe (`--site-list --only`, one attempt) | What the file was                                       |
+| ---------- | ----------------------------------------- | ------------------------------------------------------- |
+| Bandcamp   | 7.447 s, ok                               | A 60 s FLAC. The artist has switched on free downloads. |
+| SoundCloud | 6.300 s, ok                               | 160 kbps AAC (`hls_aac_160k`), 199 s.                   |
+| Audius     | 4.282 s, ok                               | 320 kbps MP3 (320,089 bps measured), 274 s.             |
+| Jamendo    | 20.521 s, ok                              | FLAC of 460,687 bps, 210 s.                             |
 
 One attempt is not a median or a p95. Beyond the probe:
 
@@ -64,7 +61,7 @@ One attempt is not a median or a p95. Beyond the probe:
 - **SoundCloud.** A profile of 295 tracks took 14.5 s to list, and a profile's sets page 14.6 s. Both are close to the server's 20 second limit, so a slower connection can time out. One track went through the real UI (paste, review, queue, worker, tagging) into `Scott Buckley/In This Moment (CC-BY)/` as a 160 kbps AAC file, tagged from the site and noted "no catalog match" by the Deezer lookup. A set that is an album was checked at the listing stage only, not downloaded.
 - **Audius.** Six page reads at once drew HTTP 429 from Audius, so the resolver reads three at a time and tries a failed page once more; a profile of 15 tracks then listed in full. Audius covers sit on many different node hosts, so none is kept.
 - **Jamendo.** A 12 track album listed in 8.1 s with each track's title and artist, numbered by list order. yt-dlp listed no cover art for it, so its files have none.
-- **Audiomack.** Not checked beyond the failure above. What an album's rows look like comes from reading the extractor's code, not from a run: each row is a file address on Audiomack's storage host, with no song page. The row has `working` off, so it is left out of the "It works with:" message and a pasted Audiomack link is refused with "Audiomack links don't work right now. The tool Musimo uses can't read that site." Its tests and probe entry stay, so a fixed yt-dlp needs one line changed.
+- **Audiomack.** Probed the same day and failed in 1.598 s: yt-dlp's extractor stops with "Failed to parse JSON" on the live site, for a song and for an album. The row was later removed. The rewrite that might fix it, [yt-dlp PR 17258](https://github.com/yt-dlp/yt-dlp/pull/17258), was still open on 18 October 2026, and 2026.08.19 was still the latest release.
 
 ### Mixes and radio, checked for real
 
@@ -76,9 +73,8 @@ On 19 September 2026 with yt-dlp 2026.8.19, no cookies, from a Windows machine, 
 | NTS        | an episode from 2022, through its Mixcloud copy              | Resolved in 2.3 s (album `Absolute Fiction`, read from the address). Downloaded in 147 s: an 80 MB Opus file at 180 kbps, genre `Radio`, with the cover, under `Mixes/Mixcloud NTS Radio/2022-07-25 - ...`.                                                            |
 | BBC Sounds | a 45 minute 2004 programme, pasted as a `/sounds/play/` link | Read as its `/programmes/` page in 4.2 s. Downloaded in 89 s: a 101 MB AAC file at 318 kbps, genre `Radio`, artist `BBC Sounds`, album `Desert Island Discs`, no date in the data so the file is dated the day it was downloaded.                                      |
 | Mixcloud   | one show, and a small account's uploads                      | The show resolved in 2.2 s with a cover (its address has no file extension, so the resolver takes a bare address for these kinds). A user page listed in 14.6 s and was marked partial. The track artists yt-dlp lists for a mix are not used; the uploader is.        |
-| TuneIn     | two podcast programmes                                       | Failed both times: "HTTP Error 400" from the site's own API, then a `KeyError`. Switched off.                                                                                                                                                                          |
 
-- **Refusals, against the real server.** A BBC news video link ("Musimo only takes programme and Sounds pages from BBC Sounds."), a TuneIn station ("Live streams never finish, so they can't be saved.") and an Audiomack link ("Audiomack links don't work right now...") each showed their own message on the review sheet.
+- **Refusals, against the real server.** A BBC news video link showed "Musimo only takes programme and Sounds pages from BBC Sounds." TuneIn failed both podcast programmes with "HTTP Error 400" from the site's own API, then a `KeyError`. The last TuneIn extractor fix shipped in yt-dlp 2025.09.23, which this pin already includes, and no later release has replaced it. The TuneIn row was later removed.
 - **Geo restriction, for real.** A current Desert Island Discs episode (`/programmes/m0031c9v`) answered "geolocation" to this machine, and the real resolver turned that into 422 "BBC Sounds only plays in the UK, and this server is not there." at the preview. The 2004 programme above plays anywhere, so a BBC link can go either way.
 - **Not checked.** A Mixcloud account with thousands of uploads (yt-dlp reads every page before it returns, so it cannot finish in 20 seconds). A SoundCloud track over 20 minutes was covered by tests on canned data only.
 
@@ -128,23 +124,23 @@ Open: measure the corpus against SoundCloud, then decide whether the switch shou
 
 ### Phase 3: indie and unsigned music
 
-Shipped: rows for Bandcamp, SoundCloud, Audius and Jamendo, plus Audiomack with `working` off. Each row has a `quality_note` shown on the sheet. A Bandcamp, SoundCloud or Jamendo album lands like a catalog album, and a SoundCloud set is an album only when SoundCloud says so. Profile links open up to ten releases. The resolver reads the page of every row that lists no title (at most 40) and fills an album's artist, date and cover from the first track, all inside a 14 second budget, and a page it could not finish is marked `partial`. The format selector `KEPT_AUDIO` skips ALAC, WAV and AIFF, which the worker cannot keep. A track whose list names no artist takes it from its own page when the worker runs.
+Shipped: rows for Bandcamp, SoundCloud, Audius and Jamendo. Each row has a `quality_note` shown on the sheet. A Bandcamp, SoundCloud or Jamendo album lands like a catalog album, and a SoundCloud set is an album only when SoundCloud says so. Profile links open up to ten releases. The resolver reads the page of every row that lists no title (at most 40) and fills an album's artist, date and cover from the first track, all inside a 14 second budget, and a page it could not finish is marked `partial`. The format selector `KEPT_AUDIO` skips ALAC, WAV and AIFF, which the worker cannot keep. A track whose list names no artist takes it from its own page when the worker runs.
 
 Checked for real: see "Indie sites, checked for real" above. It found the ALAC failure, fixed by `KEPT_AUDIO`, and the Audius 429 that made the resolver read three pages at a time.
 
-Not checked: Audiomack beyond the failure. A SoundCloud set that is an album was checked at the listing stage only.
+Not checked: a SoundCloud set that is an album was checked at the listing stage only.
 
-Open: Audiomack. TODO: check whether [yt-dlp PR 17258](https://github.com/yt-dlp/yt-dlp/pull/17258) has merged (the extractor rewrite). Once it has, bump yt-dlp and set `working` (one line). A SoundCloud profile of about 300 tracks lists in about 14.5 seconds, close to the 20 second limit. `on.soundcloud.com` short links and a custom domain that serves a Bandcamp page are not accepted.
+Open: a SoundCloud profile of about 300 tracks lists in about 14.5 seconds, close to the 20 second limit. `on.soundcloud.com` short links and a custom domain that serves a Bandcamp page are not accepted.
 
 ### Phase 4: DJ mixes and radio shows
 
-Shipped: rows for Mixcloud and HearThisAt (`mix`), NTS and BBC Sounds (`radio`), TuneIn (`radio`, off), and SoundCloud tracks over 20 minutes, which are a `mix` although their row is `music`. Files land at `Mixes/<uploader>/<YYYY-MM-DD> - <title>.<ext>`, ignoring the naming template, and skip the Deezer tidy-up, lyrics and MusicBrainz. The sheet shows the landing path before anything is queued. NTS hands over to its Mixcloud or SoundCloud copy (`hops`). BBC Sounds takes only programme and Sounds pages, and outside the UK it fails with `GEO_RESTRICTED`, which never counts toward a pause. TuneIn stations, Mixcloud `/live/` pages and the NTS live channels are refused as live.
+Shipped: rows for Mixcloud and HearThisAt (`mix`), NTS and BBC Sounds (`radio`), and SoundCloud tracks over 20 minutes, which are a `mix` although their row is `music`. Files land at `Mixes/<uploader>/<YYYY-MM-DD> - <title>.<ext>`, ignoring the naming template, and skip the Deezer tidy-up, lyrics and MusicBrainz. The sheet shows the landing path before anything is queued. NTS hands over to its Mixcloud or SoundCloud copy (`hops`). BBC Sounds takes only programme and Sounds pages, and outside the UK it fails with `GEO_RESTRICTED`, which never counts toward a pause. Mixcloud `/live/` pages and the NTS live channels are refused as live.
 
 Checked for real: see "Mixes and radio, checked for real" above.
 
 Not checked: a Mixcloud account with thousands of uploads, which cannot finish in 20 seconds. A SoundCloud track over 20 minutes was covered by tests only. There are no probe rows for these sites, since they are other people's work.
 
-Open: TuneIn, until yt-dlp reads its API again.
+Open: nothing further on this phase.
 
 ### Phase 5: Internet Archive
 
@@ -160,8 +156,8 @@ Open: a track whose files are all WAV or SHN fails with `DOWNLOAD_FAILED`.
 | ----- | ---------------------------------- | ------ | ------------------------------------------------- |
 | 1     | 0 + 1, groundwork and paste a link | Large  | Built.                                            |
 | 2     | 5, Internet Archive                | Small  | Built. Gave the link path its end-to-end fixture. |
-| 3     | 3, indie sites                     | Small  | Built. Audiomack is switched off.                 |
-| 4     | 4, mixes and radio                 | Medium | Built. TuneIn is switched off.                    |
+| 3     | 3, indie sites                     | Small  | Built.                                            |
+| 4     | 4, mixes and radio                 | Medium | Built.                                            |
 | 5     | 2, SoundCloud                      | Medium | Built. A row in the source list, off until added. |
 
 ## Testing
