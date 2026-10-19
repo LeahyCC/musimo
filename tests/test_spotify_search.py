@@ -261,6 +261,32 @@ class SpotifySearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(matched.json()["track_id"], 8)
         self.assertEqual(unknown.status_code, 404)
 
+    async def test_the_matching_isrc_wins_over_a_closer_untagged_track(self) -> None:
+        def transport(request: httpx.Request) -> httpx.Response:
+            if request.url.path.startswith("/track/isrc:"):
+                return httpx.Response(200, json={"error": {"type": "DataException", "code": 800}})
+            closer = deezer_track(1, duration=180)
+            closer["isrc"] = ""
+            closer["title"] = "Track 0"
+            right = deezer_track(2, duration=183)
+            right["isrc"] = "USAAA0000000"
+            right["title"] = "Track 0 (Remastered)"
+            return httpx.Response(200, json={"data": [closer, right], "total": 2})
+
+        upstream, api = self.clients(transport)
+        async with upstream, api:
+            matched = await api.post(
+                "/api/deezer-match",
+                json={
+                    "isrc": "USAAA0000000",
+                    "artist": "Daft Punk",
+                    "title": "Track 0",
+                    "duration": 180,
+                },
+            )
+        self.assertEqual(matched.status_code, 200)
+        self.assertEqual(matched.json()["track_id"], 2)
+
     async def test_a_missing_spotify_clip_uses_itunes_and_not_a_deezer_id(self) -> None:
         hosts: list[str] = []
 

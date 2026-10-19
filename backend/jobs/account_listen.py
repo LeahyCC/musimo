@@ -8,6 +8,7 @@ live under the data directory, apart from downloads, and are removed with the co
 import json
 import shutil
 import sqlite3
+import subprocess
 import threading
 import time
 from pathlib import Path
@@ -19,6 +20,7 @@ from backend.integrations.deezer_audio import (
     DeezerAudioError,
     DeezerCookieRejected,
     DeezerNoTrack,
+    DeezerUnavailable,
     account_cookie,
     fetch,
 )
@@ -109,7 +111,7 @@ def prepare_track(
     if not state["command"]:
         return {"play": "preview", "detail": COMMAND_REQUIRED, "url": "", "id": ""}
     try:
-        _download(data, track_id, store.current().file_command)
+        _download(data, track_id, store.current().file_command, _seconds(facts.get("duration")))
     except AccountBusy:
         return {"play": "busy", "detail": BUSY, "url": "", "id": ""}
     except DeezerNoTrack:
@@ -260,7 +262,7 @@ def _track_lock(track_id: int) -> threading.Lock:
         return lock
 
 
-def _download(data: Path, track_id: int, command: str) -> Path:
+def _download(data: Path, track_id: int, command: str, catalog_seconds: float) -> Path:
     """Fetch under the cookie lock, then run the file command after that lock is free."""
     folder = data / CACHE_DIR / str(track_id)
     folder.mkdir(parents=True, exist_ok=True)
@@ -270,10 +272,42 @@ def _download(data: Path, track_id: int, command: str) -> Path:
     try:
         clear_attempt(folder)
         with hold(data, wait=False):
-            fetch(track_id, folder, None)
-        return prepare(folder, probe, command)
+            saved = fetch(track_id, folder, None)
+        path = prepare(folder, probe, command)
+        _keep_recording(folder, path, saved.alternate, catalog_seconds)
+        return path
     finally:
         track_lock.release()
+
+
+def _keep_recording(folder: Path, path: Path, alternate: bool, catalog_seconds: float) -> None:
+    """Drop a short clip or a fallback whose length is a different recording.
+
+    The same two checks the download worker uses. The file is not left cached, or the
+    next press would play it without asking again.
+    """
+    from backend.jobs.worker import account_preview, length_differs
+
+    try:
+        info = probe(path)
+        actual = float(str(info.get("duration", 0)))
+    except (OSError, ValueError, subprocess.SubprocessError) as exc:
+        clear_attempt(folder)
+        raise DeezerAudioError(NO_ANSWER) from exc
+    wrong = (
+        length_differs(catalog_seconds, actual)
+        if alternate
+        else account_preview(catalog_seconds, actual)
+    )
+    if wrong:
+        clear_attempt(folder)
+        raise DeezerUnavailable(UNAVAILABLE)
+
+
+def _seconds(value: object) -> float:
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        return 0
+    return float(value)
 
 
 def _remember(store: Store, track_id: int, facts: dict[str, object]) -> None:
@@ -283,12 +317,7 @@ def _remember(store: Store, track_id: int, facts: dict[str, object]) -> None:
     art = _text(facts.get("art"), "")
     if not art.startswith("https://"):
         art = ""
-    duration = facts.get("duration")
-    seconds = (
-        float(duration)
-        if isinstance(duration, (int, float)) and not isinstance(duration, bool)
-        else 0
-    )
+    seconds = _seconds(facts.get("duration"))
     with store.lock:
         store.db.execute(
             """

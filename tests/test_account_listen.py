@@ -58,8 +58,15 @@ class AccountListenTests(unittest.TestCase):
         self._dir = tempfile.TemporaryDirectory()
         self.data = Path(self._dir.name)
         drop_cache(self.data)
+        self._duration = 180.0
+        self._probe = patch(
+            "backend.jobs.account_listen.probe",
+            side_effect=lambda _path: {"duration": self._duration, "codec": "mp3"},
+        )
+        self._probe.start()
 
     def tearDown(self) -> None:
+        self._probe.stop()
         drop_cache(self.data)
         self._dir.cleanup()
 
@@ -275,3 +282,60 @@ class AccountListenTests(unittest.TestCase):
             self.assertEqual(played.json()["detail"], UNAVAILABLE)
             again = client.get("/api/diagnostics").json()["deezer_listen"]
             self.assertIn(4, again["unavailable"])
+
+    def test_a_short_clip_stays_unavailable_and_is_not_cached(self) -> None:
+        deezer_cookie.write(self.data, COOKIE)
+        self._duration = 30
+        with (
+            TestClient(create_app(self.data)) as client,
+            patch("backend.jobs.account_listen.Account.login", _sign_in),
+            patch("backend.jobs.account_listen.fetch", _fetch),
+            patch("backend.jobs.account_listen.prepare", _prepare),
+        ):
+            client.patch("/api/settings", json={"file_command": "decode"})
+            played = client.post(
+                "/api/player/account/dz-7",
+                json={"title": "Song", "duration": 180},
+            )
+            self.assertEqual(played.json()["play"], "unavailable")
+            self.assertEqual(played.json()["detail"], UNAVAILABLE)
+            self.assertFalse((self.data / "account-listen" / "7" / "source.mp3").exists())
+            health = client.get("/api/diagnostics").json()["deezer_listen"]
+            self.assertIn(7, health["unavailable"])
+
+    def test_a_fallback_of_a_different_length_is_not_the_song(self) -> None:
+        deezer_cookie.write(self.data, COOKIE)
+        self._duration = 400
+
+        def _other(track_id: int, folder: Path, _progress: object) -> Saved:
+            path = folder / "account.bin"
+            path.write_bytes(b"other-recording")
+            return Saved(path, True)
+
+        with (
+            TestClient(create_app(self.data)) as client,
+            patch("backend.jobs.account_listen.Account.login", _sign_in),
+            patch("backend.jobs.account_listen.fetch", _other),
+            patch("backend.jobs.account_listen.prepare", _prepare),
+        ):
+            client.patch("/api/settings", json={"file_command": "decode"})
+            played = client.post(
+                "/api/player/account/dz-7",
+                json={"title": "Song", "duration": 180},
+            )
+            self.assertEqual(played.json()["play"], "unavailable")
+            self.assertFalse((self.data / "account-listen" / "7" / "source.mp3").exists())
+
+    def test_a_playlist_keeps_a_library_id_beside_an_account_id(self) -> None:
+        with TestClient(create_app(self.data)) as client:
+            created = client.post(
+                "/api/library/playlists",
+                json={"name": "Mix", "song_ids": ["tr-aaaaaaaaaaaaaaaa", "dz-7"]},
+            )
+            self.assertEqual(created.status_code, 200, created.text)
+            entry = created.json()["entry"]
+            self.assertEqual([row["id"] for row in entry], ["tr-aaaaaaaaaaaaaaaa", "dz-7"])
+            self.assertNotEqual(entry[0].get("origin"), "deezer")
+            self.assertNotIn("deezerId", entry[0])
+            self.assertEqual(entry[1]["origin"], "deezer")
+            self.assertEqual(entry[1]["deezerId"], 7)

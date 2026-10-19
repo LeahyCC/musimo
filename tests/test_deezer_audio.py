@@ -19,6 +19,7 @@ from backend.integrations.deezer_audio import (
     Account,
     DeezerAudioError,
     DeezerNoTrack,
+    DeezerUnavailable,
     account_cookie,
     choose_format,
     formats_to_try,
@@ -210,6 +211,29 @@ class DeezerAudioTests(unittest.TestCase):
         finally:
             account.close()
         self.assertEqual(asked, [("own", "FLAC"), ("own", "MP3_320")])
+
+    def test_a_country_block_does_not_save_the_fallback(self) -> None:
+        account = Account("ab" * 96)
+        song = {
+            "SNG_ID": "1",
+            "TRACK_TOKEN": "own",
+            "FALLBACK": {"SNG_ID": "2", "TRACK_TOKEN": "other"},
+        }
+        try:
+            with (
+                patch.object(account, "track", return_value=song),
+                patch.object(
+                    account,
+                    "media_url",
+                    side_effect=DeezerUnavailable("This song is not available."),
+                ),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                with self.assertRaises(DeezerUnavailable):
+                    account.save("1", Path(directory), None)
+                self.assertFalse((Path(directory) / "account.bin").exists())
+        finally:
+            account.close()
 
     def test_cookie_must_be_the_account_value(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

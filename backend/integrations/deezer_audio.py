@@ -267,6 +267,10 @@ class Account:
             for fmt in formats_to_try(self.format):
                 try:
                     url = self.media_url(token, fmt)
+                except DeezerNoTrack:
+                    # A country block or a missing song is this recording, not this quality.
+                    # The fallback is a different file and must not stand in for it.
+                    raise
                 except DeezerAudioError as exc:
                     last = exc
                     continue

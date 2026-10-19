@@ -29,7 +29,7 @@ from mutagen.id3 import ID3
 from mutagen.mp4 import MP4Cover
 
 from backend.core.store import Store
-from backend.jobs.account_listen import remembered_tracks
+from backend.jobs.account_listen import remembered_tracks, track_number
 from backend.library.browse import (
     ArtistSummary,
     CatalogSnapshot,
@@ -1653,8 +1653,12 @@ def album_recency(row: dict[str, object]) -> tuple[int, str]:
 
 
 def missing_track(song_id: str) -> dict[str, object]:
-    """Keeps a playlist index stable when a saved id is not in the library."""
-    return {
+    """Keeps a playlist index stable when a saved id is not in the library.
+
+    A dz- id is still an account song. Playing it through the library stream would
+    look up a file that was never saved.
+    """
+    item: dict[str, object] = {
         "id": song_id,
         "title": "Unknown track",
         "artist": "Unknown artist",
@@ -1662,6 +1666,11 @@ def missing_track(song_id: str) -> dict[str, object]:
         "duration": 0,
         "playCount": 0,
     }
+    number = track_number(song_id)
+    if number is not None:
+        item["origin"] = "deezer"
+        item["deezerId"] = number
+    return item
 
 
 def relative_path(song: StoredSong) -> str:

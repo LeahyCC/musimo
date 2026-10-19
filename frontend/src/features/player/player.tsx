@@ -674,6 +674,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const library = () => slots()[activeSlot.current]
   const accountRequest = useRef<AbortController | null>(null)
   const resumeQueue = useRef(false)
+  const previewAutoplay = useRef(true)
   const [fetchingId, setFetchingId] = useState<number | null>(null)
   const diagnostics = useQuery({
     queryKey: ['diagnostics'],
@@ -925,10 +926,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return `preview/${item.id}?fallback=${fallback}`
   }
 
-  async function loadPreview(item: MusicResult, fallback: boolean) {
+  async function loadPreview(item: MusicResult, fallback: boolean, autoplay = true) {
     request.current?.abort()
     const controller = new AbortController()
     request.current = controller
+    previewAutoplay.current = autoplay
     const identity = previewIdentity(item)
     setNotice('Finding preview…')
     setPreviewStates((prev) => new Map(prev).set(identity, 'finding'))
@@ -945,16 +947,39 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       if (!clip.url) {
         setNotice('No preview available for this track.', 'warn')
         setPreviewStates((prev) => new Map(prev).set(identity, 'none'))
+        continueAfterPreview(true)
         return
       }
       setNotice(`${clip.source} preview`)
       setPreviewStates((prev) => new Map(prev).set(identity, 'ready'))
-      startAudio(clip.url)
+      startAudio(clip.url, autoplay)
     } catch (error) {
       if (!controller.signal.aborted) {
         setNotice(error instanceof Error ? error.message : 'Preview unavailable', 'danger')
+        continueAfterPreview(true)
       }
     }
+  }
+
+  // An account song in a queue fell through to a clip. A clip that plays through moves on.
+  // One that never starts moves on too, and a run of those stops instead of walking the queue.
+  function continueAfterPreview(failed: boolean) {
+    if (!resumeQueue.current) return
+    resumeQueue.current = false
+    mode.current = 'library'
+    if (!failed) {
+      failures.current = 0
+      next(true)
+      return
+    }
+    failures.current += 1
+    if (failures.current >= MAX_FAILURES) {
+      failures.current = 0
+      setPlaying(false)
+      setNotice(failureLimitNotice, 'danger')
+      return
+    }
+    next(wantPlay.current)
   }
 
   function startAudio(url: string, autoplay = true) {
@@ -1451,7 +1476,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setPlaying(false)
         return
       }
-      playPreviewKeepingQueue(item, result.detail)
+      playPreviewKeepingQueue(item, result.detail, autoplay)
     } catch (error) {
       if (controller.signal.aborted || generation !== libraryLoads.current) return
       setNotice(
@@ -1467,7 +1492,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  function playPreviewKeepingQueue(item: LibraryTrack, detail: string) {
+  function playPreviewKeepingQueue(item: LibraryTrack, detail: string, autoplay: boolean) {
     const deezerId = item.deezerId
     if (!deezerId) return
     resumeQueue.current = true
@@ -1505,7 +1530,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setLibraryTrack(null)
     if (detail) setNotice(detail, 'warn')
     previewStage.current = 1
-    void loadPreview(synthetic, false)
+    void loadPreview(synthetic, false, autoplay)
   }
 
   function cancelFetch() {
@@ -1513,6 +1538,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setFetchingId(null)
     setPlaying(false)
     setReady(false)
+    const element = library()
+    element?.pause()
+    element?.removeAttribute('src')
+    element?.load()
+    setNotice('Press play when you are ready.', 'info')
   }
 
   function playCatalog(item: MusicResult) {
@@ -1605,6 +1635,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setNotice(item.origin === 'deezer' ? 'Deezer account' : LIBRARY_NOTICE)
     if (item.origin === 'deezer') {
       discardPreload()
+      // The element may still be holding the previous song. A press while this fetch
+      // runs has to cancel the wait, not start that song.
+      const element = library()
+      element?.pause()
+      element?.removeAttribute('src')
+      element?.load()
       void loadAccount(item, autoplay)
       return
     }
@@ -1969,6 +2005,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   function toggle() {
+    if (accountRequest.current) {
+      cancelFetch()
+      return
+    }
     const element = current()
     const hasItem = mode.current === 'library' ? libraryCurrent.current : previewCurrent.current
     if (!element || !hasItem) return
@@ -2357,11 +2397,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (!inPlay()) return
         if (!forLibrary) {
           setPlaying(false)
-          if (resumeQueue.current) {
-            resumeQueue.current = false
-            mode.current = 'library'
-            next()
-          }
+          continueAfterPreview(false)
           return
         }
         finishTrack(event.currentTarget)
@@ -2407,8 +2443,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (!item) return
         if (previewStage.current < 2) {
           previewStage.current += 1
-          void loadPreview(item, previewStage.current === 2)
-        } else setNotice('No playable preview available.', 'danger')
+          void loadPreview(item, previewStage.current === 2, previewAutoplay.current)
+        } else {
+          setNotice('No playable preview available.', 'danger')
+          continueAfterPreview(true)
+        }
       },
     }
   }

@@ -438,18 +438,26 @@ class Catalog:
         query = f'artist:"{artist.translate(unquoted)}" track:"{title.translate(unquoted)}"'
         page = await self.search(query, "track", 0)
         wanted_artist, wanted_title = normalize(artist), normalize(title)
+        # The same ISRC is this recording, even when an untagged lookalike is closer in length.
+        confirmed: Result | None = None
+        confirmed_gap = 10**9
         best: Result | None = None
         best_gap = DURATION_WINDOW + 1
         for hit in page.items:
             if hit.id <= 0:
                 continue
-            # A different ISRC is a different recording, even when the title and length are close.
             hit_isrc = isrc_key(hit.isrc)
-            if len(cleaned) == 12 and hit_isrc and hit_isrc != cleaned:
+            if len(cleaned) == 12 and hit_isrc == cleaned:
+                gap = abs(hit.duration - duration)
+                if gap < confirmed_gap:
+                    confirmed, confirmed_gap = hit, gap
+                continue
+            # A different ISRC is a different recording, even when the title and length are close.
+            if len(cleaned) == 12 and hit_isrc:
                 continue
             if normalize(hit.artist) != wanted_artist or normalize(hit.title) != wanted_title:
                 continue
             gap = abs(hit.duration - duration)
             if gap <= DURATION_WINDOW and gap < best_gap:
                 best, best_gap = hit, gap
-        return best
+        return confirmed if confirmed is not None else best
