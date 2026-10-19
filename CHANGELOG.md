@@ -6,6 +6,10 @@
 
 - Remove Audiomack and TuneIn. The pinned yt-dlp still cannot read either site, and no later release has fixed them.
 
+### Deezer account file
+
+- Save the Deezer account file as it arrived. When the command is set, it runs on that file and the file is kept only when it plays. When the command is empty, a file that does not play fails that source and the next source runs.
+
 ### Phones, other computers and the dock
 
 - Accept the app's own writes from a phone, another computer or a reverse proxy such as Tailscale Serve. The cross-origin check now trusts the browser's `Sec-Fetch-Site`, which a page cannot fake, and only falls back to comparing Origin with Host for browsers that do not send it. A page on another site is still refused.

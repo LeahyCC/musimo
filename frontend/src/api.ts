@@ -401,6 +401,7 @@ export const settingsSchema = z.object({
   deezer_cookie: field(z.boolean()).default({ value: false, origin: 'default', locked: false }),
   deezer_catalog: field(z.boolean()).default({ value: true, origin: 'default', locked: false }),
   deezer_audio: field(z.boolean()).default({ value: true, origin: 'default', locked: false }),
+  file_command: field(z.string().max(500)).default({ value: '', origin: 'default', locked: false }),
   disabled_sources: field(z.array(z.string())).default({
     value: [],
     origin: 'default',

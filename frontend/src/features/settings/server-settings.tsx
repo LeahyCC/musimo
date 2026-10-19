@@ -616,6 +616,31 @@ export function SettingsPage() {
         />
       </SettingRow>
       <SettingRow
+        htmlFor="file_command"
+        label="Command for the account file"
+        help="Leave empty to keep the file only when it already plays. The file path is added as the last argument. Musimo does not run a shell."
+        lockedBy={current.file_command.locked ? current.file_command.origin : ''}
+        detail={
+          conflicts.file_command !== undefined ? (
+            <small className="mt-[6px] block text-tiny text-warn">
+              Changed elsewhere to {settingText(conflicts.file_command)}
+            </small>
+          ) : undefined
+        }
+      >
+        <Field
+          id="file_command"
+          type="text"
+          spellCheck={false}
+          autoComplete="off"
+          maxLength={500}
+          disabled={current.file_command.locked || save.isPending}
+          value={String(draft.file_command ?? current.file_command.value)}
+          className="font-mono"
+          onChange={(e) => edit('file_command', e.target.value)}
+        />
+      </SettingRow>
+      <SettingRow
         htmlFor="youtube_cookies"
         label="YouTube cookies"
         help="Paste a Netscape cookies.txt exported while signed in at youtube.com. An age-restricted video needs it. The file stays on this server and is not shown again."

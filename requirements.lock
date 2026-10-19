@@ -436,9 +436,7 @@ pycryptodomex==3.24.0 \
     --hash=sha256:f6af77f15a91bb6c16607067cfd201330cf5dfefe1c715e955be1fb06d368613 \
     --hash=sha256:f96e10f0edff9d4b6b253e0a78f7c819749521d3ffe6af0139e08fcd35384405 \
     --hash=sha256:fab40542a863cc142a763aa92630d613925fe3e937bea3ba5fb735e0c42d4f96
-    # via
-    #   musimo
-    #   yt-dlp
+    # via yt-dlp
 pydantic==2.13.5 \
     --hash=sha256:346a034f080da3755d8e9cb5e00e8b07de1d39e4f6e2c87d8ab7cafa0b269a73 \
     --hash=sha256:51a9c5f7b2f8e636f04c6cada605d9b6a3bf1348fdf945a3d8869b19bba0ee08

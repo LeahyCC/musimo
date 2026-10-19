@@ -238,6 +238,7 @@ class Downloads:
         env["MUSIMO_TRIES_PER_SOURCE"] = str(settings.tries_per_source)
         env["MUSIMO_MAX_ATTEMPTS"] = str(settings.max_attempts)
         env["MUSIMO_PAUSED_SOURCES"] = ",".join(sorted(self.paused_sources()))
+        env["MUSIMO_FILE_COMMAND"] = settings.file_command
         env.pop("MUSIMO_DEEZER_ARL", None)
         cookie = deezer_cookie.published()
         if settings.deezer_audio and cookie:

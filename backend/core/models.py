@@ -31,6 +31,12 @@ def clean_disabled(value: list[str]) -> list[str]:
 CATALOG_ORDER = ("deezer", "youtube", "soundcloud")
 
 
+def clean_command(value: str) -> str:
+    if "\n" in value or "\r" in value:
+        raise ValueError("The command cannot contain a new line.")
+    return value
+
+
 def clean_order(value: list[str]) -> list[str]:
     if not value:
         raise ValueError("Keep at least one source in the list.")
@@ -108,6 +114,8 @@ class Settings(BaseModel):
     deezer_catalog: bool = True
     # Save the account's own file when a cookie is set. Off leaves catalog tracks to other sources.
     deezer_audio: bool = True
+    # A program and its arguments for the account file. Empty keeps that file only when it plays.
+    file_command: str = Field(default="", max_length=500)
     # Link sites and podcasts that are turned off. YouTube and SoundCloud live here too.
     disabled_sources: list[str] = Field(default_factory=list)
     # Who a catalog song asks, first to last. After the last one, the list starts again.
@@ -129,6 +137,11 @@ class Settings(BaseModel):
     @classmethod
     def order_value(cls, value: list[str]) -> list[str]:
         return clean_order(value)
+
+    @field_validator("file_command")
+    @classmethod
+    def command_text(cls, value: str) -> str:
+        return clean_command(value)
 
 
 class SettingsPatch(BaseModel):
@@ -153,6 +166,7 @@ class SettingsPatch(BaseModel):
     deezer_arl: str | None = None
     deezer_catalog: bool | None = None
     deezer_audio: bool | None = None
+    file_command: str | None = Field(default=None, max_length=500)
     disabled_sources: list[str] | None = None
     source_order: list[str] | None = None
     tries_per_source: int | None = Field(default=None, ge=1, le=4)
@@ -181,3 +195,8 @@ class SettingsPatch(BaseModel):
     @classmethod
     def order_value(cls, value: list[str] | None) -> list[str] | None:
         return None if value is None else clean_order(value)
+
+    @field_validator("file_command")
+    @classmethod
+    def command_text(cls, value: str | None) -> str | None:
+        return None if value is None else clean_command(value)
