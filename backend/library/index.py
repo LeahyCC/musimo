@@ -767,6 +767,7 @@ class Library:
             result.owned_count = 0
             result.matched_by = ""
             result.matched_album = ""
+            result.matched_song = ""
         # One indexed SQL join for the whole result page. Filesystem access never enters search.
         # CROSS JOIN keeps each catalog id on jobs(catalog, track_id). A plain join lets
         # SQLite walk every finished download and parse its JSON, which is most of a
@@ -800,36 +801,36 @@ class Library:
                   FROM json_each(?)
                 )
                 , matches AS (
-                SELECT w.i,f.path,f.album_key,0 priority
+                SELECT w.i,f.path,f.album_key,f.song_id,0 priority
                 FROM wanted w
                 CROSS JOIN jobs j INDEXED BY jobs_catalog_track
-                  ON j.catalog='deezer' AND j.track_id=w.id
+                  ON j.catalog='deezer' AND j.track_id=w.id AND w.id>0
                  AND j.active=0 AND json_extract(j.payload,'$.stage')='done'
                 JOIN library_files f ON f.path=json_extract(j.payload,'$.final_path')
                   AND (w.isrc='' OR f.isrc='' OR w.isrc=f.isrc)
                 JOIN library_roots r ON r.path=f.root AND r.enabled=1
                 UNION ALL
-                SELECT w.i,f.path,f.album_key,1 priority
+                SELECT w.i,f.path,f.album_key,f.song_id,1 priority
                 FROM wanted w JOIN library_files f INDEXED BY library_isrc
                   ON f.isrc=w.isrc AND f.isrc!='' AND w.isrc!=''
                 JOIN library_roots r ON r.path=f.root AND r.enabled=1
                 UNION ALL
-                SELECT w.i,f.path,f.album_key,2 priority
+                SELECT w.i,f.path,f.album_key,f.song_id,2 priority
                 FROM wanted w JOIN library_files f INDEXED BY library_mbid
                   ON f.mbid=w.mbid AND f.mbid!='' AND w.mbid!=''
                 JOIN library_roots r ON r.path=f.root AND r.enabled=1
                 UNION ALL
-                SELECT w.i,f.path,f.album_key,3 priority
+                SELECT w.i,f.path,f.album_key,f.song_id,3 priority
                 FROM wanted w JOIN library_files f INDEXED BY library_identity ON
                   w.title!='' AND w.artist!='' AND w.duration>0 AND f.title_key=w.title
                    AND f.artist_key=w.artist AND f.duration BETWEEN w.duration-3 AND w.duration+3
                    AND (w.isrc='' OR f.isrc='' OR w.isrc=f.isrc)
                 JOIN library_roots r ON r.path=f.root AND r.enabled=1
                 ), ranked AS (
-                  SELECT i,path,album_key,priority,
+                  SELECT i,path,album_key,song_id,priority,
                     min(priority) OVER (PARTITION BY i) best
                   FROM matches
-                ) SELECT i,path,album_key,priority FROM ranked WHERE priority=best
+                ) SELECT i,path,album_key,song_id,priority FROM ranked WHERE priority=best
             """,
                 (payload,),
             ).fetchall()
@@ -840,19 +841,21 @@ class Library:
                 3: "tags",
             }
             # Collect all best-priority matches per track
-            track_matches: dict[int, list[tuple[str, int, str]]] = {}
+            track_matches: dict[int, list[tuple[str, int, str, str]]] = {}
             for row in matches:
                 i = row["i"]
                 if i not in track_matches:
                     track_matches[i] = []
-                track_matches[i].append((row["path"], row["priority"], row["album_key"]))
+                track_matches[i].append(
+                    (row["path"], row["priority"], row["album_key"], str(row["song_id"] or ""))
+                )
             # Decide ownership: owned if any best match is not an edition, else edition
             for i, rows in track_matches.items():
                 result = results[i]
                 result.matched_by = priority_labels[rows[0][1]]
                 has_exact_match = False
                 edition_album_key = None
-                for path, priority, album_key in rows:
+                for path, priority, album_key, song in rows:
                     result.matched_paths.append(path)
                     is_edition = (
                         priority == 3
@@ -862,6 +865,8 @@ class Library:
                     )
                     if not is_edition:
                         has_exact_match = True
+                        if song and not result.matched_song:
+                            result.matched_song = song
                     elif not edition_album_key:
                         edition_album_key = album_key
                 if has_exact_match:

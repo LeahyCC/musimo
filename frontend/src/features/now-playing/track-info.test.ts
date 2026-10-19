@@ -122,6 +122,7 @@ const queued: LibraryTrack = {
   album: 'Clear Water',
   duration: 200,
   playCount: 0,
+  origin: 'library',
 }
 
 describe('formatChips', () => {

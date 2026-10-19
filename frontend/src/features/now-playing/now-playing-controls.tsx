@@ -21,6 +21,7 @@ import { cx } from '../../lib/cx'
 import { IconButton } from '../../ui'
 import { useBotChat } from '../music-bot/bot-chat'
 import { PetSpot } from '../music-bot/pet-host'
+import { sourceName } from '../player/account-play'
 import { durationText, isPassiveNotice, usePlayer } from '../player/player'
 import { TrackFormatChips } from './about-track'
 import { SleepTimerControl } from './sleep-timer-control'
@@ -281,6 +282,7 @@ export function ClassicControls({ track }: { track: LibraryTrack }) {
           <p className="line-clamp-2 text-lead [overflow-wrap:anywhere]">
             <TrackLinks track={track} separator=" · " />
           </p>
+          <p className="text-tiny text-muted">{sourceName(track, null)}</p>
           <div className="mt-[4px]">
             <TrackFormatChips track={track} />
           </div>
@@ -345,6 +347,7 @@ export function RoomControls({ track }: { track: LibraryTrack }) {
           <p className="line-clamp-2 text-strong text-muted [overflow-wrap:anywhere]">
             <TrackLinks track={track} separator=" — " />
           </p>
+          <p className="text-tiny text-muted">{sourceName(track, null)}</p>
         </div>
         <div className="flex flex-wrap items-center gap-[6px]">
           <TrackFormatChips track={track} tone="room" />

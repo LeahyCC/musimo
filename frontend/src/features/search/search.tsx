@@ -10,7 +10,7 @@ import {
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { Music2 } from 'lucide-react'
 
-import { albumSchema, api, searchPageSchema, yearsSchema } from '../../api'
+import { albumSchema, api, searchPageSchema, settingsSchema, yearsSchema } from '../../api'
 import type { MusicResult } from '../../api'
 import { InfiniteScroll } from '../../components/infinite-scroll'
 import { cx } from '../../lib/cx'
@@ -27,6 +27,7 @@ import {
 import { PodcastResults } from '../podcasts/podcasts'
 import { HomeShelves } from './home-shelves'
 import { addSearch, readSearches, writeSearches } from './recent-searches'
+import { resultKey } from './result-key'
 import {
   AlbumDestination,
   AlbumRows,
@@ -158,7 +159,7 @@ function ResultsSection({
   }
   const resetScroll = resetCounterRef.current
   const items = useMemo(() => {
-    const unique = [...new Map(raw.map((item) => [item.id, item])).values()]
+    const unique = [...new Map(raw.map((item) => [resultKey(item), item])).values()]
     const filtered = unique
       .map((item) =>
         kind === 'album'
@@ -297,6 +298,11 @@ function ResultsSection({
 }
 
 function SearchBody({ room }: { room: boolean }) {
+  const catalog = useQuery({
+    queryKey: ['settings'],
+    queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
+  })
+  const spotify = catalog.data?.search_catalog.value === 'spotify'
   const location = useRouterState({ select: (state) => state.location })
   const state = validateSearch(Object.fromEntries(new URLSearchParams(location.searchStr)))
   const navigate = useNavigate()
@@ -380,7 +386,9 @@ function SearchBody({ room }: { room: boolean }) {
         <div className="flex gap-[16px] border-t border-line pt-[26px] text-accent">
           <Music2 size={24} />
           <span>
-            Deezer catalog · Library-aware search
+            {spotify
+              ? 'Spotify track search · Deezer albums, artists and downloads'
+              : 'Deezer catalog · Library-aware search'}
             <small className="mt-[7px] block text-muted">
               Start typing above. Two characters is enough.
             </small>
@@ -406,6 +414,12 @@ function SearchBody({ room }: { room: boolean }) {
           <h1 className="max-phone:text-heading max-phone:[overflow-wrap:anywhere]">
             Results for “{state.q}”
           </h1>
+          {spotify && (
+            <p className="mt-[8px] max-w-[640px] text-small text-muted">
+              Tracks are from Spotify, up to 10 at a time. Albums, artists and downloads stay on
+              Deezer. A preview plays when the track has one.
+            </p>
+          )}
         </div>
       </div>
       <div className="mb-[24px] flex items-center gap-[8px] max-phone:mb-[16px] max-phone:flex-wrap">

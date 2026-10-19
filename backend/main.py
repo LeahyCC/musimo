@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import RequestResponseEndpoint
@@ -26,13 +28,13 @@ from backend.api.download_api import install_download_routes
 from backend.api.events_api import install_event_routes
 from backend.api.link_api import install_link_routes
 from backend.api.music_bot_api import install_music_bot_routes
-from backend.api.player_api import install_player_routes
+from backend.api.player_api import install_account_routes, install_player_routes
 from backend.api.podcast_api import install_podcast_routes
 from backend.api.search_api import install_search_routes
-from backend.api.settings_api import install_settings_routes
+from backend.api.settings_api import install_settings_routes, scrub_secret_errors
 from backend.api.waveform_api import install_waveform_routes
 from backend.core.store import Store
-from backend.integrations import deezer_cookie
+from backend.integrations import deezer_cookie, spotify_credentials
 from backend.integrations.catalog import Catalog
 from backend.integrations.youtube_cookies import drop_copies as drop_youtube_cookie_copies
 from backend.integrations.youtube_cookies import publish as publish_youtube_cookies
@@ -124,9 +126,12 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         os.environ["MUSIMO_YTDLP_CACHE"] = str(data / "ytdlp-cache")
         store = Store(data / "musimo.sqlite3")
         deezer_cookie.adopt(store, data)
+        spotify_credentials.adopt(store, data)
         # The seed has done its job. Out of the environment, the link resolver, waveform and
-        # ffmpeg children cannot inherit the cookie.
+        # ffmpeg children cannot inherit the cookie or the Spotify app secret.
         os.environ.pop("MUSIMO_DEEZER_ARL", None)
+        os.environ.pop("MUSIMO_SPOTIFY_CLIENT_ID", None)
+        os.environ.pop("MUSIMO_SPOTIFY_CLIENT_SECRET", None)
         publish_youtube_cookies(data)
         drop_youtube_cookie_copies(data)
         versions = await asyncio.to_thread(runtime_versions)
@@ -161,11 +166,21 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 store.close()
 
     app = FastAPI(title="Musimo", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
+
+    @app.exception_handler(RequestValidationError)
+    async def hide_pasted_secrets(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # FastAPI's default error repeats the rejected value. A cookie or client secret must not.
+        return JSONResponse(
+            {"detail": jsonable_encoder(scrub_secret_errors(list(exc.errors())))},
+            status_code=422,
+        )
+
     install_search_routes(app, lambda: catalog, lambda: library)
     install_activity_routes(app, lambda: store, changed.set)
     install_download_routes(app, lambda: downloads)
     install_artist_download_routes(app, lambda: downloads)
     install_player_routes(app, lambda: player)
+    install_account_routes(app, data, lambda: store)
     install_music_bot_routes(app, lambda: music_bot)
     install_audio_worker_routes(app, lambda: profiles, lambda: music_bot.busy, analysis_token)
     install_waveform_routes(app, lambda: waveforms)

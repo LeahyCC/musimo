@@ -19,6 +19,7 @@ const song = (id: string, albumId?: string): LibraryTrack => ({
   albumId,
   duration: 100,
   playCount: 0,
+  origin: 'library',
 })
 
 describe('parseReplayGainMode', () => {

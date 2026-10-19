@@ -32,6 +32,8 @@ for (const count of [2, 30]) {
       matched_paths: [],
       matched_by: '',
       matched_album: '',
+      spotify_id: '',
+      matched_song: '',
       owned_count: 1,
       coverage_verified: true,
       disc: 1,

@@ -3,33 +3,38 @@ import type { Page } from '@playwright/test'
 import type { Episode, MusicResult, Podcast } from '../src/api'
 
 /** An invented catalog record, missing from the library unless `over` says otherwise. */
-export const musicResult = (id: number, over: Partial<MusicResult> = {}): MusicResult => ({
-  id,
-  kind: 'album',
-  title: `Fixture ${id}`,
-  artist: 'Fixture artist',
-  artist_id: 7,
-  album: '',
-  album_id: id,
-  art: '',
-  duration: 180,
-  year: 2020,
-  explicit: false,
-  preview: '',
-  isrc: '',
-  popularity: 1,
-  track_count: 1,
-  record_type: 'album',
-  ownership: 'missing',
-  matched_paths: [],
-  matched_by: '',
-  matched_album: '',
-  owned_count: 0,
-  coverage_verified: true,
-  disc: 1,
-  position: 1,
-  ...over,
-})
+export function musicResult(id: number, over: Partial<MusicResult> = {}): MusicResult {
+  const result: MusicResult = {
+    id,
+    kind: 'album',
+    title: `Fixture ${id}`,
+    artist: 'Fixture artist',
+    artist_id: 7,
+    album: '',
+    album_id: id,
+    art: '',
+    duration: 180,
+    year: 2020,
+    explicit: false,
+    preview: '',
+    isrc: '',
+    popularity: 1,
+    track_count: 1,
+    record_type: 'album',
+    ownership: 'missing',
+    matched_paths: [],
+    matched_by: '',
+    matched_album: '',
+    matched_song: '',
+    spotify_id: '',
+    owned_count: 0,
+    coverage_verified: true,
+    disc: 1,
+    position: 1,
+  }
+  Object.assign(result, over)
+  return result
+}
 
 const albums = [
   musicResult(42, { title: 'Harbor Lights' }),

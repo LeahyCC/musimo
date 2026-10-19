@@ -3,12 +3,13 @@ import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDownToLine, Clock, MoreHorizontal, RotateCcw } from 'lucide-react'
 
-import { api, diagnosticsSchema, jobSchema, settingsSchema } from '../../api'
+import { api, deezerMatchSchema, diagnosticsSchema, jobSchema, settingsSchema } from '../../api'
 import type { MusicResult } from '../../api'
 import { cx } from '../../lib/cx'
 import { errorBannerClassName, IconButton, Select } from '../../ui'
 import { formatLabel, FormatOptions } from './download-target'
 import { activeJob, failureMessage, updateJob, useJobs } from './jobs'
+import { rememberDeezerMatch, resolvedDeezerId } from './spotify-download'
 
 export function DownloadButton({ item, className }: { item: MusicResult; className?: string }) {
   const client = useQueryClient()
@@ -76,10 +77,12 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
   })
   const queue = useJobs()
   const selected = format ?? settings.data?.output_format.value ?? 'original'
+  const deezerId = resolvedDeezerId(item)
   const existing = queue.data?.jobs.find(
     (job) =>
       job.catalog === 'deezer' &&
-      job.track_id === item.id &&
+      deezerId > 0 &&
+      job.track_id === deezerId &&
       job.format === selected &&
       job.target === (target || settings.data?.destination.value) &&
       activeJob(job),
@@ -89,24 +92,41 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
     : queue.data?.jobs.find(
         (job) =>
           job.catalog === 'deezer' &&
-          job.track_id === item.id &&
+          deezerId > 0 &&
+          job.track_id === deezerId &&
           job.format === selected &&
           job.target === (target || settings.data?.destination.value) &&
           job.stage === 'failed',
       )
   const mutation = useMutation({
-    mutationFn: () =>
-      failed
-        ? api(`jobs/${failed.id}/retry`, jobSchema, { method: 'POST' })
-        : api('jobs', jobSchema, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              track_id: item.id,
-              format: selected,
-              ...(target ? { target } : {}),
-            }),
+    mutationFn: async () => {
+      if (failed) return api(`jobs/${failed.id}/retry`, jobSchema, { method: 'POST' })
+      // A Spotify row resolves a Deezer track, then queues that id. Spotify is not asked for audio.
+      let trackId = item.id
+      if (item.spotify_id) {
+        const match = await api('deezer-match', deezerMatchSchema, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            isrc: item.isrc,
+            artist: item.artist,
+            title: item.title,
+            duration: item.duration,
           }),
+        })
+        rememberDeezerMatch(item.spotify_id, match.track_id)
+        trackId = match.track_id
+      }
+      return api('jobs', jobSchema, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          track_id: trackId,
+          format: selected,
+          ...(target ? { target } : {}),
+        }),
+      })
+    },
     onSuccess: (job) => updateJob(client, job),
   })
   return (

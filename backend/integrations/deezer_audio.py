@@ -10,13 +10,10 @@ from pathlib import Path
 from typing import NamedTuple
 
 import httpx
-from Cryptodome.Cipher import Blowfish
-from Cryptodome.Hash import MD5
 
 from backend.integrations import deezer_cookie
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0"
-BLOCK = 2048
 # Deezer's account cookie is 192 hex characters. Anything else is not one.
 ARL = re.compile(r"[a-fA-F0-9]{192}")
 Progress = Callable[[int, int], None]
@@ -32,6 +29,10 @@ class DeezerCookieRejected(DeezerAudioError):
 
 class DeezerNoTrack(DeezerAudioError):
     """The account cannot play this track, so Deezer has no file to give for it."""
+
+
+class DeezerUnavailable(DeezerNoTrack):
+    """This song is blocked or gone. A 30-second clip must not stand in for it."""
 
 
 class Saved(NamedTuple):
@@ -84,39 +85,38 @@ def formats_to_try(preferred: str) -> tuple[str, ...]:
     return QUALITY_LADDER[QUALITY_LADDER.index(preferred) :]
 
 
-def extension(fmt: str) -> str:
-    return "flac" if fmt == "FLAC" else "mp3"
+def allows_full(options: object) -> bool:
+    """False when this account is not allowed a full file. A missing flag is not a refusal."""
+    if not isinstance(options, dict):
+        return True
+    web = options.get("web_streaming")
+    mobile = options.get("mobile_streaming")
+    if web is False and mobile is False:
+        return False
+    quality = options.get("web_sound_quality")
+    if isinstance(quality, dict) and quality:
+        names = ("low", "standard", "high", "lossless")
+        if not any(quality.get(name) is True for name in names):
+            return False
+    return True
 
 
-def blowfish_key(song_id: str) -> bytes:
-    """The per-song key. The hex digest is xored, then UTF-8 encoded, matching Deezer's files."""
-    secret = b"g4el58wc0zvf9na1"
-    hashed = MD5.new(song_id.encode()).hexdigest().encode("ascii")
-    chars = "".join(chr(hashed[i] ^ hashed[i + 16] ^ secret[i]) for i in range(16))
-    return chars.encode()
-
-
-def decrypt_block(block: bytes, key: bytes) -> bytes:
-    cipher = Blowfish.new(key, Blowfish.MODE_CBC, iv=bytes(range(8)))
-    return bytes(cipher.decrypt(block))
-
-
-def decrypt_stripe(chunks: Iterable[bytes], key: bytes) -> bytes:
-    """Deezer encrypts every third 2048-byte block and leaves the rest as plain audio."""
-    pending = bytearray()
-    out = bytearray()
-    index = 0
-    for chunk in chunks:
-        pending.extend(chunk)
-        while len(pending) >= BLOCK:
-            block = bytes(pending[:BLOCK])
-            del pending[:BLOCK]
-            if index % 3 == 0:
-                block = decrypt_block(block, key)
-            out.extend(block)
-            index += 1
-    out.extend(pending)
-    return bytes(out)
+def _rights_refusal(errors: object) -> bool:
+    """A media error that means this song, not this quality, is unavailable."""
+    items = errors if isinstance(errors, list) else [errors]
+    for item in items:
+        if isinstance(item, dict):
+            code = item.get("code")
+            if code in {1000, 2001, 2002, 4001}:
+                return True
+            message = str(item.get("message", "")).lower()
+        elif isinstance(item, str):
+            message = item.lower()
+        else:
+            continue
+        if "country" in message or "not available" in message or "unavailable" in message:
+            return True
+    return False
 
 
 class Account:
@@ -135,6 +135,7 @@ class Account:
         self.license = ""
         self.api_token = ""
         self.format = "MP3_128"
+        self.full_file = True
 
     def close(self) -> None:
         self.http.close()
@@ -193,6 +194,7 @@ class Account:
         self.license = str(options["license_token"])
         self.api_token = token
         self.format = choose_format(options.get("web_sound_quality"))
+        self.full_file = allows_full(options)
 
     def track(self, track_id: str) -> dict[str, object]:
         payload = self._payload(
@@ -234,6 +236,8 @@ class Account:
             raise DeezerAudioError("Deezer did not return the audio")
         row = rows[0]
         if row.get("errors"):
+            if _rights_refusal(row.get("errors")):
+                raise DeezerUnavailable("This song is not available on the Deezer account.")
             raise DeezerAudioError("Deezer did not return the audio")
         media = row.get("media")
         if not isinstance(media, list) or not media or not isinstance(media[0], dict):
@@ -263,12 +267,15 @@ class Account:
             for fmt in formats_to_try(self.format):
                 try:
                     url = self.media_url(token, fmt)
+                except DeezerNoTrack:
+                    # A country block or a missing song is this recording, not this quality.
+                    # The fallback is a different file and must not stand in for it.
+                    raise
                 except DeezerAudioError as exc:
                     last = exc
                     continue
-                target = folder / f"source.{extension(fmt)}"
-                partial = target.with_suffix(target.suffix + ".part")
-                key = blowfish_key(token_id)
+                target = folder / "account.bin"
+                partial = target.with_suffix(".bin.part")
                 try:
                     with self.http.stream("GET", url) as response:
                         try:
@@ -276,9 +283,7 @@ class Account:
                         except httpx.HTTPError as exc:
                             raise DeezerAudioError("Deezer did not return the audio") from exc
                         total = int(response.headers.get("content-length") or 0)
-                        written = decrypt_to(
-                            response.iter_bytes(), partial, key, total, on_progress
-                        )
+                        written = write_body(response.iter_bytes(), partial, total, on_progress)
                 except DeezerAudioError as exc:
                     partial.unlink(missing_ok=True)
                     last = exc
@@ -292,7 +297,7 @@ class Account:
                 except BaseException:
                     partial.unlink(missing_ok=True)
                     raise
-                if written < BLOCK:
+                if written <= 0:
                     partial.unlink(missing_ok=True)
                     last = DeezerAudioError("Deezer did not return the audio")
                     continue
@@ -301,34 +306,19 @@ class Account:
         raise last
 
 
-def decrypt_to(
-    chunks: Iterable[bytes],
-    path: Path,
-    key: bytes,
-    total: int,
-    on_progress: Progress | None,
+def write_body(
+    chunks: Iterable[bytes], path: Path, total: int, on_progress: Progress | None
 ) -> int:
-    pending = bytearray()
+    """Write the response body unchanged and report the bytes written."""
     written = 0
-    index = 0
     with path.open("wb") as handle:
         for chunk in chunks:
-            pending.extend(chunk)
-            while len(pending) >= BLOCK:
-                block = bytes(pending[:BLOCK])
-                del pending[:BLOCK]
-                if index % 3 == 0:
-                    block = decrypt_block(block, key)
-                handle.write(block)
-                written += BLOCK
-                index += 1
-                if on_progress:
-                    on_progress(written, total)
-        if pending:
-            handle.write(pending)
-            written += len(pending)
-            if on_progress:
-                on_progress(written, total or written)
+            handle.write(chunk)
+            written += len(chunk)
+            if on_progress is not None:
+                on_progress(written, total)
+    if on_progress is not None and written and not total:
+        on_progress(written, written)
     return written
 
 

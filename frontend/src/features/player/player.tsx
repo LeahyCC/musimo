@@ -30,10 +30,13 @@ import {
 } from 'lucide-react'
 
 import {
+  accountPlaySchema,
   api,
   ApiError,
+  diagnosticsSchema,
   libraryPlaylistDetailSchema,
   libraryPlaylistsSchema,
+  librarySelectionSchema,
   libraryShuffleWindowSchema,
   playerQueueSchema,
   previewSchema,
@@ -42,6 +45,15 @@ import type { LibraryPlaylist, LibraryTrack, MusicResult } from '../../api'
 import { cx } from '../../lib/cx'
 import { IconButton, iconButtonClassName, useToast } from '../../ui'
 import type { ToastAction, ToastTone } from '../../ui'
+import {
+  accountCookieReplaced,
+  accountStreamStopped,
+  adoptLibraryTrack,
+  canAccountPlay,
+  isDeezerTrack,
+  toQueueTrack,
+} from './account-play'
+import type { DeezerListen } from './account-play'
 import { audioGraph, resumeAudio } from './audio-graph'
 import { crossfadeSpan } from './crossfade'
 import { useCrossfadeSeconds } from './crossfade-settings'
@@ -145,7 +157,15 @@ type Playback = {
   toggleShuffle: () => void
   cycleRepeat: () => void
   liked: LikedControl
-  previewState: (trackId: number) => PreviewState | undefined
+  previewState: (trackId: number, spotifyId?: string) => PreviewState | undefined
+  /** Deezer catalog Play. A Spotify row stays on its preview. */
+  playCatalog: (item: MusicResult) => void
+  /** Album Play, or play from here. Each track falls back on its own. */
+  playCatalogFrom: (tracks: MusicResult[], index: number, source?: string) => void
+  /** The Deezer id whose account file is being fetched, if any. */
+  fetchingId: number | null
+  cancelFetch: () => void
+  listen: DeezerListen | undefined
   /** Opens the add-to-playlist sheet; a phone's mini player has no button of its own for it. */
   openPlaylistPicker: () => void
   /** The footer's status line. Now Playing hides the footer, so the page repeats it. */
@@ -200,6 +220,11 @@ const PlayerContext = createContext<Playback>({
   cycleRepeat: () => undefined,
   liked: { isLiked: false, canToggle: false, busy: false, toggle: () => undefined },
   previewState: () => undefined,
+  playCatalog: () => undefined,
+  playCatalogFrom: () => undefined,
+  fetchingId: null,
+  cancelFetch: () => undefined,
+  listen: undefined,
   openPlaylistPicker: () => undefined,
   notice: '',
   stop: () => undefined,
@@ -346,7 +371,8 @@ export function queueEntryKey(track: LibraryTrack) {
  * footer shows them; Now Playing has the title, the source and a play button on screen already,
  * so it repeats only what is left: errors and confirmations.
  */
-export const isPassiveNotice = (text: string) => text === LIBRARY_NOTICE || text === RESTORED_NOTICE
+export const isPassiveNotice = (text: string) =>
+  text === LIBRARY_NOTICE || text === RESTORED_NOTICE || text === 'Deezer account'
 
 /** True while this exact collection owns the queue, so Play can become Pause. */
 export function useCollectionPlayback(source: string) {
@@ -355,10 +381,21 @@ export function useCollectionPlayback(source: string) {
   return { active, playing: active && player.playing, toggle: player.toggle }
 }
 
+/**
+ * Which catalog row a preview belongs to. A Spotify id is its own key, so it is never compared
+ * with a Deezer track id, including when that Spotify id is only digits.
+ */
+export function previewIdentity(item: { id: number; spotify_id?: string }) {
+  return item.spotify_id ? `spotify:${item.spotify_id}` : `deezer:${item.id}`
+}
+
 /** The same derived state for a catalog preview, which has no collection behind it. */
-export function usePreviewPlayback(id: number) {
+export function usePreviewPlayback(id: number, spotifyId = '') {
   const player = usePlayer()
-  const active = !player.libraryTrack && player.track?.id === id
+  const active =
+    !player.libraryTrack &&
+    player.track !== null &&
+    previewIdentity(player.track) === previewIdentity({ id, spotify_id: spotifyId })
   return { active, playing: active && player.playing }
 }
 
@@ -427,8 +464,12 @@ const footerClassName = cx(
 
 export const songCount = (count: number) => `${count} ${count === 1 ? 'song' : 'songs'}`
 
-export const artUrl = (track: LibraryTrack) =>
-  track.coverArt ? `/api/player/art/${encodeURIComponent(track.coverArt)}` : ''
+export const artUrl = (track: LibraryTrack) => {
+  if (!track.coverArt) return ''
+  if (track.coverArt.startsWith('https://') || track.coverArt.startsWith('http://'))
+    return track.coverArt
+  return `/api/player/art/${encodeURIComponent(track.coverArt)}`
+}
 
 // Elements whose sound already reaches the graph's bus. A media element can be given to
 // `createMediaElementSource` once only, so each is remembered for good.
@@ -475,7 +516,10 @@ export const preloadDue = (length: number, time: number) =>
 export const skippedNotice = (title: string) => `Skipped ${title}, it could not be played`
 export const failureLimitNotice = `Stopped after ${MAX_FAILURES} tracks in a row could not be played. Check that the music folder is mounted.`
 
-const streamUrl = (track: LibraryTrack) => `/api/player/stream/${encodeURIComponent(track.id)}`
+const streamUrl = (track: LibraryTrack) =>
+  track.origin === 'deezer'
+    ? `/api/player/account/${encodeURIComponent(track.id)}/file`
+    : `/api/player/stream/${encodeURIComponent(track.id)}`
 
 const secondsLeft = (element: HTMLAudioElement) =>
   Number.isFinite(element.duration) ? element.duration - element.currentTime : Infinity
@@ -628,6 +672,38 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const mode = useRef<'preview' | 'library'>('preview')
   const slots = () => [libraryA.current, libraryB.current] as const
   const library = () => slots()[activeSlot.current]
+  const accountRequest = useRef<AbortController | null>(null)
+  const resumeQueue = useRef(false)
+  const previewAutoplay = useRef(true)
+  const [fetchingId, setFetchingId] = useState<number | null>(null)
+  const diagnostics = useQuery({
+    queryKey: ['diagnostics'],
+    queryFn: ({ signal }) => api('diagnostics', diagnosticsSchema, { signal }),
+    staleTime: 30_000,
+  })
+  const listen = diagnostics.data?.deezer_listen
+  const listenRef = useRef(listen)
+  listenRef.current = listen
+  const cookieMark = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    const next = listen ? (listen.mark ?? '') : undefined
+    const previous = cookieMark.current
+    if (next !== undefined) cookieMark.current = next
+    const replaced =
+      libraryCurrent.current?.origin === 'deezer' && accountCookieReplaced(previous, next)
+    if (!accountStreamStopped(libraryCurrent.current?.origin, listen?.ready) && !replaced) return
+    accountRequest.current?.abort()
+    setFetchingId(null)
+    const element = library()
+    element?.pause()
+    element?.removeAttribute('src')
+    element?.load()
+    libraryCurrent.current = null
+    setLibraryTrack(null)
+    setPlaying(false)
+    setReady(false)
+    setNotice(listen?.detail || 'Choose a track to start listening.')
+  }, [listen?.ready, listen?.detail, listen?.mark])
   const standby = () => slots()[activeSlot.current === 0 ? 1 : 0]
   const current = () => (mode.current === 'library' ? library() : previewAudio.current)
   const elements = () => [previewAudio.current, libraryA.current, libraryB.current]
@@ -764,7 +840,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [newPlaylistName, setNewPlaylistName] = useState('')
   const [pickerOpen, setPickerOpen] = useState(false)
   const [expandedPlaylist, setExpandedPlaylist] = useState('')
-  const [previewStates, setPreviewStates] = useState<Map<number, PreviewState>>(new Map())
+  const [previewStates, setPreviewStates] = useState<Map<string, PreviewState>>(new Map())
   const playlistDialog = useRef<HTMLDialogElement>(null)
   const queryClient = useQueryClient()
 
@@ -837,30 +913,73 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     },
   })
 
-  async function loadPreview(item: MusicResult, fallback: boolean) {
+  function previewRequest(item: MusicResult, fallback: boolean) {
+    // A Spotify row has no Deezer id. Its missing clip uses the iTunes match, not /preview/0.
+    if (item.spotify_id) {
+      const params = new URLSearchParams({
+        artist: item.artist,
+        title: item.title,
+        duration: String(item.duration),
+      })
+      return `preview-match?${params}`
+    }
+    return `preview/${item.id}?fallback=${fallback}`
+  }
+
+  async function loadPreview(item: MusicResult, fallback: boolean, autoplay = true) {
     request.current?.abort()
     const controller = new AbortController()
     request.current = controller
+    previewAutoplay.current = autoplay
+    const identity = previewIdentity(item)
     setNotice('Finding preview…')
-    setPreviewStates((prev) => new Map(prev).set(item.id, 'finding'))
+    setPreviewStates((prev) => new Map(prev).set(identity, 'finding'))
     try {
-      const clip = await api(`preview/${item.id}?fallback=${fallback}`, previewSchema, {
+      const clip = await api(previewRequest(item, fallback), previewSchema, {
         signal: controller.signal,
       })
-      if (controller.signal.aborted || previewCurrent.current?.id !== item.id) return
+      if (
+        controller.signal.aborted ||
+        !previewCurrent.current ||
+        previewIdentity(previewCurrent.current) !== identity
+      )
+        return
       if (!clip.url) {
         setNotice('No preview available for this track.', 'warn')
-        setPreviewStates((prev) => new Map(prev).set(item.id, 'none'))
+        setPreviewStates((prev) => new Map(prev).set(identity, 'none'))
+        continueAfterPreview(true)
         return
       }
       setNotice(`${clip.source} preview`)
-      setPreviewStates((prev) => new Map(prev).set(item.id, 'ready'))
-      startAudio(clip.url)
+      setPreviewStates((prev) => new Map(prev).set(identity, 'ready'))
+      startAudio(clip.url, autoplay)
     } catch (error) {
       if (!controller.signal.aborted) {
         setNotice(error instanceof Error ? error.message : 'Preview unavailable', 'danger')
+        continueAfterPreview(true)
       }
     }
+  }
+
+  // An account song in a queue fell through to a clip. A clip that plays through moves on.
+  // One that never starts moves on too, and a run of those stops instead of walking the queue.
+  function continueAfterPreview(failed: boolean) {
+    if (!resumeQueue.current) return
+    resumeQueue.current = false
+    mode.current = 'library'
+    if (!failed) {
+      failures.current = 0
+      next(true)
+      return
+    }
+    failures.current += 1
+    if (failures.current >= MAX_FAILURES) {
+      failures.current = 0
+      setPlaying(false)
+      setNotice(failureLimitNotice, 'danger')
+      return
+    }
+    next(wantPlay.current)
   }
 
   function startAudio(url: string, autoplay = true) {
@@ -910,14 +1029,39 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (mode.current !== 'library' || !libraryCurrent.current) return Promise.resolve(false)
     const generation = ++queueSave.current
     const ids = queueRef.current.map((item) => item.id)
-    const deckAtSave = deck.current
-    return persistQueue(
-      JSON.stringify({
-        ids,
-        current: libraryCurrent.current.id,
-        position: Math.round((library()?.currentTime ?? 0) * 1000),
-      }),
+    const remembered = queueRef.current.flatMap((item) =>
+      item.origin === 'deezer' && item.deezerId
+        ? [
+            {
+              id: item.deezerId,
+              title: item.title,
+              artist: item.artist,
+              album: item.album,
+              duration: item.duration,
+              art: item.coverArt ?? '',
+            },
+          ]
+        : [],
     )
+    const deckAtSave = deck.current
+    const body = JSON.stringify({
+      ids,
+      current: libraryCurrent.current.id,
+      position: Math.round((library()?.currentTime ?? 0) * 1000),
+    })
+    const write = () => persistQueue(body)
+    const ready = remembered.length
+      ? fetch('/api/player/account/tracks', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ tracks: remembered }),
+        }).then((response) => {
+          // A queue of dz- ids is dropped on restore when these rows were never saved.
+          if (!response.ok) throw new Error('The queue could not be saved.')
+        })
+      : Promise.resolve()
+    return ready
+      .then(write)
       .then((response) => {
         if (!response) return false
         if (generation !== queueSave.current) return false
@@ -958,7 +1102,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function scrobble(submission: boolean) {
     const item = libraryCurrent.current
-    if (!item) return
+    // An account listen is not a library play.
+    if (!item || item.origin === 'deezer') return
     void fetch('/api/player/scrobble', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1051,7 +1196,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // Repeat one plays the same song again, and loading it early makes that gapless too.
     const index = repeat === 'one' ? indexRef.current : nextIndex()
     const upcoming = queueRef.current[index]
-    if (!upcoming) return
+    if (!upcoming || upcoming.origin === 'deezer') return
     const slot: Slot = activeSlot.current === 0 ? 1 : 0
     preload.current = { index, item: upcoming, slot, failed: false }
     // A metered connection gets the metadata only. The song then starts as it always did.
@@ -1262,6 +1407,187 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setNotice(skippedNotice(failed.title), 'warn')
   }
 
+  async function loadAccount(item: LibraryTrack, autoplay: boolean) {
+    const deezerId = item.deezerId
+    const generation = libraryLoads.current
+    if (!deezerId) return
+    accountRequest.current?.abort()
+    const controller = new AbortController()
+    accountRequest.current = controller
+    setFetchingId(deezerId)
+    setReady(false)
+    setNotice('Fetching…')
+    try {
+      const result = await api(`player/account/${encodeURIComponent(item.id)}`, accountPlaySchema, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: item.title,
+          artist: item.artist,
+          album: item.album,
+          duration: item.duration,
+          art: item.coverArt ?? '',
+        }),
+        signal: controller.signal,
+      })
+      if (generation !== libraryLoads.current || controller.signal.aborted) return
+      if (result.play === 'library' && result.id) {
+        const looked = await api('library/tracks/lookup', librarySelectionSchema, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ ids: [result.id] }),
+          signal: controller.signal,
+        })
+        const found = looked.items[0]
+        if (generation !== libraryLoads.current || controller.signal.aborted) return
+        if (found) {
+          const previous = queueRef.current.find((row) => row.id === item.id)
+          const queue = adoptLibraryTrack(queueRef.current, item.id, found)
+          const adopted = queue.find((row) => row.id === found.id)
+          if (previous && adopted) {
+            if (chosen.current.delete(previous)) chosen.current.add(adopted)
+            if (added.current.has(previous)) added.current.add(adopted)
+          }
+          queueRef.current = queue
+          setQueue(queue)
+          const playing = adopted ?? found
+          libraryCurrent.current = playing
+          setLibraryTrack(playing)
+          setNotice(LIBRARY_NOTICE)
+          startAudio(streamUrl(playing), autoplay)
+          return
+        }
+      }
+
+      if (result.play === 'account' && result.url) {
+        setNotice('Deezer account')
+        startAudio(result.url, autoplay)
+        return
+      }
+
+      if (result.play === 'unavailable') {
+        failures.current += 1
+        setNotice(result.detail || 'This song is not available on the Deezer account.', 'warn')
+        if (failures.current >= MAX_FAILURES) {
+          failures.current = 0
+          setPlaying(false)
+          return
+        }
+        next(autoplay)
+        return
+      }
+
+      if (result.play === 'busy') {
+        setNotice(result.detail || 'The Deezer account is busy.', 'warn')
+        setPlaying(false)
+        return
+      }
+      playPreviewKeepingQueue(item, result.detail, autoplay)
+    } catch (error) {
+      if (controller.signal.aborted || generation !== libraryLoads.current) return
+      setNotice(
+        error instanceof Error ? error.message : 'Deezer did not return the audio.',
+        'danger',
+      )
+      setPlaying(false)
+    } finally {
+      if (accountRequest.current === controller) {
+        accountRequest.current = null
+        setFetchingId(null)
+      }
+    }
+  }
+
+  function playPreviewKeepingQueue(item: LibraryTrack, detail: string, autoplay: boolean) {
+    const deezerId = item.deezerId
+    if (!deezerId) return
+    resumeQueue.current = true
+    mode.current = 'preview'
+    const synthetic = {
+      id: deezerId,
+      kind: 'track' as const,
+      title: item.title,
+      artist: item.artist,
+      artist_id: 0,
+      album: item.album,
+      album_id: 0,
+      art: item.coverArt ?? '',
+      duration: item.duration,
+      year: null,
+      explicit: false,
+      preview: '',
+      isrc: '',
+      spotify_id: '',
+      popularity: 0,
+      track_count: 0,
+      record_type: '',
+      ownership: 'missing' as const,
+      matched_paths: [],
+      matched_by: '' as const,
+      matched_album: '',
+      matched_song: '',
+      owned_count: 0,
+      coverage_verified: false,
+      disc: 1,
+      position: 1,
+    }
+    previewCurrent.current = synthetic
+    setTrack(synthetic)
+    setLibraryTrack(null)
+    if (detail) setNotice(detail, 'warn')
+    previewStage.current = 1
+    void loadPreview(synthetic, false, autoplay)
+  }
+
+  function cancelFetch() {
+    accountRequest.current?.abort()
+    setFetchingId(null)
+    setPlaying(false)
+    setReady(false)
+    const element = library()
+    element?.pause()
+    element?.removeAttribute('src')
+    element?.load()
+    setNotice('Press play when you are ready.', 'info')
+  }
+
+  function playCatalog(item: MusicResult) {
+    if (!isDeezerTrack(item)) {
+      play(item)
+      return
+    }
+
+    if (fetchingId === item.id) {
+      cancelFetch()
+      return
+    }
+
+    if (
+      mode.current === 'library' &&
+      libraryCurrent.current?.origin === 'deezer' &&
+      libraryCurrent.current.deezerId === item.id
+    ) {
+      toggle()
+      return
+    }
+
+    if (!canAccountPlay(item, listenRef.current)) {
+      play(item)
+      return
+    }
+    playLibrary([toQueueTrack(item)], 0, `catalog:${item.id}`)
+  }
+
+  function playCatalogFrom(tracks: MusicResult[], index: number, origin = '') {
+    const slice = tracks.slice(Math.max(0, index)).filter((item) => isDeezerTrack(item))
+    if (!slice.some((item) => canAccountPlay(item, listenRef.current))) {
+      const start = tracks[Math.max(0, index)]
+      if (start) play(start)
+      return
+    }
+    playLibrary(slice.map(toQueueTrack), 0, origin)
+  }
+
   function loadLibrary(index: number, autoplay = true, seek = 0) {
     const item = queueRef.current[index]
     if (!item) return
@@ -1312,7 +1638,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setCurrentIndex(index)
     setPosition(seek)
     setLength(item.duration || 0)
-    setNotice(LIBRARY_NOTICE)
+    setNotice(item.origin === 'deezer' ? 'Deezer account' : LIBRARY_NOTICE)
+    if (item.origin === 'deezer') {
+      discardPreload()
+      // The element may still be holding the previous song. A press while this fetch
+      // runs has to cancel the wait, not start that song.
+      const element = library()
+      element?.pause()
+      element?.removeAttribute('src')
+      element?.load()
+      void loadAccount(item, autoplay)
+      return
+    }
+
     if (!handOver) {
       discardPreload()
       applyVolume()
@@ -1673,6 +2011,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   function toggle() {
+    if (accountRequest.current) {
+      cancelFetch()
+      return
+    }
     const element = current()
     const hasItem = mode.current === 'library' ? libraryCurrent.current : previewCurrent.current
     if (!element || !hasItem) return
@@ -1690,14 +2032,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   function play(item: MusicResult) {
+    resumeQueue.current = false
     if (
       mode.current === 'preview' &&
-      previewCurrent.current?.id === item.id &&
+      previewCurrent.current &&
+      previewIdentity(previewCurrent.current) === previewIdentity(item) &&
       previewAudio.current?.src
     ) {
       toggle()
       return
     }
+    // A Spotify press stays on this path. An account fetch still in flight must not
+    // start its file on the preview element once this has taken over.
+    accountRequest.current?.abort()
+    setFetchingId(null)
     request.current?.abort()
     for (const element of elements()) element?.pause()
     fadingOut.current = null
@@ -1714,8 +2062,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setLength(30)
     previewStage.current = item.preview ? 0 : 1
     if (item.preview) {
-      setNotice('Deezer preview')
-      setPreviewStates((prev) => new Map(prev).set(item.id, 'ready'))
+      setNotice(item.spotify_id ? 'Spotify preview' : 'Deezer preview')
+      setPreviewStates((prev) => new Map(prev).set(previewIdentity(item), 'ready'))
       startAudio(item.preview)
     } else void loadPreview(item, false)
   }
@@ -1787,6 +2135,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   function stop() {
+    accountRequest.current?.abort()
+    setFetchingId(null)
     request.current?.abort()
     saveQueue()
     clearDeck()
@@ -2059,6 +2409,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (!inPlay()) return
         if (!forLibrary) {
           setPlaying(false)
+          continueAfterPreview(false)
           return
         }
         finishTrack(event.currentTarget)
@@ -2104,8 +2455,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (!item) return
         if (previewStage.current < 2) {
           previewStage.current += 1
-          void loadPreview(item, previewStage.current === 2)
-        } else setNotice('No playable preview available.', 'danger')
+          void loadPreview(item, previewStage.current === 2, previewAutoplay.current)
+        } else {
+          setNotice('No playable preview available.', 'danger')
+          continueAfterPreview(true)
+        }
       },
     }
   }
@@ -2144,6 +2498,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         shuffle,
         repeat,
         play,
+        playCatalog,
+        playCatalogFrom,
+        fetchingId,
+        cancelFetch,
+        listen,
         playLibrary,
         shuffleLibrary,
         playDeck,
@@ -2176,7 +2535,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           busy: playlistSongs.busy(likedId ?? ''),
           toggle: toggleLikedTrack,
         },
-        previewState: (trackId: number) => previewStates.get(trackId),
+        previewState: (trackId, spotifyId = '') =>
+          previewStates.get(previewIdentity({ id: trackId, spotify_id: spotifyId })),
         openPlaylistPicker: openPlaylistDialog,
         notice,
         stop,

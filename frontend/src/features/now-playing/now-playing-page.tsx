@@ -38,6 +38,7 @@ import {
   TabList,
   tabPanelId,
 } from '../../ui'
+import { sourceName } from '../player/account-play'
 import { historyTrack } from '../player/play-history'
 import {
   artUrl,
@@ -583,7 +584,10 @@ function History({ visible, tone }: { visible: boolean; tone: Tone }) {
                 <RowArt track={track} />
                 <span className="grid min-w-0 gap-[2px]">
                   <strong className="truncate font-medium">{entry.title}</strong>
-                  <small className="truncate text-small text-muted">{entry.artist}</small>
+                  <small className="truncate text-small text-muted">
+                    {entry.artist}
+                    {entry.playedFrom === 'deezer' ? ' · Played from Deezer' : ''}
+                  </small>
                 </span>
                 <time
                   className={cx('text-small text-faint', tone === 'room' && 'font-mono text-tiny')}
@@ -898,6 +902,7 @@ export function NowPlayingPage() {
         {player.track ? (
           <>
             <h1>A preview is playing.</h1>
+            <p className="text-muted">{sourceName(null, player.track)}</p>
             <p className="text-muted">
               {popout.canVisualize
                 ? 'Now Playing and its visuals play with tracks from your library.'

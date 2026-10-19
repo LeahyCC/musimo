@@ -15,6 +15,7 @@ from backend.core.sources import listed_sources
 from backend.core.store import Store
 from backend.integrations import deezer_cookie
 from backend.integrations.catalog import Catalog, CatalogError
+from backend.jobs.account_listen import snapshot as listen_snapshot
 from backend.jobs.downloads import Downloads
 from backend.library.index import Library
 from backend.library.player import Player
@@ -107,6 +108,7 @@ def install_diagnostics_routes(
             "player": player_result,
             "last_download": downloads.last_terminal_job(),
             "deezer_audio": bool(saved.deezer_audio and deezer_cookie.saved(data)),
+            "deezer_listen": listen_snapshot(store, data),
             "download_sources": listed_sources(),
         }
 

@@ -156,6 +156,18 @@ The queue holds at most 500 songs. An addition that would take the queue past th
 
 Starting playback keeps the collection in place. Loading feedback appears in the Library header's readiness tag on the list views (detail pages have no such header, so their own buttons disable while a collection loads), and other cards keep their play buttons hidden until hovered or focused. Touch layouts keep the buttons visible.
 
+## Deezer account
+
+A signed-in Deezer account can play a catalog song without saving it into the library. Now Playing names the source: Deezer account, Library, or Preview. A Spotify preview stays Preview (or Spotify preview). It is not account audio.
+
+Play fetches the whole song, then starts. The row says Fetching… until the file is ready, and pressing it cancels the wait. Seek works after that. The browser plays `/api/player/account/dz-{id}/file`. The cookie stays on the server. The listening file is cached for the session under the data directory, apart from downloads, and removed when the cookie is removed or replaced. Removing or replacing the cookie mid-stream stops the account stream. Diagnostics carries a `mark` for that file, not the cookie, and the player stops when the mark changes.
+
+A download and a Play share one cookie. Play holds it only while it fetches; the file command runs after the cookie is free, so a download is not stuck behind that command. If the account is already busy, Play says "The Deezer account is busy." and leaves the other one running.
+
+The song can join the Musimo queue (Play next, Add to queue, Play from here) and a Musimo playlist, mixed with library songs. A library song plays from disk. A Deezer song plays through the account. The liked playlist is Musimo's. History may list an account listen as Played from Deezer. The library play count does not move.
+
+The sign-in is cached and reused from Diagnostics as `deezer_listen`. A row does not sign in on its own.
+
 ## Gapless playback
 
 The library has two `<audio>` elements in the footer, `audio.library-audio`, that swap roles. One plays (`data-role="active"`) while the other holds the next track (`data-role="standby"`). The previews' element is separate and never involved.

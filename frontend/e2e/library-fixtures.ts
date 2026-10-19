@@ -28,19 +28,23 @@ export async function generatedPlayerAudio(page: Page): Promise<void> {
   })
 }
 
-export const librarySong = (id: string, over: Partial<LibraryTrack> = {}): LibraryTrack => ({
-  id,
-  title: `Song ${id}`,
-  artist: 'Harbor Static',
-  artistId: 'artist-1',
-  album: 'Clear Water',
-  albumId: 'album-1',
-  coverArt: 'cover-1',
-  duration: 214,
-  track: 1,
-  playCount: 0,
-  ...over,
-})
+export function librarySong(id: string, over: Partial<LibraryTrack> = {}): LibraryTrack {
+  const song: LibraryTrack = {
+    id,
+    title: `Song ${id}`,
+    artist: 'Harbor Static',
+    artistId: 'artist-1',
+    album: 'Clear Water',
+    albumId: 'album-1',
+    coverArt: 'cover-1',
+    duration: 214,
+    track: 1,
+    playCount: 0,
+    origin: 'library',
+  }
+  Object.assign(song, over)
+  return song
+}
 
 /**
  * On a phone the library's sort, filter and view controls live in the Filter sheet, so a spec that

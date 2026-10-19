@@ -14,6 +14,7 @@ import {
   playNextPosition,
   PRELOAD_LEAD_SECONDS,
   preloadDue,
+  previewIdentity,
   QUEUE_LIMIT,
   queueEntryKey,
   queueHash,
@@ -31,6 +32,15 @@ const song = (id: string): LibraryTrack => ({
   album: 'Album',
   duration: 100,
   playCount: 0,
+  origin: 'library',
+})
+
+describe('previewIdentity', () => {
+  it('does not treat a Spotify id as a Deezer track id', () => {
+    expect(previewIdentity({ id: 0, spotify_id: '123' })).toBe('spotify:123')
+    expect(previewIdentity({ id: 123 })).toBe('deezer:123')
+    expect(previewIdentity({ id: 0, spotify_id: '123' })).not.toBe(previewIdentity({ id: 123 }))
+  })
 })
 
 describe('durationText', () => {
@@ -213,6 +223,7 @@ describe('queueEntryKey', () => {
 describe('isPassiveNotice', () => {
   it('holds back the lines that only say where the sound comes from', () => {
     expect(isPassiveNotice('Your music library')).toBe(true)
+    expect(isPassiveNotice('Deezer account')).toBe(true)
     expect(isPassiveNotice('Queue restored. Press play to continue.')).toBe(true)
   })
 

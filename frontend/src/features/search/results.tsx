@@ -17,6 +17,7 @@ import {
 
 import { albumSchema, api } from '../../api'
 import type { DownloadJob, MusicResult } from '../../api'
+import { RowMenu } from '../../components/row-menu'
 import { cx } from '../../lib/cx'
 import { useLayout } from '../../lib/layout'
 import { Ownership, textLinkClassName } from '../../ui'
@@ -24,8 +25,12 @@ import { AlbumDownloadButton } from '../downloads/album-download'
 import { DownloadButton } from '../downloads/download-button'
 import { DownloadTarget } from '../downloads/download-target'
 import { failureMessage, useJobs } from '../downloads/jobs'
+import { resolvedDeezerId } from '../downloads/spotify-download'
+import { catalogAction, isDeezerTrack, toQueueTrack } from '../player/account-play'
 import { durationText, usePlayer, usePreviewPlayback } from '../player/player'
+import { queueActions } from '../player/queue-actions'
 import { ownedFraction, ownedShare } from './coverage'
+import { resultKey } from './result-key'
 import { getLastSearch } from './search-params'
 import type { SearchState } from './search-params'
 
@@ -160,6 +165,30 @@ export function Badge({
   )
 }
 
+function useRowAction(item: MusicResult) {
+  const player = usePlayer()
+  const playingPreview = usePreviewPlayback(item.id, item.spotify_id).playing
+  const playingAccount = Boolean(
+    player.playing &&
+    player.libraryTrack?.origin === 'deezer' &&
+    player.libraryTrack.deezerId === item.id,
+  )
+  const action = catalogAction({
+    item,
+    playingPreview,
+    playingAccount,
+    fetching: player.fetchingId === item.id,
+    previewState: player.previewState(item.id, item.spotify_id),
+    listen: player.listen,
+  })
+  const press = () => {
+    if (action.press === 'cancel') player.cancelFetch()
+    else if (action.press === 'play') player.playCatalog(item)
+    else if (action.press === 'preview') player.play(item)
+  }
+  return { action, press, playing: playingPreview || playingAccount }
+}
+
 export function Art({
   item,
   size = 'card',
@@ -172,17 +201,8 @@ export function Art({
   /** The corner radius class, for a hero cover that wants more than a card's. */
   rounded?: string
 }) {
-  const player = usePlayer()
-  const active = usePreviewPlayback(item.id).playing
-  const previewState = player.previewState(item.id)
-  const noPreview = previewState === 'none'
-  const label = active
-    ? `Pause ${item.title}`
-    : noPreview
-      ? `No preview ${item.title}`
-      : item.preview
-        ? `Preview ${item.title}`
-        : `Find preview ${item.title}`
+  const { action, press, playing } = useRowAction(item)
+  const label = `${action.label} ${item.title}`
   return (
     <div
       className={cx(
@@ -207,10 +227,11 @@ export function Art({
             'max-phone:bg-scrim/20 max-phone:opacity-100',
           )}
           aria-label={label}
-          onClick={() => player.play(item)}
-          disabled={noPreview}
+          title={action.title}
+          onClick={press}
+          disabled={action.disabled}
         >
-          {active ? <Pause size={19} /> : <Play size={19} />}
+          {playing ? <Pause size={19} /> : <Play size={19} />}
         </button>
       )}
     </div>
@@ -321,6 +342,8 @@ function MusicCard({ item }: { item: MusicResult }) {
 
 function TrackRow({
   item,
+  tracks,
+  index = 0,
   selected = false,
   job,
   focusable = false,
@@ -328,6 +351,8 @@ function TrackRow({
   onAlbum = false,
 }: {
   item: MusicResult
+  tracks?: MusicResult[]
+  index?: number
   selected?: boolean
   job?: DownloadJob
   focusable?: boolean
@@ -338,9 +363,8 @@ function TrackRow({
 }) {
   const room = useLayout() === 'room'
   const player = usePlayer()
-  const playing = usePreviewPlayback(item.id).playing
-  const previewState = player.previewState(item.id)
-  const noPreview = previewState === 'none'
+  const { action, press } = useRowAction(item)
+  const queued = isDeezerTrack(item) && player.listen?.ready === true && tracks !== undefined
   return (
     <div
       className={cx(
@@ -352,7 +376,7 @@ function TrackRow({
         'max-phone:grid max-phone:h-[78px] max-phone:grid-cols-[40px_minmax(0,1fr)_auto] max-phone:grid-rows-[1fr_auto] max-phone:gap-[2px_8px] max-phone:px-[8px] max-phone:py-[6px]',
         selected && 'bg-accent/9 outline outline-1 outline-accent [outline-offset:-1px]',
       )}
-      id={`track-${item.id}`}
+      id={`track-${resultKey(item)}`}
       aria-current={selected ? 'true' : undefined}
       tabIndex={focusable ? 0 : -1}
     >
@@ -364,14 +388,20 @@ function TrackRow({
       <Art item={item} size="row" className="max-phone:col-start-1 max-phone:row-span-2" />
       <div className="min-w-0 flex-1 max-phone:col-start-2 max-phone:row-start-1">
         <strong className="flex items-center gap-[6px] text-lead font-medium">
-          <Link
-            className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
-            to="/albums/$albumId"
-            params={{ albumId: String(item.album_id) }}
-            search={{ track: item.id }}
-          >
-            {item.title}
-          </Link>{' '}
+          {item.spotify_id ? (
+            <span className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap">
+              {item.title}
+            </span>
+          ) : (
+            <Link
+              className="min-w-0 overflow-hidden text-ellipsis whitespace-nowrap"
+              to="/albums/$albumId"
+              params={{ albumId: String(item.album_id) }}
+              search={{ track: item.id }}
+            >
+              {item.title}
+            </Link>
+          )}{' '}
           {item.explicit && (
             <span
               className="explicit shrink-0 rounded-[2px] bg-faint px-[4px] py-px text-micro text-accent-ink"
@@ -381,23 +411,34 @@ function TrackRow({
             </span>
           )}
         </strong>
-        <Link
-          className="mt-[5px] block overflow-hidden text-ellipsis whitespace-nowrap text-body text-muted"
-          to="/artists/$artistId"
-          params={{ artistId: String(item.artist_id) }}
-        >
-          {item.artist}
-        </Link>
+        {item.spotify_id ? (
+          <span className="mt-[5px] block overflow-hidden text-ellipsis whitespace-nowrap text-body text-muted">
+            {item.artist}
+          </span>
+        ) : (
+          <Link
+            className="mt-[5px] block overflow-hidden text-ellipsis whitespace-nowrap text-body text-muted"
+            to="/artists/$artistId"
+            params={{ artistId: String(item.artist_id) }}
+          >
+            {item.artist}
+          </Link>
+        )}
       </div>
-      {!onAlbum && (
-        <Link
-          className="w-[19%] overflow-hidden text-ellipsis whitespace-nowrap text-muted max-tablet:hidden @max-2xl:hidden"
-          to="/albums/$albumId"
-          params={{ albumId: String(item.album_id) }}
-        >
-          {item.album}
-        </Link>
-      )}
+      {!onAlbum &&
+        (item.spotify_id ? (
+          <span className="w-[19%] overflow-hidden text-ellipsis whitespace-nowrap text-muted max-tablet:hidden @max-2xl:hidden">
+            {item.album}
+          </span>
+        ) : (
+          <Link
+            className="w-[19%] overflow-hidden text-ellipsis whitespace-nowrap text-muted max-tablet:hidden @max-2xl:hidden"
+            to="/albums/$albumId"
+            params={{ albumId: String(item.album_id) }}
+          >
+            {item.album}
+          </Link>
+        ))}
       {!onAlbum && (
         <span className="w-[32px] text-muted max-phone:hidden @max-xl:hidden">
           {item.year ?? '…'}
@@ -417,13 +458,34 @@ function TrackRow({
         className="max-phone:col-start-2 max-phone:row-start-2 max-phone:justify-self-start max-phone:px-[6px] max-phone:py-[4px] max-phone:text-caption"
       />
       <button
-        className="w-[65px] border-0 bg-transparent text-tiny text-accent max-phone:hidden coarse:min-h-11 coarse:min-w-11 coarse:px-[6px] coarse:py-[12px]"
-        onClick={() => player.play(item)}
-        disabled={noPreview}
-        title={noPreview ? 'No preview available' : undefined}
+        className="w-[92px] border-0 bg-transparent text-tiny text-accent max-phone:hidden coarse:min-h-11 coarse:min-w-11 coarse:px-[6px] coarse:py-[12px]"
+        onClick={press}
+        disabled={action.disabled}
+        title={action.title}
       >
-        {playing ? 'Pause' : noPreview ? 'No preview' : item.preview ? 'Preview' : 'Find preview'}
+        {action.label}
       </button>
+      {queued && (
+        <RowMenu
+          className="max-phone:hidden"
+          label={`More actions for ${item.title}`}
+          actions={[
+            ...queueActions(
+              () => player.playNext([toQueueTrack(item)]),
+              () => player.addToQueue([toQueueTrack(item)]),
+            ),
+            {
+              label: 'Play from here',
+              onSelect: () =>
+                player.playCatalogFrom(
+                  tracks ?? [],
+                  index,
+                  onAlbum ? `album:${item.album_id}` : '',
+                ),
+            },
+          ]}
+        />
+      )}
       <DownloadButton
         item={item}
         className="max-phone:col-start-3 max-phone:row-span-2 max-phone:row-start-1 max-phone:gap-[2px]"
@@ -519,7 +581,7 @@ export function CatalogTrackList({
   const jobs = new Map<number, DownloadJob>()
   for (const job of queue.data?.jobs ?? []) {
     // Podcast episodes are numbered by another directory, so only music jobs belong here.
-    if (job.hidden || job.catalog !== 'deezer') continue
+    if (job.hidden || job.catalog !== 'deezer' || job.track_id <= 0) continue
     const current = jobs.get(job.track_id)
     if (!current || current.updated_at < job.updated_at) jobs.set(job.track_id, job)
   }
@@ -576,7 +638,8 @@ export function CatalogTrackList({
       virtual.scrollToIndex(newIndex, { align: 'center' })
     }
     requestAnimationFrame(() => {
-      document.getElementById(`track-${items[newIndex]?.id}`)?.focus({ preventScroll: true })
+      const row = items[newIndex]
+      if (row) document.getElementById(`track-${resultKey(row)}`)?.focus({ preventScroll: true })
     })
   }
   if (items.length <= 12)
@@ -584,12 +647,14 @@ export function CatalogTrackList({
       <div className={boxed} onKeyDown={handleKeyDown}>
         {items.map((item, index) => (
           <TrackRow
-            key={item.id}
+            key={resultKey(item)}
             first={index === 0}
             onAlbum={onAlbum}
             item={item}
-            selected={item.id === focusTrack}
-            job={jobs.get(item.id)}
+            tracks={items}
+            index={index}
+            selected={item.id === focusTrack && !item.spotify_id}
+            job={resolvedDeezerId(item) > 0 ? jobs.get(resolvedDeezerId(item)) : undefined}
             focusable={index === focusedIndex}
           />
         ))}
@@ -612,7 +677,7 @@ export function CatalogTrackList({
           const item = items[row.index]
           return item ? (
             <div
-              key={item.id}
+              key={resultKey(item)}
               ref={virtual.measureElement}
               data-index={row.index}
               style={{
@@ -627,8 +692,10 @@ export function CatalogTrackList({
                 first={row.index === 0}
                 onAlbum={onAlbum}
                 item={item}
-                selected={item.id === focusTrack}
-                job={jobs.get(item.id)}
+                tracks={items}
+                index={row.index}
+                selected={item.id === focusTrack && !item.spotify_id}
+                job={resolvedDeezerId(item) > 0 ? jobs.get(resolvedDeezerId(item)) : undefined}
                 focusable={row.index === focusedIndex}
               />
             </div>

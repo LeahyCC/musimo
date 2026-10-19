@@ -12,6 +12,7 @@ const song = (id: string): LibraryTrack => ({
   duration: 100,
   coverArt: `art-${id}`,
   playCount: 7,
+  origin: 'library',
 })
 
 describe('addToHistory', () => {
