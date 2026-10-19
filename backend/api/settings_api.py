@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 from backend.core.models import SettingsPatch
-from backend.core.store import LockedSetting, Store
+from backend.core.store import SECRET_KEYS, LockedSetting, Store
 from backend.integrations import deezer_cookie, spotify_credentials, youtube_cookies
 from backend.integrations.youtube_cookies import CookieFileError
 from backend.jobs.downloads import Downloads
@@ -15,6 +15,23 @@ from backend.jobs.downloads import Downloads
 class YoutubeCookiesBody(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     text: str = Field(min_length=1, max_length=262144)
+
+
+def scrub_secret_errors(errors: list[object]) -> list[object]:
+    """Drop a pasted cookie or Spotify secret from a validation error. The message stays."""
+    cleaned: list[object] = []
+    for error in errors:
+        if not isinstance(error, dict):
+            cleaned.append(error)
+            continue
+        item = dict(error)
+        loc = item.get("loc", ())
+        if isinstance(loc, (list, tuple)) and any(
+            isinstance(part, str) and part in SECRET_KEYS for part in loc
+        ):
+            item.pop("input", None)
+        cleaned.append(item)
+    return cleaned
 
 
 def public_settings(store: Store, data: Path) -> dict[str, object]:
@@ -98,6 +115,12 @@ def install_settings_routes(
                     spotify_credentials.write(data, client_id, client_secret)
                 else:
                     spotify_credentials.remove(data)
+            # A cookie-only or credential-only save changes no settings row, so nothing else
+            # would tell the other pages to read Diagnostics again.
+            if isinstance(cookie, str) or (
+                isinstance(client_id, str) and isinstance(client_secret, str)
+            ):
+                store.announce_settings()
         except LockedSetting as exc:
             raise HTTPException(409, str(exc)) from exc
         except ValidationError as exc:

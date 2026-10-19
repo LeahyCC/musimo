@@ -45,7 +45,14 @@ import type { LibraryPlaylist, LibraryTrack, MusicResult } from '../../api'
 import { cx } from '../../lib/cx'
 import { IconButton, iconButtonClassName, useToast } from '../../ui'
 import type { ToastAction, ToastTone } from '../../ui'
-import { accountStreamStopped, canAccountPlay, isDeezerTrack, toQueueTrack } from './account-play'
+import {
+  accountCookieReplaced,
+  accountStreamStopped,
+  adoptLibraryTrack,
+  canAccountPlay,
+  isDeezerTrack,
+  toQueueTrack,
+} from './account-play'
 import type { DeezerListen } from './account-play'
 import { audioGraph, resumeAudio } from './audio-graph'
 import { crossfadeSpan } from './crossfade'
@@ -676,8 +683,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const listen = diagnostics.data?.deezer_listen
   const listenRef = useRef(listen)
   listenRef.current = listen
+  const cookieMark = useRef<string | undefined>(undefined)
   useEffect(() => {
-    if (!accountStreamStopped(libraryCurrent.current?.origin, listen?.ready)) return
+    const next = listen ? (listen.mark ?? '') : undefined
+    const previous = cookieMark.current
+    if (next !== undefined) cookieMark.current = next
+    const replaced =
+      libraryCurrent.current?.origin === 'deezer' && accountCookieReplaced(previous, next)
+    if (!accountStreamStopped(libraryCurrent.current?.origin, listen?.ready) && !replaced) return
     accountRequest.current?.abort()
     setFetchingId(null)
     const element = library()
@@ -689,7 +702,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setPlaying(false)
     setReady(false)
     setNotice(listen?.detail || 'Choose a track to start listening.')
-  }, [listen?.ready, listen?.detail])
+  }, [listen?.ready, listen?.detail, listen?.mark])
   const standby = () => slots()[activeSlot.current === 0 ? 1 : 0]
   const current = () => (mode.current === 'library' ? library() : previewAudio.current)
   const elements = () => [previewAudio.current, libraryA.current, libraryB.current]
@@ -1017,10 +1030,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ tracks: remembered }),
-        }).then(
-          () => undefined,
-          () => undefined,
-        )
+        }).then((response) => {
+          // A queue of dz- ids is dropped on restore when these rows were never saved.
+          if (!response.ok) throw new Error('The queue could not be saved.')
+        })
       : Promise.resolve()
     return ready
       .then(write)
@@ -1403,10 +1416,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const found = looked.items[0]
         if (generation !== libraryLoads.current || controller.signal.aborted) return
         if (found) {
-          libraryCurrent.current = found
-          setLibraryTrack(found)
+          const previous = queueRef.current.find((row) => row.id === item.id)
+          const queue = adoptLibraryTrack(queueRef.current, item.id, found)
+          const adopted = queue.find((row) => row.id === found.id)
+          if (previous && adopted) {
+            if (chosen.current.delete(previous)) chosen.current.add(adopted)
+            if (added.current.has(previous)) added.current.add(adopted)
+          }
+          queueRef.current = queue
+          setQueue(queue)
+          const playing = adopted ?? found
+          libraryCurrent.current = playing
+          setLibraryTrack(playing)
           setNotice(LIBRARY_NOTICE)
-          startAudio(streamUrl(found), autoplay)
+          startAudio(streamUrl(playing), autoplay)
           return
         }
       }

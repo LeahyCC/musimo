@@ -119,7 +119,7 @@ Search cache TTL is ten minutes; album and artist TTL is 24 hours. The memory ca
 ## API and verification
 
 - `GET /api/search?q=...&kind=track|album|artist&index=0`: normalized results, total, next page index, cache status and ownership. With Search catalog set to Spotify, `kind=track` asks the Spotify Web API (at most 10 tracks) and leaves `id` at 0. The Spotify id is `spotify_id`. Album and artist searches stay on Deezer.
-- `POST /api/deezer-match`: ISRC, or else artist, title and duration within three seconds. Returns the Deezer `track_id`, or 404 `No Deezer match for “Title” by Artist.` It does not call Spotify.
+- `POST /api/deezer-match`: an ISRC when the Deezer track carries that same ISRC, or else artist, title and duration within three seconds. A different ISRC is not a match. A missing duration does not match by title. Returns the Deezer `track_id`, or 404 `No Deezer match for “Title” by Artist.` It does not call Spotify.
 - `GET /api/preview-match?artist=&title=&duration=`: the iTunes fallback for a row that is not a Deezer track.
 - `GET /api/album-years?ids=...`: up to 50 album years under a separate 12-second deadline.
 - `GET /api/albums/{id}`: album, track list, label, total duration and coverage completeness. `background=true` shares the background request budget for automatic card hydration.

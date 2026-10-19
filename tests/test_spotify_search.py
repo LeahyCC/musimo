@@ -229,6 +229,38 @@ class SpotifySearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(calls)
         self.assertTrue(all(call.startswith("api.deezer.com/") for call in calls))
 
+    async def test_a_different_isrc_is_not_the_recording(self) -> None:
+        def transport(request: httpx.Request) -> httpx.Response:
+            if request.url.path.startswith("/track/isrc:"):
+                other = deezer_track(999, duration=180)
+                other["title"] = "Other song"
+                other["isrc"] = "USBBB0000001"
+                other["artist"] = {"id": 9, "name": "Someone"}
+                return httpx.Response(200, json=other)
+            same = deezer_track(8, duration=181)
+            wrong = deezer_track(9, duration=180)
+            wrong["isrc"] = "USBBB0000001"
+            return httpx.Response(200, json={"data": [wrong, same], "total": 2})
+
+        upstream, api = self.clients(transport)
+        async with upstream, api:
+            matched = await api.post(
+                "/api/deezer-match",
+                json={
+                    "isrc": "USAAA0000000",
+                    "artist": "Daft Punk",
+                    "title": "Track 0",
+                    "duration": 180,
+                },
+            )
+            unknown = await api.post(
+                "/api/deezer-match",
+                json={"artist": "Daft Punk", "title": "Track 0", "duration": 0},
+            )
+        self.assertEqual(matched.status_code, 200)
+        self.assertEqual(matched.json()["track_id"], 8)
+        self.assertEqual(unknown.status_code, 404)
+
     async def test_a_missing_spotify_clip_uses_itunes_and_not_a_deezer_id(self) -> None:
         hosts: list[str] = []
 
@@ -309,14 +341,36 @@ class SpotifyCredentialTests(unittest.TestCase):
                 with closing(sqlite3.connect(Path(folder) / "musimo.sqlite3")) as db:
                     table = db.execute("SELECT group_concat(value) FROM settings").fetchone()[0]
                     jobs = db.execute("SELECT group_concat(payload) FROM jobs").fetchone()[0]
+                    events = db.execute("SELECT group_concat(payload) FROM job_events").fetchone()[
+                        0
+                    ]
                 self.assertNotIn(SECRET, table)
                 self.assertNotIn(SECRET, jobs or "")
+                self.assertNotIn(SECRET, events or "")
+                self.assertNotIn(CLIENT_ID, events or "")
                 client.patch(
                     "/api/settings",
                     json={"spotify_client_id": "", "spotify_client_secret": ""},
                 )
                 self.assertFalse(client.get("/api/settings").json()["spotify_credentials"]["value"])
                 self.assertFalse(app_file.exists())
+
+    def test_a_rejected_secret_is_not_echoed(self) -> None:
+        secret = "not a spotify secret"
+        cookie = "ab" * 96 + "zz"
+        with tempfile.TemporaryDirectory() as folder:
+            with TestClient(create_app(Path(folder))) as client:
+                rejected = client.patch(
+                    "/api/settings",
+                    json={"spotify_client_id": "a" * 32, "spotify_client_secret": secret},
+                )
+                self.assertEqual(rejected.status_code, 422)
+                self.assertNotIn(secret, rejected.text)
+                self.assertIn("16 to 128", rejected.text)
+                refused = client.patch("/api/settings", json={"deezer_arl": cookie})
+                self.assertEqual(refused.status_code, 422)
+                self.assertNotIn(cookie, refused.text)
+                self.assertIn("192", refused.text)
 
     def test_search_catalog_defaults_to_deezer_and_locks_from_the_environment(self) -> None:
         with tempfile.TemporaryDirectory() as folder, patch.dict("os.environ", {}, clear=False):

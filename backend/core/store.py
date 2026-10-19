@@ -892,6 +892,17 @@ class Store:
                 self.db.rollback()
                 raise
 
+    def announce_settings(self) -> None:
+        """Tell listeners the settings changed. Secrets are blank in the payload."""
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                self._event("settings.updated", self.settings())
+                self.db.commit()
+            except Exception:
+                self.db.rollback()
+                raise
+
     def snapshot(self) -> dict[str, object]:
         # Keep cursor and state in one critical section: a new subscriber must not miss a write.
         with self.lock:

@@ -552,8 +552,16 @@ export const diagnosticsSchema = z.object({
       command: z.boolean(),
       cached: z.array(z.number()),
       unavailable: z.array(z.number()),
+      mark: z.string().default(''),
     })
-    .default({ ready: false, detail: '', command: false, cached: [], unavailable: [] }),
+    .default({
+      ready: false,
+      detail: '',
+      command: false,
+      cached: [],
+      unavailable: [],
+      mark: '',
+    }),
   download_sources: z
     .array(
       z.object({

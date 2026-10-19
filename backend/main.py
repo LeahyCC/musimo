@@ -13,6 +13,8 @@ from urllib.parse import urlsplit
 
 import httpx
 from fastapi import FastAPI, HTTPException, Request
+from fastapi.encoders import jsonable_encoder
+from fastapi.exceptions import RequestValidationError
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import RequestResponseEndpoint
@@ -29,7 +31,7 @@ from backend.api.music_bot_api import install_music_bot_routes
 from backend.api.player_api import install_account_routes, install_player_routes
 from backend.api.podcast_api import install_podcast_routes
 from backend.api.search_api import install_search_routes
-from backend.api.settings_api import install_settings_routes
+from backend.api.settings_api import install_settings_routes, scrub_secret_errors
 from backend.api.waveform_api import install_waveform_routes
 from backend.core.store import Store
 from backend.integrations import deezer_cookie, spotify_credentials
@@ -164,6 +166,15 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 store.close()
 
     app = FastAPI(title="Musimo", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
+
+    @app.exception_handler(RequestValidationError)
+    async def hide_pasted_secrets(_: Request, exc: RequestValidationError) -> JSONResponse:
+        # FastAPI's default error repeats the rejected value. A cookie or client secret must not.
+        return JSONResponse(
+            {"detail": jsonable_encoder(scrub_secret_errors(list(exc.errors())))},
+            status_code=422,
+        )
+
     install_search_routes(app, lambda: catalog, lambda: library)
     install_activity_routes(app, lambda: store, changed.set)
     install_download_routes(app, lambda: downloads)

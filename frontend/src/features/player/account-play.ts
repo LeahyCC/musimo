@@ -17,6 +17,8 @@ export type DeezerListen = {
   command: boolean
   cached: number[]
   unavailable: number[]
+  /** Cookie file identity. It changes when the cookie is removed or replaced, and it is not the cookie. */
+  mark?: string
 }
 
 export type CatalogPress = 'play' | 'preview' | 'cancel' | 'none'
@@ -85,6 +87,18 @@ function previewAction(item: Row, state?: 'finding' | 'none' | 'ready'): Catalog
   return { label: 'Find preview', disabled: false, press: 'preview' }
 }
 
+/**
+ * The queue once an account song turns out to be a library file.
+ * The saved queue requires the playing id to be one of its ids.
+ */
+export function adoptLibraryTrack(
+  queue: readonly LibraryTrack[],
+  accountId: string,
+  found: LibraryTrack,
+): LibraryTrack[] {
+  return queue.map((row) => (row.id === accountId ? { ...found, origin: 'library' } : row))
+}
+
 /** The queue entry for a Deezer song. An owned song keeps the library id and plays from disk. */
 export function toQueueTrack(item: MusicResult): LibraryTrack {
   const art = item.art.startsWith('https://') ? item.art : ''
@@ -124,4 +138,9 @@ export function sourceName(library: LibraryTrack | null, preview: { spotify_id?:
 /** Stop an account stream when the sign-in is no longer usable. */
 export function accountStreamStopped(origin: string | undefined, ready: boolean | undefined) {
   return origin === 'deezer' && ready === false
+}
+
+/** True once a known cookie file is removed or replaced. The first reading is not a change. */
+export function accountCookieReplaced(previous: string | undefined, next: string | undefined) {
+  return previous !== undefined && next !== undefined && previous !== next
 }

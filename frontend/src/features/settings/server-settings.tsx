@@ -336,6 +336,7 @@ export function SettingsPage() {
     },
     onSuccess: (data) => {
       client.setQueryData(['settings'], data)
+      void client.invalidateQueries({ queryKey: ['diagnostics'] })
       setDraft({})
       setOriginalValues({})
       setConflicts({})

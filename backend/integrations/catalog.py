@@ -109,6 +109,11 @@ def missing_deezer_match(title: str, artist: str) -> str:
     return f"No Deezer match for “{title}” by {artist}."
 
 
+def isrc_key(value: str) -> str:
+    """ISRC letters and digits only, so dashes and case do not make two copies of one recording."""
+    return "".join(ch for ch in value.upper() if ch.isalnum())
+
+
 async def itunes_clip(client: httpx.AsyncClient, artist: str, title: str, duration: int) -> str:
     """An iTunes preview when the artist, title and duration agree, else ""."""
     try:
@@ -411,8 +416,9 @@ class Catalog:
 
         This asks Deezer only. It does not ask Spotify for audio.
         """
-        cleaned = "".join(ch for ch in isrc.upper() if ch.isalnum())
-        if cleaned:
+        cleaned = isrc_key(isrc)
+        # An ISRC is 12 characters. Anything else is not one, and must not select a track.
+        if len(cleaned) == 12:
             try:
                 payload, _ = await self.get(f"track/isrc:{cleaned}", fresh=True)
                 track = self.track(Track.model_validate(payload))
@@ -422,8 +428,12 @@ class Catalog:
             except ValidationError:
                 pass
             else:
-                if track.id > 0:
+                # The endpoint has to echo that ISRC. A different recording is not this song.
+                if track.id > 0 and isrc_key(track.isrc) == cleaned:
                     return track
+        # Without a length there is nothing to tell a 3-second clip from the song.
+        if duration <= 0:
+            return None
         unquoted = str.maketrans("", "", '"')
         query = f'artist:"{artist.translate(unquoted)}" track:"{title.translate(unquoted)}"'
         page = await self.search(query, "track", 0)
@@ -432,6 +442,10 @@ class Catalog:
         best_gap = DURATION_WINDOW + 1
         for hit in page.items:
             if hit.id <= 0:
+                continue
+            # A different ISRC is a different recording, even when the title and length are close.
+            hit_isrc = isrc_key(hit.isrc)
+            if len(cleaned) == 12 and hit_isrc and hit_isrc != cleaned:
                 continue
             if normalize(hit.artist) != wanted_artist or normalize(hit.title) != wanted_title:
                 continue

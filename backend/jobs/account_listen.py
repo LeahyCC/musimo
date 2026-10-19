@@ -40,6 +40,8 @@ NO_ANSWER = "Deezer did not return the audio."
 _guard = threading.Lock()
 _login: tuple[str, float, bool, str] | None = None
 _unavailable: set[int] = set()
+# One prepare of a track at a time. Not the cookie lock: the file command must not hold that.
+_track_locks: dict[int, threading.Lock] = {}
 
 
 def song_id(track_id: int) -> str:
@@ -107,8 +109,7 @@ def prepare_track(
     if not state["command"]:
         return {"play": "preview", "detail": COMMAND_REQUIRED, "url": "", "id": ""}
     try:
-        with hold(data, wait=False):
-            _download(data, track_id, store.current().file_command)
+        _download(data, track_id, store.current().file_command)
     except AccountBusy:
         return {"play": "busy", "detail": BUSY, "url": "", "id": ""}
     except DeezerNoTrack:
@@ -203,16 +204,22 @@ def _state(ready: bool, detail: str, command: bool, data: Path) -> dict[str, obj
         "command": command,
         "cached": cached_ids(data) if ready else [],
         "unavailable": sorted(_unavailable) if ready else [],
+        # Changes when the cookie file is removed or replaced. Not the cookie.
+        "mark": _cookie_mark(data),
     }
 
 
-def _stamp(data: Path, audio: bool, command: str) -> str:
+def _cookie_mark(data: Path) -> str:
     path = deezer_cookie.cookie_path(data)
     try:
         stat = path.stat()
-        mark = f"{stat.st_mtime_ns}:{stat.st_size}"
     except OSError:
-        mark = "missing"
+        return ""
+    return f"{stat.st_mtime_ns}:{stat.st_size}"
+
+
+def _stamp(data: Path, audio: bool, command: str) -> str:
+    mark = _cookie_mark(data) or "missing"
     return f"{mark}:{int(audio)}:{command}"
 
 
@@ -244,12 +251,29 @@ def _sign_in() -> tuple[bool, str]:
     return True, ""
 
 
+def _track_lock(track_id: int) -> threading.Lock:
+    with _guard:
+        lock = _track_locks.get(track_id)
+        if lock is None:
+            lock = threading.Lock()
+            _track_locks[track_id] = lock
+        return lock
+
+
 def _download(data: Path, track_id: int, command: str) -> Path:
+    """Fetch under the cookie lock, then run the file command after that lock is free."""
     folder = data / CACHE_DIR / str(track_id)
     folder.mkdir(parents=True, exist_ok=True)
-    clear_attempt(folder)
-    fetch(track_id, folder, None)
-    return prepare(folder, probe, command)
+    track_lock = _track_lock(track_id)
+    if not track_lock.acquire(blocking=False):
+        raise AccountBusy(BUSY)
+    try:
+        clear_attempt(folder)
+        with hold(data, wait=False):
+            fetch(track_id, folder, None)
+        return prepare(folder, probe, command)
+    finally:
+        track_lock.release()
 
 
 def _remember(store: Store, track_id: int, facts: dict[str, object]) -> None:

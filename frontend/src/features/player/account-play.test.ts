@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest'
 import type { MusicResult } from '../../api'
 import {
   ACCOUNT_SOURCE,
+  accountCookieReplaced,
   accountStreamStopped,
+  adoptLibraryTrack,
   BUSY,
   canAccountPlay,
   catalogAction,
@@ -130,6 +132,42 @@ describe('catalog rows', () => {
     expect(queued).toMatchObject({ id: 'dz-7', origin: 'deezer', deezerId: 7 })
   })
 
+  it('puts a resolved library file in the queue beside a library id', () => {
+    const queue = [
+      {
+        id: 'tr-1',
+        title: 'Library',
+        artist: 'Artist',
+        album: 'Album',
+        duration: 1,
+        playCount: 0,
+        origin: 'library' as const,
+      },
+      {
+        id: 'dz-7',
+        title: 'Song',
+        artist: 'Artist',
+        album: 'Album',
+        duration: 180,
+        playCount: 0,
+        origin: 'deezer' as const,
+        deezerId: 7,
+      },
+    ]
+    const next = adoptLibraryTrack(queue, 'dz-7', {
+      id: 'tr-9',
+      title: 'Song',
+      artist: 'Artist',
+      album: 'Album',
+      duration: 180,
+      playCount: 2,
+      origin: 'library',
+    })
+    expect(next.map((row) => row.id)).toEqual(['tr-1', 'tr-9'])
+    expect(next[1]?.origin).toBe('library')
+    expect(next[0]?.id).toBe('tr-1')
+  })
+
   it('stays unavailable when a clip exists', () => {
     const listen: DeezerListen = { ...signedIn, unavailable: [7] }
     expect(
@@ -220,6 +258,13 @@ describe('source names', () => {
     expect(accountStreamStopped('deezer', false)).toBe(true)
     expect(accountStreamStopped('deezer', true)).toBe(false)
     expect(accountStreamStopped('library', false)).toBe(false)
+  })
+
+  it('stops an account stream when the cookie file is replaced', () => {
+    expect(accountCookieReplaced(undefined, '1:192')).toBe(false)
+    expect(accountCookieReplaced('1:192', '1:192')).toBe(false)
+    expect(accountCookieReplaced('1:192', '2:192')).toBe(true)
+    expect(accountCookieReplaced('1:192', '')).toBe(true)
   })
 })
 

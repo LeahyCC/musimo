@@ -1,7 +1,10 @@
 """Account listening: signed-in Play, fallbacks, and a removed cookie."""
 
+import sqlite3
 import tempfile
+import threading
 import unittest
+from contextlib import closing
 from pathlib import Path
 from unittest.mock import patch
 
@@ -16,7 +19,7 @@ from backend.jobs.account_listen import (
     UNAVAILABLE,
     drop_cache,
 )
-from backend.jobs.account_lock import hold
+from backend.jobs.account_lock import AccountBusy, hold
 from backend.jobs.file_command import FileCommandError
 from backend.main import create_app
 
@@ -167,12 +170,76 @@ class AccountListenTests(unittest.TestCase):
             played = client.post("/api/player/account/dz-7", json={"title": "Song"})
             url = played.json()["url"]
             self.assertEqual(client.get(url).status_code, 200)
+            before = client.get("/api/diagnostics").json()["deezer_listen"]["mark"]
+            self.assertTrue(before)
+            self.assertNotIn(COOKIE, before)
             removed = client.patch("/api/settings", json={"deezer_arl": ""})
             self.assertEqual(removed.status_code, 200)
             self.assertEqual(client.get(url).status_code, 404)
             self.assertFalse((self.data / "account-listen").exists())
             health = client.get("/api/diagnostics").json()["deezer_listen"]
             self.assertFalse(health["ready"])
+            self.assertEqual(health["mark"], "")
+        with closing(sqlite3.connect(self.data / "musimo.sqlite3")) as db:
+            payloads = [
+                str(row[0])
+                for row in db.execute(
+                    "SELECT payload FROM job_events WHERE kind='settings.updated'"
+                )
+            ]
+        self.assertTrue(payloads)
+        self.assertNotIn(COOKIE, "".join(payloads))
+
+    def test_replacing_the_cookie_drops_the_listening_file(self) -> None:
+        deezer_cookie.write(self.data, COOKIE)
+        with (
+            TestClient(create_app(self.data)) as client,
+            patch("backend.jobs.account_listen.Account.login", _sign_in),
+            patch("backend.jobs.account_listen.fetch", _fetch),
+            patch("backend.jobs.account_listen.prepare", _prepare),
+        ):
+            client.patch("/api/settings", json={"file_command": "decode"})
+            played = client.post("/api/player/account/dz-7", json={"title": "Song"})
+            url = played.json()["url"]
+            before = client.get("/api/diagnostics").json()["deezer_listen"]["mark"]
+            replaced = client.patch("/api/settings", json={"deezer_arl": "cd" * 96})
+            self.assertEqual(replaced.status_code, 200)
+            after = client.get("/api/diagnostics").json()["deezer_listen"]
+            self.assertNotEqual(before, after["mark"])
+            self.assertNotIn("cd" * 96, after["mark"])
+            self.assertEqual(client.get(url).status_code, 404)
+            self.assertFalse((self.data / "account-listen").exists())
+
+    def test_the_file_command_does_not_hold_the_cookie(self) -> None:
+        deezer_cookie.write(self.data, COOKIE)
+        free = {"value": False}
+
+        def _command(folder: Path, _probe: object, command: str | None = None) -> Path:
+            def probe() -> None:
+                try:
+                    with hold(self.data, wait=False):
+                        free["value"] = True
+                except AccountBusy:
+                    free["value"] = False
+
+            thread = threading.Thread(target=probe)
+            thread.start()
+            self.assertTrue(thread.join(5) is None and not thread.is_alive())
+            target = folder / "source.mp3"
+            target.write_bytes(b"playable-audio")
+            (folder / "account.bin").unlink(missing_ok=True)
+            return target
+
+        with (
+            TestClient(create_app(self.data)) as client,
+            patch("backend.jobs.account_listen.Account.login", _sign_in),
+            patch("backend.jobs.account_listen.fetch", _fetch),
+            patch("backend.jobs.account_listen.prepare", _command),
+        ):
+            client.patch("/api/settings", json={"file_command": "decode"})
+            played = client.post("/api/player/account/dz-7", json={"title": "Song"})
+            self.assertEqual(played.json()["play"], "account", played.text)
+        self.assertTrue(free["value"])
 
     def test_a_busy_account_is_left_running(self) -> None:
         deezer_cookie.write(self.data, COOKIE)
