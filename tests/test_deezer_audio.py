@@ -9,7 +9,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
-from Cryptodome.Cipher import Blowfish
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
@@ -17,15 +16,11 @@ from backend.core.models import Settings, SettingsPatch
 from backend.core.store import Store
 from backend.integrations import deezer_cookie
 from backend.integrations.deezer_audio import (
-    BLOCK,
     Account,
     DeezerAudioError,
     DeezerNoTrack,
     account_cookie,
-    blowfish_key,
     choose_format,
-    decrypt_stripe,
-    decrypt_to,
     formats_to_try,
 )
 from backend.main import create_app
@@ -96,7 +91,7 @@ class DeezerAudioTests(unittest.TestCase):
 
         def stream(_method: str, _url: str) -> Response:
             status = 200 if asked[-1] == "MP3_128" else 403
-            return Response(status, b"\x01" * BLOCK)
+            return Response(status, b"not-audio")
 
         try:
             with (
@@ -107,9 +102,15 @@ class DeezerAudioTests(unittest.TestCase):
                 patch.object(account.http, "stream", side_effect=stream),
                 tempfile.TemporaryDirectory() as directory,
             ):
-                saved = account.save("1", Path(directory), None)
-                self.assertEqual(saved.path.suffix, ".mp3")
-                self.assertGreaterEqual(saved.path.stat().st_size, BLOCK)
+                seen: list[tuple[int, int]] = []
+
+                def on_progress(done: int, total: int) -> None:
+                    seen.append((done, total))
+
+                saved = account.save("1", Path(directory), on_progress)
+                self.assertEqual(saved.path.name, "account.bin")
+                self.assertEqual(saved.path.read_bytes(), b"not-audio")
+                self.assertEqual(seen, [(len(b"not-audio"), len(b"not-audio"))])
                 self.assertFalse(saved.alternate)
         finally:
             account.close()
@@ -132,7 +133,7 @@ class DeezerAudioTests(unittest.TestCase):
                     )
 
             def iter_bytes(self) -> list[bytes]:
-                return [b"\x01" * BLOCK]
+                return [b"not-audio"]
 
             def __enter__(self) -> "Response":
                 return self
@@ -182,7 +183,7 @@ class DeezerAudioTests(unittest.TestCase):
                 return None
 
             def iter_bytes(self) -> list[bytes]:
-                return [b"\x01" * BLOCK]
+                return [b"not-audio"]
 
             def __enter__(self) -> "Response":
                 return self
@@ -203,7 +204,8 @@ class DeezerAudioTests(unittest.TestCase):
                 tempfile.TemporaryDirectory() as directory,
             ):
                 saved = account.save("1", Path(directory), None)
-                self.assertEqual(saved.path.suffix, ".mp3")
+                self.assertEqual(saved.path.name, "account.bin")
+                self.assertEqual(saved.path.read_bytes(), b"not-audio")
                 self.assertFalse(saved.alternate)
         finally:
             account.close()
@@ -218,30 +220,6 @@ class DeezerAudioTests(unittest.TestCase):
                 self.assertRaises(DeezerAudioError),
             ):
                 account_cookie()
-
-    def test_stripe_puts_the_plain_audio_back(self) -> None:
-        key = blowfish_key("3135556")
-        plain = bytes((index * 17) % 256 for index in range(BLOCK * 4 + 10))
-        raw = bytearray(plain)
-        block_index = 0
-        for start in range(0, len(raw) - BLOCK + 1, BLOCK):
-            if block_index % 3 == 0:
-                cipher = Blowfish.new(key, Blowfish.MODE_CBC, iv=bytes(range(8)))
-                raw[start : start + BLOCK] = cipher.encrypt(bytes(raw[start : start + BLOCK]))
-            block_index += 1
-        self.assertEqual(decrypt_stripe([bytes(raw[:1000]), bytes(raw[1000:])], key), plain)
-
-    def test_decrypt_to_matches_the_stripe(self) -> None:
-        key = blowfish_key("42")
-        plain = b"\x01" * (BLOCK * 3)
-        cipher = Blowfish.new(key, Blowfish.MODE_CBC, iv=bytes(range(8)))
-        encrypted = bytearray(plain)
-        encrypted[:BLOCK] = cipher.encrypt(bytes(encrypted[:BLOCK]))
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "audio.part"
-            written = decrypt_to([bytes(encrypted)], path, key, len(encrypted), None)
-            self.assertEqual(written, len(plain))
-            self.assertEqual(path.read_bytes(), plain)
 
     def test_the_account_cookie_only_goes_to_deezer(self) -> None:
         # A cookie set without a domain went to every host: the media CDN and any redirect.
@@ -377,3 +355,103 @@ class DeezerAudioTests(unittest.TestCase):
             self.assertNotIsInstance(raised.exception, DeezerNoTrack)
         finally:
             account.close()
+
+    def test_an_empty_body_is_not_an_account_file(self) -> None:
+        account = Account("ab" * 96)
+
+        class Response:
+            headers = {"content-length": "0"}
+
+            def raise_for_status(self) -> None:
+                return None
+
+            def iter_bytes(self) -> list[bytes]:
+                return [b""]
+
+            def __enter__(self) -> "Response":
+                return self
+
+            def __exit__(self, *_args: object) -> None:
+                return None
+
+        try:
+            with (
+                patch.object(
+                    account, "track", return_value={"SNG_ID": "1", "TRACK_TOKEN": "token"}
+                ),
+                patch.object(account, "media_url", return_value="https://cdn.test/audio"),
+                patch.object(account.http, "stream", return_value=Response()),
+                tempfile.TemporaryDirectory() as directory,
+            ):
+                folder = Path(directory)
+                with self.assertRaises(DeezerAudioError):
+                    account.save("1", folder, None)
+                self.assertFalse((folder / "account.bin").exists())
+                self.assertFalse((folder / "account.bin.part").exists())
+        finally:
+            account.close()
+
+
+class AccountFileCommandSettingTests(unittest.TestCase):
+    def test_the_command_is_empty_until_it_is_set(self) -> None:
+        self.assertEqual(Settings().file_command, "")
+        self.assertEqual(Settings(file_command="x" * 500).file_command, "x" * 500)
+        self.assertEqual(SettingsPatch(file_command="tool").file_command, "tool")
+        for value in ("a\nb", "a\rb", "x" * 501):
+            with self.subTest(value=value[:12]), self.assertRaises(ValidationError):
+                Settings(file_command=value)
+            with self.subTest(value=value[:12]), self.assertRaises(ValidationError):
+                SettingsPatch(file_command=value)
+
+    def test_the_command_round_trips_in_the_settings_reply(self) -> None:
+        with tempfile.TemporaryDirectory() as folder, patch.dict("os.environ"):
+            os.environ.pop("MUSIMO_FILE_COMMAND", None)
+            with TestClient(create_app(Path(folder))) as client:
+                self.assertEqual(client.get("/api/settings").json()["file_command"]["value"], "")
+                saved = client.patch("/api/settings", json={"file_command": "tool --flag"})
+                self.assertEqual(saved.status_code, 200)
+                self.assertEqual(saved.json()["file_command"]["value"], "tool --flag")
+                again = client.get("/api/settings").json()["file_command"]
+                self.assertEqual(again["value"], "tool --flag")
+                self.assertFalse(again["locked"])
+                self.assertEqual(
+                    client.patch("/api/settings", json={"file_command": "tool\nmore"}).status_code,
+                    422,
+                )
+                self.assertEqual(
+                    client.patch("/api/settings", json={"file_command": "x" * 501}).status_code,
+                    422,
+                )
+
+    def test_an_older_database_gains_an_empty_command_on_startup(self) -> None:
+        with tempfile.TemporaryDirectory() as folder, patch.dict("os.environ"):
+            os.environ.pop("MUSIMO_FILE_COMMAND", None)
+            path = Path(folder) / "musimo.sqlite3"
+            store = Store(path)
+            store.db.execute("DELETE FROM settings WHERE key='file_command'")
+            store.close()
+            store = Store(path)
+            row = store.settings()["file_command"]
+            self.assertEqual(store.current().file_command, "")
+            self.assertEqual(row, {"value": "", "origin": "default", "locked": False})
+            store.close()
+
+    def test_the_environment_seeds_and_locks_a_missing_command(self) -> None:
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            patch.dict("os.environ", {"MUSIMO_FILE_COMMAND": "tool"}),
+        ):
+            store = Store(Path(folder) / "musimo.sqlite3")
+            self.assertEqual(
+                store.settings()["file_command"],
+                {"value": "tool", "origin": "MUSIMO_FILE_COMMAND", "locked": True},
+            )
+            store.close()
+
+    def test_the_account_module_no_longer_defines_the_removed_helper(self) -> None:
+        source = (
+            Path(__file__).resolve().parents[1] / "backend" / "integrations" / "deezer_audio.py"
+        ).read_text(encoding="utf-8")
+        removed = "blow" + "fish_key"
+        self.assertNotIn(f"def {removed}", source)
+        self.assertNotIn("Cryptodome", source)

@@ -803,6 +803,10 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(env[deezer_cookie.ENV], str(root / "data" / "deezer-arl.txt"))
                 store.update({"deezer_audio": False})
                 self.assertNotIn(deezer_cookie.ENV, service.child_env())
+                store.update({"deezer_audio": True, "file_command": "tool --flag"})
+                heard = service.child_env()
+                self.assertEqual(heard["MUSIMO_FILE_COMMAND"], "tool --flag")
+                self.assertNotIn("MUSIMO_DEEZER_ARL", heard)
                 await service.close()
             store.close()
 

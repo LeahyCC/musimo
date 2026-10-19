@@ -10,13 +10,10 @@ from pathlib import Path
 from typing import NamedTuple
 
 import httpx
-from Cryptodome.Cipher import Blowfish
-from Cryptodome.Hash import MD5
 
 from backend.integrations import deezer_cookie
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64; rv:135.0) Gecko/20100101 Firefox/135.0"
-BLOCK = 2048
 # Deezer's account cookie is 192 hex characters. Anything else is not one.
 ARL = re.compile(r"[a-fA-F0-9]{192}")
 Progress = Callable[[int, int], None]
@@ -82,41 +79,6 @@ def formats_to_try(preferred: str) -> tuple[str, ...]:
     if preferred not in QUALITY_LADDER:
         return (preferred,)
     return QUALITY_LADDER[QUALITY_LADDER.index(preferred) :]
-
-
-def extension(fmt: str) -> str:
-    return "flac" if fmt == "FLAC" else "mp3"
-
-
-def blowfish_key(song_id: str) -> bytes:
-    """The per-song key. The hex digest is xored, then UTF-8 encoded, matching Deezer's files."""
-    secret = b"g4el58wc0zvf9na1"
-    hashed = MD5.new(song_id.encode()).hexdigest().encode("ascii")
-    chars = "".join(chr(hashed[i] ^ hashed[i + 16] ^ secret[i]) for i in range(16))
-    return chars.encode()
-
-
-def decrypt_block(block: bytes, key: bytes) -> bytes:
-    cipher = Blowfish.new(key, Blowfish.MODE_CBC, iv=bytes(range(8)))
-    return bytes(cipher.decrypt(block))
-
-
-def decrypt_stripe(chunks: Iterable[bytes], key: bytes) -> bytes:
-    """Deezer encrypts every third 2048-byte block and leaves the rest as plain audio."""
-    pending = bytearray()
-    out = bytearray()
-    index = 0
-    for chunk in chunks:
-        pending.extend(chunk)
-        while len(pending) >= BLOCK:
-            block = bytes(pending[:BLOCK])
-            del pending[:BLOCK]
-            if index % 3 == 0:
-                block = decrypt_block(block, key)
-            out.extend(block)
-            index += 1
-    out.extend(pending)
-    return bytes(out)
 
 
 class Account:
@@ -266,9 +228,8 @@ class Account:
                 except DeezerAudioError as exc:
                     last = exc
                     continue
-                target = folder / f"source.{extension(fmt)}"
-                partial = target.with_suffix(target.suffix + ".part")
-                key = blowfish_key(token_id)
+                target = folder / "account.bin"
+                partial = target.with_suffix(".bin.part")
                 try:
                     with self.http.stream("GET", url) as response:
                         try:
@@ -276,9 +237,7 @@ class Account:
                         except httpx.HTTPError as exc:
                             raise DeezerAudioError("Deezer did not return the audio") from exc
                         total = int(response.headers.get("content-length") or 0)
-                        written = decrypt_to(
-                            response.iter_bytes(), partial, key, total, on_progress
-                        )
+                        written = write_body(response.iter_bytes(), partial, total, on_progress)
                 except DeezerAudioError as exc:
                     partial.unlink(missing_ok=True)
                     last = exc
@@ -292,7 +251,7 @@ class Account:
                 except BaseException:
                     partial.unlink(missing_ok=True)
                     raise
-                if written < BLOCK:
+                if written <= 0:
                     partial.unlink(missing_ok=True)
                     last = DeezerAudioError("Deezer did not return the audio")
                     continue
@@ -301,34 +260,19 @@ class Account:
         raise last
 
 
-def decrypt_to(
-    chunks: Iterable[bytes],
-    path: Path,
-    key: bytes,
-    total: int,
-    on_progress: Progress | None,
+def write_body(
+    chunks: Iterable[bytes], path: Path, total: int, on_progress: Progress | None
 ) -> int:
-    pending = bytearray()
+    """Write the response body unchanged and report the bytes written."""
     written = 0
-    index = 0
     with path.open("wb") as handle:
         for chunk in chunks:
-            pending.extend(chunk)
-            while len(pending) >= BLOCK:
-                block = bytes(pending[:BLOCK])
-                del pending[:BLOCK]
-                if index % 3 == 0:
-                    block = decrypt_block(block, key)
-                handle.write(block)
-                written += BLOCK
-                index += 1
-                if on_progress:
-                    on_progress(written, total)
-        if pending:
-            handle.write(pending)
-            written += len(pending)
-            if on_progress:
-                on_progress(written, total or written)
+            handle.write(chunk)
+            written += len(chunk)
+            if on_progress is not None:
+                on_progress(written, total)
+    if on_progress is not None and written and not total:
+        on_progress(written, written)
     return written
 
 
