@@ -1466,7 +1466,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       }
 
       if (result.play === 'unavailable') {
+        failures.current += 1
         setNotice(result.detail || 'This song is not available on the Deezer account.', 'warn')
+        if (failures.current >= MAX_FAILURES) {
+          failures.current = 0
+          setPlaying(false)
+          return
+        }
         next(autoplay)
         return
       }
@@ -2036,6 +2042,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       toggle()
       return
     }
+    // A Spotify press stays on this path. An account fetch still in flight must not
+    // start its file on the preview element once this has taken over.
+    accountRequest.current?.abort()
+    setFetchingId(null)
     request.current?.abort()
     for (const element of elements()) element?.pause()
     fadingOut.current = null
@@ -2125,6 +2135,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   function stop() {
+    accountRequest.current?.abort()
+    setFetchingId(null)
     request.current?.abort()
     saveQueue()
     clearDeck()
