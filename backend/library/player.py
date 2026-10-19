@@ -29,6 +29,7 @@ from mutagen.id3 import ID3
 from mutagen.mp4 import MP4Cover
 
 from backend.core.store import Store
+from backend.jobs.account_listen import remembered_tracks
 from backend.library.browse import (
     ArtistSummary,
     CatalogSnapshot,
@@ -1276,7 +1277,13 @@ class Player:
         snapshot: LibraryView,
         with_entry: bool,
     ) -> dict[str, object]:
-        entry = [snapshot.by_song.get(text) or missing_track(text) for text in song_ids]
+        remembered = remembered_tracks(
+            self.store, [text for text in song_ids if text not in snapshot.by_song]
+        )
+        entry = [
+            snapshot.by_song.get(text) or remembered.get(text) or missing_track(text)
+            for text in song_ids
+        ]
         duration = 0.0
         for track in entry:
             length = track.get("duration")
@@ -1432,12 +1439,21 @@ class Player:
         raw_ids = saved.get("song_ids")
         ids = [str(item) for item in raw_ids] if isinstance(raw_ids, list) else []
         position = saved.get("position")
+        remembered = remembered_tracks(
+            self.store, [text for text in ids if text not in snapshot.by_song]
+        )
+        entry: list[dict[str, object]] = []
+        for text in ids:
+            if text in snapshot.by_song:
+                entry.append(snapshot.by_song[text])
+            elif text in remembered:
+                entry.append(remembered[text])
         return {
             "current": str(saved.get("current") or ""),
             "position": position
             if isinstance(position, int) and not isinstance(position, bool)
             else 0,
-            "entry": [snapshot.by_song[text] for text in ids if text in snapshot.by_song],
+            "entry": entry,
         }
 
     async def save_play_queue(
@@ -1452,6 +1468,9 @@ class Player:
 
     async def scrobble(self, song_id: str, submission: bool) -> None:
         if not submission:
+            return
+        # An account listen is not a library play. The count stays on the file.
+        if song_id.startswith("dz-"):
             return
         if not self.store.record_play(song_id):
             raise SongMissing("Track not found")

@@ -10,21 +10,42 @@ import { Button, ErrorBanner, FieldSelect } from '../../ui'
 import { AlbumDownloadButton } from '../downloads/album-download'
 import { DownloadTarget } from '../downloads/download-target'
 import { useJobs } from '../downloads/jobs'
-import { durationText, usePlayer, usePreviewPlayback } from '../player/player'
+import { canAccountPlay } from '../player/account-play'
+import {
+  durationText,
+  useCollectionPlayback,
+  usePlayer,
+  usePreviewPlayback,
+} from '../player/player'
 import { CatalogHero, HeroDestination } from './catalog-hero'
 import { queuedTrackIds, trackCoverage } from './coverage'
 import { Art, BackToSearch, CatalogTrackList } from './results'
 
-/** Plays the first track's clip, or the first one that has a clip. */
-function PreviewAlbum({ tracks }: { tracks: MusicResult[] }) {
+/** Play from the account when it is signed in, otherwise the first clip. */
+function PreviewAlbum({ albumId, tracks }: { albumId: number; tracks: MusicResult[] }) {
   const player = usePlayer()
+  const source = `album:${albumId}`
+  const collection = useCollectionPlayback(source)
+  const account = tracks.some((track) => canAccountPlay(track, player.listen))
   const first = tracks.find((track) => track.preview) ?? tracks[0]
-  const playing = usePreviewPlayback(first?.id ?? 0).playing
+  const playingPreview = usePreviewPlayback(first?.id ?? 0).playing
   if (!first) return null
+  if (!account)
+    return (
+      <Button onClick={() => player.play(first)}>
+        {playingPreview ? <Pause size={15} /> : <Play size={15} />}
+        {playingPreview ? 'Pause preview' : 'Preview'}
+      </Button>
+    )
+  const fetching = tracks.some((track) => player.fetchingId === track.id)
   return (
-    <Button onClick={() => player.play(first)}>
-      {playing ? <Pause size={15} /> : <Play size={15} />}
-      {playing ? 'Pause preview' : 'Preview'}
+    <Button
+      onClick={() =>
+        collection.active ? player.toggle() : player.playCatalogFrom(tracks, 0, source)
+      }
+    >
+      {collection.playing ? <Pause size={15} /> : <Play size={15} />}
+      {collection.playing ? 'Pause' : fetching ? 'Fetching…' : 'Play'}
     </Button>
   )
 }
@@ -100,7 +121,7 @@ export function AlbumPage() {
                   : 'Download album'
               }
             />
-            <PreviewAlbum tracks={tracks} />
+            <PreviewAlbum albumId={album.id} tracks={tracks} />
             <label className="text-small text-muted">
               Quality{' '}
               <FieldSelect

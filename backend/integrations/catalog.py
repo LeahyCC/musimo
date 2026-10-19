@@ -9,6 +9,7 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError, ValidationInfo, field_validator
 
 from backend.core.store import Store
+from backend.core.text import normalize
 
 
 class CatalogModel(BaseModel):
@@ -78,7 +79,11 @@ class Result(BaseModel):
     matched_paths: list[str] = Field(default_factory=list)
     matched_by: Literal["download", "isrc", "mbid", "tags", ""] = ""
     matched_album: str = ""
+    # Library song id when this catalog track is already a file on disk. Empty otherwise.
+    matched_song: str = ""
     owned_count: int = 0
+    # A Spotify track's own id. Result.id stays a Deezer track id, so this is "" there.
+    spotify_id: str = ""
     coverage_verified: bool = False
     disc: int = 1
     position: int = 0
@@ -96,6 +101,46 @@ class CatalogError(Exception):
         self.detail, self.status = detail, status
 
 
+# The same window the library index and the iTunes preview fallback already use.
+DURATION_WINDOW = 3
+
+
+def missing_deezer_match(title: str, artist: str) -> str:
+    return f"No Deezer match for “{title}” by {artist}."
+
+
+async def itunes_clip(client: httpx.AsyncClient, artist: str, title: str, duration: int) -> str:
+    """An iTunes preview when the artist, title and duration agree, else ""."""
+    try:
+        response = await client.get(
+            "https://itunes.apple.com/search",
+            params={"term": f"{artist} {title}", "entity": "song", "limit": 10},
+        )
+        response.raise_for_status()
+        raw: object = response.json()
+    except (httpx.HTTPError, ValueError) as exc:
+        raise CatalogError("Preview lookup failed. Try again.") from exc
+    rows = raw.get("results", []) if isinstance(raw, dict) else []
+    wanted_title, wanted_artist = normalize(title), normalize(artist)
+    if not isinstance(rows, list):
+        return ""
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        length = row.get("trackTimeMillis", 0)
+        if (
+            normalize(str(row.get("trackName", ""))) == wanted_title
+            and normalize(str(row.get("artistName", ""))) == wanted_artist
+            and isinstance(length, (int, float))
+            and not isinstance(length, bool)
+            and abs(length / 1000 - duration) <= DURATION_WINDOW
+        ):
+            url = safe_media(str(row.get("previewUrl", "")))
+            if url:
+                return url
+    return ""
+
+
 def safe_media(value: str) -> str:
     try:
         parsed = urlsplit(value)
@@ -109,6 +154,7 @@ def safe_media(value: str) -> str:
             host.endswith(".dzcdn.net")
             or host.endswith(".mzstatic.com")
             or host == "audio-ssl.itunes.apple.com"
+            or host in {"p.scdn.co", "i.scdn.co"}
         )
         else ""
     )
@@ -116,7 +162,11 @@ def safe_media(value: str) -> str:
 
 class Catalog:
     def __init__(self, store: Store, client: httpx.AsyncClient) -> None:
+        # Local import: spotify.py imports this module, so a module import here would cycle.
+        from backend.integrations.spotify import SpotifyAuth
+
         self.store, self.client = store, client
+        self.spotify = SpotifyAuth()
         self.memory: OrderedDict[str, tuple[float, dict[str, object]]] = OrderedDict()
         self.requests: deque[float] = deque()
         self.rate_lock = asyncio.Lock()
@@ -353,3 +403,39 @@ class Catalog:
             "duration": payload.get("duration", 0),
             "complete": len(tracks) == album.nb_tracks,
         }
+
+    async def match_recording(
+        self, *, isrc: str, artist: str, title: str, duration: int
+    ) -> Result | None:
+        """A Deezer track for a Spotify row: ISRC first, else artist, title and duration.
+
+        This asks Deezer only. It does not ask Spotify for audio.
+        """
+        cleaned = "".join(ch for ch in isrc.upper() if ch.isalnum())
+        if cleaned:
+            try:
+                payload, _ = await self.get(f"track/isrc:{cleaned}", fresh=True)
+                track = self.track(Track.model_validate(payload))
+            except CatalogError as exc:
+                if exc.status != 404:
+                    raise
+            except ValidationError:
+                pass
+            else:
+                if track.id > 0:
+                    return track
+        unquoted = str.maketrans("", "", '"')
+        query = f'artist:"{artist.translate(unquoted)}" track:"{title.translate(unquoted)}"'
+        page = await self.search(query, "track", 0)
+        wanted_artist, wanted_title = normalize(artist), normalize(title)
+        best: Result | None = None
+        best_gap = DURATION_WINDOW + 1
+        for hit in page.items:
+            if hit.id <= 0:
+                continue
+            if normalize(hit.artist) != wanted_artist or normalize(hit.title) != wanted_title:
+                continue
+            gap = abs(hit.duration - duration)
+            if gap <= DURATION_WINDOW and gap < best_gap:
+                best, best_gap = hit, gap
+        return best

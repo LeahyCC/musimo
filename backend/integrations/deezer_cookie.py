@@ -60,11 +60,20 @@ def write(data: Path, value: str) -> None:
         raise ValueError("Paste the arl cookie from a Deezer login.")
     secret_file.replace(cookie_path(data), body.encode())
     publish(data)
+    # A replaced cookie is a different listener. Drop the previous listening files.
+    _drop_listening(data)
 
 
 def remove(data: Path) -> None:
     secret_file.delete(cookie_path(data))
     publish(data)
+    _drop_listening(data)
+
+
+def _drop_listening(data: Path) -> None:
+    from backend.jobs.account_listen import drop_cache
+
+    drop_cache(data)
 
 
 def adopt(store: "Store", data: Path) -> None:

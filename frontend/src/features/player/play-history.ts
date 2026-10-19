@@ -23,6 +23,8 @@ const historyEntrySchema = z.object({
   coverArt: z.string().optional(),
   replayGain: replayGainSchema.optional(),
   playedAt: z.number(),
+  /** Set when the listen came through the Deezer account rather than a library file. */
+  playedFrom: z.literal('deezer').optional(),
 })
 export type HistoryEntry = z.infer<typeof historyEntrySchema>
 
@@ -57,6 +59,7 @@ export function addToHistory(
     coverArt: track.coverArt,
     replayGain: track.replayGain,
     playedAt,
+    playedFrom: track.origin === 'deezer' ? 'deezer' : undefined,
   }
   return [entry, ...entries].slice(0, HISTORY_LIMIT)
 }
@@ -73,4 +76,6 @@ export const historyTrack = (entry: HistoryEntry): LibraryTrack => ({
   coverArt: entry.coverArt,
   replayGain: entry.replayGain,
   playCount: 0,
+  origin: entry.playedFrom === 'deezer' ? 'deezer' : 'library',
+  deezerId: entry.playedFrom === 'deezer' ? Number(entry.id.replace('dz-', '')) : undefined,
 })

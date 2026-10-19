@@ -17,6 +17,7 @@ const song = (id: string, albumId?: string, duration = 200): LibraryTrack => ({
   albumId,
   duration,
   playCount: 0,
+  origin: 'library',
 })
 
 // Two tracks from different albums, queued one after the other, with the overlap due.

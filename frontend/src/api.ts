@@ -119,6 +119,8 @@ export const resultSchema = z.object({
   explicit: z.boolean(),
   preview: z.string(),
   isrc: z.string(),
+  // A Spotify track id. Empty on a Deezer row. Never used as Result.id.
+  spotify_id: z.string().default(''),
   popularity: z.number(),
   track_count: z.number(),
   record_type: z.string(),
@@ -126,6 +128,7 @@ export const resultSchema = z.object({
   matched_paths: z.array(z.string()),
   matched_by: z.enum(['download', 'isrc', 'mbid', 'tags', '']),
   matched_album: z.string(),
+  matched_song: z.string().default(''),
   owned_count: z.number(),
   coverage_verified: z.boolean(),
   disc: z.number(),
@@ -153,6 +156,17 @@ export const artistSchema = z.object({
 export const artistTopSchema = z.object({ tracks: z.array(resultSchema) })
 export const yearsSchema = z.record(z.string(), z.number().nullable())
 export const previewSchema = z.object({ url: z.string().nullable(), source: z.string().nullable() })
+export const accountPlaySchema = z.object({
+  play: z.enum(['account', 'library', 'preview', 'unavailable', 'busy', 'off']),
+  detail: z.string().default(''),
+  url: z.string().default(''),
+  id: z.string().default(''),
+})
+export const deezerMatchSchema = z.object({
+  track_id: z.number().int().positive(),
+  title: z.string(),
+  artist: z.string(),
+})
 export const podcastSchema = z.object({
   id: z.number(),
   title: z.string(),
@@ -216,6 +230,9 @@ export const libraryTrackSchema = z.object({
   created: z.string().optional(),
   playCount: z.number().default(0),
   replayGain: replayGainSchema.optional(),
+  /** `deezer` plays through the account. Anything else is a library file. */
+  origin: z.enum(['library', 'deezer']).default('library'),
+  deezerId: z.number().optional(),
 })
 export type LibraryTrack = z.infer<typeof libraryTrackSchema>
 
@@ -401,6 +418,16 @@ export const settingsSchema = z.object({
   deezer_cookie: field(z.boolean()).default({ value: false, origin: 'default', locked: false }),
   deezer_catalog: field(z.boolean()).default({ value: true, origin: 'default', locked: false }),
   deezer_audio: field(z.boolean()).default({ value: true, origin: 'default', locked: false }),
+  search_catalog: field(z.enum(['deezer', 'spotify'])).default({
+    value: 'deezer',
+    origin: 'default',
+    locked: false,
+  }),
+  // Always empty from the server. Sent only to replace or remove the saved app.
+  spotify_client_id: field(z.string()).default({ value: '', origin: 'file', locked: false }),
+  spotify_client_secret: field(z.string()).default({ value: '', origin: 'file', locked: false }),
+  // Whether a Spotify app is saved. The client secret is never sent back.
+  spotify_credentials: field(z.boolean()).default({ value: false, origin: 'file', locked: false }),
   file_command: field(z.string().max(500)).default({ value: '', origin: 'default', locked: false }),
   disabled_sources: field(z.array(z.string())).default({
     value: [],
@@ -518,6 +545,15 @@ export const diagnosticsSchema = z.object({
     downloads: z.boolean(),
   }),
   deezer_audio: z.boolean().default(false),
+  deezer_listen: z
+    .object({
+      ready: z.boolean(),
+      detail: z.string(),
+      command: z.boolean(),
+      cached: z.array(z.number()),
+      unavailable: z.array(z.number()),
+    })
+    .default({ ready: false, detail: '', command: false, cached: [], unavailable: [] }),
   download_sources: z
     .array(
       z.object({

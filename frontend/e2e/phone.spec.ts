@@ -30,6 +30,8 @@ const track: MusicResult = {
   matched_paths: [],
   matched_by: '',
   matched_album: '',
+  spotify_id: '',
+  matched_song: '',
   owned_count: 0,
   coverage_verified: true,
   disc: 1,

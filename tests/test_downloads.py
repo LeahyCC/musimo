@@ -1,6 +1,7 @@
 import asyncio
 import ctypes
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -23,7 +24,7 @@ from backend.core.job_models import Candidate, Job, Metadata
 from backend.core.naming import Naming
 from backend.core.store import Store
 from backend.core.text import normalize
-from backend.integrations import deezer_cookie
+from backend.integrations import deezer_cookie, spotify_credentials
 from backend.integrations.catalog import Catalog, CatalogError
 from backend.jobs.downloads import (
     CATALOG_DETAILS_WARNING,
@@ -807,6 +808,17 @@ class BackupSourceTests(unittest.IsolatedAsyncioTestCase):
                 heard = service.child_env()
                 self.assertEqual(heard["MUSIMO_FILE_COMMAND"], "tool --flag")
                 self.assertNotIn("MUSIMO_DEEZER_ARL", heard)
+                secret = "c" * 32
+                os.environ["MUSIMO_SPOTIFY_CLIENT_ID"] = "d" * 32
+                os.environ["MUSIMO_SPOTIFY_CLIENT_SECRET"] = secret
+                os.environ[spotify_credentials.ENV] = str(root / "spotify-app.json")
+                shielded = service.child_env()
+                self.assertNotIn(secret, "".join(shielded.values()))
+                self.assertNotIn("MUSIMO_SPOTIFY_CLIENT_SECRET", shielded)
+                self.assertNotIn(spotify_credentials.ENV, shielded)
+                os.environ.pop("MUSIMO_SPOTIFY_CLIENT_ID", None)
+                os.environ.pop("MUSIMO_SPOTIFY_CLIENT_SECRET", None)
+                os.environ.pop(spotify_credentials.ENV, None)
                 await service.close()
             store.close()
 

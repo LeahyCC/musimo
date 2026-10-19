@@ -6,11 +6,11 @@ import threading
 from pathlib import Path
 from typing import Literal, NamedTuple
 
-from backend.core.models import CATALOG_ORDER, Settings, clean_arl
+from backend.core.models import CATALOG_ORDER, Settings, clean_arl, clean_spotify_token
 from backend.core.sources import source_label
 
 RETAIN_EVENTS = 5000
-SCHEMA_VERSION = 12
+SCHEMA_VERSION = 13
 # Music bot proposals kept, newest first by last use, and revisions kept per proposal. They are
 # suggestion state, not history: a dropped one is only a preview the client has to ask for again.
 PROPOSAL_LIMIT = 20
@@ -30,7 +30,7 @@ SHOWN_ACKS = 50
 # because Settings refuses keys it does not know.
 # deezer_arl held the Deezer cookie. The cookie is a file now and the row stays empty, so a
 # first-start seed from MUSIMO_DEEZER_ARL does not run again after the cookie is removed.
-SECRET_KEYS = frozenset({"deezer_arl"})
+SECRET_KEYS = frozenset({"deezer_arl", "spotify_client_id", "spotify_client_secret"})
 # soundcloud_fallback was the old SoundCloud switch. It only feeds the source_order migration.
 RETIRED_KEYS = frozenset({"soundcloud_fallback"})
 # Playback used to ask a separate server. The version 6 upgrade deletes these rows.
@@ -584,6 +584,23 @@ class Store:
                 PRAGMA user_version=12;
                 COMMIT;
             """)
+        if version < 13:
+            # Facts for a Deezer song kept in a Musimo playlist or the queue. Not a Deezer
+            # playlist, and not a library file: playback still goes through the account.
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS account_tracks (
+                    song_id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    artist TEXT NOT NULL,
+                    album TEXT NOT NULL,
+                    duration REAL NOT NULL,
+                    art TEXT NOT NULL,
+                    deezer_id INTEGER NOT NULL
+                );
+                PRAGMA user_version=13;
+                COMMIT;
+            """)
         self.seed()
 
     def paused_sources(self) -> list[str]:
@@ -668,8 +685,13 @@ class Store:
                     continue
                 env = f"MUSIMO_{key.upper()}"
                 raw = os.environ.get(env)
-                if raw is not None and not raw.strip() and isinstance(default, list):
-                    # Compose passes an unset list as "". That is no choice, so nothing is locked.
+                if (
+                    raw is not None
+                    and not raw.strip()
+                    and (isinstance(default, list) or key == "search_catalog")
+                ):
+                    # Compose passes an unset list, or an unset search catalog, as "".
+                    # That is no choice, so nothing is locked.
                     raw = None
                 values[key] = default if raw is None else seeded(default, raw)
                 seeds.append(
@@ -685,6 +707,20 @@ class Store:
                 # file at startup and empties this row, and Settings can replace it later.
                 cookie = clean_arl(os.environ.get("MUSIMO_DEEZER_ARL", ""))
                 seeds.append(("deezer_arl", json.dumps(cookie), "default", 0))
+            if "spotify_client_id" not in existing and "spotify_client_secret" not in existing:
+                # Both seed together, then startup moves them into the app file and empties
+                # the rows. One without the other is refused so a secret is not stored alone.
+                client_id = clean_spotify_token(os.environ.get("MUSIMO_SPOTIFY_CLIENT_ID", ""))
+                client_secret = clean_spotify_token(
+                    os.environ.get("MUSIMO_SPOTIFY_CLIENT_SECRET", "")
+                )
+                if bool(client_id) != bool(client_secret):
+                    raise ValueError(
+                        "Set both MUSIMO_SPOTIFY_CLIENT_ID and MUSIMO_SPOTIFY_CLIENT_SECRET, "
+                        "or neither."
+                    )
+                seeds.append(("spotify_client_id", json.dumps(client_id), "default", 0))
+                seeds.append(("spotify_client_secret", json.dumps(client_secret), "default", 0))
             # The old SoundCloud switch becomes a row in the order, once, when the order first
             # appears. Taking it off the list later stays off.
             if "source_order" not in existing and not os.environ.get("MUSIMO_SOURCE_ORDER"):
@@ -747,15 +783,22 @@ class Store:
 
     def settings(self) -> dict[str, object]:
         with self.lock:
-            return {
-                row["key"]: {
-                    "value": json.loads(row["value"]),
-                    "origin": row["origin"],
-                    "locked": bool(row["locked"]),
-                }
-                for row in self.db.execute("SELECT * FROM settings ORDER BY key")
-                if row["key"] not in RETIRED_KEYS
-            }
+            rows = []
+            for row in self.db.execute("SELECT * FROM settings ORDER BY key"):
+                if row["key"] in RETIRED_KEYS:
+                    continue
+                value: object = json.loads(row["value"])
+                # A secret row is empty after startup. Blank it here too, so a leftover
+                # value cannot leave through a settings event.
+                if row["key"] in SECRET_KEYS:
+                    value = ""
+                rows.append(
+                    (
+                        row["key"],
+                        {"value": value, "origin": row["origin"], "locked": bool(row["locked"])},
+                    )
+                )
+            return dict(rows)
 
     def _event(self, kind: str, payload: object) -> int:
         cur = self.db.execute(
@@ -1705,6 +1748,14 @@ class Store:
                             (json.dumps(song_ids),),
                         )
                     }
+                    present.update(
+                        str(row[0])
+                        for row in self.db.execute(
+                            "SELECT song_id FROM account_tracks "
+                            "WHERE song_id IN (SELECT value FROM json_each(?))",
+                            (json.dumps(song_ids),),
+                        )
+                    )
                 else:
                     present = set()
                 kept = [song_id for song_id in song_ids if song_id in present]

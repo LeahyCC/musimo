@@ -14,6 +14,12 @@ services:
       # Deezer cookie from .env, for the first start only. Musimo moves it into
       # /data/deezer-arl.txt, and Settings replaces or removes it after that.
       MUSIMO_DEEZER_ARL: '${MUSIMO_DEEZER_ARL:-}'
+      # Search catalog for the first start only. deezer or spotify. Blank leaves the default.
+      MUSIMO_SEARCH_CATALOG: '${MUSIMO_SEARCH_CATALOG:-}'
+      # Spotify app for the first start only. Musimo moves the pair into
+      # /data/spotify-app.json, and Settings replaces or removes it after that.
+      MUSIMO_SPOTIFY_CLIENT_ID: '${MUSIMO_SPOTIFY_CLIENT_ID:-}'
+      MUSIMO_SPOTIFY_CLIENT_SECRET: '${MUSIMO_SPOTIFY_CLIENT_SECRET:-}'
       # Shared with the audio worker below. Empty keeps the worker's lease routes off.
       MUSIMO_ANALYSIS_TOKEN: '${MUSIMO_ANALYSIS_TOKEN:-}'
     volumes:

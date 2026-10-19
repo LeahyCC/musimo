@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Deezer account playback
+
+- Play a Deezer song from the signed-in account. Catalog rows say Play instead of Preview when a cookie is saved, Deezer account is on, and a live sign-in succeeds. That result is cached and reused from Diagnostics. A song already in the library plays the local file. The browser plays a Musimo address, and the cookie never reaches it. With the account-file command empty, Play is offered only when the saved file already plays. A free account that cannot play a full song, a country block, a removed cookie, or a busy account stays on Preview or says why. Account songs join the Musimo queue and Musimo playlists. A heart writes to the liked playlist here, not on Deezer. Now Playing names the source Deezer account, Library, or Preview. History may say Played from Deezer. Spotify rows stay on Preview.
+
+### Search catalog
+
+- Add Spotify as a second search catalog beside Deezer. Search catalog defaults to Deezer. Spotify searches tracks and plays a preview when one exists. A download still uses the Deezer catalog. Album and artist pages stay on Deezer. A Spotify id is not a Deezer track id. A missing Spotify clip uses the iTunes fallback. Download resolves a Deezer track by ISRC, otherwise by artist, title and duration, and does not ask Spotify for audio. No Deezer match leaves the preview playable and says No Deezer match for “Title” by Artist. A pasted Spotify link stays refused. The client secret is saved like the Deezer cookie: the page learns that credentials are saved, and the secret is not in settings replies, job records, logs or diagnostics. `MUSIMO_SEARCH_CATALOG` seeds and locks the choice on first creation.
+
 ### Pasted links
 
 - Remove Audiomack and TuneIn. The pinned yt-dlp still cannot read either site, and no later release has fixed them.
@@ -9,6 +17,7 @@
 ### Deezer account file
 
 - Save the Deezer account file as it arrived. When the command is set, it runs on that file and the file is kept only when it plays. When the command is empty, a file that does not play fails that source and the next source runs.
+- Schema 13 stores the title, artist, album, duration and art of a Deezer song kept in a playlist or the queue. Playback still uses the account.
 
 ### Phones, other computers and the dock
 

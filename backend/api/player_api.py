@@ -1,11 +1,15 @@
+import asyncio
 import re
 from collections.abc import Callable
+from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
+from backend.core.store import Store
+from backend.jobs.account_listen import listen_file, prepare_track, remember_many, track_number
 from backend.library.player import (
     ALBUM_SORTS,
     ARTIST_SHOWS,
@@ -149,6 +153,62 @@ def checked_id(value: str) -> str:
     if not ITEM_ID.fullmatch(value):
         raise HTTPException(422, "Invalid item ID")
     return value
+
+
+class AccountFacts(BaseModel):
+    title: str = Field(default="", max_length=500)
+    artist: str = Field(default="", max_length=500)
+    album: str = Field(default="", max_length=500)
+    duration: float = Field(default=0, ge=0, le=86400)
+    art: str = Field(default="", max_length=2000)
+
+
+class AccountRememberTrack(AccountFacts):
+    id: int = Field(ge=1, le=2**63 - 1)
+
+
+class AccountRemember(BaseModel):
+    tracks: list[AccountRememberTrack] = Field(default_factory=list, max_length=QUEUE_LIMIT)
+
+
+_LISTEN_TYPES = {
+    ".flac": "audio/flac",
+    ".mp3": "audio/mpeg",
+    ".m4a": "audio/mp4",
+    ".aac": "audio/mp4",
+    ".ogg": "audio/ogg",
+    ".opus": "audio/ogg",
+}
+
+
+def install_account_routes(app: FastAPI, data: Path, get_store: Callable[[], Store]) -> None:
+    """Listening files for a signed-in Deezer account. The cookie never leaves the server."""
+
+    @app.post("/api/player/account/tracks", status_code=204)
+    async def remember(body: AccountRemember) -> None:
+        await asyncio.to_thread(
+            remember_many, get_store(), [row.model_dump() for row in body.tracks]
+        )
+
+    @app.post("/api/player/account/{song_id}")
+    async def account_prepare(song_id: str, facts: AccountFacts) -> dict[str, object]:
+        number = track_number(checked_id(song_id))
+        if number is None:
+            raise HTTPException(404, "Track not found")
+        return await asyncio.to_thread(prepare_track, get_store(), data, number, facts.model_dump())
+
+    @app.get("/api/player/account/{song_id}/file")
+    async def account_file(song_id: str, request: Request) -> FileResponse:
+        range_header = request.headers.get("range", "")
+        if range_header and not BYTE_RANGE.fullmatch(range_header):
+            raise HTTPException(416, "Only one byte range is supported")
+        number = track_number(checked_id(song_id))
+        if number is None or not get_store().current().deezer_audio:
+            raise HTTPException(404, "Track not found")
+        path = listen_file(data, number)
+        if path is None:
+            raise HTTPException(404, "Track not found")
+        return FileResponse(path, media_type=_LISTEN_TYPES.get(path.suffix.lower(), "audio/mpeg"))
 
 
 def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:

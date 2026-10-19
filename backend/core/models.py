@@ -20,6 +20,21 @@ def clean_arl(value: str) -> str:
     return value
 
 
+# A Spotify client ID or secret. The message never repeats the value.
+SPOTIFY_TOKEN = re.compile(r"[A-Za-z0-9]{16,128}")
+
+
+def clean_spotify_token(value: str) -> str:
+    value = value.strip()
+    if value and SPOTIFY_TOKEN.fullmatch(value) is None:
+        raise ValueError("A Spotify client ID or secret is 16 to 128 letters and numbers.")
+    return value
+
+
+def clean_search_catalog(value: str) -> str:
+    return value.strip().lower()
+
+
 def clean_disabled(value: list[str]) -> list[str]:
     allowed = set(toggle_ids())
     if any(item not in allowed for item in value):
@@ -112,6 +127,8 @@ class Settings(BaseModel):
     # Search. Off turns search off. Album pages, track details and catalog downloads still use
     # the catalog, because a download needs the track's details.
     deezer_catalog: bool = True
+    # Which catalog track search uses. Albums, artists and downloads stay on Deezer.
+    search_catalog: Literal["deezer", "spotify"] = "deezer"
     # Save the account's own file when a cookie is set. Off leaves catalog tracks to other sources.
     deezer_audio: bool = True
     # A program and its arguments for the account file. Empty keeps that file only when it plays.
@@ -143,6 +160,11 @@ class Settings(BaseModel):
     def command_text(cls, value: str) -> str:
         return clean_command(value)
 
+    @field_validator("search_catalog", mode="before")
+    @classmethod
+    def catalog_name(cls, value: object) -> object:
+        return clean_search_catalog(value) if isinstance(value, str) else value
+
 
 class SettingsPatch(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
@@ -164,8 +186,12 @@ class SettingsPatch(BaseModel):
     naming_template: str | None = None
     # The Deezer cookie. It goes to its own file, never the settings table. Empty removes it.
     deezer_arl: str | None = None
+    # The Spotify app. Both go to one file, never the settings table. Empty together removes it.
+    spotify_client_id: str | None = None
+    spotify_client_secret: str | None = None
     deezer_catalog: bool | None = None
     deezer_audio: bool | None = None
+    search_catalog: Literal["deezer", "spotify"] | None = None
     file_command: str | None = Field(default=None, max_length=500)
     disabled_sources: list[str] | None = None
     source_order: list[str] | None = None
@@ -185,6 +211,18 @@ class SettingsPatch(BaseModel):
     @classmethod
     def arl_value(cls, value: str | None) -> str | None:
         return None if value is None else clean_arl(value)
+
+    @field_validator("spotify_client_id", "spotify_client_secret")
+    @classmethod
+    def spotify_token(cls, value: str | None) -> str | None:
+        return None if value is None else clean_spotify_token(value)
+
+    @field_validator("search_catalog", mode="before")
+    @classmethod
+    def catalog_name(cls, value: object) -> object:
+        if value is None or not isinstance(value, str):
+            return value
+        return clean_search_catalog(value)
 
     @field_validator("disabled_sources")
     @classmethod

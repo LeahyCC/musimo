@@ -10,6 +10,26 @@ describe('settingsPatch', () => {
     expect(settingsPatch({ deezer_arl: ' abc ' }, false)).toEqual({ deezer_arl: 'abc' })
   })
 
+  it('sends Spotify credentials only as a pair, and removes them together', () => {
+    expect(
+      settingsPatch({ spotify_client_id: ' id ', spotify_client_secret: ' secret ' }, false),
+    ).toEqual({
+      spotify_client_id: 'id',
+      spotify_client_secret: 'secret',
+    })
+
+    expect(settingsPatch({ spotify_client_id: 'id' }, false)).toEqual({
+      spotify_client_id: 'id',
+      spotify_client_secret: '',
+    })
+
+    expect(settingsPatch({ library_label: 'Music' }, false, true)).toEqual({
+      library_label: 'Music',
+      spotify_client_id: '',
+      spotify_client_secret: '',
+    })
+  })
+
   it('sends an empty cookie only for Remove cookie', () => {
     expect(settingsPatch({ library_label: 'Music' }, true)).toEqual({
       library_label: 'Music',

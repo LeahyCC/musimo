@@ -31,6 +31,10 @@ class DeezerNoTrack(DeezerAudioError):
     """The account cannot play this track, so Deezer has no file to give for it."""
 
 
+class DeezerUnavailable(DeezerNoTrack):
+    """This song is blocked or gone. A 30-second clip must not stand in for it."""
+
+
 class Saved(NamedTuple):
     path: Path
     # True when the file is Deezer's FALLBACK, a different recording from the one asked for.
@@ -81,6 +85,40 @@ def formats_to_try(preferred: str) -> tuple[str, ...]:
     return QUALITY_LADDER[QUALITY_LADDER.index(preferred) :]
 
 
+def allows_full(options: object) -> bool:
+    """False when this account is not allowed a full file. A missing flag is not a refusal."""
+    if not isinstance(options, dict):
+        return True
+    web = options.get("web_streaming")
+    mobile = options.get("mobile_streaming")
+    if web is False and mobile is False:
+        return False
+    quality = options.get("web_sound_quality")
+    if isinstance(quality, dict) and quality:
+        names = ("low", "standard", "high", "lossless")
+        if not any(quality.get(name) is True for name in names):
+            return False
+    return True
+
+
+def _rights_refusal(errors: object) -> bool:
+    """A media error that means this song, not this quality, is unavailable."""
+    items = errors if isinstance(errors, list) else [errors]
+    for item in items:
+        if isinstance(item, dict):
+            code = item.get("code")
+            if code in {1000, 2001, 2002, 4001}:
+                return True
+            message = str(item.get("message", "")).lower()
+        elif isinstance(item, str):
+            message = item.lower()
+        else:
+            continue
+        if "country" in message or "not available" in message or "unavailable" in message:
+            return True
+    return False
+
+
 class Account:
     def __init__(self, cookie: str) -> None:
         # Scoped to deezer.com. A plain dict sets no domain, and httpx then sends the account
@@ -97,6 +135,7 @@ class Account:
         self.license = ""
         self.api_token = ""
         self.format = "MP3_128"
+        self.full_file = True
 
     def close(self) -> None:
         self.http.close()
@@ -155,6 +194,7 @@ class Account:
         self.license = str(options["license_token"])
         self.api_token = token
         self.format = choose_format(options.get("web_sound_quality"))
+        self.full_file = allows_full(options)
 
     def track(self, track_id: str) -> dict[str, object]:
         payload = self._payload(
@@ -196,6 +236,8 @@ class Account:
             raise DeezerAudioError("Deezer did not return the audio")
         row = rows[0]
         if row.get("errors"):
+            if _rights_refusal(row.get("errors")):
+                raise DeezerUnavailable("This song is not available on the Deezer account.")
             raise DeezerAudioError("Deezer did not return the audio")
         media = row.get("media")
         if not isinstance(media, list) or not media or not isinstance(media[0], dict):

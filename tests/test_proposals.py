@@ -686,7 +686,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
                 store = Store(path)
                 try:
                     version = store.db.execute("PRAGMA user_version").fetchone()[0]
-                    self.assertEqual((version, SCHEMA_VERSION), (12, 12))
+                    self.assertEqual((version, SCHEMA_VERSION), (13, 13))
                     keys = store.db.execute("PRAGMA foreign_key_list(bot_receipts)").fetchall()
                     self.assertEqual(keys, [])
                     store.db.execute("DELETE FROM bot_proposals")
@@ -710,7 +710,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
                 store = Store(path)
                 try:
                     version = store.db.execute("PRAGMA user_version").fetchone()[0]
-                    self.assertEqual((version, SCHEMA_VERSION), (12, 12))
+                    self.assertEqual((version, SCHEMA_VERSION), (13, 13))
                     tables = {
                         str(row[0]) for row in store.db.execute("SELECT name FROM sqlite_master")
                     }

@@ -21,7 +21,7 @@ from backend.core.models import Settings
 from backend.core.naming import Naming
 from backend.core.sources import Site, by_source, safe_art
 from backend.core.store import Store
-from backend.integrations import deezer_cookie
+from backend.integrations import deezer_cookie, spotify_credentials
 from backend.integrations.catalog import Catalog, CatalogError, Result
 from backend.integrations.enrichment import Enrichment
 from backend.integrations.podcasts import Podcasts
@@ -240,6 +240,9 @@ class Downloads:
         env["MUSIMO_PAUSED_SOURCES"] = ",".join(sorted(self.paused_sources()))
         env["MUSIMO_FILE_COMMAND"] = settings.file_command
         env.pop("MUSIMO_DEEZER_ARL", None)
+        env.pop("MUSIMO_SPOTIFY_CLIENT_ID", None)
+        env.pop("MUSIMO_SPOTIFY_CLIENT_SECRET", None)
+        env.pop(spotify_credentials.ENV, None)
         cookie = deezer_cookie.published()
         if settings.deezer_audio and cookie:
             env[deezer_cookie.ENV] = cookie

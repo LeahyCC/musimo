@@ -3,12 +3,10 @@ import time
 from collections.abc import Callable
 from typing import Literal
 
-import httpx
 from fastapi import FastAPI, HTTPException, Query, Response
 from fastapi.responses import JSONResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
-from backend.core.text import normalize
 from backend.integrations.catalog import (
     Album,
     Artist,
@@ -17,9 +15,22 @@ from backend.integrations.catalog import (
     Result,
     SearchPage,
     Track,
+    itunes_clip,
+    missing_deezer_match,
     safe_media,
 )
+from backend.integrations.spotify import search_tracks
 from backend.library.index import Library
+
+
+class DeezerMatch(BaseModel):
+    """The fields a Spotify row already has. The Spotify id is not one of them."""
+
+    model_config = ConfigDict(extra="forbid", strict=True)
+    isrc: str = Field(default="", max_length=32)
+    artist: str = Field(min_length=1, max_length=500)
+    title: str = Field(min_length=1, max_length=500)
+    duration: int = Field(ge=0, le=86400)
 
 
 def install_search_routes(
@@ -48,12 +59,18 @@ def install_search_routes(
     ) -> SearchPage:
         if len(q.strip()) < 2:
             raise HTTPException(422, "Enter at least two characters")
-        if not get_catalog().store.current().deezer_catalog:
+        catalog = get_catalog()
+        settings = catalog.store.current()
+        spotify = kind == "track" and settings.search_catalog == "spotify"
+        if not spotify and not settings.deezer_catalog:
             raise HTTPException(422, "Deezer search is turned off in Settings.")
         try:
             async with asyncio.timeout(2.5):
                 timing: dict[str, float] = {}
-                page = await get_catalog().search(q.strip(), kind, index, timing)
+                if spotify:
+                    page = await search_tracks(catalog, q.strip(), index, timing)
+                else:
+                    page = await catalog.search(q.strip(), kind, index, timing)
                 started = time.perf_counter()
                 page.items = get_library().annotate(page.items)
                 timing["library"] = (time.perf_counter() - started) * 1000
@@ -169,6 +186,29 @@ def install_search_routes(
             "next_index": index + len(items) if albums.get("next") and items else None,
         }
 
+    @app.get("/api/preview-match")
+    async def preview_match(
+        artist: str = Query(min_length=1, max_length=500),
+        title: str = Query(min_length=1, max_length=500),
+        duration: int = Query(ge=0, le=86400),
+    ) -> dict[str, str]:
+        """An iTunes clip for a row that is not a Deezer track. No catalog id is looked up."""
+        catalog = get_catalog()
+        async with asyncio.timeout(8):
+            await catalog.budget(itunes=True)
+            url = await itunes_clip(catalog.client, artist, title, duration)
+        return {"url": url, "source": "iTunes" if url else "No preview"}
+
+    @app.post("/api/deezer-match")
+    async def deezer_match(body: DeezerMatch) -> dict[str, object]:
+        """The Deezer track a Spotify row downloads. No match names Deezer and queues nothing."""
+        track = await get_catalog().match_recording(
+            isrc=body.isrc, artist=body.artist, title=body.title, duration=body.duration
+        )
+        if track is None:
+            raise HTTPException(404, missing_deezer_match(body.title, body.artist))
+        return {"track_id": track.id, "title": track.title, "artist": track.artist}
+
     @app.get("/api/preview/{track_id}")
     async def preview(track_id: int, fallback: bool = False) -> dict[str, str]:
         if track_id <= 0:
@@ -181,35 +221,8 @@ def install_search_routes(
             if direct and not fallback:
                 return {"url": direct, "source": "Deezer"}
             await catalog.budget(itunes=True)
-            try:
-                response = await catalog.client.get(
-                    "https://itunes.apple.com/search",
-                    params={
-                        "term": f"{track.artist.name} {track.title}",
-                        "entity": "song",
-                        "limit": 10,
-                    },
-                )
-                response.raise_for_status()
-                raw: object = response.json()
-            except (httpx.HTTPError, ValueError) as exc:
-                raise CatalogError("Preview lookup failed. Try again.") from exc
-        rows = raw.get("results", []) if isinstance(raw, dict) else []
-        if isinstance(rows, list):
-            for row in rows:
-                if not isinstance(row, dict):
-                    continue
-                duration = row.get("trackTimeMillis", 0)
-                if (
-                    normalize(str(row.get("trackName", ""))) == normalize(track.title)
-                    and normalize(str(row.get("artistName", ""))) == normalize(track.artist.name)
-                    and isinstance(duration, (int, float))
-                    and abs(duration / 1000 - track.duration) <= 3
-                ):
-                    url = safe_media(str(row.get("previewUrl", "")))
-                    if url:
-                        return {"url": url, "source": "iTunes"}
-        return {"url": "", "source": "No preview"}
+            url = await itunes_clip(catalog.client, track.artist.name, track.title, track.duration)
+        return {"url": url, "source": "iTunes" if url else "No preview"}
 
     @app.get("/api/library")
     async def library_status() -> dict[str, object]:

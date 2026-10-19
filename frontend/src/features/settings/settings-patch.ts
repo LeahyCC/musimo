@@ -15,12 +15,32 @@ export function cleanArl(value: string): string {
 export function settingsPatch<T extends Record<string, unknown>>(
   draft: T,
   removeArl: boolean,
+  removeSpotify = false,
 ): Record<string, unknown> {
-  const { deezer_arl: typed, ...rest } = draft
-  if (removeArl) return { ...rest, deezer_arl: '' }
-  return typeof typed === 'string' && cleanArl(typed) !== ''
-    ? { ...rest, deezer_arl: cleanArl(typed) }
-    : rest
+  const {
+    deezer_arl: typed,
+    spotify_client_id: clientId,
+    spotify_client_secret: clientSecret,
+    ...rest
+  } = draft
+  const body: Record<string, unknown> = removeArl
+    ? { ...rest, deezer_arl: '' }
+    : typeof typed === 'string' && cleanArl(typed) !== ''
+      ? { ...rest, deezer_arl: cleanArl(typed) }
+      : { ...rest }
+  if (removeSpotify) {
+    body.spotify_client_id = ''
+    body.spotify_client_secret = ''
+    return body
+  }
+  const id = typeof clientId === 'string' ? clientId.trim() : ''
+  const secret = typeof clientSecret === 'string' ? clientSecret.trim() : ''
+  // One of the two is still a change. The server refuses a half pair.
+  if (id || secret) {
+    body.spotify_client_id = id
+    body.spotify_client_secret = secret
+  }
+  return body
 }
 
 /**

@@ -234,6 +234,7 @@ export function SettingsPage() {
   const [cookieText, setCookieText] = useState('')
   const [removeCookies, setRemoveCookies] = useState(false)
   const [removeArl, setRemoveArl] = useState(false)
+  const [removeSpotify, setRemoveSpotify] = useState(false)
   const cookieSaved = settings.data?.youtube_cookies.value === true
   const cookiePending = cookieText.trim().length > 0 || removeCookies
   const arlSaved = settings.data?.deezer_cookie.value === true
@@ -247,7 +248,8 @@ export function SettingsPage() {
   )
   const problemFor = (id: string) => problems.find((problem) => problem.id === id)
 
-  const isDirty = Object.keys(draft).length > 0 || cookiePending || removeArl
+  const spotifySaved = settings.data?.spotify_credentials.value === true
+  const isDirty = Object.keys(draft).length > 0 || cookiePending || removeArl || removeSpotify
 
   useBlocker({
     condition: isDirty,
@@ -322,7 +324,7 @@ export function SettingsPage() {
         setRemoveCookies(false)
       }
 
-      const changes = settingsPatch(draft, removeArl)
+      const changes = settingsPatch(draft, removeArl, removeSpotify)
       if (Object.keys(changes).length === 0) {
         return api('settings', settingsSchema)
       }
@@ -340,6 +342,7 @@ export function SettingsPage() {
       setCookieText('')
       setRemoveCookies(false)
       setRemoveArl(false)
+      setRemoveSpotify(false)
       setSaved(true)
     },
     // A failed save may still have changed something on the server, so read back what is there.
@@ -555,6 +558,97 @@ export function SettingsPage() {
         lockedBy={current.deezer_catalog.locked ? current.deezer_catalog.origin : ''}
         onChange={(on) => edit('deezer_catalog', on)}
       />
+      <SettingRow
+        htmlFor="search_catalog"
+        label="Search catalog"
+        help="Deezer is the default. Spotify searches tracks and plays a preview when one exists. A download still uses the Deezer catalog. Album and artist pages stay on Deezer."
+        lockedBy={current.search_catalog.locked ? current.search_catalog.origin : ''}
+        detail={
+          conflicts.search_catalog !== undefined ? (
+            <small className="mt-[6px] block text-tiny text-warn">
+              Changed elsewhere to {settingText(conflicts.search_catalog)}
+            </small>
+          ) : undefined
+        }
+      >
+        <FieldSelect
+          id="search_catalog"
+          value={String(draft.search_catalog ?? current.search_catalog.value)}
+          disabled={save.isPending || current.search_catalog.locked}
+          onChange={(e) => {
+            const next = e.target.value
+            if (next === current.search_catalog.value) unedit('search_catalog')
+            else edit('search_catalog', next)
+          }}
+        >
+          <option value="deezer">Deezer</option>
+          <option value="spotify">Spotify</option>
+        </FieldSelect>
+      </SettingRow>
+      <SettingRow
+        htmlFor="spotify_client_id"
+        label="Spotify app"
+        help="The client ID and client secret from a Spotify developer app. The app owner needs Spotify Premium. Search returns at most 10 tracks at a time. The client secret stays on this server and is not shown again."
+        detail={
+          <>
+            <p className="mt-[7px] text-small text-muted" aria-live="polite">
+              {removeSpotify
+                ? 'The credentials will be removed when you save.'
+                : spotifySaved
+                  ? 'Spotify credentials are saved.'
+                  : 'No Spotify credentials yet.'}
+            </p>
+            {spotifySaved && (
+              <button
+                type="button"
+                className="mt-[8px] text-small text-muted underline disabled:opacity-40 coarse:inline-flex coarse:min-h-11 coarse:items-center"
+                disabled={save.isPending}
+                onClick={() => {
+                  unedit('spotify_client_id')
+                  unedit('spotify_client_secret')
+                  setRemoveSpotify(!removeSpotify)
+                  setSaved(false)
+                }}
+              >
+                {removeSpotify ? 'Keep credentials' : 'Remove credentials'}
+              </button>
+            )}
+          </>
+        }
+      >
+        <div className="grid gap-[8px]">
+          <Field
+            id="spotify_client_id"
+            autoComplete="off"
+            spellCheck={false}
+            disabled={save.isPending}
+            placeholder={spotifySaved ? 'Paste a new client ID to replace it' : 'Client ID'}
+            value={typeof draft.spotify_client_id === 'string' ? draft.spotify_client_id : ''}
+            onChange={(e) => {
+              if (e.target.value.trim() === '') unedit('spotify_client_id')
+              else edit('spotify_client_id', e.target.value.trim())
+              setRemoveSpotify(false)
+            }}
+          />
+          <Field
+            id="spotify_client_secret"
+            type="password"
+            autoComplete="off"
+            spellCheck={false}
+            aria-label="Spotify client secret"
+            disabled={save.isPending}
+            placeholder={spotifySaved ? 'Paste a new client secret to replace it' : 'Client secret'}
+            value={
+              typeof draft.spotify_client_secret === 'string' ? draft.spotify_client_secret : ''
+            }
+            onChange={(e) => {
+              if (e.target.value.trim() === '') unedit('spotify_client_secret')
+              else edit('spotify_client_secret', e.target.value.trim())
+              setRemoveSpotify(false)
+            }}
+          />
+        </div>
+      </SettingRow>
       <SourceRow
         id="deezer_audio"
         mark="a."

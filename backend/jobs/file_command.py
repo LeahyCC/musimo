@@ -68,14 +68,16 @@ def suffix_for(info: dict[str, object]) -> str | None:
     return ext
 
 
-def prepare(folder: Path, probe: Probe) -> Path:
+def prepare(folder: Path, probe: Probe, command: str | None = None) -> Path:
     """The one playable file for this try.
 
     An empty command keeps the account file only when that file itself plays. A command runs
     first, and the result is kept only in one of the two shapes the worker can tag.
+    `command` None reads MUSIMO_FILE_COMMAND, which is how the download worker passes it.
     """
     account = folder / ACCOUNT_NAME
-    command = os.environ.get("MUSIMO_FILE_COMMAND", "")
+    if command is None:
+        command = os.environ.get("MUSIMO_FILE_COMMAND", "")
     if command == "":
         return keep_saved(folder, account, probe)
     return run_command(folder, account, command, probe)

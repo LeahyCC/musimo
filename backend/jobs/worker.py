@@ -26,6 +26,7 @@ from backend.core.errors import (
 from backend.core.job_models import Candidate, Job, valid_candidate_id
 from backend.core.sources import by_source, match_entry
 from backend.integrations.deezer_audio import DeezerCookieRejected, DeezerNoTrack, configured, fetch
+from backend.jobs.account_lock import hold
 from backend.jobs.file_command import FileCommandError, prepare
 from backend.jobs.matching import CHECK_BELOW, MIN_SCORE, Matcher
 from backend.jobs.tagging import Tagger, probe
@@ -401,7 +402,8 @@ def main() -> None:
                 }
             )
 
-        saved_file, alternate = fetch(job.track_id, folder, on_progress)
+        with hold():
+            saved_file, alternate = fetch(job.track_id, folder, on_progress)
         try:
             try:
                 saved_file = prepare(folder, probe)
