@@ -1,6 +1,6 @@
 # Testing and CI
 
-The optional [bounded audio-analysis trial](audio-analysis-trial.md) has its own container, dependency lock and reproduction commands under `experiments/audio-trial/`. It reads real music through read-only mounts and writes only ignored experiment output. Its decoder checks use generated audio; recommendation quality requires the listening review. It does not alter the production database or run in the normal application test suite.
+The optional [bounded audio-analysis trial](audio-analysis-trial.md) had its own container, dependency lock and reproduction commands under `experiments/audio-trial/`, which were never committed and are gone (see the note in that report). It reads real music through read-only mounts and writes only ignored experiment output. Its decoder checks use generated audio; recommendation quality requires the listening review. It does not alter the production database or run in the normal application test suite.
 
 The [analyser bake-off](analyzer-bakeoff.md) works the same way, from `experiments/analyzer-bakeoff/`: its own compose project, read-only music and models, no network, outputs in ignored `runtime/analyzer-bakeoff/`. It is not part of the test suite either.
 
