@@ -11,7 +11,7 @@ import { e2eListenerId, test } from './test'
 /* The README's screenshots, from the invented library in `showcase-fixtures.ts`. Not part of a
    normal run: `MUSIMO_SHOTS=1 npx playwright test readme-shots --project=chromium` writes them
    into docs/assets. Diagnostics is the isolated stack's own answer with its music folder made
-   writable, so it reads as a working install would. The visualizer GIF is recorded by hand and is not made here. */
+   writable, so it reads as a working install would. The visualizer GIF was recorded with Grok and is not made here. */
 
 test.skip(!process.env.MUSIMO_SHOTS, 'Set MUSIMO_SHOTS=1 to rewrite the README screenshots.')
 

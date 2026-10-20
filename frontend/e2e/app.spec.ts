@@ -761,8 +761,8 @@ test('artist review counts selections, excludes failed albums and retries submis
             year: '2020',
             error: '',
             tracks: [
-              { id: 101, duration: 180, owned: true, identity: 'isrc:one' },
-              { id: 102, duration: 180, owned: false, identity: 'isrc:two' },
+              { id: 101, duration: 180, owned: true, skip: '', identity: 'isrc:one' },
+              { id: 102, duration: 180, owned: false, skip: '', identity: 'isrc:two' },
             ],
           },
           {
@@ -771,7 +771,7 @@ test('artist review counts selections, excludes failed albums and retries submis
             art: '',
             year: '2021',
             error: '',
-            tracks: [{ id: 103, duration: 180, owned: false, identity: 'isrc:three' }],
+            tracks: [{ id: 103, duration: 180, owned: false, skip: '', identity: 'isrc:three' }],
           },
           {
             id: 44,
@@ -789,7 +789,9 @@ test('artist review counts selections, excludes failed albums and retries submis
                   art: '',
                   year: '2022',
                   error: '',
-                  tracks: [{ id: 104, duration: 180, owned: false, identity: 'isrc:four' }],
+                  tracks: [
+                    { id: 104, duration: 180, owned: false, skip: '', identity: 'isrc:four' },
+                  ],
                 },
               ]
             : []),
@@ -899,7 +901,7 @@ test('artist review keeps Download off when the destination is read-only', async
             art: '',
             year: '2020',
             error: '',
-            tracks: [{ id: 102, duration: 180, owned: false, identity: 'isrc:two' }],
+            tracks: [{ id: 102, duration: 180, owned: false, skip: '', identity: 'isrc:two' }],
           },
         ],
       },

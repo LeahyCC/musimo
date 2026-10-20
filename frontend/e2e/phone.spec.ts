@@ -142,7 +142,7 @@ async function catalogFixtures(page: Page, jobs: DownloadJob[] = []) {
             art: '',
             year: '2020',
             error: '',
-            tracks: [{ id: 101, duration: 180, owned: false, identity: 'a' }],
+            tracks: [{ id: 101, duration: 180, owned: false, skip: '', identity: 'a' }],
           },
         ],
       },
