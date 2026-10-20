@@ -21,6 +21,7 @@ import { useNavigate, useRouterState } from '@tanstack/react-router'
 
 import { cx } from '../../lib/cx'
 import { useLayout } from '../../lib/layout'
+import { useKeyboard } from '../../lib/use-keyboard'
 import { usePhone } from '../../lib/use-phone'
 import { usePlayer } from '../player/player'
 import { useBotChat } from './bot-chat'
@@ -62,10 +63,12 @@ export function usePerchShown(): boolean {
   const player = usePlayer()
   const phone = usePhone()
   const layout = useLayout()
-  const nowPlaying = useRouterState({
-    select: (state) => state.location.pathname === '/now-playing',
-  })
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const nowPlaying = pathname === '/now-playing'
   if (settings.hidden) return false
+  // A phone's chat page fills the screen down to the mini player and has the pet in its own
+  // header, so a second one perched there would only stand on the text box.
+  if (phone && pathname === '/music-bot') return false
   // The Listening room has no footer on a wide window. Its player dock holds a spot of its own.
   if (layout === 'room' && !phone) return false
   // The footer stands down on Now Playing while a library track plays; the page has its own spot.
@@ -259,6 +262,7 @@ function FooterPerch() {
   return (
     <div
       data-pet="perch"
+      data-keyboard-hide=""
       className="pointer-events-none fixed z-pet"
       style={
         phone
@@ -545,6 +549,7 @@ function ChatPopover({
 function ChatSheet({ onClose }: { onClose: () => void }) {
   const chat = useBotChat()
   const dialog = useRef<HTMLDialogElement>(null)
+  useKeyboard(true)
 
   useEffect(() => {
     const element = dialog.current

@@ -2683,6 +2683,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         // The attribute rather than a `hidden` utility: Tailwind's base layer gives it
         // `display: none !important`, so it wins over the footer's own `grid` in any order.
         hidden={hidden}
+        data-keyboard-hide=""
         className={cx(footerClassName, !activeTitle && 'max-phone:hidden')}
       >
         {tintArt && <CoverTint art={tintArt} />}

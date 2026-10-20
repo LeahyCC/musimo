@@ -269,6 +269,7 @@ export function RoomShell() {
         <div
           aria-hidden="true"
           data-stage-hide=""
+          data-keyboard-hide=""
           className="pointer-events-none fixed inset-x-0 bottom-0 z-sticky h-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+28px)] bg-linear-to-t from-canvas from-45% to-transparent"
         />
       )}
@@ -279,6 +280,7 @@ export function RoomShell() {
       <nav
         aria-label="Main navigation"
         data-stage-hide=""
+        data-keyboard-hide=""
         className={cx(
           'sidebar flex flex-col items-center gap-[4px] py-[10px]',
           dock && 'max-tablet:row-span-2',
@@ -339,6 +341,7 @@ export function RoomShell() {
       >
         <header
           data-stage-hide=""
+          data-keyboard-hide=""
           className={cx(
             'flex h-[64px] shrink-0 items-center gap-[12px] px-[clamp(16px,2.4vw,28px)]',
             'max-phone:sticky max-phone:top-0 max-phone:z-header max-phone:h-[calc(var(--topbar-height)+var(--safe-top))] max-phone:gap-[8px] max-phone:bg-canvas max-phone:pt-[var(--safe-top)] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',

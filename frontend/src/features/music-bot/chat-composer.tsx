@@ -3,6 +3,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { Music2, SendHorizontal, X } from 'lucide-react'
 
 import { cx } from '../../lib/cx'
+import { usePhone } from '../../lib/use-phone'
 import { Button } from '../../ui'
 import { usePlayer } from '../player/player'
 import { MAX_PROMPT, useBotChat } from './bot-chat'
@@ -22,6 +23,7 @@ export function Composer({
   const chat = useBotChat()
   const player = usePlayer()
   const win95 = usePetLook().pixel
+  const phone = usePhone()
   const [text, setText] = useState('')
   const field = useRef<HTMLTextAreaElement>(null)
   const locked = chat.locked !== null
@@ -32,7 +34,13 @@ export function Composer({
   const onPage = look !== 'panel'
   const refining = look === 'room' && chat.reply !== null
   // The empty chat already offers these in its middle, so the row only appears under a conversation.
-  const prompts = onPage && !locked && chat.log.length > 0 ? startersFor(player.libraryTrack) : []
+  // A phone leaves them out: two rows of chips would take the conversation's room.
+  const prompts =
+    onPage && !phone && !locked && chat.log.length > 0 ? startersFor(player.libraryTrack) : []
+  // On a phone the note says only what the screen cannot: why the box is locked, or that the text
+  // nears the limit. The empty chat already says what the bot goes by, and a touch keyboard has no
+  // Enter to hint at.
+  const note = !win95 && (!phone || locked || text.length > MAX_PROMPT - 500)
 
   useEffect(() => {
     if (autoFocus && !offersReplies) field.current?.focus()
@@ -165,14 +173,16 @@ export function Composer({
           </Button>
         )}
       </div>
-      {!win95 && (
+      {note && (
         <div className="flex justify-between gap-[10px] text-micro text-faint">
           <span>
             {locked
               ? 'Your music keeps playing while you wait.'
-              : onPage
-                ? 'Goes by your tags and play history. Can’t hear the music, so moods and tempos are off the menu.'
-                : 'Goes by your tags and play history. Can’t hear the music.'}
+              : phone
+                ? ''
+                : onPage
+                  ? 'Goes by your tags and play history. Can’t hear the music, so moods and tempos are off the menu.'
+                  : 'Goes by your tags and play history. Can’t hear the music.'}
           </span>
           <span className="whitespace-nowrap tabular-nums">
             {waiting || locked

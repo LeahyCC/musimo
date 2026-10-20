@@ -22,6 +22,7 @@ import {
 
 import type { BotReply } from '../../api'
 import { cx } from '../../lib/cx'
+import { usePhone } from '../../lib/use-phone'
 import { useTheme } from '../../theme/store'
 import { Button, Field } from '../../ui'
 import { cover } from '../library/collection-items'
@@ -74,6 +75,8 @@ export function ResultCard({
   const draft = variant === 'draft'
   const chat = useBotChat()
   const win95 = useTheme().skin === 'win95'
+  // A phone gives the title the row: the length moves under it, beside the artist.
+  const phone = usePhone()
   const [showAll, setShowAll] = useState(false)
   const [saving, setSaving] = useState(false)
   const [playlistName, setPlaylistName] = useState('')
@@ -116,7 +119,7 @@ export function ResultCard({
     '36px',
     'minmax(0,1fr)',
     editable && 'auto',
-    'auto',
+    !phone && 'auto',
     draft && 'auto',
     'auto',
   ]
@@ -248,7 +251,16 @@ export function ResultCard({
                   <SongArt coverArt={track.coverArt} />
                   <span className="grid min-w-0 gap-[2px]">
                     <strong className="truncate text-small font-medium">{track.title}</strong>
-                    <small className="truncate text-tiny text-muted">{track.artist}</small>
+                    {phone ? (
+                      <small className="flex min-w-0 gap-[6px] text-tiny text-muted">
+                        <span className="truncate">{track.artist}</span>
+                        <time className="shrink-0 tabular-nums">
+                          {durationText(track.duration)}
+                        </time>
+                      </small>
+                    ) : (
+                      <small className="truncate text-tiny text-muted">{track.artist}</small>
+                    )}
                   </span>
                   {editable && (
                     <PinToggle
@@ -258,9 +270,11 @@ export function ResultCard({
                       onToggle={() => chat.togglePin(track.id)}
                     />
                   )}
-                  <time className="text-tiny whitespace-nowrap text-muted tabular-nums">
-                    {durationText(track.duration)}
-                  </time>
+                  {!phone && (
+                    <time className="text-tiny whitespace-nowrap text-muted tabular-nums">
+                      {durationText(track.duration)}
+                    </time>
+                  )}
                   {draft && (
                     <button
                       type="button"

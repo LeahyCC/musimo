@@ -815,6 +815,7 @@ export function RoomMiniPlayer() {
     <section
       aria-label="Player"
       data-room-mini=""
+      data-keyboard-hide=""
       className="fixed right-[calc(12px+var(--safe-right))] bottom-[calc(var(--nav-height)+var(--safe-bottom)+8px)] left-[calc(12px+var(--safe-left))] z-bar flex h-[58px] items-center gap-[10px] overflow-hidden rounded-[20px] bg-raised p-[7px] pr-[8px] shadow-[0_12px_30px_color-mix(in_oklab,var(--color-shadow)_50%,transparent)] ring-1 ring-line-strong"
     >
       {/* How far through the song, along the island's foot. The seek bar is on Now Playing; this

@@ -190,8 +190,9 @@ export function statusLine(
   return { text: `${settings ? 'Connected' : 'Ready'} · ${model}`, tone: 'accent' }
 }
 
-/** Where the next request looks. A pick wins over the model's reading, for that one request. */
-function ScopeBar() {
+/** Where the next request looks. A pick wins over the model’s reading, for that one request. `flush`
+ *  is the phone page, which pads its own sides. */
+export function ScopeBar({ flush = false }: { flush?: boolean }) {
   const chat = useBotChat()
   const player = usePlayer()
   const win95 = usePetLook().pixel
@@ -243,10 +244,13 @@ function ScopeBar() {
 
   return (
     <div
-      className="flex shrink-0 items-center gap-[10px] border-b border-line px-[12px] py-[8px] text-tiny text-muted"
+      className={cx(
+        'flex shrink-0 items-center gap-[10px] border-b border-line text-tiny text-muted',
+        flush ? 'py-[6px]' : 'px-[12px] py-[8px]',
+      )}
       data-bot="scope"
     >
-      <span id="bot-scope-label" className="whitespace-nowrap">
+      <span id="bot-scope-label" className="whitespace-nowrap max-phone:sr-only">
         Look in
       </span>
       <div
@@ -254,7 +258,7 @@ function ScopeBar() {
         role="radiogroup"
         aria-labelledby="bot-scope-label"
         onKeyDown={keys}
-        className="flex min-w-0 gap-[2px] rounded-[7px] border border-line bg-sunken p-[2px]"
+        className="flex min-w-0 gap-[2px] rounded-[7px] border border-line bg-sunken p-[2px] max-phone:grid max-phone:flex-1 max-phone:grid-cols-3"
       >
         {SCOPES.map((scope) => {
           const on = scope.id === chat.shownScope
@@ -269,7 +273,7 @@ function ScopeBar() {
               disabled={busy || !available(scope.id)}
               onClick={() => chat.setScope(scope.id)}
               className={cx(
-                'rounded-[5px] border-0 px-[9px] py-[5px] text-tiny whitespace-nowrap disabled:opacity-50 coarse:min-h-10',
+                'rounded-[5px] border-0 px-[9px] py-[5px] text-tiny whitespace-nowrap disabled:opacity-50 coarse:min-h-11 max-phone:px-[4px]',
                 on
                   ? 'bg-active font-medium text-text'
                   : 'bg-transparent text-muted hover:text-text',
@@ -307,10 +311,31 @@ export function Conversation({
   const first = !chat.log.length && !chat.thinking
 
   // A chat opens on, and follows, its newest message.
+  const atEnd = useRef(true)
   useLayoutEffect(() => {
     const element = logRef.current
     if (element) element.scrollTop = element.scrollHeight
+    atEnd.current = true
   }, [chat.log.length, chat.thinking, chat.applied, chat.cardId])
+
+  // When the log's box shrinks (a phone's keyboard comes up) it keeps the newest message in view,
+  // unless the person had scrolled back up to read.
+  useEffect(() => {
+    const element = logRef.current
+    if (!element) return
+    const track = () => {
+      atEnd.current = element.scrollHeight - element.scrollTop - element.clientHeight < 48
+    }
+    const observer = new ResizeObserver(() => {
+      if (atEnd.current) element.scrollTop = element.scrollHeight
+    })
+    element.addEventListener('scroll', track, { passive: true })
+    observer.observe(element)
+    return () => {
+      element.removeEventListener('scroll', track)
+      observer.disconnect()
+    }
+  }, [])
 
   // Opening on a question moves focus to its first quick reply, which answers it in one tap.
   useEffect(() => {
@@ -513,6 +538,7 @@ function ReplyExtras({
 }) {
   const chat = useBotChat()
   const phone = usePhone()
+  const win95 = usePetLook().pixel
   return (
     <>
       {entry.card &&
@@ -523,8 +549,18 @@ function ReplyExtras({
               data-bot="draft-note"
             >
               <ListMusic size={14} aria-hidden="true" className="shrink-0" />
-              The draft is {phone ? 'below' : 'on the right'}. Nothing plays until you say so.
+              {/* The room page stacks its Draft under the chat below the tablet edge. */}
+              <span>
+                The draft is <span className="max-tablet:hidden">on the right</span>
+                <span className="hidden max-tablet:inline">below</span>. Nothing plays until you say
+                so.
+              </span>
             </p>
+          ) : phone && !win95 ? (
+            // Out to the reply's left edge, under the pet's face, so the songs get the width.
+            <div className="-ml-[32px] min-w-0">
+              <ResultCard reply={chat.reply} />
+            </div>
           ) : (
             <ResultCard reply={chat.reply} />
           )
