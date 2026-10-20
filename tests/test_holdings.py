@@ -4,7 +4,7 @@ import asyncio
 import os
 import tempfile
 import unittest
-from contextlib import nullcontext
+from contextlib import ExitStack
 from pathlib import Path
 from unittest.mock import patch
 
@@ -204,7 +204,7 @@ class HoldingTests(unittest.IsolatedAsyncioTestCase):
                 house = index_file(store, root, "house.flac", "tr-aaaaaaaaaaaaaaaa", body=body)
                 checksum = digest(house)
                 indexed: list[Path] = []
-                library.index_published = lambda path, scanned: indexed.append(path)  # type: ignore[method-assign]
+                library.index_published = lambda path, root: indexed.append(path)  # type: ignore[method-assign]
                 async with httpx.AsyncClient() as client:
                     service = Downloads(store, Catalog(store, client), library, asyncio.Event())
                     mark_done(service.jobs, 1, house, root, 1, checksum)
@@ -243,7 +243,7 @@ class HoldingTests(unittest.IsolatedAsyncioTestCase):
             try:
                 library = Library(store, [root], asyncio.Event())
                 house = index_file(store, root, "house.flac", "tr-aaaaaaaaaaaaaaaa")
-                library.index_published = lambda path, scanned: None  # type: ignore[method-assign]
+                library.index_published = lambda path, root: None  # type: ignore[method-assign]
                 async with httpx.AsyncClient() as client:
                     service = Downloads(store, Catalog(store, client), library, asyncio.Event())
                     job = service.jobs.enqueue(9, "original", str(root))
@@ -270,7 +270,7 @@ class HoldingTests(unittest.IsolatedAsyncioTestCase):
             store = Store(root / "db.sqlite3")
             try:
                 library = Library(store, [root], asyncio.Event())
-                library.index_published = lambda path, scanned: None  # type: ignore[method-assign]
+                library.index_published = lambda path, root: None  # type: ignore[method-assign]
                 house = index_file(store, root, "house.flac", "tr-aaaaaaaaaaaaaaaa", body=b"house")
                 async with httpx.AsyncClient() as client:
                     service = Downloads(store, Catalog(store, client), library, asyncio.Event())
@@ -464,37 +464,39 @@ class HoldingTests(unittest.IsolatedAsyncioTestCase):
                         self.assertEqual(
                             unknown.json()["detail"], "That song does not match this track."
                         )
-                        if symlink_refused:
-                            link.write_bytes(b"link")
-                            store.db.execute(
-                                "INSERT INTO library_files ("
-                                "path, root, mtime_ns, size, generation, title, artist, album, "
-                                "title_key, artist_key, album_key, duration, isrc, mbid, song_id"
-                                ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                (
-                                    str(link),
-                                    str(root),
-                                    1,
-                                    4,
-                                    "test",
-                                    "Link",
-                                    "Artist",
-                                    "Album",
-                                    "link",
-                                    "artist",
-                                    "album",
-                                    180,
-                                    "USFIX2600011",
-                                    "",
-                                    "tr-dddddddddddddddd",
-                                ),
-                            )
-                            context = patch(
-                                "backend.api.download_api.Path.is_symlink", return_value=True
-                            )
-                        else:
-                            context = nullcontext()
-                        with context:
+                        with ExitStack() as stack:
+                            if symlink_refused:
+                                link.write_bytes(b"link")
+                                store.db.execute(
+                                    "INSERT INTO library_files ("
+                                    "path, root, mtime_ns, size, generation, title, artist, album, "
+                                    "title_key, artist_key, album_key, duration, isrc, mbid, "
+                                    "song_id"
+                                    ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                    (
+                                        str(link),
+                                        str(root),
+                                        1,
+                                        4,
+                                        "test",
+                                        "Link",
+                                        "Artist",
+                                        "Album",
+                                        "link",
+                                        "artist",
+                                        "album",
+                                        180,
+                                        "USFIX2600011",
+                                        "",
+                                        "tr-dddddddddddddddd",
+                                    ),
+                                )
+                                stack.enter_context(
+                                    patch(
+                                        "backend.api.download_api.Path.is_symlink",
+                                        return_value=True,
+                                    )
+                                )
                             linked = await api.post(
                                 "/api/holdings",
                                 json={"track_id": 11, "song_id": "tr-dddddddddddddddd"},

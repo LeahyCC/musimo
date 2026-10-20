@@ -145,7 +145,7 @@ def ensure_holding(
         "WHERE catalog=? AND track_id=?",
         (catalog, track_id),
     ).fetchone()
-    if row is None:
+    if not isinstance(row, sqlite3.Row):
         raise RuntimeError("holding was not stored")
     return row
 
@@ -173,7 +173,7 @@ def save_holding(
 
 def indexed_holding(db: sqlite3.Connection, track_id: int) -> sqlite3.Row | None:
     """A holding whose song is still indexed at that path in an enabled root. No stat."""
-    return db.execute(
+    found = db.execute(
         """
         SELECT h.id, h.catalog, h.track_id, h.song_id, h.path, h.reason, h.created, f.root
         FROM holdings h
@@ -183,10 +183,11 @@ def indexed_holding(db: sqlite3.Connection, track_id: int) -> sqlite3.Row | None
         """,
         (track_id,),
     ).fetchone()
+    return found if isinstance(found, sqlite3.Row) else None
 
 
 def indexed_song(db: sqlite3.Connection, song_id: str) -> sqlite3.Row | None:
-    return db.execute(
+    found = db.execute(
         """
         SELECT f.path, f.root, f.song_id
         FROM library_files f
@@ -195,6 +196,7 @@ def indexed_song(db: sqlite3.Connection, song_id: str) -> sqlite3.Row | None:
         """,
         (song_id,),
     ).fetchone()
+    return found if isinstance(found, sqlite3.Row) else None
 
 
 def byte_matches(db: sqlite3.Connection, checksum: str, job_id: str) -> list[sqlite3.Row]:

@@ -79,7 +79,7 @@ class ListenerStoreTests(unittest.TestCase):
             self.assertEqual(self.store.read_play_queue()["song_ids"], [])
             rows = self.store.list_playlists()
             self.assertEqual([str(row["name"]) for row in rows], ["Liked"])
-            self.assertEqual(int(rows[0]["song_count"]), 0)
+            self.assertEqual(rows[0]["song_count"], 0)
             self.assertEqual(self.store.linked_playlist("liked"), f"pl-{rows[0]['id']}")
             self.assertEqual(self.store.artist_favourites(), {})
             self.assertEqual(self.store.plays_for(str(second["id"])), {})
