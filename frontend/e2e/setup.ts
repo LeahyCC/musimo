@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process'
+import { mkdirSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { CI_PROJECT } from './env'
+import { BASE_URL, CI_PROJECT } from './env'
 
-export default function setup() {
+export default async function setup() {
   // WebKit can fetch media outside browser routing. Serve generated silence over real HTTP.
   execFileSync(
     'docker',
@@ -58,4 +60,45 @@ for number, (title, artist, year) in enumerate((('Bot Harbor', 'Fixture Harbor',
     ],
     { cwd: fileURLToPath(new URL('../../', import.meta.url)), stdio: 'inherit', timeout: 30_000 },
   )
+  await ensureListener()
+}
+
+/** One name on the isolated stack, so listener routes have someone to answer. Not port 8765. */
+async function ensureListener() {
+  const url = new URL(BASE_URL)
+  if (url.port === '8765') throw new Error('Refusing the live Musimo port')
+  const created = await fetch(`${BASE_URL}/api/listeners`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ name: 'Listener' }),
+  })
+  let id = ''
+  if (created.ok) {
+    const body: unknown = await created.json()
+    if (body && typeof body === 'object' && 'id' in body && typeof body.id === 'string')
+      id = body.id
+  } else if (created.status === 409) {
+    const list = await fetch(`${BASE_URL}/api/listeners`)
+    const body: unknown = await list.json()
+    const items =
+      body && typeof body === 'object' && 'items' in body && Array.isArray(body.items)
+        ? body.items
+        : []
+    const found = items.find(
+      (item): item is { id: string; name: string } =>
+        !!item &&
+        typeof item === 'object' &&
+        'name' in item &&
+        item.name === 'Listener' &&
+        'id' in item &&
+        typeof item.id === 'string',
+    )
+    id = found?.id ?? ''
+  } else {
+    throw new Error(`listener setup failed: ${created.status}`)
+  }
+  if (!id) throw new Error('listener setup did not return an id')
+  const root = fileURLToPath(new URL('../../runtime/', import.meta.url))
+  mkdirSync(root, { recursive: true })
+  writeFileSync(join(root, 'e2e-listener-id'), `${id}\n`, 'utf8')
 }

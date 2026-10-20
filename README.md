@@ -91,7 +91,7 @@ Search and library features:
 
 The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card clear and bulk Retry errors, Clear errors and Clear no match, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Settings lists each source with its own switch, order and retry count. A block pauses that source and leaves the others running. After a set number of finished tracks, the queue can wait before the next group. With a Deezer cookie, a catalog track is saved from that account first, and a miss continues with the other sources. Download verification requires testing with your chosen provider and the library setup.
 
-These are **not finished features**: personalized Discover, automatic release-edition filters, Spotify and Apple Music link imports, paid audio sources other than a Deezer account, notifications, cookie management beyond pasting a YouTube cookies file or a Deezer cookie, built-in login, multiple users and complete release benchmarks (cold search latency, match accuracy labeling, permitted-music throughput, representative 50k library, native arm64 performance). See [Discover planning](docs/discover.md), [the roadmap](docs/roadmap.md) and [known limitations](CHANGELOG.md#known-limitations).
+A name on this browser picks whose queue, likes and counts you see. It is not a login. These are **not finished features**: personalized Discover, automatic release-edition filters, Spotify and Apple Music link imports, paid audio sources other than a Deezer account, notifications, cookie management beyond pasting a YouTube cookies file or a Deezer cookie, built-in login and complete release benchmarks (cold search latency, match accuracy labeling, permitted-music throughput, representative 50k library, native arm64 performance). See [Discover planning](docs/discover.md), [the roadmap](docs/roadmap.md) and [known limitations](CHANGELOG.md#known-limitations).
 
 ## Requirements
 
@@ -227,7 +227,7 @@ Library has Home, Albums, Artists, Tracks and Playlists views. Grid and list lay
 
 Artist pages include an All songs subpage at `/library/artists/{id}/songs` and a popularity chart plotted from the library play counts when enough data exists. Playlists show song count and can be filtered by public or private status. Inline rename is available for all playlists.
 
-The linked liked playlist is always listed, sorts first, cannot be deleted, and is required for the thumbs up button to work. Its identity is stored in the SQLite table `linked_playlists`. An existing playlist named Liked is adopted when none is stored.
+Each name has their own liked playlist. It is always listed, sorts first, cannot be deleted, and is required for the thumbs up button to work. Its identity is stored in the SQLite table `linked_playlists`. An existing playlist named Liked is adopted when none is stored for that name.
 
 The add to playlist picker opens from the footer player, or from Now Playing, where the footer steps aside, and shows 25 rows with a filter box. The liked playlist is excluded from the picker. Inline New playlist is available with the current song. The Add button toggles to Remove when that song is already in the playlist.
 
@@ -337,7 +337,7 @@ Rebuilds retain named volumes. **Do not add `--volumes` or `-v` to `docker compo
 
 ## Network access and privacy
 
-Loopback is the default. There is no built-in login or separate user permissions. Anyone who can reach an exposed instance may be able to inspect paths, change settings and queue work. Use a trusted network, or authentication and HTTPS at a reverse proxy before broader access. Do not expose a bare unauthenticated port publicly.
+Loopback is the default. There is no built-in login or separate user permissions. A name picks whose queue and likes this browser shows. It is not a lock and not a password. Anyone who can reach an exposed instance may be able to inspect paths, change settings and queue work. Use a trusted network, or authentication and HTTPS at a reverse proxy before broader access. Do not expose a bare unauthenticated port publicly.
 
 Keep UI/API on the same origin. [Reverse proxy instructions](docs/reverse-proxy.md) cover SSE buffering, timeouts and trusted forwarded headers. Those examples do not install authentication.
 

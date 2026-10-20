@@ -57,7 +57,12 @@ TAG_GENRES: dict[str, tuple[str, ...]] = {
     "contemporary r&b": ("soul-rnb",),
     "asian": ("world",),
     "tv soundtracks": ("soundtrack",),
-    "drum and bass": ("electronic",),
+    # Drum and bass stays electronic, and it is also its own group, so "dnb" finds the
+    # subgenre tags below. Liquid on its own stays the liquid tag, not the whole group.
+    "drum and bass": ("electronic", "drum-and-bass"),
+    "liquid drum and bass": ("electronic", "drum-and-bass"),
+    "neurofunk": ("electronic", "drum-and-bass"),
+    "jungle": ("electronic", "drum-and-bass"),
     "dancehall": ("reggae",),
     "brazilian music": ("latin",),
     "opera": ("classical",),
@@ -111,11 +116,61 @@ GENRE_WORDS: dict[str, str] = {
     "movie": "soundtrack",
     "spoken": "spoken",
     "spoken word": "spoken",
+    "drum and bass": "drum-and-bass",
+    "dnb": "drum-and-bass",
+    "drum n bass": "drum-and-bass",
+}
+
+# A shorter name for one tag. These are not the whole drum-and-bass group.
+TAG_ALIASES: dict[str, tuple[str, ...]] = {
+    "liquid": ("liquid drum and bass",),
+    "liquid dnb": ("liquid drum and bass",),
+    "liquid drum n bass": ("liquid drum and bass",),
 }
 
 
-def _key(text: str) -> str:
-    return " ".join(text.casefold().split())
+def _fold(text: str) -> str:
+    """Case, hyphens, spaces and & compare the same, so trip-hop and drum & bass fold."""
+    return " ".join(text.casefold().replace("-", " ").replace("&", " and ").split())
+
+
+def _index(table: dict[str, str]) -> dict[str, str]:
+    folded: dict[str, str] = {}
+    for key, value in table.items():
+        name = _fold(key)
+        previous = folded.get(name)
+        if previous is not None and previous != value:
+            raise RuntimeError(f"genre key {key!r} collapses onto a different value")
+        folded[name] = value
+    return folded
+
+
+def _index_tags(table: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+    folded: dict[str, tuple[str, ...]] = {}
+    for key, value in table.items():
+        name = _fold(key)
+        previous = folded.get(name)
+        if previous is not None and previous != value:
+            raise RuntimeError(f"genre key {key!r} collapses onto a different value")
+        folded[name] = value
+    return folded
+
+
+def _index_aliases(table: dict[str, tuple[str, ...]]) -> dict[str, tuple[str, ...]]:
+    folded: dict[str, tuple[str, ...]] = {}
+    for key, forms in table.items():
+        name = _fold(key)
+        value = tuple(_fold(item) for item in forms)
+        previous = folded.get(name)
+        if previous is not None and previous != value:
+            raise RuntimeError(f"genre key {key!r} collapses onto a different value")
+        folded[name] = value
+    return folded
+
+
+TAG_LOOKUP = _index_tags(TAG_GENRES)
+WORD_LOOKUP = _index(GENRE_WORDS)
+ALIAS_LOOKUP = _index_aliases(TAG_ALIASES)
 
 
 @lru_cache(maxsize=4096)
@@ -129,12 +184,12 @@ def tag_profile(tags: tuple[str, ...]) -> tuple[frozenset[str], frozenset[str]]:
     groups: set[str] = set()
     for value in tags:
         for part in value.split(";"):
-            tag = _key(part)
+            tag = _fold(part)
             if not tag:
                 continue
             words.add(tag)
-            words.update(piece for piece in map(_key, tag.split("/")) if piece)
-            groups.update(TAG_GENRES.get(tag, ()))
+            words.update(piece for piece in map(_fold, tag.split("/")) if piece)
+            groups.update(TAG_LOOKUP.get(tag, ()))
     return frozenset(words), frozenset(groups)
 
 
@@ -147,9 +202,14 @@ def genre_query(requested: tuple[str, ...]) -> tuple[tuple[frozenset[str], str |
     """
     query = []
     for item in requested:
-        key = _key(item)
-        forms = tuple(dict.fromkeys(form for form in (key, key.removesuffix(" music")) if form))
-        group = next((GENRE_WORDS[form] for form in forms if form in GENRE_WORDS), None)
+        key = _fold(item)
+        bare = key.removesuffix(" music")
+        forms = {form for form in (key, bare) if form}
+        forms.update(ALIAS_LOOKUP.get(key, ()))
+        forms.update(ALIAS_LOOKUP.get(bare, ()))
+        group = WORD_LOOKUP.get(key)
+        if group is None:
+            group = WORD_LOOKUP.get(bare)
         query.append((frozenset(forms), group))
     return tuple(query)
 
@@ -161,9 +221,9 @@ _NEGATION = re.compile(r"\b(no|not|without|except|exclud\w*|other than|instead o
 
 
 def _vocabulary() -> set[str]:
-    words = set(GENRE_WORDS) | set(TAG_GENRES)
-    for tag in TAG_GENRES:
-        words.update(piece for piece in map(_key, tag.split("/")) if piece)
+    words = set(WORD_LOOKUP) | set(TAG_LOOKUP) | set(ALIAS_LOOKUP)
+    for tag in TAG_LOOKUP:
+        words.update(piece for piece in map(_fold, tag.split("/")) if piece)
     return words - _AMBIGUOUS
 
 
@@ -177,7 +237,7 @@ def genre_words_in(request: str) -> list[str]:
     "some drum and bass" gives ["drum and bass"], not also "bass". Punctuation other than the
     characters genre names use (&, /, -) separates words.
     """
-    text = _key(request)
+    text = " ".join(request.casefold().split())
     if _NEGATION.search(text):
         return []
     words = re.sub(r"[^\w&/\-]+", " ", text).split()
@@ -186,7 +246,7 @@ def genre_words_in(request: str) -> list[str]:
     while index < len(words):
         for size in range(min(_LONGEST, len(words) - index), 0, -1):
             phrase = " ".join(words[index : index + size])
-            if phrase in VOCABULARY:
+            if _fold(phrase) in VOCABULARY:
                 found.append(phrase)
                 index += size
                 break
@@ -197,9 +257,10 @@ def genre_words_in(request: str) -> list[str]:
 
 def is_genre_word(text: str) -> bool:
     """True for a broad-genre word or a known library tag word, with or without "music"."""
-    key = _key(text)
+    key = _fold(text)
+    bare = key.removesuffix(" music")
     return any(
-        form in GENRE_WORDS or form in TAG_GENRES for form in (key, key.removesuffix(" music"))
+        form in WORD_LOOKUP or form in TAG_LOOKUP or form in ALIAS_LOOKUP for form in (key, bare)
     )
 
 

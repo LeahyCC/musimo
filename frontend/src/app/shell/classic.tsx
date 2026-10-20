@@ -25,6 +25,7 @@ import type { LibraryPlaylist } from '../../api'
 import { activeCount, useJobs } from '../../features/downloads/jobs'
 import { QueueDock } from '../../features/downloads/queue-dock'
 import { isLinkText, useLinkSheet } from '../../features/links/links'
+import { useListenerUi } from '../../features/listener/sheet'
 import { PetFace, usePerchShown } from '../../features/music-bot/pet-host'
 import { usePetSettings } from '../../features/music-bot/pet-settings'
 import { artUrl, usePlayer } from '../../features/player/player'
@@ -291,6 +292,7 @@ function Sidebar({
   downloads: number
 }) {
   const albumCount = useAlbumCount()
+  const listener = useListenerUi()
   const { likedId, rows } = useSidebarPlaylists()
   const petHidden = usePetSettings().hidden
   const link = (to: string) => startsWithPath(pathname, to)
@@ -299,12 +301,15 @@ function Sidebar({
   return (
     <>
       {/* `brand` carries no styling here. The Windows 95 skin draws it as the sidebar's title bar. */}
-      <Link
-        to="/"
-        className="brand flex items-center px-[10px] pb-[18px] text-[22px] font-[650] tracking-[-0.8px]"
+      <button
+        type="button"
+        className="brand flex w-full min-w-0 items-center px-[10px] pb-[18px] text-left text-[22px] font-[650] tracking-[-0.8px]"
+        aria-label={listener.name ? `Listening as ${listener.name}` : 'Who is listening?'}
+        onClick={listener.open}
       >
-        musimo<span className="text-accent">.</span>
-      </Link>
+        <span className="min-w-0 truncate">{listener.name || 'musimo'}</span>
+        <span className="text-accent">.</span>
+      </button>
       <nav aria-label="Main navigation" className="flex flex-1 flex-col gap-[2px]">
         {topItems.map(({ to, label, icon: Icon, lit }) => (
           <Link
@@ -415,6 +420,7 @@ export function ClassicShell() {
   const activeDownloads = useJobs(activeCount).data ?? 0
   const perched = usePerchShown()
   const petHidden = usePetSettings().hidden
+  const listener = useListenerUi()
 
   useEffect(() => {
     clearTimeout(debounce.current)
@@ -476,6 +482,16 @@ export function ClassicShell() {
             'max-phone:gap-[10px] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
           )}
         >
+          {phone && listener.name && (
+            <button
+              type="button"
+              className="max-w-[30%] shrink-0 truncate text-body font-semibold"
+              aria-label={`Listening as ${listener.name}`}
+              onClick={listener.open}
+            >
+              {listener.name}
+            </button>
+          )}
           <form
             className="flex h-[38px] max-w-[560px] flex-1 items-center gap-[10px] rounded-[10px] border border-line bg-sunken px-[12px] text-faint max-phone:max-w-none coarse:h-11"
             onSubmit={(e) => {

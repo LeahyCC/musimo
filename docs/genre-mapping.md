@@ -61,6 +61,9 @@ Counts are tracks carrying the word, from the read-only catalogue snapshot used 
 | Asian                     |     15 | world ?            |
 | TV Soundtracks            |     14 | soundtrack ?       |
 | Drum and Bass             |     12 | electronic         |
+| Liquid Drum and Bass      |        | electronic         |
+| Neurofunk                 |        | electronic         |
+| Jungle                    |        | electronic         |
 | Dancehall                 |      8 | reggae             |
 | Brazilian Music           |      6 | latin ?            |
 | Opera                     |      5 | classical          |
@@ -74,7 +77,7 @@ Counts are tracks carrying the word, from the read-only catalogue snapshot used 
 
 ## Broad genres in this draft
 
-electronic, rock/metal, hip-hop, pop, soul/R&B, reggae, jazz, folk/country, world, classical, blues, latin, soundtrack, spoken.
+electronic, rock/metal, hip-hop, pop, soul/R&B, reggae, jazz, folk/country, world, classical, blues, latin, soundtrack, spoken, drum and bass.
 
 Changes from the genre trial's list: folk/country/world is split into folk/country and world, soundtrack is added, and "other" is dropped (an unmapped word simply has no broad genre).
 
@@ -82,13 +85,15 @@ Changes from the genre trial's list: folk/country/world is split into folk/count
 
 A requested word matches a song when any of these hold:
 
-- it names a broad genre in everyday words (`GENRE_WORDS`): "hip hop", "rap", "electronic", "edm", "r&b", "film score", "spoken word" and so on;
+- it names a broad genre in everyday words (`GENRE_WORDS`): "hip hop", "rap", "electronic", "edm", "r&b", "film score", "spoken word", "dnb" and so on;
 - it equals one of the song's tags, ignoring case and extra spaces;
 - it equals one part of a tag split at "/", so "house" finds Techno/House and "trip-hop" finds Chill Out/Trip-Hop/Lounge.
 
+A hyphen and a space are the same spelling, and `&` means "and", so "trip hop" and "trip-hop" match, and "drum & bass" is "drum and bass". `dnb` and `drum n bass` are the same word. Drum and bass is its own group over the tags Drum and Bass, Liquid Drum and Bass, Neurofunk and Jungle, and those tags stay electronic too. `liquid`, `liquid dnb` and `liquid drum n bass` mean the liquid tag only, not Neurofunk or a song tagged just Drum and Bass. Liquid Drum and Bass, Neurofunk and Jungle were not in the 14 October count, so those rows have no number.
+
 A trailing "music" is optional: "latin music" means latin, while "dance music" means the Dance tag, not every electronic song. Tag values holding several genres separated by ";" are split first.
 
-So "hip hop" finds Rap/Hip Hop, Hip-Hop, East Coast and Grime; "trance" finds only Trance; "rock" finds the whole rock/metal group; "metal" finds only Metal. "More like this" passes the reference song's tags through the same rule, so a song tagged Pop finds the pop group.
+So "hip hop" finds Rap/Hip Hop, Hip-Hop, East Coast and Grime; "trance" finds only Trance; "rock" finds the whole rock/metal group; "metal" finds only Metal. "drum and bass" finds Drum and Bass, Liquid Drum and Bass, Neurofunk and Jungle. "liquid" finds Liquid Drum and Bass and not the rest of that group. "More like this" passes the reference song's tags through the same rule, so a song tagged Pop finds the pop group.
 
 The bot's instructions tell the model to put genre words in `genres`, never `artists`. The server searches that list as given. It does not scan the request text for genre words, and it does not move a genre word out of `artists`. `genre_words_in` is the phrase table used by the mapping tests: longer phrases win, so "drum and bass" does not also mean "bass", and a negation (no, not, without, except, excluding, other than, instead of, apart from) matches nothing, because "no hip hop" must not become hip hop. World, film, movie, films, games and music are left out of that table because they show up in ordinary sentences.
 

@@ -183,15 +183,21 @@ test('Undo restores a 701-song shuffle and playback continues beyond its 500-son
   await expect(page.getByRole('contentinfo')).toContainText(/Deck \d+/)
   await ask(page)
   await page.getByRole('button', { name: 'Replace upcoming' }).click()
-  await expect
-    .poll(() => page.evaluate(() => localStorage.getItem('musimo.shuffle-deck')))
-    .toBeNull()
+  // The deck belongs to the name. The old unscoped key is copied once and then left alone.
+  const scopedDeck = () =>
+    page.evaluate(() => {
+      const id = localStorage.getItem('musimo.listener')
+      return id ? localStorage.getItem(`musimo.shuffle-deck.${id}`) : null
+    })
+  await expect.poll(scopedDeck).toBeNull()
   await undo(page).click()
   await expect
     .poll(() =>
-      page.evaluate(
-        () => JSON.parse(localStorage.getItem('musimo.shuffle-deck') ?? '{}') as unknown,
-      ),
+      page.evaluate(() => {
+        const id = localStorage.getItem('musimo.listener')
+        const raw = id ? localStorage.getItem(`musimo.shuffle-deck.${id}`) : null
+        return JSON.parse(raw ?? '{}') as unknown
+      }),
     )
     .toEqual({
       seed: 'fixture-seed',

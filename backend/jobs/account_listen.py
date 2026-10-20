@@ -273,11 +273,21 @@ def _download(data: Path, track_id: int, command: str, catalog_seconds: float) -
         clear_attempt(folder)
         with hold(data, wait=False):
             saved = fetch(track_id, folder, None)
+        # The command reads the track id from job.json beside the file. A download writes
+        # that before its worker starts. A listen has no job, so without this the command
+        # fails and Play falls back to the 30 second clip.
+        _write_track_id(folder, track_id)
         path = prepare(folder, probe, command)
         _keep_recording(folder, path, saved.alternate, catalog_seconds)
         return path
     finally:
         track_lock.release()
+
+
+def _write_track_id(folder: Path, track_id: int) -> None:
+    temporary = folder / "job.json.tmp"
+    temporary.write_text(json.dumps({"track_id": track_id}), encoding="utf-8")
+    temporary.replace(folder / "job.json")
 
 
 def _keep_recording(folder: Path, path: Path, alternate: bool, catalog_seconds: float) -> None:

@@ -11,6 +11,7 @@ import re
 import sqlite3
 from collections.abc import Callable
 
+from backend.core.listener import ForeignListener
 from backend.core.store import ProposalGone
 from backend.library.engine import ATTEMPTS, Engine, _digest, _row, parse_body, parse_intent
 from backend.library.engine_contract import (
@@ -114,7 +115,10 @@ class Proposals:
             "target": "edit",
             "edit": body.edit.model_dump(),
         }
-        first = self.bot.store.proposal_receipt(body.operation_id)
+        try:
+            first = self.bot.store.proposal_receipt(body.operation_id)
+        except ForeignListener as exc:
+            raise _not_found(proposal_id) from exc
         if first is not None:
             return self._edit_replayed(first, wanted)
         base = self._revision(proposal_id, body.revision)
@@ -122,7 +126,10 @@ class Proposals:
         assert isinstance(latest, int)
         if body.revision != latest:
             # The first attempt of this retry may have landed between the two reads above.
-            first = self.bot.store.proposal_receipt(body.operation_id)
+            try:
+                first = self.bot.store.proposal_receipt(body.operation_id)
+            except ForeignListener as exc:
+                raise _not_found(proposal_id) from exc
             if first is not None:
                 return self._edit_replayed(first, wanted)
             raise self._superseded(latest)
@@ -169,7 +176,7 @@ class Proposals:
         revision, results, ids = self.bot.store.shown_state()
         return {
             "status": "ok",
-            "profile": "default",
+            "profile": self.bot.store.shown_profile(),
             "revision": revision,
             "results": results,
             "songs": len(ids),
@@ -195,7 +202,10 @@ class Proposals:
             "playlist_name": name,
         }
         store = self.bot.store
-        first = store.proposal_receipt(body.operation_id)
+        try:
+            first = store.proposal_receipt(body.operation_id)
+        except ForeignListener as exc:
+            raise _not_found(proposal_id) from exc
         if first is not None:
             return self._replayed(first, wanted)
         stored = self._revision(proposal_id, body.revision)
@@ -231,7 +241,10 @@ class Proposals:
         # library view is never built under it.
         with store.lock:
             # A retry of this operation may have written its receipt while this one checked.
-            first = store.proposal_receipt(body.operation_id)
+            try:
+                first = store.proposal_receipt(body.operation_id)
+            except ForeignListener as exc:
+                raise _not_found(proposal_id) from exc
             if first is not None:
                 return self._replayed(first, wanted)
             if store.library_revision() != revision:
@@ -250,7 +263,7 @@ class Proposals:
                 raise Cancelled
             try:
                 saved, replayed = store.record_receipt(receipt, name)
-            except (ProposalGone, sqlite3.IntegrityError) as exc:
+            except (ProposalGone, sqlite3.IntegrityError, ForeignListener) as exc:
                 # Pruned between the checks and the write. Nothing was written.
                 raise _not_found(proposal_id) from exc
         if replayed:
@@ -303,7 +316,10 @@ class Proposals:
         }
         if cancelled():
             raise Cancelled
-        saved = self.bot.store.save_proposal(proposal_id, base, row, edit)
+        try:
+            saved = self.bot.store.save_proposal(proposal_id, base, row, edit)
+        except ForeignListener as exc:
+            raise _not_found(proposal_id or "") from exc
         if isinstance(saved, dict):
             # The same edit ran at the same time and was written first.
             assert edit is not None

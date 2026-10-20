@@ -1,5 +1,7 @@
 import { z } from 'zod'
 
+import { withListener } from './features/listener/identity'
+
 export const namingSchema = z.object({ path: z.string() })
 
 export const jobSchema = z.object({
@@ -126,7 +128,7 @@ export const resultSchema = z.object({
   record_type: z.string(),
   ownership: z.enum(['owned', 'partial', 'missing', 'edition']),
   matched_paths: z.array(z.string()),
-  matched_by: z.enum(['download', 'isrc', 'mbid', 'tags', '']),
+  matched_by: z.enum(['download', 'holding', 'isrc', 'mbid', 'tags', '']),
   matched_album: z.string(),
   matched_song: z.string().default(''),
   owned_count: z.number(),
@@ -135,6 +137,15 @@ export const resultSchema = z.object({
   position: z.number(),
 })
 export type MusicResult = z.infer<typeof resultSchema>
+export const holdingSchema = z.object({
+  id: z.string(),
+  catalog: z.string(),
+  track_id: z.number(),
+  song_id: z.string(),
+  path: z.string(),
+  reason: z.enum(['catalog', 'bytes', 'chosen']),
+  created: z.string(),
+})
 export const searchPageSchema = z.object({
   items: z.array(resultSchema),
   total: z.number(),
@@ -605,7 +616,7 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, schema: z.ZodType<T>, init?: RequestInit): Promise<T> {
-  const response = await fetch(`/api/${path}`, init)
+  const response = await fetch(`/api/${path}`, withListener(init))
   const data: unknown = response.status === 204 ? null : await response.json()
   if (!response.ok) {
     const problem = z.object({ detail: z.string(), code: z.string().optional() }).safeParse(data)

@@ -3,8 +3,9 @@ import { z } from 'zod'
 import { replayGainSchema } from '../../api'
 import type { LibraryTrack } from '../../api'
 import { readStoredJson, writeStored } from '../../lib/storage'
+import { HISTORY_KEY, listenerId } from '../listener/identity'
 
-export const HISTORY_KEY = 'musimo.play-history'
+export { HISTORY_KEY }
 export const HISTORY_LIMIT = 200
 /** Seconds of a track that must play before it counts as heard. A shorter track counts at its end. */
 export const HISTORY_LISTEN_SECONDS = 10
@@ -28,14 +29,18 @@ const historyEntrySchema = z.object({
 })
 export type HistoryEntry = z.infer<typeof historyEntrySchema>
 
-/** Whatever was stored, or nothing when it is missing, unreadable or not a history at all. */
+/** The current name's list. Nothing before a name is chosen, so Home does not show the old one. */
 export function readHistory(): HistoryEntry[] {
-  const parsed = z.array(historyEntrySchema).safeParse(readStoredJson(HISTORY_KEY))
+  const id = listenerId()
+  if (!id) return []
+  const parsed = z.array(historyEntrySchema).safeParse(readStoredJson(`${HISTORY_KEY}.${id}`))
   return parsed.success ? parsed.data.slice(0, HISTORY_LIMIT) : []
 }
 
 export function writeHistory(entries: readonly HistoryEntry[]) {
-  writeStored(HISTORY_KEY, JSON.stringify(entries))
+  const id = listenerId()
+  if (!id) return
+  writeStored(`${HISTORY_KEY}.${id}`, JSON.stringify(entries))
 }
 
 /**

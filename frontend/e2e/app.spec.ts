@@ -553,7 +553,9 @@ test('album download skips owned tracks and recovers from failure', async ({ pag
     await route.fulfill(
       attempts === 1
         ? { status: 503, json: { detail: 'Queue temporarily unavailable' } }
-        : { json: { id: 'fixture', jobs: [], skipped_owned: 1, skipped_queued: 0 } },
+        : {
+            json: { id: 'fixture', jobs: [], skipped_owned: 1, skipped_queued: 0, needs_choice: 0 },
+          },
     )
   })
   await page.goto('/search?q=Fixture&tab=album')
@@ -817,6 +819,7 @@ test('artist review counts selections, excludes failed albums and retries submis
               albums: 0,
               skipped_owned: 1,
               skipped_queued: 2,
+              needs_choice: 0,
             },
           },
     )

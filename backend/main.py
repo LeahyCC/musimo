@@ -27,12 +27,14 @@ from backend.api.diagnostics_api import install_diagnostics_routes
 from backend.api.download_api import install_download_routes
 from backend.api.events_api import install_event_routes
 from backend.api.link_api import install_link_routes
+from backend.api.listener_api import install_listener_routes
 from backend.api.music_bot_api import install_music_bot_routes
 from backend.api.player_api import install_account_routes, install_player_routes
 from backend.api.podcast_api import install_podcast_routes
 from backend.api.search_api import install_search_routes
 from backend.api.settings_api import install_settings_routes, scrub_secret_errors
 from backend.api.waveform_api import install_waveform_routes
+from backend.core.listener import CHOOSE, HEADER, bind, is_listener_route, reset
 from backend.core.store import Store
 from backend.integrations import deezer_cookie, spotify_credentials
 from backend.integrations.catalog import Catalog
@@ -106,6 +108,8 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     changed = asyncio.Event()
     versions: dict[str, str] = {}
     store: Store
+    # The middleware is registered before lifespan runs, so it reads the store from here.
+    holder: dict[str, Store | None] = {"store": None}
     catalog: Catalog
     library: Library
     downloads: Downloads
@@ -125,6 +129,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         # Later tracks reuse the YouTube player script instead of fetching it again.
         os.environ["MUSIMO_YTDLP_CACHE"] = str(data / "ytdlp-cache")
         store = Store(data / "musimo.sqlite3")
+        holder["store"] = store
         deezer_cookie.adopt(store, data)
         spotify_credentials.adopt(store, data)
         # The seed has done its job. Out of the environment, the link resolver, waveform and
@@ -163,6 +168,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                     await ready
                 await downloads.close()
                 await library.close()
+                holder["store"] = None
                 store.close()
 
     app = FastAPI(title="Musimo", version=VERSION, lifespan=lifespan, docs_url=None, redoc_url=None)
@@ -179,6 +185,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_activity_routes(app, lambda: store, changed.set)
     install_download_routes(app, lambda: downloads)
     install_artist_download_routes(app, lambda: downloads)
+    install_listener_routes(app, lambda: holder["store"])
     install_player_routes(app, lambda: player)
     install_account_routes(app, data, lambda: store)
     install_music_bot_routes(app, lambda: music_bot)
@@ -214,7 +221,24 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 and request.headers.get("content-type", "").split(";")[0] != "application/json"
             ):
                 return JSONResponse({"detail": "Use application/json"}, status_code=415)
-        response = await call_next(request)
+        token = None
+        found = holder["store"]
+        if found is not None and is_listener_route(request.url.path):
+            # A blank header is the same as a missing one. The id is not a secret.
+            presented = request.headers.get(HEADER, "").strip()
+            if found.has_listeners():
+                if not presented or not found.listener_exists(presented):
+                    return JSONResponse({"detail": CHOOSE}, status_code=401)
+                token = bind(presented)
+            elif presented:
+                return JSONResponse({"detail": CHOOSE}, status_code=401)
+            else:
+                token = bind("")
+        try:
+            response = await call_next(request)
+        finally:
+            if token is not None:
+                reset(token)
         response.headers["X-Content-Type-Options"] = "nosniff"
         response.headers["Referrer-Policy"] = "same-origin"
         # 'wasm-unsafe-eval' lets the visualizer compile its MilkDrop presets to WebAssembly. It

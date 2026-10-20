@@ -6,11 +6,19 @@ import threading
 from pathlib import Path
 from typing import Literal, NamedTuple
 
+from backend.core.listener import (
+    UNCLAIMED,
+    ForeignListener,
+    ListenerNameError,
+    clean_name,
+    new_listener_id,
+)
+from backend.core.listener import current as bound_listener
 from backend.core.models import CATALOG_ORDER, Settings, clean_arl, clean_spotify_token
 from backend.core.sources import source_label
 
 RETAIN_EVENTS = 5000
-SCHEMA_VERSION = 13
+SCHEMA_VERSION = 15
 # Music bot proposals kept, newest first by last use, and revisions kept per proposal. They are
 # suggestion state, not history: a dropped one is only a preview the client has to ask for again.
 PROPOSAL_LIMIT = 20
@@ -50,7 +58,7 @@ def note_library_change(db: sqlite3.Connection) -> None:
 
 
 def drop_song_references(db: sqlite3.Connection, song_ids: list[str]) -> None:
-    """Drop playlist, queue, waveform and audio profile rows for songs that just left the index.
+    """Drop playlist, queue, waveform, audio profile and holding rows for songs that just left.
 
     The caller holds the store lock and a write transaction. Positions are packed
     again so a playlist index still matches the row the browser asked to remove.
@@ -89,6 +97,14 @@ def drop_song_references(db: sqlite3.Connection, song_ids: list[str]) -> None:
         "DELETE FROM audio_job WHERE song_id IN (SELECT value FROM json_each(?))",
         (payload,),
     )
+    db.execute(
+        "DELETE FROM holdings WHERE song_id IN (SELECT value FROM json_each(?))",
+        (payload,),
+    )
+    db.execute(
+        "DELETE FROM listener_plays WHERE song_id IN (SELECT value FROM json_each(?))",
+        (payload,),
+    )
     _repack_queue(db)
 
 
@@ -108,17 +124,31 @@ def _repack_playlist(db: sqlite3.Connection, playlist_id: int) -> None:
 
 
 def _repack_queue(db: sqlite3.Connection) -> None:
-    songs = [
-        str(row[0]) for row in db.execute("SELECT song_id FROM play_queue_songs ORDER BY position")
-    ]
-    current = str(db.execute("SELECT current_id FROM play_queue WHERE id=1").fetchone()[0])
-    db.execute("DELETE FROM play_queue_songs")
-    db.executemany(
-        "INSERT INTO play_queue_songs VALUES (?,?)",
-        list(enumerate(songs)),
-    )
-    if current not in songs:
-        db.execute("UPDATE play_queue SET current_id='', position_ms=0 WHERE id=1")
+    """Pack each name's queue. A song that left the index leaves every queue in this transaction."""
+    listeners = [str(row[0]) for row in db.execute("SELECT listener_id FROM play_queue")]
+    for listener_id in listeners:
+        songs = [
+            str(row[0])
+            for row in db.execute(
+                "SELECT song_id FROM play_queue_songs WHERE listener_id=? ORDER BY position",
+                (listener_id,),
+            )
+        ]
+        current = str(
+            db.execute(
+                "SELECT current_id FROM play_queue WHERE listener_id=?", (listener_id,)
+            ).fetchone()[0]
+        )
+        db.execute("DELETE FROM play_queue_songs WHERE listener_id=?", (listener_id,))
+        db.executemany(
+            "INSERT INTO play_queue_songs (listener_id, position, song_id) VALUES (?,?,?)",
+            [(listener_id, index, song_id) for index, song_id in enumerate(songs)],
+        )
+        if current not in songs:
+            db.execute(
+                "UPDATE play_queue SET current_id='', position_ms=0 WHERE listener_id=?",
+                (listener_id,),
+            )
 
 
 def settings_only(values: dict[str, object]) -> dict[str, object]:
@@ -216,6 +246,138 @@ class ProposalGone(LookupError):
 
 class LockedSetting(ValueError):
     pass
+
+
+def _columns(db: sqlite3.Connection, table: str) -> set[str]:
+    return {str(row[1]) for row in db.execute(f"PRAGMA table_info({table})")}
+
+
+def _migrate_v15(db: sqlite3.Connection) -> None:
+    """One queue, playlist set, star list, and play count per name.
+
+    Idempotent when a test rewinds user_version on a file that already has these columns.
+    The unclaimed pool is listener_id ''. The first created name moves that pool onto itself.
+    """
+    db.execute("BEGIN IMMEDIATE")
+    try:
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS listeners (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                name_key TEXT NOT NULL UNIQUE,
+                created TEXT NOT NULL
+            )
+            """
+        )
+        if "listener_id" not in _columns(db, "playlists"):
+            db.execute("ALTER TABLE playlists ADD COLUMN listener_id TEXT NOT NULL DEFAULT ''")
+        db.execute("CREATE INDEX IF NOT EXISTS playlists_listener ON playlists(listener_id)")
+        if "listener_id" not in _columns(db, "linked_playlists"):
+            db.execute(
+                """
+                CREATE TABLE linked_playlists_v15 (
+                    listener_id TEXT NOT NULL DEFAULT '',
+                    key TEXT NOT NULL,
+                    playlist_id TEXT NOT NULL,
+                    PRIMARY KEY (listener_id, key)
+                )
+                """
+            )
+            db.execute(
+                "INSERT INTO linked_playlists_v15 (listener_id, key, playlist_id) "
+                "SELECT '', key, playlist_id FROM linked_playlists"
+            )
+            db.execute("DROP TABLE linked_playlists")
+            db.execute("ALTER TABLE linked_playlists_v15 RENAME TO linked_playlists")
+        if "listener_id" not in _columns(db, "artist_favourites"):
+            db.execute(
+                """
+                CREATE TABLE artist_favourites_v15 (
+                    listener_id TEXT NOT NULL DEFAULT '',
+                    artist_id TEXT NOT NULL,
+                    starred_at TEXT NOT NULL,
+                    PRIMARY KEY (listener_id, artist_id)
+                )
+                """
+            )
+            db.execute(
+                "INSERT INTO artist_favourites_v15 (listener_id, artist_id, starred_at) "
+                "SELECT '', artist_id, starred_at FROM artist_favourites"
+            )
+            db.execute("DROP TABLE artist_favourites")
+            db.execute("ALTER TABLE artist_favourites_v15 RENAME TO artist_favourites")
+        if "listener_id" not in _columns(db, "play_queue"):
+            cols = _columns(db, "play_queue")
+            db.execute(
+                """
+                CREATE TABLE play_queue_v15 (
+                    listener_id TEXT PRIMARY KEY,
+                    current_id TEXT NOT NULL DEFAULT '',
+                    position_ms INTEGER NOT NULL DEFAULT 0,
+                    changed TEXT NOT NULL DEFAULT '',
+                    writer_epoch INTEGER NOT NULL DEFAULT 0,
+                    write_sequence INTEGER NOT NULL DEFAULT 0
+                )
+                """
+            )
+            if "writer_epoch" in cols:
+                db.execute(
+                    "INSERT INTO play_queue_v15 (listener_id, current_id, position_ms, changed, "
+                    "writer_epoch, write_sequence) "
+                    "SELECT '', current_id, position_ms, changed, writer_epoch, write_sequence "
+                    "FROM play_queue"
+                )
+            else:
+                db.execute(
+                    "INSERT INTO play_queue_v15 (listener_id, current_id, position_ms, changed) "
+                    "SELECT '', current_id, position_ms, changed FROM play_queue"
+                )
+            db.execute("DROP TABLE play_queue")
+            db.execute("ALTER TABLE play_queue_v15 RENAME TO play_queue")
+        if "listener_id" not in _columns(db, "play_queue_songs"):
+            db.execute(
+                """
+                CREATE TABLE play_queue_songs_v15 (
+                    listener_id TEXT NOT NULL DEFAULT '',
+                    position INTEGER NOT NULL,
+                    song_id TEXT NOT NULL,
+                    PRIMARY KEY (listener_id, position)
+                )
+                """
+            )
+            db.execute(
+                "INSERT INTO play_queue_songs_v15 (listener_id, position, song_id) "
+                "SELECT '', position, song_id FROM play_queue_songs"
+            )
+            db.execute("DROP TABLE play_queue_songs")
+            db.execute("ALTER TABLE play_queue_songs_v15 RENAME TO play_queue_songs")
+        db.execute("INSERT OR IGNORE INTO play_queue (listener_id) VALUES ('')")
+        db.execute(
+            """
+            CREATE TABLE IF NOT EXISTS listener_plays (
+                listener_id TEXT NOT NULL,
+                song_id TEXT NOT NULL,
+                play_count INTEGER NOT NULL DEFAULT 0,
+                last_played TEXT,
+                PRIMARY KEY (listener_id, song_id)
+            )
+            """
+        )
+        db.execute("CREATE INDEX IF NOT EXISTS listener_plays_song ON listener_plays(song_id)")
+        if "listener_id" not in _columns(db, "bot_proposals"):
+            db.execute("ALTER TABLE bot_proposals ADD COLUMN listener_id TEXT NOT NULL DEFAULT ''")
+        if "listener_id" not in _columns(db, "bot_receipts"):
+            db.execute("ALTER TABLE bot_receipts ADD COLUMN listener_id TEXT NOT NULL DEFAULT ''")
+        db.execute(
+            "CREATE INDEX IF NOT EXISTS bot_proposals_listener ON bot_proposals(listener_id)"
+        )
+        db.execute("CREATE INDEX IF NOT EXISTS bot_receipts_listener ON bot_receipts(listener_id)")
+        db.execute("PRAGMA user_version=15")
+        db.commit()
+    except Exception:
+        db.rollback()
+        raise
 
 
 class Store:
@@ -369,6 +531,17 @@ class Store:
                 size INTEGER NOT NULL,
                 mtime_ns INTEGER NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS holdings (
+                id TEXT PRIMARY KEY,
+                catalog TEXT NOT NULL,
+                track_id INTEGER NOT NULL,
+                song_id TEXT NOT NULL,
+                path TEXT NOT NULL,
+                reason TEXT NOT NULL CHECK (reason IN ('catalog', 'bytes', 'chosen')),
+                created TEXT NOT NULL
+            );
+            CREATE UNIQUE INDEX IF NOT EXISTS holdings_catalog_track
+                ON holdings(catalog, track_id);
             COMMIT;
         """)
         if version < 4:
@@ -601,6 +774,27 @@ class Store:
                 PRAGMA user_version=13;
                 COMMIT;
             """)
+        if version < 14:
+            # A holding points a Deezer track at a file already in the library.
+            self.db.executescript("""
+                BEGIN IMMEDIATE;
+                CREATE TABLE IF NOT EXISTS holdings (
+                    id TEXT PRIMARY KEY,
+                    catalog TEXT NOT NULL,
+                    track_id INTEGER NOT NULL,
+                    song_id TEXT NOT NULL,
+                    path TEXT NOT NULL,
+                    reason TEXT NOT NULL CHECK (reason IN ('catalog', 'bytes', 'chosen')),
+                    created TEXT NOT NULL
+                );
+                CREATE UNIQUE INDEX IF NOT EXISTS holdings_catalog_track
+                    ON holdings(catalog, track_id);
+                PRAGMA user_version=14;
+                COMMIT;
+            """)
+        if version < 15:
+            # Names. The rows already stored stay on listener_id '' until the first create.
+            _migrate_v15(self.db)
         self.seed()
 
     def paused_sources(self) -> list[str]:
@@ -808,10 +1002,176 @@ class Store:
         self.db.execute("DELETE FROM job_events WHERE id <= ?", (event_id - RETAIN_EVENTS,))
         return event_id
 
+    def _listener(self) -> str:
+        return bound_listener()
+
+    def _has_listeners(self) -> bool:
+        """True once any name exists. The caller holds the store lock."""
+        return self.db.execute("SELECT 1 FROM listeners LIMIT 1").fetchone() is not None
+
+    def has_listeners(self) -> bool:
+        with self.lock:
+            return self._has_listeners()
+
+    def listener_exists(self, listener_id: str) -> bool:
+        with self.lock:
+            return (
+                self.db.execute("SELECT 1 FROM listeners WHERE id=?", (listener_id,)).fetchone()
+                is not None
+            )
+
+    def list_listeners(self) -> list[dict[str, str]]:
+        with self.lock:
+            return [
+                {"id": str(row["id"]), "name": str(row["name"])}
+                for row in self.db.execute("SELECT id, name FROM listeners ORDER BY created, rowid")
+            ]
+
+    def import_target(self, listener: str | None) -> str:
+        """The name an import writes. The caller holds the store lock and a transaction.
+
+        No names: the unclaimed pool, so the first later create still adopts the import.
+        One name: that name. Several, and none was given: refuse.
+        """
+        rows = self.db.execute(
+            "SELECT id, name, name_key FROM listeners ORDER BY created"
+        ).fetchall()
+        if listener:
+            folded = listener.casefold()
+            for row in rows:
+                if row["id"] == listener or str(row["name_key"]) == folded:
+                    return str(row["id"])
+            raise ValueError("No listener by that name")
+        if not rows:
+            return UNCLAIMED
+        if len(rows) == 1:
+            return str(rows[0]["id"])
+        raise ValueError("Name the listener to import into")
+
+    def create_listener(self, name: str) -> dict[str, str]:
+        """Save a name. The first one takes today's listener data. A later one starts empty."""
+        cleaned = clean_name(name)
+        key = cleaned.casefold()
+        with self.lock:
+            self.db.execute("BEGIN IMMEDIATE")
+            try:
+                count = int(self.db.execute("SELECT count(*) FROM listeners").fetchone()[0])
+                listener_id = new_listener_id()
+                try:
+                    self.db.execute(
+                        "INSERT INTO listeners (id, name, name_key, created) "
+                        "VALUES (?,?,?,strftime('%Y-%m-%dT%H:%M:%fZ','now'))",
+                        (listener_id, cleaned, key),
+                    )
+                except sqlite3.IntegrityError as exc:
+                    raise ListenerNameError("That name is already in use.", 409) from exc
+                if count == 0:
+                    self._adopt_unclaimed(listener_id)
+                else:
+                    self._start_empty(listener_id)
+                self.db.commit()
+                return {"id": listener_id, "name": cleaned}
+            except Exception:
+                self.db.rollback()
+                raise
+
+    def _adopt_unclaimed(self, listener_id: str) -> None:
+        """Move the pool onto this name. Not a second copy. The caller holds the transaction."""
+        self.db.execute("UPDATE playlists SET listener_id=? WHERE listener_id=''", (listener_id,))
+        self.db.execute(
+            "UPDATE linked_playlists SET listener_id=? WHERE listener_id=''", (listener_id,)
+        )
+        self.db.execute(
+            "UPDATE artist_favourites SET listener_id=? WHERE listener_id=''", (listener_id,)
+        )
+        self.db.execute("UPDATE play_queue SET listener_id=? WHERE listener_id=''", (listener_id,))
+        self.db.execute(
+            "UPDATE play_queue_songs SET listener_id=? WHERE listener_id=''", (listener_id,)
+        )
+        self.db.execute("INSERT OR IGNORE INTO play_queue (listener_id) VALUES (?)", (listener_id,))
+        self.db.execute(
+            """
+            INSERT INTO listener_plays (listener_id, song_id, play_count, last_played)
+            SELECT ?, song_id, play_count, last_played FROM library_files
+            WHERE play_count > 0 OR last_played IS NOT NULL
+            """,
+            (listener_id,),
+        )
+        self.db.execute(
+            "UPDATE bot_memory SET profile=? WHERE profile=?", (listener_id, SHOWN_PROFILE)
+        )
+        self.db.execute(
+            "UPDATE bot_proposals SET listener_id=? WHERE listener_id=''", (listener_id,)
+        )
+        self.db.execute(
+            "UPDATE bot_receipts SET listener_id=? WHERE listener_id=''", (listener_id,)
+        )
+
+    def _start_empty(self, listener_id: str) -> None:
+        """A later name: an empty queue, an empty Liked, and empty bot memory."""
+        now = self._timestamp()
+        self.db.execute("INSERT INTO play_queue (listener_id) VALUES (?)", (listener_id,))
+        cur = self.db.execute(
+            "INSERT INTO playlists (name, public, created, changed, listener_id) "
+            "VALUES ('Liked', 0, ?, ?, ?)",
+            (now, now, listener_id),
+        )
+        playlist_id = int(cur.lastrowid or 0)
+        self.db.execute(
+            "INSERT INTO linked_playlists (listener_id, key, playlist_id) VALUES (?,?,?)",
+            (listener_id, "liked", f"pl-{playlist_id}"),
+        )
+        self.db.execute(
+            "INSERT INTO bot_memory (profile, revision, generations, acked, changed) "
+            "VALUES (?, 0, '[]', '[]', ?)",
+            (listener_id, now),
+        )
+
+    def shown_profile(self) -> str:
+        """The bot memory key. `default` until a name is bound, then that name's id."""
+        with self.lock:
+            return self._profile()
+
+    def _profile(self) -> str:
+        who = self._listener()
+        if who and self._has_listeners():
+            return who
+        return SHOWN_PROFILE
+
+    def plays_for(self, listener_id: str) -> dict[str, tuple[int, str | None]]:
+        with self.lock:
+            rows = self.db.execute(
+                "SELECT song_id, play_count, last_played FROM listener_plays WHERE listener_id=?",
+                (listener_id,),
+            ).fetchall()
+        return {str(row[0]): (int(row[1]), str(row[2]) if row[2] else None) for row in rows}
+
+    def play_of(self, listener_id: str, song_id: str) -> tuple[int, str | None]:
+        with self.lock:
+            row = self.db.execute(
+                "SELECT play_count, last_played FROM listener_plays "
+                "WHERE listener_id=? AND song_id=?",
+                (listener_id, song_id),
+            ).fetchone()
+        if row is None:
+            return 0, None
+        return int(row[0]), str(row[1]) if row[1] else None
+
+    def artist_favourites_for(self, listener_id: str) -> dict[str, str]:
+        with self.lock:
+            return {
+                str(row[0]): str(row[1])
+                for row in self.db.execute(
+                    "SELECT artist_id, starred_at FROM artist_favourites WHERE listener_id=?",
+                    (listener_id,),
+                )
+            }
+
     def linked_playlist(self, key: str) -> str | None:
         with self.lock:
             row = self.db.execute(
-                "SELECT playlist_id FROM linked_playlists WHERE key=?", (key,)
+                "SELECT playlist_id FROM linked_playlists WHERE listener_id=? AND key=?",
+                (self._listener(), key),
             ).fetchone()
             return str(row[0]) if row else None
 
@@ -819,12 +1179,13 @@ class Store:
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
+                who = self._listener()
                 self.db.execute(
                     """
-                    INSERT INTO linked_playlists VALUES (?, ?)
-                    ON CONFLICT(key) DO UPDATE SET playlist_id=excluded.playlist_id
+                    INSERT INTO linked_playlists (listener_id, key, playlist_id) VALUES (?,?,?)
+                    ON CONFLICT(listener_id, key) DO UPDATE SET playlist_id=excluded.playlist_id
                     """,
-                    (key, playlist_id),
+                    (who, key, playlist_id),
                 )
                 self.db.commit()
             except Exception:
@@ -833,7 +1194,10 @@ class Store:
 
     def clear_linked_playlist(self, key: str) -> None:
         with self.lock:
-            self.db.execute("DELETE FROM linked_playlists WHERE key=?", (key,))
+            self.db.execute(
+                "DELETE FROM linked_playlists WHERE listener_id=? AND key=?",
+                (self._listener(), key),
+            )
 
     def waveform(self, song_id: str, fingerprint: str) -> bytes | None:
         """Cached peaks, only while the fingerprint (file size and time) is still the file's."""
@@ -1116,7 +1480,7 @@ class Store:
     def _memory_row(self) -> "_Memory":
         row = self.db.execute(
             "SELECT revision, generations, acked, forgotten FROM bot_memory WHERE profile=?",
-            (SHOWN_PROFILE,),
+            (self._profile(),),
         ).fetchone()
         # A row someone deleted by hand reads as an empty memory and is written back on the next
         # change, so a manual reset cannot leave the routes failing.
@@ -1131,7 +1495,7 @@ class Store:
             "generations=excluded.generations, acked=excluded.acked, "
             "forgotten=excluded.forgotten, changed=excluded.changed",
             (
-                SHOWN_PROFILE,
+                self._profile(),
                 memory.revision,
                 json.dumps(memory.kept),
                 json.dumps(memory.acked),
@@ -1259,7 +1623,10 @@ class Store:
                 raise
 
     def _playlist(self, playlist_id: int) -> dict[str, object] | None:
-        row = self.db.execute("SELECT * FROM playlists WHERE id=?", (playlist_id,)).fetchone()
+        row = self.db.execute(
+            "SELECT * FROM playlists WHERE id=? AND listener_id=?",
+            (playlist_id, self._listener()),
+        ).fetchone()
         if row is None:
             return None
         songs = [
@@ -1284,8 +1651,9 @@ class Store:
             try:
                 now = self._timestamp()
                 cur = self.db.execute(
-                    "INSERT INTO playlists (name, public, created, changed) VALUES (?,?,?,?)",
-                    (name, 0, now, now),
+                    "INSERT INTO playlists (name, public, created, changed, listener_id) "
+                    "VALUES (?,?,?,?,?)",
+                    (name, 0, now, now, self._listener()),
                 )
                 playlist_id = int(cur.lastrowid or 0)
                 self.db.executemany(
@@ -1315,9 +1683,11 @@ class Store:
                 FROM playlists p
                 LEFT JOIN playlist_songs s ON s.playlist_id=p.id
                 LEFT JOIN library_files f ON f.song_id=s.song_id AND s.song_id!=''
+                WHERE p.listener_id=?
                 GROUP BY p.id
                 ORDER BY p.id
-                """
+                """,
+                (self._listener(),),
             ).fetchall()
         return [
             {
@@ -1414,7 +1784,10 @@ class Store:
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
-                cur = self.db.execute("DELETE FROM playlists WHERE id=?", (playlist_id,))
+                cur = self.db.execute(
+                    "DELETE FROM playlists WHERE id=? AND listener_id=?",
+                    (playlist_id, self._listener()),
+                )
                 self.db.commit()
                 return cur.rowcount > 0
             except Exception:
@@ -1426,21 +1799,27 @@ class Store:
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
+                who = self._listener()
                 if favourite:
                     self.db.execute(
                         """
-                        INSERT INTO artist_favourites VALUES (?,?)
-                        ON CONFLICT(artist_id) DO NOTHING
+                        INSERT INTO artist_favourites (listener_id, artist_id, starred_at)
+                        VALUES (?,?,?)
+                        ON CONFLICT(listener_id, artist_id) DO NOTHING
                         """,
-                        (artist_id, self._timestamp()),
+                        (who, artist_id, self._timestamp()),
                     )
                     row = self.db.execute(
-                        "SELECT starred_at FROM artist_favourites WHERE artist_id=?",
-                        (artist_id,),
+                        "SELECT starred_at FROM artist_favourites "
+                        "WHERE listener_id=? AND artist_id=?",
+                        (who, artist_id),
                     ).fetchone()
                     starred = str(row[0]) if row else None
                 else:
-                    self.db.execute("DELETE FROM artist_favourites WHERE artist_id=?", (artist_id,))
+                    self.db.execute(
+                        "DELETE FROM artist_favourites WHERE listener_id=? AND artist_id=?",
+                        (who, artist_id),
+                    )
                     starred = None
                 self.db.commit()
                 return starred
@@ -1449,18 +1828,46 @@ class Store:
                 raise
 
     def artist_favourites(self) -> dict[str, str]:
-        with self.lock:
-            return {
-                str(row[0]): str(row[1])
-                for row in self.db.execute("SELECT artist_id, starred_at FROM artist_favourites")
-            }
+        return self.artist_favourites_for(self._listener())
 
     def record_play(self, song_id: str) -> bool:
-        """Add one play. last_played only moves forward."""
+        """Add one play. last_played only moves forward.
+
+        Once any name exists the count is that name's, and the file columns are left as they
+        were. An account listen never reaches here.
+        """
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
                 now = self._timestamp()
+                if self._has_listeners():
+                    who = self._listener()
+                    if not who:
+                        self.db.rollback()
+                        return False
+                    exists = self.db.execute(
+                        "SELECT 1 FROM library_files WHERE song_id=?", (song_id,)
+                    ).fetchone()
+                    if exists is None:
+                        self.db.rollback()
+                        return False
+                    self.db.execute(
+                        """
+                        INSERT INTO listener_plays (listener_id, song_id, play_count, last_played)
+                        VALUES (?, ?, 1, ?)
+                        ON CONFLICT(listener_id, song_id) DO UPDATE SET
+                            play_count = listener_plays.play_count + 1,
+                            last_played = CASE
+                                WHEN listener_plays.last_played IS NULL
+                                  OR listener_plays.last_played < excluded.last_played
+                                THEN excluded.last_played
+                                ELSE listener_plays.last_played
+                            END
+                        """,
+                        (who, song_id, now),
+                    )
+                    self.db.commit()
+                    return True
                 cur = self.db.execute(
                     """
                     UPDATE library_files
@@ -1505,24 +1912,30 @@ class Store:
             try:
                 now = self._timestamp()
                 revision = base + 1
+                who = self._listener()
                 if edit is not None:
                     found = self.db.execute(
-                        "SELECT receipt FROM bot_receipts WHERE operation_id=?",
+                        "SELECT receipt, listener_id FROM bot_receipts WHERE operation_id=?",
                         (edit["operation_id"],),
                     ).fetchone()
                     if found is not None:
+                        if self._foreign(str(found["listener_id"])):
+                            self.db.rollback()
+                            raise ForeignListener(str(edit["operation_id"]))
                         self.db.rollback()
                         first: dict[str, object] = json.loads(found[0])
                         return first
                 if proposal_id is None:
                     proposal_id = "pr-" + secrets.token_hex(8)
                     self.db.execute(
-                        "INSERT INTO bot_proposals VALUES (?,?,?,?)",
-                        (proposal_id, revision, self._touch(), now),
+                        "INSERT INTO bot_proposals (id, latest, touched, created, listener_id) "
+                        "VALUES (?,?,?,?,?)",
+                        (proposal_id, revision, self._touch(), now, who),
                     )
                 elif not self.db.execute(
-                    "UPDATE bot_proposals SET latest=?, touched=? WHERE id=? AND latest=?",
-                    (revision, self._touch(), proposal_id, base),
+                    "UPDATE bot_proposals SET latest=?, touched=? "
+                    "WHERE id=? AND latest=? AND listener_id=?",
+                    (revision, self._touch(), proposal_id, base, who),
                 ).rowcount:
                     self.db.rollback()
                     return None
@@ -1543,23 +1956,24 @@ class Store:
                 if edit is not None:
                     receipt = edit | {"made": revision, "created": now}
                     self.db.execute(
-                        "INSERT INTO bot_receipts VALUES (?,?,?,?,?)",
-                        (edit["operation_id"], proposal_id, base, "edit", json.dumps(receipt)),
+                        "INSERT INTO bot_receipts "
+                        "(operation_id, proposal_id, revision, target, receipt, listener_id) "
+                        "VALUES (?,?,?,?,?,?)",
+                        (
+                            edit["operation_id"],
+                            proposal_id,
+                            base,
+                            "edit",
+                            json.dumps(receipt),
+                            who,
+                        ),
                     )
-                    self.db.execute(
-                        "DELETE FROM bot_receipts WHERE rowid NOT IN "
-                        "(SELECT rowid FROM bot_receipts ORDER BY rowid DESC LIMIT ?)",
-                        (RECEIPT_LIMIT,),
-                    )
+                    self._prune_receipts(who)
                 self.db.execute(
                     "DELETE FROM bot_proposal_revisions WHERE proposal_id=? AND revision<=?",
                     (proposal_id, revision - REVISION_LIMIT),
                 )
-                self.db.execute(
-                    "DELETE FROM bot_proposals WHERE id NOT IN "
-                    "(SELECT id FROM bot_proposals ORDER BY touched DESC LIMIT ?)",
-                    (PROPOSAL_LIMIT,),
-                )
+                self._prune_proposals(who)
                 self.db.commit()
                 return proposal_id, revision
             except Exception:
@@ -1571,9 +1985,9 @@ class Store:
         proposal; `revision` None in the result for a revision it does not hold."""
         with self.lock:
             head = self.db.execute(
-                "SELECT latest FROM bot_proposals WHERE id=?", (proposal_id,)
+                "SELECT latest, listener_id FROM bot_proposals WHERE id=?", (proposal_id,)
             ).fetchone()
-            if head is None:
+            if head is None or self._foreign(str(head["listener_id"])):
                 return None
             latest = int(head["latest"])
             row = self.db.execute(
@@ -1595,12 +2009,35 @@ class Store:
             "created": str(row["created"]),
         }
 
+    def _foreign(self, owner: str) -> bool:
+        """True when names exist and this row is not the caller's. The caller holds the lock."""
+        return self._has_listeners() and owner != self._listener()
+
+    def _prune_proposals(self, listener_id: str) -> None:
+        self.db.execute(
+            "DELETE FROM bot_proposals WHERE listener_id=? AND id NOT IN "
+            "(SELECT id FROM bot_proposals WHERE listener_id=? ORDER BY touched DESC LIMIT ?)",
+            (listener_id, listener_id, PROPOSAL_LIMIT),
+        )
+
+    def _prune_receipts(self, listener_id: str) -> None:
+        self.db.execute(
+            "DELETE FROM bot_receipts WHERE listener_id=? AND rowid NOT IN "
+            "(SELECT rowid FROM bot_receipts WHERE listener_id=? ORDER BY rowid DESC LIMIT ?)",
+            (listener_id, listener_id, RECEIPT_LIMIT),
+        )
+
     def proposal_receipt(self, operation_id: str) -> dict[str, object] | None:
         with self.lock:
             row = self.db.execute(
-                "SELECT receipt FROM bot_receipts WHERE operation_id=?", (operation_id,)
+                "SELECT receipt, listener_id FROM bot_receipts WHERE operation_id=?",
+                (operation_id,),
             ).fetchone()
-        found: dict[str, object] | None = json.loads(row[0]) if row is not None else None
+            if row is None:
+                return None
+            if self._foreign(str(row["listener_id"])):
+                raise ForeignListener(operation_id)
+            found: dict[str, object] = json.loads(row["receipt"])
         return found
 
     def proposal_receipts(self, proposal_id: str, revision: int, target: str) -> list[str]:
@@ -1608,8 +2045,9 @@ class Store:
         with self.lock:
             rows = self.db.execute(
                 "SELECT operation_id FROM bot_receipts "
-                "WHERE proposal_id=? AND revision=? AND target=? ORDER BY rowid",
-                (proposal_id, revision, target),
+                "WHERE proposal_id=? AND revision=? AND target=? AND listener_id=? "
+                "ORDER BY rowid",
+                (proposal_id, revision, target, self._listener()),
             ).fetchall()
         return [str(row[0]) for row in rows]
 
@@ -1623,14 +2061,25 @@ class Store:
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
+                who = self._listener()
                 found = self.db.execute(
-                    "SELECT receipt FROM bot_receipts WHERE operation_id=?",
+                    "SELECT receipt, listener_id FROM bot_receipts WHERE operation_id=?",
                     (receipt["operation_id"],),
                 ).fetchone()
                 if found is not None:
+                    if self._foreign(str(found["listener_id"])):
+                        self.db.rollback()
+                        raise ForeignListener(str(receipt["operation_id"]))
                     self.db.rollback()
                     first: dict[str, object] = json.loads(found[0])
                     return first, True
+                owned = self.db.execute(
+                    "SELECT listener_id FROM bot_proposals WHERE id=?",
+                    (receipt["proposal_id"],),
+                ).fetchone()
+                if owned is None or self._foreign(str(owned[0])):
+                    self.db.rollback()
+                    raise ForeignListener(str(receipt["proposal_id"]))
                 if (
                     self.db.execute(
                         "SELECT 1 FROM bot_proposal_revisions WHERE proposal_id=? AND revision=?",
@@ -1643,8 +2092,9 @@ class Store:
                 now = self._timestamp()
                 if playlist_name is not None:
                     cur = self.db.execute(
-                        "INSERT INTO playlists (name, public, created, changed) VALUES (?,?,?,?)",
-                        (playlist_name, 0, now, now),
+                        "INSERT INTO playlists (name, public, created, changed, listener_id) "
+                        "VALUES (?,?,?,?,?)",
+                        (playlist_name, 0, now, now, who),
                     )
                     playlist_id = int(cur.lastrowid or 0)
                     ids = receipt["ids"]
@@ -1659,24 +2109,23 @@ class Store:
                     }
                 receipt = receipt | {"created": now}
                 self.db.execute(
-                    "INSERT INTO bot_receipts VALUES (?,?,?,?,?)",
+                    "INSERT INTO bot_receipts "
+                    "(operation_id, proposal_id, revision, target, receipt, listener_id) "
+                    "VALUES (?,?,?,?,?,?)",
                     (
                         receipt["operation_id"],
                         receipt["proposal_id"],
                         receipt["revision"],
                         receipt["target"],
                         json.dumps(receipt),
+                        who,
                     ),
                 )
                 self.db.execute(
-                    "UPDATE bot_proposals SET touched=? WHERE id=?",
-                    (self._touch(), receipt["proposal_id"]),
+                    "UPDATE bot_proposals SET touched=? WHERE id=? AND listener_id=?",
+                    (self._touch(), receipt["proposal_id"], who),
                 )
-                self.db.execute(
-                    "DELETE FROM bot_receipts WHERE rowid NOT IN "
-                    "(SELECT rowid FROM bot_receipts ORDER BY rowid DESC LIMIT ?)",
-                    (RECEIPT_LIMIT,),
-                )
+                self._prune_receipts(who)
                 self.db.commit()
                 return receipt, False
             except ProposalGone:
@@ -1686,11 +2135,14 @@ class Store:
                 raise
 
     def begin_queue_writer(self) -> int:
-        """A new browser writer invalidates delayed saves from a previous writer."""
+        """A new browser writer invalidates delayed saves from a previous writer of this name."""
         with self.lock, self.db:
+            who = self._listener()
+            self.db.execute("INSERT OR IGNORE INTO play_queue (listener_id) VALUES (?)", (who,))
             row = self.db.execute(
                 "UPDATE play_queue SET writer_epoch=writer_epoch+1, write_sequence=0 "
-                "WHERE id=1 RETURNING writer_epoch"
+                "WHERE listener_id=? RETURNING writer_epoch",
+                (who,),
             ).fetchone()
             return int(row[0])
 
@@ -1705,11 +2157,13 @@ class Store:
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
+                who = self._listener()
+                self.db.execute("INSERT OR IGNORE INTO play_queue (listener_id) VALUES (?)", (who,))
                 if epoch is not None:
                     changed = self.db.execute(
-                        "UPDATE play_queue SET write_sequence=? WHERE id=1 "
+                        "UPDATE play_queue SET write_sequence=? WHERE listener_id=? "
                         "AND writer_epoch=? AND write_sequence<?",
-                        (sequence, epoch, sequence),
+                        (sequence, who, epoch, sequence),
                     ).rowcount
                     if not changed:
                         self.db.rollback()
@@ -1718,16 +2172,18 @@ class Store:
                     # Older clients/imports still work, but invalidate outstanding tokened saves.
                     self.db.execute(
                         "UPDATE play_queue SET writer_epoch=writer_epoch+1, "
-                        "write_sequence=0 WHERE id=1"
+                        "write_sequence=0 WHERE listener_id=?",
+                        (who,),
                     )
-                self.db.execute("DELETE FROM play_queue_songs")
+                self.db.execute("DELETE FROM play_queue_songs WHERE listener_id=?", (who,))
                 self.db.executemany(
-                    "INSERT INTO play_queue_songs VALUES (?,?)",
-                    list(enumerate(song_ids)),
+                    "INSERT INTO play_queue_songs (listener_id, position, song_id) VALUES (?,?,?)",
+                    [(who, index, song_id) for index, song_id in enumerate(song_ids)],
                 )
                 self.db.execute(
-                    "UPDATE play_queue SET current_id=?, position_ms=?, changed=? WHERE id=1",
-                    (current, position_ms, self._timestamp()),
+                    "UPDATE play_queue SET current_id=?, position_ms=?, changed=? "
+                    "WHERE listener_id=?",
+                    (current, position_ms, self._timestamp(), who),
                 )
                 self.db.commit()
                 return True
@@ -1743,12 +2199,18 @@ class Store:
         with self.lock:
             self.db.execute("BEGIN IMMEDIATE")
             try:
+                who = self._listener()
                 rows = self.db.execute(
-                    "SELECT song_id FROM play_queue_songs ORDER BY position"
+                    "SELECT song_id FROM play_queue_songs WHERE listener_id=? ORDER BY position",
+                    (who,),
                 ).fetchall()
                 header = self.db.execute(
-                    "SELECT current_id, position_ms, changed FROM play_queue WHERE id=1"
+                    "SELECT current_id, position_ms, changed FROM play_queue WHERE listener_id=?",
+                    (who,),
                 ).fetchone()
+                if header is None:
+                    self.db.rollback()
+                    return {"current": "", "position": 0, "changed": "", "song_ids": []}
                 song_ids = [str(row[0]) for row in rows]
                 if song_ids:
                     present = {
@@ -1776,14 +2238,15 @@ class Store:
                     current = ""
                     position = 0
                 if kept != song_ids or current != str(header["current_id"]):
-                    self.db.execute("DELETE FROM play_queue_songs")
+                    self.db.execute("DELETE FROM play_queue_songs WHERE listener_id=?", (who,))
                     self.db.executemany(
-                        "INSERT INTO play_queue_songs VALUES (?,?)",
-                        list(enumerate(kept)),
+                        "INSERT INTO play_queue_songs (listener_id, position, song_id) "
+                        "VALUES (?,?,?)",
+                        [(who, index, song_id) for index, song_id in enumerate(kept)],
                     )
                     self.db.execute(
-                        "UPDATE play_queue SET current_id=?, position_ms=? WHERE id=1",
-                        (current, position),
+                        "UPDATE play_queue SET current_id=?, position_ms=? WHERE listener_id=?",
+                        (current, position, who),
                     )
                 changed = str(header["changed"])
                 self.db.commit()

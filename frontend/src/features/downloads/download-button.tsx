@@ -3,17 +3,32 @@ import { useId, useLayoutEffect, useRef, useState } from 'react'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowDownToLine, Clock, MoreHorizontal, RotateCcw } from 'lucide-react'
 
-import { api, deezerMatchSchema, diagnosticsSchema, jobSchema, settingsSchema } from '../../api'
+import {
+  api,
+  deezerMatchSchema,
+  diagnosticsSchema,
+  holdingSchema,
+  jobSchema,
+  settingsSchema,
+} from '../../api'
 import type { MusicResult } from '../../api'
+import { overlayDialogClassName, sheetPaddingClassName } from '../../components/review-sheet'
 import { cx } from '../../lib/cx'
-import { errorBannerClassName, IconButton, Select } from '../../ui'
+import { Button, errorBannerClassName, IconButton, Select } from '../../ui'
 import { formatLabel, FormatOptions } from './download-target'
+import {
+  choiceCall,
+  downloadPress,
+  editionSentence,
+  houseBody,
+  patchHeldCaches,
+} from './holding-choice'
 import { activeJob, failureMessage, updateJob, useJobs } from './jobs'
 import { rememberDeezerMatch, resolvedDeezerId } from './spotify-download'
 
 export function DownloadButton({ item, className }: { item: MusicResult; className?: string }) {
   const client = useQueryClient()
-  const owned = item.ownership === 'owned'
+  const press = downloadPress(item)
   const settings = useQuery({
     queryKey: ['settings'],
     queryFn: ({ signal }) => api('settings', settingsSchema, { signal }),
@@ -22,6 +37,10 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
   const [target, setTarget] = useState('')
   const [options, setOptions] = useState(false)
   const optionsId = useId()
+  const choiceTitleId = useId()
+  const choice = useRef<HTMLDialogElement>(null)
+  const houseButton = useRef<HTMLButtonElement>(null)
+  const [asking, setAsking] = useState(false)
   const optionsButton = useRef<HTMLButtonElement>(null)
   const optionsPanel = useRef<HTMLDivElement>(null)
   const optionsAnchor = useRef<DOMRect | null>(null)
@@ -98,25 +117,26 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
           job.target === (target || settings.data?.destination.value) &&
           job.stage === 'failed',
       )
+  const deezerTrackId = async () => {
+    // A Spotify row resolves a Deezer track. Spotify is not asked for audio.
+    if (!item.spotify_id) return item.id
+    const match = await api('deezer-match', deezerMatchSchema, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        isrc: item.isrc,
+        artist: item.artist,
+        title: item.title,
+        duration: item.duration,
+      }),
+    })
+    rememberDeezerMatch(item.spotify_id, match.track_id)
+    return match.track_id
+  }
   const mutation = useMutation({
     mutationFn: async () => {
       if (failed) return api(`jobs/${failed.id}/retry`, jobSchema, { method: 'POST' })
-      // A Spotify row resolves a Deezer track, then queues that id. Spotify is not asked for audio.
-      let trackId = item.id
-      if (item.spotify_id) {
-        const match = await api('deezer-match', deezerMatchSchema, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            isrc: item.isrc,
-            artist: item.artist,
-            title: item.title,
-            duration: item.duration,
-          }),
-        })
-        rememberDeezerMatch(item.spotify_id, match.track_id)
-        trackId = match.track_id
-      }
+      const trackId = await deezerTrackId()
       return api('jobs', jobSchema, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -129,14 +149,41 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
     },
     onSuccess: (job) => updateJob(client, job),
   })
+  const hold = useMutation({
+    mutationFn: async () => {
+      const trackId = await deezerTrackId()
+      return api('holdings', holdingSchema, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ track_id: trackId, song_id: item.matched_song }),
+      })
+    },
+    onSuccess: (holding) => {
+      patchHeldCaches(client, {
+        trackId: holding.track_id,
+        spotifyId: item.spotify_id,
+        songId: holding.song_id,
+        path: holding.path,
+      })
+      choice.current?.close()
+    },
+  })
+  useLayoutEffect(() => {
+    if (!asking) return
+    const dialog = choice.current
+    if (!dialog) return
+    if (!dialog.open) dialog.showModal()
+    houseButton.current?.focus()
+  }, [asking])
+  const editionNote = editionSentence(item.ownership, item.matched_album)
   return (
     // The native option list takes the select's transparent background otherwise, which some
     // engines paint white under light text.
     <div className={cx('relative flex items-center gap-[6px] [&_option]:bg-raised', className)}>
-      {/* An owned track already shows its "In library" badge, so it gets no download button
-          rather than a disabled tick that says the same thing. The format lives in the options
-          popover and shows on this button's name and tooltip. */}
-      {!owned && (
+      {/* An exact file already shows its "In library" badge, so it gets no download button
+          rather than a disabled tick that says the same thing. An ISRC, MusicBrainz or tag
+          match keeps the arrow and asks first. The format lives in the options popover. */}
+      {press !== 'hide' && (
         <IconButton
           aria-label={
             existing
@@ -152,8 +199,11 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
                 ? failureMessage(failed)
                 : `to ${target || settings.data?.destination.value || '(not set)'} · ${formatLabel(selected)}`
           }
-          disabled={Boolean(existing) || mutation.isPending}
-          onClick={() => mutation.mutate()}
+          disabled={Boolean(existing) || mutation.isPending || hold.isPending}
+          onClick={() => {
+            if (press === 'ask') setAsking(true)
+            else mutation.mutate()
+          }}
         >
           {existing ? (
             <Clock size={17} />
@@ -223,6 +273,54 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
           Original keeps source quality. Conversion does not improve it.
         </small>
       </div>
+      <dialog
+        ref={choice}
+        className={overlayDialogClassName('sheet')}
+        aria-labelledby={choiceTitleId}
+        onClose={() => setAsking(false)}
+      >
+        <div className={cx('grid gap-[12px] py-[16px]', sheetPaddingClassName)}>
+          <h2 id={choiceTitleId} className="text-base font-semibold">
+            Already in the house
+          </h2>
+          <p className="text-small">{houseBody(item.matched_by)}</p>
+          {editionNote && <p className="text-small">{editionNote}</p>}
+          {hold.isError && (
+            <p className={errorBannerClassName('block')} role="alert">
+              {hold.error.message}
+            </p>
+          )}
+          <div className="flex flex-wrap gap-[8px]">
+            <Button
+              ref={houseButton}
+              variant="primary"
+              disabled={hold.isPending}
+              onClick={() => {
+                if (choiceCall('house') === 'holdings') hold.mutate()
+              }}
+            >
+              Use the house copy
+            </Button>
+            <Button
+              disabled={mutation.isPending}
+              onClick={() => {
+                if (choiceCall('copy') !== 'jobs') return
+                choice.current?.close()
+                mutation.mutate()
+              }}
+            >
+              Save another copy
+            </Button>
+            <Button
+              onClick={() => {
+                if (choiceCall('cancel') === null) choice.current?.close()
+              }}
+            >
+              Cancel
+            </Button>
+          </div>
+        </div>
+      </dialog>
       {mutation.data?.stage === 'done' && (
         <span className={errorBannerClassName('block', 'mt-2')} role="status">
           Already downloaded. The existing file was kept.
@@ -232,7 +330,8 @@ export function DownloadButton({ item, className }: { item: MusicResult; classNa
         <span className={errorBannerClassName('block', 'mt-2')} role="alert">
           {mutation.error.message}
           <button
-            disabled={owned || Boolean(existing) || mutation.isPending}
+            type="button"
+            disabled={press === 'hide' || Boolean(existing) || mutation.isPending}
             onClick={() => mutation.mutate()}
           >
             Retry

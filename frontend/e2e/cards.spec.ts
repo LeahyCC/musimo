@@ -114,7 +114,13 @@ test('card links and download controls work independently in a natural-height gr
 
   await page.route('**/api/batches', (route) =>
     route.fulfill({
-      json: { id: 'fixture', jobs: [queuedJob], skipped_owned: 0, skipped_queued: 0 },
+      json: {
+        id: 'fixture',
+        jobs: [queuedJob],
+        skipped_owned: 0,
+        skipped_queued: 0,
+        needs_choice: 0,
+      },
     }),
   )
   await page.goto('/search?q=Fixture&tab=album')
@@ -432,8 +438,8 @@ test('badge shows distinct states for owned, edition, queued, and downloaded', a
 
   // The format choice lives in the options popover, so no row carries a select of its own.
   await expect(page.getByRole('combobox', { name: /^Format for / })).toHaveCount(0)
-  // An owned track has its badge and no download button; its "In library" is not repeated as a tick.
-  await expect(rows.nth(0).getByRole('button', { name: /^Download Owned Track/ })).toHaveCount(0)
+  // An ISRC match keeps the download button. The badge still says In library, and it is not a tick.
+  await expect(rows.nth(0).getByRole('button', { name: /^Download Owned Track/ })).toBeEnabled()
   await expect(rows.nth(0).getByRole('button', { name: /in your library/ })).toHaveCount(0)
   await expect(rows.nth(0).getByRole('button', { name: /^Download options for/ })).toBeVisible()
   // An edition match can still be downloaded.

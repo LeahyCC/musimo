@@ -19,6 +19,7 @@ from watchdog.observers.polling import PollingEmitter
 from backend.core.store import Store, drop_song_references, new_song_id, note_library_change
 from backend.core.text import normalize
 from backend.integrations.catalog import Result
+from backend.jobs.holdings import refresh_holdings
 from backend.library.player import is_cover_image, ranked_cover_names
 from backend.library.tags import TAGS_VERSION, facts_for
 
@@ -768,7 +769,8 @@ class Library:
             result.matched_by = ""
             result.matched_album = ""
             result.matched_song = ""
-        # One indexed SQL join for the whole result page. Filesystem access never enters search.
+        # One indexed SQL join for the whole result page. The page query stays in SQL.
+        # A holding also checks that its file is still a regular file.
         # CROSS JOIN keeps each catalog id on jobs(catalog, track_id). A plain join lets
         # SQLite walk every finished download and parse its JSON, which is most of a
         # second once the history is large, and the artist download check used to pay
@@ -855,6 +857,7 @@ class Library:
                 result.matched_by = priority_labels[rows[0][1]]
                 has_exact_match = False
                 edition_album_key = None
+                edition_song = ""
                 for path, priority, album_key, song in rows:
                     result.matched_paths.append(path)
                     is_edition = (
@@ -867,12 +870,17 @@ class Library:
                         has_exact_match = True
                         if song and not result.matched_song:
                             result.matched_song = song
-                    elif not edition_album_key:
-                        edition_album_key = album_key
+                    else:
+                        if not edition_album_key:
+                            edition_album_key = album_key
+                        if song and not edition_song:
+                            edition_song = song
                 if has_exact_match:
                     result.ownership = "owned"
                 else:
                     result.ownership = "edition"
+                    if edition_song:
+                        result.matched_song = edition_song
                     if edition_album_key:
                         album_row = self.store.db.execute(
                             "SELECT album FROM library_files WHERE album_key=? LIMIT 1",
@@ -880,6 +888,25 @@ class Library:
                         ).fetchone()
                         if album_row:
                             result.matched_album = album_row["album"]
+        # The file check stats the disk, so it stays outside the lock held for the match query.
+        live = refresh_holdings(
+            self.store,
+            [result.id for result in results if result.kind == "track" and result.id > 0],
+        )
+        with self.store.lock:
+            # A live holding is the same strength as a finished download, and wins when both exist.
+            for result in results:
+                if result.kind != "track":
+                    continue
+                found = live.get(result.id)
+                if found is None:
+                    continue
+                song_id, path = found
+                result.ownership = "owned"
+                result.matched_by = "holding"
+                result.matched_song = song_id
+                result.matched_paths = [path]
+                result.matched_album = ""
             for result in results:
                 if result.kind == "album":
                     rows = self.store.db.execute(

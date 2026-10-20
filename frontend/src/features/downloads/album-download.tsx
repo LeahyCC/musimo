@@ -8,6 +8,7 @@ import type { MusicResult } from '../../api'
 import { cx } from '../../lib/cx'
 import { Button, errorBannerClassName, IconButton } from '../../ui'
 import type { ButtonVariant } from '../../ui'
+import { albumBatchStatus } from './holding-choice'
 import { activeJob, updateJob, useJobs } from './jobs'
 
 const batchSchema = z.object({
@@ -15,6 +16,7 @@ const batchSchema = z.object({
   jobs: z.array(jobSchema),
   skipped_owned: z.number(),
   skipped_queued: z.number(),
+  needs_choice: z.number(),
 })
 
 export function AlbumDownloadButton({
@@ -60,6 +62,7 @@ export function AlbumDownloadButton({
     },
   })
   const result = download.data
+  const batchStatus = albumBatchStatus(queued, result ?? null)
   const disabled = complete || checkingCoverage || download.isPending
   const ariaLabel = complete
     ? `Nothing to download for ${item.title}`
@@ -126,15 +129,16 @@ export function AlbumDownloadButton({
               overlay && 'rounded-md bg-raised/96 p-[8px]',
             )}
           >
-            {queued > 0
-              ? `${queued} queued`
-              : result?.jobs.length
-                ? `${result.jobs.length} queued`
-                : 'Nothing missing'}
+            {batchStatus.link}
             {result?.skipped_owned ? ` · ${result.skipped_owned} owned` : ''}
             {result?.skipped_queued ? ` · ${result.skipped_queued} queued` : ''}
           </Link>
         </span>
+      )}
+      {batchStatus.choice && (
+        <p role="status" className="text-tiny [overflow-wrap:anywhere]">
+          {batchStatus.choice}
+        </p>
       )}
 
       {download.isError && (

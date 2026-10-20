@@ -2,6 +2,14 @@
 
 ## Unreleased
 
+### Names
+
+- Pick a name to keep a queue, playlists, likes, play counts and the music bot's shown songs. The first name keeps what is already there. A later name starts empty, with their own Liked playlist. Music files, holdings, downloads and the one Deezer cookie stay shared. A name is not a password.
+
+### Genre search
+
+- A hyphen and a space are the same spelling, and `&` means "and". `dnb`, `drum n bass` and `drum & bass` mean drum and bass, which also matches Liquid Drum and Bass, Neurofunk and Jungle. `liquid` matches that liquid tag only. `trip hop` matches `trip-hop`.
+
 ### Deezer account playback
 
 - Play a Deezer song from the signed-in account. Catalog rows say Play instead of Preview when a cookie is saved, Deezer account is on, and a live sign-in succeeds. That result is cached and reused from Diagnostics. A song already in the library plays the local file. The browser plays a Musimo address, and the cookie never reaches it. With the account-file command empty, Play is offered only when the saved file already plays. A free account that cannot play a full song, a country block, a removed or replaced cookie, or a busy account stays on Preview or says why. Removing or replacing the cookie stops an account stream. Play holds the cookie only while it fetches. Account songs join the Musimo queue and Musimo playlists. A heart writes to the liked playlist here, not on Deezer. Now Playing names the source Deezer account, Library, or Preview. History may say Played from Deezer. Spotify rows stay on Preview.

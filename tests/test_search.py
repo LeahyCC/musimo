@@ -348,8 +348,8 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         self.store.db.execute(
             "INSERT INTO library_files ("
             "path, root, mtime_ns, size, generation, title, artist, album, "
-            "title_key, artist_key, album_key, duration, isrc, mbid"
-            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+            "title_key, artist_key, album_key, duration, isrc, mbid, song_id"
+            ") VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
             (
                 str(self.root / "edition_track.flac"),
                 str(self.root),
@@ -365,6 +365,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
                 215,
                 "",
                 "",
+                "tr-eeeeeeeeeeeeeeee",
             ),
         )
         self.store.db.execute(
@@ -388,6 +389,7 @@ class SearchTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(edition_only.ownership, "edition")
         self.assertEqual(edition_only.matched_by, "tags")
         self.assertEqual(edition_only.matched_album, "Discovery Deluxe Edition")
+        self.assertEqual(edition_only.matched_song, "tr-eeeeeeeeeeeeeeee")
 
     async def test_download_history_match_uses_the_track_index(self) -> None:
         path = self.add_file("owned.opus", isrc="USFIX2600077")

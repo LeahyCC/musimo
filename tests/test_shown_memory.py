@@ -503,7 +503,7 @@ class ShownMemoryTests(unittest.IsolatedAsyncioTestCase):
                 store = Store(path)
                 try:
                     version = store.db.execute("PRAGMA user_version").fetchone()[0]
-                    self.assertEqual((version, SCHEMA_VERSION), (13, 13))
+                    self.assertEqual((version, SCHEMA_VERSION), (15, 15))
                     # Created empty: the old copy lived in a browser tab and is not carried over.
                     # The second open must leave what the first one recorded.
                     expected = (0, []) if run == 0 else (1, ["tr-bbbbbbbbbbbbbbbb"])

@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 
+import { ListenerGate } from '../features/listener/sheet'
 import { useLayout } from '../lib/layout'
 import { ClassicShell } from './shell/classic'
 import { RoomShell } from './shell/room'
@@ -15,5 +16,5 @@ export function Shell() {
     document.documentElement.dataset.layout = layout
   }, [layout])
 
-  return layout === 'room' ? <RoomShell /> : <ClassicShell />
+  return <ListenerGate>{layout === 'room' ? <RoomShell /> : <ClassicShell />}</ListenerGate>
 }

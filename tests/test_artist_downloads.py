@@ -180,6 +180,7 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
                     result = (await client.get("/api/artists/7/download-plan")).json()
                     self.assertEqual([row["id"] for row in result["albums"]], [1, 2, 3])
                     self.assertTrue(result["albums"][0]["tracks"][0]["owned"])
+                    self.assertEqual(result["albums"][0]["tracks"][0]["skip"], "choice")
                     self.assertTrue(result["albums"][2]["error"])
                     self.assertTrue(any("index=50" in url for url in requests))
                     self.assertEqual(len(downloads.jobs.list()), 1)
@@ -206,7 +207,8 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
                     )
                     self.assertTrue(all(row["meta"]["artist"] == "Artist" for row in batch["jobs"]))
                     self.assertEqual(batch["albums"], 2)
-                    self.assertEqual(batch["skipped_owned"], 1)
+                    self.assertEqual(batch["skipped_owned"], 0)
+                    self.assertEqual(batch["needs_choice"], 1)
                     self.assertEqual(batch["skipped_queued"], 1)
                     self.assertEqual({row["batch_id"] for row in batch["jobs"]}, {batch["id"]})
                     repeated = (
@@ -240,7 +242,8 @@ class ArtistDownloadTests(unittest.IsolatedAsyncioTestCase):
                             },
                         )
                     ).json()
-                    self.assertEqual(len(all_tracks["jobs"]), 3)
+                    self.assertEqual(len(all_tracks["jobs"]), 2)
+                    self.assertEqual(all_tracks["needs_choice"], 1)
                     for body in [
                         {"artist_id": 7, "album_ids": []},
                         {"artist_id": 7, "album_ids": [100]},

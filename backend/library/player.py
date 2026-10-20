@@ -28,6 +28,7 @@ from mutagen.flac import Picture
 from mutagen.id3 import ID3
 from mutagen.mp4 import MP4Cover
 
+from backend.core.listener import current as current_listener
 from backend.core.store import Store
 from backend.jobs.account_listen import remembered_tracks, track_number
 from backend.library.browse import (
@@ -564,21 +565,79 @@ class Player:
         self._build_lock = threading.Lock()
         self._token = 0
         self._cached: LibraryView | None = None
+        # One catalog per name once names exist. The empty key is the neutral view: zero counts.
+        self._views: dict[str, LibraryView] = {}
         # Absolute play and star values applied onto a catalog built from an older read.
         self._plays: dict[str, tuple[int, str | None]] = {}
         self._stars: dict[str, str | None] = {}
+        self._pending_plays: dict[str, dict[str, tuple[int, str | None]]] = {}
+        self._pending_stars: dict[str, dict[str, str | None]] = {}
         self.shuffle_orders: OrderedDict[str, tuple[float, list[str]]] = OrderedDict()
 
     def _invalidate(self) -> None:
         with self._lock:
             self._token += 1
             self._cached = None
+            self._views.clear()
 
     async def _catalog(self) -> LibraryView:
         """Browse data from the index. Cover rows come from the scan, so folders are not listed."""
         return await asyncio.to_thread(self.view)
 
     def view(self) -> LibraryView:
+        """The shared catalog, or the caller's counts and stars once any name exists."""
+        if self.store.has_listeners():
+            return self._view_for(current_listener())
+        return self._view_shared()
+
+    def _view_for(self, who: str) -> LibraryView:
+        revision = self.store.library_revision()
+        with self._lock:
+            token = self._token
+            cached = self._views.get(who)
+            if cached is not None and cached.revision == revision and cached.token == token:
+                return cached
+        with self._build_lock:
+            with self._lock:
+                token = self._token
+                cached = self._views.get(who)
+                if cached is not None and cached.revision == revision and cached.token == token:
+                    return cached
+            # No name on this call: zeros, so a warm-up cannot leak one person's counts.
+            songs = self._songs_for(who)
+            favourites = {} if not who else self.store.artist_favourites_for(who)
+            built = self._build(songs, self._load_covers(), favourites, revision, token)
+            with self._lock:
+                if self._token != token:
+                    self._overlay_listener(built, who)
+                    return built
+                current = self._views.get(who)
+                if current is not None and current.revision == revision and current.token == token:
+                    return current
+                self._overlay_listener(built, who)
+                self._views[who] = built
+                return built
+
+    def _songs_for(self, who: str) -> list[StoredSong]:
+        songs = self._load_rows()
+        if not who:
+            return [replace(song, play_count=0, last_played=None) for song in songs]
+        plays = self.store.plays_for(who)
+        personal: list[StoredSong] = []
+        for song in songs:
+            count, played = plays.get(song.song_id, (0, None))
+            if count != song.play_count or played != song.last_played:
+                song = replace(song, play_count=count, last_played=played)
+            personal.append(song)
+        return personal
+
+    def _overlay_listener(self, snapshot: LibraryView, who: str) -> None:
+        for played_id, (count, played) in self._pending_plays.get(who, {}).items():
+            self._write_play(snapshot, played_id, count, played)
+        for artist_id, starred in self._pending_stars.get(who, {}).items():
+            self._write_star(snapshot, artist_id, starred)
+
+    def _view_shared(self) -> LibraryView:
         revision = self.store.library_revision()
         with self._lock:
             token = self._token
@@ -625,10 +684,10 @@ class Player:
         while True:
             try:
                 revision = await asyncio.to_thread(self.store.library_revision)
-                cached = self._cached
+                cached = self._warm_cached()
                 if cached is None or cached.revision != revision or seen != revision:
                     await self.warm()
-                    cached = self._cached
+                    cached = self._warm_cached()
                     seen = cached.revision if cached is not None else None
             except asyncio.CancelledError:
                 raise
@@ -636,6 +695,11 @@ class Player:
                 # A failed warm leaves the next request to build the page itself.
                 seen = None
             await asyncio.sleep(2)
+
+    def _warm_cached(self) -> LibraryView | None:
+        if self.store.has_listeners():
+            return self._views.get("")
+        return self._cached
 
     def _overlay(self, snapshot: LibraryView) -> None:
         """Play counts and stars that landed while this catalog was being built."""
@@ -1051,6 +1115,12 @@ class Player:
 
     async def favourite_artist(self, artist_id: str, favourite: bool) -> None:
         starred = self.store.set_artist_favourite(artist_id, favourite)
+        if self.store.has_listeners():
+            who = current_listener()
+            with self._lock:
+                self._pending_stars.setdefault(who, {})[artist_id] = starred
+                self._write_star(self._views.get(who), artist_id, starred)
+            return
         with self._lock:
             self._stars[artist_id] = starred
             self._write_star(self._cached, artist_id, starred)
@@ -1141,14 +1211,22 @@ class Player:
             "cursor": cursor,
         }
 
+    def _deck_key(self, seed: str) -> str:
+        """The client still sees the raw seed. Another name's seed misses."""
+        who = current_listener()
+        if who and self.store.has_listeners():
+            return f"{who}\n{seed}"
+        return seed
+
     def remember_shuffle(self, seed: str, ids: list[str], replaces: str = "") -> None:
         """Keep a pass under its seed. `replaces` is the finished pass this one follows."""
         now = time.monotonic()
         self.expire_shuffles(now)
+        key = self._deck_key(seed)
         if replaces:
-            self.shuffle_orders.pop(replaces, None)
-        self.shuffle_orders[seed] = (now, ids)
-        self.shuffle_orders.move_to_end(seed)
+            self.shuffle_orders.pop(self._deck_key(replaces), None)
+        self.shuffle_orders[key] = (now, ids)
+        self.shuffle_orders.move_to_end(key)
         held = sum(len(order) for _fetched, order in self.shuffle_orders.values())
         while held > SHUFFLE_ID_LIMIT and len(self.shuffle_orders) > 1:
             _seed, (_fetched, oldest) = self.shuffle_orders.popitem(last=False)
@@ -1166,12 +1244,13 @@ class Player:
     def borrow_shuffle(self, seed: str) -> list[str]:
         now = time.monotonic()
         self.expire_shuffles(now)
-        found = self.shuffle_orders.get(seed)
+        key = self._deck_key(seed)
+        found = self.shuffle_orders.get(key)
         if found is None:
             raise ShuffleExpired("That shuffle is no longer on the server")
         _fetched, ids = found
-        self.shuffle_orders[seed] = (now, ids)
-        self.shuffle_orders.move_to_end(seed)
+        self.shuffle_orders[key] = (now, ids)
+        self.shuffle_orders.move_to_end(key)
         return ids
 
     async def shuffle_window(
@@ -1474,6 +1553,13 @@ class Player:
             return
         if not self.store.record_play(song_id):
             raise SongMissing("Track not found")
+        if self.store.has_listeners():
+            who = current_listener()
+            count, when = self.store.play_of(who, song_id)
+            with self._lock:
+                self._pending_plays.setdefault(who, {})[song_id] = (count, when)
+                self._write_play(self._views.get(who), song_id, count, when)
+            return
         with self.store.lock:
             row = self.store.db.execute(
                 "SELECT play_count, last_played FROM library_files WHERE song_id=?",
