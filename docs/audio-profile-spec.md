@@ -126,7 +126,22 @@ Known misses, from the bake-off: live recordings with talking (The Doors, Phish,
 
 #### 100-song run on the graphics card, 20 October 2026
 
-Pending. Filled in by the trial-stack run in this change.
+On the trial stack: a SQLite-backup copy of the live database (50,510 files, 19 October), `M:\Media\Music` read-only, the app on an internal network with no route out, the GPU worker image with the `analysis-gpu` defaults (4 cores, 4 GB, no swap). Queued with the page's own "Measure 100 songs" route. The live app, its volume and its settings were not touched, and nothing was switched on in the copy either.
+
+| Run (100 songs each)          | Decoders | Seconds a song | Sure | Unsure | Skipped | Failed |
+| ----------------------------- | -------: | -------------: | ---: | -----: | ------: | -----: |
+| 1, the sample                 |        4 |           0.99 |   86 |     13 |       1 |      0 |
+| 2, the next sample            |        8 |           0.39 |      |        |         |        |
+| 3                             |        1 |           0.76 |      |        |         |        |
+| 4                             |        4 |           0.42 |      |        |         |        |
+| All four (397 songs measured) |          |                |  315 |     78 |       4 |      0 |
+
+- **Counts.** 79 percent sure, close to the bake-off's 79 of 100. No reading went over 200 BPM. The 315 sure songs have 153 distinct BPM values (librosa gave 12), median 145: 20 slow, 93 medium, 202 fast. Skipped: the podcast in each sample (the same file each time, since a skipped song is tried again after new ones) and three files under 60 seconds. Recordings of 21 to 55 minutes measured without trouble; two DJ mixes and two ambient tapes came out unsure, one at 108.7.
+- **Speed.** 0.4 to 1.0 s a song with parallel decoding, against 0.61 s with one decoder in the bake-off. The spread follows file reads through Docker Desktop's Windows mount rather than the decoder count: the first run read cold files (its first songs took 18 s), and 8 decoders were no faster than 4 on the later runs. At 0.4 to 1.0 s the 50,117 songs left are about 6 to 14 hours. The page's estimate uses the latest run's own rate.
+- **Memory.** Process peak 1.9 GB, as in the bake-off. The container's peak, which counts file cache, was 2.1 to 3.8 GB, under the 4 GB cap and reclaimable. Graphics memory in use on the card went from 1,345 MiB idle to about 1,917 MiB with the worker loaded; the card is shared with the desktop, so that is the worker's share at most. The model loads in 3.5 to 5.3 s.
+- **No way out.** In the app container `api.deezer.com` and `www.youtube.com` do not resolve, connections to 1.1.1.1 and 8.8.8.8 fail with "network unreachable", and the routing table has no default route. The page reaches Colin's browser through a proxy container bound to 127.0.0.1 that forwards only to the app.
+
+The listen on the page, and the call on whether to switch it on, are Colin's.
 
 ### Embedding recipe
 

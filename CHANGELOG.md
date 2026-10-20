@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Song analysis
+
+- A Song analysis page (Server settings, Music bot) measures tempo and energy with Beat This!, on an NVIDIA graphics card or the CPU, lets you listen to the fastest, slowest, loudest, quietest and doubtful songs at the exact sections measured, and switches the result on for Octive. Measuring 100 songs and the whole library are buttons; the whole library asks first and can be paused. Nothing is switched on or measured until you do it.
+- Octive allows for a tempo read at half or double when the song's energy agrees, lists those songs after the direct matches and says how many there were.
+
 ### Names
 
 - Pick a name to keep a queue, playlists, likes, play counts and the music bot's shown songs. The first name keeps what is already there. A later name starts empty, with their own Liked playlist. Music files, holdings, downloads and the one Deezer cookie stay shared. A name is not a password.

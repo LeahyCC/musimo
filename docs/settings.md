@@ -15,7 +15,8 @@ Music bot settings are under Music bot on the Server page:
 - `ollama_url`: default `http://127.0.0.1:11434`, reachable from the Musimo server. In Docker, use the host's reachable address, such as `http://host.docker.internal:11434` on Docker Desktop. HTTP and HTTPS are accepted; credentials, paths, queries and redirects are not. Save the address, then Test Ollama connection to list installed models and measure the connection time.
 - `ollama_model`: chosen in the chat, from Pick a model when none is set or from the chat's own settings (the gear in its header), and remembered here. No default is selected and no model is downloaded. Missing models and models that fail structured-output validation show an error. Refresh models after installing or removing a model in Ollama.
 - `music_timezone`: IANA time-zone name, default `UTC`. Set it to your local zone, for example `Pacific/Honolulu`, before using "played today". Day boundaries include daylight-saving changes where applicable. The `tzdata` package supplies time-zone data on Windows.
-- `audio_scalar_recipe`: default empty, up to 80 characters. The id of the tempo and energy recipe whose measured rows the bot may read; the only one in the code is `tempo-energy-v1`, and it is not set until its listening check passes. Empty means audio analysis is off: the bot refuses tempo and energy requests and ignores any rows. Anything but empty or a registered recipe id is rejected.
+- `audio_scalar_recipe`: default empty, up to 80 characters. The id of the tempo and energy recipe whose measured rows the bot may read: `tempo-energy-v1` or `tempo-beat-v1`. The [Song analysis page](audio-profile-spec.md#song-analysis-page) sets it to `tempo-beat-v1` or empty with its switch, after you listen; turning it off keeps the rows. Empty means audio analysis is off: the bot refuses tempo and energy requests and ignores any rows. Anything but empty or a registered recipe id is rejected.
+- `audio_analysis_paused`: off by default. The Song analysis page's Pause: while on, the worker is handed no new songs; a song it already holds finishes and the queue stays.
 - `audio_embedding_recipe`: default empty, up to 80 characters. The id of the sound similarity recipe. No recipe is registered for it yet, so only empty is accepted. See [song characteristics](audio-profile-spec.md) for both.
 
 These use the existing SQLite settings table and environment seeding/locking rules. The Ollama settings needed no migration; the two recipe rows are seeded on first start like any new setting, and the measurement tables they point at arrive with schema 9 (see [song characteristics](audio-profile-spec.md)). The model receives bounded chat and tag context, never the full library, audio files or lyrics. Chat history stays in the current browser tab's session storage and can be cleared.
@@ -33,7 +34,27 @@ The music bot pet (character, name, colour, size, position, chattiness, animatio
 
 Set `MUSIMO_` plus the uppercase key in the container environment to seed and lock a value on first creation, for example `MUSIMO_CONCURRENCY=3`. An on or off setting takes `1`, `true`, `yes` or `on` for on and anything else for off (`MUSIMO_DEEZER_AUDIO=0`). Later env changes do not replace an existing row. Its original env name remains visible in the UI and API, and PATCH returns 409 for a locked setting. Removing the variable does not unlock the database record. There is no unlock UI yet.
 
-Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGID` control Compose. `MUSIMO_LIBRARY_ROOTS` lists the mounted Linux paths the scanner reads. `MUSIMO_ANALYSIS_TOKEN` is the secret the app shares with the optional audio worker (`docker compose --profile analysis`); empty keeps the worker's lease routes off, and any long random string set for both turns them on. `MUSIMO_WATCH_MODE` is `native` by default; use `poll` for external-change checks on Docker Desktop Windows or network shares. `MUSIMO_POLL_INTERVAL_SECONDS` defaults to 300 (five minutes); lowering it makes external changes appear sooner but uses more CPU. A label does not move or rename a folder. The image fixes application data at `/data`; `MUSIMO_DATA_DIR` is a local-development override, not a supported Compose mount relocation.
+Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGID` control Compose. `MUSIMO_LIBRARY_ROOTS` lists the mounted Linux paths the scanner reads. `MUSIMO_ANALYSIS_TOKEN` is the secret the app shares with the optional audio worker; empty keeps the worker's lease routes off, and any long random string set for both turns them on. See [the song analysis worker](#song-analysis-worker). `MUSIMO_WATCH_MODE` is `native` by default; use `poll` for external-change checks on Docker Desktop Windows or network shares. `MUSIMO_POLL_INTERVAL_SECONDS` defaults to 300 (five minutes); lowering it makes external changes appear sooner but uses more CPU. A label does not move or rename a folder. The image fixes application data at `/data`; `MUSIMO_DATA_DIR` is a local-development override, not a supported Compose mount relocation.
+
+## Song analysis worker
+
+Optional. One of two Compose profiles, run from the Musimo folder:
+
+```
+CPU, safe for any machine:      docker compose --profile analysis up -d audio-worker
+NVIDIA graphics card (opt-in):  docker compose --profile analysis-gpu up -d audio-worker-gpu
+```
+
+Both read these from `.env`. The defaults differ by profile:
+
+| Variable                 | CPU (`analysis`) | GPU (`analysis-gpu`) | What it is                                                                   |
+| ------------------------ | ---------------- | -------------------- | ---------------------------------------------------------------------------- |
+| `MUSIMO_ANALYSIS_TOKEN`  | empty (off)      | empty (off)          | The same long random string for Musimo and the worker. Restart Musimo.       |
+| `MUSIMO_WORKER_CPUS`     | `1`              | `4`                  | Cores the container may use.                                                 |
+| `MUSIMO_WORKER_MEMORY`   | `2g`             | `4g`                 | Memory cap, swap off. The process peaks near 1.9 GB; the rest is file cache. |
+| `MUSIMO_WORKER_DECODERS` | `1`              | `4`                  | Songs decoded at once, feeding one model.                                    |
+
+The GPU image is about 12 GB and needs Docker with NVIDIA GPU support. A card it cannot use (or none) falls back to the CPU and says so on the page. The workers mount music read-only from `./runtime/music`; if your `compose.override.yaml` mounts your music somewhere else, mount the same folder read-only into `audio-worker` or `audio-worker-gpu` too.
 
 ## Download settings
 
