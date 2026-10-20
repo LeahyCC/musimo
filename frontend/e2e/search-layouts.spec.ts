@@ -25,17 +25,21 @@ test('Classic: the top result shows what the library holds and opens the artist 
   await expect(top.getByRole('link', { name: 'Fixture artist' })).toBeVisible()
   // The fixture albums hold two of their four songs.
   await expect(top.getByText('2 songs in library')).toBeVisible()
-  // On a desktop the top bar is the search box; the page's own is for phones.
-  if ((page.viewportSize()?.width ?? 0) > 600) await expect(page.getByRole('search')).toBeHidden()
+  // Classic's search is the top bar's box at every width; the page has none of its own.
+  await expect(page.getByRole('search')).toHaveCount(0)
   await top.getByRole('button', { name: 'Get missing albums' }).click()
   await expect(page.getByRole('dialog', { name: 'Choose albums to download' })).toBeVisible()
 })
 
-test('Classic: a phone gets the search field in the page', async ({ page }) => {
+test('Classic: a phone searches from the top bar, with no second box in the page', async ({
+  page,
+}) => {
   await page.setViewportSize({ width: 390, height: 844 })
   await open(page, 'classic', '/search?q=Fixture')
-  await expect(page.getByRole('search')).toBeVisible()
-  await expect(page.getByRole('searchbox', { name: 'Search the catalog' })).toHaveValue('Fixture')
+  await expect(page.getByRole('textbox', { name: 'Search music or paste a link' })).toHaveValue(
+    'Fixture',
+  )
+  await expect(page.getByRole('search')).toHaveCount(0)
 })
 
 test('Listening room: the banner counts the missing songs and the field is always there', async ({

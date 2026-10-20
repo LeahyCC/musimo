@@ -11,7 +11,7 @@ import {
 } from 'react'
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate, useRouter } from '@tanstack/react-router'
 import { ChevronDown, ChevronUp, Disc3, GripVertical, ListPlus, Trash2, X } from 'lucide-react'
 
 import {
@@ -870,6 +870,51 @@ function RoomNowPlaying({ track, large, phone, lyricsView, onLyricsView }: Layou
   )
 }
 
+/**
+ * A phone opens Now Playing as a screen of its own, with no top bar or tab bar (see
+ * `app/shell/phone-stage.ts`), so the page brings the way out: a chevron that goes back to the page
+ * it came from, or Home from a bookmark, and the album it is playing from, as a phone's music app
+ * heads its player.
+ */
+function PhoneStageBar({ track }: { track: LibraryTrack }) {
+  const router = useRouter()
+  const navigate = useNavigate()
+  const from = track.album || track.artist
+  return (
+    <div className="mb-[10px] flex items-center gap-[8px]">
+      <button
+        type="button"
+        className="-ml-[10px] grid size-[44px] shrink-0 place-items-center rounded-full text-text"
+        aria-label="Close Now Playing"
+        onClick={() => {
+          if (router.history.canGoBack()) router.history.back()
+          else void navigate({ to: '/' })
+        }}
+      >
+        <ChevronDown size={26} aria-hidden="true" />
+      </button>
+      <div className="min-w-0 flex-1 text-center leading-[1.3]">
+        <span className="block font-mono text-caption tracking-[0.8px] text-faint">
+          PLAYING FROM
+        </span>
+        {track.albumId && track.album ? (
+          <Link
+            to="/library/albums/$albumId"
+            params={{ albumId: track.albumId }}
+            className="block truncate text-small font-semibold"
+          >
+            {from}
+          </Link>
+        ) : (
+          <span className="block truncate text-small font-semibold">{from}</span>
+        )}
+      </div>
+      {/* Balances the chevron, so the album sits in the middle of the screen. */}
+      <span aria-hidden="true" className="size-[44px] shrink-0 -mr-[10px]" />
+    </div>
+  )
+}
+
 export function NowPlayingPage() {
   const player = usePlayer()
   const popout = useNowPlayingPopout()
@@ -925,6 +970,7 @@ export function NowPlayingPage() {
   const props = { track, large, phone: popout.phone, lyricsView, onLyricsView: setLyricsView }
   return (
     <>
+      {popout.phone && <PhoneStageBar track={track} />}
       {layout === 'room' ? <RoomNowPlaying {...props} /> : <ClassicNowPlaying {...props} />}
       <ShortcutsDialog open={help} onClose={closeHelp} />
     </>

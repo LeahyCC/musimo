@@ -424,15 +424,21 @@ test('the mini player is one row and hands the rest to Now Playing', async ({ pa
   const nav = await box(page.locator('.sidebar'))
   const rect = await box(player)
   expect(rect.height).toBeLessThan(90)
-  // A card floating 6px above the bar, not a strip against it.
-  expect(rect.y + rect.height).toBeCloseTo(nav.y - 6, 0)
+  // Docked: a strip across the screen sitting on the bar, where the Listening room's floats.
+  expect(rect.y + rect.height).toBeCloseTo(nav.y, 0)
+  expect(rect.x).toBe(0)
+  expect(rect.width).toBe(viewport.width)
   for (const name of ['Volume', 'Shuffle', 'Repeat off', 'Previous track']) {
     await expect(player.getByRole(name === 'Volume' ? 'slider' : 'button', { name })).toBeHidden()
   }
   await expect(player.getByRole('button', { name: 'Next track' })).toBeVisible()
   await expect(player.getByRole('button', { name: 'Close player' })).toBeVisible()
-  // A rounded card, with play and next at touch size.
-  await expect(player).toHaveCSS('border-top-left-radius', '12px')
+  // Square corners, tinted with the cover, with play and next at touch size.
+  await expect(player).toHaveCSS('border-top-left-radius', '0px')
+  await expect(player.locator('[data-cover-tint]')).toHaveAttribute(
+    'data-cover-tint',
+    /^#[0-9a-f]{6}$/,
+  )
   for (const name of ['Play', 'Pause', 'Next track']) {
     const control = player.getByRole('button', { name, exact: true })
     if (await control.isVisible()) {
@@ -582,7 +588,10 @@ test.describe('Listening room', () => {
     await page.goto('/library/albums/album-1')
     const nav = page.locator('.sidebar')
     const tabs = await box(nav)
-    expect(tabs.height).toBe(68)
+    // A 64px pill floating over the page, in from both edges.
+    expect(tabs.height).toBe(64)
+    expect(tabs.x).toBe(12)
+    await expect(nav).toHaveCSS('border-top-left-radius', '999px')
     for (const name of ['Home', 'Search', 'Library', 'Octive', 'Queue']) {
       const tab = await box(nav.getByRole('link', { name: new RegExp(`^${name}`) }))
       expect(tab.y).toBeGreaterThanOrEqual(tabs.y)

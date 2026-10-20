@@ -14,6 +14,7 @@ import {
   useLayout,
 } from '../../lib/layout'
 import type { HomeSection, Layout } from '../../lib/layout'
+import { usePhone } from '../../lib/use-phone'
 import { sectionCaptionClassName, Switch } from '../../ui'
 
 /* Layout and the Home page, the first two sections of Settings › Yours. Both are kept in this
@@ -47,7 +48,7 @@ function CardHeading({
 }
 
 /** A few boxes in the shape of a layout, in theme colors, so each card shows what it will look like. */
-function LayoutPreview({ layout }: { layout: Layout }) {
+function DesktopPreview({ layout }: { layout: Layout }) {
   const tile = 'aspect-square rounded-[3px] bg-active'
 
   if (layout === 'classic') {
@@ -101,17 +102,112 @@ function LayoutPreview({ layout }: { layout: Layout }) {
   )
 }
 
-const LAYOUT_CARDS: readonly { value: Layout; name: string; description: string }[] = [
+/**
+ * The same idea for a phone, which arranges each layout its own way: Classic keeps a search bar on
+ * top and docks the player, tinted by the cover, on a tab bar along the edge; the Listening room
+ * heads each page with its title and floats the player and a pill of tabs over the page. Drawn in
+ * a phone's shape, since that is the screen the choice is being made on.
+ */
+function PhonePreview({ layout }: { layout: Layout }) {
+  const tile = 'aspect-square rounded-[3px] bg-active'
+  const tabs = (lit: string) =>
+    [0, 1, 2, 3, 4].map((tab) => (
+      <i key={tab} className={cx('size-[5px] rounded-full', tab ? 'bg-line-strong' : lit)} />
+    ))
+  const frame =
+    'pointer-events-none relative mx-auto flex aspect-[9/17] w-full max-w-[124px] flex-col overflow-hidden rounded-[16px] bg-canvas ring-4 ring-sidebar'
+
+  if (layout === 'classic') {
+    return (
+      <div aria-hidden="true" className={frame}>
+        <div className="flex items-center gap-[4px] border-b border-line px-[7px] pt-[9px] pb-[6px]">
+          <i className="size-[9px] shrink-0 rounded-full bg-accent" />
+          <i className="h-[10px] flex-1 rounded-[4px] border border-line bg-sunken" />
+          <i className="size-[9px] shrink-0 rounded-full border border-line" />
+        </div>
+        <div className="flex flex-1 flex-col gap-[5px] p-[7px]">
+          <i className="h-[6px] w-[55%] rounded-[2px] bg-text" />
+          <div className="flex gap-[3px]">
+            <i className="h-[6px] w-[22%] rounded-pill bg-active" />
+            <i className="h-[6px] w-[18%] rounded-pill border border-line" />
+            <i className="h-[6px] w-[18%] rounded-pill border border-line" />
+          </div>
+          <div className="grid grid-cols-2 gap-[5px]">
+            <i className={tile} />
+            <i className={tile} />
+            <i className={tile} />
+            <i className={tile} />
+          </div>
+        </div>
+        <div className="flex items-center gap-[4px] border-t-2 border-accent bg-[color-mix(in_oklab,var(--color-accent)_22%,var(--color-hover))] px-[6px] py-[4px]">
+          <i className="size-[10px] rounded-[2px] bg-accent" />
+          <i className="h-[3px] flex-1 rounded-[2px] bg-line-strong" />
+          <i className="size-[6px] rounded-full bg-text" />
+        </div>
+        <div className="flex h-[16px] items-center justify-around border-t border-line bg-sidebar px-[6px]">
+          {tabs('bg-accent')}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div aria-hidden="true" className={frame}>
+      <div className="flex items-center gap-[4px] px-[7px] pt-[9px] pb-[6px]">
+        <i className="size-[9px] shrink-0 rounded-full bg-accent" />
+        <i className="h-[7px] w-[40%] rounded-[2px] bg-text" />
+        <span className="flex-1" />
+        <i className="size-[8px] rounded-[3px] bg-sunken" />
+        <i className="size-[8px] rounded-[3px] bg-sunken" />
+      </div>
+      <div className="flex flex-1 flex-col gap-[5px] px-[7px]">
+        <div className="flex gap-[5px] rounded-[6px] bg-raised p-[5px]">
+          <i className="aspect-square w-[38%] rounded-[3px] bg-[color-mix(in_oklab,var(--color-accent)_40%,var(--color-canvas))]" />
+          <div className="flex flex-1 flex-col justify-end gap-[3px]">
+            <i className="h-[4px] w-[80%] rounded-[2px] bg-text" />
+            <i className="h-[3px] w-[55%] rounded-[2px] bg-line-strong" />
+          </div>
+        </div>
+        <div className="grid grid-cols-3 gap-[4px]">
+          <i className={tile} />
+          <i className={tile} />
+          <i className={tile} />
+          <i className={tile} />
+          <i className={tile} />
+          <i className={tile} />
+        </div>
+      </div>
+      <div className="absolute inset-x-0 bottom-0 h-[40%] bg-linear-to-t from-canvas from-50% to-transparent" />
+      <div className="absolute inset-x-[6px] bottom-[26px] flex items-center gap-[4px] rounded-[7px] bg-raised p-[3px] shadow-[0_4px_10px_color-mix(in_oklab,var(--color-shadow)_50%,transparent)] ring-1 ring-line-strong">
+        <i className="size-[11px] rounded-[3px] bg-[color-mix(in_oklab,var(--color-accent)_40%,var(--color-canvas))]" />
+        <i className="h-[3px] flex-1 rounded-[2px] bg-line-strong" />
+        <i className="size-[10px] rounded-full bg-text" />
+      </div>
+      <div className="absolute inset-x-[6px] bottom-[6px] flex h-[16px] items-center justify-around rounded-pill bg-raised px-[4px] ring-1 ring-line-strong">
+        {tabs('bg-accent ring-3 ring-active')}
+      </div>
+    </div>
+  )
+}
+
+const LAYOUT_CARDS: readonly {
+  value: Layout
+  name: string
+  description: string
+  phoneDescription: string
+}[] = [
   {
     value: 'classic',
     name: 'Classic',
     description:
       'Sidebar with your library sections and pinned playlists. Player across the bottom.',
+    phoneDescription: 'Search on top. The player docks on the tab bar, tinted by the cover.',
   },
   {
     value: 'room',
     name: 'Listening room',
     description: 'Slim icon rail. The player and Up next stay docked on the right.',
+    phoneDescription: 'Page titles on top. The player and tabs float over the page.',
   },
 ]
 
@@ -122,6 +218,9 @@ let refocusLayout = false
 /** Two cards, one radio each. Choosing one switches the app at once and keeps the page you are on. */
 export function LayoutSection() {
   const layout = useLayout()
+  // The choice is kept per browser, so a phone shows what the layouts look like on a phone, and
+  // says that a computer keeps a choice of its own.
+  const phone = usePhone()
   const prefix = useId()
   const group = useRef<HTMLDivElement>(null)
 
@@ -140,7 +239,11 @@ export function LayoutSection() {
       <CardHeading
         id="layout"
         title="Layout"
-        description="Changes how the app is arranged. Every screen and control is the same in both."
+        description={
+          phone
+            ? 'How the app is arranged on this phone. A computer keeps its own choice.'
+            : 'Changes how the app is arranged. Every screen and control is the same in both.'
+        }
       >
         <span className={cx(sectionCaptionClassName, 'font-mono')}>SAVED IN THIS BROWSER</span>
       </CardHeading>
@@ -148,9 +251,14 @@ export function LayoutSection() {
         ref={group}
         role="radiogroup"
         aria-labelledby="layout"
-        className="mt-[16px] grid grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-[12px]"
+        className={cx(
+          'mt-[16px] grid',
+          phone
+            ? 'grid-cols-2 gap-[10px]'
+            : 'grid-cols-[repeat(auto-fit,minmax(230px,1fr))] gap-[12px]',
+        )}
       >
-        {LAYOUT_CARDS.map(({ value, name, description }) => {
+        {LAYOUT_CARDS.map(({ value, name, description, phoneDescription }) => {
           const chosen = layout === value
           return (
             <label
@@ -174,7 +282,7 @@ export function LayoutSection() {
                   setLayout(value)
                 }}
               />
-              <LayoutPreview layout={value} />
+              {phone ? <PhonePreview layout={value} /> : <DesktopPreview layout={value} />}
               <span className="flex items-start gap-[10px]">
                 <span className="min-w-0 flex-1">
                   <span className="block text-lead font-semibold">{name}</span>
@@ -182,7 +290,7 @@ export function LayoutSection() {
                     id={`${prefix}-${value}`}
                     className="mt-[3px] block text-small leading-[1.5] text-muted"
                   >
-                    {description}
+                    {phone ? phoneDescription : description}
                   </span>
                 </span>
                 <span

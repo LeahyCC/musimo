@@ -422,7 +422,7 @@ function SearchBody({ room }: { room: boolean }) {
           )}
         </div>
       </div>
-      <div className="mb-[24px] flex items-center gap-[8px] max-phone:mb-[16px] max-phone:flex-wrap">
+      <div className="mb-[24px] flex flex-wrap items-center gap-[8px] max-phone:mb-[16px]">
         <div
           className="flex min-w-0 flex-none items-center gap-[6px] overflow-x-auto [scrollbar-width:none] max-phone:w-full"
           role="group"
@@ -685,7 +685,8 @@ export function SearchPage() {
   const room = useLayout() === 'room'
   return (
     <>
-      <SearchField room={room} />
+      {/* Classic's search is the top bar's box, on a phone as on a desktop. */}
+      {room && <SearchField />}
       <SearchBody room={room} />
     </>
   )

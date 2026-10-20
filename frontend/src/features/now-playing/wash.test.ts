@@ -4,7 +4,7 @@ import { LIGHT_THEME } from '../../../e2e/theme-fixtures'
 import { contrastRatio, parseHex } from '../../theme/color'
 import { CONTRAST_PAIRS, MIN_CONTRAST } from '../../theme/contrast'
 import { BUILT_IN_THEMES, DEFAULT_THEME } from '../../theme/themes'
-import { GLOW_MIX, glowFor, washFor } from './wash'
+import { GLOW_MIX, glowFor, tintFor, washFor } from './wash'
 
 const covers = [
   { r: 200, g: 30, b: 30, a: 1 },
@@ -109,5 +109,30 @@ describe('glowFor', () => {
   it('leaves a canvas that is not a color without a glow', () => {
     const colors = { ...DEFAULT_THEME.colors, '--color-canvas': 'nonsense' }
     expect(glowFor({ r: 200, g: 30, b: 30, a: 1 }, colors)).toBeNull()
+  })
+})
+
+describe('tintFor', () => {
+  it('tints the default theme for a colorful cover', () => {
+    const tint = tintFor({ r: 200, g: 60, b: 160, a: 1 }, DEFAULT_THEME.colors)
+    expect(tint).toMatch(/^#[0-9a-f]{6}$/)
+    expect(tint).not.toBe(DEFAULT_THEME.colors['--color-hover'])
+  })
+
+  it.each(BUILT_IN_THEMES)('keeps the title and artist readable in $name', (theme) => {
+    const surface = parseHex(theme.colors['--color-hover'])
+    for (const cover of covers) {
+      const tint = tintFor(cover, theme.colors)
+      if (tint === null || !surface) continue
+      const painted = parseHex(tint)
+      for (const key of ['--color-text', '--color-muted'] as const) {
+        const ink = parseHex(theme.colors[key])
+        if (!ink || !painted) continue
+        const floor = Math.min(MIN_CONTRAST, contrastRatio(ink, surface))
+        expect(contrastRatio(ink, painted), `${key} over ${tint}`).toBeGreaterThanOrEqual(
+          floor - 1e-9,
+        )
+      }
+    }
   })
 })

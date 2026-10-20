@@ -25,6 +25,7 @@ import type { LibraryPlaylist } from '../../api'
 import { activeCount, useJobs } from '../../features/downloads/jobs'
 import { QueueDock } from '../../features/downloads/queue-dock'
 import { isLinkText, useLinkSheet } from '../../features/links/links'
+import { ListenerAvatar } from '../../features/listener/avatar'
 import { useListenerUi } from '../../features/listener/sheet'
 import { PetFace, usePerchShown } from '../../features/music-bot/pet-host'
 import { usePetSettings } from '../../features/music-bot/pet-settings'
@@ -420,7 +421,6 @@ export function ClassicShell() {
   const activeDownloads = useJobs(activeCount).data ?? 0
   const perched = usePerchShown()
   const petHidden = usePetSettings().hidden
-  const listener = useListenerUi()
 
   useEffect(() => {
     clearTimeout(debounce.current)
@@ -461,8 +461,9 @@ export function ClassicShell() {
         Skip to content
       </a>
       {/* `sidebar` carries no styling; it is the hook `e2e/app.spec.ts` and `e2e/phone.spec.ts`
-          measure the bottom bar with. */}
+          measure the bottom bar with. `data-stage-hide` takes it away on a phone's Now Playing. */}
       <aside
+        data-stage-hide=""
         className={cx(
           'sidebar fixed inset-y-0 left-[var(--safe-left)] flex w-[var(--sidebar-width)] flex-col gap-[2px] overflow-x-hidden overflow-y-auto border-r border-line bg-sidebar px-[12px] pt-[20px] pb-[14px]',
           'max-phone:inset-x-0 max-phone:top-auto max-phone:z-bar max-phone:h-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:w-auto max-phone:overflow-visible max-phone:border-t max-phone:border-r-0 max-phone:p-0 max-phone:pr-[var(--safe-right)] max-phone:pb-[var(--safe-bottom)] max-phone:pl-[var(--safe-left)]',
@@ -476,24 +477,16 @@ export function ClassicShell() {
       </aside>
       <div className="ml-[calc(var(--sidebar-width)+var(--safe-left))] pr-[var(--safe-right)] max-phone:ml-0 max-phone:pr-0">
         <header
+          data-stage-hide=""
           className={cx(
             'sticky top-0 z-header flex h-[calc(var(--topbar-height)+var(--safe-top))] items-center gap-[16px] border-b border-line bg-canvas px-[32px] pt-[var(--safe-top)]',
             'max-tablet:px-[24px]',
-            'max-phone:gap-[10px] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
+            'max-phone:gap-[8px] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
           )}
         >
-          {phone && listener.name && (
-            <button
-              type="button"
-              className="max-w-[30%] shrink-0 truncate text-body font-semibold"
-              aria-label={`Listening as ${listener.name}`}
-              onClick={listener.open}
-            >
-              {listener.name}
-            </button>
-          )}
+          {phone && <ListenerAvatar />}
           <form
-            className="flex h-[38px] max-w-[560px] flex-1 items-center gap-[10px] rounded-[10px] border border-line bg-sunken px-[12px] text-faint max-phone:max-w-none coarse:h-11"
+            className="flex h-[38px] max-w-[560px] flex-1 items-center max-phone:min-w-0 gap-[10px] rounded-[10px] border border-line bg-sunken px-[12px] text-faint max-phone:max-w-none coarse:h-11"
             onSubmit={(e) => {
               e.preventDefault()
               clearTimeout(debounce.current)
@@ -531,7 +524,7 @@ export function ClassicShell() {
                 }, 200)
               }}
             />
-            <Kbd className="text-faint">/</Kbd>
+            <Kbd className="text-faint max-phone:hidden">/</Kbd>
           </form>
           {/* The sidebar's footer says whether updates are live; a phone has no sidebar. */}
           {phone && (
@@ -550,12 +543,12 @@ export function ClassicShell() {
           </button>
           <Link
             to="/music-bot"
-            className="inline-flex h-[34px] shrink-0 items-center gap-[8px] rounded-pill border border-line py-0 pr-[12px] pl-[8px] text-small text-text hover:border-good-line coarse:min-h-11 coarse:min-w-11 coarse:justify-center max-phone:px-[10px]"
+            className="inline-flex h-[34px] shrink-0 items-center gap-[8px] rounded-pill border border-line py-0 pr-[12px] pl-[8px] text-small text-text hover:border-good-line coarse:min-h-11 coarse:min-w-11 coarse:justify-center max-phone:size-[44px] max-phone:px-0"
           >
             {octiveIcon}
-            {/* Under 380px the bar has no room for the words beside the search field, so the face
-                stands for them, and they stay for readers. */}
-            <span className="max-[380px]:sr-only">Ask Octive</span>
+            {/* A phone's bar gives the search field the room, so the face or the sparkle stands
+                for the words there, and they stay for readers. */}
+            <span className="max-phone:sr-only">Ask Octive</span>
           </Link>
         </header>
         {links.sheet}
@@ -580,7 +573,8 @@ export function ClassicShell() {
         <main
           id="main"
           className={cx(
-            'm-auto max-w-[1360px] px-[40px] pt-[36px] pb-[130px] wide:pt-[48px] max-tablet:px-[24px] max-phone:pt-[24px] max-phone:pr-[calc(20px+var(--safe-right))] max-phone:pl-[calc(20px+var(--safe-left))]',
+            'm-auto max-w-[1360px] px-[40px] pt-[36px] pb-[130px] wide:pt-[48px] max-tablet:px-[24px] max-phone:pr-[calc(20px+var(--safe-right))] max-phone:pl-[calc(20px+var(--safe-left))]',
+            'max-phone:pt-[24px]',
             perched
               ? 'max-phone:pb-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+76px)]'
               : 'max-phone:pb-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+32px)]',

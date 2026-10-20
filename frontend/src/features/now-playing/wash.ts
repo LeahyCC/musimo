@@ -1,4 +1,4 @@
-import { contrastRatio, mixRgb, parseHex, toHex } from '../../theme/color'
+import { contrastRatio, mixRgb, parseHex, relativeLuminance, toHex } from '../../theme/color'
 import type { Rgb } from '../../theme/color'
 import { CONTRAST_PAIRS, MIN_CONTRAST } from '../../theme/contrast'
 import type { Theme } from '../../theme/themes'
@@ -56,4 +56,55 @@ export function glowFor(cover: Rgb, colors: Theme['colors']): string | null {
   const canvas = parseHex(colors['--color-canvas'])
 
   return canvas ? toHex(mixRgb(canvas, cover, GLOW_MIX)) : null
+}
+
+/** The most of the cover the phone mini player's tint can take. */
+const TINT_MAX_MIX = 0.8
+
+/**
+ * The cover taken toward black on a dark surface, or toward white on a light one, until it is as
+ * light as the surface. Its hue survives, so mixing it in colors the surface without making it
+ * lighter or darker, which is what would cost the text its contrast.
+ */
+function toneTo(cover: Rgb, surface: Rgb, dark: boolean): Rgb {
+  const target = relativeLuminance(surface)
+  const end: Rgb = dark ? { r: 0, g: 0, b: 0, a: 1 } : { r: 255, g: 255, b: 255, a: 1 }
+  let low = 0
+  let high = 1
+  for (let step = 0; step < 24; step += 1) {
+    const middle = (low + high) / 2
+    const light = relativeLuminance(mixRgb(cover, end, middle))
+    if (dark ? light > target : light < target) low = middle
+    else high = middle
+  }
+  return mixRgb(cover, end, high)
+}
+
+/**
+ * The tint for Classic's phone mini player: `#rrggbb`, the cover's hue mixed into the mini player's
+ * own surface (`--color-hover`), or null when the surface is not a color or no mix keeps its text
+ * readable. The cover is first toned to the surface's lightness (`toneTo`), so a pale cover on a
+ * dark theme gives a dark tint of its own hue rather than a grey. The bar sets its title in
+ * `--color-text` and its artist in `--color-muted`, so those two are held, each to AA or to what
+ * it had on the plain surface if that was less, and the mix backs off in steps until they are.
+ */
+export function tintFor(cover: Rgb, colors: Theme['colors']): string | null {
+  const surface = parseHex(colors['--color-hover'])
+  const text = parseHex(colors['--color-text'])
+  if (!surface || !text) return null
+  const toned = toneTo(cover, surface, relativeLuminance(text) > relativeLuminance(surface))
+
+  const floors: { ink: Rgb; floor: number }[] = []
+  for (const key of ['--color-text', '--color-muted'] as const) {
+    const ink = parseHex(colors[key])
+    if (ink) floors.push({ ink, floor: Math.min(MIN_CONTRAST, contrastRatio(ink, surface)) })
+  }
+
+  for (let mix = TINT_MAX_MIX; mix > STEP / 2; mix -= STEP) {
+    const painted = parseHex(toHex(mixRgb(surface, toned, mix)))
+    if (painted && floors.every(({ ink, floor }) => contrastRatio(ink, painted) >= floor))
+      return toHex(painted)
+  }
+
+  return null
 }

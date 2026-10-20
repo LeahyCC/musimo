@@ -36,7 +36,7 @@ The whole album or artist card is a native link. Artist links, preview, coverage
 
 Search and the catalog pages draw in both layouts (Settings › Yours). The data is the same; the look is not.
 
-- **Classic**: outlined pill tabs, a search field inside the page on a phone only (a desktop uses the top bar's), and on Top a "Top result" card for the best-matching artist beside the first tracks, then the albums as covers.
+- **Classic**: outlined pill tabs, no search field in the page at any width (the top bar's is the one, on a phone as on a desktop), and on Top a "Top result" card for the best-matching artist beside the first tracks, then the albums as covers.
 - **Listening room**: an in-page search field (52px), filled pill tabs, a top-result banner with a stacked ownership bar and "Get the N missing", then tracks and albums side by side with the albums as rows. Status shows as a dot and plain words instead of a chip.
 
 The top result's counts are songs, taken from the artist's loaded releases (the same request the artist page uses) against the library index, and queued songs from the download queue. They are estimates until each album is checked, and "other edition" is not known at artist level, so the bar leaves it out. "Get missing albums" opens the artist download sheet in its albums-only mode.

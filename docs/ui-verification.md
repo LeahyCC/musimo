@@ -197,6 +197,25 @@ The UI refactor gave the app two layouts, picked in Settings › Yours: Classic 
 
 **Left open.** Firefox still would not launch on this Mac after `npx playwright install firefox` (`Could not find profile folder`), so nothing here was run in Firefox. The pet cat, which floats over the bottom left of the page, covers a little of the content beside it on a phone (a search field on a playlist page, a card title on Home), so it was left alone.
 
+## Phone layouts, 19 October 2026
+
+A temporary Playwright walk visited nineteen routes in both layouts at 320x568, 360x780, 390x844 and 430x932 with touch emulation, plus 820x1180 and 1280x800, against the isolated stack, using the invented library in `e2e/showcase-fixtures.ts`. Each screen was screenshotted and probed for sideways scroll and elements past the right edge.
+
+Found and fixed:
+
+- Classic on a phone was 17px wider than the screen whenever a name was chosen: the name, the search form and the Ask Octive pill could not shrink, so a phone zoomed the whole page out and the bottom bar fell below the fold. The form can now shrink, the name is its initial in a circle, and the Octive pill is a round button with its words for screen readers.
+- Settings, Yours drew the desktop shapes of both layouts on a phone. A phone now gets phone-shaped pictures of each layout's phone arrangement, side by side, and says the choice is for this phone.
+- The two layouts were near copies on a phone. Classic now docks a cover-tinted mini player on its bar; the Listening room floats its tab bar as a pill with the mini player above it (now with a progress line) and fades the page out behind them.
+- Now Playing on a phone sat under the top bar and above the tab bar, which pushed the transport below the fold at 320x568. It is now a screen of its own with a close chevron and "Playing from".
+- Classic's Search page drew a second search box under the top bar's on a phone; it has one now.
+- The Listening room's Library view tabs were cut off at 390px ("Playlists" out of sight). They share the width, each with its count under it.
+- The library and playlist headers' "…" button wrapped onto a row of its own at 390px in Classic; the phone's action buttons are tighter.
+- At 820px (an iPad held upright) Classic's search results toolbar ran past the page edge; it wraps now.
+
+`e2e/phone.spec.ts`, `e2e/now-playing-popout.spec.ts`, `e2e/search-layouts.spec.ts` and `e2e/themed-walk.spec.ts` carry the new expectations (the docked strip and its tint, the 64px pill 12px in from the edge, the full screen Now Playing and its close, one search box). `npx playwright test phone now-playing-popout settings-layouts search-layouts themed-walk` passed on the Chromium and phone projects: 164 tests.
+
+Not verified on a device: the floating pill and the full screen Now Playing were checked in Chromium emulation only, which reports no safe-area insets. A notched iPhone in standalone mode still needs a look.
+
 ## Further coverage
 
 Automate card success/retry against a fixture API, coverage loading/failure and filter reactivity, slider keyboard behavior, close during a pending lookup, activity clear racing with a new event, and the player/queue at small and tablet widths. Do not treat this targeted browser pass as the full release acceptance suite.

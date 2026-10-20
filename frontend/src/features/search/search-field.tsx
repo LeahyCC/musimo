@@ -3,19 +3,18 @@ import { useEffect, useRef, useState } from 'react'
 import { useNavigate, useRouterState } from '@tanstack/react-router'
 import { Search } from 'lucide-react'
 
-import { cx } from '../../lib/cx'
 import { isLinkText, useLinkSheet } from '../links/links'
 import { validateSearch } from './search-params'
 
 /**
- * The search box that sits in the page. Classic keeps its search in the top bar on a desktop, so
- * this one shows only on a phone, where that bar is gone. The Listening room has no top bar
- * search, so there it is always shown, larger.
+ * The search box that sits in the Listening room's Search page. The room has no search in its top
+ * bar, so the page carries one. Classic's search is its top bar's box at every width, so Classic
+ * does not render this.
  *
  * It does what the top bar's box does: the query goes to the URL after a short pause, and a pasted
  * link opens the link sheet instead of being searched.
  */
-export function SearchField({ room }: { room: boolean }) {
+export function SearchField() {
   const navigate = useNavigate()
   const searchStr = useRouterState({ select: (state) => state.location.searchStr })
   const urlQuery = new URLSearchParams(searchStr).get('q') ?? ''
@@ -47,12 +46,7 @@ export function SearchField({ room }: { room: boolean }) {
       <form
         role="search"
         data-ui="search-field"
-        className={cx(
-          'items-center text-faint',
-          room
-            ? 'mb-[14px] flex h-[52px] gap-[12px] rounded-[14px] border border-line-strong bg-sunken px-[14px]'
-            : 'mb-[16px] hidden h-[44px] gap-[10px] rounded-[10px] border border-line bg-sunken px-[12px] max-phone:flex',
-        )}
+        className="mb-[14px] flex h-[52px] items-center gap-[12px] rounded-[14px] border border-line-strong bg-sunken px-[14px] text-faint"
         onSubmit={(event) => {
           event.preventDefault()
           clearTimeout(debounce.current)
@@ -60,15 +54,12 @@ export function SearchField({ room }: { room: boolean }) {
           go(text)
         }}
       >
-        <Search size={room ? 19 : 18} aria-hidden="true" />
+        <Search size={19} aria-hidden="true" />
         <input
           type="search"
-          className={cx(
-            'min-w-0 flex-1 border-0 bg-transparent text-text outline-0 placeholder:text-faint',
-            room ? 'text-[17px]' : 'text-[16px]',
-          )}
+          className="min-w-0 flex-1 border-0 bg-transparent text-[17px] text-text outline-0 placeholder:text-faint"
           aria-label="Search the catalog"
-          placeholder={room ? 'Search the catalog or paste a link' : 'Search or paste a link'}
+          placeholder="Search the catalog or paste a link"
           value={text}
           onPaste={(event) => {
             clearTimeout(debounce.current)
@@ -83,11 +74,9 @@ export function SearchField({ room }: { room: boolean }) {
             debounce.current = setTimeout(() => go(value), 200)
           }}
         />
-        {room && (
-          <span className="font-mono text-tiny whitespace-nowrap text-faint max-phone:hidden">
-            DEEZER · LIBRARY-AWARE
-          </span>
-        )}
+        <span className="font-mono text-tiny whitespace-nowrap text-faint max-phone:hidden">
+          DEEZER · LIBRARY-AWARE
+        </span>
       </form>
       {links.sheet}
     </>

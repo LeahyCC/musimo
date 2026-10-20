@@ -99,7 +99,7 @@ export function CollectionHeader({
           {byline}
           {meta && <p className="library-count text-body text-muted">{meta}</p>}
         </div>
-        <div className="mt-[10px] flex flex-wrap items-center gap-[8px] max-phone:col-span-2 max-phone:mt-0 [&_[data-ui=button]]:rounded-[10px]">
+        <div className="mt-[10px] flex flex-wrap items-center gap-[8px] max-phone:col-span-2 max-phone:mt-0 max-phone:gap-[6px] [&_[data-ui=button]]:rounded-[10px] max-phone:[&_[data-ui=button]]:gap-[6px] max-phone:[&_[data-ui=button]]:px-[12px]">
           {children}
         </div>
       </div>
