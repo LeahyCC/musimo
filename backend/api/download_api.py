@@ -1,23 +1,37 @@
 import uuid
 from collections.abc import Callable
+from pathlib import Path
 from typing import Literal
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import JSONResponse
+from pydantic import ValidationError
 
 from backend.core.job_models import (
     RUNNING,
     TERMINAL,
     BatchRequest,
     Enqueue,
+    HoldingRequest,
     Job,
     Metadata,
     Pick,
     valid_candidate_id,
 )
 from backend.core.naming import Naming
-from backend.integrations.catalog import Result
+from backend.integrations.catalog import CatalogError, Result, Track
 from backend.jobs.downloads import DownloadError, Downloads, listing_metadata
+from backend.jobs.holdings import (
+    HoldingMismatch,
+    batch_skip,
+    catalog_candidates,
+    first_regular,
+    holding_public,
+    indexed_holding,
+    indexed_song,
+    path_is_regular_in_root,
+    save_holding,
+)
 from backend.jobs.job_store import JobConflict
 
 
@@ -98,8 +112,19 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         format = request.format or settings.output_format
         wanted: list[int] = []
         skipped_owned = 0
+        needs_choice = 0
+        with service.store.lock:
+            candidates = catalog_candidates(service.store.db, [track.id for track in tracks])
+        certain_ids = {
+            track_id for track_id, rows in candidates.items() if first_regular(rows) is not None
+        }
         for track in tracks:
-            if request.missing_only and track.ownership in ("owned", "edition"):
+            skip = batch_skip(track.matched_by, track.id in certain_ids)
+            if skip == "owned":
+                skipped_owned += 1
+            elif skip == "choice":
+                needs_choice += 1
+            elif request.missing_only and track.ownership in ("owned", "edition"):
                 skipped_owned += 1
             else:
                 wanted.append(track.id)
@@ -131,7 +156,41 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
             "jobs": [job.public() for job in jobs],
             "skipped_owned": skipped_owned,
             "skipped_queued": skipped_queued,
+            "needs_choice": needs_choice,
         }
+
+    @app.post("/api/holdings")
+    async def choose_holding(request: HoldingRequest) -> dict[str, object]:
+        service = get()
+        try:
+            raw, _ = await service.catalog.get(f"track/{request.track_id}")
+            track = service.catalog.track(Track.model_validate(raw))
+        except (CatalogError, ValidationError):
+            raise HTTPException(422, "That track could not be matched.") from None
+        service.library.annotate([track])
+        with service.store.lock:
+            existing = indexed_holding(service.store.db, request.track_id)
+        if existing is not None and path_is_regular_in_root(
+            str(existing["path"]), str(existing["root"])
+        ):
+            if str(existing["song_id"]) != request.song_id:
+                raise HTTPException(422, "That song does not match this track.")
+            return holding_public(existing)
+        if track.matched_by not in {"isrc", "mbid", "tags"}:
+            raise HTTPException(422, "That song does not match this track.")
+        with service.store.lock:
+            song = indexed_song(service.store.db, request.song_id)
+        if song is None or str(song["path"]) not in track.matched_paths:
+            raise HTTPException(422, "That song does not match this track.")
+        path = str(song["path"])
+        if Path(path).is_symlink():
+            raise HTTPException(422, "That file is a link, not a library copy.")
+        if not path_is_regular_in_root(path, str(song["root"])):
+            raise HTTPException(422, "That song does not match this track.")
+        try:
+            return save_holding(service.store, request.track_id, request.song_id, path, "chosen")
+        except HoldingMismatch:
+            raise HTTPException(422, "That song does not match this track.") from None
 
     @app.post("/api/batches/{batch_id}/{action}")
     async def batch_command(

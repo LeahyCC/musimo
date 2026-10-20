@@ -617,19 +617,22 @@ class QueueControlTests(unittest.IsolatedAsyncioTestCase):
                         )
                         self.assertEqual(response.status_code, 200)
                         payload = response.json()
-                        # Track 2 was pre-queued. Tracks 1, 3, 4 get new jobs. All 4 jobs returned.
+                        # Track 1 matches by tags, so it asks and is not queued. Track 2 was
+                        # pre-queued. Tracks 3 and 4 get new jobs.
                         self.assertEqual(payload["skipped_owned"], 0)
                         self.assertEqual(payload["skipped_queued"], 1)
-                        self.assertEqual(len(payload["jobs"]), 4)
-                        self.assertEqual({job["track_id"] for job in payload["jobs"]}, {1, 2, 3, 4})
-                        # Second request: all four tracks now have active jobs from first request
+                        self.assertEqual(payload["needs_choice"], 1)
+                        self.assertEqual(len(payload["jobs"]), 3)
+                        self.assertEqual({job["track_id"] for job in payload["jobs"]}, {2, 3, 4})
+                        # Second request: those three tracks are still active. Track 1 still asks.
                         again = await api.post(
                             "/api/batches", json={"album_id": 100, "missing_only": False}
                         )
                         again_payload = again.json()
                         self.assertEqual(again_payload["skipped_owned"], 0)
-                        self.assertEqual(again_payload["skipped_queued"], 4)
-                        self.assertEqual(len(again_payload["jobs"]), 4)
+                        self.assertEqual(again_payload["skipped_queued"], 3)
+                        self.assertEqual(again_payload["needs_choice"], 1)
+                        self.assertEqual(len(again_payload["jobs"]), 3)
                     await service.close()
             finally:
                 store.close()

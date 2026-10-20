@@ -2,6 +2,7 @@ import { z } from 'zod'
 
 import { libraryTrackSchema } from '../../api'
 import type { BotReply } from '../../api'
+import { withListener } from '../listener/identity'
 
 /* The browser's side of the server's proposals (`/api/music-bot/proposals`): a result is stored
    as a revision, refined into the next one, and committed by id, revision and operation id. The
@@ -198,13 +199,16 @@ async function send<T>(
   schema: z.ZodType<T>,
   init: { method: 'POST' | 'GET' | 'DELETE'; body?: unknown; signal?: AbortSignal },
 ): Promise<T> {
-  const response = await fetch(`/api/music-bot/${path}`, {
-    method: init.method,
-    signal: init.signal,
-    ...(init.body === undefined
-      ? {}
-      : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(init.body) }),
-  })
+  const response = await fetch(
+    `/api/music-bot/${path}`,
+    withListener({
+      method: init.method,
+      signal: init.signal,
+      ...(init.body === undefined
+        ? {}
+        : { headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(init.body) }),
+    }),
+  )
   const data: unknown = await response.json().catch(() => null)
   if (!response.ok) throw failure(response.status, data)
   const parsed = schema.safeParse(data)

@@ -12,7 +12,7 @@ Musimo is in early development. Security fixes target the current development ve
 
 ## Deployment boundaries
 
-The default bind is loopback. There is no built-in login, multi-user isolation or permission model. A network client that reaches the app should be treated as having access to its operations. Same-origin write checks do not replace authentication.
+The default bind is loopback. There is no built-in login or permission model. A name picks whose queue, likes and counts this browser shows, and it is not a lock. A network client that reaches the app should be treated as having access to its operations. Same-origin write checks do not replace authentication.
 
 Use authentication and HTTPS at a correctly configured reverse proxy before broader access. Restrict mounted folders and credentials to what the app needs. Prefer read-only mounts for reference collections. Do not mount the Docker socket, run privileged or expose unrelated host folders.
 

@@ -13,6 +13,13 @@ import {
   settingsSchema,
 } from '../../api'
 import type { BotReply, BotScope, LibraryTrack } from '../../api'
+import {
+  BOT_RESET,
+  BOT_HISTORY_KEY as HISTORY_KEY,
+  BOT_LOG_KEY as LOG_KEY,
+  BOT_PREVIEW_KEY as PREVIEW_KEY,
+  BOT_PROPOSAL_KEY as PROPOSAL_KEY,
+} from '../listener/identity'
 import { usePlayer } from '../player/player'
 import type { BotQueueAction } from '../player/player'
 import {
@@ -66,13 +73,9 @@ import type {
    the search again, and the player refuses a queue that changed underneath. Nothing here decides
    what plays. */
 
-const HISTORY_KEY = 'musimo.music-bot.history'
-const PROPOSAL_KEY = 'musimo.music-bot.proposal'
-const LOG_KEY = 'musimo.music-bot.log'
 /** Where an older build kept the shown songs in this tab. The server holds them now; the leftover
  *  is removed so the two cannot disagree. */
 const LEGACY_SHOWN_KEY = 'musimo.music-bot.shown'
-const PREVIEW_KEY = 'musimo.music-bot.preview'
 const MEMORY_KEY = ['bot-memory'] as const
 /** The stored revision the card shows. Its songs are `BotReply.tracks`; this is the rest. */
 const previewSchema = z.object({
@@ -466,6 +469,34 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       /* Chat still works without storage. */
     }
   }, [history, reply, log, cardId, preview])
+
+  // Clearing storage is not enough: this effect writes it back from state on the next render.
+  useEffect(() => {
+    const reset = () => {
+      serial.current += 1
+      request.current?.abort()
+      request.current = null
+      cleared.current += 1
+      latestPreview.current = null
+      setHistory([])
+      setReply(null)
+      setLog([])
+      setCardId(null)
+      setPreview(null)
+      setPins([])
+      setProblem(null)
+      setSavedAs([])
+      setThinking(false)
+      setApplying(false)
+      setConfirming(false)
+      setUnread(false)
+      setOpen(false)
+      setStamp('')
+      setApplied(null)
+    }
+    window.addEventListener(BOT_RESET, reset)
+    return () => window.removeEventListener(BOT_RESET, reset)
+  }, [setOpen])
 
   const memory = useQuery({
     queryKey: MEMORY_KEY,

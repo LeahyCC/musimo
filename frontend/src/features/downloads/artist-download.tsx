@@ -19,6 +19,7 @@ import {
 import { cx } from '../../lib/cx'
 import { Button, ErrorBanner, Switch } from '../../ui'
 import { DESTINATION_PROBLEM, destinationBroken, formatLabel } from './download-target'
+import { artistQueueBucket, needsChoiceSentence } from './holding-choice'
 import { activeJob, updateJob, useJobs } from './jobs'
 
 const planSchema = z.object({
@@ -34,6 +35,7 @@ const planSchema = z.object({
           id: z.number(),
           duration: z.number(),
           owned: z.boolean(),
+          skip: z.enum(['', 'owned', 'choice']),
           identity: z.string(),
         }),
       ),
@@ -46,6 +48,7 @@ const batchSchema = z.object({
   albums: z.number(),
   skipped_owned: z.number(),
   skipped_queued: z.number(),
+  needs_choice: z.number(),
 })
 
 export function ArtistDownloadButton({
@@ -100,6 +103,7 @@ export function ArtistDownloadButton({
   let songs = 0,
     owned = 0,
     queued = 0,
+    choice = 0,
     seconds = 0
   for (const album of selected) {
     let count = 0
@@ -107,8 +111,10 @@ export function ArtistDownloadButton({
     for (const track of album.tracks) {
       if (seen.has(track.identity)) continue
       seen.add(track.identity)
-      if (missingOnly && track.owned) owned++
-      else if (active.has(track.id)) queued++
+      const bucket = artistQueueBucket(track, missingOnly, active.has(track.id))
+      if (bucket === 'owned') owned++
+      else if (bucket === 'choice') choice++
+      else if (bucket === 'queued') queued++
       else {
         count++
         songs++
@@ -204,6 +210,9 @@ export function ArtistDownloadButton({
               <p role="status" className="mr-auto">
                 {download.data.jobs.length} songs queued from {download.data.albums}{' '}
                 {allMusic ? 'releases' : 'albums'}.{' '}
+                {download.data.needs_choice > 0
+                  ? `${needsChoiceSentence(download.data.needs_choice)} `
+                  : ''}
                 <Link to="/downloads" onClick={() => dialog.current?.close()}>
                   Open downloads
                 </Link>
@@ -216,6 +225,9 @@ export function ArtistDownloadButton({
                       {plural(albumCount, allMusic ? 'release' : 'album')} · {plural(songs, 'song')}{' '}
                       · ~{megabytes.toLocaleString()} MB
                     </div>
+                    {choice > 0 && (
+                      <p className="mt-[2px] text-tiny text-muted">{needsChoiceSentence(choice)}</p>
+                    )}
                     <div className="mt-[2px] font-mono text-tiny text-faint uppercase [overflow-wrap:anywhere]">
                       → {chosenTarget || '(not set)'} · {formatLabel(chosenFormat)} · estimated
                     </div>

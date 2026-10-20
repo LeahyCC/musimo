@@ -39,7 +39,7 @@ For private access from devices on your tailnet, keep Musimo bound to loopback a
 tailscale serve --bg --https=8765 http://127.0.0.1:8765
 ```
 
-Open the HTTPS URL printed by the command on a device connected to your tailnet. The background configuration persists. This uses Serve, not public Funnel. Tailnet access rules determine who can reach the app; Musimo has no separate login. To remove only this endpoint, use `tailscale serve --https=8765 off`, rather than resetting all Serve configuration.
+Open the HTTPS URL printed by the command on a device connected to your tailnet. The background configuration persists. This uses Serve, not public Funnel. Tailnet access rules determine who can reach the app; Musimo has no separate login. A name only picks whose queue and likes this browser shows. To remove only this endpoint, use `tailscale serve --https=8765 off`, rather than resetting all Serve configuration.
 
 HTTPS proxy requests need a trusted forwarded scheme for Settings and download actions. On Docker Desktop, the proxy can arrive from the Docker network gateway instead of loopback. Inspect `docker inspect <musimo-container>` and the actual connection peer. Merge `FORWARDED_ALLOW_IPS: 127.0.0.1,<observed-proxy-IP>` into that service's environment in your local Compose override, then recreate only Musimo with `docker compose up -d --no-deps musimo`. Replace the placeholder with the verified address, never `*`. Recheck it if the Docker network is recreated.
 

@@ -77,7 +77,7 @@ class Result(BaseModel):
     record_type: str = ""
     ownership: Literal["owned", "partial", "missing", "edition"] = "missing"
     matched_paths: list[str] = Field(default_factory=list)
-    matched_by: Literal["download", "isrc", "mbid", "tags", ""] = ""
+    matched_by: Literal["download", "holding", "isrc", "mbid", "tags", ""] = ""
     matched_album: str = ""
     # Library song id when this catalog track is already a file on disk. Empty otherwise.
     matched_song: str = ""

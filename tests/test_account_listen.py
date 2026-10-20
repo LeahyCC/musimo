@@ -1,5 +1,6 @@
 """Account listening: signed-in Play, fallbacks, and a removed cookie."""
 
+import json
 import sqlite3
 import tempfile
 import threading
@@ -110,6 +111,29 @@ class AccountListenTests(unittest.TestCase):
             self.assertNotIn(COOKIE, audio.text)
             counted = client.post("/api/player/scrobble", json={"id": "dz-7", "submission": True})
             self.assertEqual(counted.status_code, 204)
+
+    def test_play_writes_the_track_id_before_the_file_command(self) -> None:
+        deezer_cookie.write(self.data, COOKIE)
+        seen: dict[str, object] = {}
+
+        def _read(folder: Path, probe: object, command: str | None = None) -> Path:
+            job = json.loads((folder / "job.json").read_text(encoding="utf-8"))
+            seen["track_id"] = job.get("track_id")
+            return _prepare(folder, probe, command)
+
+        with (
+            TestClient(create_app(self.data)) as client,
+            patch("backend.jobs.account_listen.Account.login", _sign_in),
+            patch("backend.jobs.account_listen.fetch", _fetch),
+            patch("backend.jobs.account_listen.prepare", _read),
+        ):
+            client.patch("/api/settings", json={"file_command": "decode"})
+            played = client.post(
+                "/api/player/account/dz-7", json={"title": "Song", "duration": 180}
+            )
+            self.assertEqual(played.json()["play"], "account", played.text)
+        self.assertEqual(seen["track_id"], 7)
+        self.assertIsInstance(seen["track_id"], int)
 
     def test_a_missing_sign_in_stays_on_preview(self) -> None:
         with TestClient(create_app(self.data)) as client:

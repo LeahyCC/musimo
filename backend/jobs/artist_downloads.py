@@ -6,6 +6,7 @@ import uuid
 from backend.core.job_models import ArtistBatchRequest
 from backend.integrations.catalog import Album, Artist, CatalogError, Result, safe_media
 from backend.jobs.downloads import Downloads, listing_metadata
+from backend.jobs.holdings import batch_skip, catalog_candidates, first_regular
 
 
 class ArtistDownloads:
@@ -47,6 +48,7 @@ class ArtistDownloads:
         tracks = [track for _, rows, _ in groups for track in rows]
         if tracks:
             self.downloads.library.annotate(tracks)
+        certain = self.certain_ids([track.id for track in tracks])
         described: list[dict[str, object]] = []
         for album, rows, error in groups:
             described.append(
@@ -60,6 +62,7 @@ class ArtistDownloads:
                             "id": track.id,
                             "duration": track.duration,
                             "owned": track.ownership == "owned",
+                            "skip": batch_skip(track.matched_by, track.id in certain) or "",
                             "identity": f"isrc:{track.isrc}" if track.isrc else f"id:{track.id}",
                         }
                         for track in rows
@@ -68,6 +71,14 @@ class ArtistDownloads:
                 }
             )
         return described
+
+    def certain_ids(self, track_ids: list[int]) -> set[int]:
+        """Tracks whose done file is still a regular indexed file. The stat is outside the lock."""
+        with self.downloads.store.lock:
+            candidates = catalog_candidates(self.downloads.store.db, track_ids)
+        return {
+            track_id for track_id, rows in candidates.items() if first_regular(rows) is not None
+        }
 
     async def plan(self, artist_id: int, all_music: bool = False) -> dict[str, object]:
         albums = await self.albums(artist_id, all_music)
@@ -107,18 +118,22 @@ class ArtistDownloads:
                 return available[album_id], await self.tracks(available[album_id])
 
         loaded = list(await asyncio.gather(*(load(album_id) for album_id in selected)))
-        self.describe([(album, rows, "") for album, rows in loaded])
+        flat = [track for _, rows in loaded for track in rows]
+        if flat:
+            service.library.annotate(flat)
         identities: set[str] = set()
         wanted: list[int] = []
         album_tracks: dict[int, list[int]] = {}
         owned = 0
         queued = 0
+        needs_choice = 0
         format = request.format or settings.output_format
         active = {
             job.track_id
             for job in service.jobs.list(active=True)
             if job.format == format and job.target == str(target)
         }
+        certain_ids = self.certain_ids([track.id for track in flat])
         for album, rows in loaded:
             before = len(wanted)
             for track in rows:
@@ -126,7 +141,12 @@ class ArtistDownloads:
                 if identity in identities:
                     continue
                 identities.add(identity)
-                if request.missing_only and track.ownership == "owned":
+                skip = batch_skip(track.matched_by, track.id in certain_ids)
+                if skip == "owned":
+                    owned += 1
+                elif skip == "choice":
+                    needs_choice += 1
+                elif request.missing_only and track.ownership == "owned":
                     owned += 1
                 elif track.id in active:
                     queued += 1
@@ -163,4 +183,5 @@ class ArtistDownloads:
             "albums": albums_added,
             "skipped_owned": owned,
             "skipped_queued": queued,
+            "needs_choice": needs_choice,
         }

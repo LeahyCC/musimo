@@ -26,6 +26,7 @@ from backend.integrations.catalog import Catalog, CatalogError, Result
 from backend.integrations.enrichment import Enrichment
 from backend.integrations.podcasts import Podcasts
 from backend.jobs import mixes
+from backend.jobs.holdings import HoldingMismatch, byte_matches, root_containing, save_holding
 from backend.jobs.job_store import Jobs
 from backend.jobs.link_tags import NOTE_PREFIX, LinkTags, tidied, wants_tidy
 from backend.jobs.processes import stop_tree
@@ -852,6 +853,37 @@ class Downloads:
             return mixes.landing(job.meta, self.today(), extension)
         return Naming().path(self.settings().naming_template, job.meta, extension)
 
+    async def _matching_bytes(self, job: Job, checksum: str) -> tuple[str, str] | None:
+        """Oldest done Deezer file whose bytes still equal this hash.
+
+        Only jobs that already stored a hash are considered. The house file is not opened
+        unless its stored hash matches.
+        """
+        with self.store.lock:
+            rows = byte_matches(self.store.db, checksum, job.id)
+            roots = [
+                str(row[0])
+                for row in self.store.db.execute("SELECT path FROM library_roots WHERE enabled=1")
+            ]
+        for row in rows:
+            try:
+                other = Job.model_validate_json(row["payload"])
+            except ValidationError:
+                continue
+            path = other.final_path
+            if not path or other.artifact_hash != checksum:
+                continue
+            if root_containing(path, roots) is None:
+                continue
+            try:
+                fresh = await asyncio.to_thread(digest, Path(path))
+            except OSError:
+                continue
+            if fresh != checksum:
+                continue
+            return path, str(row["song_id"] or "")
+        return None
+
     async def finish(
         self, job: Job, ready: Path | None = None, info: dict[str, object] | None = None
     ) -> None:
@@ -865,39 +897,76 @@ class Downloads:
                 update={"artist": named, "album_artist": job.meta.album_artist or named}
             )
             job = self.jobs.update(job.id, meta=meta.model_dump())
+        reused = False
         if ready:
             self.jobs.update(job.id, stage="moving", progress=1, speed=0, eta=None)
             target = root / self.layout(job, ready.suffix[1:])
             if not target.resolve().is_relative_to(root):
                 raise DownloadError("MOVE_FAILED", "Output path escaped the library root")
-            target.parent.mkdir(parents=True, exist_ok=True)
-            if target.exists():
-                target = target.with_name(f"{target.stem} [{job.id[:8]}]{target.suffix}")
             checksum = await asyncio.to_thread(digest, ready)
             details = info or {}
-            job = self.jobs.update(
-                job.id,
-                final_path=str(target),
-                artifact_hash=checksum,
-                codec=str(details.get("codec", "")),
-                actual_bitrate=int(str(details.get("bitrate", 0))),
-                tool_version=str(details.get("version", "")),
-            )
-            publish_file(ready, target)
+            # Same bytes as a file already here: drop the new copy before it is named.
+            held = await self._matching_bytes(job, checksum) if job.catalog == "deezer" else None
+            if held is not None:
+                existing_path, song_id = held
+                existing = Path(existing_path)
+                if ready.resolve() != existing.resolve():
+                    ready.unlink()
+                job = self.jobs.update(
+                    job.id,
+                    final_path=existing_path,
+                    artifact_hash=checksum,
+                    reused_file=True,
+                    codec=str(details.get("codec", "")),
+                    actual_bitrate=int(str(details.get("bitrate", 0))),
+                    tool_version=str(details.get("version", "")),
+                )
+                if song_id:
+                    try:
+                        save_holding(self.store, job.track_id, song_id, existing_path, "bytes")
+                    except HoldingMismatch:
+                        # The house already pointed this track at another file.
+                        pass
+                target = existing
+                reused = True
+            else:
+                target.parent.mkdir(parents=True, exist_ok=True)
+                if target.exists():
+                    target = target.with_name(f"{target.stem} [{job.id[:8]}]{target.suffix}")
+                job = self.jobs.update(
+                    job.id,
+                    final_path=str(target),
+                    artifact_hash=checksum,
+                    reused_file=False,
+                    codec=str(details.get("codec", "")),
+                    actual_bitrate=int(str(details.get("bitrate", 0))),
+                    tool_version=str(details.get("version", "")),
+                )
+                publish_file(ready, target)
         else:
             target = Path(job.final_path)
+            # The local flag from the first pass is gone after a crash or a cancel. The
+            # stored one says this path is a file that was already here.
+            reused = job.reused_file
         # An already-published file is reconciled on restart instead of downloaded again.
         self.jobs.update(job.id, stage="scanning")
-        for source, destination in [
-            (folder / "cover.jpg", target.parent / "cover.jpg"),
-            (folder / "ready.lrc", target.with_suffix(".lrc")),
-        ]:
-            if source.is_file() and not destination.exists():
-                try:
-                    publish_file(source, destination)
-                except FileExistsError:
-                    pass
-        await asyncio.to_thread(self.library.index_published, target, root)
+        inside = False
+        try:
+            inside = target.resolve().is_relative_to(root.resolve())
+        except (OSError, ValueError):
+            inside = False
+        # A reused file already has its place. Cover and lyrics stay off its folder.
+        if not reused and inside:
+            for source, destination in [
+                (folder / "cover.jpg", target.parent / "cover.jpg"),
+                (folder / "ready.lrc", target.with_suffix(".lrc")),
+            ]:
+                if source.is_file() and not destination.exists():
+                    try:
+                        publish_file(source, destination)
+                    except FileExistsError:
+                        pass
+            await asyncio.to_thread(self.library.index_published, target, root)
         current = self.jobs.get(job.id)
         warnings = list(current.warnings)
         details = info or {}

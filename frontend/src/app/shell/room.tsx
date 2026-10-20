@@ -16,6 +16,7 @@ import type { LucideIcon } from 'lucide-react'
 
 import { api, libraryAlbumsSchema } from '../../api'
 import { activeCount, useJobs } from '../../features/downloads/jobs'
+import { useListenerUi } from '../../features/listener/sheet'
 import { PetFace, usePerchShown } from '../../features/music-bot/pet-host'
 import { usePetSettings } from '../../features/music-bot/pet-settings'
 import { usePlayer } from '../../features/player/player'
@@ -202,6 +203,7 @@ export function RoomShell() {
   const petHidden = usePetSettings().hidden
   const perched = usePerchShown()
   const [title, subtitle] = useHeading(pathname, status)
+  const listener = useListenerUi()
 
   // Now Playing has every control the dock has, so the dock stands down beside it, as the Classic
   // footer does. A preview has no Now Playing, so it keeps the dock there.
@@ -326,6 +328,16 @@ export function RoomShell() {
             'max-phone:sticky max-phone:top-0 max-phone:z-header max-phone:h-[calc(var(--topbar-height)+var(--safe-top))] max-phone:bg-canvas max-phone:pt-[var(--safe-top)] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
           )}
         >
+          {listener.name && (
+            <button
+              type="button"
+              className="max-w-[9rem] shrink-0 truncate text-body font-semibold"
+              aria-label={`Listening as ${listener.name}`}
+              onClick={listener.open}
+            >
+              {listener.name}
+            </button>
+          )}
           <div className="flex min-w-0 flex-1 items-baseline gap-[10px]">
             <span className="text-heading font-semibold tracking-[-0.4px] whitespace-nowrap max-phone:text-subtitle">
               {title}

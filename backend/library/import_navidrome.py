@@ -64,9 +64,14 @@ class NavidromeImport:
             raise ValueError("Choose exactly one existing Navidrome user by name or id")
         self.user = str(users[0]["id"])
 
-    def plan(self, target: sqlite3.Connection) -> ImportPlan:
-        """Match against one target snapshot; apply rebuilds this plan under the writer lock."""
+    def plan(self, target: sqlite3.Connection, listener: str = "") -> ImportPlan:
+        """Match against one target snapshot; apply rebuilds this plan under the writer lock.
+
+        `listener` is empty for the unclaimed pool. A named import reads that name's counts,
+        likes, and queue, and leaves the file's own columns out of the comparison.
+        """
         target.row_factory = sqlite3.Row
+        scoped = _has_listener(target)
         if not 6 <= target.execute("PRAGMA user_version").fetchone()[0] <= SCHEMA_VERSION:
             raise ValueError("Import requires an already-scanned compatible Musimo database")
         enabled = {
@@ -134,10 +139,17 @@ class NavidromeImport:
                 plan.matched_tags += 1
             matches[str(song["id"])] = matched
 
-        linked = target.execute(
-            "SELECT p.id FROM linked_playlists l JOIN playlists p "
-            "ON l.playlist_id='pl-' || p.id WHERE l.key='liked'"
-        ).fetchone()
+        if scoped:
+            linked = target.execute(
+                "SELECT p.id FROM linked_playlists l JOIN playlists p "
+                "ON l.playlist_id='pl-' || p.id WHERE l.key='liked' AND l.listener_id=?",
+                (listener,),
+            ).fetchone()
+        else:
+            linked = target.execute(
+                "SELECT p.id FROM linked_playlists l JOIN playlists p "
+                "ON l.playlist_id='pl-' || p.id WHERE l.key='liked'"
+            ).fetchone()
         liked = {
             str(row[0])
             for row in target.execute(
@@ -154,7 +166,26 @@ class NavidromeImport:
                 "JOIN library_roots r ON f.root=r.path WHERE r.enabled=1"
             )
         }
-        starred = {str(row[0]) for row in target.execute("SELECT artist_id FROM artist_favourites")}
+        if scoped:
+            starred = {
+                str(row[0])
+                for row in target.execute(
+                    "SELECT artist_id FROM artist_favourites WHERE listener_id=?", (listener,)
+                )
+            }
+            file_plays = {
+                str(row[0]): (int(row[1]), row[2])
+                for row in target.execute(
+                    "SELECT song_id, play_count, last_played FROM listener_plays "
+                    "WHERE listener_id=?",
+                    (listener,),
+                )
+            }
+        else:
+            starred = {
+                str(row[0]) for row in target.execute("SELECT artist_id FROM artist_favourites")
+            }
+            file_plays = {}
         for item in self.source.execute(
             "SELECT a.*, ar.name AS artist_name FROM annotation a "
             "LEFT JOIN artist ar ON a.item_type='artist' AND ar.id=a.item_id WHERE a.user_id=?",
@@ -164,12 +195,16 @@ class NavidromeImport:
                 row = matches[item["item_id"]]
                 count = max(0, int(item["play_count"] or 0))
                 when = timestamp(item["play_date"])
-                old_when = timestamp(row["last_played"])
-                if count > row["play_count"] or (when and (not old_when or when > old_when)):
+                if listener and scoped:
+                    old_count, old_raw = file_plays.get(str(row["song_id"]), (0, None))
+                else:
+                    old_count, old_raw = int(row["play_count"]), row["last_played"]
+                old_when = timestamp(old_raw)
+                if count > old_count or (when and (not old_when or when > old_when)):
                     plan.plays.append(
                         (
                             row["song_id"],
-                            max(count, row["play_count"]),
+                            max(count, old_count),
                             max(filter(None, (when, old_when)), default=None),
                         )
                     )
@@ -186,7 +221,15 @@ class NavidromeImport:
                     )
                     starred.add(artist_id)
 
-        names = {str(row[0]) for row in target.execute("SELECT name FROM playlists")}
+        if scoped:
+            names = {
+                str(row[0])
+                for row in target.execute(
+                    "SELECT name FROM playlists WHERE listener_id=?", (listener,)
+                )
+            }
+        else:
+            names = {str(row[0]) for row in target.execute("SELECT name FROM playlists")}
         for playlist in self.source.execute(
             "SELECT id,name,rules FROM playlist WHERE owner_id=? ORDER BY id", (self.user,)
         ):
@@ -215,7 +258,12 @@ class NavidromeImport:
             else:
                 plan.playlists.append((name, songs))
                 names.add(name)
-        has_queue = target.execute("SELECT 1 FROM play_queue_songs LIMIT 1").fetchone()
+        if scoped:
+            has_queue = target.execute(
+                "SELECT 1 FROM play_queue_songs WHERE listener_id=? LIMIT 1", (listener,)
+            ).fetchone()
+        else:
+            has_queue = target.execute("SELECT 1 FROM play_queue_songs LIMIT 1").fetchone()
         has_source_queue = self.source.execute(
             "SELECT 1 FROM sqlite_master WHERE type='table' AND name='playqueue'"
         ).fetchone()
@@ -245,26 +293,52 @@ class NavidromeImport:
             plan.skipped.append({"kind": "no_source_queue"})
         return plan
 
-    def apply(self, store: Store) -> ImportPlan:
-        """Commit all listening state together; a failed write leaves the old state intact."""
+    def apply(self, store: Store, listener: str | None = None) -> ImportPlan:
+        """Commit all listening state together; a failed write leaves the old state intact.
+
+        `listener` is a name or id. None picks the only name, or the unclaimed pool when
+        there are none, and refuses when several names exist and none was given.
+        """
         with store.lock:
             db = store.db
             db.execute("BEGIN IMMEDIATE")
             try:
-                plan = self.plan(db)
+                target_id = store.import_target(listener)
+                plan = self.plan(db, target_id)
                 now = store._timestamp()
                 for song, count, when in plan.plays:
-                    db.execute(
-                        "UPDATE library_files SET play_count=max(play_count,?), "
-                        "last_played=nullif(max(coalesce(last_played,''),coalesce(?,'')),'') "
-                        "WHERE song_id=?",
-                        (count, when, song),
-                    )
-                db.executemany("INSERT OR IGNORE INTO artist_favourites VALUES (?,?)", plan.artists)
+                    if target_id:
+                        db.execute(
+                            """
+                            INSERT INTO listener_plays
+                                (listener_id, song_id, play_count, last_played)
+                            VALUES (?,?,?,?)
+                            ON CONFLICT(listener_id, song_id) DO UPDATE SET
+                                play_count=max(listener_plays.play_count, excluded.play_count),
+                                last_played=nullif(max(
+                                    coalesce(listener_plays.last_played,''),
+                                    coalesce(excluded.last_played,'')
+                                ), '')
+                            """,
+                            (target_id, song, count, when),
+                        )
+                    else:
+                        db.execute(
+                            "UPDATE library_files SET play_count=max(play_count,?), "
+                            "last_played=nullif(max(coalesce(last_played,''),coalesce(?,'')),'') "
+                            "WHERE song_id=?",
+                            (count, when, song),
+                        )
+                db.executemany(
+                    "INSERT OR IGNORE INTO artist_favourites "
+                    "(listener_id, artist_id, starred_at) VALUES (?,?,?)",
+                    [(target_id, artist, starred) for artist, starred in plan.artists],
+                )
                 for name, songs in plan.playlists:
                     playlist_id = db.execute(
-                        "INSERT INTO playlists(name,public,created,changed) VALUES (?,0,?,?)",
-                        (name, now, now),
+                        "INSERT INTO playlists(name,public,created,changed,listener_id) "
+                        "VALUES (?,0,?,?,?)",
+                        (name, now, now, target_id),
                     ).lastrowid
                     db.executemany(
                         "INSERT INTO playlist_songs VALUES (?,?,?)",
@@ -273,20 +347,23 @@ class NavidromeImport:
                 if plan.likes:
                     linked = db.execute(
                         "SELECT p.id FROM linked_playlists l JOIN playlists p "
-                        "ON l.playlist_id='pl-' || p.id WHERE l.key='liked'"
+                        "ON l.playlist_id='pl-' || p.id WHERE l.key='liked' AND l.listener_id=?",
+                        (target_id,),
                     ).fetchone()
                     playlist_id = (
                         linked[0]
                         if linked
                         else db.execute(
-                            "INSERT INTO playlists(name,public,created,changed) "
-                            "VALUES ('Liked',0,?,?)",
-                            (now, now),
+                            "INSERT INTO playlists(name,public,created,changed,listener_id) "
+                            "VALUES ('Liked',0,?,?,?)",
+                            (now, now, target_id),
                         ).lastrowid
                     )
                     db.execute(
-                        "INSERT OR REPLACE INTO linked_playlists VALUES ('liked',?)",
-                        (f"pl-{playlist_id}",),
+                        "INSERT INTO linked_playlists (listener_id, key, playlist_id) "
+                        "VALUES (?,?,?) ON CONFLICT(listener_id, key) DO UPDATE SET "
+                        "playlist_id=excluded.playlist_id",
+                        (target_id, "liked", f"pl-{playlist_id}"),
                     )
                     position = db.execute(
                         "SELECT count(*) FROM playlist_songs WHERE playlist_id=?", (playlist_id,)
@@ -298,12 +375,18 @@ class NavidromeImport:
                     db.execute("UPDATE playlists SET changed=? WHERE id=?", (now, playlist_id))
                 if plan.queue:
                     songs, current, position = plan.queue
+                    db.execute(
+                        "INSERT OR IGNORE INTO play_queue (listener_id) VALUES (?)", (target_id,)
+                    )
                     db.executemany(
-                        "INSERT INTO play_queue_songs VALUES (?,?)", list(enumerate(songs))
+                        "INSERT INTO play_queue_songs (listener_id, position, song_id) "
+                        "VALUES (?,?,?)",
+                        [(target_id, index, song) for index, song in enumerate(songs)],
                     )
                     db.execute(
-                        "UPDATE play_queue SET current_id=?,position_ms=?,changed=? WHERE id=1",
-                        (current, position, now),
+                        "UPDATE play_queue SET current_id=?,position_ms=?,changed=? "
+                        "WHERE listener_id=?",
+                        (current, position, now, target_id),
                     )
                 db.execute("UPDATE library_revision SET value=value+1 WHERE id=1")
                 store._event(
@@ -317,6 +400,34 @@ class NavidromeImport:
                 raise
 
 
+def _has_listener(db: sqlite3.Connection) -> bool:
+    return any(str(row[1]) == "listener_id" for row in db.execute("PRAGMA table_info(playlists)"))
+
+
+def _known_listeners(db: sqlite3.Connection) -> list[sqlite3.Row]:
+    found = db.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='listeners'"
+    ).fetchone()
+    if found is None:
+        return []
+    return list(db.execute("SELECT id, name FROM listeners ORDER BY created"))
+
+
+def resolve_listener(rows: list[sqlite3.Row], named: str) -> str:
+    """The id a dry run should read. Opening the store would migrate, which is a write."""
+    if named:
+        folded = named.casefold()
+        for row in rows:
+            if str(row["id"]) == named or str(row["name"]).casefold() == folded:
+                return str(row["id"])
+        raise ValueError("No listener by that name")
+    if not rows:
+        return ""
+    if len(rows) == 1:
+        return str(rows[0]["id"])
+    raise ValueError("Name the listener to import into")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("source", type=Path)
@@ -327,6 +438,9 @@ def main() -> None:
         "--write", action="store_true", help="Apply after backup, with Musimo stopped"
     )
     parser.add_argument("--report", type=Path)
+    parser.add_argument(
+        "--listener", default="", help="Name or id, required when more than one exists"
+    )
     args = parser.parse_args()
     if args.source.resolve() == args.target.resolve():
         parser.error("Source and target must be different files")
@@ -342,11 +456,12 @@ def main() -> None:
             sqlite3.connect(args.target.resolve().as_uri() + "?mode=ro", uri=True)
         ) as target:
             target.execute("BEGIN")
-            plan = importer.plan(target)
+            chosen = resolve_listener(_known_listeners(target), args.listener)
+            plan = importer.plan(target, chosen)
         if args.write:
             store = Store(args.target)
             try:
-                plan = importer.apply(store)
+                plan = importer.apply(store, args.listener or None)
             finally:
                 store.close()
         report = plan.report() | {"written": args.write}

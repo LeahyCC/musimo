@@ -676,7 +676,8 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
                     target TEXT NOT NULL,
                     receipt TEXT NOT NULL
                 );
-                INSERT INTO bot_proposals VALUES ('pr-0123456789abcdef', 1, 1, 'then');
+                INSERT INTO bot_proposals (id, latest, touched, created, listener_id)
+                    VALUES ('pr-0123456789abcdef', 1, 1, 'then', '');
                 INSERT INTO bot_receipts VALUES
                     ('op-v10-0001', 'pr-0123456789abcdef', 1, 'queue', '{json.dumps(receipt)}');
                 PRAGMA user_version=10;
@@ -686,7 +687,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
                 store = Store(path)
                 try:
                     version = store.db.execute("PRAGMA user_version").fetchone()[0]
-                    self.assertEqual((version, SCHEMA_VERSION), (13, 13))
+                    self.assertEqual((version, SCHEMA_VERSION), (15, 15))
                     keys = store.db.execute("PRAGMA foreign_key_list(bot_receipts)").fetchall()
                     self.assertEqual(keys, [])
                     store.db.execute("DELETE FROM bot_proposals")
@@ -710,7 +711,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
                 store = Store(path)
                 try:
                     version = store.db.execute("PRAGMA user_version").fetchone()[0]
-                    self.assertEqual((version, SCHEMA_VERSION), (13, 13))
+                    self.assertEqual((version, SCHEMA_VERSION), (15, 15))
                     tables = {
                         str(row[0]) for row in store.db.execute("SELECT name FROM sqlite_master")
                     }

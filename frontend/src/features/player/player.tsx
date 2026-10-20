@@ -46,6 +46,13 @@ import { cx } from '../../lib/cx'
 import { IconButton, iconButtonClassName, useToast } from '../../ui'
 import type { ToastAction, ToastTone } from '../../ui'
 import {
+  CHOSEN_KEY,
+  DECK_KEY,
+  placeKey,
+  registerListenerPlace,
+  withListener,
+} from '../listener/identity'
+import {
   accountCookieReplaced,
   accountStreamStopped,
   adoptLibraryTrack,
@@ -69,7 +76,7 @@ import {
   writeHistory,
 } from './play-history'
 import { PlaylistPicker } from './playlist-picker'
-import { QueueWriter } from './queue-writer'
+import { type QueueSave, QueueWriter } from './queue-writer'
 import {
   playsAlbumInOrder,
   replayGainHasPeak,
@@ -250,10 +257,6 @@ export { QUEUE_LIMIT }
 export const EDITED_SOURCE = 'queue'
 /** The source of a queue brought back after a reload, which does not remember where it began. */
 export const RESTORED_SOURCE = 'restored'
-/** Where the entries queued by hand are kept, by position, across a reload. */
-const CHOSEN_KEY = 'musimo.queue-chosen'
-/** A Tracks shuffle that does not fit in the saved queue. The order itself stays on the server. */
-const DECK_KEY = 'musimo.shuffle-deck'
 
 /**
  * What the queue counts as coming from. An edit does not take the collection away: it is still the
@@ -584,7 +587,7 @@ function strings(value: unknown): string[] | null {
 /** The saved deck only belongs to the queue it was written with. */
 function readDeck(queueIds: string[]): Deck | null {
   try {
-    const raw: unknown = JSON.parse(stored(DECK_KEY, ''))
+    const raw: unknown = JSON.parse(stored(placeKey(DECK_KEY), ''))
     if (!raw || typeof raw !== 'object') return null
     const body = raw as { seed?: unknown; cursor?: unknown; total?: unknown; queue?: unknown }
     const queue = strings(body.queue)
@@ -1010,7 +1013,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // `announce` is for an edit the listener just made: it is the one save whose failure they need
   // to hear about, since the queue on screen would then differ from the one that restores.
-  function persistQueue(body: string): Promise<Response | null> {
+  function writer(): QueueWriter {
     queueWriter.current ??= new QueueWriter((replaced) => {
       const kind = replaced ? 'replaced' : 'failed'
       if (queueFailureShown.current === kind) return
@@ -1019,15 +1022,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       else queueSaveFailed()
     })
 
-    return queueWriter.current.save(body).then((response) => {
-      if (response?.ok) queueFailureShown.current = null
-      return response
-    })
+    return queueWriter.current
+  }
+
+  function persistQueue(body: string, begun?: QueueSave): Promise<Response | null> {
+    return writer()
+      .save(body, begun)
+      .then((response) => {
+        if (response?.ok) queueFailureShown.current = null
+        return response
+      })
   }
 
   function saveQueue(announce = false): Promise<boolean> {
     if (mode.current !== 'library' || !libraryCurrent.current) return Promise.resolve(false)
     const generation = ++queueSave.current
+    // Fixed before the account-tracks wait. A switch can reset the writer while that
+    // request is still out, and this snapshot must not be written onto the next name.
+    const begun = writer().begin()
     const ids = queueRef.current.map((item) => item.id)
     const remembered = queueRef.current.flatMap((item) =>
       item.origin === 'deezer' && item.deezerId
@@ -1049,13 +1061,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       current: libraryCurrent.current.id,
       position: Math.round((library()?.currentTime ?? 0) * 1000),
     })
-    const write = () => persistQueue(body)
+    const write = () => persistQueue(body, begun)
     const ready = remembered.length
-      ? fetch('/api/player/account/tracks', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ tracks: remembered }),
-        }).then((response) => {
+      ? fetch(
+          '/api/player/account/tracks',
+          withListener({
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ tracks: remembered }),
+          }),
+        ).then((response) => {
           // A queue of dz- ids is dropped on restore when these rows were never saved.
           if (!response.ok) throw new Error('The queue could not be saved.')
         })
@@ -1083,8 +1098,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // fingerprint of the queue it belongs to, and let the restore check that the two still match.
   function saveChosen() {
     const saved = encodeChosen(queueRef.current, chosen.current)
-    if (saved) remember(CHOSEN_KEY, saved)
-    else forget(CHOSEN_KEY)
+    if (saved) remember(placeKey(CHOSEN_KEY), saved)
+    else forget(placeKey(CHOSEN_KEY))
   }
 
   // Tells the rest of the app which collection the queue counts as coming from right now. It
@@ -1104,11 +1119,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const item = libraryCurrent.current
     // An account listen is not a library play.
     if (!item || item.origin === 'deezer') return
-    void fetch('/api/player/scrobble', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ id: item.id, submission }),
-    })
+    void fetch(
+      '/api/player/scrobble',
+      withListener({
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: item.id, submission }),
+      }),
+    )
   }
 
   // Called once a track has been heard: past HISTORY_LISTEN_SECONDS, or through to its end when it
@@ -1688,12 +1706,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function writeDeck(value: Deck | null, queueIds: string[]) {
     if (!value) {
-      forget(DECK_KEY)
+      forget(placeKey(DECK_KEY))
       return
     }
 
     try {
-      localStorage.setItem(DECK_KEY, JSON.stringify({ ...value, queue: queueIds }))
+      localStorage.setItem(placeKey(DECK_KEY), JSON.stringify({ ...value, queue: queueIds }))
     } catch {
       /* No fingerprint for a queue this browser could not store. */
     }
@@ -2165,29 +2183,117 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setNotice('Choose a track to start listening.')
   }
 
+  const restoreToken = useRef(0)
+  const leaveRef = useRef<() => Promise<void>>(async () => undefined)
+  const arriveRef = useRef<() => Promise<boolean>>(async () => false)
+
+  function pauseHere() {
+    accountRequest.current?.abort()
+    setFetchingId(null)
+    const element = current()
+    if (element && !element.paused) {
+      endCrossfade()
+      element.pause()
+    }
+    setPlaying(false)
+  }
+
+  // Clears what is on screen without writing a queue. A switch must not save the name being left
+  // onto the name just opened, and an empty queue must not wipe the one the server kept.
+  function unloadWithoutSaving() {
+    accountRequest.current?.abort()
+    setFetchingId(null)
+    request.current?.abort()
+    cancelHandover()
+    preload.current = null
+    failures.current = 0
+    previewCurrent.current = null
+    libraryCurrent.current = null
+    sourceRef.current = ''
+    editedRef.current = false
+    deck.current = null
+    chosen.current = new Set()
+    queueRef.current = []
+    fadingOut.current = null
+    clearSleep()
+    for (const element of elements()) {
+      element?.pause()
+      element?.removeAttribute('src')
+      element?.load()
+    }
+    setSource('')
+    setEdited(false)
+    setTrack(null)
+    setLibraryTrack(null)
+    setQueue([])
+    setPlaying(false)
+    setReady(false)
+    setPosition(0)
+    setCurrentIndex(-1)
+    setNotice('Choose a track to start listening.')
+  }
+
+  function reloadHistory() {
+    const next = readHistory()
+    historyRef.current = next
+    setHistory(next)
+  }
+
+  // `replace` throws away the name we just left. The first load leaves an empty player as it is.
+  async function restoreFromServer(replace: boolean): Promise<boolean> {
+    const token = ++restoreToken.current
+    try {
+      const saved = await api('player/queue', playerQueueSchema)
+      if (token !== restoreToken.current) return false
+      if (!saved.entry.length) {
+        if (replace) unloadWithoutSaving()
+        return false
+      }
+      const index = Math.max(
+        0,
+        saved.entry.findIndex((item) => item.id === saved.current),
+      )
+      queueRef.current = saved.entry
+      setQueue(saved.entry)
+      const savedDeck = readDeck(saved.entry.map((item) => item.id))
+      if (savedDeck) {
+        deck.current = savedDeck
+        setShuffle(true)
+      } else deck.current = null
+      sourceRef.current = RESTORED_SOURCE
+      // Only the ids came back, so the songs queued by hand are found again by their places.
+      chosen.current = decodeChosen(saved.entry, stored(placeKey(CHOSEN_KEY), ''))
+      loadLibrary(index, false, saved.position / 1000)
+      setNotice(RESTORED_NOTICE)
+      return true
+    } catch {
+      if (token === restoreToken.current && replace) unloadWithoutSaving()
+      return false
+    }
+  }
+
+  leaveRef.current = async () => {
+    pauseHere()
+    await saveQueue()
+  }
+
+  arriveRef.current = async () => {
+    queueWriter.current?.reset()
+    reloadHistory()
+    return restoreFromServer(true)
+  }
+
+  useEffect(
+    () =>
+      registerListenerPlace({
+        leave: () => leaveRef.current(),
+        arrive: () => arriveRef.current(),
+      }),
+    [],
+  )
+
   useEffect(() => {
-    void api('player/queue', playerQueueSchema)
-      .then((saved) => {
-        if (!saved.entry.length) return
-        const index = Math.max(
-          0,
-          saved.entry.findIndex((item) => item.id === saved.current),
-        )
-        queueRef.current = saved.entry
-        setQueue(saved.entry)
-        const savedDeck = readDeck(saved.entry.map((item) => item.id))
-        if (savedDeck) {
-          deck.current = savedDeck
-          setShuffle(true)
-        }
-        sourceRef.current = RESTORED_SOURCE
-        // Only the ids came back, so the songs queued by hand are found again by their places.
-        // They are dropped, not guessed at, when the queue is no longer the one they were saved for.
-        chosen.current = decodeChosen(saved.entry, stored(CHOSEN_KEY, ''))
-        loadLibrary(index, false, saved.position / 1000)
-        setNotice(RESTORED_NOTICE)
-      })
-      .catch(() => undefined)
+    void restoreFromServer(false)
   }, [])
 
   // Also re-runs when what the gain depends on changes: the setting, shuffle (album gain needs the

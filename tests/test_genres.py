@@ -51,6 +51,25 @@ class GenreTests(unittest.TestCase):
         self.assertEqual(genre_words_in("popular songs from around the world"), [])
         self.assertEqual(genre_words_in("anything except hip hop"), [])
         self.assertEqual(genre_words_in("no rock"), [])
+        self.assertEqual(genre_words_in("some liquid dnb"), ["liquid dnb"])
+        self.assertEqual(genre_words_in("play some trip hop"), ["trip hop"])
+
+    def test_drum_and_bass_and_hyphen_spellings(self) -> None:
+        liquid = ("Liquid Drum and Bass",)
+        self.assertTrue(matches_genres(("liquid",), liquid))
+        self.assertTrue(matches_genres(("liquid dnb",), liquid))
+        self.assertFalse(matches_genres(("liquid",), ("Neurofunk",)))
+        self.assertFalse(matches_genres(("liquid",), ("Drum and Bass",)))
+        for word in ("dnb", "drum & bass", "drum n bass", "drum and bass"):
+            self.assertTrue(matches_genres((word,), ("Drum and Bass",)), word)
+        for tag in ("Liquid Drum and Bass", "Neurofunk", "Jungle"):
+            self.assertTrue(matches_genres(("drum and bass",), (tag,)), tag)
+            self.assertTrue(matches_genres(("dnb",), (tag,)), tag)
+        self.assertTrue(matches_genres(("electronic",), ("Neurofunk",)))
+        self.assertFalse(matches_genres(("drum and bass",), ("Trance",)))
+        lounge = ("Chill Out/Trip-Hop/Lounge",)
+        self.assertTrue(matches_genres(("trip hop",), lounge))
+        self.assertTrue(matches_genres(("trip-hop",), lounge))
 
     def test_table_matches_the_documented_mapping(self) -> None:
         groups = set(GENRE_WORDS.values())

@@ -147,6 +147,9 @@ class Job(BaseModel):
     notes: list[str] = Field(default_factory=list)
     final_path: str = ""
     artifact_hash: str = ""
+    # A byte match pointed this job at a file that was already here. Recovery must not
+    # publish cover or lyrics beside that file. Jobs from before this field load as false.
+    reused_file: bool = False
     codec: str = ""
     actual_bitrate: int = 0
     created_at: float
@@ -166,9 +169,15 @@ class Job(BaseModel):
         return data
 
     def public(self) -> dict[str, object]:
-        return self.model_dump(exclude={"meta": {"lyrics", "synced_lyrics"}}) | {
-            "source_label": source_label(self.source)
-        }
+        return self.model_dump(
+            exclude={"reused_file": True, "meta": {"lyrics", "synced_lyrics"}}
+        ) | {"source_label": source_label(self.source)}
+
+
+class HoldingRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+    track_id: int = Field(gt=0)
+    song_id: str = Field(min_length=1)
 
 
 class Enqueue(BaseModel):

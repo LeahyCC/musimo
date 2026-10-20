@@ -10,6 +10,13 @@ from backend.core.job_models import RUNNING, TERMINAL, CatalogName, Format, Job,
 from backend.core.sources import Kind
 from backend.core.store import VISIBLE_ID_SQL, Store
 from backend.integrations import deezer_cookie
+from backend.jobs.holdings import (
+    catalog_candidates,
+    ensure_holding,
+    first_regular,
+    indexed_song,
+    path_is_regular_in_root,
+)
 
 
 class JobConflict(ValueError):
@@ -115,12 +122,32 @@ class Jobs:
         kinds: dict[int, Kind] | None = None,
         untidied: frozenset[int] = frozenset(),
     ) -> builtins.list[Job]:
-        """Queue tracks, reusing active or completed jobs. `prepared` supplies the metadata and
-        file address for podcast and link jobs, which have no catalog lookup later. An empty
-        `source` on a catalog song is the first row that can run. A podcast takes `podcast`.
-        `kinds` overrides `kind` for a track that is of another kind than its site's, such as a
-        long SoundCloud track. Tracks in `untidied` keep the tags their site gave them."""
+        """Queue tracks, reusing an active job or a Deezer file already in the library.
+
+        A finished Deezer track whose file is still a regular indexed file is returned as it
+        stands, and a holding is recorded. Format and destination do not matter for that reuse.
+        `replace_match` asks for another recording and always inserts. Podcast and link jobs still
+        reuse a completed job only when the catalog id, format and destination match and the file
+        exists. `prepared` supplies the metadata and file address for those jobs, which have no
+        catalog lookup later. An empty `source` on a catalog song is the first row that can run.
+        A podcast takes `podcast`. `kinds` overrides `kind` for a track that is of another kind
+        than its site's, such as a long SoundCloud track. Tracks in `untidied` keep the tags their
+        site gave them."""
         jobs: builtins.list[Job] = []
+        # Which house files are still regular is decided before the write transaction, so a
+        # slow disk does not hold it open. The chosen path is checked once more before insert.
+        deezer_ids = [
+            track_id
+            for track_id in tracks
+            if catalog == "deezer" and not replace_match and track_id > 0
+        ]
+        with self.store.lock:
+            candidates = catalog_candidates(self.store.db, deezer_ids)
+        chosen = {
+            track_id: found
+            for track_id, rows in candidates.items()
+            if (found := first_regular(rows)) is not None
+        }
         with self.store.lock:
             self.store.db.execute("BEGIN IMMEDIATE")
             try:
@@ -143,6 +170,21 @@ class Jobs:
                     if row:
                         jobs.append(Job.model_validate_json(row[0]))
                         continue
+                    # A Deezer file already indexed is the whole answer, any format or folder.
+                    # Anything short of that falls through to the same check as before.
+                    if track_id in chosen:
+                        done, song_id, path, root = chosen[track_id]
+                        indexed = indexed_song(self.store.db, song_id)
+                        if (
+                            indexed is not None
+                            and str(indexed["path"]) == path
+                            and path_is_regular_in_root(path, root)
+                        ):
+                            ensure_holding(
+                                self.store.db, "deezer", track_id, song_id, path, "catalog"
+                            )
+                            jobs.append(done)
+                            continue
                     if not replace_match:
                         saved = self.store.db.execute(
                             "SELECT payload FROM jobs WHERE catalog=? AND track_id=? "
