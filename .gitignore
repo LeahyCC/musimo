@@ -4,6 +4,7 @@ node_modules/
 # not walk a dozen full checkouts.
 .claude/
 frontend/dist/
+*.tsbuildinfo
 .venv/
 __pycache__/
 .mypy_cache/
