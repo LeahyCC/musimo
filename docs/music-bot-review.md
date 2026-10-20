@@ -27,7 +27,7 @@ Logs are in ignored `runtime/milestone1/`. The saved initial diff is `preexistin
 
 ## Live model checks
 
-[Recorded results](evidence/music-bot-models.json) contain 18 passing guarded-workflow checks: the acceptance request, reference-artist removal and "make the rest calmer", twice for each of three installed models. This is a small fixed corpus, not proof of general recommendation quality.
+Recorded results contain 18 passing guarded-workflow checks: the acceptance request, reference-artist removal and "make the rest calmer", twice for each of three installed models. This is a small fixed corpus, not proof of general recommendation quality.
 
 Acceptance wall-clock times on this Windows PC (Ryzen 9 9900X, RTX 5080): llama3.1:8b took 5.19 seconds cold and 0.64 seconds warm; qwen2.5-coder:7b took 0.69 and 0.71 seconds warm; gpt-oss:20b took 15.46 seconds cold and 1.36 seconds warm. Qwen was already loaded in this final run, so it has no cold measurement there. An earlier run with the final prompt measured 4.08 seconds cold for Qwen. Cold is established by `/api/ps`, without evicting another application's model. Times include model listing, generation and library resolution. Follow-ups are warm even when grouped under the initial cold pass in the JSON.
 
@@ -43,7 +43,7 @@ Checks: `tests/test_music_bot.py`, `scripts/music_bot_benchmark.py`, `frontend/e
 
 Dependency: `pyproject.toml`, `uv.lock`, `requirements.lock`, adding pinned `tzdata` for Windows time zones.
 
-Docs/evidence: `docs/ai-music-plan.md` (status only), `docs/player.md`, `docs/settings.md`, `docs/architecture.md`, `docs/testing.md`, this handoff, `docs/evidence/music-bot-models.json`, `docs/assets/music-bot-desktop.png`, `docs/assets/music-bot-phone.png`.
+Docs/evidence: `docs/ai-music-plan.md` (status only), `docs/player.md`, `docs/settings.md`, `docs/architecture.md`, `docs/testing.md`, this handoff, `docs/assets/music-bot-desktop.png`, `docs/assets/music-bot-phone.png`. The raw results file named in the first draft, `docs/evidence/music-bot-models.json`, was never committed and is lost; the figures above are all that remain.
 
 ## Remaining issues and boundaries
 
