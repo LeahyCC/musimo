@@ -5,7 +5,7 @@ This separates files present in the repository from GitHub settings, legal revie
 ## Repository preparation
 
 - [x] MIT source licence and copyright notice. (Initial commit, [LICENSE](../LICENSE))
-- [x] README covering installation, limits, storage, updates and development. ([README.md](../README.md))
+- [x] README and docs covering installation, limits, storage, updates and development. ([README.md](../README.md), [install](install.md), [guide](guide.md), [development](development.md))
 - [x] Contribution guide, issue/PR templates, code ownership and conduct policy. ([CONTRIBUTING.md](../CONTRIBUTING.md), [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md))
 - [x] Security contact, privacy notice and responsible-use terms. ([SECURITY.md](../SECURITY.md), [PRIVACY.md](../PRIVACY.md), [TERMS.md](../TERMS.md))
 - [x] Dependency update configuration and CI checks. ([.github/dependabot.yml](../.github/dependabot.yml), [.github/workflows/](../.github/workflows/))
