@@ -63,8 +63,8 @@ const topItems = [
 ] as const
 
 const libraryItems = [
-  { to: '/library/albums', label: 'Albums', icon: Disc3 },
   { to: '/library/artists', label: 'Artists', icon: MicVocal },
+  { to: '/library/albums', label: 'Albums', icon: Disc3 },
   { to: '/library/tracks', label: 'Tracks', icon: Music },
   { to: '/library/playlists', label: 'Playlists', icon: ListMusic },
 ] as const
@@ -75,11 +75,12 @@ const systemItems = [
   { to: '/diagnostics', label: 'Diagnostics', icon: Activity },
 ] as const
 
-/* The phone's bar has five tabs, and Library is one tab for all four views. */
+/* The phone's bar has five tabs, and Library is one tab for all four views. It goes through
+   `/library`, which opens the view the Library was last on. */
 const phoneTabs = [
   ...topItems.slice(0, 2),
   {
-    to: '/library/albums',
+    to: '/library',
     label: 'Library',
     icon: Library,
     lit: (path: string) => startsWithPath(path, '/library'),

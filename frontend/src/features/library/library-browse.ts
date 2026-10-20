@@ -11,6 +11,7 @@ import {
   loadArtistSort,
   loadLibraryView,
   saveArtistSort,
+  saveLastLibraryView,
   saveLibraryView,
   validateArtistAlbumSearch,
   validateArtistSongSearch,
@@ -94,6 +95,11 @@ export function useLibraryBrowse(tab: LibraryTab, active: boolean) {
     if (sameSearch(fromUrl, pending)) setPending(null)
     if (librarySearchActive(fromUrl) || sameSearch(fromUrl, pending)) setSynced(true)
   }, [fromUrl, onList, pending])
+
+  // The view itself, the moment it is open, so leaving the Library and coming back lands here.
+  useEffect(() => {
+    if (onList && tab !== 'home') saveLastLibraryView(tab)
+  }, [onList, tab])
 
   useEffect(() => {
     if (!onList || !synced) return
