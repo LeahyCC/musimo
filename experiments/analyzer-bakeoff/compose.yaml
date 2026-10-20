@@ -1,0 +1,56 @@
+# Analyser bake-off, 19 October 2026. See docs/analyzer-bakeoff.md. Its own project, never
+# combined with the main compose files. No network, read-only root, music and models, 2 GB with
+# no swap, one CPU, UID 1000. Code lives here; models, the sample and outputs stay in the
+# ignored runtime/analyzer-bakeoff/. BAKEOFF_MUSIC is the music folder, checked before each run
+# because drive letters move:
+#   $env:BAKEOFF_MUSIC = 'M:/Media/Music'
+#   docker compose -f experiments/analyzer-bakeoff/compose.yaml -p musimo-analyzer-bakeoff run --rm beat-this final0 /out/beat_this-final0
+x-limits: &limits
+  init: true
+  user: '1000:1000'
+  network_mode: none
+  read_only: true
+  mem_limit: 2g
+  memswap_limit: 2g
+  cpus: '1'
+  pids_limit: 64
+  security_opt:
+    - no-new-privileges:true
+  cap_drop: [ALL]
+  tmpfs:
+    - /tmp:size=256m,uid=1000,gid=1000
+  volumes:
+    - type: bind
+      source: '${BAKEOFF_MUSIC:?set BAKEOFF_MUSIC to the music folder}'
+      target: /music
+      read_only: true
+    - type: bind
+      source: ../../runtime/analyzer-bakeoff/models
+      target: /models
+      read_only: true
+    - type: bind
+      source: ./harness
+      target: /harness
+      read_only: true
+    - type: bind
+      source: ../../runtime/analyzer-bakeoff/sample.json
+      target: /sample.json
+      read_only: true
+    - type: bind
+      source: ../../runtime/analyzer-bakeoff/out
+      target: /out
+services:
+  beat-this:
+    <<: *limits
+    build: ./images/beat_this
+    image: musimo-bakeoff-beat-this:1
+    entrypoint: ['python', '-I', '/harness/run_beat_this.py']
+  essentia:
+    <<: *limits
+    build: ./images/essentia
+    image: musimo-bakeoff-essentia:1
+    entrypoint: ['python', '-I', '/harness/run_essentia.py']
+  librosa:
+    <<: *limits
+    image: musimo-audio-worker:0.4.0
+    entrypoint: ['python', '-I', '/harness/run_librosa.py']

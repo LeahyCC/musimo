@@ -32,7 +32,7 @@ Start at the top and stop when you have what you need.
 Records of decisions and checks, kept for history. Read them for the why; the pages above say what is true now.
 
 - Plans: [roadmap](roadmap.md), [original brief](brief.md), [research and decisions](research.md), [Discover](discover.md), [more sources](more-sources.md), [music bot and audio indexing](ai-music-plan.md), [song characteristics](audio-profile-spec.md), [V2 gates](v2-gates.md), [UI refactor](ui-refactor-plan.md), [Tailwind migration](tailwind-migration.md), [closing the Navidrome gaps](navidrome-gap-plan.md), [post-0.4.0 work](release-handoff.md).
-- Reviews and trials: [replacing Navidrome](navidrome-replacement-review.md), [music match](match-review.md), [music bot milestone 1](music-bot-review.md), [its fixes](music-bot-review-fixes.md) and [final checks](music-bot-finish-review.md), [audio analysis trial](audio-analysis-trial.md), [genre trial](genre-analysis-trial.md), [its review](genre-trial-review.md) and [genre labels](genre-label-review.md).
+- Reviews and trials: [replacing Navidrome](navidrome-replacement-review.md), [music match](match-review.md), [music bot milestone 1](music-bot-review.md), [its fixes](music-bot-review-fixes.md) and [final checks](music-bot-finish-review.md), [audio analysis trial](audio-analysis-trial.md), [genre trial](genre-analysis-trial.md), [its review](genre-trial-review.md), [genre labels](genre-label-review.md) and [analyser bake-off](analyzer-bakeoff.md).
 
 ## Legal
 
