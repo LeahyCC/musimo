@@ -98,6 +98,26 @@ Play, Play next, Add to queue, Replace upcoming and Save as playlist send a comm
 
 Undo restores only the latest bot queue edit, and refuses after the queue or the loaded track changes. Pausing, or pressing play on the song already loaded, does not refuse it. The card shows that refusal ("Can’t undo." with View queue) as soon as the player stops offering Undo, rather than after a press that cannot work. It also restores a large-library shuffle's seed, cursor, total and queue fingerprint, so playback can fetch beyond the loaded window. An edit to upcoming songs leaves the playing element untouched. Undoing Play restores the earlier song paused at its saved position; undoing a first selection restores an empty queue.
 
+#### On a phone
+
+Under the phone breakpoint both layouts draw the same chat page (`PhoneBotPage` in `bot-page.tsx`), laid out like a messaging app:
+
+```text
+top bar                              keyboard up
+< (pet) Octive         [gear] [bin]  < (pet) Octive         [gear] [bin]
+[Whole library][This sel.][Up next]  [Whole library][This sel.][Up next]
+messages, newest at the foot         messages, newest kept in view
+[Ask Octive for music        ] [>]   [Ask Octive for music        ] [>]
+mini player / tab bar                ==== on-screen keyboard ====
+```
+
+- One header row: Back, the pet, the name and status, Chat settings and Clear chat. The model is picked in Chat settings; the status line names it. Look in fills the next row with three 44px buttons and keeps its label for screen readers only.
+- The page is fixed between the top bar and the player, so it never scrolls the text box away. The conversation scrolls inside it.
+- The result card is a message in the conversation, as in the pet's sheet, in both layouts. The Listening room's Draft panel is for wider windows only. The card reaches out under the reply's pet face, and a song's length sits beside its artist, so the title has the row.
+- No starter chips under a conversation (the empty chat offers them) and no footnote, except while the chat is locked or the text nears its 2,000 characters.
+- The pet does not perch on the mini player on this page; it is in the header.
+- The on-screen keyboard: `useKeyboard` (`src/lib/use-keyboard.ts`) reads `window.visualViewport` while the page or the pet's sheet is open, and sets `data-keyboard`, `--keyboard-inset` and `--keyboard-top` on `<html>` while a keyboard is up. Style.css then hides the top bar, tab bar, mini player and perch (each marked `data-keyboard-hide`) and seats the page or the sheet on the keyboard's top edge. A keyboard counts when the visible viewport stops 120px or more short of the layout viewport (iOS Safari, Android Chrome by default), or the layout viewport shrinks by that much (a browser that resizes it), and only while a text field has the focus, so a pinch zoom or a shorter window does not count. The page and the sheet keep below the notch while the top bar is hidden. The log keeps its newest message in view when its box shrinks, unless it had been scrolled up.
+
 #### The pet
 
 Four characters (cat, bird, robot, blob) drawn from boxes and clip paths in `frontend/src/features/music-bot/pet-shape.tsx`, so one drawing scales from 16px to 72px. The Windows 95 pixels are in `pet-pixel.tsx`. The body takes the theme accent and the face the accent ink, so the face always has the theme's own text-on-accent contrast. The Windows 95 skin draws a 16 by 16 pixel version instead, and the chat becomes a window (title bar, bevelled buttons, a list view for songs, a status bar) through `[data-bot]` rules in `win95.css`.

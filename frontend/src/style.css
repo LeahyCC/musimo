@@ -231,6 +231,31 @@
   }
 }
 
+/* The on-screen keyboard over the music bot's chat on a phone (`lib/use-keyboard.ts`). The bars go
+   while it is up, the way a messaging app's do, so the conversation keeps the room that is left,
+   and the chat page and sheet sit on the keyboard's top edge. After the room rules above, which
+   these tie with on weight. */
+@media (width < theme(--breakpoint-phone)) {
+  :root[data-keyboard] {
+    --nav-height: 0px !important;
+    --player-height: 0px !important;
+  }
+  :root[data-keyboard] [data-keyboard-hide] {
+    display: none !important;
+  }
+  :root[data-keyboard] [data-bot-phone] {
+    /* The top bar is gone, but the notch and status bar still cover the screen's top edge. */
+    top: calc(var(--keyboard-top) + var(--safe-top)) !important;
+    bottom: var(--keyboard-inset) !important;
+  }
+  :root[data-keyboard] .chat-sheet {
+    top: calc(var(--keyboard-top) + var(--safe-top) + 8px) !important;
+    bottom: var(--keyboard-inset) !important;
+    height: auto !important;
+    padding-bottom: 0 !important;
+  }
+}
+
 /* Resets for bare elements sit in Tailwind's `base` layer, so any utility on the element wins. A
    rule outside every layer beats every utility whatever its specificity: left unlayered, `font:
    inherit` on a button would undo the size and weight a primitive in src/ui/ asks for. */

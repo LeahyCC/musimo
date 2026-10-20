@@ -464,6 +464,7 @@ export function ClassicShell() {
           measure the bottom bar with. `data-stage-hide` takes it away on a phone's Now Playing. */}
       <aside
         data-stage-hide=""
+        data-keyboard-hide=""
         className={cx(
           'sidebar fixed inset-y-0 left-[var(--safe-left)] flex w-[var(--sidebar-width)] flex-col gap-[2px] overflow-x-hidden overflow-y-auto border-r border-line bg-sidebar px-[12px] pt-[20px] pb-[14px]',
           'max-phone:inset-x-0 max-phone:top-auto max-phone:z-bar max-phone:h-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:w-auto max-phone:overflow-visible max-phone:border-t max-phone:border-r-0 max-phone:p-0 max-phone:pr-[var(--safe-right)] max-phone:pb-[var(--safe-bottom)] max-phone:pl-[var(--safe-left)]',
@@ -478,6 +479,7 @@ export function ClassicShell() {
       <div className="ml-[calc(var(--sidebar-width)+var(--safe-left))] pr-[var(--safe-right)] max-phone:ml-0 max-phone:pr-0">
         <header
           data-stage-hide=""
+          data-keyboard-hide=""
           className={cx(
             'sticky top-0 z-header flex h-[calc(var(--topbar-height)+var(--safe-top))] items-center gap-[16px] border-b border-line bg-canvas px-[32px] pt-[var(--safe-top)]',
             'max-tablet:px-[24px]',

@@ -6,7 +6,7 @@ import { PageTitle } from '../../components/page-title'
 import { useLayout } from '../../lib/layout'
 import { usePhone } from '../../lib/use-phone'
 import { useBotChat } from './bot-chat'
-import { ClassicBotPage, RoomBotPage } from './bot-page'
+import { ClassicBotPage, PhoneBotPage, RoomBotPage } from './bot-page'
 import { ChatPanel } from './chat-panel'
 import { usePetLook } from './use-pet'
 
@@ -54,7 +54,11 @@ export function MusicBotPage() {
   return (
     <>
       <h1 className="sr-only">Music bot</h1>
-      <Page autoFocus={!phone} />
+      {phone ? (
+        <PhoneBotPage autoFocus={false} look={layout === 'room' ? 'room' : 'page'} />
+      ) : (
+        <Page autoFocus />
+      )}
     </>
   )
 }

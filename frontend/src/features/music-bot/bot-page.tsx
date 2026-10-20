@@ -1,17 +1,17 @@
 import { useState } from 'react'
 
 import { useNavigate, useRouter } from '@tanstack/react-router'
-import { ChevronDown, ChevronLeft, ListMusic, Settings, Trash2 } from 'lucide-react'
+import { ChevronLeft, Settings, Trash2 } from 'lucide-react'
 
 import type { BotScope } from '../../api'
 import { cx } from '../../lib/cx'
-import { usePhone } from '../../lib/use-phone'
+import { useKeyboard } from '../../lib/use-keyboard'
 import { Segmented, SelectChip } from '../../ui'
 import { usePlayer } from '../player/player'
 import { useBotChat } from './bot-chat'
 import { headerButton } from './chat-buttons'
 import { Composer } from './chat-composer'
-import { Conversation, DOT, statusLine } from './chat-panel'
+import { Conversation, DOT, ScopeBar, statusLine } from './chat-panel'
 import { ChatSettings } from './chat-settings'
 import { Pet } from './pet'
 import { ResultCard } from './result-card'
@@ -19,7 +19,8 @@ import { usePetLook, usePetState } from './use-pet'
 
 /* The music bot's page in the two layouts. Classic is one centred column; the Listening room puts
    the chat beside a Draft panel that holds the result. Both draw the same conversation, the same
-   composer and the same result card as the popover and sheet do, so every edit works the same. */
+   composer and the same result card as the popover and sheet do, so every edit works the same.
+   A phone has one page for both, `PhoneBotPage`, at the foot of this file. */
 
 const SCOPES: readonly { value: BotScope; label: string }[] = [
   { value: 'library', label: 'Whole library' },
@@ -141,7 +142,7 @@ function SettingsView({ onBack }: { onBack: () => void }) {
 }
 
 const classicHeight =
-  'h-[calc(100dvh-var(--topbar-height)-var(--player-height)-150px)] min-h-[520px] max-phone:-mx-[20px] max-phone:-mt-[24px] max-phone:h-[calc(100dvh-var(--topbar-height)-var(--safe-top)-var(--player-height)-var(--nav-height)-var(--safe-bottom))] max-phone:min-h-[420px] max-phone:px-[16px]'
+  'h-[calc(100dvh-var(--topbar-height)-var(--player-height)-150px)] min-h-[520px]'
 
 export function ClassicBotPage({ autoFocus }: { autoFocus: boolean }) {
   const chat = useBotChat()
@@ -163,7 +164,7 @@ export function ClassicBotPage({ autoFocus }: { autoFocus: boolean }) {
         <>
           <div
             data-bot="title-bar"
-            className="flex shrink-0 flex-wrap items-center gap-[14px] border-b border-line pb-[16px] max-phone:pt-[12px]"
+            className="flex shrink-0 flex-wrap items-center gap-[14px] border-b border-line pb-[16px]"
           >
             <Back />
             <span className="grid size-[44px] shrink-0 place-items-center" data-bot="title-pet">
@@ -182,7 +183,7 @@ export function ClassicBotPage({ autoFocus }: { autoFocus: boolean }) {
               </h2>
               <Status className="mt-[3px]" />
             </div>
-            <Controls className="max-phone:order-1 max-phone:w-full" />
+            <Controls />
             <ChatTools onSettings={() => setSettings(true)} />
           </div>
           <Conversation petState={petState} autoFocus={autoFocus} flush />
@@ -196,11 +197,7 @@ export function ClassicBotPage({ autoFocus }: { autoFocus: boolean }) {
 export function RoomBotPage({ autoFocus }: { autoFocus: boolean }) {
   const chat = useBotChat()
   const petState = usePetState()
-  const phone = usePhone()
   const [settings, setSettings] = useState(false)
-  // On a phone the draft sits under the chat and folds away, so the chat keeps the screen.
-  const [open, setOpen] = useState(true)
-  const songs = chat.reply?.tracks.length ?? 0
 
   return (
     <section
@@ -246,43 +243,82 @@ export function RoomBotPage({ autoFocus }: { autoFocus: boolean }) {
         data-bot="draft"
         className="flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[18px] bg-raised"
       >
-        {phone && (
-          <button
-            type="button"
-            aria-expanded={open}
-            onClick={() => setOpen((value) => !value)}
-            className="flex min-h-11 items-center gap-[8px] border-0 bg-transparent px-[18px] text-left text-small font-medium text-text"
-          >
-            <ListMusic size={15} aria-hidden="true" />
-            Draft
-            <span className="text-muted">
-              {songs > 0 ? `${songs} ${songs === 1 ? 'song' : 'songs'}` : 'empty'}
-            </span>
-            <ChevronDown
-              size={16}
-              aria-hidden="true"
-              className={cx('ml-auto text-muted', open && 'rotate-180')}
-            />
-          </button>
-        )}
-        {(!phone || open) && (
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {chat.reply ? (
-              <ResultCard reply={chat.reply} variant="draft" />
-            ) : (
-              <div className="grid gap-[10px] p-[18px]">
-                <span className="w-fit rounded-[5px] bg-partial-bg px-[7px] py-[3px] font-mono text-[10.5px] tracking-[0.6px] text-partial">
-                  DRAFT · NOT PLAYING
-                </span>
-                <p className="m-0 leading-[1.5] text-muted">
-                  Nothing here yet. Ask for music and the songs show up here first. Nothing plays
-                  until you say so.
-                </p>
-              </div>
-            )}
-          </div>
-        )}
+        <div className="min-h-0 flex-1 overflow-y-auto">
+          {chat.reply ? (
+            <ResultCard reply={chat.reply} variant="draft" />
+          ) : (
+            <div className="grid gap-[10px] p-[18px]">
+              <span className="w-fit rounded-[5px] bg-partial-bg px-[7px] py-[3px] font-mono text-[10.5px] tracking-[0.6px] text-partial">
+                DRAFT · NOT PLAYING
+              </span>
+              <p className="m-0 leading-[1.5] text-muted">
+                Nothing here yet. Ask for music and the songs show up here first. Nothing plays
+                until you say so.
+              </p>
+            </div>
+          )}
+        </div>
       </section>
+    </section>
+  )
+}
+
+/**
+ * A phone's chat page, in either layout, laid out like a messaging app: one header row, where the
+ * next request looks, the conversation, and the text box at the foot. It is fixed between the top
+ * bar and the player, so the page never scrolls the box away, and while the on-screen keyboard is
+ * up it sits on the keyboard instead (`useKeyboard`). The result card is a message in the
+ * conversation, as in the pet's sheet; a Draft beside the chat has no room on a phone. The model
+ * is picked in Chat settings, where the status line's model name points.
+ */
+export function PhoneBotPage({ autoFocus, look }: { autoFocus: boolean; look: 'page' | 'room' }) {
+  const chat = useBotChat()
+  const pet = usePetLook()
+  const petState = usePetState()
+  const [settings, setSettings] = useState(false)
+  useKeyboard(true)
+
+  return (
+    <section
+      data-bot-page
+      data-bot="panel"
+      data-layout="page"
+      data-bot-phone=""
+      aria-label={`Chat with ${chat.name}`}
+      className="fixed inset-x-0 top-[calc(var(--topbar-height)+var(--safe-top))] bottom-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom))] z-header flex min-w-0 flex-col bg-canvas pr-[calc(16px+var(--safe-right))] pl-[calc(16px+var(--safe-left))] text-small"
+    >
+      {settings ? (
+        <SettingsView onBack={() => setSettings(false)} />
+      ) : (
+        <>
+          <div
+            data-bot="title-bar"
+            className="flex shrink-0 items-center gap-[8px] border-b border-line py-[4px]"
+          >
+            <Back />
+            <span className="grid size-[32px] shrink-0 place-items-center" data-bot="title-pet">
+              <Pet
+                kind={pet.settings.kind}
+                state={petState}
+                size={30}
+                motion={pet.motion}
+                pixel={pet.pixel}
+                paint={pet.paint}
+              />
+            </span>
+            <div className="min-w-0 flex-1">
+              <h2 className="m-0 truncate text-body leading-[1.25] font-[550]" data-bot="title">
+                {chat.name}
+              </h2>
+              <Status className="mt-[1px]" />
+            </div>
+            <ChatTools onSettings={() => setSettings(true)} />
+          </div>
+          {!chat.locked && <ScopeBar flush />}
+          <Conversation petState={petState} autoFocus={autoFocus} flush />
+          <Composer autoFocus={autoFocus} look={look} />
+        </>
+      )}
     </section>
   )
 }

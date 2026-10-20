@@ -566,8 +566,9 @@ test('Play next and Replace upcoming preserve the playing song, and Undo respect
   await page.getByRole('link', { name: 'Open Now Playing' }).first().click()
   await page.getByRole('button', { name: /Remove First Light/ }).click()
   await expect.poll(() => saves.at(-1)?.ids).toEqual([playing.id, second.id])
-  // The sidebar row on a desktop, the top bar link on a phone.
-  await page.locator('a[href="/music-bot"]:visible').first().click()
+  // Back to the chat. A phone's Now Playing is a screen of its own with no top bar or tab bar, so
+  // there is no link to tap there; Back works in both.
+  await page.goBack()
   await expect(undo(page)).toBeDisabled()
   await expect(card(page).getByRole('alert')).toContainText('Can\u2019t undo.')
   await expect(card(page).getByRole('link', { name: 'View queue' })).toBeVisible()

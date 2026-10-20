@@ -933,6 +933,8 @@ test('the Listening room keeps the result in a Draft panel, numbered, with a rem
   page,
   isMobile,
 }) => {
+  // A phone shows the card in the conversation instead; music-bot-phone.spec.ts covers that.
+  test.skip(isMobile, 'The Draft panel is for a wider window.')
   await page.addInitScript(() => localStorage.setItem('musimo.layout', 'room'))
   await fixtures(page)
   await open(page, isMobile)
