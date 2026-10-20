@@ -2,6 +2,8 @@
 
 14 October 2026. Milestone 2 only. Measurements and listening review are separate gates. Neither candidate is approved for production indexing until Colin has assessed the shortlist.
 
+> **Missing files (found 20 October 2026).** The harness under `experiments/audio-trial/` was never committed, and the evidence under `runtime/audio-trial/` (including the listening page) is no longer on disk. The figures in this report are all that remain, and the reproduction steps below cannot run as written. The [analyser bake-off](analyzer-bakeoff.md) is the committed, rerunnable successor for tempo and genre.
+
 ## Measured result
 
 Both candidates completed 100 sampled tracks and twelve fuller references under the enforced 2 GB, one-CPU, zero-swap limits. The corrected runs had no failed tracks, timeouts or OOM kills. Values below include decoder memory and use decimal MB. Repeated reads benefited from the shared filesystem cache.
@@ -28,7 +30,7 @@ The twelve fuller-reference tracks reached 14.8 songs/min for MFCC and 8.0 for C
 
 The twelve-reference comparison favours CLAP stability, but it does not establish musical accuracy. CLAP's sampled/full cosine ranged from 0.909 to 0.995; MFCC's from 0.515 to 0.985. Vintage Culture's `Cante por Nós (Reverse Effect, Tokah Remix)` retained only one of five CLAP neighbours despite a 0.956 cosine. The electronic-dance phrase also changed its first result within the reference subset from Fred V's `Gezellig` to Sub Focus's `Torus`. Three sections cannot yet be accepted for changing tracks.
 
-On the hundred-track catalogue, CLAP suggested Fred again..'s `Catrin (Liverpool Street Station)` for dreamy guitar, Armin van Buuren's `Fathers and Sons` for instrumental piano without vocals, and Phish's `You Enjoy Myself` for gentle acoustic singing. These are unverified suggestions, not statements about their contents. The generated [six listening checks](../runtime/audio-trial/listening.html) compare both candidates, the least stable sampled/full result, early/middle/late mix sections and those three phrases. Open the file locally while Musimo is running. No listening approval has been recorded.
+On the hundred-track catalogue, CLAP suggested Fred again..'s `Catrin (Liverpool Street Station)` for dreamy guitar, Armin van Buuren's `Fathers and Sons` for instrumental piano without vocals, and Phish's `You Enjoy Myself` for gentle acoustic singing. These are unverified suggestions, not statements about their contents. The generated six listening checks compare both candidates, the least stable sampled/full result, early/middle/late mix sections and those three phrases. Open the file locally while Musimo is running. No listening approval has been recorded.
 
 Recommendation: retain CLAP as the provisional text/audio candidate and MFCC as the baseline. Keep the two-GB cap. Defer production selection and sampling acceptance until the listening checks pass, particularly vocal exclusions and changing tracks.
 
@@ -147,7 +149,7 @@ The browser probe requires the repository's installed Playwright and Chromium. I
 
 Checks passed: Ruff lint and formatting; host and pinned Linux correctness checks for deterministic selection, section bounds, short files, corrupt input, vector normalisation, self-exclusion and singleton retrieval; Prettier for the report, Compose and playback probe; and `git diff --check`. The listening page has six checks and fifteen players, fits a 390-pixel viewport without horizontal overflow, and its first player successfully streamed from the specified section without an error. This was muted UI verification, not listening assessment. Baseline hashes confirm that only the plan and testing document changed among pre-existing files.
 
-Key local evidence: [evaluation](../runtime/audio-trial/evaluation.json), [corrected playback probe](../runtime/audio-trial/browser-playback-v2.json), [deadline termination](../runtime/audio-trial/deadline-fixed-state.json), and [phone listening-page screenshot](../runtime/audio-trial/listening-phone.png). No experiment worker remains running.
+Key local evidence: evaluation, corrected playback probe, deadline termination, and phone listening-page screenshot. No experiment worker remains running.
 
 Raw evidence stays in ignored `runtime/audio-trial`: starting diff and file hashes, environment, read-only catalogue snapshot, sample, checkpoint metadata, model files, build logs, container inspections, run logs, playback probes, per-track records, vectors and evaluation output. No audio excerpts are saved or uploaded. The only source edits belong to `experiments/audio-trial/`, this report, `docs/ai-music-plan.md` and the trial link in `docs/testing.md`.
 

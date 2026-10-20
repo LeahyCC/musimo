@@ -2,11 +2,13 @@
 
 14 October 2026. Milestone 2 follow-up. The resource gate passed, but Colin did not accept the earlier musical matches. Genre identification now takes priority over mood, similarity and permanent indexing.
 
+> **Missing files (found 20 October 2026).** The harnesses under `experiments/genre-trial/` and `experiments/audio-trial/` were never committed, and the evidence under `runtime/genre-trial/` (including the review page) is no longer on disk. The figures and labels in this report and the [label review](genre-label-review.md) are all that remain, and the reproduction steps below cannot run as written. The [analyser bake-off](analyzer-bakeoff.md) reruns the EffNet comparison with a committed harness.
+
 **Updated result:** Colin labelled all 28 recordings. On the thirteen held-out clips, exact genre-set matches were tags 7/13, EffNet 5/13 and CLAP 2/13. Neither frozen model is recommended for production. See the [label review](genre-label-review.md) for per-genre precision/recall, denominators and errors. The initial experiment and pre-label workflow are documented below.
 
 ## Smallest useful review
 
-Open the local [genre review](../runtime/genre-trial/review.html) on pancakes with Musimo running. Start with **First six**, listen to the middle section, and use Early or Late when needed. Select one or more broad genres, or choose ambiguous, unknown or outside the vocabulary. Save each answer, then export the JSON file. This first batch contains five music cases and a podcast-tagged case; it is an initial diagnostic, not coverage of every genre.
+Open the local genre review on pancakes with Musimo running. Start with **First six**, listen to the middle section, and use Early or Late when needed. Select one or more broad genres, or choose ambiguous, unknown or outside the vocabulary. Save each answer, then export the JSON file. This first batch contains five music cases and a podcast-tagged case; it is an initial diagnostic, not coverage of every genre.
 
 Names, tags and predictions are hidden initially. Saving allows comparison; revealing locks that answer so the original blind judgement survives. Answers can be updated before revealing. Browser storage preserves progress; JSON export/import is the portable copy. Storage failures are reported and export still works from the open tab. All 28 clips remain available for later review. No source audio is copied, uploaded, tagged or added to a playback queue.
 
@@ -65,7 +67,7 @@ EffNet abstained on 1/15 development tracks in each recipe and 0/13 held-out tra
 
 Development suggestion records changed for 3/15 EffNet and 6/15 CLAP tracks with longer sampling. That includes changes in first-ranked genre, a second suggestion or abstention reason, not just changed label sets. For example, EffNet added hip-hop beside soul for G05; CLAP changed its first ranking between pop and hip-hop for G03 and G04. Both long mixes retained their first-ranked genre, which does not establish that all their sections agree.
 
-Exact label sets disagree with source tags on 7/15 EffNet and 13/15 CLAP short-development tracks. EffNet's short proposals cover eight broad groups; CLAP's cover eight, but different ones. Neither proposes every represented group. Per-genre tag coverage, proposed counts, disagreements and sampling changes are in [summary.json](../runtime/genre-trial/summary.json). These are diagnostics, never tag-derived accuracy. A notable case is G12: its podcast tag contrasts with CLAP's blues/Latin suggestions. Listen before deciding whether this is a classifier failure, music within the recording or a bad source tag.
+Exact label sets disagree with source tags on 7/15 EffNet and 13/15 CLAP short-development tracks. EffNet's short proposals cover eight broad groups; CLAP's cover eight, but different ones. Neither proposes every represented group. Per-genre tag coverage, proposed counts, disagreements and sampling changes are in summary.json. These are diagnostics, never tag-derived accuracy. A notable case is G12: its podcast tag contrasts with CLAP's blues/Latin suggestions. Listen before deciding whether this is a classifier failure, music within the recording or a bad source tag.
 
 Result JSON sizes, including per-section scores, are EffNet 44.8/95.4/39.0 KB and CLAP 43.4/92.2/37.6 KB for development short/long and held-out short respectively. No permanent feature index was created. This small genre-balanced sample is not suitable for a new full-library scan estimate. The earlier scan estimates remain provisional; no scan is authorised by these results.
 
@@ -110,7 +112,7 @@ node frontend/node_modules/prettier/bin/prettier.cjs --check experiments/genre-t
 git diff --check
 ```
 
-Checks passed: mapping and multilabel denominator tests, exact artist/title separation, blind review, streaming playback, save/reload, reveal locking, export/import, rejection of a foreign manifest and 390-pixel phone layout. Screenshots and test evidence are in [review-check.json](../runtime/genre-trial/review-check.json), [phone](../runtime/genre-trial/review-phone.png) and [desktop](../runtime/genre-trial/review-desktop.png). Ruff uses 110 columns for two literal checksum lines; formatting uses the repository defaults. The workers remain stopped after the trial.
+Checks passed: mapping and multilabel denominator tests, exact artist/title separation, blind review, streaming playback, save/reload, reveal locking, export/import, rejection of a foreign manifest and 390-pixel phone layout. Screenshots and test evidence are in review-check.json, phone and desktop. Ruff uses 110 columns for two literal checksum lines; formatting uses the repository defaults. The workers remain stopped after the trial.
 
 ## Files and review boundary
 
