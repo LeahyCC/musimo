@@ -178,7 +178,14 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
         self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
         self.measure()
         fast = self.resolve(plan(tempo="fast"))
-        self.assertEqual(set(self.titles(fast)), {"Anchor", "Breaker", "Ember", "Fathom"})
+        # The four at 140 and up come first. The songs read at 70 to 100 with medium or high
+        # energy fit at double their tempo, so they follow (Current and Drift lose to the
+        # artist cap, which Anchor and Breaker filled), and the summary counts them.
+        self.assertEqual(set(self.titles(fast)[:4]), {"Anchor", "Breaker", "Ember", "Fathom"})
+        self.assertEqual(set(self.titles(fast)[4:]), {"Gale", "Harbour"})
+        self.assertIn(
+            "2 of these matched at half or double their measured tempo.", str(fast["summary"])
+        )
         self.assertIn(
             f"Tempo and energy from {SCALAR_RECIPE}: 8 of 9 songs are measured; "
             "1 match was skipped without a measurement.",
@@ -202,12 +209,17 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
         )
         window = self.resolve(plan(tempo_min=90, tempo_max=90))
         self.assertEqual(set(self.titles(window)), {"Drift", "Gale", "Current"})
+        # Anchor reads 160 with medium energy, so at half it is 80, inside the window. Named,
+        # Harbor is uncapped, and Anchor follows the two direct matches.
+        named = self.resolve(plan(tempo_min=90, tempo_max=90, artists=["Harbor"]))
+        self.assertEqual(self.titles(named)[2:], ["Anchor"])
+        self.assertEqual(set(self.titles(named)[:2]), {"Drift", "Current"})
         query = SearchPlan.model_validate(window["plan"])
         self.assertEqual((query.tempo_min, query.tempo_max), (80, 100))
         # A band and a bound both apply.
+        # Harbour, at 70 with high energy, fits at 140.
         self.assertEqual(
-            set(self.titles(self.resolve(plan(tempo="fast", tempo_max=150)))),
-            {"Breaker", "Ember", "Fathom"},
+            self.titles(self.resolve(plan(tempo="fast", tempo_max=150)))[3:], ["Harbour"]
         )
         # Inside the gate nothing is ranked, neither "faster" nor listening: one seed draws the
         # same songs whatever the play counts say.
@@ -234,10 +246,17 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
             plan(energy_compared="more_intense"), reference_id=self.ids["Harbour"]
         )
         self.assertEqual(self.titles(intense), ["Breaker"])
+        # Current is 100 with high energy. Harbour (70, high) is compared at 140, so it is not
+        # slower; Breaker (150, high) is not halved, because high energy does not back half.
         slower = self.resolve(plan(tempo_compared="slower"), reference_id=self.ids["Current"])
-        self.assertEqual(set(self.titles(slower)), {"Drift", "Gale", "Harbour"})
+        self.assertEqual(set(self.titles(slower)), {"Drift", "Gale"})
+        self.assertNotIn("half or double", str(slower["summary"]))
+        # Breaker is 150, high. Anchor (medium) is compared as it is; Gale and Current (high)
+        # are compared at 190 and 200, so they come after it as octave matches.
         faster = self.resolve(plan(tempo_compared="faster"), reference_id=self.ids["Breaker"])
-        self.assertEqual(self.titles(faster), ["Anchor"])
+        self.assertEqual(self.titles(faster)[0], "Anchor")
+        self.assertEqual(set(self.titles(faster)[1:]), {"Gale", "Current"})
+        self.assertIn("2 of these matched at half or double", str(faster["summary"]))
         with self.assertRaises(BotError):
             self.resolve(plan(energy_compared="calmer"))
         # An unmeasured reference is an honest miss, not a widened search.
@@ -447,11 +466,13 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
                 "1 match was skipped without a measurement.",
                 summary,
             )
+            # Harbour fits "fast" at double its tempo, and has no vector, so it is counted here.
             self.assertIn(
                 f"Similarity uses the {EMBED.id} sound profile: 7 of 9 songs are measured; "
-                "0 matches were skipped without a measurement.",
+                "1 match was skipped without a measurement.",
                 summary,
             )
+            # Current and Drift fit at double too, but Harbor is already at its cap of two.
             self.assertEqual(set(self.titles(result)), {"Anchor", "Breaker", "Ember", "Fathom"})
 
     def test_a_copy_of_the_seed_is_absent_and_a_phrase_beside_the_seed_is_dropped(self) -> None:

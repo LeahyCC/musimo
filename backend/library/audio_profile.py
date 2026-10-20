@@ -26,6 +26,9 @@ from backend.core.store import Store
 from backend.library.tags import track_length
 
 LEASE_SECONDS = 180
+# The Song analysis page's "Measure 100 songs", and the length that counts as a long recording.
+SAMPLE_SIZE = 100
+LONG_RECORDING = 1200
 # A song whose lease lapses or whose analysis fails this many times is written as failed.
 MAX_ATTEMPTS = 3
 ProfileStatus = Literal["done", "failed", "skipped"]
@@ -156,13 +159,15 @@ class ProfileSet:
         scores = self.matrix @ seed
         return dict(zip(self.ids, scores.tolist(), strict=True))
 
-    def coverage(self, songs: Iterable[FileIdentity]) -> tuple[int, int]:
-        """How many of these songs have a fresh row, out of how many there are."""
+    def coverage(self, songs: Iterable[FileIdentity], tempo: bool = False) -> tuple[int, int]:
+        """How many of these songs have a fresh row, out of how many there are. With `tempo`,
+        a row without a tempo (an unsure tempo-beat-v1 reading) does not count."""
         total = 0
         done = 0
         for song in songs:
             total += 1
-            if self.fresh(song) is not None:
+            row = self.fresh(song)
+            if row is not None and not (tempo and row.tempo_bpm is None):
                 done += 1
         return done, total
 
@@ -385,7 +390,10 @@ class AudioProfiles:
         vector = result.vector_bytes()
         if result.status == "done":
             if recipe.kind == "scalar":
-                if result.tempo_bpm is None or result.energy is None:
+                if result.energy is None:
+                    raise LeaseError(f"A done {recipe.id} row needs energy", 422)
+                # An unsure tempo-beat-v1 reading is stored as energy alone.
+                if result.tempo_bpm is None and not recipe.tempo_optional:
                     raise LeaseError(f"A done {recipe.id} row needs tempo_bpm and energy", 422)
                 if vector is not None or result.dim:
                     raise LeaseError(f"{recipe.id} rows have no vector", 422)
@@ -495,6 +503,58 @@ class AudioProfiles:
                 db.rollback()
                 raise
 
+    def enqueue_sample(self, recipe_id: str, size: int = SAMPLE_SIZE) -> int:
+        """Queue a measuring sample in the 19 October trial's shape: the newest songs lacking a
+        row, plus one podcast-tagged song and one recording over 20 minutes when the library
+        has them, so the spoken-word skip and a long file are always in it. Returns how many
+        rows were added (songs already queued are not counted again)."""
+        if recipe_for(recipe_id) is None:
+            raise LeaseError("Unknown recipe", 422)
+        with self.store.lock:
+            db = self.store.db
+            db.execute("BEGIN IMMEDIATE")
+            try:
+                picked: list[str] = []
+                for extra in (_SPOKEN_SQL, f"f.duration > {LONG_RECORDING} AND NOT {_SPOKEN_SQL}"):
+                    row = db.execute(
+                        f"SELECT f.song_id FROM library_files f {_LACKING_SQL} AND {extra} "
+                        "ORDER BY f.added_at DESC, f.path LIMIT 1",
+                        (recipe_id, recipe_id),
+                    ).fetchone()
+                    if row is not None:
+                        picked.append(str(row["song_id"]))
+                newest = db.execute(
+                    f"""
+                    SELECT f.song_id FROM library_files f
+                    {_LACKING_SQL}
+                      AND f.song_id NOT IN (SELECT value FROM json_each(?))
+                    ORDER BY EXISTS (
+                        SELECT 1 FROM audio_profile p
+                        WHERE p.song_id = f.song_id AND p.recipe = ?
+                          AND p.size = f.size AND p.mtime_ns = f.mtime_ns
+                    ), f.added_at DESC, f.path
+                    LIMIT ?
+                    """,
+                    (
+                        recipe_id,
+                        recipe_id,
+                        json.dumps(picked),
+                        recipe_id,
+                        max(0, size - len(picked)),
+                    ),
+                ).fetchall()
+                ids = [str(row["song_id"]) for row in newest] + picked
+                db.executemany(
+                    "INSERT OR IGNORE INTO audio_job (song_id, recipe, status) "
+                    "VALUES (?, ?, 'queued')",
+                    [(song_id, recipe_id) for song_id in ids],
+                )
+                db.commit()
+                return len(ids)
+            except Exception:
+                db.rollback()
+                raise
+
     def lacking(self, recipe_id: str) -> int:
         """How many library songs have no fresh done row and are not queued yet."""
         with self.store.lock:
@@ -560,6 +620,15 @@ class AudioProfiles:
             ),
         )
 
+
+# A song tagged as speech, in the genre column or the genres list, as the worker's skip reads it.
+_SPOKEN_SQL = """(
+    lower(trim(f.genre)) IN ('podcast', 'podcasts', 'spoken word')
+    OR (CASE WHEN json_valid(f.genres) THEN EXISTS (
+        SELECT 1 FROM json_each(f.genres)
+        WHERE lower(trim(value)) IN ('podcast', 'podcasts', 'spoken word')
+    ) ELSE 0 END)
+)"""
 
 # Songs in an enabled root that have no done row measured from the file as it is now, and are
 # not already waiting. Takes the recipe id twice.

@@ -75,6 +75,9 @@ class Settings(BaseModel):
     # off: the bot refuses tempo, energy and sound requests and ignores any rows.
     audio_scalar_recipe: str = Field(default="", max_length=80)
     audio_embedding_recipe: str = Field(default="", max_length=80)
+    # The Song analysis page's pause. While on, the worker is leased nothing; a song it already
+    # holds finishes, and the queue is kept.
+    audio_analysis_paused: bool = False
 
     @field_validator("audio_scalar_recipe")
     @classmethod
@@ -175,6 +178,7 @@ class SettingsPatch(BaseModel):
     music_timezone: str | None = Field(default=None, max_length=100)
     audio_scalar_recipe: str | None = Field(default=None, max_length=80)
     audio_embedding_recipe: str | None = Field(default=None, max_length=80)
+    audio_analysis_paused: bool | None = None
     output_format: Literal["original", "m4a", "opus", "mp3"] | None = None
     concurrency: int | None = Field(default=None, ge=1, le=3)
     max_attempts: int | None = Field(default=None, ge=1, le=4)

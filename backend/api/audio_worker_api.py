@@ -3,6 +3,9 @@
 Both routes need the bearer token the app and the worker share. With no token configured they
 answer 404 before reading the body. A request a browser made (it carries an Origin or
 Sec-Fetch-Site header) gets the same 404, whatever token it sends.
+
+A lease call also tells the Song analysis page the worker is alive (`seen`), even when there is
+nothing to hand out. While the page's pause is on, or the bot is busy, nothing is handed out.
 """
 
 import asyncio
@@ -13,12 +16,14 @@ from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel, ConfigDict, Field
 
 from backend.core.audio_recipes import recipe_for
+from backend.library.audio_analysis import WorkerInfo
 from backend.library.audio_profile import AudioProfiles, LeaseError, WorkerResult
 
 
 class LeaseRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
     recipe: str = Field(min_length=1, max_length=80)
+    worker: WorkerInfo | None = None
 
 
 def install_audio_worker_routes(
@@ -26,6 +31,8 @@ def install_audio_worker_routes(
     get_profiles: Callable[[], AudioProfiles],
     is_busy: Callable[[], bool],
     token: str,
+    is_paused: Callable[[], bool] = lambda: False,
+    seen: Callable[[str, WorkerInfo | None], None] = lambda recipe, info: None,
 ) -> None:
     def authorised(request: Request) -> None:
         if (
@@ -44,8 +51,9 @@ def install_audio_worker_routes(
     async def lease(body: LeaseRequest) -> dict[str, object]:
         if recipe_for(body.recipe) is None:
             raise HTTPException(422, "Unknown recipe")
+        seen(body.recipe, body.worker)
         # A chat request is resolving. Analysis waits so the two do not contend.
-        if is_busy():
+        if is_busy() or is_paused():
             return {"job": None}
         try:
             return {"job": await asyncio.to_thread(get_profiles().lease, body.recipe)}
