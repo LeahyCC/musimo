@@ -2,7 +2,7 @@
 
 ## Changes
 
-Every Ollama chat now sends `keep_alive: "60s"`. The service checks `/api/show` before inference and sends `think: false` only when the reported `thinking.values` includes boolean false. Missing metadata and models with named thinking levels omit the control. GPT-OSS still thinks; this change does not claim otherwise. Capability lookup has the existing eight-second HTTP bound and is cancellable. The inference limit remains 90 seconds.
+Every Ollama chat now sends `keep_alive: "60s"`. The service checks `/api/show` before inference and sends `think: false` when the reported `thinking.values` includes boolean false, or when the model lists the `thinking` capability with no `thinking` metadata at all. Models with named thinking levels only, and models that do not think, omit the control. (Until 19 October 2026 a thinking model with no metadata also omitted it. The abliterated Qwen 3.5 re-pulled on 18 October reports no metadata, was left thinking, and Ollama then stopped holding its answers to the plan's schema: code fences and filter names outside the list. With `think: false` the same requests return valid plans.) GPT-OSS still thinks; this change does not claim otherwise. Capability lookup has the existing eight-second HTTP bound and is cancellable. The inference limit remains 90 seconds.
 
 The schema and prompt now explain the two different withdrawal operations: artist names belong in `allow_artists`, while withdrawing a recent-play exclusion requires `exclude_played_days: 0` and that field in `change_filters`. Tests verify that either withdrawal leaves unrelated exclusions intact. The service's exclusion protections were not weakened.
 
@@ -10,13 +10,13 @@ The benchmark now rejects missing models before inference, records installed dig
 
 ## Investigation
 
-The earlier Qwen 2.5 miss changed `history` instead of withdrawing `exclude_played_days`. The earlier GPT-OSS miss omitted the artist from `allow_artists`. The guarded service therefore kept the exclusions in both cases. Before the prompt clarification, this session's [repeat of the original corpus](evidence/music-bot-finish-baseline.json) passed 20/20 for each model. Those old failures are intermittent; a successful repeat is not proof they are gone. The historical [60-call evidence](evidence/music-bot-review-models.json) remains unchanged.
+The earlier Qwen 2.5 miss changed `history` instead of withdrawing `exclude_played_days`. The earlier GPT-OSS miss omitted the artist from `allow_artists`. The guarded service therefore kept the exclusions in both cases. Before the prompt clarification, this session's repeat of the original corpus passed 20/20 for each model. Those old failures are intermittent; a successful repeat is not proof they are gone. The historical 60-call evidence remains unchanged.
 
 The first combined browser run finished with 72 passes, three existing platform drag skips and one WebKit failure. Its trace shows all UI assertions completed, then context teardown disposed an API response while the snapshot route handler was still reading it after reload. The bot spec now waits for active route handlers with `unrouteAll({ behavior: 'wait' })` before context disposal. It does not suppress errors. The whole bot and queue suite was rerun after this change.
 
 ## Live comparison
 
-[Comparison results](evidence/music-bot-finish-comparison.json) contain every call, including failures. These three runs preceded the final worked artist-withdrawal example added for Qwen 3.5 below. They were not rerun with that last prompt change. Each model ran the same 22 cases once, with the original three cases repeated within that corpus. Times are wall-clock seconds for the guarded service, not raw model throughput. Warm statistics exclude the first call and include failures.
+Comparison results contain every call, including failures. These three runs preceded the final worked artist-withdrawal example added for Qwen 3.5 below. They were not rerun with that last prompt change. Each model ran the same 22 cases once, with the original three cases repeated within that corpus. Times are wall-clock seconds for the guarded service, not raw model throughput. Warm statistics exclude the first call and include failures.
 
 | Installed model                   | Passed        | Cold first call | Warm median | Warm range    |
 | --------------------------------- | ------------- | --------------- | ----------- | ------------- |
@@ -30,11 +30,11 @@ Gemma advertised boolean thinking controls, received `think: false`, and returne
 
 ## Qwen 3.5 verification
 
-The abliterated Qwen download finished on 13 October at 23:21 HST. Before any inference, the pull log reported SHA-256 verification and success, `/api/tags` listed the installed model, and the pull process had exited. [Installation evidence](evidence/music-bot-qwen-install.json) records digest `92a443adb124f5e805bbdee23fdb38fcd22a7bf00a1016b53f764e741369c600`, size 6,594,474,755 bytes, and supported thinking values `[false, true]`.
+The abliterated Qwen download finished on 13 October at 23:21 HST. Before any inference, the pull log reported SHA-256 verification and success, `/api/tags` listed the installed model, and the pull process had exited. Installation evidence records digest `92a443adb124f5e805bbdee23fdb38fcd22a7bf00a1016b53f764e741369c600`, size 6,594,474,755 bytes, and supported thinking values `[false, true]`.
 
-The [first corpus](evidence/music-bot-finish-qwen-before.json) passed 20/22 (90.9%). Both artist-withdrawal phrases failed: the JSON omitted `allow_artists` even though its explanation claimed the artist was allowed. The service correctly retained that exclusion. The cold first call took 13.941 seconds; the remaining calls had a 1.973-second median and 1.647–2.578-second range.
+The first corpus passed 20/22 (90.9%). Both artist-withdrawal phrases failed: the JSON omitted `allow_artists` even though its explanation claimed the artist was allowed. The service correctly retained that exclusion. The cold first call took 13.941 seconds; the remaining calls had a 1.973-second median and 1.647–2.578-second range.
 
-The prompt now includes a worked withdrawal using generic Artist A and Artist B, with the required arrays shown explicitly. The [complete rerun](evidence/music-bot-finish-qwen.json) passed 22/22 (100%), including both artist withdrawals, both played-today withdrawals, paraphrases, scope changes, added songs and contradictory filters. All 22 calls were warm: median 2.255 seconds, range 1.762–3.197 seconds. Every call sent `think: false` and `keep_alive: "60s"`; none returned thinking text. The 17 bot unit tests also passed again after this last prompt change.
+The prompt now includes a worked withdrawal using generic Artist A and Artist B, with the required arrays shown explicitly. The complete rerun passed 22/22 (100%), including both artist withdrawals, both played-today withdrawals, paraphrases, scope changes, added songs and contradictory filters. All 22 calls were warm: median 2.255 seconds, range 1.762–3.197 seconds. Every call sent `think: false` and `keep_alive: "60s"`; none returned thinking text. The 17 bot unit tests also passed again after this last prompt change.
 
 These are small, partly development-used service corpora, not independent raw-model accuracy estimates. The failures remain available beside the rerun. No default model was changed, and no general accuracy claim follows from 22/22.
 
@@ -61,6 +61,6 @@ All generated music and databases belong to disposable checks. No personal libra
 
 - Service and checks: `backend/library/music_bot.py`, `tests/test_music_bot.py`, `scripts/music_bot_benchmark.py`, `frontend/e2e/music-bot.spec.ts`, `frontend/e2e/music-bot-live.spec.ts`.
 - Docs: `docs/ai-music-plan.md`, `docs/architecture.md`, `docs/testing.md`, `docs/music-bot-review-fixes.md`, this report.
-- Evidence: five `docs/evidence/music-bot-finish-*.json` / `music-bot-qwen-install.json` files and the two `docs/assets/music-bot-qwen-*.png` screenshots.
+- Evidence: the two `docs/assets/music-bot-qwen-*.png` screenshots. The raw `docs/evidence/music-bot-finish-*.json` and `music-bot-qwen-install.json` files were never committed and are lost; the figures in this note are all that remain.
 
 Remaining issues: interpretation errors remain possible, particularly on the comparison models; max-loaded-models still awaits a later Ollama restart; the existing build chunk-size warning and three platform drag-test skips remain. All unrelated files were compared with their starting hashes and preserved.

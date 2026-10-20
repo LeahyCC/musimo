@@ -25,7 +25,7 @@ The first wider browser run found four WebKit failures in existing queue-editing
 
 ## Live model checks
 
-[Full results and timings](evidence/music-bot-review-models.json): 60 real Ollama calls against four generated WAVs, the real scanner and SQLite. Three original requests ran twice per model, followed by fourteen independent cases covering paraphrases, queue/library scopes, adding songs, changing artists/decades, accumulated exclusions, individual withdrawals and conflicting filters. Clarification is accepted for contradictory requests. No personal library or downloaded music was used.
+Full results and timings: 60 real Ollama calls against four generated WAVs, the real scanner and SQLite. Three original requests ran twice per model, followed by fourteen independent cases covering paraphrases, queue/library scopes, adding songs, changing artists/decades, accumulated exclusions, individual withdrawals and conflicting filters. Clarification is accepted for contradictory requests. No personal library or downloaded music was used.
 
 - llama3.1:8b: 20/20 checks passed.
 - qwen2.5-coder:7b: 19/20. It retained the recent-play exclusion after being asked to allow today's songs.
@@ -41,7 +41,7 @@ Frontend: `frontend/src/api.ts`, `frontend/src/features/player/player.tsx`, new 
 
 Checks: `tests/test_music_bot.py`, `tests/test_player.py`, `tests/test_player_store.py`, `tests/test_sources.py`, `scripts/music_bot_benchmark.py`, new `frontend/src/features/player/queue-writer.test.ts`, `frontend/e2e/music-bot.spec.ts`, `frontend/e2e/library-fixtures.ts`, `frontend/e2e/queue-editing.spec.ts`.
 
-Docs/evidence: `docs/player.md`, `docs/architecture.md`, `docs/testing.md`, `docs/ai-music-plan.md`, `docs/music-bot-review.md`, this handoff, `docs/evidence/music-bot-review-models.json`, `docs/assets/music-bot-desktop.png` and `docs/assets/music-bot-phone.png`. The original milestone file list remains in [the original handoff](music-bot-review.md).
+Docs/evidence: `docs/player.md`, `docs/architecture.md`, `docs/testing.md`, `docs/ai-music-plan.md`, `docs/music-bot-review.md`, this handoff, `docs/assets/music-bot-desktop.png` and `docs/assets/music-bot-phone.png`. The raw results file, `docs/evidence/music-bot-review-models.json`, was never committed and is lost; the figures above are all that remain. The original milestone file list remains in [the original handoff](music-bot-review.md).
 
 ## Remaining limits
 

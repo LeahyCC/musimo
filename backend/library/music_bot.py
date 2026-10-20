@@ -626,10 +626,16 @@ class MusicBot:
             raise BotError("Ollama returned invalid model capabilities.")
         thinking = metadata.get("thinking")
         values = thinking.get("values") if isinstance(thinking, dict) else None
+        capabilities = metadata.get("capabilities")
         options: dict[str, object] = {"keep_alive": "60s"}
-        # A thinking capability alone does not promise an off switch (e.g. named levels).
-        # Older servers omit this metadata. Do not guess a control or retry an inference.
-        if isinstance(values, list) and any(value is False for value in values):
+        if isinstance(values, list):
+            # Named levels only (GPT-OSS) have no off switch, so they keep thinking.
+            if any(value is False for value in values):
+                options["think"] = False
+        elif thinking is None and isinstance(capabilities, list) and "thinking" in capabilities:
+            # A model that thinks but lists no values. Left to think, Ollama stops holding its
+            # answer to the plan's schema (a re-pulled Qwen 3.5 did this on 18 October 2026), so
+            # ask for no thinking; a model with no boolean switch ignores the field.
             options["think"] = False
         return options
 
