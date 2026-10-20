@@ -4,29 +4,48 @@
 
 ### Your music, at home.
 
-A self-hosted music library.
+A music app for the collection you own. It runs on your own computer and plays in any browser, on your desktop or your phone.
 
-Search tracks, albums, artists and podcasts. Hear a preview, see what you already own, and queue a download you have the right to keep. Play the files in your own folders.
-
-[Quick start](#quick-start) · [Features and limits](#features-and-limits) · [Architecture](#architecture-and-api) · [Contributing](#contributing-and-support)
+[Get started](docs/install.md) · [See what it does](#what-it-does) · [Documentation](docs/README.md)
 
 </div>
 
 <img src="docs/assets/now-playing.png" alt="Now Playing in the Classic layout. Glass Garden by Mira Vale on the stage, washed in the cover's pink, with the title, a seek bar and the transport under it. Up next lists the rest of the queue beside it." width="100%" />
 
-<p align="center"><b>Now Playing.</b> The file you are hearing, as artwork or a MilkDrop visualizer.</p>
+## Why Musimo
+
+Streaming apps rent you music. Your own files deserve better than a folder of filenames. Musimo turns them into a library you'll want to open: big artwork, a player that moves from one song to the next without a gap, and a way to find what's missing from your shelves.
+
+- **It's yours.** It runs on your hardware, with no Musimo account and no analytics. Your library and your listening stay at home.
+- **It's beautiful.** Covers fill the screen, the page takes on the album's colours, and a MilkDrop visualizer dances to the song.
+- **It knows your shelves.** Search the catalog and every result tells you whether you already own it.
+- **It's made for your phone too.** It isn't the desktop squeezed down. Each layout has its own phone design.
+
+## What it does
+
+### Plays your whole collection, beautifully
+
+Gapless playback, optional crossfade, lyrics that follow along, a sleep timer, playlists and likes. Now Playing goes full screen or pops out into its own window, and the seek bar draws the song's waveform.
 
 <img src="docs/assets/visualizer.gif" alt="Now Playing with the MilkDrop visualizer on the stage. The picture moves while First Light plays. Up next shows Second Tide." width="100%" />
 
-<p align="center"><b>Visualizer.</b> The same stage, drawing to the music. Press V, or the button on the artwork.</p>
+<p align="center"><sub>Press V and the artwork becomes a visualizer that moves with the music.</sub></p>
+
+### Fits in your hand
+
+Two layouts, each with its own phone design. Classic docks the player on the tab bar, tinted by the cover. The Listening room floats it. Add Musimo to your home screen and it opens like an app.
 
 <img src="docs/assets/phones.png" alt="Four phone screens. Classic's Home with its search bar, the track to continue and this week's listening, over a player docked on the tab bar. The Listening room's Library grid of album covers under a floating player and a floating pill of tabs. The Listening room's full screen Now Playing with a Playing from line and a chevron to close it. Settings, Yours, with a phone-shaped picture of each layout." width="100%" />
 
-<p align="center"><b>On a phone.</b> Two layouts built for the hand, not shrunk from the desktop. Classic docks the player on the tab bar; the Listening room floats it.</p>
+### Pick the room you listen in
+
+Classic gives you a sidebar with your library and playlists. The Listening room keeps the player and Up next docked beside whatever you're browsing. Switch any time in Settings.
 
 <img src="docs/assets/listening-room.png" alt="The Listening room layout. A slim icon rail on the left, the Home page in the middle with the paused track, this week's numbers, new albums, most played songs and playlists, and the player docked on the right with the artwork, the transport and Up next." width="100%" />
 
-<p align="center"><b>Listening room.</b> The other layout, picked in Settings, Yours: a slim rail, with the player and Up next docked on the right.</p>
+### Find it, and know if you have it
+
+Search tracks, albums, artists and podcasts. Every result is checked against your library, so you see what you own, what you own in another edition, and what's missing. Hear a preview before you decide.
 
 <table>
 <tr>
@@ -38,9 +57,16 @@ Search tracks, albums, artists and podcasts. Hear a preview, see what you alread
 </td>
 </tr>
 <tr>
-<td align="center"><b>Search.</b> The catalog, checked against your library.</td>
-<td align="center"><b>Library.</b> Your folders, as albums, artists, tracks and playlists.</td>
+<td align="center"><b>Search</b>, checked against your library.</td>
+<td align="center"><b>Library</b>, by artist, album, track and playlist.</td>
 </tr>
+</table>
+
+### Fill the gaps you're allowed to fill
+
+For music you have the right to keep, Musimo can download the missing songs into your library, tag them and put them in the right folder. You can watch every song go through match, download, convert, tag and move. If one fails, it says why in plain words and links to the fix.
+
+<table>
 <tr>
 <td width="50%" valign="top">
 <img src="docs/assets/downloads.png" alt="Downloads in the Listening room. An album batch in progress: two songs done, one downloading, one converting, one tagging and two queued, each with its step in the Match, Download, Convert, Tag, Move pipeline." width="100%" />
@@ -50,76 +76,24 @@ Search tracks, albums, artists and podcasts. Hear a preview, see what you alread
 </td>
 </tr>
 <tr>
-<td align="center"><b>Downloads.</b> Every song through match, download, convert, tag and move.</td>
-<td align="center"><b>Diagnostics.</b> Ready means the folders, the scan and the player.</td>
+<td align="center"><b>Downloads</b>, every step in view.</td>
+<td align="center"><b>Diagnostics</b>, so you know it's ready.</td>
 </tr>
 </table>
 
-<p align="center"><sub>Every artist, album and cover in these pictures is invented. <code>MUSIMO_SHOTS=1 npx playwright test readme-shots --project=chromium</code> in <code>frontend/</code> remakes them.</sub></p>
+### Ask for a mix
 
-Musimo keeps discovery close to the library you already own. React provides the interface, FastAPI runs the backend, and SQLite stores settings, the library index, and jobs. Docker Compose builds the app from this repository. No Musimo account or hosted Musimo service is required.
+Octive, a small pet that sits on the player, builds a queue from your own library: "an hour of 90s rock", "songs I haven't played lately", "more like this". It uses a model you run yourself with [Ollama](https://ollama.com), so your requests stay on your own machines. You see the list before anything plays.
 
-> [!NOTE]
-> Version 0.4.0 is Musimo's first tagged release, and the version the app reports. That tag has search, library indexing, download workers, queue controls, album batches, library playback and playlist management. Current main also plays from the music folders with no separate server, draws a MilkDrop visualizer on Now Playing, and builds queues from the library with the music bot. The database on main is version 8. The release is tested but still early. Known limitations are in the [changelog](CHANGELOG.md) and [measurements](docs/measurements.md). Read [download verification](docs/downloads.md) before use. The original [brief](docs/brief.md) describes future ambitions beyond shipped features.
+### And more
 
-## Contents
+Paste a link from YouTube, Bandcamp, SoundCloud, the Internet Archive and others to save it. Find podcasts and save episodes. Bring over your playlists, likes and play counts from Navidrome. Choose from twelve themes, or make your own.
 
-- [Features and limits](#features-and-limits)
-- [Requirements](#requirements)
-- [Quick start](#quick-start)
-- [Music folders and permissions](#music-folders-and-permissions)
-- [Using Musimo](#using-musimo)
-- [Audio quality and metadata](#audio-quality-and-metadata)
-- [Playback](#playback)
-- [Configuration](#configuration)
-- [Backups and updates](#backups-and-updates)
-- [Network access and privacy](#network-access-and-privacy)
-- [Troubleshooting](#troubleshooting)
-- [Development and checks](#development-and-checks)
-- [Architecture and API](#architecture-and-api)
-- [Contributing and support](#contributing-and-support)
-- [Licence and permitted use](#licence-and-permitted-use)
+<p align="center"><sub>Every artist, album and cover in these pictures is invented.</sub></p>
 
-## Features and limits
+## Get started
 
-Search and library features:
-
-- Deezer catalog search with Top, Tracks, Albums and Artists views.
-- Podcast search and episode downloads from Apple's podcast directory, saved under `Podcasts/<show>`.
-- Paste a link into the search box to review it and download it directly. It works with YouTube, the Internet Archive, Bandcamp, SoundCloud, Audius, Jamendo, Mixcloud, NTS, HearThisAt and BBC Sounds. DJ mixes and radio shows are saved under `Mixes/<uploader>`.
-- Typeahead, independent result sections, pagination, filters and sorting.
-- Search state in the URL, so refresh and browser Back preserve the query.
-- Album pages and artist discographies grouped by catalog release type.
-- Automatic album coverage checks, with a count and progress bar.
-- A persistent index of audio tags. Search does not reopen music files to check coverage.
-- One player across navigation. Catalog previews and library tracks use separate audio elements, and only one plays at a time. Library tracks hand over without a gap. Consecutive tracks from one album do not crossfade. Other joins can, from 1 to 12 seconds, off by default. A sleep timer can stop at the end of the track, the end of the queue, or after 15, 30, 45 or 60 minutes.
-- Library browsing for albums, artists, tracks and playlists, with playlist CRUD, a saved queue, media controls, lyrics, scrobbling, shuffle and repeat. Albums, Artists and Tracks filter and sort on the server, and each view keeps its search, filters and sort in the address.
-- A linked liked playlist, thumbs up button, add to playlist picker with inline creation and the artist All songs subpage with a popularity chart.
-- LRCLIB lyric fallback when the library has no imported lyrics. On Now Playing, synced lines follow playback, and choosing a line seeks there.
-- Now Playing for a library track: a sidebar entry while one is loaded, a waveform on the seek bar, and a stage that shows the artwork or a MilkDrop visualizer. The visualizer needs WebGL 2 and draws presets from the butterchurn base pack. It can change preset with the music, or stay on the one you picked. The stage goes full screen in the tab or pops out into its own window. Up next can be reordered. Lyrics, About and History sit with it.
-- A music bot that builds a queue from the library you already have. A pet on the player opens the chat, and the same chat is a page. It needs a local Ollama model. A result stays a preview until you play it, queue it or save it as a playlist. It matches tags, play history and the liked playlist. It does not analyse how a recording sounds.
-- An importer for listening state from a Navidrome 0.63.2 database: manual playlists, likes, artist favourites, play counts and last played. See [the importer](docs/player.md#import-listening-state-from-navidrome).
-- Background scans, scan cancellation, native or polling watchers and diagnostics.
-- A bounded activity feed in Settings and Diagnostics, with persistent clearing.
-- Personal settings with a theme picker and editor, stored in your browser and movable between browsers as a file.
-
-The download implementation provides persistent track jobs, progress, pause/resume/cancel/retry, alternate-match selection, history, failure explanations with plain language messages, per card clear and bulk Retry errors, Clear errors and Clear no match, failure grouping by download group and infinite scrolling for results and history. Album card actions queue missing tracks using Settings defaults. Each error links to the relevant setting or diagnostic. Settings lists each source with its own switch, order and retry count. A block pauses that source and leaves the others running. After a set number of finished tracks, the queue can wait before the next group. With a Deezer cookie, a catalog track is saved from that account first, and a miss continues with the other sources. Download verification requires testing with your chosen provider and the library setup.
-
-A name on this browser picks whose queue, likes and counts you see. It is not a login. These are **not finished features**: personalized Discover, automatic release-edition filters, Spotify and Apple Music link imports, paid audio sources other than a Deezer account, notifications, cookie management beyond pasting a YouTube cookies file or a Deezer cookie, built-in login and complete release benchmarks (cold search latency, match accuracy labeling, permitted-music throughput, representative 50k library, native arm64 performance). See [Discover planning](docs/discover.md), [the roadmap](docs/roadmap.md) and [known limitations](CHANGELOG.md#known-limitations).
-
-## Requirements
-
-The supported deployment uses Docker Engine with the Compose plugin, or Docker Desktop running Linux containers. You need a recent browser with JavaScript, HTML audio and Server-Sent Events support. The Now Playing popout requires Document Picture-in-Picture, available in desktop Chrome and Edge. The visualizer needs WebGL 2, which current desktop and phone browsers have. Without it the stage stays on the artwork. The music bot needs [Ollama](https://ollama.com) reachable from the Musimo server, and a model chosen in the chat. Search, the library and downloads do not.
-
-Catalog queries, artwork, previews and enabled sources require internet access. Keep application state on local disk. The music destination needs room for temporary and final files, and the runtime user needs permission to read indexed folders and write to the selected destination.
-
-Playback uses the files in the music folders. No separate playback server is included in Compose. No minimum CPU/RAM or maximum library-size guarantee has been established by the full release benchmarks.
-
-The main image includes Python, FFmpeg, Deno, Chromaprint tools and Python dependencies. Host installations of these tools are unnecessary when using Docker. An optional YouTube helper runs as a second container.
-
-## Quick start
-
-Want help with the whole installation? Copy the [setup handoff prompt](docs/setup-handoff.md) into an LLM with access to your computer. It covers music folders, verification and private remote access.
+You need [Docker](https://docs.docker.com/get-docker/). Then:
 
 ```sh
 git clone https://github.com/LeahyCC/musimo.git
@@ -127,417 +101,30 @@ cd musimo
 docker compose up -d --build --wait
 ```
 
-Open [Musimo](http://127.0.0.1:8765). The initial build can take several minutes.
+Open [http://127.0.0.1:8765](http://127.0.0.1:8765). The first build takes a few minutes.
 
-If Musimo is useful, [star it on GitHub](https://github.com/LeahyCC/musimo).
+Next, [point it at your music](docs/install.md#music-folders-and-permissions). Or let an assistant do the whole setup with you: give it the [setup handoff prompt](docs/setup-handoff.md).
 
-If you want to support the people who make music possible, [Donate to MUSICARES](https://www.musicares.org/).
+## Good to know
 
-1. Search for an artist or track. Catalog access needs no credentials.
-2. Open Diagnostics to verify all components are ready (library roots, destination, scan, helpers).
-3. Open Settings and inspect the library paths and download destination.
-4. Mount your collection using the instructions below, then scan it.
-5. Preview a result and check its library badge.
-6. For a download test, use material you have permission to obtain.
+- **It's early.** Version 0.4.0 is the first release. It's tested, but expect rough edges. The [changelog](CHANGELOG.md#known-limitations) lists what's known.
+- **Keep it on your own network.** There's no built-in login. To reach it from outside, put it behind a [proxy with a login](docs/reverse-proxy.md) or a private network such as Tailscale.
+- **Download only what you have the right to keep.** Owning a copy or paying for a subscription doesn't on its own give you that right. See [Terms and responsible use](TERMS.md).
 
-The default music mount is `./runtime/music`, an isolated test folder within the checkout. It does not automatically find your existing collection. SQLite lives in the `musimo-data` named volume.
+## Learn more
 
-For the worker's optional YouTube helper:
+|                                            |                                                                     |
+| ------------------------------------------ | ------------------------------------------------------------------- |
+| [Install and run](docs/install.md)         | Requirements, music folders, settings, backups, updates and privacy |
+| [Using Musimo](docs/guide.md)              | Every feature in detail, and what isn't finished yet                |
+| [Troubleshooting](docs/troubleshooting.md) | When something doesn't work                                         |
+| [Developing Musimo](docs/development.md)   | Local setup, checks, architecture and the API                       |
+| [All documentation](docs/README.md)        | Everything else, from plans to test evidence                        |
 
-```sh
-docker compose --profile youtube up -d --build --wait
-```
+## Support the project
 
-The helper and Python plugin use matching pinned versions. Starting them does not guarantee that a source accepts requests. See [YouTube troubleshooting](docs/youtube-troubleshooting.md).
+If Musimo is useful to you, [star it on GitHub](https://github.com/LeahyCC/musimo). If you want to support the people who make the music, [donate to MusiCares](https://www.musicares.org/).
 
-Useful health checks:
+Bug reports, accessibility fixes and small improvements are welcome. Read [Contributing](CONTRIBUTING.md) first, and report security issues privately as [Security](SECURITY.md) explains.
 
-```sh
-docker compose ps
-docker compose logs --tail 100 musimo
-curl http://127.0.0.1:8765/api/health
-```
-
-Health means the app and database respond. It does not mean every provider works or a file is visible in the library.
-
-## Music folders and permissions
-
-Settings uses **container paths**. Docker mounts connect those to host folders. A library label does not mount, move or rename files.
-
-Create an ignored `compose.override.yaml`. This example indexes a read-only collection and downloads into a separate writable folder:
-
-```yaml
-services:
-  musimo:
-    environment:
-      MUSIMO_LIBRARY_ROOTS: /music:/collection
-    volumes:
-      - type: bind
-        source: /absolute/host/music-incoming
-        target: /music
-      - type: bind
-        source: /absolute/host/existing-music
-        target: /collection
-        read_only: true
-```
-
-Replace both host paths with real, existing folders. The `/music` target replaces the base Compose test-folder bind during the merge. Check the result:
-
-```sh
-docker compose config
-docker compose up -d --wait
-```
-
-The merged output may contain environment values. Redact it before sharing.
-
-Add further mounts and list their Linux paths in `MUSIMO_LIBRARY_ROOTS`, separated by colons. Only configured roots can receive downloads. Give the library access to the same host folder if it should play these files.
-
-### Windows and network mounts
-
-Use Compose's long bind syntax and quote a verified absolute Windows source path. Drive letters differ between machines and can change. Do not copy a machine-specific override without checking its paths.
-
-For Windows Docker Desktop binds or network shares that do not deliver filesystem events, set these values in `.env`:
-
-```dotenv
-MUSIMO_WATCH_MODE=poll
-MUSIMO_POLL_INTERVAL_SECONDS=300
-```
-
-Shorter polling intervals use more CPU. Both modes also reconcile periodically. Keep SQLite on the local named volume, not SMB/NFS. Music mounts can be network folders, subject to their permissions and filesystem behavior.
-
-### File permissions
-
-`PUID` and `PGID` default to `1000`. On Linux, choose non-root IDs with access to the mounted folders. The entrypoint adjusts the application data directory and database files, then drops privileges. It does not recursively change ownership of music folders.
-
-Read-only mounts contribute to coverage but cannot receive downloads. Diagnostics shows existence, free space and a permission check. Workers check their destination too. Neither check guarantees a later write will succeed if permissions, free space or the mount change.
-
-## Using Musimo
-
-### Search and album coverage
-
-The home page is an empty search. It reads "Find it. Make room for it." With no recent searches it offers Daft Punk, Khruangbin, Nina Simone and Radiohead. This browser keeps up to eight recent searches, and clearing them brings those four back. Newest library albums appear under that row once the library has some.
-
-Enter at least two characters in the search box at the top of every page. Search waits about 200 ms after typing and cancels superseded browser requests. Top requests tracks, albums and artists independently. Pasting or submitting a link there opens a review sheet and does not search. A link placed in the search page's address is not searched either.
-
-Filters and sorting apply to **loaded results**, not the entire provider catalog. More results load as you scroll. Unknown years cannot satisfy a year filter. Duration and preview filters apply only to tracks. Long track lists are virtualized; album and artist card grids scroll with the page.
-
-Cards automatically check album details against the local index. Loading shows checking or estimated coverage; complete track lists permit verified counts. Incomplete provider lists stay partial. Failed checks show Retry coverage.
-
-Tracks show distinct badges: "In library" for exact matches, "Another edition in library" when a different album edition is detected, "Queued" for active downloads, and "Downloaded earlier" for completed downloads. Edition matches keep the download button enabled so you can choose to download both versions.
-
-The album download icon queues missing tracks without opening the album. The card shows where files will land and in what format before queueing. It uses the saved format and destination, skips indexed matches and links to the queue after success. A completely indexed album shows a check. Open an album to inspect individual tracks and available album actions. The status line separates owned and queued counts.
-
-Artist release types come from the catalog. A generic album type does not establish whether a recording is live, remixed or a compilation. Library coverage is a file match, not proof of legal rights.
-
-### Card navigation and artist batches
-
-Click an album or artist card to open it. Separate artist links and card controls still work independently. Download sits in the card's top-right corner and appears on hover or keyboard focus; touch screens keep it visible. Card collections scroll with the page.
-
-An artist's **Download all albums** button opens a selection sheet with album/song counts, estimated size, format and destination. Existing library songs are skipped by default, already queued songs are excluded, and you can deselect alternative editions. All album pages are checked before confirmation; singles and EPs are excluded. See [search behavior](docs/search.md#artist-album-downloads).
-
-### Library and playback
-
-Library has Home, Albums, Artists, Tracks and Playlists views. Grid and list layouts are available for collection views and the choice is remembered in the browser under `musimo.library-layout`. Albums, Artists and Tracks run search, genre, year and sort on the server, so they describe the whole library rather than the pages already loaded. Each view keeps that choice in its address, and a tab or the back link opens the last choice again. On Tracks, Play all plays the first 500 songs in the current sort order. Shuffle plays every matching song once, in a random order, and past 500 songs the queue refills as it plays.
-
-Artist pages include an All songs subpage at `/library/artists/{id}/songs` and a popularity chart plotted from the library play counts when enough data exists. Playlists show song count and can be filtered by public or private status. Inline rename is available for all playlists.
-
-Each name has their own liked playlist. It is always listed, sorts first, cannot be deleted, and is required for the thumbs up button to work. Its identity is stored in the SQLite table `linked_playlists`. An existing playlist named Liked is adopted when none is stored for that name.
-
-The add to playlist picker opens from the footer player, or from Now Playing, where the footer steps aside, and shows 25 rows with a filter box. The liked playlist is excluded from the picker. Inline New playlist is available with the current song. The Add button toggles to Remove when that song is already in the playlist.
-
-Now Playing is in the sidebar while a library track is loaded, and it leaves when the player is empty. The stage shows the artwork or a MilkDrop visualizer, and it can go full screen in the tab or pop out into a floating window. The seek bar draws the file's waveform. Up next, Lyrics, About and History sit beside the stage on a wide window, and under the controls on a phone. Catalog previews have no Now Playing page. With nothing loaded, that page says "Nothing playing yet."
-
-### Player controls
-
-Previews are provider clips, not full library playback. Failed Deezer clips refresh their URLs and can fall back to a matching iTunes preview. Some tracks have no playable preview.
-
-- Artwork controls start or pause a preview. Tracks with no available preview show a disabled state.
-- The player's song title returns to its highlighted track in the album for previews, or links to Now Playing for library tracks. The highlighted row receives focus and shows a visible focus indicator.
-- Album and artist pages show "Back to results" when reached from search, restoring your last query and filters.
-- Its artist and album names link to their Library pages when playing library tracks, or to the artist page for previews.
-- Seek within the clip, restart, mute, adjust volume or close it.
-- Volume is remembered in the current browser under `musimo.player-volume`. Mute preserves the chosen level.
-- Navigating keeps playback; closing stops audio and cancels a pending lookup.
-
-Library playback adds previous (restarts the current track after 4 seconds of playback), next, shuffle, repeat including repeat one, thumbs up to add or remove from the liked playlist, add to playlist picker, and expand to Now Playing. The queue autosaves every 10 seconds of playback and on pause or close. Now playing scrobbles on play and submits on track end. MediaSession handlers provide play, pause, next and previous for system media controls.
-
-Keyboard controls: `/` focuses search; Ctrl/Cmd+K opens the command palette; Escape closes it or filter menus. ArrowUp, ArrowDown, Home and End move focus through track lists and the download job list. Space toggles playback outside editing fields and interactive controls. Native sliders support keyboard adjustment. Browser autoplay rules can require another press of Play. On Now Playing, Left and Right seek by five seconds, Shift with either goes to the previous or next track, Up and Down adjust volume, M mutes, L opens the large lyrics view and closes it, Q opens Up next, S switches the stage between small and large, and `?` lists the keys. On the stage itself, F enters full screen, Esc leaves full screen or closes the popout, N and P skip tracks, V switches between artwork and the visualizer, and `[` and `]` change the preset. See [Now Playing](docs/now-playing-popout.md) and [the visualizer](docs/visualizer.md).
-
-### Music bot
-
-The music bot builds a queue from songs already in the library. A pet sits on the player. Its name is Octive until you change it. Tapping the pet opens the chat. The Music bot row in the sidebar, and the link in the top bar, open the same conversation as a page at `/music-bot`. The character, name, colour, size and perch are saved in this browser, under Settings, Yours.
-
-It needs Ollama reachable from the Musimo server. In Docker that address is often `http://host.docker.internal:11434`. No model is downloaded for you. Pick one in the chat. Until the server answers and a model is chosen, the chat says why and waits.
-
-Ask for an artist, a genre, a year, a length, songs you have liked, or songs you have not played lately. Genre words match the tags in the files and the broad genres in [genre mapping](docs/genre-mapping.md). The card stays a preview until you play it, play it next, add it, replace what is coming up, or save it as a playlist. Each of those checks the files again before it changes the queue. Undo restores the last of those edits, and refuses once the queue has moved on.
-
-The bot does not listen to the audio. A request about mood, energy or tempo is refused, because that analysis is switched off. "More like this" uses saved genre and artist tags. See [the music bot](docs/player.md#music-bot).
-
-### Downloads and history
-
-Jobs progress through queued, matching, downloading, optional conversion, tagging, moving, scanning and done. Job cards display the destination and format. Low-confidence matches are flagged. Failures retain their stage and error rather than looking like success.
-
-Each failure shows a reason summary with plain language messages. The NO_MATCH message names the sites that were asked, such as "No matching recording was found on YouTube." Those tracks sit on the No match tab. Real failures sit on the Errors tab, which groups them by download group with reason chips and offers Retry errors and Clear errors. Clear no match hides the tracks that never found a recording. Per card attempt counts are shown and reset when retrying. Each finished card also has its own Clear to dismiss it individually. The download arrow on a track becomes Retry with the failure reason in its tooltip.
-
-The floating queue button appears only while a download is active. History and queue load more results on scroll.
-
-Pause/resume and restart recovery depend on the stage and surviving partial files. Cancelling does not remove an already published library file. Clearing finished jobs from the queue is separate from download history.
-
-Validate a new setup by inspecting a permitted test file, its tags and its appearance in the library. A queue acknowledgement confirms submission, not successful publication. Download controls show the destination and format before queueing so you know where files will land. [Measurements](docs/measurements.md) records which acceptance checks have actually passed.
-
-### Recent activity
-
-Settings and Diagnostics show the same scrollable feed. It displays up to 100 recent visible entries. Clear all clears through the snapshot you saw, preserving events that arrive afterward. The clear point survives refresh and restart.
-
-This clears the feed, not music, download history or the bounded live-event replay buffer. It is not a privacy wipe. See [Privacy](PRIVACY.md).
-
-## Audio quality and metadata
-
-`original` is the default. It avoids unnecessary conversion when possible. M4A, Opus and MP3 are also offered. A codec/container mismatch may require remuxing or conversion.
-
-A higher output bitrate cannot recover detail absent from the source. Converting lossy audio into a larger file does not make it lossless. Subscriptions, catalog results and preview URLs do not establish that a permitted full-quality download exists.
-
-Album size figures are estimates from duration and an assumed bitrate. Check the codec and bitrate of the finished file for actual output characteristics.
-
-Tagging uses catalog metadata, artwork and optional MusicBrainz/LRCLIB enrichment. Available fields include titles, artists, album, date, track/disc numbers, genre, label, identifiers and lyrics. Missing or ambiguous data can stay empty; warnings should explain failed optional enrichment. Artwork and lyrics have their own rights and provider conditions.
-
-## Playback
-
-Musimo plays the files in its music folders. Mount the host folder, select it as the download destination, and list it in `MUSIMO_LIBRARY_ROOTS`. A finished download is indexed and can be played without another server.
-
-Library tracks hand over without a gap. Crossfade and the sleep timer are part of that player. The Now Playing seek bar draws a waveform of the file, worked out once and kept in SQLite. Cover art, lyrics, playlists and the saved queue come from the same index. See [library player](docs/player.md), [the visualizer](docs/visualizer.md) and [Now Playing](docs/now-playing-popout.md).
-
-Listening state from a Navidrome 0.63.2 database can move across with the importer in the library player document. It matches files you have already scanned, then copies manual playlists, likes, artist favourites, play counts and last played. It does not copy audio, and it leaves an existing Musimo queue alone.
-
-## Configuration
-
-Copy `.env.example` to `.env` for Compose deployment values. Both `.env` and `compose.override.yaml` are ignored.
-
-- `MUSIMO_BIND`: host interface, default `127.0.0.1`.
-- `MUSIMO_PORT`: host port, default `8765`.
-- `PUID`, `PGID`: runtime IDs, default `1000`, both nonzero.
-- `MUSIMO_LIBRARY_ROOTS`: container paths, default `/music` in base Compose.
-- `MUSIMO_WATCH_MODE`: `native` or `poll`.
-- `MUSIMO_POLL_INTERVAL_SECONDS`: polling interval, default `300`.
-
-Editable settings cover the label, destination, output format, naming template, concurrency and retry limits. See [Settings](docs/settings.md) and `backend/core/models.py` for the current contract.
-
-Setting environment variables are **first-run bootstrap values**. Pass a value such as `MUSIMO_CONCURRENCY=3` through the container's `environment:` block to seed and lock it. Merely adding an arbitrary key to `.env` does not pass it into the container.
-
-Existing database values win on later starts. Removing a bootstrap variable does not unlock its stored setting. The UI/API show the origin and reject writes to locked fields. There is no general unlock UI yet. Do not delete the database to change one preference.
-
-For local development, `MUSIMO_DATA_DIR` and `MUSIMO_STATIC_DIR` select data and built frontend directories. The supported Docker layout keeps application state at `/data`.
-
-## Backups and updates
-
-SQLite stores settings, cached catalog results, indexed tags/paths, jobs/history and events at `/data/musimo.sqlite3`. Download staging lives under `.musimo` within the selected music root, on the same filesystem as publication.
-
-Back up the application volume, music and necessary staging files, private Compose overrides and separately stored credentials. Record the application revision used with each backup.
-
-A simple consistent backup is to stop Musimo, back up the entire application volume and required host folders with your normal backup tool, then start it. Do not copy only a live SQLite main file while omitting its WAL.
-
-Update from a reviewed revision:
-
-```sh
-git pull --ff-only
-docker compose up -d --build --wait
-```
-
-Use the same Compose overrides and optional profiles as installation. Back up before schema changes. `git pull --ff-only` refuses divergence instead of silently merging local edits. A newer database schema may require a matching backup to roll back.
-
-This application opens database version 8. Version 5 stores the pause between groups of downloads. Version 6 is the library player: playlists, favourites, play counts and the saved queue live in Musimo, and the settings for a separate player are removed. Version 7 records each file's codec, and whether a FLAC file also carries ID3 tags. Version 8 numbers queue saves, so an older save cannot overwrite a newer one. An older build refuses a newer database, so rolling back after an upgrade needs the backup taken before it.
-
-Rebuilds retain named volumes. **Do not add `--volumes` or `-v` to `docker compose down` during an update.** Removing the data volume loses application state. To stop without removal, use `docker compose stop`. Music folders remain your files, not disposable application state.
-
-## Network access and privacy
-
-Loopback is the default. There is no built-in login or separate user permissions. A name picks whose queue and likes this browser shows. It is not a lock and not a password. Anyone who can reach an exposed instance may be able to inspect paths, change settings and queue work. Use a trusted network, or authentication and HTTPS at a reverse proxy before broader access. Do not expose a bare unauthenticated port publicly.
-
-Keep UI/API on the same origin. [Reverse proxy instructions](docs/reverse-proxy.md) cover SSE buffering, timeouts and trusted forwarded headers. Those examples do not install authentication.
-
-Self-hosted does not mean offline. Catalog/enrichment providers receive requests from the server. Artwork and preview hosts receive requests from the browser. Musimo has no built-in analytics service, but providers and your own proxy may log requests. [Privacy](PRIVACY.md) describes these flows.
-
-## Troubleshooting
-
-Visit the Diagnostics page to check system readiness. It shows library roots (mounted, writable, free space), the selected destination with write testing, the last library scan, the player, YouTube helper availability and the most recent download outcome. Settings displays a summary with a link to Diagnostics.
-
-### The page does not open
-
-Check Docker, `docker compose ps`, bind/port settings and service logs. A loopback bind cannot be reached from another device. Health is independent of remote provider availability.
-
-### Search works but downloads fail
-
-Metadata and audio come from different systems. Read the job stage and error. Unavailable recordings, source restrictions, rate limits, missing tools and disk permissions need different remedies. Each failed download displays a plain hint and links to the relevant setting, diagnostic or fix. Error codes and their recovery paths are documented in [Downloads](docs/downloads.md#error-codes-and-recovery). Avoid repeatedly retrying a blocked source. See [YouTube troubleshooting](docs/youtube-troubleshooting.md). Use the destination write test in Diagnostics to verify write permissions.
-
-### Coverage is wrong or unknown
-
-Check mounted roots, scan status and tags. Rescan after mount changes. Matches use a priority system: completed downloads first, then ISRC, then MusicBrainz ID, then normalized artist/title and duration. Different editions (same title and artist but different album) are flagged separately with the matched album name shown. Inaccessible files or incomplete provider track lists can produce partial results.
-
-### New files are absent
-
-Confirm the folder is mounted and listed in `MUSIMO_LIBRARY_ROOTS`. Switch to polling if filesystem events do not cross the mount. Wait for the scan to finish. A finished download is indexed as soon as the file is published.
-
-### Settings are locked
-
-Their origin is a bootstrap environment value. Later edits to `.env` do not replace or unlock existing rows. Check the Settings origin field.
-
-### A preview is silent
-
-Check Play, mute, the volume slider and browser/site audio settings. Expired clip URLs may need a new track selection. Some catalog results offer no preview.
-
-### Idle CPU is high
-
-Check active scans, jobs and polling interval. Frequent scans across Windows/network mounts can be costly. [Measurements](docs/measurements.md) records unresolved targets; a short sample does not establish typical idle usage.
-
-### Live updates fail behind a proxy
-
-Disable buffering/caching for `/api/events`, allow long responses, preserve host/scheme, and trust only the real proxy. Reload obtains a new snapshot. See [proxy details](docs/reverse-proxy.md).
-
-### Report a problem
-
-Include version/revision, OS, Docker/Compose versions, screen, reproduction steps, expected behavior and the actual result. Share a short redacted error excerpt. Remove credentials, signed URLs, private hosts, usernames and local paths before posting diagnostics.
-
-## Development and checks
-
-For a native Windows installation, follow the [Windows setup guide](docs/windows.md), including the launcher and download helper setup.
-
-Checks run locally: `npm ci --prefix frontend` installs git hooks that run `scripts/check.sh` before each commit and push, and GitHub Actions only runs by hand. Use Python 3.12 or 3.14, Node 26 and uv. Dependencies are locked in `uv.lock` and `frontend/package-lock.json`. See [Testing and CI](docs/testing.md) for isolated browser tests, coverage and required checks.
-
-```sh
-uv sync --locked
-npm ci --prefix frontend
-npm run build --prefix frontend
-```
-
-For frontend development:
-
-```sh
-docker compose up -d --build --wait
-npm run dev --prefix frontend
-```
-
-Open Vite's printed address. Its `/api` proxy targets localhost port 8765. Set `MUSIMO_API_TARGET` to use another backend, for example a Musimo on another machine on your network whose `MUSIMO_BIND` lets you reach it, or one behind Tailscale Serve or a reverse proxy over https:
-
-```sh
-MUSIMO_API_TARGET=http://other-machine:8765 npm run dev --prefix frontend
-MUSIMO_API_TARGET=https://other-machine.tailnet.ts.net npm run dev --prefix frontend
-```
-
-Writes through the proxy (saving the queue, scrobbles, settings) work in both cases: over http the browser's Host goes through unchanged, and over https the proxy presents the target's own origin.
-
-For Python work outside Docker, install the worker tools if needed, and set `MUSIMO_DATA_DIR`, `MUSIMO_LIBRARY_ROOTS` and `MUSIMO_STATIC_DIR` to isolated absolute paths:
-
-```sh
-uv run python -m uvicorn backend.main:app --host 127.0.0.1 --port 8765 --reload
-```
-
-Build the frontend if Python should serve it. Root lists use the host path separator: semicolon on Windows, colon on Linux. Use one application worker; the scheduler and source budgets are process-local. Test against generated fixtures, not irreplaceable collections.
-
-Required checks:
-
-```sh
-uv run ruff check backend tests scripts
-uv run ruff format --check backend tests scripts
-uv run mypy
-uv run coverage run -m unittest discover -s tests
-uv run coverage report
-npm run lint --prefix frontend
-npm run format:check --prefix frontend
-npm run test --prefix frontend
-npm run build --prefix frontend
-npm run test:e2e:types --prefix frontend
-```
-
-Relevant live checks against an isolated Compose setup:
-
-```sh
-uv run python scripts/smoke.py --restart
-uv run python scripts/search_smoke.py
-uv run python scripts/watcher_smoke.py
-uv run python scripts/benchmark.py
-```
-
-The restart smoke test restarts this project's container and briefly changes/restores its label. Search smoke uses live catalog/preview endpoints. Watcher smoke generates and removes a one-second audio fixture in the test mount. Read scripts before changing their target.
-
-The benchmark distinguishes measured values from unfinished checks. Its `--release` gate intentionally fails when acceptance work is incomplete. A green build is not a completed release benchmark.
-
-After Python dependency changes, regenerate the runtime export:
-
-```sh
-uv export --no-dev --no-emit-project --no-header --format requirements-txt --output-file requirements.lock
-```
-
-Commit the manifest and relevant locks/exports together. Prettier formats frontend/YAML/Markdown; Ruff formats Python. See [Contributing](CONTRIBUTING.md).
-
-## Architecture and API
-
-```text
-Browser
-  | same-origin HTTP + one event stream
-FastAPI
-  |-- catalog cache -> metadata and preview providers
-  |-- library index -> music folders
-  |-- scheduler -> worker -> staging -> music folders
-  `-- SQLite -> settings, cache, index, jobs and events
-```
-
-The backend serves frontend and API on one origin. SQLite uses WAL and a serialized writer. Events have increasing IDs and bounded replay; expired cursors trigger a snapshot refresh.
-
-API groups:
-
-- Health/settings: `/api/health`, `/api/settings` GET and PATCH, `/api/youtube-cookies` PUT and DELETE, `/api/snapshot`.
-- Search: `/api/search`, `/api/album-years`, `/api/albums/{id}`, `/api/artists/{id}`, `/api/artists/{id}/top`, `/api/preview/{id}`.
-- Index: `/api/library` GET, `/api/library/scan` POST, `/api/library/cancel` POST.
-- Player: `/api/player/capabilities`, `/api/player/song/{id}`, `/api/player/queue` GET and PUT, `/api/player/scrobble`, `/api/player/lyrics/{id}`, `/api/player/stream/{id}`, `/api/player/art/{id}`, `/api/player/waveform/{id}`. Album, artist, track and playlist browsing is `/api/library/{albums,artists,tracks,playlists}`. Scan routes stay at `/api/library` GET, `/api/library/scan` and `/api/library/cancel`.
-- Music bot: `/api/music-bot/models` GET, `/api/music-bot/chat` POST, `/api/music-bot/validate` POST, `/api/music-bot/capabilities` GET, `/api/music-bot/intent` POST, and the proposal routes `/api/music-bot/proposals` POST, `/api/music-bot/proposals/{id}` GET, `/api/music-bot/proposals/{id}/revisions` POST and `/api/music-bot/proposals/{id}/commit` POST.
-- Jobs/batches: `/api/naming-preview`, `/api/jobs` GET and POST, `/api/history`, `/api/batches` POST, `/api/batches/{id}/{pause,resume,cancel,retry}`, `/api/jobs/{id}/pick`, `/api/jobs/{id}/{pause,resume,cancel,retry,dismiss}`, `/api/queue/{pause,resume,cancel-queued,retry-failed,clear-finished,clear-failed,clear-unmatched,resume-source}`.
-- Artist downloads: `/api/artists/{id}/download-plan`, `/api/artist-batches`.
-- Podcasts and pasted links: `/api/podcasts`, `/api/podcasts/{id}`, `/api/podcast-episodes` POST, `/api/links/resolve` POST, `/api/links` POST.
-- Activity: `/api/activity` GET and DELETE; deletion takes the observed `through` cursor.
-- Operations: `/api/events`, `/api/diagnostics`, `/api/diagnostics/test/deezer`, `/api/diagnostics/test/destination`, `/api/diagnostics/export`.
-
-Contracts can change before a stable release. The live schema is at `/openapi.json`; interactive Swagger/Redoc pages are disabled. Read [architecture](docs/architecture.md), [search/indexing](docs/search.md) and source for detailed behavior.
-
-Repository layout:
-
-```text
-backend/          API, state, catalog, indexing and download services
-  main.py         app setup, middleware and serving the built frontend
-  api/            every route module, one per area
-  core/           SQLite store, settings and job models, errors, file naming, the site
-                  allowlist, text normalizing, secret files
-  jobs/           the download pipeline: queue, worker, yt-dlp options, matching, tagging,
-                  publishing files, pasted links
-  library/        local file index, the player, browse filters, the Navidrome importer
-                  and seek bar waveforms
-  integrations/   Deezer catalog and audio, MusicBrainz, podcast directory, saved cookies
-frontend/src/     React screens, player, queue and shared UI
-  main.tsx        mounts the app
-  api.ts          every backend call and the zod schema it is read with
-  app/            shell, routes, live events, command palette
-  features/       one folder per screen or engine: search, library, downloads, links,
-                  podcasts, player, now-playing, visualizer, music-bot, settings,
-                  diagnostics
-  components/     pieces more than one screen uses
-  ui/             primitives: Button, Panel, Field and the rest
-  theme/          color tokens, built-in themes, the theme store
-  lib/            small helpers and hooks
-scripts/          smoke tests and benchmarks
-tests/            regression tests
-docs/             setup, behavior, evidence and proposals
-.github/          checks, contribution templates and ownership
-```
-
-## Contributing and support
-
-Read [Contributing](CONTRIBUTING.md) before a large change. Reproducible bug reports, accessibility work, documentation corrections and small fixes are welcome. Use issue templates; security reports follow [Security](SECURITY.md), not public issues.
-
-[Code of conduct](CODE_OF_CONDUCT.md) covers project spaces. [Governance](GOVERNANCE.md) describes maintenance. [Release checks](docs/releasing.md) distinguish repository setup from completed public-release work. There is no paid support agreement or promised response time.
-
-## Licence and permitted use
-
-Musimo's original source uses the [MIT licence](LICENSE). Dependencies and executables retain their own licences; see [third-party notices](THIRD_PARTY_NOTICES.md). The software licence grants no rights to recordings, compositions, lyrics, artwork or provider accounts.
-
-Use Musimo where you have the rights or permission required for the intended copying, downloading, processing and sharing. Possessing a copy or paying for a subscription does not by itself establish those permissions. Read [Terms and responsible use](TERMS.md), [Privacy](PRIVACY.md) and each configured provider's terms.
-
-Musimo is independent of the providers and the library. Names describe integrations, not endorsement. MIT includes warranty and liability provisions; no notice waives rights or liabilities that applicable law does not allow to be waived.
+Musimo's code is under the [MIT licence](LICENSE). That licence gives no rights to recordings, artwork, lyrics or provider accounts. Musimo isn't connected to or endorsed by any of the services it works with. See [Privacy](PRIVACY.md) and [third-party notices](THIRD_PARTY_NOTICES.md).

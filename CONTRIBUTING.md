@@ -1,6 +1,6 @@
 # Contributing
 
-Start with the [README](README.md), [architecture](docs/architecture.md) and the document covering the behavior you want to change. The brief and roadmap contain unfinished work. Check the source before treating a feature as implemented.
+Start with the [README](README.md), [Developing Musimo](docs/development.md), [architecture](docs/architecture.md) and the document covering the behavior you want to change. The brief and roadmap contain unfinished work. Check the source before treating a feature as implemented.
 
 ## Before starting
 
