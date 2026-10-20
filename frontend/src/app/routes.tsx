@@ -15,6 +15,8 @@ import { DiagnosticsPage } from '../features/diagnostics/diagnostics'
 import { DownloadsPage } from '../features/downloads/downloads'
 import { HomePage } from '../features/home/home'
 import {
+  lastLibraryView,
+  libraryPaths,
   validateArtistAlbumSearch,
   validateArtistSongSearch,
   validateLibrarySearch,
@@ -141,14 +143,17 @@ function LibraryScreen({
   )
 }
 
-// Library has no page of its own. An old link or bookmark lands on Albums, keeping its filters.
+// Library has no page of its own. It opens the view it was last on in this visit, or Artists, the
+// first tab; that view then brings back its own filters. The Library tabs, the palette and an
+// old link or bookmark all come in this way, and a link's own filters are kept.
 const libraryRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/library',
   beforeLoad: ({ search }) => {
+    const view = lastLibraryView()
     throw redirect({
-      to: '/library/albums',
-      search: validateLibrarySearch('albums', search),
+      to: libraryPaths[view],
+      search: validateLibrarySearch(view, search),
       replace: true,
     })
   },

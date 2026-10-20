@@ -1,154 +1,457 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="./support.js"></script>
-</head>
-<body>
-<x-dc>
-<helmet>
-<script src="./icon.js"></script>
-<style>html{color-scheme:dark}*{scrollbar-color:#2a3630 transparent;scrollbar-width:thin}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a3630;border-radius:10px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-corner{background:transparent}
-body{margin:0;background:#111716;font-family:Inter,-apple-system,sans-serif}a{color:#c3e4a2;text-decoration:none}button{font:inherit;cursor:pointer}</style>
-</helmet>
-<div style="color:#e8ece8;font-size:13px;container-type:inline-size">
-  <sc-if value="{{ showBack }}" hint-placeholder-val="{{ true }}">
-    <button onClick="{{ back }}" style="display:inline-flex;align-items:center;gap:6px;height:32px;padding:0 10px 0 6px;margin:0 0 16px -6px;border:0;border-radius:8px;background:transparent;color:#93a39b;font-size:13px" style-hover="background:#17201b;color:#e8ece8"><m-i n="chevron-left" s="16"></m-i>Back to results</button>
-  </sc-if>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <script src="./icon.js"></script>
+        <style>
+          html {
+            color-scheme: dark;
+          }
+          * {
+            scrollbar-color: #2a3630 transparent;
+            scrollbar-width: thin;
+          }
+          ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+          }
+          ::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          ::-webkit-scrollbar-thumb {
+            background: #2a3630;
+            border-radius: 10px;
+            border: 3px solid transparent;
+            background-clip: padding-box;
+          }
+          ::-webkit-scrollbar-corner {
+            background: transparent;
+          }
+          body {
+            margin: 0;
+            background: #111716;
+            font-family:
+              Inter,
+              -apple-system,
+              sans-serif;
+          }
+          a {
+            color: #c3e4a2;
+            text-decoration: none;
+          }
+          button {
+            font: inherit;
+            cursor: pointer;
+          }
+        </style>
+      </helmet>
+      <div style="color: #e8ece8; font-size: 13px; container-type: inline-size">
+        <sc-if value="{{ showBack }}" hint-placeholder-val="{{ true }}">
+          <button
+            onClick="{{ back }}"
+            style="
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              height: 32px;
+              padding: 0 10px 0 6px;
+              margin: 0 0 16px -6px;
+              border: 0;
+              border-radius: 8px;
+              background: transparent;
+              color: #93a39b;
+              font-size: 13px;
+            "
+            style-hover="background:#17201b;color:#e8ece8"
+          >
+            <m-i n="chevron-left" s="16"></m-i>Back to results
+          </button>
+        </sc-if>
 
-  <div style="display:flex;flex-wrap:wrap;align-items:flex-end;gap:20px 28px;margin-bottom:26px">
-    <div style="width:clamp(120px,22cqi,210px);aspect-ratio:1;flex:none;border-radius:{{ coverR }};background:{{ info.art }};box-shadow:0 24px 50px -24px rgba(0,0,0,.8)"></div>
-    <div style="flex:1 1 300px;min-width:0">
-      <div style="display:flex;align-items:center;gap:8px;font-family:{{ mono }};font-size:11px;letter-spacing:0.8px;color:#819088">{{ info.eyebrow }}<span style="padding:2px 6px;border-radius:4px;border:1px solid #344035;color:#93a39b;letter-spacing:0.4px">{{ info.source }}</span></div>
-      <h1 style="margin:8px 0 0;font-size:clamp(26px,4.4cqi,40px);font-weight:600;letter-spacing:-1px;line-height:1.08">{{ info.title }}</h1>
-      <div style="margin-top:8px;font-size:14px;display:flex;flex-wrap:wrap;gap:4px 8px;align-items:center">
-        <sc-if value="{{ info.by }}" hint-placeholder-val="{{ false }}"><a href="#" onClick="{{ openArtist }}">{{ info.by }}</a><span style="color:#344035">·</span></sc-if>
-        <span style="color:#93a39b">{{ info.meta }}</span>
-      </div>
-      <div style="max-width:440px;margin-top:14px">
-        <div style="display:flex;height:6px;border-radius:6px;overflow:hidden;gap:2px">
-          <sc-for list="{{ info.cov }}" as="c" hint-placeholder-count="3"><span style="flex:{{ c.n }};background:{{ c.c }}"></span></sc-for>
-        </div>
-        <div style="display:flex;flex-wrap:wrap;gap:4px 14px;margin-top:7px;font-size:12px;color:#93a39b">
-          <sc-for list="{{ info.cov }}" as="c" hint-placeholder-count="3"><span style="display:inline-flex;align-items:center;gap:6px"><i style="width:7px;height:7px;border-radius:2px;background:{{ c.c }}"></i>{{ c.label }}</span></sc-for>
-        </div>
-      </div>
-      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-top:18px">
-        <button onClick="{{ primary }}" style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 16px;border-radius:10px;border:0;background:#c3e4a2;color:#172014;font-size:13px;font-weight:600"><m-i n="{{ info.pIcon }}" s="16"></m-i>{{ info.pText }}</button>
-        <button style="display:inline-flex;align-items:center;gap:8px;height:40px;padding:0 14px;border-radius:10px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:13px;font-weight:500"><m-i n="{{ info.sIcon }}" s="15"></m-i>{{ info.sText }}</button>
-        <span style="font-size:12px;color:#819088;display:inline-flex;align-items:center;gap:6px"><m-i n="folder" s="13"></m-i><span style="font-family:{{ mono }}">{{ info.dest }}</span></span>
-      </div>
-    </div>
-  </div>
-
-  <!-- album / podcast rows -->
-  <sc-if value="{{ hasRows }}" hint-placeholder-val="{{ true }}">
-    <div style="display:grid;grid-template-columns:28px minmax(0,1fr) auto 52px 40px;gap:14px;padding:0 10px 8px;border-bottom:1px solid #2a3630;font-family:{{ mono }};font-size:10.5px;letter-spacing:0.6px;color:#819088">
-      <span style="text-align:right">#</span><span>{{ col2 }}</span><span>STATUS</span><span style="text-align:right">TIME</span><span></span>
-    </div>
-    <div style="padding-top:6px">
-      <sc-for list="{{ rows }}" as="r" hint-placeholder-count="10">
-        <div style="display:grid;grid-template-columns:28px minmax(0,1fr) auto 52px 40px;align-items:center;gap:14px;padding:6px 10px;border-radius:10px" style-hover="background:#17201b">
-          <span style="font-family:{{ mono }};font-size:11px;text-align:right;color:#819088">{{ r.n }}</span>
-          <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.t }}</span><span style="display:block;font-size:12px;color:#93a39b;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.sub }}</span></span>
-          <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:5px;font-size:11px;white-space:nowrap;background:{{ r.bbg }};color:{{ r.bfg }}"><m-i n="{{ r.bi }}" s="11"></m-i>{{ r.badge }}</span>
-          <span style="font-family:{{ mono }};font-size:11px;color:#93a39b;text-align:right">{{ r.d }}</span>
-          <button aria-label="{{ r.act }}" style="width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:{{ r.ac }}" style-hover="background:#1e2a23"><m-i n="{{ r.ai }}" s="16"></m-i></button>
-        </div>
-      </sc-for>
-    </div>
-    <div style="margin-top:18px;padding-top:14px;border-top:1px solid #2a3630;font-size:12px;color:#819088;line-height:1.7">{{ info.foot }}</div>
-  </sc-if>
-
-  <!-- artist -->
-  <sc-if value="{{ isArtist }}" hint-placeholder-val="{{ false }}">
-    <section style="margin-bottom:30px">
-      <h2 style="margin:0 0 10px;font-size:16px;font-weight:600">Popular</h2>
-      <sc-for list="{{ popular }}" as="r" hint-placeholder-count="5">
-        <div style="display:grid;grid-template-columns:22px 40px minmax(0,1fr) auto 52px 40px;align-items:center;gap:12px;padding:6px 8px;border-radius:10px" style-hover="background:#17201b">
-          <span style="font-family:{{ mono }};font-size:11px;color:#819088;text-align:right">{{ r.n }}</span>
-          <span style="width:40px;height:40px;border-radius:6px;background:{{ r.art }};display:grid;place-items:center;color:#fff"><m-i n="play" s="13" fill></m-i></span>
-          <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ r.t }}</span><span style="display:block;font-size:12px;color:#93a39b">{{ r.sub }}</span></span>
-          <span style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:5px;font-size:11px;white-space:nowrap;background:{{ r.bbg }};color:{{ r.bfg }}"><m-i n="{{ r.bi }}" s="11"></m-i>{{ r.badge }}</span>
-          <span style="font-family:{{ mono }};font-size:11px;color:#93a39b;text-align:right">{{ r.d }}</span>
-          <button aria-label="{{ r.act }}" style="width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:{{ r.ac }}" style-hover="background:#1e2a23"><m-i n="{{ r.ai }}" s="16"></m-i></button>
-        </div>
-      </sc-for>
-    </section>
-    <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
-      <section style="margin-bottom:30px">
-        <div style="display:flex;align-items:baseline;gap:10px;margin-bottom:14px"><h2 style="margin:0;font-size:16px;font-weight:600">{{ g.title }}</h2><span style="font-family:{{ mono }};font-size:11px;color:#819088">{{ g.n }}</span></div>
-        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:22px 16px">
-          <sc-for list="{{ g.items }}" as="a" hint-placeholder-count="5">
-            <div onClick="{{ openAlbum }}" style="min-width:0;cursor:pointer">
-              <div style="position:relative;aspect-ratio:1;border-radius:10px;background:{{ a.art }}">
-                <span style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:8px;display:grid;place-items:center;background:rgba(17,23,22,.85);color:{{ a.pc }}"><m-i n="{{ a.icon }}" s="15"></m-i></span>
-              </div>
-              <div style="margin-top:9px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ a.t }}</div>
-              <div style="margin-top:2px;font-size:12px;color:#93a39b">{{ a.y }} · {{ a.own }}</div>
-              <div style="height:3px;border-radius:3px;background:#2a3630;margin-top:8px"><div style="height:100%;border-radius:3px;width:{{ a.pct }};background:{{ a.pc }}"></div></div>
+        <div
+          style="
+            display: flex;
+            flex-wrap: wrap;
+            align-items: flex-end;
+            gap: 20px 28px;
+            margin-bottom: 26px;
+          "
+        >
+          <div
+            style="width:clamp(120px,22cqi,210px);aspect-ratio:1;flex:none;border-radius:{{ coverR }};background:{{ info.art }};box-shadow:0 24px 50px -24px rgba(0,0,0,.8)"
+          ></div>
+          <div style="flex: 1 1 300px; min-width: 0">
+            <div
+              style="display:flex;align-items:center;gap:8px;font-family:{{ mono }};font-size:11px;letter-spacing:0.8px;color:#819088"
+            >
+              {{ info.eyebrow }}<span
+                style="
+                  padding: 2px 6px;
+                  border-radius: 4px;
+                  border: 1px solid #344035;
+                  color: #93a39b;
+                  letter-spacing: 0.4px;
+                "
+                >{{ info.source }}</span
+              >
             </div>
-          </sc-for>
+            <h1
+              style="
+                margin: 8px 0 0;
+                font-size: clamp(26px, 4.4cqi, 40px);
+                font-weight: 600;
+                letter-spacing: -1px;
+                line-height: 1.08;
+              "
+            >
+              {{ info.title }}
+            </h1>
+            <div
+              style="
+                margin-top: 8px;
+                font-size: 14px;
+                display: flex;
+                flex-wrap: wrap;
+                gap: 4px 8px;
+                align-items: center;
+              "
+            >
+              <sc-if value="{{ info.by }}" hint-placeholder-val="{{ false }}"
+                ><a href="#" onClick="{{ openArtist }}">{{ info.by }}</a
+                ><span style="color: #344035">·</span></sc-if
+              >
+              <span style="color: #93a39b">{{ info.meta }}</span>
+            </div>
+            <div style="max-width: 440px; margin-top: 14px">
+              <div
+                style="display: flex; height: 6px; border-radius: 6px; overflow: hidden; gap: 2px"
+              >
+                <sc-for list="{{ info.cov }}" as="c" hint-placeholder-count="3"
+                  ><span style="flex:{{ c.n }};background:{{ c.c }}"></span
+                ></sc-for>
+              </div>
+              <div
+                style="
+                  display: flex;
+                  flex-wrap: wrap;
+                  gap: 4px 14px;
+                  margin-top: 7px;
+                  font-size: 12px;
+                  color: #93a39b;
+                "
+              >
+                <sc-for list="{{ info.cov }}" as="c" hint-placeholder-count="3"
+                  ><span style="display: inline-flex; align-items: center; gap: 6px"
+                    ><i style="width:7px;height:7px;border-radius:2px;background:{{ c.c }}"></i>{{
+                    c.label }}</span
+                  ></sc-for
+                >
+              </div>
+            </div>
+            <div
+              style="
+                display: flex;
+                flex-wrap: wrap;
+                align-items: center;
+                gap: 8px;
+                margin-top: 18px;
+              "
+            >
+              <button
+                onClick="{{ primary }}"
+                style="
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 8px;
+                  height: 40px;
+                  padding: 0 16px;
+                  border-radius: 10px;
+                  border: 0;
+                  background: #c3e4a2;
+                  color: #172014;
+                  font-size: 13px;
+                  font-weight: 600;
+                "
+              >
+                <m-i n="{{ info.pIcon }}" s="16"></m-i>{{ info.pText }}
+              </button>
+              <button
+                style="
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 8px;
+                  height: 40px;
+                  padding: 0 14px;
+                  border-radius: 10px;
+                  border: 1px solid #344035;
+                  background: #1e2a23;
+                  color: #e8ece8;
+                  font-size: 13px;
+                  font-weight: 500;
+                "
+              >
+                <m-i n="{{ info.sIcon }}" s="15"></m-i>{{ info.sText }}
+              </button>
+              <span
+                style="
+                  font-size: 12px;
+                  color: #819088;
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 6px;
+                "
+                ><m-i n="folder" s="13"></m-i
+                ><span style="font-family:{{ mono }}">{{ info.dest }}</span></span
+              >
+            </div>
+          </div>
         </div>
-      </section>
-    </sc-for>
-  </sc-if>
-</div>
-</x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 1000, &quot;height&quot;: 900}, &quot;kind&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;album&quot;, &quot;artist&quot;, &quot;podcast&quot;], &quot;default&quot;: &quot;album&quot;, &quot;tsType&quot;: &quot;'album' | 'artist' | 'podcast'&quot;}, &quot;mono&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;ui-monospace, Menlo, monospace&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;showBack&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: true, &quot;tsType&quot;: &quot;boolean&quot;}, &quot;onBack&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}, &quot;onOpenArtist&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}, &quot;onOpenAlbum&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}, &quot;onDownloadAll&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}}">
-const art = (h) => `repeating-linear-gradient(135deg, oklch(0.42 0.07 ${h}) 0 2px, oklch(0.35 0.06 ${h}) 2px 10px)`
-const G = '#c3e4a2', P = '#e4cc9c', M = '#93a39b', F = '#819088', T = '#e8ece8'
-const BADGE = {
-  own: ['In library', 'check', '#2a3a27', G, 'play', 'Play', G],
-  ed: ['Other edition', 'copy', '#3a3224', P, 'arrow-down-to-line', 'Download this edition', T],
-  q: ['Queued', 'clock', '#1e2a23', M, 'x', 'Cancel', M],
-  miss: ['Not in library', 'circle-dashed', 'transparent', F, 'arrow-down-to-line', 'Download', T],
-  done: ['Downloaded', 'check', '#2a3a27', G, 'play', 'Play', G],
-  new: ['New', 'sparkle', '#1e2a23', T, 'arrow-down-to-line', 'Download', T],
-}
-const badge = (k) => { const b = BADGE[k]; return { badge: b[0], bi: b[1], bbg: b[2], bfg: b[3], ai: b[4], act: b[5], ac: b[6] } }
-class Component extends DCLogic {
-  renderVals() {
-    const kind = this.props.kind ?? 'album'
-    const mono = this.props.mono ?? 'ui-monospace, Menlo, monospace'
-    const cov = (o, e, q, m, total) => [
-      { n: o, c: G, label: `${o} in library` }, { n: e, c: P, label: `${e} other edition` }, { n: q, c: M, label: `${q} queued` }, { n: m, c: '#2a3630', label: `${m} missing of ${total}` },
-    ].filter((x) => x.n > 0)
-    const INFO = {
-      album: { eyebrow: 'ALBUM · 2018', source: 'DEEZER', title: 'Con Todo El Mundo', by: 'Khruangbin', meta: '10 tracks · 39 min', art: art(95), cov: cov(6, 1, 1, 2, 10), pIcon: 'arrow-down-to-line', pText: 'Download 2 missing', sIcon: 'play', sText: 'Preview', dest: '/music · M4A', foot: 'Track list from Deezer. Coverage is a file match against your library index, not proof of rights.' },
-      artist: { eyebrow: 'ARTIST', source: 'DEEZER', title: 'Khruangbin', by: '', meta: '1.2M fans · 9 albums · 14 singles & EPs', art: art(40), cov: cov(61, 9, 4, 20, 94), pIcon: 'arrow-down-to-line', pText: 'Download all albums…', sIcon: 'library', sText: 'Open in library', dest: '/music · M4A' },
-      podcast: { eyebrow: 'PODCAST', source: 'APPLE PODCASTS', title: 'Song Exploder', by: 'Hrishikesh Hirway', meta: '312 episodes · new every 2 weeks', art: art(150), cov: cov(4, 0, 1, 307, 312), pIcon: 'arrow-down-to-line', pText: 'Download latest 5', sIcon: 'play', sText: 'Play newest', dest: '/music/Podcasts/Song Exploder', foot: 'Episodes save as they were published, no re-encoding. Older episodes load as you scroll.' },
-    }
-    const info = INFO[kind]
-    const albumRows = [
-      ['Cómo Me Quieres', 'own', '3:15'], ['Lady and Man', 'miss', '4:30'], ['Maria También', 'ed', '3:08'], ['August 10', 'own', '4:21'], ['Rules', 'own', '3:47'],
-      ['Evan Finds the Third Room', 'q', '4:06'], ['Friday Morning', 'own', '4:52'], ['Shades of Man', 'miss', '5:10'], ['Two Fish and an Elephant', 'own', '3:20'], ['A Hymn', 'own', '4:41'],
-    ].map(([t, k, d], i) => ({ n: i + 1, t, d, sub: k === 'ed' ? 'Have it on “Con Todo El Mundo (Deluxe)”' : 'Khruangbin', ...badge(k) }))
-    const podRows = [
-      ['Khruangbin – “Time (You and I)”', 'new', '18:42', 'Oct 14'], ['Adrian Quesada – “Mentira Salomé”', 'q', '21:05', 'Sep 30'], ['Nina Simone tribute', 'done', '35:10', 'Sep 16'],
-      ['Radiohead – “Reckoner”', 'done', '24:33', 'Sep 2'], ['Daft Punk – “Instant Crush”', 'done', '19:58', 'Aug 19'], ['Black Pumas – “Colors”', 'miss', '22:14', 'Aug 5'],
-    ].map(([t, k, d, date], i) => ({ n: 312 - i, t, d, sub: date + ' · How the song was made, in the artist’s words', ...badge(k) }))
-    const grp = (title, list) => ({ title, n: list.length, items: list.map(([t, y, own, p, h]) => ({ t, y, own, art: art(h), pct: p + '%', pc: p === 100 ? G : p > 0 ? P : F, icon: p === 100 ? 'check' : 'arrow-down-to-line' })) })
-    return {
-      mono, info, coverR: kind === 'artist' ? '50%' : '14px',
-      showBack: this.props.showBack !== false,
-      back: () => this.props.onBack?.(),
-      openArtist: (e) => { e?.preventDefault?.(); this.props.onOpenArtist?.() },
-      openAlbum: () => this.props.onOpenAlbum?.(),
-      primary: () => (kind === 'artist' ? this.props.onDownloadAll?.() : undefined),
-      hasRows: kind !== 'artist', isArtist: kind === 'artist',
-      col2: kind === 'podcast' ? 'EPISODE' : 'TITLE',
-      rows: kind === 'podcast' ? podRows : albumRows,
-      popular: [['Time (You and I)', 'Mordechai', 'own', '4:17', 40], ['Maria También', 'Con Todo El Mundo', 'ed', '3:08', 95], ['So We Won’t Forget', 'Mordechai', 'q', '4:15', 40], ['Texas Sun', 'Texas Sun EP', 'miss', '4:12', 60], ['White Gloves', 'The Universe Smiles Upon You', 'miss', '5:21', 200]].map(([t, sub, k, d, h], i) => ({ n: i + 1, t, sub, d, art: art(h), ...badge(k) })),
-      groups: [
-        grp('Albums', [['A LA SALA', 2024, '0/12', 0, 170], ['Mordechai', 2020, '10/10', 100, 40], ['Hasta El Cielo', 2019, '10/10', 100, 120], ['Con Todo El Mundo', 2018, '7/10', 70, 95], ['The Universe Smiles Upon You', 2015, '0/12', 0, 200]]),
-        grp('Singles & EPs', [['Texas Moon', 2022, '0/5', 0, 60], ['Texas Sun', 2020, '1/4', 25, 65], ['Late Night Tales', 2017, '0/22', 0, 250]]),
-      ],
-    }
-  }
-}
 
-</script>
-</body>
+        <!-- album / podcast rows -->
+        <sc-if value="{{ hasRows }}" hint-placeholder-val="{{ true }}">
+          <div
+            style="display:grid;grid-template-columns:28px minmax(0,1fr) auto 52px 40px;gap:14px;padding:0 10px 8px;border-bottom:1px solid #2a3630;font-family:{{ mono }};font-size:10.5px;letter-spacing:0.6px;color:#819088"
+          >
+            <span style="text-align: right">#</span><span>{{ col2 }}</span><span>STATUS</span
+            ><span style="text-align: right">TIME</span><span></span>
+          </div>
+          <div style="padding-top: 6px">
+            <sc-for list="{{ rows }}" as="r" hint-placeholder-count="10">
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: 28px minmax(0, 1fr) auto 52px 40px;
+                  align-items: center;
+                  gap: 14px;
+                  padding: 6px 10px;
+                  border-radius: 10px;
+                "
+                style-hover="background:#17201b"
+              >
+                <span style="font-family:{{ mono }};font-size:11px;text-align:right;color:#819088"
+                  >{{ r.n }}</span
+                >
+                <span style="min-width: 0"
+                  ><span
+                    style="
+                      display: block;
+                      font-weight: 500;
+                      overflow: hidden;
+                      text-overflow: ellipsis;
+                      white-space: nowrap;
+                    "
+                    >{{ r.t }}</span
+                  ><span
+                    style="
+                      display: block;
+                      font-size: 12px;
+                      color: #93a39b;
+                      overflow: hidden;
+                      text-overflow: ellipsis;
+                      white-space: nowrap;
+                    "
+                    >{{ r.sub }}</span
+                  ></span
+                >
+                <span
+                  style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:5px;font-size:11px;white-space:nowrap;background:{{ r.bbg }};color:{{ r.bfg }}"
+                  ><m-i n="{{ r.bi }}" s="11"></m-i>{{ r.badge }}</span
+                >
+                <span style="font-family:{{ mono }};font-size:11px;color:#93a39b;text-align:right"
+                  >{{ r.d }}</span
+                >
+                <button
+                  aria-label="{{ r.act }}"
+                  style="width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:{{ r.ac }}"
+                  style-hover="background:#1e2a23"
+                >
+                  <m-i n="{{ r.ai }}" s="16"></m-i>
+                </button>
+              </div>
+            </sc-for>
+          </div>
+          <div
+            style="
+              margin-top: 18px;
+              padding-top: 14px;
+              border-top: 1px solid #2a3630;
+              font-size: 12px;
+              color: #819088;
+              line-height: 1.7;
+            "
+          >
+            {{ info.foot }}
+          </div>
+        </sc-if>
+
+        <!-- artist -->
+        <sc-if value="{{ isArtist }}" hint-placeholder-val="{{ false }}">
+          <section style="margin-bottom: 30px">
+            <h2 style="margin: 0 0 10px; font-size: 16px; font-weight: 600">Popular</h2>
+            <sc-for list="{{ popular }}" as="r" hint-placeholder-count="5">
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: 22px 40px minmax(0, 1fr) auto 52px 40px;
+                  align-items: center;
+                  gap: 12px;
+                  padding: 6px 8px;
+                  border-radius: 10px;
+                "
+                style-hover="background:#17201b"
+              >
+                <span style="font-family:{{ mono }};font-size:11px;color:#819088;text-align:right"
+                  >{{ r.n }}</span
+                >
+                <span
+                  style="width:40px;height:40px;border-radius:6px;background:{{ r.art }};display:grid;place-items:center;color:#fff"
+                  ><m-i n="play" s="13" fill></m-i
+                ></span>
+                <span style="min-width: 0"
+                  ><span
+                    style="
+                      display: block;
+                      font-weight: 500;
+                      overflow: hidden;
+                      text-overflow: ellipsis;
+                      white-space: nowrap;
+                    "
+                    >{{ r.t }}</span
+                  ><span style="display: block; font-size: 12px; color: #93a39b"
+                    >{{ r.sub }}</span
+                  ></span
+                >
+                <span
+                  style="display:inline-flex;align-items:center;gap:6px;padding:3px 8px;border-radius:5px;font-size:11px;white-space:nowrap;background:{{ r.bbg }};color:{{ r.bfg }}"
+                  ><m-i n="{{ r.bi }}" s="11"></m-i>{{ r.badge }}</span
+                >
+                <span style="font-family:{{ mono }};font-size:11px;color:#93a39b;text-align:right"
+                  >{{ r.d }}</span
+                >
+                <button
+                  aria-label="{{ r.act }}"
+                  style="width:36px;height:36px;display:grid;place-items:center;border:0;border-radius:9px;background:transparent;color:{{ r.ac }}"
+                  style-hover="background:#1e2a23"
+                >
+                  <m-i n="{{ r.ai }}" s="16"></m-i>
+                </button>
+              </div>
+            </sc-for>
+          </section>
+          <sc-for list="{{ groups }}" as="g" hint-placeholder-count="2">
+            <section style="margin-bottom: 30px">
+              <div style="display: flex; align-items: baseline; gap: 10px; margin-bottom: 14px">
+                <h2 style="margin: 0; font-size: 16px; font-weight: 600">{{ g.title }}</h2>
+                <span style="font-family:{{ mono }};font-size:11px;color:#819088">{{ g.n }}</span>
+              </div>
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+                  gap: 22px 16px;
+                "
+              >
+                <sc-for list="{{ g.items }}" as="a" hint-placeholder-count="5">
+                  <div onClick="{{ openAlbum }}" style="min-width: 0; cursor: pointer">
+                    <div
+                      style="position:relative;aspect-ratio:1;border-radius:10px;background:{{ a.art }}"
+                    >
+                      <span
+                        style="position:absolute;top:8px;right:8px;width:32px;height:32px;border-radius:8px;display:grid;place-items:center;background:rgba(17,23,22,.85);color:{{ a.pc }}"
+                        ><m-i n="{{ a.icon }}" s="15"></m-i
+                      ></span>
+                    </div>
+                    <div
+                      style="
+                        margin-top: 9px;
+                        font-weight: 600;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                      "
+                    >
+                      {{ a.t }}
+                    </div>
+                    <div style="margin-top: 2px; font-size: 12px; color: #93a39b">
+                      {{ a.y }} · {{ a.own }}
+                    </div>
+                    <div
+                      style="height: 3px; border-radius: 3px; background: #2a3630; margin-top: 8px"
+                    >
+                      <div
+                        style="height:100%;border-radius:3px;width:{{ a.pct }};background:{{ a.pc }}"
+                      ></div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </section>
+          </sc-for>
+        </sc-if>
+      </div>
+    </x-dc>
+    <script
+      type="text/x-dc"
+      data-dc-script
+      data-props='{"$preview": {"width": 1000, "height": 900}, "kind": {"editor": "enum", "options": ["album", "artist", "podcast"], "default": "album", "tsType": "&apos;album&apos; | &apos;artist&apos; | &apos;podcast&apos;"}, "mono": {"editor": "text", "default": "ui-monospace, Menlo, monospace", "tsType": "string"}, "showBack": {"editor": "boolean", "default": true, "tsType": "boolean"}, "onBack": {"editor": null, "tsType": "() =&gt; void"}, "onOpenArtist": {"editor": null, "tsType": "() =&gt; void"}, "onOpenAlbum": {"editor": null, "tsType": "() =&gt; void"}, "onDownloadAll": {"editor": null, "tsType": "() =&gt; void"}}'
+    >
+      const art = (h) => `repeating-linear-gradient(135deg, oklch(0.42 0.07 ${h}) 0 2px, oklch(0.35 0.06 ${h}) 2px 10px)`
+      const G = '#c3e4a2', P = '#e4cc9c', M = '#93a39b', F = '#819088', T = '#e8ece8'
+      const BADGE = {
+        own: ['In library', 'check', '#2a3a27', G, 'play', 'Play', G],
+        ed: ['Other edition', 'copy', '#3a3224', P, 'arrow-down-to-line', 'Download this edition', T],
+        q: ['Queued', 'clock', '#1e2a23', M, 'x', 'Cancel', M],
+        miss: ['Not in library', 'circle-dashed', 'transparent', F, 'arrow-down-to-line', 'Download', T],
+        done: ['Downloaded', 'check', '#2a3a27', G, 'play', 'Play', G],
+        new: ['New', 'sparkle', '#1e2a23', T, 'arrow-down-to-line', 'Download', T],
+      }
+      const badge = (k) => { const b = BADGE[k]; return { badge: b[0], bi: b[1], bbg: b[2], bfg: b[3], ai: b[4], act: b[5], ac: b[6] } }
+      class Component extends DCLogic {
+        renderVals() {
+          const kind = this.props.kind ?? 'album'
+          const mono = this.props.mono ?? 'ui-monospace, Menlo, monospace'
+          const cov = (o, e, q, m, total) => [
+            { n: o, c: G, label: `${o} in library` }, { n: e, c: P, label: `${e} other edition` }, { n: q, c: M, label: `${q} queued` }, { n: m, c: '#2a3630', label: `${m} missing of ${total}` },
+          ].filter((x) => x.n > 0)
+          const INFO = {
+            album: { eyebrow: 'ALBUM · 2018', source: 'DEEZER', title: 'Con Todo El Mundo', by: 'Khruangbin', meta: '10 tracks · 39 min', art: art(95), cov: cov(6, 1, 1, 2, 10), pIcon: 'arrow-down-to-line', pText: 'Download 2 missing', sIcon: 'play', sText: 'Preview', dest: '/music · M4A', foot: 'Track list from Deezer. Coverage is a file match against your library index, not proof of rights.' },
+            artist: { eyebrow: 'ARTIST', source: 'DEEZER', title: 'Khruangbin', by: '', meta: '1.2M fans · 9 albums · 14 singles & EPs', art: art(40), cov: cov(61, 9, 4, 20, 94), pIcon: 'arrow-down-to-line', pText: 'Download all albums…', sIcon: 'library', sText: 'Open in library', dest: '/music · M4A' },
+            podcast: { eyebrow: 'PODCAST', source: 'APPLE PODCASTS', title: 'Song Exploder', by: 'Hrishikesh Hirway', meta: '312 episodes · new every 2 weeks', art: art(150), cov: cov(4, 0, 1, 307, 312), pIcon: 'arrow-down-to-line', pText: 'Download latest 5', sIcon: 'play', sText: 'Play newest', dest: '/music/Podcasts/Song Exploder', foot: 'Episodes save as they were published, no re-encoding. Older episodes load as you scroll.' },
+          }
+          const info = INFO[kind]
+          const albumRows = [
+            ['Cómo Me Quieres', 'own', '3:15'], ['Lady and Man', 'miss', '4:30'], ['Maria También', 'ed', '3:08'], ['August 10', 'own', '4:21'], ['Rules', 'own', '3:47'],
+            ['Evan Finds the Third Room', 'q', '4:06'], ['Friday Morning', 'own', '4:52'], ['Shades of Man', 'miss', '5:10'], ['Two Fish and an Elephant', 'own', '3:20'], ['A Hymn', 'own', '4:41'],
+          ].map(([t, k, d], i) => ({ n: i + 1, t, d, sub: k === 'ed' ? 'Have it on “Con Todo El Mundo (Deluxe)”' : 'Khruangbin', ...badge(k) }))
+          const podRows = [
+            ['Khruangbin – “Time (You and I)”', 'new', '18:42', 'Oct 14'], ['Adrian Quesada – “Mentira Salomé”', 'q', '21:05', 'Sep 30'], ['Nina Simone tribute', 'done', '35:10', 'Sep 16'],
+            ['Radiohead – “Reckoner”', 'done', '24:33', 'Sep 2'], ['Daft Punk – “Instant Crush”', 'done', '19:58', 'Aug 19'], ['Black Pumas – “Colors”', 'miss', '22:14', 'Aug 5'],
+          ].map(([t, k, d, date], i) => ({ n: 312 - i, t, d, sub: date + ' · How the song was made, in the artist’s words', ...badge(k) }))
+          const grp = (title, list) => ({ title, n: list.length, items: list.map(([t, y, own, p, h]) => ({ t, y, own, art: art(h), pct: p + '%', pc: p === 100 ? G : p > 0 ? P : F, icon: p === 100 ? 'check' : 'arrow-down-to-line' })) })
+          return {
+            mono, info, coverR: kind === 'artist' ? '50%' : '14px',
+            showBack: this.props.showBack !== false,
+            back: () => this.props.onBack?.(),
+            openArtist: (e) => { e?.preventDefault?.(); this.props.onOpenArtist?.() },
+            openAlbum: () => this.props.onOpenAlbum?.(),
+            primary: () => (kind === 'artist' ? this.props.onDownloadAll?.() : undefined),
+            hasRows: kind !== 'artist', isArtist: kind === 'artist',
+            col2: kind === 'podcast' ? 'EPISODE' : 'TITLE',
+            rows: kind === 'podcast' ? podRows : albumRows,
+            popular: [['Time (You and I)', 'Mordechai', 'own', '4:17', 40], ['Maria También', 'Con Todo El Mundo', 'ed', '3:08', 95], ['So We Won’t Forget', 'Mordechai', 'q', '4:15', 40], ['Texas Sun', 'Texas Sun EP', 'miss', '4:12', 60], ['White Gloves', 'The Universe Smiles Upon You', 'miss', '5:21', 200]].map(([t, sub, k, d, h], i) => ({ n: i + 1, t, sub, d, art: art(h), ...badge(k) })),
+            groups: [
+              grp('Albums', [['A LA SALA', 2024, '0/12', 0, 170], ['Mordechai', 2020, '10/10', 100, 40], ['Hasta El Cielo', 2019, '10/10', 100, 120], ['Con Todo El Mundo', 2018, '7/10', 70, 95], ['The Universe Smiles Upon You', 2015, '0/12', 0, 200]]),
+              grp('Singles & EPs', [['Texas Moon', 2022, '0/5', 0, 60], ['Texas Sun', 2020, '1/4', 25, 65], ['Late Night Tales', 2017, '0/22', 0, 250]]),
+            ],
+          }
+        }
+      }
+    </script>
+  </body>
 </html>

@@ -46,6 +46,11 @@ export type LibraryListSearch = {
 
 const LIST_KEY = 'musimo.library-views'
 const ARTIST_KEY = 'musimo.library-artist-sort'
+const LAST_VIEW_KEY = 'musimo.library-last-view'
+
+/** The four list views, in the order their tabs and sidebar rows show them. */
+export const libraryViews = ['artists', 'albums', 'tracks', 'playlists'] as const
+export type LibraryView = (typeof libraryViews)[number]
 
 export function defaultLibrarySort(tab: LibraryTab) {
   return librarySortValues[tab][0]
@@ -145,6 +150,20 @@ export function saveLibraryView(tab: LibraryTab, search: LibraryListSearch) {
   const views = isRecord(stored) ? { ...stored } : {}
   views[tab] = validateLibrarySearch(tab, search)
   writeSession(LIST_KEY, views)
+}
+
+/**
+ * The list view the Library was last on in this visit, so a way back into the Library (its tab,
+ * the palette, `/library`) opens where the person left it. That view brings back its own filters
+ * (`loadLibraryView`). Before there is one, the first tab.
+ */
+export function lastLibraryView(): LibraryView {
+  const stored = readSession(LAST_VIEW_KEY)
+  return libraryViews.find((view) => view === stored) ?? libraryViews[0]
+}
+
+export function saveLastLibraryView(view: LibraryView) {
+  writeSession(LAST_VIEW_KEY, view)
 }
 
 export function loadArtistSort(kind: 'albums'): ArtistAlbumSort | undefined

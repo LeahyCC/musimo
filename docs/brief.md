@@ -151,12 +151,14 @@ Store one error code per job with a retryable flag, the stage, the raw tail of t
 ## 7. Performance targets (acceptance criteria)
 
 Search
+
 - Typeahead p95: 150 ms from cache, 400 ms cold, single catalog.
 - Multi-source search: first paint 500 ms p95, complete 1.5 s p95, hard deadline 2.5 s with "timed out" chips and retry.
 - Album track list: 300 ms when prefetched, 800 ms cold.
 - In-library badge: under 5 ms per 50 results, from the index.
 
 Download
+
 - Click to first progress event: 1.5 s.
 - First byte of media: 3 s p95 warm, 6 s cold.
 - One track passthrough end to end: 8 s p50, 15 s p95.
@@ -165,6 +167,7 @@ Download
 - Dispatch latency after a slot frees: 200 ms.
 
 UI and ops
+
 - Reconnect after a proxy drop with full replay within 3 s. State visible after reload within 300 ms.
 - New file indexed within 1 s of the move. Full re-index of 50k tracks within 5 minutes.
 - Idle container under 150 MB RSS and 1 percent CPU. Startup to healthy under 10 s.
@@ -174,6 +177,7 @@ Write a benchmark script that measures these against a running container and pri
 ## 8. Extra features beyond my list, ranked by value for effort
 
 Do in v1
+
 - URL import for Deezer, YouTube, YouTube Music, Apple albums via iTunes lookup, Spotify via the least fragile method you find.
 - LRCLIB lyrics on every download plus a backfill job for the existing library.
 - MusicBrainz IDs and ISRC in every file.
@@ -182,6 +186,7 @@ Do in v1
 - Diagnostics page: versions, source health with Test now, disk free per folder, last errors, log tail, export zip.
 
 Do in v2
+
 - Artist monitoring: watch an artist, poll MusicBrainz release groups and Deezer artist albums, notify or auto-download. Seed the watch list from the existing library.
 - Wishlist: tracks that failed with NO_MATCH get retried on a schedule.
 - Reverse flow: paste any YouTube link, identify via catalog match then AcoustID, tag properly.
@@ -191,6 +196,7 @@ Do in v2
 - Navidrome playlist creation after a playlist import.
 
 Later or never
+
 - Quality upgrade to lossless (only if a paid lossless source exists).
 - Soulseek.
 - Multi-user.

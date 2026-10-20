@@ -160,17 +160,21 @@ test('home is at the root and search has its own address', async ({ page }) => {
   await expect(page.getByRole('region', { name: 'This week' })).toBeVisible()
   await expect(page.getByRole('region', { name: 'On repeat this month' })).toContainText('3 plays')
 
-  // The bare library address has no page of its own; it opens Albums. The sidebar lights the view
-  // it is on, and a phone's one Library tab stays lit across all of them.
+  // The bare library address has no page of its own; on a first visit it opens Artists, the first
+  // tab. The sidebar lights the view it is on, and a phone's one Library tab stays lit across all.
   await page.goto('/library')
-  await expect(page).toHaveURL(/\/library\/albums$/)
+  await expect(page).toHaveURL(/\/library\/artists$/)
   const nav = mainNav(page)
   const lit = nav.locator('[aria-current="page"]')
-  await expect(lit).toHaveText(/^(Library|Albums)/)
-  // A wide Classic screen switches views from the sidebar, so the test goes by address.
-  await page.goto('/library/artists')
-  await expect(page).toHaveURL(/\/library\/artists$/)
   await expect(lit).toHaveText(/^(Library|Artists)/)
+  // A wide Classic screen switches views from the sidebar, so the test goes by address.
+  await page.goto('/library/tracks')
+  await expect(page).toHaveURL(/\/library\/tracks$/)
+  await expect(lit).toHaveText(/^(Library|Tracks)/)
+  // Leaving the Library and coming back through it opens the view it was last on.
+  await page.goto('/')
+  await page.goto('/library')
+  await expect(page).toHaveURL(/\/library\/tracks$/)
 })
 
 test('a turned-off section is not drawn', async ({ page }) => {
