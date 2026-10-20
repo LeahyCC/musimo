@@ -87,6 +87,8 @@ export function LibraryHeading({
               onClick={() => onOpen(item)}
               className={cx(
                 'flex h-[38px] flex-[1_0_auto] items-center justify-center gap-[8px] rounded-[10px] border-0 px-[14px] text-body font-semibold coarse:min-h-11',
+                // A phone has room for the four views side by side, each with its count under it.
+                'max-phone:min-w-0 max-phone:flex-1 max-phone:flex-col max-phone:gap-0 max-phone:px-[4px] max-phone:leading-[1.25]',
                 tab === item ? 'bg-active text-text' : 'bg-transparent text-muted hover:text-text',
               )}
             >

@@ -369,8 +369,8 @@ for (const layout of LAYOUTS) {
       // went clear would show the light canvas through and pass a weaker check. A card may sit on
       // the canvas by design (the library grid does), so it is held to not being any dark surface.
       expect(chrome.body).toBe(rgb(LIGHT_THEME.colors['--color-canvas']))
-      // The room's phone tab bar is on the canvas; everywhere else the nav is on the sidebar token.
-      const navToken = layout === 'room' && isMobile ? '--color-canvas' : '--color-sidebar'
+      // The room's phone tab bar floats as a raised pill; everywhere else the nav is on the sidebar.
+      const navToken = layout === 'room' && isMobile ? '--color-raised' : '--color-sidebar'
       expect(chrome.nav).toBe(rgb(LIGHT_THEME.colors[navToken]))
       // Classic's phone mini player is in the hover surface, not the desktop footer's raised one.
       // The room's dock is sunken on a wide window and its floating mini player is raised.

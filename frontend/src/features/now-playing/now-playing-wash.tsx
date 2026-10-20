@@ -6,7 +6,7 @@ import { leavingStyle, useLeaving } from '../../lib/use-leaving'
 import type { Rgb } from '../../theme/color'
 import { useTheme } from '../../theme/store'
 import { sampleCover } from './cover-color'
-import { glowFor, washFor } from './wash'
+import { glowFor, tintFor, washFor } from './wash'
 
 // The cover's color once it has been read. The last one stays while the next is being read, so the
 // wash and the glow do not blink off between tracks; they fade from one to the other when the new
@@ -137,5 +137,38 @@ export function NowPlayingGlow({ art, className }: { art: string; className?: st
       {glow && <GlowLayer color={glow} />}
       {leaving?.value && <GlowLayer color={leaving.value} leaving />}
     </div>
+  )
+}
+
+/**
+ * Classic's phone mini player, tinted with the cover the way the Now Playing page is washed with
+ * it. `tintFor` mixes the cover into the bar's own surface only as far as its title and artist
+ * still read. It fills its parent, which has to be a stacking context (the footer is fixed with a z-index), and
+ * cross-fades on a track change like the wash.
+ */
+export function CoverTint({ art, className }: { art: string; className?: string }) {
+  const theme = useTheme()
+  const cover = useCoverColor(art)
+  const tint = useMemo(() => (cover ? tintFor(cover, theme.colors) : null), [cover, theme])
+  const leaving = useLeaving(tint)
+
+  return (
+    <div
+      aria-hidden="true"
+      data-cover-tint={tint ?? ''}
+      className={cx('pointer-events-none absolute inset-0 -z-10 overflow-hidden', className)}
+    >
+      {tint && <TintLayer color={tint} />}
+      {leaving?.value && <TintLayer color={leaving.value} leaving />}
+    </div>
+  )
+}
+
+function TintLayer({ color, leaving }: { color: string; leaving?: boolean }) {
+  return (
+    <div
+      className={cx('absolute inset-0 bg-(--cover-tint)', leaving && 'leaving')}
+      style={{ '--cover-tint': color, ...(leaving ? leavingStyle : {}) } as CSSProperties}
+    />
   )
 }

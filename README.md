@@ -12,7 +12,7 @@ Search tracks, albums, artists and podcasts. Hear a preview, see what you alread
 
 </div>
 
-<img src="docs/assets/now-playing.png" alt="Now Playing in the Classic layout. Album art on the stage, the title, artist and album under it, a seek bar and the transport. Up next, Lyrics, About and History tabs sit beside the stage." width="100%" />
+<img src="docs/assets/now-playing.png" alt="Now Playing in the Classic layout. Glass Garden by Mira Vale on the stage, washed in the cover's pink, with the title, a seek bar and the transport under it. Up next lists the rest of the queue beside it." width="100%" />
 
 <p align="center"><b>Now Playing.</b> The file you are hearing, as artwork or a MilkDrop visualizer.</p>
 
@@ -20,28 +20,42 @@ Search tracks, albums, artists and podcasts. Hear a preview, see what you alread
 
 <p align="center"><b>Visualizer.</b> The same stage, drawing to the music. Press V, or the button on the artwork.</p>
 
-<img src="docs/assets/listening-room.png" alt="The Listening room layout. A slim icon rail on the left, the Home page in the middle with the track you left off on, new albums, playlists and Ask Octive, and the player docked on the right with the artwork, a visualizer switch, the transport and Up next." width="100%" />
+<img src="docs/assets/phones.png" alt="Four phone screens. Classic's Home with its search bar, the track to continue and this week's listening, over a player docked on the tab bar. The Listening room's Library grid of album covers under a floating player and a floating pill of tabs. The Listening room's full screen Now Playing with a Playing from line and a chevron to close it. Settings, Yours, with a phone-shaped picture of each layout." width="100%" />
+
+<p align="center"><b>On a phone.</b> Two layouts built for the hand, not shrunk from the desktop. Classic docks the player on the tab bar; the Listening room floats it.</p>
+
+<img src="docs/assets/listening-room.png" alt="The Listening room layout. A slim icon rail on the left, the Home page in the middle with the paused track, this week's numbers, new albums, most played songs and playlists, and the player docked on the right with the artwork, the transport and Up next." width="100%" />
 
 <p align="center"><b>Listening room.</b> The other layout, picked in Settings, Yours: a slim rail, with the player and Up next docked on the right.</p>
 
 <table>
 <tr>
 <td width="50%" valign="top">
-<img src="docs/assets/search.png" alt="The search home. Find it. Make room for it. Starter searches for Daft Punk, Khruangbin, Nina Simone and Radiohead." width="100%" />
+<img src="docs/assets/search.png" alt="Search results for Mira. The top result is the artist Mira Vale with 12 songs in the library, beside her tracks, each marked In library or Not in library." width="100%" />
 </td>
 <td width="50%" valign="top">
-<img src="docs/assets/downloads.png" alt="The downloads page with an empty queue. Parallel is 2. The tabs are Queue, Done, No match, Errors and History." width="100%" />
+<img src="docs/assets/library.png" alt="The Library's albums in Classic: a grid of covers with their artist and year, and the sidebar's library sections and playlists." width="100%" />
 </td>
 </tr>
 <tr>
 <td align="center"><b>Search.</b> The catalog, checked against your library.</td>
-<td align="center"><b>Downloads.</b> A queue, with a tab for every outcome.</td>
+<td align="center"><b>Library.</b> Your folders, as albums, artists, tracks and playlists.</td>
+</tr>
+<tr>
+<td width="50%" valign="top">
+<img src="docs/assets/downloads.png" alt="Downloads in the Listening room. An album batch in progress: two songs done, one downloading, one converting, one tagging and two queued, each with its step in the Match, Download, Convert, Tag, Move pipeline." width="100%" />
+</td>
+<td width="50%" valign="top">
+<img src="docs/assets/diagnostics.png" alt="Diagnostics. A banner says Ready to download, 4 of 5 checks pass. Library root, download destination, library scan and the player are ready. Last download has not been tested." width="100%" />
+</td>
+</tr>
+<tr>
+<td align="center"><b>Downloads.</b> Every song through match, download, convert, tag and move.</td>
+<td align="center"><b>Diagnostics.</b> Ready means the folders, the scan and the player.</td>
 </tr>
 </table>
 
-<img src="docs/assets/diagnostics.png" alt="Diagnostics. A banner says Ready to download, 4 of 5 checks pass. Library root, download destination, library scan and the player are ready. Last download has not been tested." width="100%" />
-
-<p align="center"><b>Diagnostics.</b> Ready means the folders, the scan and the player.</p>
+<p align="center"><sub>Every artist, album and cover in these pictures is invented. <code>MUSIMO_SHOTS=1 npx playwright test readme-shots --project=chromium</code> in <code>frontend/</code> remakes them.</sub></p>
 
 Musimo keeps discovery close to the library you already own. React provides the interface, FastAPI runs the backend, and SQLite stores settings, the library index, and jobs. Docker Compose builds the app from this repository. No Musimo account or hosted Musimo service is required.
 

@@ -203,12 +203,31 @@
   :root:where([data-layout='room']) {
     --sidebar-width: 0px;
     --topbar-height: 56px;
-    --nav-height: 68px;
+    /* The floating tab bar's 64px pill and the 8px it floats over the home indicator. */
+    --nav-height: 72px;
     --player-height: 0px !important;
     --toast-bottom: calc(var(--player-height) + var(--nav-height) + var(--safe-bottom) + 12px);
   }
   :root:where([data-layout='room']):has([data-room-mini]) {
     --player-height: 66px !important;
+  }
+}
+/* A phone's full screen Now Playing (`app/shell/phone-stage.ts`) has neither bar, so everything
+   that adds their heights up, the page's padding, the toasts and the wash, reads nothing for them.
+   `:root[data-stage]` outweighs the room's `:where` rules above. */
+@media (width < theme(--breakpoint-phone)) {
+  :root[data-stage] {
+    --topbar-height: 0px;
+    --nav-height: 0px;
+  }
+  /* The bars themselves, and the page padded for the notch and home indicator alone. Both beat
+     the shells' own utilities, which is why they are here and not in the components. */
+  :root[data-stage] [data-stage-hide] {
+    display: none !important;
+  }
+  :root[data-stage] #main {
+    padding-top: calc(4px + var(--safe-top)) !important;
+    padding-bottom: calc(24px + var(--safe-bottom)) !important;
   }
 }
 

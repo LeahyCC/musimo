@@ -449,16 +449,21 @@ test('on a phone the stage takes the full width, the tabs follow the controls an
   expect(tab.y).toBeLessThan(viewport.height * 2)
   await page.getByRole('tab', { name: 'Lyrics' }).click()
   await expect(page.getByText('Morning finds the water')).toBeVisible()
-  // With no footer, the page pads for the bottom bar alone, not for a player that is not there.
-  const nav = await page.locator('.sidebar').boundingBox()
-  if (!nav) throw new Error('Missing bottom bar box')
+  // A screen of its own: the tab bar and top bar stand down too, and the page pads only for the
+  // home indicator. The chevron at its top is the way out, and it names where the song is from.
+  await expect(page.locator('.sidebar')).toBeHidden()
+  await expect(page.getByRole('banner')).toBeHidden()
   await expect
     .poll(() =>
       page
         .locator('main')
         .evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingBottom)),
     )
-    .toBeLessThan(nav.height + 60)
+    .toBeLessThan(60)
+  await expect(page.getByText('PLAYING FROM')).toBeVisible()
+  await page.getByRole('button', { name: 'Close Now Playing' }).click()
+  await expect(page).not.toHaveURL(/now-playing/)
+  await expect(page.locator('.sidebar')).toBeVisible()
 })
 
 /** A second custom theme, so a change made while the popout is open has somewhere to go. */

@@ -43,6 +43,8 @@ import {
 } from '../../api'
 import type { LibraryPlaylist, LibraryTrack, MusicResult } from '../../api'
 import { cx } from '../../lib/cx'
+import { useLayout } from '../../lib/layout'
+import { usePhone } from '../../lib/use-phone'
 import { IconButton, iconButtonClassName, useToast } from '../../ui'
 import type { ToastAction, ToastTone } from '../../ui'
 import {
@@ -52,6 +54,7 @@ import {
   registerListenerPlace,
   withListener,
 } from '../listener/identity'
+import { CoverTint } from '../now-playing/now-playing-wash'
 import {
   accountCookieReplaced,
   accountStreamStopped,
@@ -240,6 +243,27 @@ const PlayerContext = createContext<Playback>({
   retryQueueSave: () => undefined,
 })
 export const usePlayer = () => useContext(PlayerContext)
+
+/* Whether a library track is loaded, on its own. The player's context changes on every tick of the
+   clock; this one only when a track loads or the player empties, so the shell can read it without
+   drawing itself again four times a second. */
+const LibraryLoadedContext = createContext(false)
+
+/**
+ * Whether Now Playing has the screen: its route, with a library track loaded. The page then has
+ * every control the footer, the room's dock and its mini player carry, so they stand down, and on
+ * a phone the top bar and tab bar too (`app/shell/phone-stage.ts`). Without a library track the
+ * page is empty, and a preview's only controls are the player's, so it keeps them.
+ */
+export const nowPlayingTakesOver = (pathname: string, libraryLoaded: boolean) =>
+  pathname === '/now-playing' && libraryLoaded
+
+/** `nowPlayingTakesOver` for the current address, from a component inside the player. */
+export function useNowPlayingTakesOver() {
+  const loaded = useContext(LibraryLoadedContext)
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  return nowPlayingTakesOver(pathname, loaded)
+}
 
 const LIBRARY_NOTICE = 'Your music library'
 const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
@@ -461,8 +485,9 @@ const PICKER_ROWS = 25
 const footerClassName = cx(
   'live-player fixed right-[var(--safe-right)] bottom-0 left-[calc(var(--sidebar-width)+var(--safe-left))] z-bar grid h-[76px] grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)_minmax(0,1fr)] items-center gap-[20px] border-t border-line-strong bg-raised px-[20px]',
   'max-tablet:gap-[12px] max-tablet:px-[16px]',
-  // The phone's mini player is a card above the tab bar, not a bar across the screen.
-  'max-phone:right-[calc(8px+var(--safe-right))] max-phone:bottom-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:left-[calc(8px+var(--safe-left))] max-phone:mb-[6px] max-phone:flex max-phone:h-auto max-phone:min-h-[56px] max-phone:gap-[6px] max-phone:rounded-[12px] max-phone:border-0 max-phone:bg-hover max-phone:p-[8px]',
+  // The phone's mini player is docked: a bar across the screen sitting on the tab bar, tinted with
+  // the cover, where the Listening room's floats as an island. The seek line is its top edge.
+  'max-phone:right-0 max-phone:bottom-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:left-0 max-phone:flex max-phone:h-auto max-phone:min-h-[60px] max-phone:gap-[6px] max-phone:border-t-0 max-phone:bg-hover max-phone:py-[8px] max-phone:pr-[calc(8px+var(--safe-right))] max-phone:pl-[calc(12px+var(--safe-left))]',
 )
 
 export const songCount = (count: number) => `${count} ${count === 1 ? 'song' : 'songs'}`
@@ -2385,22 +2410,23 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   } as CSSProperties
   const volumeStyle = { '--progress': `${(muted ? 0 : volume) * 100}%` } as CSSProperties
 
-  // The Now Playing page has every control the footer has (like, add to playlist, seek, the
-  // transport, shuffle, repeat, volume and close) and shows the title, so the footer stands down
-  // beside it at every width. Without a library track the page is empty, and a preview's only
-  // controls are the footer's, so it stays.
-  const onStage = useRouterState({ select: (state) => state.location.pathname === '/now-playing' })
-  const hidden = onStage && isLibrary
+  // The footer stands down beside Now Playing at every width (see `nowPlayingTakesOver`).
+  const pathname = useRouterState({ select: (state) => state.location.pathname })
+  const hidden = nowPlayingTakesOver(pathname, isLibrary)
+  // Only Classic's phone mini player shows the tint, and only a library cover can be read: a
+  // catalog preview's art is on another origin, so the canvas would refuse its pixels.
+  const phone = usePhone()
+  const layout = useLayout()
+  const tintArt = phone && layout === 'classic' && libraryTrack ? artUrl(libraryTrack) : ''
 
   useEffect(() => {
     const footer = footerRef.current
     if (!footer) return
     const publish = () => {
+      // The phone's mini player sits right on the tab bar, so its height is all the room it
+      // takes. Hidden, it takes none.
       const { height } = footer.getBoundingClientRect()
-      // The phone's mini player floats above the tab bar with a gap under it, and that gap is
-      // as much room as the player takes. Hidden, it takes none.
-      const gap = height ? Number.parseFloat(getComputedStyle(footer).marginBottom) || 0 : 0
-      document.documentElement.style.setProperty('--player-height', `${height + gap}px`)
+      document.documentElement.style.setProperty('--player-height', `${height}px`)
     }
     // A hidden footer (a phone with nothing playing, or Now Playing) gets no first observation,
     // so the height is published now, as 0 while it is hidden, and again whenever it shows or
@@ -2651,7 +2677,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         retryQueueSave,
       }}
     >
-      {children}
+      <LibraryLoadedContext.Provider value={isLibrary}>{children}</LibraryLoadedContext.Provider>
       <footer
         ref={footerRef}
         // The attribute rather than a `hidden` utility: Tailwind's base layer gives it
@@ -2659,6 +2685,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         hidden={hidden}
         className={cx(footerClassName, !activeTitle && 'max-phone:hidden')}
       >
+        {tintArt && <CoverTint art={tintArt} />}
         {/* Left: the cover, what is playing, like. */}
         <div className="flex min-w-0 items-center gap-[12px] text-small max-phone:flex-1 max-phone:gap-[10px] [&_a:hover]:underline">
           {/* Now Playing is for library tracks only, so a preview's thumbnail stays a picture.
@@ -2846,7 +2873,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               {durationText(position)}
             </span>
             <input
-              className="h-[16px] min-w-0 flex-1 appearance-none bg-transparent accent-accent max-phone:absolute max-phone:top-[-5px] max-phone:left-[8px] max-phone:m-0 max-phone:block max-phone:h-[13px] max-phone:w-[calc(100%-16px)] max-phone:flex-none max-phone:disabled:opacity-60"
+              className="h-[16px] min-w-0 flex-1 appearance-none bg-transparent accent-accent max-phone:absolute max-phone:top-[-6px] max-phone:left-[8px] max-phone:m-0 max-phone:block max-phone:h-[13px] max-phone:w-[calc(100%-16px)] max-phone:flex-none max-phone:disabled:opacity-60"
               aria-label={isLibrary ? 'Playback position' : 'Preview position'}
               type="range"
               min="0"

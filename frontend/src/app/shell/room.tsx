@@ -16,10 +16,11 @@ import type { LucideIcon } from 'lucide-react'
 
 import { api, libraryAlbumsSchema } from '../../api'
 import { activeCount, useJobs } from '../../features/downloads/jobs'
+import { ListenerAvatar } from '../../features/listener/avatar'
 import { useListenerUi } from '../../features/listener/sheet'
 import { PetFace, usePerchShown } from '../../features/music-bot/pet-host'
 import { usePetSettings } from '../../features/music-bot/pet-settings'
-import { usePlayer } from '../../features/player/player'
+import { useNowPlayingTakesOver, usePlayer } from '../../features/player/player'
 import { PlayerDock, RoomMiniPlayer } from '../../features/player/player-dock'
 import { cx } from '../../lib/cx'
 import { usePhone } from '../../lib/use-phone'
@@ -198,7 +199,6 @@ export function RoomShell() {
   const pathname = useRouterState({ select: (state) => state.location.pathname })
   const phone = usePhone()
   const narrow = useNarrow()
-  const player = usePlayer()
   const activeDownloads = useJobs(activeCount).data ?? 0
   const petHidden = usePetSettings().hidden
   const perched = usePerchShown()
@@ -207,7 +207,7 @@ export function RoomShell() {
 
   // Now Playing has every control the dock has, so the dock stands down beside it, as the Classic
   // footer does. A preview has no Now Playing, so it keeps the dock there.
-  const onStage = pathname === '/now-playing' && Boolean(player.libraryTrack)
+  const onStage = useNowPlayingTakesOver()
   const dock = !phone && !onStage
 
   // `/` searches in Classic. Here it opens the palette, which is this layout's search.
@@ -235,7 +235,7 @@ export function RoomShell() {
         className={cx(
           'relative',
           className,
-          active ? 'bg-active text-accent max-phone:bg-transparent' : 'text-muted hover:text-text',
+          active ? 'bg-active text-accent' : 'text-muted hover:text-text',
         )}
       >
         {children}
@@ -260,14 +260,28 @@ export function RoomShell() {
       >
         Skip to content
       </a>
+      {/* On a phone the page runs on under the floating player and tab bar, so it fades out
+          behind them rather than showing through the gaps around them. */}
+      {/* `z-sticky`, the save bar's level: it is later in the page, so the bar draws over the
+          fade, and every other control the page has draws under it. */}
+      {phone && (
+        <div
+          aria-hidden="true"
+          data-stage-hide=""
+          className="pointer-events-none fixed inset-x-0 bottom-0 z-sticky h-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+28px)] bg-linear-to-t from-canvas from-45% to-transparent"
+        />
+      )}
       {/* `sidebar` carries no styling; it is the hook the specs measure the phone's tab bar with.
-          The rail on a wide window, the five-tab bar along the bottom on a phone. */}
+          The rail on a wide window. On a phone, a pill of five tabs floating over the page's
+          foot, with the mini player floating above it: the room's two bars are islands, where
+          Classic's are docked to the edge. */}
       <nav
         aria-label="Main navigation"
+        data-stage-hide=""
         className={cx(
           'sidebar flex flex-col items-center gap-[4px] py-[10px]',
           dock && 'max-tablet:row-span-2',
-          'max-phone:fixed max-phone:inset-x-0 max-phone:bottom-0 max-phone:z-bar max-phone:grid max-phone:h-[calc(var(--nav-height)+var(--safe-bottom))] max-phone:grid-cols-5 max-phone:gap-0 max-phone:border-t max-phone:border-line max-phone:bg-canvas max-phone:py-0 max-phone:pr-[var(--safe-right)] max-phone:pb-[var(--safe-bottom)] max-phone:pl-[var(--safe-left)]',
+          'max-phone:fixed max-phone:right-[calc(12px+var(--safe-right))] max-phone:bottom-[calc(8px+var(--safe-bottom))] max-phone:left-[calc(12px+var(--safe-left))] max-phone:z-bar max-phone:grid max-phone:h-[calc(var(--nav-height)-8px)] max-phone:grid-cols-5 max-phone:gap-[2px] max-phone:rounded-pill max-phone:bg-raised max-phone:p-[5px] max-phone:shadow-[0_10px_30px_color-mix(in_oklab,var(--color-shadow)_45%,transparent)] max-phone:ring-1 max-phone:ring-line-strong',
         )}
       >
         <Link
@@ -293,7 +307,7 @@ export function RoomShell() {
             </>,
             cx(
               'flex h-[56px] w-[60px] flex-none flex-col items-center justify-center gap-[5px] rounded-[14px] text-tiny font-medium',
-              'max-phone:h-full max-phone:w-auto max-phone:gap-[4px] max-phone:rounded-none',
+              'max-phone:h-full max-phone:w-auto max-phone:gap-[3px] max-phone:rounded-pill',
             ),
           )
         })}
@@ -323,20 +337,25 @@ export function RoomShell() {
         )}
       >
         <header
+          data-stage-hide=""
           className={cx(
             'flex h-[64px] shrink-0 items-center gap-[12px] px-[clamp(16px,2.4vw,28px)]',
-            'max-phone:sticky max-phone:top-0 max-phone:z-header max-phone:h-[calc(var(--topbar-height)+var(--safe-top))] max-phone:bg-canvas max-phone:pt-[var(--safe-top)] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
+            'max-phone:sticky max-phone:top-0 max-phone:z-header max-phone:h-[calc(var(--topbar-height)+var(--safe-top))] max-phone:gap-[8px] max-phone:bg-canvas max-phone:pt-[var(--safe-top)] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
           )}
         >
-          {listener.name && (
-            <button
-              type="button"
-              className="max-w-[9rem] shrink-0 truncate text-body font-semibold"
-              aria-label={`Listening as ${listener.name}`}
-              onClick={listener.open}
-            >
-              {listener.name}
-            </button>
+          {phone ? (
+            <ListenerAvatar />
+          ) : (
+            listener.name && (
+              <button
+                type="button"
+                className="max-w-[9rem] shrink-0 truncate text-body font-semibold"
+                aria-label={`Listening as ${listener.name}`}
+                onClick={listener.open}
+              >
+                {listener.name}
+              </button>
+            )
           )}
           <div className="flex min-w-0 flex-1 items-baseline gap-[10px]">
             <span className="text-heading font-semibold tracking-[-0.4px] whitespace-nowrap max-phone:text-subtitle">
@@ -397,7 +416,8 @@ export function RoomShell() {
           id="main"
           className={cx(
             '@container min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-[clamp(16px,2.4vw,28px)] pt-[4px] pb-[32px]',
-            'max-phone:overflow-visible max-phone:pt-[8px] max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
+            'max-phone:overflow-visible max-phone:pr-[calc(16px+var(--safe-right))] max-phone:pl-[calc(16px+var(--safe-left))]',
+            'max-phone:pt-[8px]',
             perched
               ? 'max-phone:pb-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+76px)]'
               : 'max-phone:pb-[calc(var(--player-height)+var(--nav-height)+var(--safe-bottom)+32px)]',
