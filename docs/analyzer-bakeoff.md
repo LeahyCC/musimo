@@ -6,15 +6,17 @@
 
 ```
 job                     use                                   confidence rule
-tempo                   Beat This!, steady-gap BPM            keep the BPM only when at least 2 of the
-                        (not librosa, not median gap)         10 s sections gave one and their median
-                                                              agrees with the 60 s window within 2 BPM
+tempo                   Beat This! final0, steady-gap BPM,    keep the BPM only when at least 2 of the
+                        on the graphics card                  10 s sections gave one and their median
+                        (not librosa, not median gap)         agrees with the 60 s window within 2 BPM;
+                                                              above 200 BPM counts as unsure
 genre: check the tags   Essentia discogs-effnet, flag only    flag when the top parent genre scores >= 0.3
                                                               and the tag's genre is not in the model's top 3
 genre: the genre itself keep the file tags                    the model never overwrites a tag
 ```
 
-- **Tempo can drop most of the listening.** Beat This! matches Deezer within 2 BPM on 63 of 84 songs, against librosa's 43. Songs that pass the rule above matched Deezer 67 of 68 times up to half/double. One listen stays: half-time songs (below).
+- **Tempo is much better than librosa, but half or double time remains.** On the songs the method was built on, Beat This! matches Deezer within 2 BPM on 63 of 84, against librosa's 43. On [100 fresh songs](#fresh-songs-on-the-graphics-card) it matched 66 of 99, with 19 at half or double and 14 other. The confidence rule does not catch half or double: 13 of the 79 songs it calls sure are at half or double Deezer's value. Several of those look like Deezer doubling hip-hop, so the true error is lower, but only a listen can say which one is right. Octive's "faster" and "slower" should allow for half or double.
+- **The graphics card makes a full scan practical.** 0.61 s a song on the RTX 5080 against 5.6 s on one CPU core, with 165 MB of graphics memory.
 - **Genre: the check can replace a full listen, the tags stay.** The model agrees with the tag's broad genre (in its top 3) on 267 of 279 songs. The 7 it flags are a short review list. It cannot judge speech clips, and Colin's own labels on 14 October had it tied with the tags ([genre label review](genre-label-review.md)).
 - **Licence:** Beat This! is MIT, code and weights, and can ship. Essentia's models are non-commercial and the Essentia library is AGPL. Fine on Colin's own server, not something Musimo's MIT release can bundle.
 
@@ -61,9 +63,31 @@ Beat This! against librosa on the 99: same 56, Beat This! reads half 3, double 1
 
 On the core 99, 87 are sure. An unsure song gets no BPM, and the bot reports it as not covered. `score.py` writes these counts as `confidence_rule`.
 
+The 12% steady-gap tolerance and this rule were chosen on these same songs, so the next section checks them on songs they never saw.
+
+### Fresh songs, on the graphics card
+
+20 October. 100 songs outside the 300 above, drawn with seed `musimo-gpu-20261020` from songs with an ISRC, at least 30 s long and not podcasts, keeping the first 100 that Deezer gives a BPM for (312 lookups). Same windows, same steady-gap rule, same confidence rule, nothing retuned. Both checkpoints ran on the RTX 5080.
+
+| 100 fresh songs, 60 s window vs Deezer | Same (±2) | Half | Double | Other |
+| -------------------------------------- | --------: | ---: | -----: | ----: |
+| Beat This! final0                      |  66 of 99 |   15 |      4 |    14 |
+| Beat This! small0                      | 67 of 100 |   11 |      2 |    20 |
+
+```
+final0, 100 fresh songs
+  sure    79  ->  vs Deezer: 60 same, 12 half, 1 double, 6 other
+  unsure  21  ->  vs Deezer:  6 same,  3 half, 3 double, 8 other
+```
+
+- The match rate falls from 75% to 67% on fresh songs, which is the expected cost of tuning on the first set.
+- The sure rule still sorts well (76% same against 30%), but it does not catch half or double time.
+- Many half readings look like Deezer doubling hip-hop: Gang Starr 94 against 188, Snoop Dogg 82 against 164, Lil Wayne 68 against 136. Neither side is ground truth.
+- Clear model misses: live recordings (The Doors, Phish, Slipknot live) and four readings above 200 BPM (208, 236, 238, 275), where Deezer has 104 to 134. The above-200 rule in the answer table catches those.
+
 ## Genre and style
 
-300 songs: the 100 plus 200 drawn with seed `musimo-bakeoff-20261019`, so every one of the 14 biggest tags has at least 18. The draw is a blake2b hash of the seed and the song id, so `chain.ps1 -Steps sample` gives the same ids again from the same DB copy. 279 have a tag that maps to a broad genre (Alternative has none, by Colin's 14 October decision; 2 are untagged).
+300 songs: the 100 plus 200 drawn with seed `musimo-bakeoff-20261019`. The draw guarantees each of the 14 biggest tags at least 15 songs; this copy of the library gave each at least 18. The draw is a blake2b hash of the seed and the song id, so `chain.ps1 -Steps sample` gives the same ids again from the same DB copy. 279 have a tag that maps to a broad genre (Alternative has none, by Colin's 14 October decision; 2 are untagged).
 
 ### Mapping table
 
@@ -165,6 +189,19 @@ All under 2 GB with no swap (kernel `memory.swap.max` 0), 1 CPU (`cpu.max 100000
 
 small0 is as good as final0 on the 23 Deezer songs (21 of 23 within 2 BPM, both windows) and 40% faster. It was not run on the extra 61.
 
+On the graphics card (RTX 5080, CUDA 12.8 torch 2.7.1, 2 CPUs, 4 GB RAM cap, same four windows), speed no longer separates the checkpoints, so final0 is the pick:
+
+|                           |   final0, GPU |   small0, GPU |
+| ------------------------- | ------------: | ------------: |
+| Per song, median / p95    | 0.61 / 0.68 s | 0.68 / 0.79 s |
+| Of which reading the file |           61% |           65% |
+| Graphics memory peak      |        165 MB |         91 MB |
+| Process peak              |        1.9 GB |        1.9 GB |
+| 50,510 files at this rate |        ~8.5 h |        ~9.5 h |
+| Image on disk             |       11.6 GB |       11.6 GB |
+
+Most of the time is now FFmpeg reading the four windows. One 60 s window and several decoders in parallel should bring a full scan to a few hours; that is an estimate, not measured.
+
 ## Licences
 
 | Piece                                                  | Terms                                                            | Source                                                                                                                        |
@@ -202,11 +239,35 @@ powershell -File experiments/analyzer-bakeoff/harness/chain.ps1
 | essentia/discogs-effnet-bs64-1.pb             | `3ed9af50d5367c0b9c795b294b00e7599e4943244f4cbd376869f3bfc87721b1` |
 | essentia/genre_discogs400-discogs-effnet-1.pb | `3885ba078a35249af94b8e5e4247689afac40deca4401a4bc888daf5a579c01c` |
 
-Package versions are pinned in the two Dockerfiles.
+Package versions are pinned in the Dockerfiles.
+
+The fresh-song GPU check lives in `experiments/analyzer-bakeoff/gpu/`, with its image in `images/beat_this_gpu/`. It needs Docker with NVIDIA GPU support. Outputs go to the ignored `runtime/gpu-test/`:
+
+```powershell
+# 1. candidates, read-only from the trial copy (start the trial musimo service first)
+docker cp experiments/analyzer-bakeoff/gpu/export_candidates.py musimo-tempo-trial-musimo-1:/tmp/
+docker cp runtime/analyzer-bakeoff/sample.json musimo-tempo-trial-musimo-1:/bakeoff-sample.json
+docker exec musimo-tempo-trial-musimo-1 sh -c "python -I /tmp/export_candidates.py 600 > /tmp/candidates.json"
+docker cp musimo-tempo-trial-musimo-1:/tmp/candidates.json runtime/gpu-test/candidates.json
+# 2. the first 100 with a Deezer BPM (host, network)
+uv run --no-project python -I experiments/analyzer-bakeoff/gpu/deezer_pick.py runtime/gpu-test
+# 3. analyse, no network, read-only music, models and code
+docker build -t musimo-gpu-beat-this:1 experiments/analyzer-bakeoff/images/beat_this_gpu
+docker run --rm --gpus all --network none --read-only --tmpfs /tmp:size=512m,uid=1000,gid=1000 `
+  -u 1000:1000 --cpus 2 --memory 4g --memory-swap 4g `
+  -v M:/Media/Music:/music:ro -v ${PWD}/runtime/analyzer-bakeoff/models:/models:ro `
+  -v ${PWD}/experiments/analyzer-bakeoff/harness:/harness:ro `
+  -v ${PWD}/experiments/analyzer-bakeoff/gpu:/gpu-code:ro -v ${PWD}/runtime/gpu-test:/gpu:ro `
+  -v ${PWD}/runtime/gpu-test/out:/out --entrypoint python musimo-gpu-beat-this:1 `
+  -I /gpu-code/run_gpu.py final0 cuda /out/final0-cuda
+# 4. score
+uv run --no-project --with numpy python -I experiments/analyzer-bakeoff/gpu/score_gpu.py runtime/gpu-test
+```
 
 ## Not covered
 
 - Energy. RMS is still not validated as "intensity".
-- Beat This! with its DBN, a 60 s-only timing, and small0 on the extra 61 songs.
+- Beat This! with its DBN, a 60 s-only timing (on CPU or GPU), parallel decoding, and small0 on the extra 61 songs.
+- Which side is right when Beat This! and Deezer disagree by half or double. That needs a listen.
 - How stable a song's styles are across its windows (the per-window scores are saved).
 - The library has **781 A State of Trance voice clips**, all under 90 s and tagged Trance, and 1,711 files under 60 s. Neither tags nor these models handle them. They need their own rule.
