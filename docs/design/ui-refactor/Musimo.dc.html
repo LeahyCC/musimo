@@ -1,53 +1,127 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="./support.js"></script>
-</head>
-<body>
-<x-dc>
-<helmet>
-<title>Musimo</title>
-<style>html{color-scheme:dark}*{scrollbar-color:#2a3630 transparent;scrollbar-width:thin}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a3630;border-radius:10px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-corner{background:transparent}
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <title>Musimo</title>
+        <style>
+          html {
+            color-scheme: dark;
+          }
+          * {
+            scrollbar-color: #2a3630 transparent;
+            scrollbar-width: thin;
+          }
+          ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+          }
+          ::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          ::-webkit-scrollbar-thumb {
+            background: #2a3630;
+            border-radius: 10px;
+            border: 3px solid transparent;
+            background-clip: padding-box;
+          }
+          ::-webkit-scrollbar-corner {
+            background: transparent;
+          }
 
-body{margin:0;background:#0e1312}
-*{box-sizing:border-box}
-a{color:#c3e4a2;text-decoration:none}
-a:hover{color:#d9ff73}
-</style>
-</helmet>
-<div style="width:100%;height:{{ rootH }};position:relative;overflow:hidden;background:#0e1312">
-  <sc-if value="{{ classic }}" hint-placeholder-val="{{ true }}">
-    <dc-import name="Musimo A" device="{{ device }}" screen="{{ screen }}" settings-tab="{{ settingsTab }}" np-mode="{{ npMode }}" dl-tab="{{ dlTab }}" playlist-id="{{ playlistId }}" first-run="{{ firstRun }}" layout="{{ layout }}" home="{{ home }}" on-navigate="{{ onNavigate }}" on-settings-tab="{{ onSettingsTab }}" on-layout="{{ onLayout }}" on-home-toggle="{{ onHomeToggle }}" on-home-reset="{{ onHomeReset }}" hint-size="100%,100%" style="width:100%;height:100%"></dc-import>
-  </sc-if>
-  <sc-if value="{{ room }}" hint-placeholder-val="{{ false }}">
-    <dc-import name="Musimo B" device="{{ device }}" screen="{{ screen }}" settings-tab="{{ settingsTab }}" np-mode="{{ npMode }}" dl-tab="{{ dlTab }}" playlist-id="{{ playlistId }}" first-run="{{ firstRun }}" layout="{{ layout }}" home="{{ home }}" on-navigate="{{ onNavigate }}" on-settings-tab="{{ onSettingsTab }}" on-layout="{{ onLayout }}" on-home-toggle="{{ onHomeToggle }}" on-home-reset="{{ onHomeReset }}" hint-size="100%,100%" style="width:100%;height:100%"></dc-import>
-  </sc-if>
-</div>
-</x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;device&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;desktop&quot;, &quot;phone&quot;], &quot;default&quot;: &quot;desktop&quot;, &quot;tsType&quot;: &quot;'desktop' | 'phone'&quot;}, &quot;layout&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;classic&quot;, &quot;room&quot;], &quot;default&quot;: &quot;classic&quot;, &quot;tsType&quot;: &quot;'classic' | 'room'&quot;}, &quot;screen&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;home&quot;, &quot;search&quot;, &quot;albums&quot;, &quot;artists&quot;, &quot;tracks&quot;, &quot;playlists&quot;, &quot;album&quot;, &quot;artist&quot;, &quot;playlist&quot;, &quot;calbum&quot;, &quot;cartist&quot;, &quot;podcast&quot;, &quot;nowplaying&quot;, &quot;bot&quot;, &quot;downloads&quot;, &quot;settings&quot;, &quot;diagnostics&quot;], &quot;default&quot;: &quot;settings&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;settingsTab&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;server&quot;, &quot;yours&quot;], &quot;default&quot;: &quot;yours&quot;, &quot;tsType&quot;: &quot;'server' | 'yours'&quot;}, &quot;npMode&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;art&quot;, &quot;visualizer&quot;], &quot;default&quot;: &quot;art&quot;, &quot;tsType&quot;: &quot;'art' | 'visualizer'&quot;}, &quot;dlTab&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;queue&quot;, &quot;done&quot;, &quot;nomatch&quot;, &quot;errors&quot;, &quot;history&quot;], &quot;default&quot;: &quot;queue&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;playlistId&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;liked&quot;, &quot;late&quot;, &quot;sunday&quot;, &quot;boleros&quot;, &quot;run&quot;, &quot;octive&quot;, &quot;car&quot;], &quot;default&quot;: &quot;late&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;firstRun&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;}, &quot;embedded&quot;: {&quot;editor&quot;: &quot;boolean&quot;, &quot;default&quot;: false, &quot;tsType&quot;: &quot;boolean&quot;}}">
-class Component extends DCLogic {
-  state = { layout: null, screen: null, settingsTab: null, home: {} }
-  renderVals() {
-    const layout = this.state.layout ?? this.props.layout ?? 'classic'
-    return {
-      rootH: this.props.embedded ? '100%' : '100vh',
-      device: this.props.device ?? 'desktop',
-      layout, classic: layout === 'classic', room: layout === 'room',
-      screen: this.state.screen ?? this.props.screen ?? 'settings',
-      settingsTab: this.state.settingsTab ?? this.props.settingsTab ?? 'yours',
-      home: this.state.home,
-      npMode: this.props.npMode ?? 'art', dlTab: this.props.dlTab ?? 'queue', playlistId: this.props.playlistId ?? 'late', firstRun: !!this.props.firstRun,
-      onNavigate: (k) => this.setState({ screen: k }),
-      onSettingsTab: (t) => this.setState({ settingsTab: t }),
-      onLayout: (k) => this.setState({ layout: k }),
-      onHomeToggle: (k) => this.setState({ home: { ...this.state.home, [k]: this.state.home[k] === false } }),
-      onHomeReset: () => this.setState({ home: {} }),
-    }
-  }
-}
-
-</script>
-</body>
+          body {
+            margin: 0;
+            background: #0e1312;
+          }
+          * {
+            box-sizing: border-box;
+          }
+          a {
+            color: #c3e4a2;
+            text-decoration: none;
+          }
+          a:hover {
+            color: #d9ff73;
+          }
+        </style>
+      </helmet>
+      <div
+        style="width:100%;height:{{ rootH }};position:relative;overflow:hidden;background:#0e1312"
+      >
+        <sc-if value="{{ classic }}" hint-placeholder-val="{{ true }}">
+          <dc-import
+            name="Musimo A"
+            device="{{ device }}"
+            screen="{{ screen }}"
+            settings-tab="{{ settingsTab }}"
+            np-mode="{{ npMode }}"
+            dl-tab="{{ dlTab }}"
+            playlist-id="{{ playlistId }}"
+            first-run="{{ firstRun }}"
+            layout="{{ layout }}"
+            home="{{ home }}"
+            on-navigate="{{ onNavigate }}"
+            on-settings-tab="{{ onSettingsTab }}"
+            on-layout="{{ onLayout }}"
+            on-home-toggle="{{ onHomeToggle }}"
+            on-home-reset="{{ onHomeReset }}"
+            hint-size="100%,100%"
+            style="width: 100%; height: 100%"
+          ></dc-import>
+        </sc-if>
+        <sc-if value="{{ room }}" hint-placeholder-val="{{ false }}">
+          <dc-import
+            name="Musimo B"
+            device="{{ device }}"
+            screen="{{ screen }}"
+            settings-tab="{{ settingsTab }}"
+            np-mode="{{ npMode }}"
+            dl-tab="{{ dlTab }}"
+            playlist-id="{{ playlistId }}"
+            first-run="{{ firstRun }}"
+            layout="{{ layout }}"
+            home="{{ home }}"
+            on-navigate="{{ onNavigate }}"
+            on-settings-tab="{{ onSettingsTab }}"
+            on-layout="{{ onLayout }}"
+            on-home-toggle="{{ onHomeToggle }}"
+            on-home-reset="{{ onHomeReset }}"
+            hint-size="100%,100%"
+            style="width: 100%; height: 100%"
+          ></dc-import>
+        </sc-if>
+      </div>
+    </x-dc>
+    <script
+      type="text/x-dc"
+      data-dc-script
+      data-props='{"device": {"editor": "enum", "options": ["desktop", "phone"], "default": "desktop", "tsType": "&apos;desktop&apos; | &apos;phone&apos;"}, "layout": {"editor": "enum", "options": ["classic", "room"], "default": "classic", "tsType": "&apos;classic&apos; | &apos;room&apos;"}, "screen": {"editor": "enum", "options": ["home", "search", "albums", "artists", "tracks", "playlists", "album", "artist", "playlist", "calbum", "cartist", "podcast", "nowplaying", "bot", "downloads", "settings", "diagnostics"], "default": "settings", "tsType": "string"}, "settingsTab": {"editor": "enum", "options": ["server", "yours"], "default": "yours", "tsType": "&apos;server&apos; | &apos;yours&apos;"}, "npMode": {"editor": "enum", "options": ["art", "visualizer"], "default": "art", "tsType": "&apos;art&apos; | &apos;visualizer&apos;"}, "dlTab": {"editor": "enum", "options": ["queue", "done", "nomatch", "errors", "history"], "default": "queue", "tsType": "string"}, "playlistId": {"editor": "enum", "options": ["liked", "late", "sunday", "boleros", "run", "octive", "car"], "default": "late", "tsType": "string"}, "firstRun": {"editor": "boolean", "default": false, "tsType": "boolean"}, "embedded": {"editor": "boolean", "default": false, "tsType": "boolean"}}'
+    >
+      class Component extends DCLogic {
+        state = { layout: null, screen: null, settingsTab: null, home: {} }
+        renderVals() {
+          const layout = this.state.layout ?? this.props.layout ?? 'classic'
+          return {
+            rootH: this.props.embedded ? '100%' : '100vh',
+            device: this.props.device ?? 'desktop',
+            layout, classic: layout === 'classic', room: layout === 'room',
+            screen: this.state.screen ?? this.props.screen ?? 'settings',
+            settingsTab: this.state.settingsTab ?? this.props.settingsTab ?? 'yours',
+            home: this.state.home,
+            npMode: this.props.npMode ?? 'art', dlTab: this.props.dlTab ?? 'queue', playlistId: this.props.playlistId ?? 'late', firstRun: !!this.props.firstRun,
+            onNavigate: (k) => this.setState({ screen: k }),
+            onSettingsTab: (t) => this.setState({ settingsTab: t }),
+            onLayout: (k) => this.setState({ layout: k }),
+            onHomeToggle: (k) => this.setState({ home: { ...this.state.home, [k]: this.state.home[k] === false } }),
+            onHomeReset: () => this.setState({ home: {} }),
+          }
+        }
+      }
+    </script>
+  </body>
 </html>

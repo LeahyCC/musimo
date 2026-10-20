@@ -1,165 +1,549 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="./support.js"></script>
-</head>
-<body>
-<x-dc>
-<helmet>
-<script src="./icon.js"></script>
-<style>html{color-scheme:dark}*{scrollbar-color:#2a3630 transparent;scrollbar-width:thin}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a3630;border-radius:10px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-corner{background:transparent}
-body{margin:0;background:#111716;font-family:Inter,-apple-system,sans-serif}a{color:#c3e4a2;text-decoration:none}button{font:inherit;cursor:pointer}</style>
-</helmet>
-<div style="color:#e8ece8;font-size:13px">
-
-  <!-- DONE -->
-  <sc-if value="{{ t.done }}" hint-placeholder-val="{{ true }}">
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:12px">
-      <span style="font-size:12px;color:#93a39b">48 finished today · all scanned into the library</span>
-      <div style="flex:1"></div>
-      <button style="height:32px;padding:0 12px;border-radius:8px;border:1px solid #344035;background:transparent;color:#e8ece8;font-size:12px">Clear finished</button>
-    </div>
-    <div style="display:grid;gap:2px">
-      <sc-for list="{{ done }}" as="j" hint-placeholder-count="8">
-        <div style="display:grid;grid-template-columns:40px minmax(0,1fr) auto auto 36px;align-items:center;gap:14px;padding:7px 10px;border-radius:10px" style-hover="background:#17201b">
-          <span style="width:40px;height:40px;border-radius:6px;background:{{ j.art }}"></span>
-          <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ j.t }}</span><span style="display:block;font-family:{{ mono }};font-size:11px;color:#819088;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ j.path }}</span></span>
-          <span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 7px;border-radius:5px;background:{{ j.cbg }};color:{{ j.cfg }};white-space:nowrap"><m-i n="{{ j.ci }}" s="11"></m-i>{{ j.conf }}</span>
-          <span style="font-family:{{ mono }};font-size:11px;color:#93a39b;white-space:nowrap">{{ j.src }}</span>
-          <button aria-label="Play" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#c3e4a2" style-hover="background:#1e2a23"><m-i n="play" s="14" fill></m-i></button>
-        </div>
-      </sc-for>
-    </div>
-  </sc-if>
-
-  <!-- NO MATCH -->
-  <sc-if value="{{ t.nomatch }}" hint-placeholder-val="{{ false }}">
-    <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:12px 14px;border-radius:12px;background:#17201b;border:1px solid #2a3630;margin-bottom:12px">
-      <m-i n="search-x" s="16"></m-i>
-      <span style="flex:1;min-width:220px;font-size:13px;color:#93a39b">No source had a recording close enough. These aren't errors. Try a different source, pick a candidate by hand, or let them go.</span>
-      <button style="height:32px;padding:0 12px;border-radius:8px;border:0;background:transparent;color:#93a39b;font-size:12px;text-decoration:underline">Clear no match</button>
-    </div>
-    <div style="display:grid;gap:8px">
-      <sc-for list="{{ nomatch }}" as="j" hint-placeholder-count="3">
-        <div style="padding:12px 14px;border-radius:12px;border:1px solid #2a3630;background:#17201b">
-          <div style="display:grid;grid-template-columns:40px minmax(0,1fr) auto;align-items:center;gap:14px">
-            <span style="width:40px;height:40px;border-radius:6px;background:{{ j.art }}"></span>
-            <span style="min-width:0"><span style="display:block;font-weight:600">{{ j.t }}</span><span style="display:block;font-size:12px;color:#93a39b;margin-top:2px">{{ j.why }}</span></span>
-            <div style="display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end">
-              <button style="height:32px;padding:0 12px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:12px">Pick a match</button>
-              <button aria-label="Dismiss" style="width:32px;height:32px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#819088"><m-i n="x" s="15"></m-i></button>
-            </div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <script src="./icon.js"></script>
+        <style>
+          html {
+            color-scheme: dark;
+          }
+          * {
+            scrollbar-color: #2a3630 transparent;
+            scrollbar-width: thin;
+          }
+          ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+          }
+          ::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          ::-webkit-scrollbar-thumb {
+            background: #2a3630;
+            border-radius: 10px;
+            border: 3px solid transparent;
+            background-clip: padding-box;
+          }
+          ::-webkit-scrollbar-corner {
+            background: transparent;
+          }
+          body {
+            margin: 0;
+            background: #111716;
+            font-family:
+              Inter,
+              -apple-system,
+              sans-serif;
+          }
+          a {
+            color: #c3e4a2;
+            text-decoration: none;
+          }
+          button {
+            font: inherit;
+            cursor: pointer;
+          }
+        </style>
+      </helmet>
+      <div style="color: #e8ece8; font-size: 13px">
+        <!-- DONE -->
+        <sc-if value="{{ t.done }}" hint-placeholder-val="{{ true }}">
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              flex-wrap: wrap;
+              margin-bottom: 12px;
+            "
+          >
+            <span style="font-size: 12px; color: #93a39b"
+              >48 finished today · all scanned into the library</span
+            >
+            <div style="flex: 1"></div>
+            <button
+              style="
+                height: 32px;
+                padding: 0 12px;
+                border-radius: 8px;
+                border: 1px solid #344035;
+                background: transparent;
+                color: #e8ece8;
+                font-size: 12px;
+              "
+            >
+              Clear finished
+            </button>
           </div>
-          <div style="display:flex;flex-wrap:wrap;gap:6px;margin:10px 0 0 54px">
-            <sc-for list="{{ j.tried }}" as="s" hint-placeholder-count="3"><span style="display:inline-flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:999px;background:#111716;border:1px solid #2a3630;font-size:11px;color:#93a39b"><m-i n="{{ s.i }}" s="11"></m-i>{{ s.k }}</span></sc-for>
+          <div style="display: grid; gap: 2px">
+            <sc-for list="{{ done }}" as="j" hint-placeholder-count="8">
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: 40px minmax(0, 1fr) auto auto 36px;
+                  align-items: center;
+                  gap: 14px;
+                  padding: 7px 10px;
+                  border-radius: 10px;
+                "
+                style-hover="background:#17201b"
+              >
+                <span
+                  style="width:40px;height:40px;border-radius:6px;background:{{ j.art }}"
+                ></span>
+                <span style="min-width: 0"
+                  ><span
+                    style="
+                      display: block;
+                      font-weight: 500;
+                      overflow: hidden;
+                      text-overflow: ellipsis;
+                      white-space: nowrap;
+                    "
+                    >{{ j.t }}</span
+                  ><span
+                    style="display:block;font-family:{{ mono }};font-size:11px;color:#819088;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"
+                    >{{ j.path }}</span
+                  ></span
+                >
+                <span
+                  style="display:inline-flex;align-items:center;gap:5px;font-size:11px;padding:3px 7px;border-radius:5px;background:{{ j.cbg }};color:{{ j.cfg }};white-space:nowrap"
+                  ><m-i n="{{ j.ci }}" s="11"></m-i>{{ j.conf }}</span
+                >
+                <span style="font-family:{{ mono }};font-size:11px;color:#93a39b;white-space:nowrap"
+                  >{{ j.src }}</span
+                >
+                <button
+                  aria-label="Play"
+                  style="
+                    width: 34px;
+                    height: 34px;
+                    display: grid;
+                    place-items: center;
+                    border: 0;
+                    border-radius: 8px;
+                    background: transparent;
+                    color: #c3e4a2;
+                  "
+                  style-hover="background:#1e2a23"
+                >
+                  <m-i n="play" s="14" fill></m-i>
+                </button>
+              </div>
+            </sc-for>
           </div>
-        </div>
-      </sc-for>
-    </div>
-  </sc-if>
+        </sc-if>
 
-  <!-- ERRORS -->
-  <sc-if value="{{ t.errors }}" hint-placeholder-val="{{ false }}">
-    <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
-      <sc-for list="{{ reasons }}" as="r" hint-placeholder-count="3">
-        <span style="display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border-radius:999px;background:{{ r.bg }};border:1px solid {{ r.line }};color:{{ r.fg }};font-size:12px">{{ r.k }}<b style="font-weight:600">{{ r.n }}</b></span>
-      </sc-for>
-      <div style="flex:1"></div>
-      <button style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border-radius:8px;border:1px solid #674343;background:transparent;color:#efbaa2;font-size:12px;font-weight:500"><m-i n="rotate-ccw" s="13"></m-i>Retry errors</button>
-      <button style="height:32px;padding:0 12px;border-radius:8px;border:0;background:transparent;color:#93a39b;font-size:12px;text-decoration:underline">Clear errors</button>
-    </div>
-    <sc-for list="{{ errGroups }}" as="g" hint-placeholder-count="2">
-      <section style="border-radius:14px;border:1px solid #674343;background:#17201b;overflow:hidden;margin-bottom:12px">
-        <div style="display:flex;align-items:center;gap:12px;padding:12px 14px;background:#39251f;color:#efbaa2;flex-wrap:wrap">
-          <m-i n="{{ g.icon }}" s="16"></m-i>
-          <div style="flex:1;min-width:200px"><div style="font-weight:600;color:#e8ece8">{{ g.title }}</div><div style="font-size:12px;margin-top:2px">{{ g.hint }}</div></div>
-          <a href="#" style="display:inline-flex;align-items:center;gap:5px;height:30px;padding:0 11px;border-radius:7px;background:#efbaa2;color:#39251f;font-size:12px;font-weight:600">{{ g.fix }}<m-i n="arrow-right" s="13"></m-i></a>
-        </div>
-        <sc-for list="{{ g.jobs }}" as="j" hint-placeholder-count="2">
-          <div style="display:grid;grid-template-columns:36px minmax(0,1fr) auto 34px;align-items:center;gap:12px;padding:8px 14px;border-top:1px solid #2a3630">
-            <span style="width:36px;height:36px;border-radius:6px;background:{{ j.art }}"></span>
-            <span style="min-width:0"><span style="display:block;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ j.t }}</span><span style="display:block;font-size:12px;color:#93a39b">Failed at {{ j.stage }}</span></span>
-            <span style="font-family:{{ mono }};font-size:11px;color:#819088">{{ j.tries }}</span>
-            <button aria-label="Retry" style="width:34px;height:34px;display:grid;place-items:center;border:0;border-radius:8px;background:transparent;color:#efbaa2" style-hover="background:#39251f"><m-i n="rotate-ccw" s="15"></m-i></button>
+        <!-- NO MATCH -->
+        <sc-if value="{{ t.nomatch }}" hint-placeholder-val="{{ false }}">
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 12px;
+              flex-wrap: wrap;
+              padding: 12px 14px;
+              border-radius: 12px;
+              background: #17201b;
+              border: 1px solid #2a3630;
+              margin-bottom: 12px;
+            "
+          >
+            <m-i n="search-x" s="16"></m-i>
+            <span style="flex: 1; min-width: 220px; font-size: 13px; color: #93a39b"
+              >No source had a recording close enough. These aren't errors. Try a different source,
+              pick a candidate by hand, or let them go.</span
+            >
+            <button
+              style="
+                height: 32px;
+                padding: 0 12px;
+                border-radius: 8px;
+                border: 0;
+                background: transparent;
+                color: #93a39b;
+                font-size: 12px;
+                text-decoration: underline;
+              "
+            >
+              Clear no match
+            </button>
           </div>
-        </sc-for>
-      </section>
-    </sc-for>
-  </sc-if>
+          <div style="display: grid; gap: 8px">
+            <sc-for list="{{ nomatch }}" as="j" hint-placeholder-count="3">
+              <div
+                style="
+                  padding: 12px 14px;
+                  border-radius: 12px;
+                  border: 1px solid #2a3630;
+                  background: #17201b;
+                "
+              >
+                <div
+                  style="
+                    display: grid;
+                    grid-template-columns: 40px minmax(0, 1fr) auto;
+                    align-items: center;
+                    gap: 14px;
+                  "
+                >
+                  <span
+                    style="width:40px;height:40px;border-radius:6px;background:{{ j.art }}"
+                  ></span>
+                  <span style="min-width: 0"
+                    ><span style="display: block; font-weight: 600">{{ j.t }}</span
+                    ><span style="display: block; font-size: 12px; color: #93a39b; margin-top: 2px"
+                      >{{ j.why }}</span
+                    ></span
+                  >
+                  <div style="display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end">
+                    <button
+                      style="
+                        height: 32px;
+                        padding: 0 12px;
+                        border-radius: 8px;
+                        border: 1px solid #344035;
+                        background: #1e2a23;
+                        color: #e8ece8;
+                        font-size: 12px;
+                      "
+                    >
+                      Pick a match
+                    </button>
+                    <button
+                      aria-label="Dismiss"
+                      style="
+                        width: 32px;
+                        height: 32px;
+                        display: grid;
+                        place-items: center;
+                        border: 0;
+                        border-radius: 8px;
+                        background: transparent;
+                        color: #819088;
+                      "
+                    >
+                      <m-i n="x" s="15"></m-i>
+                    </button>
+                  </div>
+                </div>
+                <div style="display: flex; flex-wrap: wrap; gap: 6px; margin: 10px 0 0 54px">
+                  <sc-for list="{{ j.tried }}" as="s" hint-placeholder-count="3"
+                    ><span
+                      style="
+                        display: inline-flex;
+                        align-items: center;
+                        gap: 5px;
+                        height: 24px;
+                        padding: 0 9px;
+                        border-radius: 999px;
+                        background: #111716;
+                        border: 1px solid #2a3630;
+                        font-size: 11px;
+                        color: #93a39b;
+                      "
+                      ><m-i n="{{ s.i }}" s="11"></m-i>{{ s.k }}</span
+                    ></sc-for
+                  >
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </sc-if>
 
-  <!-- HISTORY -->
-  <sc-if value="{{ t.history }}" hint-placeholder-val="{{ false }}">
-    <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;margin-bottom:14px">
-      <label style="flex:1 1 220px;max-width:320px;height:36px;display:flex;align-items:center;gap:8px;padding:0 11px;border-radius:8px;border:1px solid #2a3630;background:#151c19;color:#819088"><m-i n="search" s="15"></m-i><input placeholder="Search history" style="flex:1;min-width:0;border:0;background:transparent;color:#e8ece8;font-size:13px;outline:0"></label>
-      <sc-for list="{{ hFilters }}" as="f" hint-placeholder-count="3">
-        <button onClick="{{ f.go }}" style="height:32px;padding:0 12px;border-radius:999px;border:1px solid {{ f.line }};background:{{ f.bg }};color:{{ f.fg }};font-size:12px">{{ f.label }}</button>
-      </sc-for>
-    </div>
-    <div style="border-radius:12px;border:1px solid #2a3630;overflow:hidden">
-      <sc-for list="{{ history }}" as="h" hint-placeholder-count="10">
-        <sc-if value="{{ h.day }}" hint-placeholder-val="{{ false }}"><div style="padding:8px 14px;background:#151c19;font-family:{{ mono }};font-size:10.5px;letter-spacing:0.6px;color:#819088;border-top:1px solid #2a3630">{{ h.day }}</div></sc-if>
-        <div style="display:grid;grid-template-columns:52px 10px minmax(0,1fr) auto;align-items:center;gap:12px;padding:9px 14px;border-top:1px solid #2a3630">
-          <span style="font-family:{{ mono }};font-size:11px;color:#819088">{{ h.time }}</span>
-          <i style="width:8px;height:8px;border-radius:50%;background:{{ h.c }}"></i>
-          <span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><b style="font-weight:500">{{ h.t }}</b><span style="color:#93a39b"> · {{ h.a }}</span></span>
-          <span style="font-size:12px;color:{{ h.c }};white-space:nowrap">{{ h.out }}</span>
-        </div>
-      </sc-for>
-    </div>
-    <div style="margin-top:12px;text-align:center;font-size:12px;color:#819088">Loading more as you scroll…</div>
-  </sc-if>
-</div>
-</x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 960, &quot;height&quot;: 800}, &quot;tab&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;done&quot;, &quot;nomatch&quot;, &quot;errors&quot;, &quot;history&quot;], &quot;default&quot;: &quot;done&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;mono&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;ui-monospace, Menlo, monospace&quot;, &quot;tsType&quot;: &quot;string&quot;}}">
-const art = (h) => `repeating-linear-gradient(135deg, oklch(0.42 0.07 ${h}) 0 2px, oklch(0.35 0.06 ${h}) 2px 10px)`
-const G = '#c3e4a2', W = '#f8ca76', D = '#efbaa2', M = '#93a39b'
-class Component extends DCLogic {
-  state = { hf: 'all' }
-  renderVals() {
-    const tab = this.props.tab ?? 'done'
-    const conf = (k) => ({ hi: ['Exact match', 'check', '#283a28', G], isrc: ['ISRC match', 'fingerprint', '#283a28', G], lo: ['Low confidence', 'triangle-alert', '#342e1d', W] }[k])
-    const done = [
-      ['First Class', 'Khruangbin/Mordechai/01 First Class.m4a', 'isrc', 'BANDCAMP', 40], ['Connaissais de Face', 'Khruangbin/Mordechai/02 Connaissais de Face.m4a', 'isrc', 'BANDCAMP', 40],
-      ['Time (You and I)', 'Khruangbin/Mordechai/03 Time (You and I).m4a', 'hi', 'YOUTUBE', 40], ['Pelota', 'Khruangbin/Mordechai/04 Pelota.m4a', 'lo', 'YOUTUBE', 40],
-      ['Mentira Salomé', 'Adrian Quesada/Boleros Psicodélicos/07 Mentira Salomé.opus', 'isrc', 'DEEZER', 330], ['Colors', 'Black Pumas/Black Pumas/02 Colors.m4a', 'hi', 'ARCHIVE', 120],
-      ['Song Exploder · Time (You and I)', 'Podcasts/Song Exploder/2026-10-14 Time.mp3', 'hi', 'PODCAST', 150], ['Boiler Room x Dekmantel', 'Mixes/Boiler Room/Khruangbin · Dekmantel.m4a', 'hi', 'YOUTUBE', 20],
-    ].map(([t, path, k, src, h]) => { const c = conf(k); return { t, path, src, art: art(h), conf: c[0], ci: c[1], cbg: c[2], cfg: c[3] } })
-    const tr = (k, i = 'x') => ({ k, i })
-    const nomatch = [
-      { t: 'Dearest Alfred (Demo)', why: 'Nothing within 10 s of the catalog length (2:51).', art: art(40), tried: [tr('YouTube · 2 near'), tr('Bandcamp · none'), tr('Archive · none')] },
-      { t: 'Lady and Man (Live at KEXP)', why: 'Only studio versions found. Live recordings are kept apart.', art: art(95), tried: [tr('YouTube · 4 studio'), tr('SoundCloud · none')] },
-      { t: 'Hymn of the Grackle', why: 'The catalog lists this as region-locked; no source had it.', art: art(200), tried: [tr('YouTube · none'), tr('Bandcamp · none'), tr('Deezer · locked', 'lock-keyhole')] },
-    ]
-    const ej = (t, stage, tries, h) => ({ t, stage, tries, art: art(h) })
-    const errGroups = [
-      { icon: 'key-round', title: 'YouTube asked this server to sign in', hint: 'Usually after many downloads in a row. Other sources kept going.', fix: 'Add a cookies file', jobs: [ej('Dearest Alfred', 'download', '3 TRIES', 40), ej('So We Won’t Forget', 'download', '3 TRIES', 40)] },
-      { icon: 'hard-drive', title: 'Could not write to /collection', hint: 'That folder is mounted read-only. Pick a writable destination.', fix: 'Change destination', jobs: [ej('Wild Is the Wind', 'moving', '1 TRY', 350)] },
-    ]
-    const H = [
-      ['TODAY · SAT 17 OCT', '14:02', 'Time (You and I)', 'Khruangbin', 'Downloaded', G], [null, '13:58', 'Pelota', 'Khruangbin', 'Downloaded · low confidence', W],
-      [null, '13:41', 'Dearest Alfred', 'Khruangbin', 'Failed · sign-in', D], [null, '13:12', 'Mentira Salomé', 'Adrian Quesada', 'Downloaded', G],
-      ['YESTERDAY', '22:40', 'Hymn of the Grackle', 'Khruangbin', 'No match', M], [null, '22:31', 'Colors', 'Black Pumas', 'Downloaded', G],
-      [null, '21:05', 'Wild Is the Wind', 'Nina Simone', 'Failed · read-only', D], [null, '20:48', 'Boiler Room x Dekmantel', 'Khruangbin', 'Downloaded', G],
-      ['THU 15 OCT', '09:12', 'Digital Love', 'Daft Punk', 'Cancelled', M], [null, '09:10', 'One More Time', 'Daft Punk', 'Downloaded', G],
-    ]
-    const hfOut = { all: () => true, ok: (o) => o.startsWith('Downloaded'), fail: (o) => o.startsWith('Failed') || o === 'No match' }
-    let lastDay = null
-    const history = H.map(([day, time, t, a, out, c]) => { if (day) lastDay = day; return { day, dayG: lastDay, time, t, a, out, c } })
-      .filter((h) => hfOut[this.state.hf](h.out))
-      .map((h, i, arr) => ({ ...h, day: i === 0 || arr[i - 1].dayG !== h.dayG ? h.dayG : null }))
-    return {
-      mono: this.props.mono ?? 'ui-monospace, Menlo, monospace',
-      t: { done: tab === 'done', nomatch: tab === 'nomatch', errors: tab === 'errors', history: tab === 'history' },
-      done, nomatch, errGroups,
-      reasons: [['Sign-in needed', 2, D], ['Read-only folder', 1, D], ['Rate limited', 0, M]].filter((r) => r[1]).map(([k, n, c]) => ({ k, n, fg: c, bg: '#39251f', line: '#674343' })),
-      hFilters: [['all', 'All'], ['ok', 'Downloaded'], ['fail', 'Failed & no match']].map(([k, label]) => ({ label, go: () => this.setState({ hf: k }), bg: this.state.hf === k ? '#263327' : 'transparent', fg: this.state.hf === k ? '#e8ece8' : M, line: this.state.hf === k ? '#4b6743' : '#2a3630' })),
-      history,
-    }
-  }
-}
+        <!-- ERRORS -->
+        <sc-if value="{{ t.errors }}" hint-placeholder-val="{{ false }}">
+          <div
+            style="
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              flex-wrap: wrap;
+              margin-bottom: 14px;
+            "
+          >
+            <sc-for list="{{ reasons }}" as="r" hint-placeholder-count="3">
+              <span
+                style="display:inline-flex;align-items:center;gap:7px;height:30px;padding:0 11px;border-radius:999px;background:{{ r.bg }};border:1px solid {{ r.line }};color:{{ r.fg }};font-size:12px"
+                >{{ r.k }}<b style="font-weight: 600">{{ r.n }}</b></span
+              >
+            </sc-for>
+            <div style="flex: 1"></div>
+            <button
+              style="
+                height: 32px;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+                padding: 0 12px;
+                border-radius: 8px;
+                border: 1px solid #674343;
+                background: transparent;
+                color: #efbaa2;
+                font-size: 12px;
+                font-weight: 500;
+              "
+            >
+              <m-i n="rotate-ccw" s="13"></m-i>Retry errors
+            </button>
+            <button
+              style="
+                height: 32px;
+                padding: 0 12px;
+                border-radius: 8px;
+                border: 0;
+                background: transparent;
+                color: #93a39b;
+                font-size: 12px;
+                text-decoration: underline;
+              "
+            >
+              Clear errors
+            </button>
+          </div>
+          <sc-for list="{{ errGroups }}" as="g" hint-placeholder-count="2">
+            <section
+              style="
+                border-radius: 14px;
+                border: 1px solid #674343;
+                background: #17201b;
+                overflow: hidden;
+                margin-bottom: 12px;
+              "
+            >
+              <div
+                style="
+                  display: flex;
+                  align-items: center;
+                  gap: 12px;
+                  padding: 12px 14px;
+                  background: #39251f;
+                  color: #efbaa2;
+                  flex-wrap: wrap;
+                "
+              >
+                <m-i n="{{ g.icon }}" s="16"></m-i>
+                <div style="flex: 1; min-width: 200px">
+                  <div style="font-weight: 600; color: #e8ece8">{{ g.title }}</div>
+                  <div style="font-size: 12px; margin-top: 2px">{{ g.hint }}</div>
+                </div>
+                <a
+                  href="#"
+                  style="
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 5px;
+                    height: 30px;
+                    padding: 0 11px;
+                    border-radius: 7px;
+                    background: #efbaa2;
+                    color: #39251f;
+                    font-size: 12px;
+                    font-weight: 600;
+                  "
+                  >{{ g.fix }}<m-i n="arrow-right" s="13"></m-i
+                ></a>
+              </div>
+              <sc-for list="{{ g.jobs }}" as="j" hint-placeholder-count="2">
+                <div
+                  style="
+                    display: grid;
+                    grid-template-columns: 36px minmax(0, 1fr) auto 34px;
+                    align-items: center;
+                    gap: 12px;
+                    padding: 8px 14px;
+                    border-top: 1px solid #2a3630;
+                  "
+                >
+                  <span
+                    style="width:36px;height:36px;border-radius:6px;background:{{ j.art }}"
+                  ></span>
+                  <span style="min-width: 0"
+                    ><span
+                      style="
+                        display: block;
+                        font-weight: 500;
+                        overflow: hidden;
+                        text-overflow: ellipsis;
+                        white-space: nowrap;
+                      "
+                      >{{ j.t }}</span
+                    ><span style="display: block; font-size: 12px; color: #93a39b"
+                      >Failed at {{ j.stage }}</span
+                    ></span
+                  >
+                  <span style="font-family:{{ mono }};font-size:11px;color:#819088"
+                    >{{ j.tries }}</span
+                  >
+                  <button
+                    aria-label="Retry"
+                    style="
+                      width: 34px;
+                      height: 34px;
+                      display: grid;
+                      place-items: center;
+                      border: 0;
+                      border-radius: 8px;
+                      background: transparent;
+                      color: #efbaa2;
+                    "
+                    style-hover="background:#39251f"
+                  >
+                    <m-i n="rotate-ccw" s="15"></m-i>
+                  </button>
+                </div>
+              </sc-for>
+            </section>
+          </sc-for>
+        </sc-if>
 
-</script>
-</body>
+        <!-- HISTORY -->
+        <sc-if value="{{ t.history }}" hint-placeholder-val="{{ false }}">
+          <div
+            style="
+              display: flex;
+              flex-wrap: wrap;
+              align-items: center;
+              gap: 8px;
+              margin-bottom: 14px;
+            "
+          >
+            <label
+              style="
+                flex: 1 1 220px;
+                max-width: 320px;
+                height: 36px;
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                padding: 0 11px;
+                border-radius: 8px;
+                border: 1px solid #2a3630;
+                background: #151c19;
+                color: #819088;
+              "
+              ><m-i n="search" s="15"></m-i
+              ><input
+                placeholder="Search history"
+                style="
+                  flex: 1;
+                  min-width: 0;
+                  border: 0;
+                  background: transparent;
+                  color: #e8ece8;
+                  font-size: 13px;
+                  outline: 0;
+                "
+            /></label>
+            <sc-for list="{{ hFilters }}" as="f" hint-placeholder-count="3">
+              <button
+                onClick="{{ f.go }}"
+                style="height:32px;padding:0 12px;border-radius:999px;border:1px solid {{ f.line }};background:{{ f.bg }};color:{{ f.fg }};font-size:12px"
+              >
+                {{ f.label }}
+              </button>
+            </sc-for>
+          </div>
+          <div style="border-radius: 12px; border: 1px solid #2a3630; overflow: hidden">
+            <sc-for list="{{ history }}" as="h" hint-placeholder-count="10">
+              <sc-if value="{{ h.day }}" hint-placeholder-val="{{ false }}"
+                ><div
+                  style="padding:8px 14px;background:#151c19;font-family:{{ mono }};font-size:10.5px;letter-spacing:0.6px;color:#819088;border-top:1px solid #2a3630"
+                >
+                  {{ h.day }}
+                </div></sc-if
+              >
+              <div
+                style="
+                  display: grid;
+                  grid-template-columns: 52px 10px minmax(0, 1fr) auto;
+                  align-items: center;
+                  gap: 12px;
+                  padding: 9px 14px;
+                  border-top: 1px solid #2a3630;
+                "
+              >
+                <span style="font-family:{{ mono }};font-size:11px;color:#819088"
+                  >{{ h.time }}</span
+                >
+                <i style="width:8px;height:8px;border-radius:50%;background:{{ h.c }}"></i>
+                <span
+                  style="
+                    min-width: 0;
+                    overflow: hidden;
+                    text-overflow: ellipsis;
+                    white-space: nowrap;
+                  "
+                  ><b style="font-weight: 500">{{ h.t }}</b
+                  ><span style="color: #93a39b"> · {{ h.a }}</span></span
+                >
+                <span style="font-size:12px;color:{{ h.c }};white-space:nowrap">{{ h.out }}</span>
+              </div>
+            </sc-for>
+          </div>
+          <div style="margin-top: 12px; text-align: center; font-size: 12px; color: #819088">
+            Loading more as you scroll…
+          </div>
+        </sc-if>
+      </div>
+    </x-dc>
+    <script
+      type="text/x-dc"
+      data-dc-script
+      data-props='{"$preview": {"width": 960, "height": 800}, "tab": {"editor": "enum", "options": ["done", "nomatch", "errors", "history"], "default": "done", "tsType": "string"}, "mono": {"editor": "text", "default": "ui-monospace, Menlo, monospace", "tsType": "string"}}'
+    >
+      const art = (h) => `repeating-linear-gradient(135deg, oklch(0.42 0.07 ${h}) 0 2px, oklch(0.35 0.06 ${h}) 2px 10px)`
+      const G = '#c3e4a2', W = '#f8ca76', D = '#efbaa2', M = '#93a39b'
+      class Component extends DCLogic {
+        state = { hf: 'all' }
+        renderVals() {
+          const tab = this.props.tab ?? 'done'
+          const conf = (k) => ({ hi: ['Exact match', 'check', '#283a28', G], isrc: ['ISRC match', 'fingerprint', '#283a28', G], lo: ['Low confidence', 'triangle-alert', '#342e1d', W] }[k])
+          const done = [
+            ['First Class', 'Khruangbin/Mordechai/01 First Class.m4a', 'isrc', 'BANDCAMP', 40], ['Connaissais de Face', 'Khruangbin/Mordechai/02 Connaissais de Face.m4a', 'isrc', 'BANDCAMP', 40],
+            ['Time (You and I)', 'Khruangbin/Mordechai/03 Time (You and I).m4a', 'hi', 'YOUTUBE', 40], ['Pelota', 'Khruangbin/Mordechai/04 Pelota.m4a', 'lo', 'YOUTUBE', 40],
+            ['Mentira Salomé', 'Adrian Quesada/Boleros Psicodélicos/07 Mentira Salomé.opus', 'isrc', 'DEEZER', 330], ['Colors', 'Black Pumas/Black Pumas/02 Colors.m4a', 'hi', 'ARCHIVE', 120],
+            ['Song Exploder · Time (You and I)', 'Podcasts/Song Exploder/2026-10-14 Time.mp3', 'hi', 'PODCAST', 150], ['Boiler Room x Dekmantel', 'Mixes/Boiler Room/Khruangbin · Dekmantel.m4a', 'hi', 'YOUTUBE', 20],
+          ].map(([t, path, k, src, h]) => { const c = conf(k); return { t, path, src, art: art(h), conf: c[0], ci: c[1], cbg: c[2], cfg: c[3] } })
+          const tr = (k, i = 'x') => ({ k, i })
+          const nomatch = [
+            { t: 'Dearest Alfred (Demo)', why: 'Nothing within 10 s of the catalog length (2:51).', art: art(40), tried: [tr('YouTube · 2 near'), tr('Bandcamp · none'), tr('Archive · none')] },
+            { t: 'Lady and Man (Live at KEXP)', why: 'Only studio versions found. Live recordings are kept apart.', art: art(95), tried: [tr('YouTube · 4 studio'), tr('SoundCloud · none')] },
+            { t: 'Hymn of the Grackle', why: 'The catalog lists this as region-locked; no source had it.', art: art(200), tried: [tr('YouTube · none'), tr('Bandcamp · none'), tr('Deezer · locked', 'lock-keyhole')] },
+          ]
+          const ej = (t, stage, tries, h) => ({ t, stage, tries, art: art(h) })
+          const errGroups = [
+            { icon: 'key-round', title: 'YouTube asked this server to sign in', hint: 'Usually after many downloads in a row. Other sources kept going.', fix: 'Add a cookies file', jobs: [ej('Dearest Alfred', 'download', '3 TRIES', 40), ej('So We Won’t Forget', 'download', '3 TRIES', 40)] },
+            { icon: 'hard-drive', title: 'Could not write to /collection', hint: 'That folder is mounted read-only. Pick a writable destination.', fix: 'Change destination', jobs: [ej('Wild Is the Wind', 'moving', '1 TRY', 350)] },
+          ]
+          const H = [
+            ['TODAY · SAT 17 OCT', '14:02', 'Time (You and I)', 'Khruangbin', 'Downloaded', G], [null, '13:58', 'Pelota', 'Khruangbin', 'Downloaded · low confidence', W],
+            [null, '13:41', 'Dearest Alfred', 'Khruangbin', 'Failed · sign-in', D], [null, '13:12', 'Mentira Salomé', 'Adrian Quesada', 'Downloaded', G],
+            ['YESTERDAY', '22:40', 'Hymn of the Grackle', 'Khruangbin', 'No match', M], [null, '22:31', 'Colors', 'Black Pumas', 'Downloaded', G],
+            [null, '21:05', 'Wild Is the Wind', 'Nina Simone', 'Failed · read-only', D], [null, '20:48', 'Boiler Room x Dekmantel', 'Khruangbin', 'Downloaded', G],
+            ['THU 15 OCT', '09:12', 'Digital Love', 'Daft Punk', 'Cancelled', M], [null, '09:10', 'One More Time', 'Daft Punk', 'Downloaded', G],
+          ]
+          const hfOut = { all: () => true, ok: (o) => o.startsWith('Downloaded'), fail: (o) => o.startsWith('Failed') || o === 'No match' }
+          let lastDay = null
+          const history = H.map(([day, time, t, a, out, c]) => { if (day) lastDay = day; return { day, dayG: lastDay, time, t, a, out, c } })
+            .filter((h) => hfOut[this.state.hf](h.out))
+            .map((h, i, arr) => ({ ...h, day: i === 0 || arr[i - 1].dayG !== h.dayG ? h.dayG : null }))
+          return {
+            mono: this.props.mono ?? 'ui-monospace, Menlo, monospace',
+            t: { done: tab === 'done', nomatch: tab === 'nomatch', errors: tab === 'errors', history: tab === 'history' },
+            done, nomatch, errGroups,
+            reasons: [['Sign-in needed', 2, D], ['Read-only folder', 1, D], ['Rate limited', 0, M]].filter((r) => r[1]).map(([k, n, c]) => ({ k, n, fg: c, bg: '#39251f', line: '#674343' })),
+            hFilters: [['all', 'All'], ['ok', 'Downloaded'], ['fail', 'Failed & no match']].map(([k, label]) => ({ label, go: () => this.setState({ hf: k }), bg: this.state.hf === k ? '#263327' : 'transparent', fg: this.state.hf === k ? '#e8ece8' : M, line: this.state.hf === k ? '#4b6743' : '#2a3630' })),
+            history,
+          }
+        }
+      }
+    </script>
+  </body>
 </html>

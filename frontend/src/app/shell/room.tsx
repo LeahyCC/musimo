@@ -63,7 +63,8 @@ const mainNav: NavItem[] = [
       ['/search', '/albums', '/artists', '/podcasts'].some((s) => inSection(path, s)),
   },
   {
-    to: '/library/albums',
+    // `/library` opens the view the Library was last on.
+    to: '/library',
     label: 'Library',
     icon: Library,
     active: (path) => inSection(path, '/library'),

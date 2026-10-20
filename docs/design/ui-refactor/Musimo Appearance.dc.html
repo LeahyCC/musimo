@@ -1,170 +1,520 @@
-<!DOCTYPE html>
+<!doctype html>
 <html>
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<script src="./support.js"></script>
-</head>
-<body>
-<x-dc>
-<helmet>
-<script src="./icon.js"></script>
-<style>html{color-scheme:dark}*{scrollbar-color:#2a3630 transparent;scrollbar-width:thin}::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-track{background:transparent}::-webkit-scrollbar-thumb{background:#2a3630;border-radius:10px;border:3px solid transparent;background-clip:padding-box}::-webkit-scrollbar-corner{background:transparent}
-body{margin:0;background:#111716;font-family:Inter,-apple-system,sans-serif}a{color:#c3e4a2;text-decoration:none}button{font:inherit;cursor:pointer}</style>
-</helmet>
-<div style="display:grid;gap:20px;color:#e8ece8;font-size:13px">
-
-  <section style="border-radius:16px;background:#151c19;border:1px solid #2a3630;padding:18px 20px">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <div>
-        <h2 style="margin:0;font-size:15px;font-weight:600">Layout</h2>
-        <p style="margin:4px 0 0;font-size:12px;color:#93a39b">Changes how the app is arranged. Every screen and control is the same in both.</p>
-      </div>
-      <span style="font-family:{{ mono }};font-size:11px;color:#819088">SAVED IN THIS BROWSER</span>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:12px;margin-top:16px">
-      <sc-for list="{{ layouts }}" as="l" hint-placeholder-count="2">
-        <button onClick="{{ l.pick }}" style="text-align:left;padding:12px;border-radius:14px;border:2px solid {{ l.line }};background:#111716;color:#e8ece8;display:flex;flex-direction:column;gap:12px" style-hover="border-color:#4b6743">
-          <div style="aspect-ratio:16/9;border-radius:9px;background:#0e1312;padding:6px;display:flex;gap:5px;overflow:hidden">
-            <sc-if value="{{ l.classic }}" hint-placeholder-val="{{ true }}">
-              <div style="width:22%;border-radius:4px;background:#17201b;display:flex;flex-direction:column;gap:4px;padding:5px">
-                <i style="height:5px;width:60%;border-radius:2px;background:#c3e4a2"></i><i style="height:4px;border-radius:2px;background:#344035"></i><i style="height:4px;border-radius:2px;background:#344035"></i><i style="height:4px;border-radius:2px;background:#344035"></i>
-              </div>
-              <div style="flex:1;display:flex;flex-direction:column;gap:5px">
-                <i style="height:9px;border-radius:3px;background:#17201b"></i>
-                <div style="flex:1;display:grid;grid-template-columns:repeat(4,1fr);gap:4px;align-content:start"><i style="aspect-ratio:1;border-radius:3px;background:#263327"></i><i style="aspect-ratio:1;border-radius:3px;background:#263327"></i><i style="aspect-ratio:1;border-radius:3px;background:#263327"></i><i style="aspect-ratio:1;border-radius:3px;background:#263327"></i></div>
-                <i style="height:12px;border-radius:3px;background:#1e2a23;border-top:2px solid #c3e4a2"></i>
-              </div>
-            </sc-if>
-            <sc-if value="{{ l.room }}" hint-placeholder-val="{{ false }}">
-              <div style="width:9%;display:flex;flex-direction:column;gap:4px;align-items:center;padding-top:4px">
-                <i style="width:8px;height:8px;border-radius:3px;background:#c3e4a2"></i><i style="width:8px;height:8px;border-radius:3px;background:#344035"></i><i style="width:8px;height:8px;border-radius:3px;background:#344035"></i>
-              </div>
-              <div style="flex:1;border-radius:5px;background:#17201b;padding:5px;display:grid;grid-template-columns:repeat(3,1fr);gap:4px;align-content:start"><i style="aspect-ratio:1;border-radius:3px;background:#263327"></i><i style="aspect-ratio:1;border-radius:3px;background:#263327"></i><i style="aspect-ratio:1;border-radius:3px;background:#263327"></i></div>
-              <div style="width:28%;border-radius:5px;background:#17201b;padding:5px;display:flex;flex-direction:column;gap:4px"><i style="aspect-ratio:1;border-radius:3px;background:oklch(0.42 0.07 330)"></i><i style="height:3px;border-radius:2px;background:#c3e4a2;width:70%"></i><i style="height:3px;border-radius:2px;background:#344035"></i><i style="height:3px;border-radius:2px;background:#344035"></i></div>
-            </sc-if>
-          </div>
-          <div style="display:flex;align-items:flex-start;gap:10px">
-            <div style="flex:1;min-width:0">
-              <div style="font-weight:600;font-size:14px">{{ l.name }}</div>
-              <div style="margin-top:3px;font-size:12px;color:#93a39b;line-height:1.5">{{ l.desc }}</div>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="./support.js"></script>
+  </head>
+  <body>
+    <x-dc>
+      <helmet>
+        <script src="./icon.js"></script>
+        <style>
+          html {
+            color-scheme: dark;
+          }
+          * {
+            scrollbar-color: #2a3630 transparent;
+            scrollbar-width: thin;
+          }
+          ::-webkit-scrollbar {
+            width: 10px;
+            height: 10px;
+          }
+          ::-webkit-scrollbar-track {
+            background: transparent;
+          }
+          ::-webkit-scrollbar-thumb {
+            background: #2a3630;
+            border-radius: 10px;
+            border: 3px solid transparent;
+            background-clip: padding-box;
+          }
+          ::-webkit-scrollbar-corner {
+            background: transparent;
+          }
+          body {
+            margin: 0;
+            background: #111716;
+            font-family:
+              Inter,
+              -apple-system,
+              sans-serif;
+          }
+          a {
+            color: #c3e4a2;
+            text-decoration: none;
+          }
+          button {
+            font: inherit;
+            cursor: pointer;
+          }
+        </style>
+      </helmet>
+      <div style="display: grid; gap: 20px; color: #e8ece8; font-size: 13px">
+        <section
+          style="
+            border-radius: 16px;
+            background: #151c19;
+            border: 1px solid #2a3630;
+            padding: 18px 20px;
+          "
+        >
+          <div
+            style="
+              display: flex;
+              align-items: baseline;
+              justify-content: space-between;
+              gap: 12px;
+              flex-wrap: wrap;
+            "
+          >
+            <div>
+              <h2 style="margin: 0; font-size: 15px; font-weight: 600">Layout</h2>
+              <p style="margin: 4px 0 0; font-size: 12px; color: #93a39b">
+                Changes how the app is arranged. Every screen and control is the same in both.
+              </p>
             </div>
-            <span style="width:20px;height:20px;flex:none;border-radius:50%;display:grid;place-items:center;border:2px solid {{ l.line }};background:{{ l.dot }};color:#172014"><sc-if value="{{ l.on }}" hint-placeholder-val="{{ false }}"><m-i n="check" s="12"></m-i></sc-if></span>
+            <span style="font-family:{{ mono }};font-size:11px;color:#819088"
+              >SAVED IN THIS BROWSER</span
+            >
           </div>
-        </button>
-      </sc-for>
-    </div>
-  </section>
+          <div
+            style="
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+              gap: 12px;
+              margin-top: 16px;
+            "
+          >
+            <sc-for list="{{ layouts }}" as="l" hint-placeholder-count="2">
+              <button
+                onClick="{{ l.pick }}"
+                style="text-align:left;padding:12px;border-radius:14px;border:2px solid {{ l.line }};background:#111716;color:#e8ece8;display:flex;flex-direction:column;gap:12px"
+                style-hover="border-color:#4b6743"
+              >
+                <div
+                  style="
+                    aspect-ratio: 16/9;
+                    border-radius: 9px;
+                    background: #0e1312;
+                    padding: 6px;
+                    display: flex;
+                    gap: 5px;
+                    overflow: hidden;
+                  "
+                >
+                  <sc-if value="{{ l.classic }}" hint-placeholder-val="{{ true }}">
+                    <div
+                      style="
+                        width: 22%;
+                        border-radius: 4px;
+                        background: #17201b;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 4px;
+                        padding: 5px;
+                      "
+                    >
+                      <i
+                        style="height: 5px; width: 60%; border-radius: 2px; background: #c3e4a2"
+                      ></i
+                      ><i style="height: 4px; border-radius: 2px; background: #344035"></i
+                      ><i style="height: 4px; border-radius: 2px; background: #344035"></i
+                      ><i style="height: 4px; border-radius: 2px; background: #344035"></i>
+                    </div>
+                    <div style="flex: 1; display: flex; flex-direction: column; gap: 5px">
+                      <i style="height: 9px; border-radius: 3px; background: #17201b"></i>
+                      <div
+                        style="
+                          flex: 1;
+                          display: grid;
+                          grid-template-columns: repeat(4, 1fr);
+                          gap: 4px;
+                          align-content: start;
+                        "
+                      >
+                        <i style="aspect-ratio: 1; border-radius: 3px; background: #263327"></i
+                        ><i style="aspect-ratio: 1; border-radius: 3px; background: #263327"></i
+                        ><i style="aspect-ratio: 1; border-radius: 3px; background: #263327"></i
+                        ><i style="aspect-ratio: 1; border-radius: 3px; background: #263327"></i>
+                      </div>
+                      <i
+                        style="
+                          height: 12px;
+                          border-radius: 3px;
+                          background: #1e2a23;
+                          border-top: 2px solid #c3e4a2;
+                        "
+                      ></i>
+                    </div>
+                  </sc-if>
+                  <sc-if value="{{ l.room }}" hint-placeholder-val="{{ false }}">
+                    <div
+                      style="
+                        width: 9%;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 4px;
+                        align-items: center;
+                        padding-top: 4px;
+                      "
+                    >
+                      <i
+                        style="width: 8px; height: 8px; border-radius: 3px; background: #c3e4a2"
+                      ></i
+                      ><i
+                        style="width: 8px; height: 8px; border-radius: 3px; background: #344035"
+                      ></i
+                      ><i
+                        style="width: 8px; height: 8px; border-radius: 3px; background: #344035"
+                      ></i>
+                    </div>
+                    <div
+                      style="
+                        flex: 1;
+                        border-radius: 5px;
+                        background: #17201b;
+                        padding: 5px;
+                        display: grid;
+                        grid-template-columns: repeat(3, 1fr);
+                        gap: 4px;
+                        align-content: start;
+                      "
+                    >
+                      <i style="aspect-ratio: 1; border-radius: 3px; background: #263327"></i
+                      ><i style="aspect-ratio: 1; border-radius: 3px; background: #263327"></i
+                      ><i style="aspect-ratio: 1; border-radius: 3px; background: #263327"></i>
+                    </div>
+                    <div
+                      style="
+                        width: 28%;
+                        border-radius: 5px;
+                        background: #17201b;
+                        padding: 5px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 4px;
+                      "
+                    >
+                      <i
+                        style="
+                          aspect-ratio: 1;
+                          border-radius: 3px;
+                          background: oklch(0.42 0.07 330);
+                        "
+                      ></i
+                      ><i
+                        style="height: 3px; border-radius: 2px; background: #c3e4a2; width: 70%"
+                      ></i
+                      ><i style="height: 3px; border-radius: 2px; background: #344035"></i
+                      ><i style="height: 3px; border-radius: 2px; background: #344035"></i>
+                    </div>
+                  </sc-if>
+                </div>
+                <div style="display: flex; align-items: flex-start; gap: 10px">
+                  <div style="flex: 1; min-width: 0">
+                    <div style="font-weight: 600; font-size: 14px">{{ l.name }}</div>
+                    <div style="margin-top: 3px; font-size: 12px; color: #93a39b; line-height: 1.5">
+                      {{ l.desc }}
+                    </div>
+                  </div>
+                  <span
+                    style="width:20px;height:20px;flex:none;border-radius:50%;display:grid;place-items:center;border:2px solid {{ l.line }};background:{{ l.dot }};color:#172014"
+                    ><sc-if value="{{ l.on }}" hint-placeholder-val="{{ false }}"
+                      ><m-i n="check" s="12"></m-i></sc-if
+                  ></span>
+                </div>
+              </button>
+            </sc-for>
+          </div>
+        </section>
 
-  <section style="border-radius:16px;background:#151c19;border:1px solid #2a3630;overflow:hidden">
-    <div style="padding:18px 20px 12px;display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <div>
-        <h2 style="margin:0;font-size:15px;font-weight:600">Home page</h2>
-        <p style="margin:4px 0 0;font-size:12px;color:#93a39b">Choose what Home shows. Hidden sections are still in the Library.</p>
-      </div>
-      <button onClick="{{ reset }}" style="border:0;background:none;color:#93a39b;font-size:12px;text-decoration:underline">Show all</button>
-    </div>
-    <sc-for list="{{ sections }}" as="r" hint-placeholder-count="6">
-      <button onClick="{{ r.toggle }}" style="width:100%;display:flex;align-items:center;gap:14px;padding:12px 20px;border:0;border-top:1px solid #2a3630;background:transparent;color:#e8ece8;text-align:left" style-hover="background:#17201b">
-        <span style="width:34px;height:34px;flex:none;border-radius:9px;display:grid;place-items:center;background:#1e2a23;color:{{ r.ic }}"><m-i n="{{ r.icon }}" s="16"></m-i></span>
-        <span style="flex:1;min-width:0"><span style="display:block;font-weight:500;color:{{ r.tc }}">{{ r.label }}</span><span style="display:block;margin-top:2px;font-size:12px;color:#93a39b">{{ r.desc }}</span></span>
-        <span style="width:38px;height:22px;border-radius:999px;background:{{ r.tbg }};position:relative;flex:none"><span style="position:absolute;top:3px;left:{{ r.tx }};width:16px;height:16px;border-radius:50%;background:{{ r.tk }}"></span></span>
-      </button>
-    </sc-for>
-  </section>
-
-  <section style="border-radius:16px;background:#151c19;border:1px solid #2a3630;padding:18px 20px">
-    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap">
-      <div>
-        <h2 style="margin:0;font-size:15px;font-weight:600">Theme</h2>
-        <p style="margin:4px 0 0;font-size:12px;color:#93a39b">Each theme comes in dark and light. Applies right away.</p>
-      </div>
-      <div style="display:flex;gap:8px">
-        <button style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:12px"><m-i n="upload" s="13"></m-i>Import</button>
-        <button style="height:32px;display:inline-flex;align-items:center;gap:6px;padding:0 12px;border-radius:8px;border:1px solid #344035;background:#1e2a23;color:#e8ece8;font-size:12px"><m-i n="copy" s="13"></m-i>Duplicate & edit</button>
-      </div>
-    </div>
-    <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:16px">
-      <span style="font-size:12px;color:#93a39b">Follow system</span>
-      <button onClick="{{ toggleSystem }}" aria-label="Follow system light or dark" style="width:38px;height:22px;border:0;padding:0;border-radius:999px;background:{{ sys.tbg }};position:relative;flex:none"><span style="position:absolute;top:3px;left:{{ sys.tx }};width:16px;height:16px;border-radius:50%;background:{{ sys.tk }}"></span></button>
-      <span style="font-size:12px;color:#819088">{{ sysNote }}</span>
-    </div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px;margin-top:14px">
-      <sc-for list="{{ families }}" as="t" hint-placeholder-count="6">
-        <div style="padding:8px;border-radius:14px;border:2px solid {{ t.line }};background:#111716;color:#e8ece8;display:flex;flex-direction:column;gap:10px">
-          <button onClick="{{ t.pick }}" aria-label="Use {{ t.name }}" style="display:block;border:0;padding:0;background:none;text-align:left;color:inherit">
-            <div style="height:64px;border-radius:9px;overflow:hidden;display:flex">
-              <div style="flex:{{ t.dFlex }};background:{{ t.d.canvas }};display:flex;align-items:flex-end;gap:5px;padding:7px;transition:flex .2s">
-                <i style="flex:1;height:55%;border-radius:4px;background:{{ t.d.raised }}"></i><i style="width:14px;height:14px;flex:none;border-radius:50%;background:{{ t.d.accent }}"></i>
-              </div>
-              <div style="flex:{{ t.lFlex }};background:{{ t.l.canvas }};display:flex;align-items:flex-end;gap:5px;padding:7px;transition:flex .2s">
-                <i style="flex:1;height:55%;border-radius:4px;background:{{ t.l.raised }};box-shadow:0 0 0 1px rgba(0,0,0,.08)"></i><i style="width:14px;height:14px;flex:none;border-radius:50%;background:{{ t.l.accent }}"></i>
-              </div>
+        <section
+          style="
+            border-radius: 16px;
+            background: #151c19;
+            border: 1px solid #2a3630;
+            overflow: hidden;
+          "
+        >
+          <div
+            style="
+              padding: 18px 20px 12px;
+              display: flex;
+              align-items: baseline;
+              justify-content: space-between;
+              gap: 12px;
+              flex-wrap: wrap;
+            "
+          >
+            <div>
+              <h2 style="margin: 0; font-size: 15px; font-weight: 600">Home page</h2>
+              <p style="margin: 4px 0 0; font-size: 12px; color: #93a39b">
+                Choose what Home shows. Hidden sections are still in the Library.
+              </p>
             </div>
-          </button>
-          <div style="display:flex;align-items:center;gap:8px">
-            <span style="flex:1;min-width:0;font-size:13px;font-weight:600;display:flex;align-items:center;gap:6px">{{ t.name }}<sc-if value="{{ t.on }}" hint-placeholder-val="{{ false }}"><span style="color:#c3e4a2;display:inline-flex"><m-i n="check" s="13"></m-i></span></sc-if></span>
-            <div style="display:flex;padding:2px;border-radius:8px;background:#1e2a23;opacity:{{ t.modeOp }}">
-              <button onClick="{{ t.dark }}" aria-label="{{ t.name }} dark" style="width:28px;height:24px;display:grid;place-items:center;border:0;border-radius:6px;background:{{ t.dBg }};color:{{ t.dFg }}"><m-i n="moon" s="13"></m-i></button>
-              <button onClick="{{ t.light }}" aria-label="{{ t.name }} light" style="width:28px;height:24px;display:grid;place-items:center;border:0;border-radius:6px;background:{{ t.lBg }};color:{{ t.lFg }}"><m-i n="sun" s="13"></m-i></button>
+            <button
+              onClick="{{ reset }}"
+              style="
+                border: 0;
+                background: none;
+                color: #93a39b;
+                font-size: 12px;
+                text-decoration: underline;
+              "
+            >
+              Show all
+            </button>
+          </div>
+          <sc-for list="{{ sections }}" as="r" hint-placeholder-count="6">
+            <button
+              onClick="{{ r.toggle }}"
+              style="
+                width: 100%;
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                padding: 12px 20px;
+                border: 0;
+                border-top: 1px solid #2a3630;
+                background: transparent;
+                color: #e8ece8;
+                text-align: left;
+              "
+              style-hover="background:#17201b"
+            >
+              <span
+                style="width:34px;height:34px;flex:none;border-radius:9px;display:grid;place-items:center;background:#1e2a23;color:{{ r.ic }}"
+                ><m-i n="{{ r.icon }}" s="16"></m-i
+              ></span>
+              <span style="flex: 1; min-width: 0"
+                ><span style="display:block;font-weight:500;color:{{ r.tc }}">{{ r.label }}</span
+                ><span style="display: block; margin-top: 2px; font-size: 12px; color: #93a39b"
+                  >{{ r.desc }}</span
+                ></span
+              >
+              <span
+                style="width:38px;height:22px;border-radius:999px;background:{{ r.tbg }};position:relative;flex:none"
+                ><span
+                  style="position:absolute;top:3px;left:{{ r.tx }};width:16px;height:16px;border-radius:50%;background:{{ r.tk }}"
+                ></span
+              ></span>
+            </button>
+          </sc-for>
+        </section>
+
+        <section
+          style="
+            border-radius: 16px;
+            background: #151c19;
+            border: 1px solid #2a3630;
+            padding: 18px 20px;
+          "
+        >
+          <div
+            style="
+              display: flex;
+              align-items: baseline;
+              justify-content: space-between;
+              gap: 12px;
+              flex-wrap: wrap;
+            "
+          >
+            <div>
+              <h2 style="margin: 0; font-size: 15px; font-weight: 600">Theme</h2>
+              <p style="margin: 4px 0 0; font-size: 12px; color: #93a39b">
+                Each theme comes in dark and light. Applies right away.
+              </p>
+            </div>
+            <div style="display: flex; gap: 8px">
+              <button
+                style="
+                  height: 32px;
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 6px;
+                  padding: 0 12px;
+                  border-radius: 8px;
+                  border: 1px solid #344035;
+                  background: #1e2a23;
+                  color: #e8ece8;
+                  font-size: 12px;
+                "
+              >
+                <m-i n="upload" s="13"></m-i>Import
+              </button>
+              <button
+                style="
+                  height: 32px;
+                  display: inline-flex;
+                  align-items: center;
+                  gap: 6px;
+                  padding: 0 12px;
+                  border-radius: 8px;
+                  border: 1px solid #344035;
+                  background: #1e2a23;
+                  color: #e8ece8;
+                  font-size: 12px;
+                "
+              >
+                <m-i n="copy" s="13"></m-i>Duplicate & edit
+              </button>
             </div>
           </div>
-        </div>
-      </sc-for>
-    </div>
-  </section>
-</div>
-</x-dc>
-<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;: {&quot;width&quot;: 900, &quot;height&quot;: 1100}, &quot;layout&quot;: {&quot;editor&quot;: &quot;enum&quot;, &quot;options&quot;: [&quot;classic&quot;, &quot;room&quot;], &quot;default&quot;: &quot;classic&quot;, &quot;tsType&quot;: &quot;'classic' | 'room'&quot;}, &quot;home&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;Record&lt;string, boolean&gt;&quot;}, &quot;mono&quot;: {&quot;editor&quot;: &quot;text&quot;, &quot;default&quot;: &quot;ui-monospace, Menlo, monospace&quot;, &quot;tsType&quot;: &quot;string&quot;}, &quot;onLayout&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;(k: string) =&gt; void&quot;}, &quot;onHomeToggle&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;(k: string) =&gt; void&quot;}, &quot;onHomeReset&quot;: {&quot;editor&quot;: null, &quot;tsType&quot;: &quot;() =&gt; void&quot;}}">
-const THEMES = [
-  ['musimo-dark', 'Musimo dark', '#111716', '#17201b', '#c3e4a2', '#e8ece8'], ['musimo-light', 'Musimo light', '#f4f6f3', '#ffffff', '#375b25', '#1c2518'],
-  ['slate-dark', 'Slate dark', '#121417', '#1a1f23', '#8bb8e4', '#e8ebed'], ['slate-light', 'Slate light', '#f3f5f7', '#ffffff', '#275486', '#181f25'],
-  ['sunset-dark', 'Sunset dark', '#181411', '#241d19', '#eca465', '#edeae8'], ['sunset-light', 'Sunset light', '#f7f4f2', '#ffffff', '#8f4710', '#251d18'],
-  ['violet-dark', 'Violet dark', '#141118', '#1d1924', '#b79aea', '#eae8ed'], ['violet-light', 'Violet light', '#f4f3f7', '#ffffff', '#5f3891', '#1d1825'],
-  ['graphite-dark', 'Graphite dark', '#141515', '#1d1f20', '#90cbdf', '#e8eced'], ['graphite-light', 'Graphite light', '#f4f5f5', '#ffffff', '#125a74', '#182125'],
-  ['win95-dark', 'Windows 95 dark', '#000000', '#000000', '#ffff00', '#ffffff'], ['win95-light', 'Windows 95 light', '#c0c0c0', '#c0c0c0', '#000080', '#000000'],
-]
-const FAMILIES = [['musimo', 'Musimo'], ['slate', 'Slate'], ['sunset', 'Sunset'], ['violet', 'Violet'], ['graphite', 'Graphite'], ['win95', 'Windows 95']]
-const SECTIONS = [
-  ['continue', 'Continue listening', 'The track you left off on, with resume.', 'circle-play'],
-  ['stats', 'This week', 'Time listened, plays and top genre.', 'chart-column'],
-  ['jump', 'Jump back in', 'Recent albums, artists and playlists.', 'history'],
-  ['fresh', 'Recently added', 'The newest albums in your folders.', 'disc-3'],
-  ['mostPlayed', 'On repeat', 'Your most played songs this month.', 'repeat'],
-  ['octive', 'Ask Octive', 'Prompts that build a queue from your library.', 'sparkles'],
-]
-class Component extends DCLogic {
-  state = { family: 'musimo', modes: {}, system: false }
-  renderVals() {
-    const layout = this.props.layout ?? 'classic'
-    const home = this.props.home ?? {}
-    const on = (k) => home[k] !== false
-    const L = [
-      ['classic', 'Classic', 'Sidebar with your library sections and pinned playlists. Player across the bottom.'],
-      ['room', 'Listening room', 'Slim icon rail. The player and Up next stay docked on the right.'],
-    ]
-    return {
-      mono: this.props.mono ?? "ui-monospace, Menlo, monospace",
-      layouts: L.map(([k, name, desc]) => ({ name, desc, classic: k === 'classic', room: k === 'room', on: layout === k, line: layout === k ? '#c3e4a2' : '#2a3630', dot: layout === k ? '#c3e4a2' : 'transparent', pick: () => this.props.onLayout?.(k) })),
-      sections: SECTIONS.map(([k, label, desc, icon]) => ({ label, desc, icon, toggle: () => this.props.onHomeToggle?.(k), tbg: on(k) ? '#c3e4a2' : '#344035', tk: on(k) ? '#172014' : '#93a39b', tx: on(k) ? '19px' : '3px', tc: on(k) ? '#e8ece8' : '#93a39b', ic: on(k) ? '#c3e4a2' : '#819088' })),
-      reset: () => this.props.onHomeReset?.(),
-      families: FAMILIES.map(([fid, name]) => {
-        const mode = this.state.modes[fid] ?? 'dark'
-        const sw = (m) => { const t = THEMES.find((x) => x[0] === fid + '-' + m); return { canvas: t[2], raised: t[3], accent: t[4] } }
-        const on = this.state.family === fid
-        const isDark = this.state.system ? true : mode === 'dark'
-        const setMode = (m) => () => this.setState({ family: fid, modes: { ...this.state.modes, [fid]: m } })
-        return { name, on, line: on ? '#c3e4a2' : '#2a3630', d: sw('dark'), l: sw('light'), dFlex: isDark ? '3' : '1', lFlex: isDark ? '1' : '3',
-          pick: () => this.setState({ family: fid }), dark: setMode('dark'), light: setMode('light'),
-          dBg: isDark ? '#344035' : 'transparent', dFg: isDark ? '#e8ece8' : '#819088', lBg: !isDark ? '#344035' : 'transparent', lFg: !isDark ? '#e8ece8' : '#819088', modeOp: this.state.system ? '0.4' : '1' }
-      }),
-      sys: { tbg: this.state.system ? '#c3e4a2' : '#344035', tk: this.state.system ? '#172014' : '#93a39b', tx: this.state.system ? '19px' : '3px' },
-      sysNote: this.state.system ? 'Light by day, dark by night: your device decides.' : '',
-      toggleSystem: () => this.setState({ system: !this.state.system }),
-    }
-  }
-}
-
-</script>
-</body>
+          <div
+            style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 16px"
+          >
+            <span style="font-size: 12px; color: #93a39b">Follow system</span>
+            <button
+              onClick="{{ toggleSystem }}"
+              aria-label="Follow system light or dark"
+              style="width:38px;height:22px;border:0;padding:0;border-radius:999px;background:{{ sys.tbg }};position:relative;flex:none"
+            >
+              <span
+                style="position:absolute;top:3px;left:{{ sys.tx }};width:16px;height:16px;border-radius:50%;background:{{ sys.tk }}"
+              ></span>
+            </button>
+            <span style="font-size: 12px; color: #819088">{{ sysNote }}</span>
+          </div>
+          <div
+            style="
+              display: grid;
+              grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+              gap: 10px;
+              margin-top: 14px;
+            "
+          >
+            <sc-for list="{{ families }}" as="t" hint-placeholder-count="6">
+              <div
+                style="padding:8px;border-radius:14px;border:2px solid {{ t.line }};background:#111716;color:#e8ece8;display:flex;flex-direction:column;gap:10px"
+              >
+                <button
+                  onClick="{{ t.pick }}"
+                  aria-label="Use {{ t.name }}"
+                  style="
+                    display: block;
+                    border: 0;
+                    padding: 0;
+                    background: none;
+                    text-align: left;
+                    color: inherit;
+                  "
+                >
+                  <div style="height: 64px; border-radius: 9px; overflow: hidden; display: flex">
+                    <div
+                      style="flex:{{ t.dFlex }};background:{{ t.d.canvas }};display:flex;align-items:flex-end;gap:5px;padding:7px;transition:flex .2s"
+                    >
+                      <i style="flex:1;height:55%;border-radius:4px;background:{{ t.d.raised }}"></i
+                      ><i
+                        style="width:14px;height:14px;flex:none;border-radius:50%;background:{{ t.d.accent }}"
+                      ></i>
+                    </div>
+                    <div
+                      style="flex:{{ t.lFlex }};background:{{ t.l.canvas }};display:flex;align-items:flex-end;gap:5px;padding:7px;transition:flex .2s"
+                    >
+                      <i
+                        style="flex:1;height:55%;border-radius:4px;background:{{ t.l.raised }};box-shadow:0 0 0 1px rgba(0,0,0,.08)"
+                      ></i
+                      ><i
+                        style="width:14px;height:14px;flex:none;border-radius:50%;background:{{ t.l.accent }}"
+                      ></i>
+                    </div>
+                  </div>
+                </button>
+                <div style="display: flex; align-items: center; gap: 8px">
+                  <span
+                    style="
+                      flex: 1;
+                      min-width: 0;
+                      font-size: 13px;
+                      font-weight: 600;
+                      display: flex;
+                      align-items: center;
+                      gap: 6px;
+                    "
+                    >{{ t.name }}<sc-if value="{{ t.on }}" hint-placeholder-val="{{ false }}"
+                      ><span style="color: #c3e4a2; display: inline-flex"
+                        ><m-i n="check" s="13"></m-i></span></sc-if
+                  ></span>
+                  <div
+                    style="display:flex;padding:2px;border-radius:8px;background:#1e2a23;opacity:{{ t.modeOp }}"
+                  >
+                    <button
+                      onClick="{{ t.dark }}"
+                      aria-label="{{ t.name }} dark"
+                      style="width:28px;height:24px;display:grid;place-items:center;border:0;border-radius:6px;background:{{ t.dBg }};color:{{ t.dFg }}"
+                    >
+                      <m-i n="moon" s="13"></m-i>
+                    </button>
+                    <button
+                      onClick="{{ t.light }}"
+                      aria-label="{{ t.name }} light"
+                      style="width:28px;height:24px;display:grid;place-items:center;border:0;border-radius:6px;background:{{ t.lBg }};color:{{ t.lFg }}"
+                    >
+                      <m-i n="sun" s="13"></m-i>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </section>
+      </div>
+    </x-dc>
+    <script
+      type="text/x-dc"
+      data-dc-script
+      data-props='{"$preview": {"width": 900, "height": 1100}, "layout": {"editor": "enum", "options": ["classic", "room"], "default": "classic", "tsType": "&apos;classic&apos; | &apos;room&apos;"}, "home": {"editor": null, "tsType": "Record&lt;string, boolean&gt;"}, "mono": {"editor": "text", "default": "ui-monospace, Menlo, monospace", "tsType": "string"}, "onLayout": {"editor": null, "tsType": "(k: string) =&gt; void"}, "onHomeToggle": {"editor": null, "tsType": "(k: string) =&gt; void"}, "onHomeReset": {"editor": null, "tsType": "() =&gt; void"}}'
+    >
+      const THEMES = [
+        ['musimo-dark', 'Musimo dark', '#111716', '#17201b', '#c3e4a2', '#e8ece8'], ['musimo-light', 'Musimo light', '#f4f6f3', '#ffffff', '#375b25', '#1c2518'],
+        ['slate-dark', 'Slate dark', '#121417', '#1a1f23', '#8bb8e4', '#e8ebed'], ['slate-light', 'Slate light', '#f3f5f7', '#ffffff', '#275486', '#181f25'],
+        ['sunset-dark', 'Sunset dark', '#181411', '#241d19', '#eca465', '#edeae8'], ['sunset-light', 'Sunset light', '#f7f4f2', '#ffffff', '#8f4710', '#251d18'],
+        ['violet-dark', 'Violet dark', '#141118', '#1d1924', '#b79aea', '#eae8ed'], ['violet-light', 'Violet light', '#f4f3f7', '#ffffff', '#5f3891', '#1d1825'],
+        ['graphite-dark', 'Graphite dark', '#141515', '#1d1f20', '#90cbdf', '#e8eced'], ['graphite-light', 'Graphite light', '#f4f5f5', '#ffffff', '#125a74', '#182125'],
+        ['win95-dark', 'Windows 95 dark', '#000000', '#000000', '#ffff00', '#ffffff'], ['win95-light', 'Windows 95 light', '#c0c0c0', '#c0c0c0', '#000080', '#000000'],
+      ]
+      const FAMILIES = [['musimo', 'Musimo'], ['slate', 'Slate'], ['sunset', 'Sunset'], ['violet', 'Violet'], ['graphite', 'Graphite'], ['win95', 'Windows 95']]
+      const SECTIONS = [
+        ['continue', 'Continue listening', 'The track you left off on, with resume.', 'circle-play'],
+        ['stats', 'This week', 'Time listened, plays and top genre.', 'chart-column'],
+        ['jump', 'Jump back in', 'Recent albums, artists and playlists.', 'history'],
+        ['fresh', 'Recently added', 'The newest albums in your folders.', 'disc-3'],
+        ['mostPlayed', 'On repeat', 'Your most played songs this month.', 'repeat'],
+        ['octive', 'Ask Octive', 'Prompts that build a queue from your library.', 'sparkles'],
+      ]
+      class Component extends DCLogic {
+        state = { family: 'musimo', modes: {}, system: false }
+        renderVals() {
+          const layout = this.props.layout ?? 'classic'
+          const home = this.props.home ?? {}
+          const on = (k) => home[k] !== false
+          const L = [
+            ['classic', 'Classic', 'Sidebar with your library sections and pinned playlists. Player across the bottom.'],
+            ['room', 'Listening room', 'Slim icon rail. The player and Up next stay docked on the right.'],
+          ]
+          return {
+            mono: this.props.mono ?? "ui-monospace, Menlo, monospace",
+            layouts: L.map(([k, name, desc]) => ({ name, desc, classic: k === 'classic', room: k === 'room', on: layout === k, line: layout === k ? '#c3e4a2' : '#2a3630', dot: layout === k ? '#c3e4a2' : 'transparent', pick: () => this.props.onLayout?.(k) })),
+            sections: SECTIONS.map(([k, label, desc, icon]) => ({ label, desc, icon, toggle: () => this.props.onHomeToggle?.(k), tbg: on(k) ? '#c3e4a2' : '#344035', tk: on(k) ? '#172014' : '#93a39b', tx: on(k) ? '19px' : '3px', tc: on(k) ? '#e8ece8' : '#93a39b', ic: on(k) ? '#c3e4a2' : '#819088' })),
+            reset: () => this.props.onHomeReset?.(),
+            families: FAMILIES.map(([fid, name]) => {
+              const mode = this.state.modes[fid] ?? 'dark'
+              const sw = (m) => { const t = THEMES.find((x) => x[0] === fid + '-' + m); return { canvas: t[2], raised: t[3], accent: t[4] } }
+              const on = this.state.family === fid
+              const isDark = this.state.system ? true : mode === 'dark'
+              const setMode = (m) => () => this.setState({ family: fid, modes: { ...this.state.modes, [fid]: m } })
+              return { name, on, line: on ? '#c3e4a2' : '#2a3630', d: sw('dark'), l: sw('light'), dFlex: isDark ? '3' : '1', lFlex: isDark ? '1' : '3',
+                pick: () => this.setState({ family: fid }), dark: setMode('dark'), light: setMode('light'),
+                dBg: isDark ? '#344035' : 'transparent', dFg: isDark ? '#e8ece8' : '#819088', lBg: !isDark ? '#344035' : 'transparent', lFg: !isDark ? '#e8ece8' : '#819088', modeOp: this.state.system ? '0.4' : '1' }
+            }),
+            sys: { tbg: this.state.system ? '#c3e4a2' : '#344035', tk: this.state.system ? '#172014' : '#93a39b', tx: this.state.system ? '19px' : '3px' },
+            sysNote: this.state.system ? 'Light by day, dark by night: your device decides.' : '',
+            toggleSystem: () => this.setState({ system: !this.state.system }),
+          }
+        }
+      }
+    </script>
+  </body>
 </html>

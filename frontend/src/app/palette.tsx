@@ -46,7 +46,7 @@ type Group = { label: string; items: Command[] }
 const pages = [
   { label: 'Home', to: '/', icon: House },
   { label: 'Search music', to: '/search', icon: Search },
-  { label: 'Library', to: '/library/albums', icon: Library },
+  { label: 'Library', to: '/library', icon: Library },
   { label: 'Now Playing', to: '/now-playing', icon: AudioLines },
   { label: 'Downloads', to: '/downloads', icon: ArrowDownToLine },
   { label: 'Octive', to: '/music-bot', icon: Sparkles },

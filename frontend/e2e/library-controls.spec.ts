@@ -119,8 +119,7 @@ test('the tracks view sends its search, filter, sort and shuffle to the server',
 test('loading states name what is on the way and hold the counts back', async ({ page }) => {
   await libraryFixtures(page)
   await page.route('**/api/library/albums?**', () => new Promise(() => undefined))
-  // The bare library address opens Albums, so that is what it says while waiting.
-  await page.goto('/library')
+  await page.goto('/library/albums')
   await expect(page).toHaveURL(/\/library\/albums$/)
   await expect(page.getByText('Loading albums…')).toBeVisible()
 

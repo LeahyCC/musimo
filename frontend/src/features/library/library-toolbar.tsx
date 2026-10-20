@@ -8,10 +8,10 @@ import { FilterChip, Select, SelectChip, textLinkClassName } from '../../ui'
 import { FacetChip, LayoutToggle, type ViewMode } from './collection-items'
 import type { useLibraryBrowse } from './library-browse'
 import type { LibraryTab } from './library-params'
-import { defaultLibrarySort } from './library-params'
+import { defaultLibrarySort, libraryViews } from './library-params'
 
 export type BrowseTab = Exclude<LibraryTab, 'home'>
-export const browseTabs: readonly BrowseTab[] = ['albums', 'artists', 'tracks', 'playlists']
+export const browseTabs: readonly BrowseTab[] = libraryViews
 
 const tabLabels: Record<BrowseTab, string> = {
   albums: 'Albums',
