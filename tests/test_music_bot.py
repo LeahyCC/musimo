@@ -799,7 +799,7 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
             await self.bot.chat(BotRequest(prompt="rock", shown_ids=[self.ids["B today"]]))
         self.assertEqual(asked, [remembered])
 
-    async def test_non_thinking_is_selected_only_when_reported_as_supported(self) -> None:
+    async def test_non_thinking_is_selected_unless_only_named_levels_are_reported(self) -> None:
         for metadata, expected in [
             (
                 {
@@ -810,8 +810,10 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
             ),
             ({"thinking": {"values": [False]}}, {"think": False}),
             ({"capabilities": ["thinking"], "thinking": {"values": ["low", "medium", "high"]}}, {}),
-            ({"capabilities": ["thinking"]}, {}),
+            # Thinks, but lists no values: the re-pulled Qwen 3.5 reports exactly this.
+            ({"capabilities": ["completion", "vision", "tools", "thinking"]}, {"think": False}),
             ({"capabilities": ["completion"]}, {}),
+            ({}, {}),
             ({"thinking": {"values": [0, "false", True]}}, {}),
         ]:
             with self.subTest(metadata=metadata):
