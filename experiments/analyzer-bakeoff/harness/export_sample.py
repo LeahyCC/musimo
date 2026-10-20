@@ -39,9 +39,12 @@ def main() -> None:
     counts = Counter((r["genre"] or "").strip() for r in rows.values())
     top = [g for g, _ in counts.most_common() if g][:TOP_TAGS]
 
-    base = sorted(tempo)
+    # A profile row can outlive its file. Such a song has nothing to analyse, so it is listed
+    # apart and kept out of every id list the runners and score.py index by.
+    missing = sorted(s for s in tempo if s not in rows)
+    base = sorted(s for s in tempo if s in rows)
     chosen = set(base)
-    have = Counter((rows[s]["genre"] or "").strip() for s in base if s in rows)
+    have = Counter((rows[s]["genre"] or "").strip() for s in base)
 
     def eligible(r: dict) -> bool:
         genre = (r["genre"] or "").strip()
@@ -68,14 +71,18 @@ def main() -> None:
                 r = queues[tag].pop(0)
                 chosen.add(r["song_id"])
                 have[tag] += 1
+    for r in pool:
+        if len(chosen) >= len(base) + EXTRA:
+            break
+        chosen.add(r["song_id"])
     out = {
         "seed": SEED,
         "top_tags": top,
         "library_tag_counts": dict(counts.most_common(40)),
         "tempo_ids": base,
         "genre_ids": sorted(chosen, key=lambda s: (s not in tempo, draw_key(s))),
-        "songs": {s: {**rows[s], "tempo_energy_v1": tempo.get(s)} for s in chosen if s in rows},
-        "missing_from_library": [s for s in chosen if s not in rows],
+        "songs": {s: {**rows[s], "tempo_energy_v1": tempo.get(s)} for s in chosen},
+        "missing_from_library": missing,
     }
     with open(sys.argv[1], "w", encoding="utf-8") as handle:
         json.dump(out, handle, ensure_ascii=False, indent=1)

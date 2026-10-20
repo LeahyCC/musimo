@@ -66,7 +66,10 @@ def main() -> None:
         target = out_dir / f"{song_id}.json"
         if target.exists():
             continue
-        song = songs[song_id]
+        song = songs.get(song_id)
+        if song is None:
+            write_json(target, {"song_id": song_id, "status": "failed", "error": "not in sample"})
+            continue
         record = {"song_id": song_id, "path": song["path"], "duration": song["duration"]}
         song_clock = Clock()
         decode_seconds = 0.0

@@ -103,6 +103,20 @@ def song_tags(song: dict) -> tuple[str, ...]:
     return tuple(t for t in (song.get("genre") or "", *extra) if t)
 
 
+# The worker's skip list (worker/audio_worker/recipe.py SKIPPED_GENRES), read the same way:
+# genre and the genres list, casefolded and stripped. Speech has no musical tempo.
+SPEECH_TAGS = frozenset({"podcast", "podcasts", "spoken word"})
+
+
+def is_speech(song: dict) -> bool:
+    return any(t.casefold().strip() in SPEECH_TAGS for t in song_tags(song))
+
+
+def mb(value: int | None) -> float | None:
+    """memory.peak is missing before Linux 5.19, so a peak can be None."""
+    return round(value / 1e6, 1) if value is not None else None
+
+
 def classify(value: float | None, ref: float | None) -> str | None:
     if not value or not ref:
         return None
@@ -120,6 +134,8 @@ def window_bpm(beats: list[float]) -> dict:
         return {"median": None, "fine": None}
     gaps = np.diff(np.asarray(beats))
     gaps = gaps[gaps > 0]
+    if not len(gaps):
+        return {"median": None, "fine": None}
     med = float(np.median(gaps))
     steady = gaps[np.abs(gaps - med) <= STEADY * med]
     fine = 60.0 / float(steady.mean()) if len(steady) >= 3 else None
@@ -196,7 +212,11 @@ def load_dir(path: Path) -> dict:
 
 def timing(records: dict, key: str = "seconds_total") -> dict:
     times = sorted(r[key] for r in records.values() if r.get(key) is not None)
-    peaks = [r["memory"]["cgroup_peak"] for r in records.values() if r.get("memory")]
+    peaks = [
+        r["memory"]["cgroup_peak"]
+        for r in records.values()
+        if r.get("memory") and r["memory"].get("cgroup_peak") is not None
+    ]
     if not times:
         return {}
     return {
@@ -212,13 +232,13 @@ def timing(records: dict, key: str = "seconds_total") -> dict:
 def tempo_report(root: Path, sample: dict, deezer: dict) -> dict:
     songs = sample["songs"]
     report = {}
+    lib_core = load_dir(root / "out" / "librosa")
+    lib = {**lib_core, **load_dir(root / "out" / "librosa-extra")}
     for checkpoint in ("final0", "small0"):
         bt = load_dir(root / "out" / f"beat_this-{checkpoint}")
         bt.update(load_dir(root / "out" / f"beat_this-{checkpoint}-extra"))
         if not bt:
             continue
-        lib = load_dir(root / "out" / "librosa")
-        lib.update(load_dir(root / "out" / "librosa-extra"))
         rows = {}
         for song_id, record in bt.items():
             if record.get("status") != "done":
@@ -232,14 +252,11 @@ def tempo_report(root: Path, sample: dict, deezer: dict) -> dict:
                 "librosa_sections": rerun.get("bpm_sections") or db.get("tempo_bpm"),
                 "librosa_long60": rerun.get("bpm_long60"),
                 "deezer": (deezer.get(song_id) or {}).get("bpm") or None,
-                "genre": songs[song_id]["genre"],
+                "genre": songs.get(song_id, {}).get("genre"),
+                "speech": is_speech(songs.get(song_id, {})),
                 "in_tempo_100": song_id in sample["tempo_ids"],
             }
-        music = {
-            k: v
-            for k, v in rows.items()
-            if "median_sections" in v and (v["genre"] or "").casefold() != "podcast"
-        }
+        music = {k: v for k, v in rows.items() if "median_sections" in v and not v["speech"]}
         core = {k: v for k, v in music.items() if v["in_tempo_100"]}
         bt_records = {k: v for k, v in bt.items() if k in sample["tempo_ids"]}
         run = json.loads((root / "out" / f"beat_this-{checkpoint}" / "_run.json").read_text())
@@ -287,25 +304,25 @@ def tempo_report(root: Path, sample: dict, deezer: dict) -> dict:
             "infer_core": timing(bt_records, "seconds_infer"),
             "decode_core": timing(bt_records, "seconds_decode"),
             "load_seconds": run["load_seconds"],
-            "memory_after_load_mb": round(run["memory_after_load"]["cgroup_peak"] / 1e6, 1),
-            "cgroup_peak_end_mb": round(end["memory_end"]["cgroup_peak"] / 1e6, 1) if end else None,
+            "memory_after_load_mb": mb(run["memory_after_load"].get("cgroup_peak")),
+            "cgroup_peak_end_mb": mb(end["memory_end"].get("cgroup_peak")) if end else None,
         }
         report[checkpoint] = entry
-    lib = load_dir(root / "out" / "librosa")
-    if lib:
-        same_as_db = [
-            abs(
-                (r.get("bpm_sections") or 0)
-                - (songs[k]["tempo_energy_v1"] or {}).get("tempo_bpm", 0)
+    if lib_core:
+        # Only songs where both the rerun and the stored row have a tempo can match.
+        pairs = [
+            (
+                r.get("bpm_sections"),
+                (songs.get(k, {}).get("tempo_energy_v1") or {}).get("tempo_bpm"),
             )
-            < 0.01
-            for k, r in lib.items()
+            for k, r in lib_core.items()
             if r.get("status") == "done"
         ]
+        same_as_db = [abs(a - b) < 0.01 for a, b in pairs if a is not None and b is not None]
         report["librosa_rerun"] = {
             "matches_db": f"{sum(same_as_db)} of {len(same_as_db)}",
-            "timing_sections": timing(lib, "seconds_sections"),
-            "timing_long60": timing(lib, "seconds_long60"),
+            "timing_sections": timing(lib_core, "seconds_sections"),
+            "timing_long60": timing(lib_core, "seconds_long60"),
         }
     report["deezer_coverage"] = {
         "tempo_100": Counter(deezer_kind(deezer[s]) for s in sample["tempo_ids"]),
@@ -414,7 +431,7 @@ def genre_report(root: Path, sample: dict, threshold: float) -> dict:
         ]
         if top1_scores
         else [],
-        "threshold_sweep": threshold_sweep(per_song, records, classes, rated),
+        "threshold_sweep": threshold_sweep(records, classes, rated),
         "top_misses": misses[:15],
         "flagged": {
             "rule": f"tag parent not in top 3 and top parent >= {FLAG_SCORE}",
@@ -430,17 +447,22 @@ def genre_report(root: Path, sample: dict, threshold: float) -> dict:
     }
 
 
-def threshold_sweep(per_song: dict, records: dict, classes: list[str], rated: dict) -> list:
+def threshold_sweep(records: dict, classes: list[str], rated: dict) -> list:
     """For each threshold: how many styles a song keeps, and what share of the kept styles
     sit under a parent the file tag agrees with. Used to pick the threshold."""
+    # Each song's top styles, sorted once rather than once per threshold.
+    top = {}
+    for song_id in rated:
+        scores = np.asarray(records[song_id]["scores"])
+        top[song_id] = [
+            (classes[i], float(scores[i])) for i in np.argsort(scores)[::-1][:TOP_STYLES]
+        ]
     rows = []
     for t in (0.05, 0.1, 0.15, 0.2, 0.3, 0.4, 0.5):
         kept = agree = songs_with = 0
         counts = []
         for song_id, v in rated.items():
-            scores = np.asarray(records[song_id]["scores"])
-            order = np.argsort(scores)[::-1][:TOP_STYLES]
-            styles = [classes[i] for i in order if scores[i] >= t]
+            styles = [style for style, score in top[song_id] if score >= t]
             counts.append(len(styles))
             kept += len(styles)
             agree += sum(parent(s) in v["tag_parents"] for s in styles)

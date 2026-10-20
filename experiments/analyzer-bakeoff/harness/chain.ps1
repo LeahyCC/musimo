@@ -6,6 +6,11 @@
 param(
     [string[]]$Steps = @('sample', 'deezer', 'build', 'analyse', 'score')
 )
+# powershell -File passes "-Steps a,b" as the single string 'a,b'. Split it here.
+$Steps = @($Steps | ForEach-Object { $_ -split ',' } | ForEach-Object { $_.Trim() } | Where-Object { $_ })
+$known = @('sample', 'deezer', 'build', 'analyse', 'essentia', 'score')
+$unknown = @($Steps | Where-Object { $known -notcontains $_ })
+if ($unknown) { throw "unknown step(s): $($unknown -join ', '); expected $($known -join ', ')" }
 $repo = (Resolve-Path "$PSScriptRoot/../../..").Path
 $here = Join-Path $repo 'experiments/analyzer-bakeoff'
 $runtime = Join-Path $repo 'runtime/analyzer-bakeoff'
@@ -17,18 +22,30 @@ New-Item -ItemType Directory -Force "$runtime/out", "$runtime/logs" | Out-Null
 $compose = @('compose', '-f', "$here/compose.yaml", '-p', 'musimo-analyzer-bakeoff')
 
 function Log([string]$text) { "$(Get-Date -Format o) $text" | Add-Content "$runtime/logs/chain.log" }
+# Native commands do not stop a script when they fail. Log the exit and stop, so a later step
+# never runs on a stale sample or a stale image.
+function Check([string]$what) {
+    if ($LASTEXITCODE -ne 0) {
+        Log "$what failed, exit $LASTEXITCODE"
+        throw "$what failed with exit $LASTEXITCODE"
+    }
+}
 
 if ($Steps -contains 'sample') {
     # The trial stack holds the DB copy and has no route out. Read it, then stop it again.
     $trial = @('compose', '-f', "$repo/runtime/tempo-trial/compose.yaml", '-p', 'musimo-tempo-trial',
         '--env-file', "$repo/runtime/tempo-trial/.env")
     docker @trial up -d --wait musimo
+    Check 'trial stack start'
     try {
         docker cp "$here/harness/export_sample.py" musimo-tempo-trial-musimo-1:/tmp/export_sample.py
+        Check 'copy export script'
         docker exec musimo-tempo-trial-musimo-1 python -I /tmp/export_sample.py /tmp/sample.json
+        Check 'export sample'
         docker cp musimo-tempo-trial-musimo-1:/tmp/sample.json "$runtime/sample.json"
-        docker exec musimo-tempo-trial-musimo-1 rm -f /tmp/export_sample.py /tmp/sample.json
+        Check 'copy sample out'
     } finally {
+        docker exec musimo-tempo-trial-musimo-1 rm -f /tmp/export_sample.py /tmp/sample.json
         docker @trial stop musimo
     }
     Log 'sample exported'
@@ -36,11 +53,13 @@ if ($Steps -contains 'sample') {
 if ($Steps -contains 'deezer') {
     & $uv run --no-project --python 3.12 python -I "$here/harness/deezer_bpm.py" `
         "$runtime/sample.json" "$runtime/out/deezer.json" *> "$runtime/logs/deezer.log"
-    Log "deezer exit $LASTEXITCODE"
+    Check 'deezer'
+    Log 'deezer done'
 }
 if ($Steps -contains 'build') {
     docker @compose build beat-this essentia *> "$runtime/logs/build.log"
-    Log "build exit $LASTEXITCODE"
+    Check 'build'
+    Log 'build done'
 }
 if ($Steps -contains 'analyse' -or $Steps -contains 'essentia') {
     $jobs = @(
@@ -56,10 +75,12 @@ if ($Steps -contains 'analyse' -or $Steps -contains 'essentia') {
         $service, $name, $arguments = $job
         Log "start $name"
         docker @compose run --rm --name "bakeoff-$name" $service @arguments *> "$runtime/logs/$name.log"
-        Log "end $name exit $LASTEXITCODE"
+        Check $name
+        Log "end $name"
     }
 }
 if ($Steps -contains 'score') {
     & $uv run --no-project --python 3.12 --with numpy python -I "$here/harness/score.py" $runtime 0.15
-    Log "score exit $LASTEXITCODE"
+    Check 'score'
+    Log 'score done'
 }

@@ -33,7 +33,10 @@ def main() -> None:
         target = out_dir / f"{song_id}.json"
         if target.exists():
             continue
-        song = songs[song_id]
+        song = songs.get(song_id)
+        if song is None:
+            write_json(target, {"song_id": song_id, "status": "failed", "error": "not in sample"})
+            continue
         job = recipe.Job(
             song_id=song_id,
             recipe=recipe.RECIPE,
