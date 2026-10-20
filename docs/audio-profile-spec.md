@@ -1,6 +1,6 @@
 # Song characteristics
 
-Status: implemented, 15 October 2026, with both recipe settings empty. The ranker, schema 9, the lease, the worker image and the gates are in the code. The `tempo-energy-v1` 100-song resource run happened on 19 October, on a copy of the database ([results](#100-song-run-19-october-2026)); it found librosa's tempo too coarse, and the [analyser bake-off](analyzer-bakeoff.md) recommends Beat This! in its place. The scripted listen, the embedding listen and a full-library scan are outstanding, so no recipe is switched on and the live library has not been analysed. The implementation handoff is [todo/audio-profile-handoff.md](../todo/audio-profile-handoff.md). It is the approach left open by [the music-bot plan](ai-music-plan.md) after the [genre listen](genre-label-review.md). The held-out labels from that listen stay sealed. They are not a tuning set for anything described here. The rest of this document is the contract the code was built to; where the implementation settled a detail the contract left open, the paragraph says so.
+Status: implemented, 15 October 2026, with both recipe settings empty. The ranker, schema 9, the lease, the worker image and the gates are in the code. The `tempo-energy-v1` 100-song resource run happened on 19 October, on a copy of the database ([results](#100-song-run-19-october-2026)); it found librosa's tempo too coarse, and the [analyser bake-off](analyzer-bakeoff.md) recommends Beat This! in its place. On 20 October that became [`tempo-beat-v1`](#tempo-beat-v1), with a graphics-card worker, the [Song analysis page](#song-analysis-page) and [half and double tempo](#half-and-double-tempo) in Octive. The listen on that page, the embedding listen and a full-library scan are outstanding, so no recipe is switched on and the live library has not been analysed. The implementation handoff is [todo/audio-profile-handoff.md](../todo/audio-profile-handoff.md). It is the approach left open by [the music-bot plan](ai-music-plan.md) after the [genre listen](genre-label-review.md). The held-out labels from that listen stay sealed. They are not a tuning set for anything described here. The rest of this document is the contract the code was built to; where the implementation settled a detail the contract left open, the paragraph says so.
 
 The bot keeps its current shape. Ollama emits a filter plan. `MusicBot.resolve` chooses real song ids from the player view. The model never emits song ids, SQL, or paths. This spec gives that resolver measured tempo, measured energy, and one sound vector, stored in the existing SQLite file.
 
@@ -58,7 +58,7 @@ CREATE TABLE audio_profile (
 CREATE INDEX audio_profile_recipe ON audio_profile(recipe, status);
 ```
 
-`tempo_bpm` is beats per minute, null when this recipe does not measure tempo. `energy` is the mean RMS of the analysed sections, linear amplitude, null when this recipe does not measure energy. `vector` is little-endian float32, L2-normalised, length `dim * 4`. `dim` 0 and a null vector mean this recipe has no vector. A done row whose byte length disagrees with `dim` is ignored, the same as a failed row. Failed and skipped rows have a null vector and null measurements.
+`tempo_bpm` is beats per minute, null when this recipe does not measure tempo, or, for a recipe that allows it (`tempo-beat-v1`), when the tempo was measured but is not sure enough to use. `energy` is the mean RMS of the analysed sections, linear amplitude, null when this recipe does not measure energy. `vector` is little-endian float32, L2-normalised, length `dim * 4`. `dim` 0 and a null vector mean this recipe has no vector. A done row whose byte length disagrees with `dim` is ignored, the same as a failed row. Failed and skipped rows have a null vector and null measurements.
 
 There is no genre column and no mood column.
 
@@ -88,6 +88,46 @@ The 100 were the 98 newest files from `scripts/enqueue_audio_trial.py`, plus one
 
 The run found that the tempo is too coarse to use. `librosa.feature.rhythm.tempo` at this hop can only return 60 × 22050 / 512 / n for a whole number n, so the 99 songs got 12 distinct values (86.1, 92.3, 95.7, 99.4, 112.3, 117.5, 123.0, 129.2, 136.0, 143.6, 152.0 and 161.5) and 53 of them read exactly 143.6. Trance at 138 and techno at 145 cannot be told apart. The [analyser bake-off](analyzer-bakeoff.md) measured Beat This! as the replacement; adopting it is a new recipe id. Energy was not checked.
 
+### `tempo-beat-v1`
+
+Decided 20 October 2026. Beat This! 1.1.0 (CPJKU, MIT code and weights), checkpoint `final0`, SHA-256 `8c328b45f59d8dd3dff219253ff6a8d6482be57d0133a29140e2febbf8eb8331`, without its DBN. It is the [bake-off's](analyzer-bakeoff.md#method) method exactly, nothing retuned. Every rule below is part of the id; changing one is a new recipe.
+
+```
+song ──► skip?  podcast / podcasts / spoken word genre       → skipped
+         │      shorter than 60 s                            → skipped
+         ▼
+       decode four windows (FFmpeg, mono, 22,050 Hz)
+         10 s at 10% ─┐
+         10 s at 50% ─┼─ of (duration - 10)
+         10 s at 90% ─┘
+         60 s centred on the middle
+         ▼
+       Beat This! beats per window ──► steady-gap BPM per window
+         ▼
+       song BPM = median of the section BPMs
+       sure     = 2+ sections gave a BPM
+                  and that median is within 2 BPM of the 60 s window
+                  and it is 200 BPM or less
+         ▼
+       done row: energy always; tempo_bpm only when sure
+```
+
+- **Windows.** Three 10-second sections at 10, 50 and 90 percent of `duration - 10`, as in `tempo-energy-v1`, and one 60-second window centred on the middle of the song. The decoder rules of `tempo-energy-v1` stay: FFmpeg seeks, a window more than 100 ms short is rejected, M4A and the rest of the MOV family use `-seek_streams_individually 0`, the deadline is 30 seconds and FFmpeg runs one thread. Samples are mono float32 at 22,050 Hz; Beat This! resamples them itself.
+- **BPM of a window.** The model's beat times. Fewer than 4 beats gives no BPM. The gaps between beats, the median gap, and the "steady" gaps within 12 percent of that median. Fewer than 3 steady gaps gives no BPM. Otherwise BPM is 60 divided by the mean steady gap, rounded to two decimals.
+- **BPM of the song.** The median of the section BPMs that exist. The 60-second window is the check, not the answer.
+- **Sure.** At least two sections gave a BPM, their median is within 2 BPM of the 60-second window's BPM, and the median is 200 BPM or less. Anything else is unsure. On 100 fresh songs 79 were sure and 60 of those matched Deezer; the rule does not catch half or double time (13 of the 79), which is why the bot [allows for it](#half-and-double-tempo).
+- **Energy.** The mean RMS of the windows that decoded. A window's RMS is the mean over frames of 2,048 samples, hop 512, of the square root of the mean square. Each window counts once. Like `tempo-energy-v1` it is signal amplitude, not a validated perceived intensity.
+- **A done row.** Needs energy, so at least one window decoded. `tempo_bpm` is set only when the reading is sure. **An unsure song is a done row with energy and a null tempo.** It answers energy requests, it does not answer tempo requests, and the bot counts it as not covered for tempo. This changes the `tempo-energy-v1` rule that "a done row requires both numbers", on purpose, for this recipe only; `tempo-energy-v1` still requires both. A file where no window decodes is failed with the reason in `detail`.
+- **`detail`.** A JSON object, so the [page](#song-analysis-page) can show the reading and play the exact sections: `{"bpm": 142.31 or null, "sure": true, "long": 142.4 or null, "sections": [[start, bpm or null], ...], "long_start": 120.0, "why": ""}`. `bpm` is the song BPM before the sure check, so an unsure song still shows what was read. `why` says why it is unsure ("1 section", "sections and 60 s disagree", "over 200 BPM"). It stays under the 400-character limit.
+- **Skips.** Decided from the lease before any decoding, so they cost nothing. The genre rule of `tempo-energy-v1` stays: `podcast`, `podcasts` or `spoken word` in the genre or the genres list. New: **a file shorter than 60 seconds is skipped**, with the detail "shorter than the 60 s check window". Under 60 seconds the check window is the whole file and the sections sit inside it, so the sure rule would be comparing the audio with itself. Measured on the 20 October copy of the database (50,510 files): 1,711 files are under 60 seconds. They include 782 of the 786 "A State of Trance" radio clips under 90 seconds that every analyser read a beat from (the other four are 61 to 66 second mixed outros, which are music), and 929 other short files: skits, intros, interview snippets and short live banter. 154 files carry a podcast or spoken-word genre. A skipped song has no tempo and no energy, so a voice clip cannot turn up in a "calm" playlist either.
+- **Device.** The worker picks CUDA when it finds a usable graphics card and the CPU otherwise, once at start, and reports which in its status. The numbers are the same on both; only the speed differs (0.61 s a song on the RTX 5080, 5.6 s on one CPU core, in the bake-off).
+
+Known misses, from the bake-off: live recordings with talking (The Doors, Phish, Slipknot live) and half or double readings, which only a listen can settle. Several half readings look like Deezer doubling hip-hop, so Deezer is not the truth either.
+
+#### 100-song run on the graphics card, 20 October 2026
+
+Pending. Filled in by the trial-stack run in this change.
+
 ### Embedding recipe
 
 Unnamed. The id is chosen when four things exist together: a checkpoint, a licence that Musimo may ship, a written sampling recipe, and a passed 100-song neighbour listen. The October labels are not that listen.
@@ -98,17 +138,43 @@ The row stores one L2-normalised float32 vector. Tempo and energy stay on `tempo
 
 ## Analysis worker
 
-The worker contract in [the music-bot plan](ai-music-plan.md) stands. One optional Linux container, read-only music, one song at a time, 2 GB RAM, one CPU, no swap. FastAPI owns SQLite. The worker leases through the internal API and never opens the database. Expired leases are dropped. A late or duplicate result cannot replace a newer row. File size and modification time are rechecked before commit. A busy bot request prevents new leases; it does not pause or cancel a job already running. Playback stays usable.
+The worker contract in [the music-bot plan](ai-music-plan.md) stands, with the caps made settings [below](#colins-decisions-of-20-october-2026). One optional Linux container, read-only music, by default one song at a time, 2 GB RAM, one CPU, no swap. FastAPI owns SQLite. The worker leases through the internal API and never opens the database. Expired leases are dropped. A late or duplicate result cannot replace a newer row. File size and modification time are rechecked before commit. A busy bot request prevents new leases; it does not pause or cancel a job already running. Playback stays usable.
 
 The result body this spec adds is: `song_id`, `recipe`, `lease_token`, `size`, `mtime_ns`, `status`, `tempo_bpm`, `energy`, `dim`, `vector` (the little-endian float32 bytes, base64 in the JSON), `detail`. FastAPI rejects a result whose recipe, identity, lease, or vector length disagrees with the lease.
 
-Order of work, once a recipe is approved to run: the operator's chosen songs, then new library files, then the backlog. Implemented so far: `scripts/enqueue_audio_trial.py` queues newest files first and the lease hands them out in that order. Songs whose row for the file as it is now is failed or skipped wait behind every song not yet tried, so a limited run keeps reaching new songs; choosing particular songs is a later item, not in this change. Each committed row is readable. The bot uses them only after that recipe is the active one. A full-library scan waits on the listen below. At the trial's fuller CLAP rate of about 8 songs a minute, 44,070 tracks is on the order of four days at one song at a time. The tempo recipe should be faster. The trial measures the real rate before a full scan is started. The plan's rule stands: a model that does not fit the cap is a failed candidate, not a reason to raise the cap.
+Order of work, once a recipe is approved to run: the operator's chosen songs, then new library files, then the backlog. Implemented so far: `scripts/enqueue_audio_trial.py` and the [Song analysis page](#song-analysis-page) queue newest files first and the lease hands them out in that order. Songs whose row for the file as it is now is failed or skipped wait behind every song not yet tried, so a limited run keeps reaching new songs; choosing particular songs is a later item, not in this change. Each committed row is readable. The bot uses them only after that recipe is the active one. At the trial's fuller CLAP rate of about 8 songs a minute, 44,070 tracks is on the order of four days at one song at a time. The trial measures the real rate before a full scan is started.
+
+#### Colin's decisions of 20 October 2026
+
+This section used to say "a model that does not fit the cap is a failed candidate, not a reason to raise the cap", and the page used to have no scan button. Colin overruled both on 20 October 2026:
+
+- **Caps are settings, not a fixed rule.** The defaults are the safe ones for anyone else running Musimo: CPU, one worker container, one decoder, one core, 2 GB, no swap. A graphics card, more decoders, more cores and more memory are opt-in. Colin's machine may use up to 10 GB for analysis.
+- **The page has a scan button.** "Measure whole library" queues every song lacking a row, after a confirmation that names the count and the time estimate. Switching the recipe on for Octive is still a separate action, after the listen.
+
+#### `tempo-beat-v1` worker
+
+The same contract: optional containers, read-only music, the lease API, never the database, size and modification time rechecked before commit, a busy bot request holds back new leases. What changed:
+
+```
+           ┌─ decoder 1: lease ─► check file ─► FFmpeg x4 ─┐
+lease API ─┼─ decoder 2: lease ─► check file ─► FFmpeg x4 ─┼─► queue ─► one model ─► result
+           └─ decoder N ...                                ┘   (N)     (GPU or CPU)
+```
+
+- **Parallel decoding, one model.** `MUSIMO_WORKER_DECODERS` threads each lease a song, check it, decode its four windows and hand them to a queue that holds at most that many songs. One thread runs Beat This! on them in turn and posts the results. In the bake-off FFmpeg was 61 percent of the time on the graphics card, so decoding in parallel is where the speed is. Each song has its own lease, so a song never waits on the queue for long against its 180-second lease.
+- **More than one lease at once is safe.** Checked in `AudioProfiles.lease`: each lease is one `BEGIN IMMEDIATE` transaction under the store lock that picks one queued (or lapsed) row and marks it leased with its own token, so two decoders, or two worker containers, can never be handed the same song while a lease is current. A result must carry the current token, so a late result after a lapse is refused. `tests/test_audio_worker.py` covers concurrent leases.
+- **Compose profiles.** `analysis` starts `audio-worker`, the CPU image. `analysis-gpu` starts `audio-worker-gpu`, the CUDA image (about 11.6 GB, torch 2.7.1 built for CUDA 12.8, which the RTX 50 series needs), and asks Docker for the graphics card. Run one or the other. The checkpoint is downloaded while the image is built and checked against its SHA-256, so the containers never need the internet.
+- **The caps** come from `.env`, read by Compose: `MUSIMO_WORKER_CPUS`, `MUSIMO_WORKER_MEMORY` and `MUSIMO_WORKER_DECODERS`. The CPU profile defaults to 1, `2g` and 1. The GPU profile defaults to 4, `4g` and 4. Swap stays off (`memswap_limit` equals the memory cap). See [settings](settings.md#song-analysis-worker).
+- **Status.** Each lease call carries the worker's device, graphics card name, decoders and memory cap. The app keeps the last one in memory for the page; it is not stored. A worker idle with nothing queued still asks every 15 seconds, so "last seen" stays current.
+- **Pause.** The `audio_analysis_paused` setting. While it is on the lease hands out nothing; a song already leased finishes. The queue is kept.
+
+`tempo-energy-v1` keeps its own image (`worker/Dockerfile`), which is no longer in a Compose profile. Its rows stay readable.
 
 ## How the bot ranks
 
 `SearchPlan` carries the fields below from this change, all empty by default, so one schema exists. While a recipe's setting is empty the prompt keeps today's refusal, word for word: mood, energy, tempo, instruments, and vocals are `unsupported`, and they are not approximated with genres. The service enforces it too: a search plan that filled one of those fields anyway becomes `unsupported` with the same explanation and the fields cleared. `system_prompt` in `backend/library/music_bot.py` builds the prompt from the active recipes.
 
-When `tempo-energy-v1` is active, the plan may carry:
+When a scalar recipe (`tempo-energy-v1` or `tempo-beat-v1`) is active, the plan may carry:
 
 - `tempo`: `slow`, `medium`, `fast`, or empty.
 - `tempo_min` and `tempo_max`: BPM bounds. Set from an explicit BPM in the request. A band and a bound can both be set. Both are hard.
@@ -160,6 +226,53 @@ Every library search has a generation seed, an integer from 0 to `2**53 - 1`, so
 
 Left as they are, by the same decision: there is no exact "my N most played" mode and no "less played" mode; songs in the queue or playing now are not demoted; a request that names several artists samples their songs uniformly and does not balance the artists. Duration words are unchanged for now. A later pass settles "about", "under" and "at least". Colin has decided that "about N minutes" will mean the whole-track total closest to N, never more than 5 minutes off, and otherwise a shortfall. That is a decision, not built.
 
+### Half and double tempo
+
+Decided 20 October 2026, for every scalar recipe. A beat tracker can lock on to every other beat or to every half beat, so a song felt at 140 may read 70, and the other way round. Energy is the tie-breaker the bot has, so it is used only where it agrees.
+
+```
+"fast" (140+)    song reads 72, energy high    72 x 2 = 144 fits, high energy  → octave match
+"fast" (140+)    song reads 72, energy low     144 fits, but low energy        → out
+"slow" (<90)     song reads 168, energy low    168 / 2 = 84 fits, low energy   → octave match
+"120 bpm"        song reads 61, energy medium  122 fits, medium energy         → octave match
+```
+
+- **Tempo words and BPM ranges.** A song matches **directly** when its BPM fits every tempo gate in the plan (`tempo`, `tempo_min`, `tempo_max`). If not, it is an **octave match** when its BPM doubled or halved fits all of them **and** its energy band agrees with that reading: doubled (the song is really faster than it read) needs medium or high energy, halved (really slower) needs low or medium. With no energy bands yet there are no octave matches. Every other gate, energy included, still applies as a hard gate.
+- **Direct matches rank first.** The library draw runs on the direct matches, then on the octave matches, and the walk takes them in that order, so an octave match is only used when the direct ones run out or are capped. A refinement keeps the person's own order, as before.
+- **The reply says so.** When the result holds octave matches the summary adds "N of these matched at half or double their measured tempo."
+- **"Faster" and "slower" than this.** When the song and the reference song are in the same energy band, the song's BPM is first brought into the reference song's octave: doubled or halved until it is within half an octave of the reference (from the reference / √2 up to, not including, the reference × √2). Then it is compared. So a song at exactly double the reference's tempo, with the same energy, is the same pace and is neither faster nor slower. When the bands differ, or there are no bands, the BPM is compared as it is. A song that is in only because of that folding counts as an octave match: it ranks after the direct ones and is counted in the sentence.
+- **Unsure tempo.** With `tempo-beat-v1`, a done row with a null tempo is outside every tempo gate and counted with the songs "skipped without a measurement". An energy-only request still uses it.
+
+`validate` accepts direct and octave matches alike, so a proposal built on an octave match still plays.
+
+## Song analysis page
+
+`/library/analysis`, linked from Server settings under Music bot. It is where a person measures songs, checks them by ear and switches the recipe on for Octive. It always works on `tempo-beat-v1`. It works at 390 px wide and uses the app's settings layout, buttons and themes.
+
+```
+┌ Song analysis ──────────────────────────────────────────────┐
+│ 1  Octive uses tempo [off]   Worker: graphics card, seen 4 s │
+│    done 98 · unsure 21 · skipped 2 · failed 0 · queue 0      │
+├─────────────────────────────────────────────────────────────┤
+│ 2  Measure 100 songs   [Measure 100]   ████████░░ 82 of 100  │
+├─────────────────────────────────────────────────────────────┤
+│ 3  Listen   fastest · slowest · loudest · quietest · unsure  │
+│    Song - Artist   144 BPM  high   [10%] [50%] [90%]         │
+│    "Tempo can read half or double ..."                       │
+├─────────────────────────────────────────────────────────────┤
+│ 4  [Turn on for Octive]                                      │
+│    Measure whole library: 48,700 songs, about 8 h on the GPU │
+│    [Measure whole library]  [Pause]   progress · ETA         │
+└─────────────────────────────────────────────────────────────┘
+```
+
+1. **Status.** The on/off switch for Octive, which is the existing `audio_scalar_recipe` setting set to `tempo-beat-v1` or empty. Turning it off keeps every row. The worker: device, graphics card, decoders, memory cap and when it was last seen. A worker not seen in the last minute is "not running", and the page shows the one command that starts it, for the CPU or the graphics card. With no `MUSIMO_ANALYSIS_TOKEN` it says to set one first. Counts for the library as it is now: done (sure tempo), unsure, skipped, failed, waiting, plus the rate and time left while a run is going.
+2. **Measure 100 songs.** Queues the 98 newest songs without a row, one podcast-tagged song and one recording over 20 minutes, the shape of the 19 October trial, so the spoken-word skip and a long file are always in it. Progress counts the rows written since it was pressed. The app keeps that start time in memory, so a page reload keeps the progress and an app restart forgets it (the counts and the queue are in the database and stay).
+3. **Listen.** Groups of up to 10: fastest, slowest, loudest, quietest, and "check these": unsure songs, songs under 100 BPM with high energy and songs over 160 BPM with low energy, the likely half or double readings. Each row shows the BPM (or what was read, for an unsure song), the energy band and three buttons that each play the exact 10-second section that was measured. A plain note says tempo can read half or double and Octive allows for it. There are no thumbs or ratings; the listen is for the person to decide whether to switch it on.
+4. **Turn on and measure everything.** "Turn on for Octive" sets the setting. "Measure whole library" shows how many songs lack a row and a time estimate for the device in use: the rate of this machine's last run when there is one, otherwise the bake-off rate (0.61 s a song on the graphics card, 5.6 s on the CPU). It asks to confirm before queueing. Pause and resume, progress and time left.
+
+Routes, all under `/api/audio-analysis/` and same-origin like the rest of the app: `GET status`, `POST sample`, `POST all` (with `{"confirm": true}`; without it the answer is the count and nothing is queued), `POST pause` (`{"paused": true|false}`) and `GET listen`. The worker's lease routes are unchanged and still refuse a browser.
+
 ## Listen gate
 
 Implementation, automated validation, real-library listening/resource measurements, recipe activation and full-library scanning are separate milestones. Passing generated-audio tests does not establish recommendation quality or authorize activation. Production embeddings are absent. Tempo and energy share one scalar activation setting: if tempo passes but perceived-intensity checks fail, keep it off or separately implement and validate capability gating. Strict approximate/maximum/minimum duration modes, richer musical evidence and the V2 engine remain follow-on work in [issue #179](https://github.com/LeahyCC/musimo/issues/179).
@@ -168,17 +281,23 @@ Implementation, automated validation, real-library listening/resource measuremen
 
 The embedding recipe is activated after a separate 100-song neighbour listen. The page plays "more like this" results. If the recipe is text-aligned, the same listen includes the phrases "relaxed", "aggressive", and "sad piano", judged as playlists. Agreement between two models is not a pass. The October genre labels are not reused, and they are not the reason a checkpoint is rejected or kept for this job.
 
-A full scan of a recipe starts only after that recipe's listen has passed and the operator has turned it on. Coverage in the bot is whatever fraction is done. The reply says so.
+`tempo-beat-v1` is switched on after the listen on the [Song analysis page](#song-analysis-page), not after a full scan: the fastest, slowest, loudest, quietest and check-these groups of a 100-song measurement, each song heard at the sections that were measured. Activation is the switch on that page, the same setting as before. Turning it off keeps the rows.
+
+A full scan of `tempo-energy-v1` or an embedding recipe starts only after that recipe's listen has passed and the operator has turned it on. For `tempo-beat-v1` Colin decided on 20 October 2026 that the page may measure the whole library before or after the switch is on; its confirmation is the gate, and the rows do nothing until the switch is on. Coverage in the bot is whatever fraction is done. The reply says so.
 
 ## Licences
 
-| Piece                                                                     | Terms                                               | Use here                                                                                           |
-| ------------------------------------------------------------------------- | --------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
-| AudioMuse-AI, its ONNX exports, and its distilled CLAP (DCLAP) repository | AGPL-3.0                                            | Behaviour only. The DCLAP student weights and training code stay out.                              |
-| Essentia, and the MTG Essentia models AudioMuse replaced in v0.9.0        | Essentia is AGPL. Those models are CC BY-NC-SA 4.0. | Out.                                                                                               |
-| Original MusiCNN, as described in the AudioMuse v0.9.0 release note       | The note calls the model ISC.                       | Not a Musimo dependency. Any later use has to confirm the weight file's own licence before a scan. |
-| `laion/clap-htsat-unfused` at `8fa0f1c`                                   | Apache-2.0                                          | Candidate for the embedding listen. Not selected.                                                  |
-| librosa, for `tempo-energy-v1`                                            | ISC                                                 | The scalar recipe.                                                                                 |
+| Piece                                                                     | Terms                                                     | Use here                                                                                           |
+| ------------------------------------------------------------------------- | --------------------------------------------------------- | -------------------------------------------------------------------------------------------------- |
+| AudioMuse-AI, its ONNX exports, and its distilled CLAP (DCLAP) repository | AGPL-3.0                                                  | Behaviour only. The DCLAP student weights and training code stay out.                              |
+| Essentia, and the MTG Essentia models AudioMuse replaced in v0.9.0        | Essentia is AGPL. Those models are CC BY-NC-SA 4.0.       | Out.                                                                                               |
+| Original MusiCNN, as described in the AudioMuse v0.9.0 release note       | The note calls the model ISC.                             | Not a Musimo dependency. Any later use has to confirm the weight file's own licence before a scan. |
+| `laion/clap-htsat-unfused` at `8fa0f1c`                                   | Apache-2.0                                                | Candidate for the embedding listen. Not selected.                                                  |
+| librosa, for `tempo-energy-v1`                                            | ISC                                                       | The first scalar recipe.                                                                           |
+| Beat This! 1.1.0 code and the `final0` checkpoint                         | MIT (the README warns some training audio is copyrighted) | `tempo-beat-v1`. The checkpoint is downloaded at image build, not committed.                       |
+| torch, torchaudio, einops, rotary-embedding-torch                         | BSD, BSD, MIT, MIT                                        | `tempo-beat-v1` worker images.                                                                     |
+| soxr (Beat This! resampler)                                               | LGPL-2.1-or-later                                         | `tempo-beat-v1` worker images, as an unmodified shared library.                                    |
+| NVIDIA CUDA libraries in the torch cu128 wheels                           | NVIDIA's redistributable licence                          | The GPU worker image only. Built by the operator, not published.                                   |
 
 ## Acceptance
 
@@ -197,14 +316,21 @@ These are the checks the implementation carries, in `tests/test_music_bot.py`, `
 - `validate` rejects a proposal whose profile went stale.
 - The worker result is rejected when the file changed during the lease, or when the vector length disagrees with the recipe.
 - Worker peak memory, songs per minute, and warm resolve time are recorded the way the trial report records them, on the machine that will run the scan. Warm resolve of an audio request stays under 500 ms apart from Ollama.
+- `tempo-beat-v1` (`worker/tests/test_beat.py`, generated audio and a stand-in tracker): the steady-gap BPM and its 4-beat and 3-gap floors; the song BPM is the median of the sections; sure needs two sections, agreement with the 60 s window within 2 BPM and at most 200 BPM; an unsure song is done with energy and no tempo; podcast genres and files under 60 s are skipped before decoding; energy is the mean window RMS; a file where nothing decodes is failed; the decoders feed one model and every result goes back under its own lease. The real model on a click track runs inside the worker image.
+- A done `tempo-beat-v1` row may have a null tempo and must have energy; a done `tempo-energy-v1` row still needs both.
+- Two leases at once never get the same song.
+- Half and double (`tests/test_music_bot_audio.py`): a song at half the asked tempo with high energy is an octave match for "fast", with low energy it is out; the same for "slow" at double with low energy; a BPM range works the same way; direct matches come before octave matches; the summary counts the octave matches; "faster than this" folds a same-band song into the seed's octave and compares the raw BPM when the bands differ; an unsure song is not covered for tempo but is for energy; `validate` accepts an octave match.
+- The page's routes (`tests/test_audio_analysis_api.py`): status counts, worker last seen and device, the 100-song sample with a podcast and a long recording, "measure all" queues nothing without confirmation, pause holds back the lease, the listen groups and the ambiguous list.
+- The page (`frontend/src/features/analysis/*.test.ts` and `frontend/e2e/song-analysis.spec.ts` on the desktop and phone projects, routes mocked).
 
 ## Build order
 
 1. **Ranker, no audio.** Done. The 5,000 ceiling is gone and the artist cap applies. Tag matches were first ordered by play count and last played; since 15 October 2026 a library search draws among them under a seed instead (see [Broad selection](#broad-selection)). "More like this" stays tag-based until an embedding recipe exists.
 2. **Schema 9 and `tempo-energy-v1` trial.** The code is done: the tables, the lease, the worker image, the search-plan fields and the prompt switch. The 100-song resource run happened on 19 October on a copy of the database ([results](#100-song-run-19-october-2026)) and showed the tempo is too coarse. The scripted listen has not happened, and the recipe is not turned on. The next step is a Beat This! recipe, measured in the [analyser bake-off](analyzer-bakeoff.md).
-3. **Embedding listen.** Not started. The code takes a registered embedding recipe and a text encoder, which only tests register; no candidate is named.
-4. **Full scan of an activated recipe.** Not started. `scripts/enqueue_audio_trial.py --all` is that scan, and it stops to ask before queueing anything.
+3. **`tempo-beat-v1`, the page and half and double.** Code done on 20 October 2026, not merged. The 100-song GPU run on the trial copy is [above](#100-song-run-on-the-graphics-card-20-october-2026). Next: Colin's listen on the page, then the switch.
+4. **Embedding listen.** Not started. The code takes a registered embedding recipe and a text encoder, which only tests register; no candidate is named.
+5. **Full scan.** Not started. "Measure whole library" on the page, or `scripts/enqueue_audio_trial.py --all`, is that scan, and both stop to ask before queueing anything.
 
 ## Where the code is
 
-`backend/core/audio_recipes.py` is the recipe registry and the settings check. `backend/core/store.py` holds schema 9 and drops a removed song's rows. `backend/library/audio_profile.py` reads and writes the rows, runs the lease and the queue, works out the bands, and scores cosine. `backend/api/audio_worker_api.py` is the internal lease. `backend/library/music_bot.py` holds `SearchPlan`, `system_prompt`, `AudioGates` and the ranker in `MusicBot.resolve`. `backend/library/selection.py` holds the seeded draw and the refinement order. `worker/` is the worker image, with the recipe in `audio_worker/recipe.py` and its own lock. `scripts/enqueue_audio_trial.py` is the only way to queue work. The player view remains the catalogue the resolver walks. No second database is added.
+`backend/core/audio_recipes.py` is the recipe registry and the settings check. `backend/core/store.py` holds schema 9 and drops a removed song's rows. `backend/library/audio_profile.py` reads and writes the rows, runs the lease and the queue, works out the bands, and scores cosine. `backend/api/audio_worker_api.py` is the internal lease. `backend/library/music_bot.py` holds `SearchPlan`, `system_prompt`, `AudioGates` and the ranker in `MusicBot.resolve`. `backend/library/selection.py` holds the seeded draw and the refinement order. `worker/` holds both worker images: `Dockerfile` with `tempo-energy-v1` in `audio_worker/recipe.py`, and `beat.Dockerfile` (built twice, CPU and CUDA) with `tempo-beat-v1` in `audio_worker/beat.py` and the decoder pipeline in `audio_worker/pipeline.py`. `backend/library/audio_analysis.py` is the page's service (status, sample, listen groups) and `backend/api/audio_analysis_api.py` its routes; `frontend/src/features/analysis/` is the page. `scripts/enqueue_audio_trial.py` and the page are the only ways to queue work. The player view remains the catalogue the resolver walks. No second database is added.
