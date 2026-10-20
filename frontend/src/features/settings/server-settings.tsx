@@ -103,7 +103,7 @@ const controls: {
   {
     key: 'audio_scalar_recipe',
     label: 'Tempo and energy recipe',
-    help: 'Empty means audio analysis is off and the bot answers from tags alone. After the listening check, the analysis recipe id goes here.',
+    help: 'Empty means audio analysis is off and the bot answers from tags alone. Song analysis below measures songs and switches tempo-beat-v1 on here.',
     section: 'music-bot',
     optional: true,
   },
@@ -487,6 +487,19 @@ export function SettingsPage() {
           renderRow(control),
           control.key === 'ollama_url' ? ollamaTest : null,
         ])}
+      {id === 'music-bot' && (
+        <SettingsBlock className="flex flex-wrap items-center gap-x-[12px] gap-y-[6px]">
+          <Link
+            to="/library/analysis"
+            className="font-medium underline coarse:min-h-11 coarse:content-center"
+          >
+            Song analysis
+          </Link>
+          <p className="text-small text-muted">
+            Measure tempo and energy, listen to the results, and switch them on for Octive.
+          </p>
+        </SettingsBlock>
+      )}
       {id === 'library' && (
         <>
           <LibraryPanel />

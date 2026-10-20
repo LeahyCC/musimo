@@ -413,6 +413,12 @@ export const settingsSchema = z.object({
     origin: 'default',
     locked: false,
   }),
+  // The Song analysis page's pause. Older servers do not send it.
+  audio_analysis_paused: field(z.boolean()).default({
+    value: false,
+    origin: 'default',
+    locked: false,
+  }),
   library_label: field(z.string()),
   output_format: field(z.enum(['original', 'm4a', 'opus', 'mp3'])),
   concurrency: field(z.number()),
@@ -456,6 +462,95 @@ export const settingsSchema = z.object({
 })
 export type Settings = z.infer<typeof settingsSchema>
 export type SettingKey = keyof Settings
+
+// The Song analysis page (docs/audio-profile-spec.md, "Song analysis page").
+export const analysisWorkerSchema = z.object({
+  version: z.string(),
+  device: z.enum(['cuda', 'cpu', '']),
+  gpu: z.string(),
+  decoders: z.number(),
+  memory_limit: z.number().nullable(),
+  cpus: z.number().nullable(),
+  note: z.string(),
+  seen_at: z.string(),
+  seconds_ago: z.number(),
+  running: z.boolean(),
+})
+export const analysisStatusSchema = z.object({
+  recipe: z.string(),
+  active: z.boolean(),
+  active_recipe: z.string(),
+  paused: z.boolean(),
+  token_configured: z.boolean(),
+  worker: analysisWorkerSchema.nullable(),
+  counts: z.object({
+    library: z.number(),
+    done: z.number(),
+    unsure: z.number(),
+    skipped: z.number(),
+    failed: z.number(),
+    waiting: z.number(),
+    leased: z.number(),
+    lacking: z.number(),
+  }),
+  rate: z.object({
+    songs_per_minute: z.number().nullable(),
+    run_songs: z.number(),
+    running: z.boolean(),
+  }),
+  eta_seconds: z.number().nullable(),
+  estimate: z.object({
+    device: z.string(),
+    seconds_per_song: z.number(),
+    source: z.enum(['measured', 'bake-off']),
+    lacking: z.number(),
+    whole_library_seconds: z.number(),
+  }),
+  batch: z
+    .object({
+      kind: z.enum(['sample', 'all']),
+      total: z.number(),
+      measured: z.number(),
+      started_at: z.string(),
+    })
+    .nullable(),
+})
+export type AnalysisStatus = z.infer<typeof analysisStatusSchema>
+export const analysisQueueSchema = z.object({
+  queued: z.number(),
+  waiting: z.number(),
+  lacking: z.number().optional(),
+  needs_confirmation: z.boolean().optional(),
+})
+export const analysisSongSchema = z.object({
+  id: z.string(),
+  title: z.string(),
+  artist: z.string(),
+  album: z.string(),
+  duration: z.number().nullable(),
+  bpm: z.number().nullable(),
+  reading: z.number().nullable(),
+  check: z.number().nullable(),
+  sure: z.boolean(),
+  why: z.string(),
+  energy: z.number(),
+  band: z.enum(['low', 'medium', 'high']).nullable(),
+  sections: z.array(z.number()),
+})
+export type AnalysisSong = z.infer<typeof analysisSongSchema>
+export const analysisListenSchema = z.object({
+  recipe: z.string(),
+  measured: z.number(),
+  ambiguous_total: z.number(),
+  groups: z.object({
+    fastest: z.array(analysisSongSchema),
+    slowest: z.array(analysisSongSchema),
+    loudest: z.array(analysisSongSchema),
+    quietest: z.array(analysisSongSchema),
+    ambiguous: z.array(analysisSongSchema),
+  }),
+})
+export type AnalysisListen = z.infer<typeof analysisListenSchema>
 
 export const botModelsSchema = z.object({ models: z.array(z.string()), elapsed_ms: z.number() })
 export const botPlanSchema = z.object({

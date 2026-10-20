@@ -11,6 +11,7 @@ import {
   useSearch,
 } from '@tanstack/react-router'
 
+import { SongAnalysisPage } from '../features/analysis/song-analysis'
 import { DiagnosticsPage } from '../features/diagnostics/diagnostics'
 import { DownloadsPage } from '../features/downloads/downloads'
 import { HomePage } from '../features/home/home'
@@ -234,6 +235,13 @@ const libraryPlaylistRoute = createRoute({
     return <LibraryScreen view="playlists" playlistId={playlistId} />
   },
 })
+// Song analysis: measure tempo and energy, listen, and switch it on for Octive. Linked from Server
+// settings under Music bot.
+const libraryAnalysisRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/library/analysis',
+  component: SongAnalysisPage,
+})
 const nowPlayingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/now-playing',
@@ -283,6 +291,7 @@ export const router = createRouter({
     libraryTracksRoute,
     libraryPlaylistsRoute,
     libraryPlaylistRoute,
+    libraryAnalysisRoute,
     nowPlayingRoute,
     downloadsRoute,
     settingsRoute,

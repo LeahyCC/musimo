@@ -292,6 +292,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 "",
                 "search",
                 "library",
+                "library/analysis",
                 "now-playing",
                 "music-bot",
                 "downloads",
