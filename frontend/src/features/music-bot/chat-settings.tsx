@@ -38,12 +38,21 @@ export function ChatSettings({ petState }: { petState: PetState }) {
       className="flex min-h-0 flex-1 flex-col gap-[14px] overflow-y-auto p-[14px]"
       data-bot="settings"
     >
-      <section aria-labelledby="bot-set-model" className="grid shrink-0 gap-[10px]">
+      {/* Model names have no spaces, so an auto grid column grows to the longest one and pushes
+          every row past the panel on a phone. minmax(0,1fr) holds the column to the panel. */}
+      <section
+        aria-labelledby="bot-set-model"
+        className="grid shrink-0 grid-cols-[minmax(0,1fr)] gap-[10px]"
+      >
         <h3 id="bot-set-model" className="m-0 text-small font-[550]">
           Model
         </h3>
         {models.length > 0 ? (
-          <div role="radiogroup" aria-labelledby="bot-set-model" className="grid gap-[6px]">
+          <div
+            role="radiogroup"
+            aria-labelledby="bot-set-model"
+            className="grid grid-cols-[minmax(0,1fr)] gap-[6px]"
+          >
             {models.map((model) => {
               const on = model === chat.model
               return (
@@ -60,9 +69,9 @@ export function ChatSettings({ petState }: { petState: PetState }) {
                     checked={on}
                     disabled={chat.choosingModel || lockedModel}
                     onChange={() => chat.chooseModel(model)}
-                    className="m-0 accent-[var(--color-accent)]"
+                    className="m-0 shrink-0 accent-[var(--color-accent)]"
                   />
-                  <span className="flex-1">{model}</span>
+                  <span className="min-w-0 flex-1 [overflow-wrap:anywhere]">{model}</span>
                 </label>
               )
             })}

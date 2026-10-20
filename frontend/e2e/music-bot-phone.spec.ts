@@ -190,6 +190,31 @@ for (const layout of ['classic', 'room'] as const)
         expect(await page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBe(0)
       })
 
+    test('Chat settings keeps long model names inside the screen', async ({ page }) => {
+      await page.setViewportSize({ width: 390, height: 844 })
+      await fixtures(page, layout)
+      // Ollama names have no spaces to break at, and these are longer than a phone is wide.
+      const models = ['fixture', 'hauhau-qwen38-27b-aggressive:latest', `${'a'.repeat(60)}:latest`]
+      await page.route('**/api/music-bot/models', (route) =>
+        route.fulfill({ json: { models, elapsed_ms: 2 } }),
+      )
+      await page.goto('/music-bot')
+      await page.getByRole('button', { name: 'Chat settings', exact: true }).tap()
+      const group = page.getByRole('radiogroup', { name: 'Model' })
+      await expect(group.getByRole('radio')).toHaveCount(models.length)
+      for (const row of await group.locator('label').all()) {
+        const r = await rect(row)
+        expect(r.x).toBeGreaterThanOrEqual(0)
+        expect(r.x + r.width).toBeLessThanOrEqual(390)
+      }
+      // No sideways scroll in the panel either.
+      expect(
+        await page
+          .locator('[data-bot="settings"]')
+          .evaluate((node) => node.scrollWidth - node.clientWidth),
+      ).toBe(0)
+    })
+
     test('the on-screen keyboard lifts the box, takes the bars away and keeps the newest message in view', async ({
       page,
     }) => {
