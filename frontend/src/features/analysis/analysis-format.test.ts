@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { AnalysisSong } from '../../api'
 import {
   clock,
+  estimateLine,
   gigabytes,
   percent,
   roughly,
@@ -101,5 +102,23 @@ describe('song analysis wording', () => {
     expect(tempoText(song({ bpm: null, reading: null, sure: false }))).toBe('no tempo')
     expect(clock(19.6)).toBe('0:19')
     expect(clock(171)).toBe('2:51')
+  })
+
+  it('gives each device its time and says where the speed came from', () => {
+    expect(
+      estimateLine('cuda', {
+        seconds_per_song: 0.6,
+        source: 'trial',
+        whole_library_seconds: 30559,
+      }),
+    ).toBe('About 8 h 29 min on the graphics card (0.60 s a song, from the trial on your library).')
+
+    expect(
+      estimateLine('cpu', {
+        seconds_per_song: 5.6,
+        source: 'measured',
+        whole_library_seconds: 284800,
+      }),
+    ).toBe('About 79 h on the CPU (5.6 s a song, measured on this machine).')
   })
 })

@@ -477,6 +477,11 @@ export const analysisWorkerSchema = z.object({
   seconds_ago: z.number(),
   running: z.boolean(),
 })
+const analysisDeviceEstimateSchema = z.object({
+  seconds_per_song: z.number(),
+  source: z.enum(['measured', 'trial']),
+  whole_library_seconds: z.number(),
+})
 export const analysisStatusSchema = z.object({
   recipe: z.string(),
   active: z.boolean(),
@@ -503,11 +508,13 @@ export const analysisStatusSchema = z.object({
   }),
   eta_seconds: z.number().nullable(),
   estimate: z.object({
-    device: z.string(),
+    device: z.enum(['cuda', 'cpu']),
     seconds_per_song: z.number(),
-    source: z.enum(['measured', 'bake-off']),
+    source: z.enum(['measured', 'trial']),
     lacking: z.number(),
     whole_library_seconds: z.number(),
+    // Both devices, so the page can say what the graphics card would take before it has run.
+    devices: z.object({ cuda: analysisDeviceEstimateSchema, cpu: analysisDeviceEstimateSchema }),
   }),
   batch: z
     .object({

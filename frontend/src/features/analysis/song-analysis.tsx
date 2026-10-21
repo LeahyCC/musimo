@@ -14,15 +14,14 @@ import {
 import type { AnalysisSong, AnalysisStatus } from '../../api'
 import { PageTitle } from '../../components/page-title'
 import { cx } from '../../lib/cx'
-import { Button, ErrorBanner, Segmented, Switch } from '../../ui'
+import { Button, ErrorBanner, Segmented, Switch, useToast } from '../../ui'
 import { usePlayer } from '../player/player'
 import { SettingRow, SettingsBlock, SettingsSection } from '../settings/settings-layout'
 import {
   clock,
-  deviceName,
+  estimateLine,
   GROUPS,
   percent,
-  roughly,
   seenAgo,
   spoken,
   startCommand,
@@ -298,9 +297,18 @@ export function SongAnalysisPage() {
     },
     onSettled: () => setWanted(null),
   })
+  const toast = useToast()
   const sample = useMutation({
     mutationFn: () => api('audio-analysis/sample', analysisQueueSchema, { method: 'POST' }),
-    onSuccess: () => void refresh(),
+    onSuccess: (reply) => {
+      toast.show({
+        tone: 'good',
+        text: reply.queued
+          ? `Queued ${reply.queued} songs to measure.`
+          : 'Every song already has a measurement.',
+      })
+      void refresh()
+    },
   })
   const all = useMutation({
     mutationFn: () =>
@@ -406,15 +414,26 @@ export function SongAnalysisPage() {
           >
             <SettingsBlock className="grid gap-[12px]">
               <div>
-                <Button disabled={busy} onClick={() => sample.mutate()}>
-                  Measure 100 songs
+                {/* Songs already waiting are the run in progress, so pressing again would only
+                    stack another 100 behind them. */}
+                <Button disabled={busy || left > 0} onClick={() => sample.mutate()}>
+                  {sample.isPending
+                    ? 'Queuing…'
+                    : left > 0
+                      ? `${left.toLocaleString()} songs waiting`
+                      : 'Measure 100 songs'}
                 </Button>
               </div>
-              {sample.data && (
-                <p className="text-small text-muted" role="status">
-                  Queued {sample.data.queued} songs.
-                  {data.worker?.running ? '' : ' They start when the worker does.'}
-                </p>
+              {left > 0 && !data.worker?.running && (
+                <div className="grid gap-[8px] rounded-[10px] border border-warn-line bg-warn-bg px-[12px] py-[10px]">
+                  <p className="text-small" role="status">
+                    {left.toLocaleString()} songs are waiting for the worker. Nothing is measured
+                    until it runs. Start it from the Musimo folder:
+                  </p>
+                  <code className="block font-mono text-small [overflow-wrap:anywhere]">
+                    {startCommand(data.estimate.device === 'cpu' ? 'cpu' : 'gpu')}
+                  </code>
+                </div>
               )}
               {batch?.kind === 'sample' && (
                 <ProgressBar label="Sample progress" done={batch.measured} total={batch.total} />
@@ -450,14 +469,20 @@ export function SongAnalysisPage() {
             </SettingsBlock>
             <SettingsBlock className="grid gap-[12px]">
               <p className="text-small">
-                {data.estimate.lacking.toLocaleString()} songs have no measurement.{' '}
-                {data.estimate.lacking > 0 &&
-                  `${roughly(data.estimate.whole_library_seconds)} on the ${deviceName(data.estimate.device)}${
-                    data.estimate.source === 'measured'
-                      ? ", at this machine's last rate."
-                      : ', at the rate measured in testing.'
-                  }`}
+                {data.estimate.lacking.toLocaleString()} songs have no measurement.
               </p>
+              {data.estimate.lacking > 0 && (
+                <ul className="grid gap-[4px] text-small" aria-label="Time to measure everything">
+                  {(['cuda', 'cpu'] as const).map((name) => {
+                    const device = data.estimate.devices[name]
+                    return (
+                      <li key={name} className={cx(name !== data.estimate.device && 'text-muted')}>
+                        {estimateLine(name, device)}
+                      </li>
+                    )
+                  })}
+                </ul>
+              )}
               {confirming ? (
                 <div className="flex flex-wrap items-center gap-[10px]" role="group">
                   <span className="text-small font-medium">

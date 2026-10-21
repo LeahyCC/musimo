@@ -104,7 +104,7 @@ class Pipeline:
 
     def _finish(self, decoded: Decoded) -> Result:
         try:
-            return finish(decoded, self.track)
+            return finish(decoded, self.track, str(self.info.get("device", "")))
         except Exception as exc:  # noqa: BLE001 - one bad song must not stop the model thread
             job = decoded.job
             return Result(

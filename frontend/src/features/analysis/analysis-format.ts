@@ -94,3 +94,18 @@ export const GROUPS = [
 ] as const
 
 export type GroupId = (typeof GROUPS)[number]['id']
+
+/** One device's line under "Measure whole library": how long, and where the speed came from. */
+export function estimateLine(
+  device: 'cuda' | 'cpu',
+  estimate: {
+    seconds_per_song: number
+    source: 'measured' | 'trial'
+    whole_library_seconds: number
+  },
+): string {
+  const speed = `${estimate.seconds_per_song < 1 ? estimate.seconds_per_song.toFixed(2) : estimate.seconds_per_song.toFixed(1)} s a song`
+  const from =
+    estimate.source === 'measured' ? 'measured on this machine' : 'from the trial on your library'
+  return `${roughly(estimate.whole_library_seconds)} on the ${deviceName(device)} (${speed}, ${from}).`
+}

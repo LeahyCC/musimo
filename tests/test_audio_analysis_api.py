@@ -154,10 +154,19 @@ class AudioAnalysisApiTests(unittest.IsolatedAsyncioTestCase):
                 "lacking": SONGS,
             },
         )
-        # No run on this machine yet, and no worker: the bake-off's CPU rate.
-        self.assertEqual(status["estimate"]["source"], "bake-off")
-        self.assertEqual(status["estimate"]["seconds_per_song"], 5.6)
-        self.assertEqual(status["estimate"]["whole_library_seconds"], round(SONGS * 5.6))
+        # No run on this machine yet, and no worker: the trial's rates, for both devices.
+        estimate = status["estimate"]
+        self.assertEqual((estimate["device"], estimate["source"]), ("cpu", "trial"))
+        self.assertEqual(estimate["seconds_per_song"], 5.6)
+        self.assertEqual(estimate["whole_library_seconds"], round(SONGS * 5.6))
+        self.assertEqual(
+            estimate["devices"]["cuda"],
+            {
+                "seconds_per_song": 0.6,
+                "source": "trial",
+                "whole_library_seconds": round(SONGS * 0.6),
+            },
+        )
         self.assertIsNone(status["batch"])
 
     async def test_the_sample_takes_the_newest_plus_a_podcast_and_a_long_recording(self) -> None:
@@ -204,7 +213,7 @@ class AudioAnalysisApiTests(unittest.IsolatedAsyncioTestCase):
         )
         self.assertTrue(worker["running"])
         # The page's estimate now uses the graphics card's rate.
-        self.assertEqual(status["estimate"]["seconds_per_song"], 0.61)
+        self.assertEqual(status["estimate"]["seconds_per_song"], 0.6)
         await self.post("pause", {"paused": False})
         self.assertIsNotNone(await self.lease(info))
         # A worker for another recipe is not this page's worker.
@@ -308,6 +317,32 @@ class AudioAnalysisApiTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((unsure["bpm"], unsure["reading"], unsure["sure"]), (None, 128.0, False))
         self.assertEqual(unsure["sections"], [19.0, 95.0, 171.0])
         self.assertIn(unsure["band"], {"low", "medium", "high"})
+
+    async def test_each_device_is_timed_from_its_own_last_run(self) -> None:
+        now = datetime.now(UTC)
+        with self.store.lock:
+            for index in range(20):
+                # A graphics card run, one song every half second, ten minutes ago, then a CPU
+                # run of three songs (too few to time) just now.
+                device, at = ("cuda", now - timedelta(minutes=10, seconds=index / 2))
+                if index < 3:
+                    device, at = "cpu", now - timedelta(seconds=index * 5)
+                self.store.db.execute(
+                    "INSERT INTO audio_profile VALUES (?,?,'done',1,1,120,0.1,0,NULL,?,?)",
+                    (
+                        f"tr-{index:016x}",
+                        BEAT_RECIPE,
+                        json.dumps({"device": device}),
+                        at.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                    ),
+                )
+            self.store.db.commit()
+        estimate = (await self.get("status"))["estimate"]
+        self.assertEqual(estimate["devices"]["cuda"]["source"], "measured")
+        self.assertAlmostEqual(estimate["devices"]["cuda"]["seconds_per_song"], 0.5, places=2)
+        self.assertEqual(estimate["devices"]["cpu"]["source"], "trial")
+        # The CPU measured last, so with no worker seen it is the device in use.
+        self.assertEqual(estimate["device"], "cpu")
 
 
 class RunRateTests(unittest.TestCase):
