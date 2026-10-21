@@ -78,6 +78,10 @@ class Settings(BaseModel):
     # The Song analysis page's pause. While on, the worker is leased nothing; a song it already
     # holds finishes, and the queue is kept.
     audio_analysis_paused: bool = False
+    # Whether the bot answers energy words (low, high, calmer, more intense) from the scalar
+    # recipe. Off: tempo only. Energy is RMS loudness, which does not separate intensity in a
+    # library of loud music, so it stays off until a better measure exists.
+    audio_energy: bool = False
 
     @field_validator("audio_scalar_recipe")
     @classmethod
@@ -179,6 +183,7 @@ class SettingsPatch(BaseModel):
     audio_scalar_recipe: str | None = Field(default=None, max_length=80)
     audio_embedding_recipe: str | None = Field(default=None, max_length=80)
     audio_analysis_paused: bool | None = None
+    audio_energy: bool | None = None
     output_format: Literal["original", "m4a", "opus", "mp3"] | None = None
     concurrency: int | None = Field(default=None, ge=1, le=3)
     max_attempts: int | None = Field(default=None, ge=1, le=4)

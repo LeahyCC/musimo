@@ -187,9 +187,7 @@ test.describe('Song analysis', () => {
       page.getByText('docker compose --profile analysis up -d audio-worker'),
     ).toBeVisible()
 
-    await expect(
-      page.getByRole('switch', { name: 'Octive uses tempo and energy' }),
-    ).not.toBeChecked()
+    await expect(page.getByRole('switch', { name: 'Octive uses tempo' })).not.toBeChecked()
     await expect(page.getByText('50,510 songs have no measurement.')).toBeVisible()
     await expect(page.getByText(/About 8 h 34 min on the graphics card/)).toBeVisible()
   })
@@ -262,8 +260,8 @@ test.describe('Song analysis', () => {
     await expect(page.getByText('50,510 waiting, paused.')).toBeVisible()
     await page.getByRole('button', { name: 'Turn on for Octive' }).click()
     await expect(page.getByText(`On. Octive uses ${RECIPE}.`)).toBeVisible()
-    await expect(page.getByRole('switch', { name: 'Octive uses tempo and energy' })).toBeChecked()
-    await page.getByRole('switch', { name: 'Octive uses tempo and energy' }).uncheck()
+    await expect(page.getByRole('switch', { name: 'Octive uses tempo' })).toBeChecked()
+    await page.getByRole('switch', { name: 'Octive uses tempo' }).uncheck()
     await expect(page.getByRole('button', { name: 'Turn on for Octive' })).toBeVisible()
     expect(state.posts).toEqual([
       { path: '/api/audio-analysis/all', body: { confirm: true } },

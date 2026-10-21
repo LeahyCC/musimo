@@ -333,14 +333,16 @@ def registry(scalar: Recipe | None, embedding: Recipe | None) -> list[Capability
         ),
         *(
             Capability(name, "filter", scalar is not None, _SCALAR_NOTE)
-            for name in (
-                "tempo",
-                "tempo_min",
-                "tempo_max",
-                "energy",
-                "energy_compared",
-                "tempo_compared",
+            for name in ("tempo", "tempo_min", "tempo_max", "tempo_compared")
+        ),
+        *(
+            Capability(
+                name,
+                "filter",
+                scalar is not None and scalar.energy,
+                _SCALAR_NOTE + " Energy also needs the audio_energy setting.",
             )
+            for name in ("energy", "energy_compared")
         ),
         Capability(
             "sound",

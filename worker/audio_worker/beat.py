@@ -7,6 +7,8 @@ per window. A window's BPM is 60 over the mean of its "steady" gaps, the gaps wi
 of the median gap. The song's BPM is the median of the section BPMs. It is kept only when it is
 sure: at least two sections gave a BPM, their median is within 2 BPM of the 60-second window,
 and it is 200 BPM or less. An unsure song is still a done row, with its energy and no tempo.
+Energy is the loudest window's mean frame RMS, so a quiet intro or breakdown under one
+section does not pull a loud song down.
 
 Podcast genres and files under 60 seconds are skipped before anything is decoded. Changing any
 rule here is a new recipe id. Nothing in this module imports torch; the model is passed in as a
@@ -235,7 +237,7 @@ def finish(decoded: Decoded, track: Tracker) -> Result:
         decoded.mtime_ns,
         "done",
         tempo_bpm=read.bpm if read.sure else None,
-        energy=float(statistics.fmean(energies)),
+        energy=float(max(energies)),
         detail=detail,
     )
 

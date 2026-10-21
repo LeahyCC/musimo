@@ -28,6 +28,10 @@ class Recipe:
     # Whether a done scalar row may carry energy with no tempo: measured, but not sure enough
     # to use. Such a song answers energy requests and is not covered for tempo.
     tempo_optional: bool = False
+    # Whether the bot may answer energy words from a scalar recipe's rows. Not a constant of the
+    # recipe: `MusicBot.active_recipes` sets it from the `audio_energy` setting, so tempo can be
+    # on while energy (RMS loudness, not a validated intensity) stays off.
+    energy: bool = True
 
 
 SCALAR_RECIPE = "tempo-energy-v1"

@@ -5,7 +5,7 @@ import json
 import math
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, get_args
 from zoneinfo import ZoneInfo
@@ -233,6 +233,9 @@ class SearchPlan(BaseModel):
             raise ValueError("Tempo range is reversed")
         return self
 
+    def uses_energy(self) -> bool:
+        return bool(self.energy or self.energy_compared)
+
     def uses_scalar(self) -> bool:
         """Whether any tempo or energy gate is set. Called per song, so it stays cheap."""
         return bool(
@@ -297,6 +300,13 @@ inclusive: under 100 is tempo_max 100; 120 bpm is tempo_min 110 and tempo_max 13
 medium or high, or "". Calmer or more intense than the current or reference song is
 energy_compared calmer or more_intense; slower or faster than it is tempo_compared slower or
 faster. Those two need a current or reference song.
+"""
+_TEMPO_ON = """\
+Tempo is measured for the songs analysis has reached. tempo is slow (under 90 BPM), medium
+(90 to 139) or fast (140 and up), or "". An explicit BPM goes in tempo_min and tempo_max,
+inclusive: under 100 is tempo_max 100; 120 bpm is tempo_min 110 and tempo_max 130. Slower or
+faster than the current or reference song is tempo_compared slower or faster, which needs a
+current or reference song. energy and energy_compared stay "".
 """
 _SIMILAR_TAGS = """\
 More like this can use similar_to_current (artist and saved genres only).
@@ -395,10 +405,12 @@ def system_prompt(scalar: Recipe | None, embedding: Recipe | None) -> str:
         return _PROMPT_HEAD + _AUDIO_OFF + _PROMPT_MIDDLE + _CALMER_OFF + _EMPTY_OFF + _PROMPT_TAIL
     parts = [_PROMPT_HEAD]
     if scalar is not None:
-        parts.append(_TEMPO_ENERGY_ON)
+        parts.append(_TEMPO_ENERGY_ON if scalar.energy else _TEMPO_ON)
     unmeasured: list[str] = []
     if scalar is None:
         unmeasured += ["energy", "tempo"]
+    elif not scalar.energy:
+        unmeasured += ["energy"]
     if embedding is None or not embedding.text_aligned:
         unmeasured += ["mood", "instruments", "vocals"]
     if unmeasured:
@@ -416,7 +428,7 @@ def system_prompt(scalar: Recipe | None, embedding: Recipe | None) -> str:
         )
         parts.append(_SOUND_ON if embedding.text_aligned else _SOUND_OFF)
     parts.append(_PROMPT_MIDDLE)
-    parts.append(_CALMER_ON if scalar is not None else _CALMER_OFF)
+    parts.append(_CALMER_ON if scalar is not None and scalar.energy else _CALMER_OFF)
     parts.append(_EMPTY_ON)
     parts.append(_PROMPT_TAIL)
     return "".join(parts)
@@ -634,6 +646,8 @@ class MusicBot:
         )
         if scalar is not None and scalar.kind != "scalar":
             scalar = None
+        if scalar is not None:
+            scalar = replace(scalar, energy=settings.audio_energy)
         if embedding is not None and embedding.kind != "embedding":
             embedding = None
         return scalar, embedding
@@ -1133,6 +1147,8 @@ class MusicBot:
                 tempo_min=None,
                 tempo_max=None,
             )
+        elif scalar is not None and not scalar.energy and plan.uses_energy():
+            cleared.update(energy="", energy_compared="")
         # "More like this" keeps one rank key, the reference song, so a phrase beside it is
         # dropped rather than refused.
         phrase = plan.sound if not plan.similar_to_current else ""
@@ -1145,6 +1161,10 @@ class MusicBot:
         refusal = ""
         if scalar is None and plan.uses_scalar():
             refusal = "Tempo and energy need audio analysis, which is not enabled."
+        elif scalar is not None and not scalar.energy and plan.uses_energy():
+            refusal = (
+                "Energy is not measured well enough to use yet, so it is switched off. Tempo works."
+            )
         elif phrase and embedding is None:
             refusal = "Describing how music sounds needs audio analysis, which is not enabled."
         elif phrase and embedding is not None and not embedding.text_aligned:
@@ -1177,12 +1197,14 @@ class MusicBot:
         miss = None
         seed: Vector | None = None
         if plan.uses_scalar() and rows is not None:
-            energies = [
-                row.energy
-                for song in view.stored.values()
-                if (row := rows.fresh(song)) is not None and row.energy is not None
-            ]
-            bands = percentile_bands(energies)
+            # The bands also back half and double tempo, so with energy off there are none.
+            if scalar is not None and scalar.energy:
+                energies = [
+                    row.energy
+                    for song in view.stored.values()
+                    if (row := rows.fresh(song)) is not None and row.energy is not None
+                ]
+                bands = percentile_bands(energies)
             if plan.energy_compared or plan.tempo_compared:
                 if reference is None:
                     raise BotError("Choose a current or reference song to compare with.", 422)

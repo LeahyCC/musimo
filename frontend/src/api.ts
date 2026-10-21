@@ -419,6 +419,7 @@ export const settingsSchema = z.object({
     origin: 'default',
     locked: false,
   }),
+  audio_energy: field(z.boolean()).default({ value: false, origin: 'default', locked: false }),
   library_label: field(z.string()),
   output_format: field(z.enum(['original', 'm4a', 'opus', 'mp3'])),
   concurrency: field(z.number()),
@@ -481,6 +482,8 @@ export const analysisStatusSchema = z.object({
   active: z.boolean(),
   active_recipe: z.string(),
   paused: z.boolean(),
+  // Whether Octive answers energy words too. Older builds of this page's server send nothing.
+  energy: z.boolean().default(false),
   token_configured: z.boolean(),
   worker: analysisWorkerSchema.nullable(),
   counts: z.object({

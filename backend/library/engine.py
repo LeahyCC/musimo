@@ -295,6 +295,8 @@ class Engine:
         off: list[str] = []
         if scalar is None:
             off += [name for name in _SCALAR_FIELDS if getattr(filters, name)]
+        elif not scalar.energy:
+            off += [name for name in ("energy", "energy_compared") if getattr(filters, name)]
         if filters.sound and (embedding is None or not embedding.text_aligned):
             off.append("sound")
         if off:

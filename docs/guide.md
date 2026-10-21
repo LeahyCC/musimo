@@ -90,7 +90,7 @@ It needs Ollama reachable from the Musimo server. In Docker that address is ofte
 
 Ask for an artist, a genre, a year, a length, songs you have liked, or songs you have not played lately. Genre words match the tags in the files and the broad genres in [genre mapping](genre-mapping.md). The card stays a preview until you play it, play it next, add it, replace what is coming up, or save it as a playlist. Each of those checks the files again before it changes the queue. Undo restores the last of those edits, and refuses once the queue has moved on.
 
-Until song analysis is switched on, the bot does not listen to the audio: a request about mood, energy or tempo is refused. Server settings, Music bot, Song analysis measures tempo and energy, lets you listen to the results and switches them on. Then "fast", "calmer" or "120 BPM" work for the songs measured so far, and a song whose beat was read at half or double can still match when its energy agrees; the reply says how many did. Mood and sound are still refused. "More like this" uses saved genre and artist tags. See [the music bot](player.md#music-bot).
+Until song analysis is switched on, the bot does not listen to the audio: a request about mood, energy or tempo is refused. Server settings, Music bot, Song analysis measures tempo and energy, lets you listen to the results and switches them on. Then "fast", "slower than this" or "120 BPM" work for the songs measured so far. Energy words ("calm", "intense") stay refused for now: the measure is loudness, and most music is mastered equally loud. Mood and sound are still refused. "More like this" uses saved genre and artist tags. See [the music bot](player.md#music-bot).
 
 ## Downloads and history
 

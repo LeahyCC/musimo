@@ -342,7 +342,7 @@ export function SongAnalysisPage() {
       <PageTitle eyebrow="MEASURE, LISTEN, SWITCH ON" title="Song analysis" />
       <p className="-mt-[8px] mb-[24px] max-w-[650px] text-lead">
         Musimo measures each song&apos;s tempo and energy so Octive can answer &ldquo;fast&rdquo;,
-        &ldquo;calmer&rdquo; or &ldquo;120 BPM&rdquo;. Measure a sample, listen, then switch it on.{' '}
+        &ldquo;slower&rdquo; or &ldquo;120 BPM&rdquo;. Measure a sample, listen, then switch it on.{' '}
         <Link to="/settings" hash="music-bot" className="underline">
           Server settings
         </Link>
@@ -365,14 +365,17 @@ export function SongAnalysisPage() {
           >
             <SettingRow
               htmlFor="analysis-on"
-              label="Octive uses tempo and energy"
+              label="Octive uses tempo"
               control="switch"
               help={
-                data.active
+                (data.active
                   ? 'On. Turning it off keeps every measurement.'
                   : data.active_recipe
                     ? `Off for this recipe. Octive is using ${data.active_recipe}.`
-                    : 'Off. Octive answers from tags alone until you switch it on.'
+                    : 'Off. Octive answers from tags alone until you switch it on.') +
+                (data.energy
+                  ? ' Energy words are on too.'
+                  : ' Energy words (calm, intense) stay off: loudness is not a good enough measure yet.')
               }
             >
               <Switch

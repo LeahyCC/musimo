@@ -156,8 +156,9 @@ class AnalyseTests(unittest.TestCase):
         result = analyse(job(self.song), [self.root], track, self.decode)
         self.assertEqual(result.status, "done")
         self.assertEqual(result.tempo_bpm, 128.0)
-        # The marker sample nudges the first frame; every other frame is 0.1.
-        self.assertAlmostEqual(result.energy or 0, 0.1, delta=0.005)
+        # The marker sample nudges each window's first frame; every other frame is 0.1. Energy
+        # takes the loudest window, the one with the biggest marker, a few thousandths up.
+        self.assertAlmostEqual(result.energy or 0, 0.1, delta=0.01)
         self.assertEqual(self.decoded, [(12.0, 10.0), (60.0, 10.0), (108.0, 10.0), (35.0, 60.0)])
         detail = json.loads(result.detail)
         self.assertEqual(
@@ -184,6 +185,17 @@ class AnalyseTests(unittest.TestCase):
         self.assertEqual((detail["bpm"], detail["sure"]), (140.5, False))
         self.assertEqual(detail["why"], "sections and 60 s disagree")
         self.assertEqual(detail["sections"][2], [108.0, None])
+
+    def test_energy_is_the_loudest_window(self) -> None:
+        # A quiet intro under the first section must not pull a loud song down.
+        loudness = {12.0: 0.02, 60.0: 0.3, 108.0: 0.1, 35.0: 0.2}
+
+        def decode(path: Path, start: float, seconds: float) -> np.ndarray:
+            return marked(start, seconds, loudness[start])
+
+        track = self.tracker({12.0: 128.0, 60.0: 128.0, 108.0: 128.0, 35.0: 128.0})
+        result = analyse(job(self.song), [self.root], track, decode)
+        self.assertAlmostEqual(result.energy or 0, 0.3, delta=0.005)
 
     def test_skips_happen_before_any_decoding(self) -> None:
         for changes, reason in (

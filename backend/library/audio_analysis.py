@@ -204,6 +204,7 @@ class AudioAnalysis:
             "active": settings.audio_scalar_recipe == self.recipe,
             "active_recipe": settings.audio_scalar_recipe,
             "paused": settings.audio_analysis_paused,
+            "energy": settings.audio_energy,
             "token_configured": self.token_configured,
             "worker": worker_out,
             "counts": counts,

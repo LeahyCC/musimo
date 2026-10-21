@@ -175,7 +175,7 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn("Gale", self.titles(result))
 
     def test_tempo_and_energy_are_hard_gates_with_the_shortfall_kept(self) -> None:
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         self.measure()
         fast = self.resolve(plan(tempo="fast"))
         # The four at 140 and up come first. The songs read at 70 to 100 with medium or high
@@ -233,7 +233,7 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.titles(self.resolve(plan(tempo="fast"))), before)
 
     def test_compared_gates_use_the_reference_songs_own_measurement(self) -> None:
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         self.measure()
         calmer = self.resolve(plan(energy_compared="calmer"), reference_id=self.ids["Fathom"])
         self.assertEqual(self.titles(calmer), ["Ember"])
@@ -265,7 +265,7 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("no tempo-energy-v1 measurement yet", str(miss["summary"]))
 
     def test_stale_rows_satisfy_no_gate_and_validate_answers_409(self) -> None:
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         self.measure()
         selection = ValidateSelection(ids=[self.ids["Anchor"]], plan=plan(tempo="fast"))
         self.bot.validate(selection)
@@ -396,7 +396,7 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(self.titles(alike)[:2], ["Anchor", "Breaker"])
 
     def test_the_reply_carries_the_songs_it_was_measured_against(self) -> None:
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         self.measure()
         calmer = self.resolve(plan(energy_compared="calmer"), reference_id=self.ids["Fathom"])
         self.assertEqual(calmer["reference_id"], self.ids["Fathom"])
@@ -453,7 +453,7 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual((unchanged.tempo_min, unchanged.tempo_max), (100, 120))
 
     def test_each_recipe_counts_its_own_unmeasured_matches(self) -> None:
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         self.measure()
         with self.embedding_on(EMBED, encode):
             self.measure(EMBED.id, titles=tuple(t for t, *_ in SONGS if t != "Harbour"))
@@ -545,7 +545,7 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
         messages = self.chat_bodies[-1]["messages"]
         assert isinstance(messages, list)
         self.assertEqual(messages[0]["content"], system_prompt(None, None))
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         await self.bot.chat(BotRequest(prompt="rock"))
         messages = self.chat_bodies[-1]["messages"]
         assert isinstance(messages, list)
@@ -573,7 +573,7 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
                 with self.assertRaises(ValidationError):
                     self.store.update(values)
         self.assertEqual(SettingsPatch(audio_scalar_recipe="").audio_scalar_recipe, "")
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         self.assertEqual(self.store.current().audio_scalar_recipe, SCALAR_RECIPE)
         self.store.update({"audio_scalar_recipe": ""})
         self.assertEqual(self.bot.active_recipes(), (None, None))

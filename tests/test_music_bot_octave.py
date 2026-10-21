@@ -17,6 +17,7 @@ from test_player import tag, write_wav
 from backend.core.audio_recipes import BEAT_RECIPE, RECIPES
 from backend.core.store import Store
 from backend.library.audio_profile import Profile, ProfileSet
+from backend.library.engine_contract import registry
 from backend.library.index import Library
 from backend.library.music_bot import (
     AudioGates,
@@ -25,6 +26,7 @@ from backend.library.music_bot import (
     SearchPlan,
     ValidateSelection,
     same_octave,
+    system_prompt,
     widen_single_bpm,
 )
 from backend.library.player import Player
@@ -171,7 +173,9 @@ class OctaveBotTests(unittest.IsolatedAsyncioTestCase):
         music = root / "music"
         music.mkdir()
         self.store = Store(root / "state.sqlite3")
-        self.store.update({"ollama_model": "fixture", "audio_scalar_recipe": BEAT_RECIPE})
+        self.store.update(
+            {"ollama_model": "fixture", "audio_scalar_recipe": BEAT_RECIPE, "audio_energy": True}
+        )
         self.player = Player(self.store, [music])
         library = Library(self.store, [music], asyncio.Event())
         for index, (title, artist, *_) in enumerate([*SONGS, ("Rest", "R1", None, 0.0)]):
@@ -256,6 +260,35 @@ class OctaveBotTests(unittest.IsolatedAsyncioTestCase):
         # Calmer only needs its energy.
         calmer, _ = self.titles(plan(energy_compared="calmer"), reference="Echo")
         self.assertIn("Arrow", calmer)
+
+    def test_with_energy_off_tempo_works_alone(self) -> None:
+        self.store.update({"audio_energy": False})
+        # Energy words are refused, the fields cleared, and nothing searched.
+        for filled in ({"energy": "high"}, {"energy_compared": "calmer"}):
+            refused = self.bot.resolve(
+                plan(**filled), BotRequest(prompt="fixture", reference_id=self.ids["Arrow"])
+            )
+            query = SearchPlan.model_validate(refused["plan"])
+            self.assertEqual(query.action, "unsupported")
+            self.assertIn("Energy is not measured well enough", query.explanation)
+            self.assertEqual((query.energy, query.energy_compared), ("", ""))
+            self.assertEqual(refused["tracks"], [])
+        # Tempo still works, with no bands to back a half or double reading.
+        titles, summary = self.titles(plan(tempo="fast"))
+        self.assertEqual(set(titles), {"Arrow", "Blaze"})
+        self.assertNotIn("half or double", summary)
+        faster, _ = self.titles(plan(tempo_compared="faster"), reference="Flint")
+        self.assertEqual(set(faster), {"Arrow", "Blaze", "Grove"})
+        scalar, embedding = self.bot.active_recipes()
+        assert scalar is not None
+        prompt = system_prompt(scalar, embedding)
+        self.assertIn("energy and energy_compared stay", prompt)
+        self.assertIn("Energy, mood, instruments and vocals need audio analysis", prompt)
+        self.assertIn('"Calmer music needs audio analysis, which is not enabled."', prompt)
+        available = {c.id: c.available for c in registry(scalar, embedding)}
+        self.assertTrue(available["tempo"])
+        self.assertFalse(available["energy"])
+        self.assertFalse(available["energy_compared"])
 
     def test_validate_accepts_an_octave_match(self) -> None:
         self.bot.validate(ValidateSelection(ids=[self.ids["Comet"]], plan=plan(tempo="fast")))
