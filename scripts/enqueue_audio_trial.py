@@ -1,6 +1,6 @@
 """Queue songs for the audio worker. This is the only way work gets queued.
 
-    uv run python -m scripts.enqueue_audio_trial --recipe tempo-energy-v1 --limit 100
+    uv run python -m scripts.enqueue_audio_trial --recipe tempo-beat-v1 --limit 100
 
 Inside the container: docker compose exec musimo python -m scripts.enqueue_audio_trial ...
 
@@ -8,7 +8,8 @@ Songs without a done row measured from the file as it is now are queued, newest 
 Failed and skipped songs count as lacking one, so they are tried again, but only after every
 song not yet tried on its current file, so a limited run keeps reaching new songs. `--all` is the
 full-library scan: it prints how many songs that is and stops unless `--yes` is given too.
-Nothing here starts the worker.
+Nothing here starts the worker. The Song analysis page queues the same way (and its 100-song
+sample adds a podcast and a long recording); this script is for a shell.
 """
 
 import argparse
@@ -17,7 +18,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-from backend.core.audio_recipes import SCALAR_RECIPE, recipe_for
+from backend.core.audio_recipes import BEAT_RECIPE, recipe_for
 from backend.core.store import Store
 from backend.library.audio_profile import AudioProfiles
 
@@ -29,7 +30,7 @@ def enqueue(store: Store, recipe: str, limit: int | None) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
-    parser.add_argument("--recipe", default=SCALAR_RECIPE, help=f"default {SCALAR_RECIPE}")
+    parser.add_argument("--recipe", default=BEAT_RECIPE, help=f"default {BEAT_RECIPE}")
     parser.add_argument("--limit", type=int, help="songs to queue, default 100")
     parser.add_argument("--all", action="store_true", help="queue every song lacking a row")
     parser.add_argument("--yes", action="store_true", help="with --all, actually queue them")

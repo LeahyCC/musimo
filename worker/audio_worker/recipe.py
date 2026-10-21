@@ -137,11 +137,17 @@ def decode_command(path: Path, start: float, seconds: float = SECTION_SECONDS) -
     return command
 
 
-def decode_section(path: Path, start: float, deadline: float = DECODE_DEADLINE) -> Samples:
-    """`SECTION_SECONDS` of mono float32 from `start`, or DecodeError."""
+def decode_section(
+    path: Path,
+    start: float,
+    deadline: float = DECODE_DEADLINE,
+    seconds: float = SECTION_SECONDS,
+) -> Samples:
+    """`seconds` of mono float32 from `start`, or DecodeError. `tempo-beat-v1` decodes its
+    60 s window through here too, under the same rules."""
     try:
         done = subprocess.run(
-            decode_command(path, start),
+            decode_command(path, start, seconds),
             stdin=subprocess.DEVNULL,
             capture_output=True,
             timeout=deadline,
@@ -155,13 +161,13 @@ def decode_section(path: Path, start: float, deadline: float = DECODE_DEADLINE) 
         raise DecodeError(f"ffmpeg exited {done.returncode} at {start:.1f} s")
     whole = len(done.stdout) - len(done.stdout) % 4
     samples = np.frombuffer(done.stdout[:whole], dtype="<f4")
-    needed = int((SECTION_SECONDS - SHORT_TOLERANCE) * SAMPLE_RATE)
+    needed = int((seconds - SHORT_TOLERANCE) * SAMPLE_RATE)
     if len(samples) < needed:
         raise DecodeError(
             f"section at {start:.1f} s is {len(samples) / SAMPLE_RATE:.2f} s, more than "
             f"{SHORT_TOLERANCE * 1000:.0f} ms short"
         )
-    return samples[: int(SECTION_SECONDS * SAMPLE_RATE)].astype(np.float32)
+    return samples[: int(seconds * SAMPLE_RATE)].astype(np.float32)
 
 
 def measure_section(samples: Samples) -> tuple[float | None, float]:
@@ -201,24 +207,10 @@ def analyse(
             "skipped",
             detail=reason,
         )
-    path = Path(job.path)
-    # `..` is lexically inside the mount, and stat would follow it out. A symlink is
-    # the same kind of escape. Both are refused before either is followed.
-    if ".." in path.parts or not any(path.is_relative_to(root) for root in roots):
-        return _failed(job, "the path is not under the music mount")
-    if path.is_symlink():
-        return _failed(job, "the path is not under the music mount")
-    try:
-        resolved = path.resolve(strict=True)
-    except OSError as exc:
-        return _failed(job, f"cannot read the file: {exc.strerror or exc}")
-    if not any(resolved.is_relative_to(root.resolve()) for root in roots):
-        return _failed(job, "the path is not under the music mount")
-    try:
-        stat = resolved.stat()
-    except OSError as exc:
-        return _failed(job, f"cannot read the file: {exc.strerror or exc}")
-    size, mtime_ns = stat.st_size, stat.st_mtime_ns
+    checked = checked_file(job, roots)
+    if isinstance(checked, Result):
+        return checked
+    path, size, mtime_ns = checked
     starts = section_starts(job.duration)
     if starts is None:
         return _failed(job, "shorter than 10 seconds", size, mtime_ns)
@@ -267,6 +259,31 @@ def analyse(
         energy=float(statistics.fmean(energies)),
         detail=detail,
     )
+
+
+def checked_file(job: Job, roots: Sequence[Path]) -> Result | tuple[Path, int, int]:
+    """The leased file, its size and its modification time as found now, or a failed result.
+
+    The worker reports the file as it found it, so a file the index has not caught up with is
+    refused by the app and tried again rather than written against stale identity."""
+    path = Path(job.path)
+    # `..` is lexically inside the mount, and stat would follow it out. A symlink is
+    # the same kind of escape. Both are refused before either is followed.
+    if ".." in path.parts or not any(path.is_relative_to(root) for root in roots):
+        return _failed(job, "the path is not under the music mount")
+    if path.is_symlink():
+        return _failed(job, "the path is not under the music mount")
+    try:
+        resolved = path.resolve(strict=True)
+    except OSError as exc:
+        return _failed(job, f"cannot read the file: {exc.strerror or exc}")
+    if not any(resolved.is_relative_to(root.resolve()) for root in roots):
+        return _failed(job, "the path is not under the music mount")
+    try:
+        stat = resolved.stat()
+    except OSError as exc:
+        return _failed(job, f"cannot read the file: {exc.strerror or exc}")
+    return path, stat.st_size, stat.st_mtime_ns
 
 
 def _failed(job: Job, detail: str, size: int | None = None, mtime_ns: int | None = None) -> Result:

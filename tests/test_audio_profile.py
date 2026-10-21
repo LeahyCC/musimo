@@ -17,7 +17,14 @@ import numpy as np
 from pydantic import ValidationError
 from test_player import tag, write_wav
 
-from backend.core.audio_recipes import RECIPES, SCALAR_RECIPE, Recipe, recipe_for, registered
+from backend.core.audio_recipes import (
+    BEAT_RECIPE,
+    RECIPES,
+    SCALAR_RECIPE,
+    Recipe,
+    recipe_for,
+    registered,
+)
 from backend.core.store import SCHEMA_VERSION, Store, drop_song_references
 from backend.library.audio_profile import (
     LEASE_SECONDS,
@@ -474,13 +481,13 @@ class ProfileTests(unittest.IsolatedAsyncioTestCase):
         with contextlib.redirect_stdout(out):
             self.assertEqual(enqueue_main(["--data", str(self.root), "--limit", "1"]), 0)
             self.assertEqual(enqueue_main(["--data", str(self.root), "--all"]), 1)
-            self.assertEqual(self.profiles.queued(SCALAR_RECIPE), 1)
+            self.assertEqual(self.profiles.queued(BEAT_RECIPE), 1)
             self.assertEqual(enqueue_main(["--data", str(self.root), "--all", "--yes"]), 0)
         lines = out.getvalue().splitlines()
-        self.assertEqual(lines[0], f"Queued 1 songs for {SCALAR_RECIPE}. 1 waiting.")
+        self.assertEqual(lines[0], f"Queued 1 songs for {BEAT_RECIPE}. 1 waiting.")
         self.assertIn("2 songs lack a fresh", lines[1])
         self.assertIn("Add --yes", lines[1])
-        self.assertEqual(lines[2], f"Queued 2 songs for {SCALAR_RECIPE}. 3 waiting.")
+        self.assertEqual(lines[2], f"Queued 2 songs for {BEAT_RECIPE}. 3 waiting.")
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             enqueue_main(["--data", str(self.root), "--recipe", "nobody-v9"])
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):

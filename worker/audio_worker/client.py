@@ -45,9 +45,13 @@ class Client:
             raise ClientError(f"{path} failed: {exc}") from exc
 
 
-def lease(post: Poster, recipe: str) -> object:
-    """The leased job as the app sent it, or None when there is nothing to do."""
-    reply = post("/api/internal/audio/lease", {"recipe": recipe})
+def lease(post: Poster, recipe: str, worker: dict[str, object] | None = None) -> object:
+    """The leased job as the app sent it, or None when there is nothing to do. `worker` is what
+    the Song analysis page shows about this worker; the app keeps the latest in memory."""
+    body: dict[str, object] = {"recipe": recipe}
+    if worker is not None:
+        body["worker"] = worker
+    reply = post("/api/internal/audio/lease", body)
     if not isinstance(reply, dict):
         raise ClientError("lease reply is not an object")
     return reply.get("job")

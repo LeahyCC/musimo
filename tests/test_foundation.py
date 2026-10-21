@@ -61,7 +61,13 @@ class FoundationTests(unittest.TestCase):
                     with self.subTest(path=path):
                         self.assertEqual(client.get(path).status_code, 404)
                 # Every in-app route has to survive a reload or a pasted link.
-                for path in ("/", "/settings", "/settings/user", "/library/albums"):
+                for path in (
+                    "/",
+                    "/settings",
+                    "/settings/user",
+                    "/library/albums",
+                    "/library/analysis",
+                ):
                     with self.subTest(path=path):
                         self.assertEqual(client.get(path).status_code, 200)
 

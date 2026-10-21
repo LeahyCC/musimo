@@ -188,7 +188,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
 
     def test_resolve_rewrites_are_refused_rather_than_loosened(self) -> None:
         # One BPM becomes a window, and tag similarity replaces the artist and genre filters.
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         exact = self.refused(PLAIN | {"filters": {"tempo_min": 120, "tempo_max": 120}})
         self.assertEqual(exact.code, "unsupported_constraint")
         self.store.update({"audio_scalar_recipe": ""})
@@ -215,7 +215,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
                 self.assertEqual(self.refused(body).code, "invalid_intent")
 
     def test_an_unmeasured_reference_is_an_error_not_an_empty_match(self) -> None:
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         error = self.refused(
             PLAIN
             | {
@@ -288,7 +288,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
                 self.store.update({"audio_embedding_recipe": ""})
 
     def test_a_scalar_filter_is_allowed_once_its_recipe_is_on(self) -> None:
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         result = self.run_at(intent(filters={"tempo": "fast"}))
         # Nothing is measured, so nothing matches, and the result says so.
         self.assertEqual(self.ids_of(result), [])

@@ -2,8 +2,9 @@
 
 A recipe is a constant in code, not a per-row flag. Its id names a measurement formula: the
 worker writes rows under that id, the bot reads rows under the active id, and a changed formula
-is a new id so old rows stay readable until the operator switches. `tempo-energy-v1` is the only
-production recipe. Tests may register a small embedding recipe; nothing in production does.
+is a new id so old rows stay readable until the operator switches. `tempo-energy-v1` (librosa)
+and `tempo-beat-v1` (Beat This!) are the production recipes, both scalar. Tests may register a
+small embedding recipe; nothing in production does.
 """
 
 from collections.abc import Callable, Iterator
@@ -24,11 +25,23 @@ class Recipe:
     dim: int = 0
     # Whether the vector lives in a space a phrase can be encoded into, so `sound` can rank.
     text_aligned: bool = False
+    # Whether a done scalar row may carry energy with no tempo: measured, but not sure enough
+    # to use. Such a song answers energy requests and is not covered for tempo.
+    tempo_optional: bool = False
+    # Whether the bot may answer energy words from a scalar recipe's rows. Not a constant of the
+    # recipe: `MusicBot.active_recipes` sets it from the `audio_energy` setting, so tempo can be
+    # on while energy (RMS loudness, not a validated intensity) stays off.
+    energy: bool = True
 
 
 SCALAR_RECIPE = "tempo-energy-v1"
+# The recipe the Song analysis page measures and switches on.
+BEAT_RECIPE = "tempo-beat-v1"
 
-RECIPES: dict[str, Recipe] = {SCALAR_RECIPE: Recipe(SCALAR_RECIPE, "scalar")}
+RECIPES: dict[str, Recipe] = {
+    SCALAR_RECIPE: Recipe(SCALAR_RECIPE, "scalar"),
+    BEAT_RECIPE: Recipe(BEAT_RECIPE, "scalar", tempo_optional=True),
+}
 _ENCODERS: dict[str, TextEncoder] = {}
 
 

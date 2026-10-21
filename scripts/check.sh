@@ -32,6 +32,11 @@ full() {
   step diff -u requirements.lock "$exported"
   uv export --locked --project worker --no-header --no-emit-project --format requirements-txt --output-file "$exported" > /dev/null
   step diff -u worker/requirements.lock "$exported"
+  # The tempo-beat-v1 images: one lock, exported once for the CPU and once for CUDA.
+  for variant in cpu gpu; do
+    uv export --locked --project worker/beat --extra "$variant" --no-header --no-emit-project --format requirements-txt --output-file "$exported" > /dev/null
+    step diff -u "worker/beat/requirements-$variant.lock" "$exported"
+  done
   rm -f "$exported"
   step uv run coverage run -m unittest discover -s tests
   step uv run coverage report
@@ -40,6 +45,8 @@ full() {
   step npm run --silent test:e2e:types --prefix frontend
   step uv run pip-audit --disable-pip --no-deps -r requirements.lock
   step uv run pip-audit --disable-pip --no-deps -r worker/requirements.lock
+  step uv run pip-audit --disable-pip --no-deps -r worker/beat/requirements-cpu.lock
+  step uv run pip-audit --disable-pip --no-deps -r worker/beat/requirements-gpu.lock
   step npm audit --prefix frontend --audit-level=high
 }
 

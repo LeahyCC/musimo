@@ -178,7 +178,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
     async def test_coverage_is_honest_when_some_songs_are_unmeasured_or_have_no_length(
         self,
     ) -> None:
-        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE})
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
         stored = self.player.view().stored
         measured_titles = ("Dawn", "Dusk")
         with self.store.lock:

@@ -5,7 +5,7 @@ import json
 import math
 import time
 from collections.abc import Callable, Iterable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Annotated, Literal, get_args
 from zoneinfo import ZoneInfo
@@ -233,6 +233,9 @@ class SearchPlan(BaseModel):
             raise ValueError("Tempo range is reversed")
         return self
 
+    def uses_energy(self) -> bool:
+        return bool(self.energy or self.energy_compared)
+
     def uses_scalar(self) -> bool:
         """Whether any tempo or energy gate is set. Called per song, so it stays cheap."""
         return bool(
@@ -297,6 +300,13 @@ inclusive: under 100 is tempo_max 100; 120 bpm is tempo_min 110 and tempo_max 13
 medium or high, or "". Calmer or more intense than the current or reference song is
 energy_compared calmer or more_intense; slower or faster than it is tempo_compared slower or
 faster. Those two need a current or reference song.
+"""
+_TEMPO_ON = """\
+Tempo is measured for the songs analysis has reached. tempo is slow (under 90 BPM), medium
+(90 to 139) or fast (140 and up), or "". An explicit BPM goes in tempo_min and tempo_max,
+inclusive: under 100 is tempo_max 100; 120 bpm is tempo_min 110 and tempo_max 130. Slower or
+faster than the current or reference song is tempo_compared slower or faster, which needs a
+current or reference song. energy and energy_compared stay "".
 """
 _SIMILAR_TAGS = """\
 More like this can use similar_to_current (artist and saved genres only).
@@ -395,10 +405,12 @@ def system_prompt(scalar: Recipe | None, embedding: Recipe | None) -> str:
         return _PROMPT_HEAD + _AUDIO_OFF + _PROMPT_MIDDLE + _CALMER_OFF + _EMPTY_OFF + _PROMPT_TAIL
     parts = [_PROMPT_HEAD]
     if scalar is not None:
-        parts.append(_TEMPO_ENERGY_ON)
+        parts.append(_TEMPO_ENERGY_ON if scalar.energy else _TEMPO_ON)
     unmeasured: list[str] = []
     if scalar is None:
         unmeasured += ["energy", "tempo"]
+    elif not scalar.energy:
+        unmeasured += ["energy"]
     if embedding is None or not embedding.text_aligned:
         unmeasured += ["mood", "instruments", "vocals"]
     if unmeasured:
@@ -416,7 +428,7 @@ def system_prompt(scalar: Recipe | None, embedding: Recipe | None) -> str:
         )
         parts.append(_SOUND_ON if embedding.text_aligned else _SOUND_OFF)
     parts.append(_PROMPT_MIDDLE)
-    parts.append(_CALMER_ON if scalar is not None else _CALMER_OFF)
+    parts.append(_CALMER_ON if scalar is not None and scalar.energy else _CALMER_OFF)
     parts.append(_EMPTY_ON)
     parts.append(_PROMPT_TAIL)
     return "".join(parts)
@@ -459,7 +471,41 @@ def widen_single_bpm(plan: "SearchPlan") -> "SearchPlan":
     return plan
 
 
-Verdict = Literal["in", "out", "missing_scalar", "missing_vector"]
+# "octave" is a song that fits only at double or half its measured tempo, with energy agreeing.
+Verdict = Literal["in", "octave", "out", "missing_scalar", "missing_vector"]
+MATCHED: frozenset[Verdict] = frozenset({"in", "octave"})
+# Energy bands that can back a reading at double the measured tempo, and at half.
+_DOUBLE_BANDS = frozenset({"medium", "high"})
+_HALF_BANDS = frozenset({"low", "medium"})
+
+
+def same_octave(bpm: float, reference: float) -> float:
+    """`bpm` doubled or halved until it is within half an octave of `reference`: from
+    reference / sqrt(2) up to, not including, reference * sqrt(2)."""
+    if bpm <= 0 or reference <= 0:
+        return bpm
+    while bpm >= reference * math.sqrt(2):
+        bpm /= 2
+    while bpm < reference / math.sqrt(2):
+        bpm *= 2
+    return bpm
+
+
+def _uses_tempo(plan: "SearchPlan") -> bool:
+    return bool(
+        plan.tempo
+        or plan.tempo_compared
+        or plan.tempo_min is not None
+        or plan.tempo_max is not None
+    )
+
+
+def _tempo_fits(plan: "SearchPlan", bpm: float) -> bool:
+    if plan.tempo and tempo_band(bpm) != plan.tempo:
+        return False
+    if plan.tempo_min is not None and bpm < plan.tempo_min:
+        return False
+    return not (plan.tempo_max is not None and bpm > plan.tempo_max)
 
 
 @dataclass(frozen=True)
@@ -467,7 +513,9 @@ class AudioGates:
     """What the audio fields of one plan need from the measured rows, worked out once.
 
     A `missing` verdict is a song without a fresh row for a recipe the plan needs, named so
-    the summary can count each recipe's own; `out` is a measured song outside the gate.
+    the summary can count each recipe's own; `out` is a measured song outside the gate. A
+    song read at half or double its felt tempo is an `octave` match when its energy agrees
+    (docs/audio-profile-spec.md, "Half and double tempo"); it ranks after the direct ones.
     """
 
     scalar: ProfileSet | None = None
@@ -478,24 +526,18 @@ class AudioGates:
     needs_vector: bool = False
 
     def verdict(self, plan: SearchPlan, song: FileIdentity) -> Verdict:
+        octave = False
         if plan.uses_scalar():
             if self.scalar is None:
                 return "out"
             row = self.scalar.fresh(song)
             if row is None:
                 return "missing_scalar"
-            if row.tempo_bpm is None or row.energy is None:
+            if row.energy is None:
                 return "out"
-            bpm, energy = row.tempo_bpm, row.energy
-            if plan.tempo and tempo_band(bpm) != plan.tempo:
-                return "out"
-            if plan.tempo_min is not None and bpm < plan.tempo_min:
-                return "out"
-            if plan.tempo_max is not None and bpm > plan.tempo_max:
-                return "out"
-            if plan.energy and (
-                self.bands is None or energy_band(energy, self.bands) != plan.energy
-            ):
+            energy, bpm = row.energy, row.tempo_bpm
+            band = energy_band(energy, self.bands) if self.bands is not None else None
+            if plan.energy and band != plan.energy:
                 return "out"
             if plan.energy_compared:
                 against = self.reference.energy if self.reference is not None else None
@@ -503,15 +545,43 @@ class AudioGates:
                     return "out"
                 if (energy < against) != (plan.energy_compared == "calmer") or energy == against:
                     return "out"
-            if plan.tempo_compared:
-                against = self.reference.tempo_bpm if self.reference is not None else None
-                if against is None:
+            if _uses_tempo(plan):
+                # A tempo-beat-v1 song whose reading was not sure has no tempo: not covered.
+                if bpm is None:
+                    return "missing_scalar"
+                if not _tempo_fits(plan, bpm):
+                    if not (
+                        (band in _DOUBLE_BANDS and _tempo_fits(plan, bpm * 2))
+                        or (band in _HALF_BANDS and _tempo_fits(plan, bpm / 2))
+                    ):
+                        return "out"
+                    octave = True
+            if plan.tempo_compared and bpm is not None:
+                reference = self.reference
+                against = reference.tempo_bpm if reference is not None else None
+                if reference is None or against is None:
                     return "out"
-                if (bpm < against) != (plan.tempo_compared == "slower") or bpm == against:
+                slower = plan.tempo_compared == "slower"
+                compared = bpm
+                if (
+                    self.bands is not None
+                    and reference.energy is not None
+                    and energy_band(reference.energy, self.bands) == band
+                ):
+                    # The same rule as a range: doubling needs the energy of a faster song,
+                    # halving that of a slower one. Otherwise the reading stands as it is.
+                    folded = same_octave(bpm, against)
+                    if (folded > bpm and band in _DOUBLE_BANDS) or (
+                        folded < bpm and band in _HALF_BANDS
+                    ):
+                        compared = folded
+                if (compared < against) != slower or compared == against:
                     return "out"
+                if (bpm < against) != slower or bpm == against:
+                    octave = True
         if self.needs_vector and (self.vectors is None or self.vectors.fresh(song) is None):
             return "missing_vector"
-        return "in"
+        return "octave" if octave else "in"
 
 
 def _same_artist(song_artist: str, name: str) -> bool:
@@ -576,6 +646,8 @@ class MusicBot:
         )
         if scalar is not None and scalar.kind != "scalar":
             scalar = None
+        if scalar is not None:
+            scalar = replace(scalar, energy=settings.audio_energy)
         if embedding is not None and embedding.kind != "embedding":
             embedding = None
         return scalar, embedding
@@ -842,6 +914,8 @@ class MusicBot:
             else (view.stored[sid] for sid in order if sid in view.stored)
         )
         matched: list[StoredSong] = []
+        # Songs in only at half or double their measured tempo. They walk after the rest.
+        octave: set[str] = set()
         missing = {"missing_scalar": 0, "missing_vector": 0}
         # Kept songs are placed as they are, and excluded ones never come back.
         skip = kept.excluded | set(kept.ids)
@@ -851,8 +925,10 @@ class MusicBot:
             if miss is not None or not self._matches(song, plan, liked, now):
                 continue
             verdict = gates.verdict(plan, song)
-            if verdict == "in":
+            if verdict in MATCHED:
                 matched.append(song)
+                if verdict == "octave":
+                    octave.add(song.song_id)
             elif verdict != "out":
                 missing[verdict] += 1
         seed_song = reference if plan.similar_to_current else None
@@ -904,7 +980,7 @@ class MusicBot:
                 for sid in dict.fromkeys(request.proposal_ids)
                 if sid in view.stored
                 and self._matches(view.stored[sid], plan, liked, now)
-                and gates.verdict(plan, view.stored[sid]) == "in"
+                and gates.verdict(plan, view.stored[sid]) in MATCHED
                 and self.player.local_file(sid) is not None
             ]
             retained_ids = {song.song_id for song in retained}
@@ -926,8 +1002,23 @@ class MusicBot:
                 [s.duration for s in matched],
             )
             drawn = broad_order(
-                [s.song_id for s in matched], generation_seed, need, relevance, shown
+                [s.song_id for s in matched if s.song_id not in octave],
+                generation_seed,
+                need,
+                relevance,
+                shown,
             )
+            if octave:
+                # Direct matches first: an octave match is used only once they run out or are
+                # capped. Each part is drawn on its own, so neither changes the other's order.
+                later = broad_order(
+                    [s.song_id for s in matched if s.song_id in octave],
+                    generation_seed,
+                    need,
+                    relevance,
+                    shown,
+                )
+                drawn = Drawn(drawn.ids + later.ids, drawn.window, len(matched) > max(need, 1))
             walk = drawn.ids
         else:
             walk = refine_order([s.song_id for s in matched])
@@ -946,7 +1037,13 @@ class MusicBot:
         position = {sid: index for index, sid in enumerate(walk)}
         if drawn is not None and relevance is not None:
             # A ranked draw is shown best fit first; the set and its length do not change.
-            added.sort(key=lambda t: (-relevance[str(t["id"])], position[str(t["id"])]))
+            added.sort(
+                key=lambda t: (
+                    str(t["id"]) in octave,
+                    -relevance[str(t["id"])],
+                    position[str(t["id"])],
+                )
+            )
             tracks = tracks[: len(retained)] + added
         reused = [sid for sid in added_ids if sid in shown] if drawn is not None else []
         shortfall = max(0, plan.target_seconds - total)
@@ -1006,10 +1103,17 @@ class MusicBot:
             summary += f" {repeats}; no other match could be used." if exhausted else f" {repeats}."
         if miss is not None:
             summary += f" {miss}"
+        by_octave = sum(1 for sid in added_ids if sid in octave)
+        if by_octave:
+            summary += (
+                " 1 of these matched at half or double its measured tempo."
+                if by_octave == 1
+                else f" {by_octave} of these matched at half or double their measured tempo."
+            )
         library = list(view.stored.values())
         if plan.uses_scalar() and scalar is not None and gates.scalar is not None:
             summary += f" Tempo and energy from {scalar.id}:" + _coverage(
-                gates.scalar, library, missing["missing_scalar"]
+                gates.scalar, library, missing["missing_scalar"], _uses_tempo(plan)
             )
         if plan.similar_to_current and embedding is None:
             summary += " Similarity uses artist or genre tags, not audio analysis."
@@ -1043,6 +1147,8 @@ class MusicBot:
                 tempo_min=None,
                 tempo_max=None,
             )
+        elif scalar is not None and not scalar.energy and plan.uses_energy():
+            cleared.update(energy="", energy_compared="")
         # "More like this" keeps one rank key, the reference song, so a phrase beside it is
         # dropped rather than refused.
         phrase = plan.sound if not plan.similar_to_current else ""
@@ -1055,6 +1161,10 @@ class MusicBot:
         refusal = ""
         if scalar is None and plan.uses_scalar():
             refusal = "Tempo and energy need audio analysis, which is not enabled."
+        elif scalar is not None and not scalar.energy and plan.uses_energy():
+            refusal = (
+                "Energy is not measured well enough to use yet, so it is switched off. Tempo works."
+            )
         elif phrase and embedding is None:
             refusal = "Describing how music sounds needs audio analysis, which is not enabled."
         elif phrase and embedding is not None and not embedding.text_aligned:
@@ -1087,12 +1197,14 @@ class MusicBot:
         miss = None
         seed: Vector | None = None
         if plan.uses_scalar() and rows is not None:
-            energies = [
-                row.energy
-                for song in view.stored.values()
-                if (row := rows.fresh(song)) is not None and row.energy is not None
-            ]
-            bands = percentile_bands(energies)
+            # The bands also back half and double tempo, so with energy off there are none.
+            if scalar is not None and scalar.energy:
+                energies = [
+                    row.energy
+                    for song in view.stored.values()
+                    if (row := rows.fresh(song)) is not None and row.energy is not None
+                ]
+                bands = percentile_bands(energies)
             if plan.energy_compared or plan.tempo_compared:
                 if reference is None:
                     raise BotError("Choose a current or reference song to compare with.", 422)
@@ -1100,6 +1212,11 @@ class MusicBot:
                 if reference_row is None:
                     miss = (
                         f"The reference song has no {rows.recipe.id} measurement yet, "
+                        "so there is nothing to compare it with."
+                    )
+                elif plan.tempo_compared and reference_row.tempo_bpm is None:
+                    miss = (
+                        f"The reference song has no sure {rows.recipe.id} tempo, "
                         "so there is nothing to compare it with."
                     )
         if plan.similar_to_current and vectors is not None:
@@ -1326,7 +1443,7 @@ class MusicBot:
             if (
                 song is None
                 or not self._matches(song, plan, liked, now)
-                or gates.verdict(plan, song) != "in"
+                or gates.verdict(plan, song) not in MATCHED
                 or self.player.local_file(sid) is None
             ):
                 raise changed
@@ -1434,9 +1551,12 @@ def _duration_sentence(report: dict[str, object], fixed: int | None = None) -> s
     return sentence
 
 
-def _coverage(rows: ProfileSet | None, library: list[StoredSong], unmeasured: int) -> str:
-    """How far analysis has reached, and how many matches it could not vouch for."""
-    done, total = rows.coverage(library) if rows is not None else (0, len(library))
+def _coverage(
+    rows: ProfileSet | None, library: list[StoredSong], unmeasured: int, tempo: bool = False
+) -> str:
+    """How far analysis has reached, and how many matches it could not vouch for. With a
+    tempo gate a song measured without a sure tempo is not covered."""
+    done, total = rows.coverage(library, tempo) if rows is not None else (0, len(library))
     noun = "match was" if unmeasured == 1 else "matches were"
     return (
         f" {done:,} of {total:,} songs are measured; "
