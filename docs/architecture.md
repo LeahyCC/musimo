@@ -90,7 +90,7 @@ The worker never opens SQLite. The `tempo-beat-v1` worker (`worker/beat.Dockerfi
 
 Song analysis (api/audio_analysis_api.py, library/audio_analysis.py), same-origin browser routes for `/library/analysis`, always on `tempo-beat-v1`:
 
-- `GET /api/audio-analysis/status`: whether the recipe is on for Octive, pause, the worker as last seen (running when seen in the last minute), counts for the library as it is now (done, unsure, skipped, failed, waiting, lacking), the rate of the latest run of writes and the time left, and an estimate for the whole library on the worker's device (this machine's last rate, or the bake-off's 0.61 s a song on a graphics card and 5.6 s on a CPU).
+- `GET /api/audio-analysis/status`: whether the recipe is on for Octive, pause, the worker as last seen (running when seen in the last minute), counts for the library as it is now (done, unsure, skipped, failed, waiting, lacking), the rate of the latest run of writes and the time left, and an estimate for the whole library on both the graphics card and the CPU. Each row's `detail` names the device that measured it, so each device is timed from its own last run on this machine; before one has run, the graphics card uses 0.6 s a song (the 20 October trial on this library) and the CPU 5.6 s (the bake-off, one core). The device in use is the worker's, else the one that measured last.
 - `POST /api/audio-analysis/sample`: queues the newest songs without a row plus one podcast-tagged song and one recording over 20 minutes, 100 in all.
 - `POST /api/audio-analysis/all`: with `{"confirm": true}` queues every song without a row; without it answers the count and queues nothing.
 - `POST /api/audio-analysis/pause`: `{"paused": true|false}`, saved as the `audio_analysis_paused` setting.

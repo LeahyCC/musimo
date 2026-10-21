@@ -187,8 +187,9 @@ def prepare(job: Job, roots: Sequence[Path], decode: WindowDecoder = _decode) ->
     return decoded
 
 
-def finish(decoded: Decoded, track: Tracker) -> Result:
-    """Run the model on the decoded windows and build the row."""
+def finish(decoded: Decoded, track: Tracker, device: str = "") -> Result:
+    """Run the model on the decoded windows and build the row. `device` (cuda or cpu) goes in
+    `detail` so the app can tell how fast each device measures this library."""
     job = decoded.job
     if not decoded.audio:
         problem = decoded.problems[0] if decoded.problems else "nothing decoded"
@@ -226,6 +227,7 @@ def finish(decoded: Decoded, track: Tracker) -> Result:
             "sections": [[w.start, bpms.get(w.name)] for w in sections],
             "long_start": long.start,
             "why": read.why or (decoded.problems[0][:120] if decoded.problems else ""),
+            "device": device,
         },
         separators=(",", ":"),
     )

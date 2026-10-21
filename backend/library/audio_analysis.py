@@ -30,8 +30,11 @@ SEEN_SECONDS = 60.0
 RUN_GAP_SECONDS = 120.0
 # Fewer rows than this in the last run is too few to call a rate.
 MIN_RUN_ROWS = 10
-# Seconds a song in the bake-off, one decoder: RTX 5080 and one CPU core.
-BAKEOFF_SECONDS = {"cuda": 0.61, "cpu": 5.6}
+# Seconds a song before this machine has measured its own: the graphics card from the 20 October
+# trial on this library (four runs, 0.39 to 0.99 s with 1 to 8 decoders, about 0.6 typical), the
+# CPU from the bake-off (one core, one decoder).
+TRIAL_SECONDS = {"cuda": 0.6, "cpu": 5.6}
+DEVICES = ("cuda", "cpu")
 GROUP_SIZE = 10
 AMBIGUOUS_SIZE = 20
 # Under 100 BPM with high energy, or over 160 with low, is a likely half or double reading.
@@ -161,31 +164,46 @@ class AudioAnalysis:
         counts = self.counts()
         with self.store.lock:
             rows = self.store.db.execute(
-                "SELECT updated_at FROM audio_profile WHERE recipe = ? "
+                "SELECT updated_at, detail FROM audio_profile WHERE recipe = ? "
                 "ORDER BY updated_at DESC LIMIT 2000",
                 (self.recipe,),
             ).fetchall()
-        stamps = [stamp for row in rows if (stamp := _parse(str(row[0]))) is not None]
-        rate, run_rows, going = run_rate(stamps, moment)
+        written = [
+            (stamp, str(_reading(str(row[1])).get("device", "")))
+            for row in rows
+            if (stamp := _parse(str(row[0]))) is not None
+        ]
+        rate, run_rows, going = run_rate([stamp for stamp, _ in written], moment)
+        # Each device's own last run, so a CPU run never sets the graphics card's estimate.
+        measured = {
+            name: run_rate([stamp for stamp, on in written if on == name], moment)[0]
+            for name in DEVICES
+        }
         with self._lock:
             worker = self._worker
             batch = self._batch
         worker_out: dict[str, object] | None = None
-        device = "cpu"
+        # The device in use: the worker's, else the one that measured last, else the CPU.
+        device = next((on for _, on in written if on in DEVICES), "cpu")
         if worker is not None:
             info, at = worker
             ago = max(0.0, (moment - at).total_seconds())
-            device = info.device or "cpu"
+            device = info.device or device
             worker_out = info.model_dump() | {
                 "seen_at": _stamp(at),
                 "seconds_ago": round(ago, 1),
                 "running": ago <= SEEN_SECONDS,
             }
         left = counts["waiting"] + counts["leased"]
-        if rate is not None:
-            per_song, source = 1 / rate, "measured"
-        else:
-            per_song, source = BAKEOFF_SECONDS.get(device, BAKEOFF_SECONDS["cpu"]), "bake-off"
+        devices: dict[str, dict[str, object]] = {}
+        for name in DEVICES:
+            speed = measured[name]
+            per_song = 1 / speed if speed else TRIAL_SECONDS[name]
+            devices[name] = {
+                "seconds_per_song": round(per_song, 3),
+                "source": "measured" if speed else "trial",
+                "whole_library_seconds": round(counts["lacking"] * per_song),
+            }
         progress: dict[str, object] | None = None
         if batch is not None:
             with self.store.lock:
@@ -216,10 +234,9 @@ class AudioAnalysis:
             "eta_seconds": round(left / rate) if rate is not None and left else None,
             "estimate": {
                 "device": device,
-                "seconds_per_song": round(per_song, 3),
-                "source": source,
                 "lacking": counts["lacking"],
-                "whole_library_seconds": round(counts["lacking"] * per_song),
+                **devices[device],
+                "devices": devices,
             },
             "batch": progress,
         }

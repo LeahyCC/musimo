@@ -170,6 +170,7 @@ class AnalyseTests(unittest.TestCase):
                 "sections": [[12.0, 128.0], [60.0, 128.4], [108.0, 127.6]],
                 "long_start": 35.0,
                 "why": "",
+                "device": "",
             },
         )
         self.assertLess(len(str(result.payload()["detail"])), 400)

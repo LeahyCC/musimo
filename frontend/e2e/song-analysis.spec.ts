@@ -78,9 +78,13 @@ function initialStatus(): Status {
     estimate: {
       device: 'cuda',
       seconds_per_song: 0.61,
-      source: 'bake-off',
+      source: 'measured',
       lacking: 50510,
       whole_library_seconds: 30811,
+      devices: {
+        cuda: { seconds_per_song: 0.61, source: 'measured', whole_library_seconds: 30811 },
+        cpu: { seconds_per_song: 5.6, source: 'trial', whole_library_seconds: 282856 },
+      },
     },
     batch: null,
   }
@@ -189,7 +193,15 @@ test.describe('Song analysis', () => {
 
     await expect(page.getByRole('switch', { name: 'Octive uses tempo' })).not.toBeChecked()
     await expect(page.getByText('50,510 songs have no measurement.')).toBeVisible()
-    await expect(page.getByText(/About 8 h 34 min on the graphics card/)).toBeVisible()
+    await expect(
+      page.getByText(
+        'About 8 h 34 min on the graphics card (0.61 s a song, measured on this machine).',
+      ),
+    ).toBeVisible()
+
+    await expect(
+      page.getByText('About 79 h on the CPU (5.6 s a song, from the trial on your library).'),
+    ).toBeVisible()
   })
 
   test('a running worker, the sample and its progress', async ({ page }) => {
@@ -211,7 +223,9 @@ test.describe('Song analysis', () => {
       page.getByText('on graphics card (NVIDIA GeForce RTX 5080), 4 decoders, 4 GB'),
     ).toBeVisible()
     await page.getByRole('button', { name: 'Measure 100 songs' }).click()
-    await expect(page.getByText('Queued 100 songs.')).toBeVisible()
+    await expect(page.getByText('Queued 100 songs to measure.')).toBeVisible()
+    // While songs wait, the button says so instead of stacking another 100.
+    await expect(page.getByRole('button', { name: '100 songs waiting' })).toBeDisabled()
     await expect(page.getByRole('progressbar', { name: 'Sample progress' })).toHaveAttribute(
       'aria-valuenow',
       '37',
@@ -255,6 +269,10 @@ test.describe('Song analysis', () => {
     await page.getByRole('button', { name: 'Measure whole library' }).click()
     await page.getByRole('button', { name: 'Queue them' }).click()
     await expect(page.getByRole('progressbar', { name: 'Library progress' })).toBeVisible()
+    // No worker is running, so the page says why nothing moves and how to start one.
+    await expect(
+      page.getByText('50,510 songs are waiting for the worker.', { exact: false }),
+    ).toBeVisible()
     await page.getByRole('button', { name: 'Pause' }).click()
     await expect(page.getByRole('button', { name: 'Resume' })).toBeVisible()
     await expect(page.getByText('50,510 waiting, paused.')).toBeVisible()
