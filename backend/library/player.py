@@ -35,6 +35,7 @@ from backend.library.browse import (
     ArtistSummary,
     CatalogSnapshot,
     artist_facets,
+    artist_letters,
     artist_summaries,
     filter_albums,
     filter_artists,
@@ -206,6 +207,7 @@ class LibraryView:
     track_orders: dict[str, list[dict[str, object]]]
     track_facets: dict[str, object] | None
     album_orders: dict[str, list[dict[str, object]]] = field(default_factory=dict)
+    artist_orders: dict[str, list[dict[str, object]]] = field(default_factory=dict)
 
 
 def frozen_id(kind: str, *parts: str) -> str:
@@ -1097,19 +1099,35 @@ class Player:
         size: int,
     ) -> dict[str, object]:
         snapshot = await self._catalog()
-        catalog = CatalogSnapshot(
-            0, snapshot.artists, snapshot.albums, snapshot.summaries, snapshot.facets
-        )
-        ordered = sort_artists(
-            filter_artists(catalog, query, genres, years, show),
-            snapshot.summaries,
-            sort,
-        )
+        plain = not query and not genres and not years and not show
+        if plain:
+            # Like albums and tracks, the unfiltered order is sorted once and kept:
+            # paging through artists used to re-sort the whole list on every page.
+            ordered = await self._page_order(
+                plain,
+                snapshot.artist_orders,
+                sort,
+                snapshot.artists,
+                snapshot.artists,
+                lambda rows, order: sort_artists(rows, snapshot.summaries, order),
+            )
+        else:
+            catalog = CatalogSnapshot(
+                0, snapshot.artists, snapshot.albums, snapshot.summaries, snapshot.facets
+            )
+            ordered = sort_artists(
+                filter_artists(catalog, query, genres, years, show),
+                snapshot.summaries,
+                sort,
+            )
         end = offset + size
         return {
             "items": ordered[offset:end],
             "next_offset": end if end < len(ordered) else None,
             "total": len(ordered),
+            # Only a name order has letters worth jumping to, and only the first page
+            # carries them — the rail reads that copy, not every page's.
+            "letters": artist_letters(ordered) if sort == "name" and offset == 0 else [],
             **snapshot.facets,
         }
 

@@ -18,7 +18,9 @@ export function InfiniteScroll({
       ([entry]) => {
         if (entry?.isIntersecting) onLoadMore()
       },
-      { rootMargin: '600px' },
+      // A page and a half of runway: fetching starts well before the bottom is
+      // reached, so the scroll rarely has to wait on the next page.
+      { rootMargin: '1000px' },
     )
     observer.observe(node)
     return () => observer.disconnect()

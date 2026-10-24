@@ -352,6 +352,17 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
                 [genre.casefold() for genre in facets["genres"]], ["jazz", "rock", "soul"]
             )
             self.assertEqual(facets["years"], [2011, 1999])
+            self.assertEqual(
+                facets["letters"],
+                [
+                    {"letter": "A", "offset": 0},
+                    {"letter": "M", "offset": 1},
+                    {"letter": "Z", "offset": 2},
+                ],
+            )
+            self.assertEqual(
+                (await client.get("/api/library/artists?sort=albums")).json()["letters"], []
+            )
             self.assertEqual(await names("genre=JAZZ"), ["Mox", "Zia"])
             self.assertEqual(await names("year=2011"), ["Ame", "Mox"])
             self.assertEqual(await names("genre=Soul&year=2011"), ["Ame"])

@@ -330,6 +330,9 @@ export const libraryArtistsSchema = page(libraryArtistSchema).extend({
   total: z.number().default(0),
   genres: z.array(z.string()).default([]),
   years: z.array(z.number()).default([]),
+  // First offset of each initial in a name-sorted list, for the A-Z jump rail. Empty in
+  // other orders, and on an older server that does not send it.
+  letters: z.array(z.object({ letter: z.string(), offset: z.number() })).default([]),
 })
 export const libraryTracksSchema = page(libraryTrackSchema).extend({
   total: z.number().default(0),

@@ -1,4 +1,4 @@
-import { useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
+import { useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState } from 'react'
 
 import {
   keepPreviousData,
@@ -63,6 +63,7 @@ import {
 import { remember, songCount, stored, usePlayer, usePlaylistSongs } from '../player/player'
 import { queueActions } from '../player/queue-actions'
 import { albumCountLabel, type AlbumGroup, groupAlbumEditions, yearSpan } from './album-editions'
+import { readReturnAnchor, revealBrowseItem, writeReturnAnchor } from './browse-anchor'
 import { CollectionCover, CollectionHeader } from './collection-header'
 import {
   AlbumItem,
@@ -83,6 +84,7 @@ import { artistAlbumSorts, artistSongSorts, librarySortValues } from './library-
 import { LibraryHeading, LibraryToolbar, SearchField, type TabCounts } from './library-toolbar'
 import { PopularityChart } from './popularity-chart'
 import { TrackList } from './track-list'
+import { VirtualBrowse } from './virtual-browse'
 
 export type LibraryTab = 'home' | 'albums' | 'artists' | 'tracks' | 'playlists'
 type Tab = LibraryTab
@@ -245,6 +247,9 @@ export function LibraryPage({
   const addSongsSearch = useRef<HTMLInputElement>(null)
   const editionsSheetTitle = useId()
   const [openGroupKey, setOpenGroupKey] = useState('')
+  const anchorApplied = useRef('')
+  const [revealId, setRevealId] = useState('')
+  const [jumping, setJumping] = useState(false)
   const [layout, setLayout] = useState<ViewMode>(() =>
     stored('musimo.library-layout', 'grid') === 'list' ? 'list' : 'grid',
   )
@@ -284,12 +289,15 @@ export function LibraryPage({
   const albums = useInfiniteQuery({
     queryKey: ['library-albums', albumSearch],
     queryFn: ({ pageParam, signal }) =>
-      api(`library/albums?${albumSearch}&offset=${pageParam}&size=60`, libraryAlbumsSchema, {
+      api(`library/albums?${albumSearch}&offset=${pageParam}&size=100`, libraryAlbumsSchema, {
         signal,
       }),
     initialPageParam: 0,
     getNextPageParam: (page) => page.next_offset ?? undefined,
     enabled: ready && (tab === 'home' || tab === 'albums'),
+    // Half an hour, not the default five minutes: coming back from an album after a long
+    // listen should find the pages already scrolled through, not just the first one.
+    gcTime: 30 * 60_000,
   })
   const artistSearch = useMemo(() => {
     const params = new URLSearchParams({ q: deferredQuery, sort })
@@ -301,12 +309,13 @@ export function LibraryPage({
   const artists = useInfiniteQuery({
     queryKey: ['library-artists', artistSearch],
     queryFn: ({ pageParam, signal }) =>
-      api(`library/artists?${artistSearch}&offset=${pageParam}&size=100`, libraryArtistsSchema, {
+      api(`library/artists?${artistSearch}&offset=${pageParam}&size=200`, libraryArtistsSchema, {
         signal,
       }),
     initialPageParam: 0,
     getNextPageParam: (page) => page.next_offset ?? undefined,
     enabled: ready && tab === 'artists',
+    gcTime: 30 * 60_000,
   })
   // Search, filter, sort, totals and shuffle are the server's job so they cover the whole
   // library rather than the pages this browser happens to have scrolled through.
@@ -319,12 +328,13 @@ export function LibraryPage({
   const tracks = useInfiniteQuery({
     queryKey: ['library-tracks', trackSearch],
     queryFn: ({ pageParam, signal }) =>
-      api(`library/tracks?${trackSearch}&offset=${pageParam}&size=100`, libraryTracksSchema, {
+      api(`library/tracks?${trackSearch}&offset=${pageParam}&size=200`, libraryTracksSchema, {
         signal,
       }),
     initialPageParam: 0,
     getNextPageParam: (page) => page.next_offset ?? undefined,
     enabled: ready && tab === 'tracks',
+    gcTime: 30 * 60_000,
     // Without this a filter change empties the filter menus and disables Play all until the
     // new page lands, which on a large library is seconds.
     placeholderData: keepPreviousData,
@@ -625,6 +635,68 @@ export function LibraryPage({
     artistDetail.isLoading ||
     playlistDetail.isLoading
 
+  const artistLetters = artists.data?.pages[0]?.letters ?? []
+
+  // Coming back to a list: the router restores the pixel, and this restores the card and
+  // its focus when the pixel alone was not enough (a resized window, a taller page, a
+  // layout switch). It runs as pages arrive, so a card several pages down is caught once
+  // its page lands.
+  useEffect(() => {
+    if (!showBrowser) return
+    const anchor = readReturnAnchor()
+    if (!anchor || anchor.path !== window.location.pathname) return
+    const key = `${anchor.path}:${anchor.id}`
+    if (anchorApplied.current === key) return
+    if (revealBrowseItem(anchor.id)) {
+      anchorApplied.current = key
+      writeReturnAnchor(null)
+      if (revealId === anchor.id) setRevealId('')
+    } else if (currentItems.some((item) => item.id === anchor.id)) {
+      // Loaded but windowed out of the DOM: ask the list to scroll it into view.
+      if (revealId !== anchor.id) setRevealId(anchor.id)
+    } else if (!hasMore && !activeQuery.isLoading) {
+      // The whole matching list is here and the card is not in it: the filters moved on.
+      writeReturnAnchor(null)
+    }
+  }, [activeQuery.isLoading, currentItems, hasMore, revealId, showBrowser])
+
+  /** A windowed list has scrolled a card in and focused it: the reveal is complete. */
+  const revealDone = useCallback((id: string) => {
+    setRevealId('')
+    const anchor = readReturnAnchor()
+    if (anchor?.id === id) {
+      anchorApplied.current = `${anchor.path}:${anchor.id}`
+      writeReturnAnchor(null)
+    }
+  }, [])
+
+  async function jumpToLetter(offset: number) {
+    if (jumping) return
+    const loaded = artistItems[offset]
+    if (loaded) {
+      setRevealId(loaded.id)
+      return
+    }
+    setJumping(true)
+    try {
+      // fetchNextPage resolves rather than throwing on a failed page, with the count
+      // unchanged and a next page still on offer — so stop when a fetch errors or
+      // makes no progress, or this would retry the endpoint forever.
+      let result = await artists.fetchNextPage()
+      let count = result.data?.pages.reduce((sum, page) => sum + page.items.length, 0) ?? 0
+      while (count <= offset && result.hasNextPage && !result.isError) {
+        const before = count
+        result = await artists.fetchNextPage()
+        count = result.data?.pages.reduce((sum, page) => sum + page.items.length, 0) ?? 0
+        if (count <= before) break
+      }
+      const target = result.data?.pages.flatMap((page) => page.items)[offset]
+      if (target) setRevealId(target.id)
+    } finally {
+      setJumping(false)
+    }
+  }
+
   useEffect(() => remember('musimo.library-layout', layout), [layout])
 
   useEffect(() => {
@@ -896,6 +968,30 @@ export function LibraryPage({
           onView={setLayout}
           loadedText={loadedText}
         />
+      )}
+      {showBrowser && tab === 'artists' && sort === 'name' && artistLetters.length > 1 && (
+        <nav
+          aria-label="Jump to letter"
+          className="mb-[16px] flex flex-wrap items-center gap-[2px]"
+        >
+          {artistLetters.map(({ letter, offset }) => (
+            <button
+              key={letter}
+              type="button"
+              disabled={jumping}
+              aria-label={`Jump to artists starting with ${letter}`}
+              className="grid h-[30px] min-w-[30px] place-items-center rounded-md px-[6px] font-mono text-small text-muted hover:bg-raised hover:text-text disabled:opacity-50 coarse:min-h-11 coarse:min-w-11"
+              onClick={() => void jumpToLetter(offset)}
+            >
+              {letter}
+            </button>
+          ))}
+          {jumping && (
+            <span role="status" className="ml-[8px] text-small text-muted">
+              Loading artists…
+            </span>
+          )}
+        </nav>
       )}
       {showBrowser && tab === 'playlists' && showPlaylistForm && (
         <form
@@ -1420,21 +1516,30 @@ export function LibraryPage({
       {(tab === 'home' || tab === 'albums') && showBrowser && (
         <section aria-label={deferredQuery ? 'Album results' : 'Albums'}>
           {libraryLoadError}
-          <div
-            className={layout === 'grid' ? browseGridClass('album', room) : browseListClass(room)}
-          >
-            {albumItems.map((album) => (
+          <VirtualBrowse
+            items={albumItems}
+            kind="album"
+            layout={layout}
+            room={room}
+            revealId={revealId}
+            onRevealDone={revealDone}
+            onNearEnd={() => {
+              if (hasMore && !loadingMore) loadMore()
+            }}
+            cacheKey={`${layout}:${busy}`}
+            renderItem={(album) => (
               <AlbumItem
                 album={album}
                 key={album.id}
                 layout={layout}
                 loading={busy}
-                onOpen={() =>
+                onOpen={() => {
+                  writeReturnAnchor({ path: window.location.pathname, id: album.id })
                   void navigate({
                     to: '/library/albums/$albumId',
                     params: { albumId: album.id },
                   })
-                }
+                }}
                 onPlay={() =>
                   playCollection.mutate({ kind: 'album', id: album.id, shuffled: false })
                 }
@@ -1445,28 +1550,37 @@ export function LibraryPage({
                   queueCollection.mutate({ kind: 'album', id: album.id, upNext })
                 }
               />
-            ))}
-          </div>
+            )}
+          />
         </section>
       )}
       {tab === 'artists' && showBrowser && (
         <div>
           {libraryLoadError}
-          <div
-            className={layout === 'grid' ? browseGridClass('artist', room) : browseListClass(room)}
-          >
-            {artistItems.map((artist: LibraryArtist) => (
+          <VirtualBrowse
+            items={artistItems}
+            kind="artist"
+            layout={layout}
+            room={room}
+            revealId={revealId}
+            onRevealDone={revealDone}
+            onNearEnd={() => {
+              if (hasMore && !loadingMore) loadMore()
+            }}
+            cacheKey={`${layout}:${busy}`}
+            renderItem={(artist: LibraryArtist) => (
               <ArtistItem
                 artist={artist}
                 key={artist.id}
                 layout={layout}
                 loading={busy}
-                onOpen={() =>
+                onOpen={() => {
+                  writeReturnAnchor({ path: window.location.pathname, id: artist.id })
                   void navigate({
                     to: '/library/artists/$artistId',
                     params: { artistId: artist.id },
                   })
-                }
+                }}
                 onPlay={() =>
                   playCollection.mutate({ kind: 'artist', id: artist.id, shuffled: false })
                 }
@@ -1474,8 +1588,8 @@ export function LibraryPage({
                   playCollection.mutate({ kind: 'artist', id: artist.id, shuffled: true })
                 }
               />
-            ))}
-          </div>
+            )}
+          />
         </div>
       )}
       {tab === 'tracks' && showBrowser && (
@@ -1502,6 +1616,10 @@ export function LibraryPage({
               is shown only when the list is in album order. */}
           <TrackList
             table
+            virtualize
+            onNearEnd={() => {
+              if (hasMore && !loadingMore) loadMore()
+            }}
             tracks={trackItems}
             source={trackSource}
             numbering={sort === 'album' ? 'track' : 'none'}
@@ -1536,12 +1654,13 @@ export function LibraryPage({
                 liked={item.id === likedId}
                 loading={busy}
                 deleting={deletePlaylist.isPending}
-                onOpen={() =>
+                onOpen={() => {
+                  writeReturnAnchor({ path: window.location.pathname, id: item.id })
                   void navigate({
                     to: '/library/playlists/$playlistId',
                     params: { playlistId: item.id },
                   })
-                }
+                }}
                 onPlay={() =>
                   playCollection.mutate({ kind: 'playlist', id: item.id, shuffled: false })
                 }
