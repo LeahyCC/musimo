@@ -300,6 +300,19 @@ export const router = createRouter({
     diagnosticsRoute,
   ]),
   defaultPreload: 'intent',
+  // Come back to where a list was left, not its top. On the library lists the key is the
+  // address rather than the history entry, so the library's own Back link — which opens
+  // the list afresh — restores the same place the browser's Back button does. Everywhere
+  // else the history entry is the key, so opening a detail page a second time starts at
+  // its top and each search address does not grow its own saved position. `#main` is the
+  // Listening room's scrolling pane; the window is Classic's and a phone's. Both are
+  // named as scroll-to-top selectors so a page with no remembered place starts at its top.
+  scrollRestoration: true,
+  getScrollRestorationKey: (location) =>
+    /^\/library\/(albums|artists|tracks|playlists)$/.test(location.pathname)
+      ? location.href
+      : (location.state?.__TSR_key ?? location.href),
+  scrollToTopSelectors: ['window', '#main'],
 })
 declare module '@tanstack/react-router' {
   interface Register {

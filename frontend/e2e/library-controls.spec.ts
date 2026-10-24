@@ -368,6 +368,100 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await expect.poll(names).toEqual(['Stone Lines', 'Clear Water'])
 })
 
+test('returning to the artists list restores the place it was left', async ({ page }) => {
+  await libraryFixtures(page)
+  const artists = Array.from({ length: 48 }, (_, index) => ({
+    id: `artist-${index + 1}`,
+    name: `Artist ${index + 1}`,
+    albumCount: 1,
+  }))
+  await page.route(
+    (url) => url.pathname === '/api/library/artists',
+    (route) =>
+      route.fulfill({
+        json: { items: artists, next_offset: null, total: artists.length, genres: [], years: [] },
+      }),
+  )
+
+  await page.route('**/api/library/artists/artist-36', (route) =>
+    route.fulfill({ json: { id: 'artist-36', name: 'Artist 36', album: [] } }),
+  )
+
+  await page.route('**/api/library/artists/artist-36/tracks', (route) =>
+    route.fulfill({ json: { items: [] } }),
+  )
+  await page.goto('/library/artists')
+
+  const card = page.getByRole('button', { name: 'Open Artist 36' })
+  await card.scrollIntoViewIfNeeded()
+  // The list scrolls on the window in Classic and on `#main` in the Listening room.
+  const place = () =>
+    page.evaluate(() => Math.max(window.scrollY, document.querySelector('#main')?.scrollTop ?? 0))
+  await expect.poll(place).toBeGreaterThan(200)
+  const leftAt = await place()
+
+  // The page's own Back link opens the list afresh, and the browser's Back returns to the
+  // earlier visit; both should land where the list was left.
+  for (const goBack of [
+    async () => page.getByRole('button', { name: 'Back to artists' }).click(),
+    async () => page.goBack(),
+  ]) {
+    await card.click()
+    await expect(page.getByRole('heading', { name: 'Artist 36' })).toBeVisible()
+    await goBack()
+    await expect(card).toBeInViewport()
+    await expect(card).toBeFocused()
+    await expect.poll(place).toBeGreaterThan(leftAt - 200)
+  }
+})
+
+test('the A-Z rail jumps to a letter further down the artists list', async ({ page }) => {
+  await libraryFixtures(page)
+  const artists = [
+    ['a', 'Alpha'],
+    ['m', 'Mango'],
+    ['z', 'Zebra'],
+  ].flatMap(([prefix, word]) =>
+    Array.from({ length: 10 }, (_, index) => ({
+      id: `${prefix}-${index + 1}`,
+      name: `${word} ${index + 1}`,
+      albumCount: 1,
+    })),
+  )
+  // Pages of ten, whatever size the page asks for, so the Z artists start out genuinely
+  // unloaded and the jump has to fetch its way to them.
+  await page.route(
+    (url) => url.pathname === '/api/library/artists',
+    (route) => {
+      const offset = Number(new URL(route.request().url()).searchParams.get('offset') ?? 0)
+      const end = offset + 10
+      route.fulfill({
+        json: {
+          items: artists.slice(offset, end),
+          next_offset: end < artists.length ? end : null,
+          total: artists.length,
+          genres: [],
+          years: [],
+          letters:
+            offset === 0
+              ? [
+                  { letter: 'A', offset: 0 },
+                  { letter: 'M', offset: 10 },
+                  { letter: 'Z', offset: 20 },
+                ]
+              : [],
+        },
+      })
+    },
+  )
+  await page.goto('/library/artists')
+
+  await page.getByRole('button', { name: 'Jump to artists starting with Z' }).click()
+  const card = page.getByRole('button', { name: 'Open Zebra 1' })
+  await expect(card).toBeInViewport()
+  await expect(card).toBeFocused()
+})
+
 test('a tracks sort stays in the address and comes back with the tab', async ({
   page,
   isMobile,

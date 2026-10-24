@@ -220,6 +220,25 @@ def sort_artists(
     return by_name
 
 
+def artist_letters(rows: list[dict[str, object]]) -> list[dict[str, object]]:
+    """First offset of each initial in a name-sorted artist list, for an A-Z jump rail.
+
+    The letter comes from the same text the list is sorted by, so a name filed under its
+    sort name lands under that letter. Anything that does not start with a letter (digits,
+    punctuation) is grouped under '#'.
+    """
+    letters: list[dict[str, object]] = []
+    seen: set[str] = set()
+    for offset, row in enumerate(rows):
+        text = track_text(row, "sortName") or track_text(row, "name")
+        initial = next((char for char in text if char.isalnum()), "")
+        letter = initial.upper() if initial.isalpha() else "#"
+        if letter not in seen:
+            seen.add(letter)
+            letters.append({"letter": letter, "offset": offset})
+    return letters
+
+
 def track_facets(rows: list[dict[str, object]]) -> dict[str, object]:
     """Filter choices for the whole library, so picking one does not hide the others."""
     genres: dict[str, str] = {}

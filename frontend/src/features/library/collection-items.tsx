@@ -345,7 +345,13 @@ const editionChipClassName =
 
 const artImage = (coverArt: string | undefined, fallback: ReactNode) =>
   coverArt ? (
-    <img src={cover(coverArt)} alt="" loading="lazy" className="h-full w-full object-cover" />
+    <img
+      src={cover(coverArt)}
+      alt=""
+      loading="lazy"
+      decoding="async"
+      className="h-full w-full object-cover"
+    />
   ) : (
     fallback
   )
@@ -389,7 +395,7 @@ export function AlbumItem({
   )
   if (layout === 'list')
     return (
-      <div className={browseRowClass(room)}>
+      <div className={browseRowClass(room)} data-browse-anchor={album.id}>
         <span className={browseArtClass()}>{artImage(album.coverArt, <Disc3 />)}</span>
         <button
           className={collectionOpenClass}
@@ -425,7 +431,7 @@ export function AlbumItem({
     )
 
   return (
-    <article className="library-card group min-w-0">
+    <article className="library-card group min-w-0" data-browse-anchor={album.id}>
       <div className="relative">
         {/* Over the artwork, so it takes the page's wash to stay readable, and shows on hover or
             focus like the play button beside it. */}
@@ -502,7 +508,7 @@ export function ArtistItem({
   // browse the same way. The art stays round so an artist never reads as an album.
   if (layout === 'grid')
     return (
-      <article className="library-artist-card group min-w-0">
+      <article className="library-artist-card group min-w-0" data-browse-anchor={artist.id}>
         <div className="relative">
           <button
             className="grid aspect-square w-full place-items-center overflow-hidden rounded-pill border border-line bg-raised p-0 text-faint"
@@ -537,7 +543,10 @@ export function ArtistItem({
     )
 
   return (
-    <article className={cx('library-artist-card', browseRowClass(room))}>
+    <article
+      className={cx('library-artist-card', browseRowClass(room))}
+      data-browse-anchor={artist.id}
+    >
       <span className={browseArtClass(true)}>{art}</span>
       <button className={collectionOpenClass} onClick={onOpen}>
         <strong className="truncate text-body font-semibold">{artist.name}</strong>
@@ -682,7 +691,10 @@ export function PlaylistRow({
 
   if (layout === 'list')
     return (
-      <div className={cx('library-list-row', browseRowClass(room))}>
+      <div
+        className={cx('library-list-row', browseRowClass(room))}
+        data-browse-anchor={playlist.id}
+      >
         <span className={cx(browseArtClass(), 'relative')}>{art(18)}</span>
         <button className={cx('library-list-open', collectionOpenClass)} onClick={onOpen}>
           <strong className="truncate text-body font-semibold">{playlist.name}</strong>
@@ -695,7 +707,10 @@ export function PlaylistRow({
   // The Listening room's card runs sideways: a small cover, the name, and the controls to the right.
   if (room)
     return (
-      <div className="library-list-row group flex min-w-0 items-center gap-[12px] rounded-[16px] bg-raised p-[10px] hover:bg-hover focus-within:bg-hover">
+      <div
+        className="library-list-row group flex min-w-0 items-center gap-[12px] rounded-[16px] bg-raised p-[10px] hover:bg-hover focus-within:bg-hover"
+        data-browse-anchor={playlist.id}
+      >
         <span className="relative grid h-[64px] w-[64px] flex-none place-items-center overflow-hidden rounded-[10px] bg-sunken text-faint">
           {art(24)}
         </span>
@@ -712,7 +727,7 @@ export function PlaylistRow({
 
   // Classic's card: a square cover with its controls on it, the name and meta underneath.
   return (
-    <article className="library-list-row group min-w-0">
+    <article className="library-list-row group min-w-0" data-browse-anchor={playlist.id}>
       <div className="relative">
         <button
           className="library-list-open relative grid aspect-square w-full place-items-center overflow-hidden rounded-[10px] border border-line bg-raised p-0 text-faint"
