@@ -223,15 +223,16 @@ def sort_artists(
 def artist_letters(rows: list[dict[str, object]]) -> list[dict[str, object]]:
     """First offset of each initial in a name-sorted artist list, for an A-Z jump rail.
 
-    The letter comes from the same text the list is sorted by, so a name filed under its
-    sort name lands under that letter. Anything that does not start with a letter (digits,
-    punctuation) is grouped under '#'.
+    The letter is where the list itself files the name: the first character of the
+    text it is sorted by. A name that starts with a digit or punctuation is sorted
+    ahead of the As, so it is grouped under '#' with them — taking its first letter
+    character instead would file "&ME" under M, far from where it actually sits.
     """
     letters: list[dict[str, object]] = []
     seen: set[str] = set()
     for offset, row in enumerate(rows):
         text = track_text(row, "sortName") or track_text(row, "name")
-        initial = next((char for char in text if char.isalnum()), "")
+        initial = text[:1]
         letter = initial.upper() if initial.isalpha() else "#"
         if letter not in seen:
             seen.add(letter)
