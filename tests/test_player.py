@@ -372,6 +372,14 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(await names("q=m"), ["Ame", "Mox"])
             self.assertEqual(await names("sort=albums"), ["Mox", "Ame", "Zia"])
             self.assertEqual(await names("sort=recent"), ["Zia", "Ame", "Mox"])
+            scrambled = await names("sort=scramble&seed=7")
+            self.assertEqual(sorted(scrambled), ["Ame", "Mox", "Zia"])
+            # The same seed deals the same order again, or paging would repeat artists.
+            self.assertEqual(await names("sort=scramble&seed=7"), scrambled)
+            self.assertEqual(
+                (await client.get("/api/library/artists?sort=scramble&seed=7")).json()["letters"],
+                [],
+            )
             page = (await client.get("/api/library/artists?offset=1&size=1")).json()
             self.assertEqual(page["items"][0]["name"], "Mox")
             self.assertEqual(page["next_offset"], 2)

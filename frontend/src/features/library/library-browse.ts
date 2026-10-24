@@ -27,6 +27,11 @@ function sameSearch(left: LibraryListSearch, right: LibraryListSearch) {
   return JSON.stringify(left) === JSON.stringify(right)
 }
 
+/** A fresh seed to deal a Scramble order from, in the range the server accepts. */
+function scrambleSeed() {
+  return Math.floor(Math.random() * 2_147_483_646) + 1
+}
+
 /** Navigations run in order, so a filter change still wins if it happens while a restore is in flight. */
 function useLibraryGo() {
   const navigate = useNavigate()
@@ -160,12 +165,19 @@ export function useLibraryBrowse(tab: LibraryTab, active: boolean) {
     setQuery,
     deferredQuery,
     sort: search.sort ?? defaultLibrarySort(tab),
+    seed: search.seed ?? 0,
     genres: search.genre ?? [],
     years: search.year ?? [],
     show: search.show ?? '',
     visibility: search.visibility ?? 'all',
     setSort: (value: string) =>
-      commit({ sort: value === defaultLibrarySort(tab) ? undefined : value }),
+      // Picking Scramble deals a fresh order; staying in one keeps the seed it has.
+      commit({
+        sort: value === defaultLibrarySort(tab) ? undefined : value,
+        seed: value === 'scramble' ? (latest.current.seed ?? scrambleSeed()) : undefined,
+      }),
+    /** Deal the scramble again from a new seed. */
+    reshuffle: () => commit({ sort: 'scramble', seed: scrambleSeed() }),
     toggleGenre: (value: string) => toggle('genre', value),
     toggleYear: (value: string) => toggle('year', value),
     setShow: (value: string) =>

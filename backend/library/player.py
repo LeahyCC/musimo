@@ -54,7 +54,7 @@ from backend.version import VERSION
 # The request validator and the comparators share these names.
 TRACK_SORTS = ("title", "artist", "album", "year", "duration", "newest")
 ALBUM_SORTS = ("newest", "title", "artist", "year")
-ARTIST_SORTS = ("name", "albums", "recent")
+ARTIST_SORTS = ("name", "albums", "recent", "scramble")
 ARTIST_SHOWS = ("favourites", "played", "unplayed")
 # Shuffle keeps its order in memory. One pass, refreshed when the next window is asked for.
 SHUFFLE_ORDER_SECONDS = 24 * 60 * 60
@@ -1097,19 +1097,22 @@ class Player:
         show: str,
         offset: int,
         size: int,
+        seed: int = 0,
     ) -> dict[str, object]:
         snapshot = await self._catalog()
         plain = not query and not genres and not years and not show
         if plain:
             # Like albums and tracks, the unfiltered order is sorted once and kept:
             # paging through artists used to re-sort the whole list on every page.
+            # A scramble is kept per seed, so each seed's order is dealt once.
+            cache_key = f"scramble:{seed}" if sort == "scramble" else sort
             ordered = await self._page_order(
                 plain,
                 snapshot.artist_orders,
-                sort,
+                cache_key,
                 snapshot.artists,
                 snapshot.artists,
-                lambda rows, order: sort_artists(rows, snapshot.summaries, order),
+                lambda rows, _order: sort_artists(rows, snapshot.summaries, sort, seed),
             )
         else:
             catalog = CatalogSnapshot(
@@ -1119,6 +1122,7 @@ class Player:
                 filter_artists(catalog, query, genres, years, show),
                 snapshot.summaries,
                 sort,
+                seed,
             )
         end = offset + size
         return {

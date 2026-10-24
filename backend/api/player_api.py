@@ -255,9 +255,10 @@ def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:
         show: ArtistShow = "",
         offset: int = Query(default=0, ge=0),
         size: int = Query(default=100, ge=1, le=200),
+        seed: int = Query(default=0, ge=0, le=2_147_483_647),
     ) -> dict[str, object]:
         return await get().browse_artists(
-            q.strip(), sort, genre or [], year or [], show, offset, size
+            q.strip(), sort, genre or [], year or [], show, offset, size, seed
         )
 
     @app.put("/api/library/artists/{artist_id}/favourite", status_code=204)

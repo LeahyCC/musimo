@@ -22,7 +22,7 @@ export const libraryPaths = {
 export const librarySortValues = {
   home: ['newest', 'title', 'artist', 'year'],
   albums: ['newest', 'title', 'artist', 'year'],
-  artists: ['name', 'albums', 'recent'],
+  artists: ['name', 'albums', 'recent', 'scramble'],
   tracks: ['title', 'artist', 'album', 'year', 'duration', 'newest'],
   playlists: ['name', 'tracks', 'duration', 'changed'],
 } as const
@@ -38,6 +38,8 @@ const playlistVisibility = ['public', 'private'] as const
 export type LibraryListSearch = {
   q?: string
   sort?: string
+  /** The seed a Scramble order is dealt from; a new seed is a fresh order. Artists only. */
+  seed?: number
   genre?: string[]
   year?: string[]
   show?: (typeof artistShows)[number]
@@ -81,6 +83,17 @@ export function validateLibrarySearch(tab: LibraryTab, search: Record<string, un
   const result: LibraryListSearch = {}
   if (q) result.q = q
   if (sort && sort !== defaultLibrarySort(tab)) result.sort = sort
+  // A scramble without a seed is the server's standing shuffle; a seed is only
+  // worth keeping in the address alongside the scramble it deals.
+  const seed = Number(search.seed)
+  if (
+    tab === 'artists' &&
+    sort === 'scramble' &&
+    Number.isSafeInteger(seed) &&
+    seed > 0 &&
+    seed <= 2_147_483_647
+  )
+    result.seed = seed
   const genre = textList(search.genre)
   const year = textList(search.year)
   if (genre) result.genre = genre
