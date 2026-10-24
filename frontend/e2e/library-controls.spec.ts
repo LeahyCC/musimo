@@ -462,6 +462,35 @@ test('the A-Z rail jumps to a letter further down the artists list', async ({ pa
   await expect(card).toBeFocused()
 })
 
+test('scramble deals a random artist order from a seed that can be redealt', async ({
+  page,
+  isMobile,
+}) => {
+  await libraryFixtures(page)
+  const artists = Array.from({ length: 12 }, (_, index) => ({
+    id: `artist-${index + 1}`,
+    name: `Artist ${index + 1}`,
+    albumCount: 1,
+  }))
+  await page.route(
+    (url) => url.pathname === '/api/library/artists',
+    (route) =>
+      route.fulfill({
+        json: { items: artists, next_offset: null, total: artists.length, genres: [], years: [] },
+      }),
+  )
+  await page.goto('/library/artists')
+  await openLibraryFilters(page, isMobile)
+  await librarySort(page, 'artists').selectOption('scramble')
+  await closeLibraryFilters(page, isMobile)
+  await expect(page).toHaveURL(/sort=scramble&seed=\d+/)
+  const dealt = new URL(page.url()).searchParams.get('seed')
+
+  await page.getByRole('button', { name: 'Reshuffle' }).click()
+  await expect.poll(() => new URL(page.url()).searchParams.get('seed')).not.toBe(dealt)
+  await expect(page).toHaveURL(/sort=scramble&seed=\d+/)
+})
+
 test('a tracks sort stays in the address and comes back with the tab', async ({
   page,
   isMobile,

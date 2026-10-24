@@ -1,5 +1,6 @@
 """Filtering, sorting and filter choices for the library pages."""
 
+import random
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -202,8 +203,16 @@ def sort_albums(rows: list[dict[str, object]], sort: str) -> list[dict[str, obje
 
 
 def sort_artists(
-    rows: list[dict[str, object]], summaries: dict[str, ArtistSummary], sort: str
+    rows: list[dict[str, object]], summaries: dict[str, ArtistSummary], sort: str, seed: int = 0
 ) -> list[dict[str, object]]:
+    if sort == "scramble":
+        # A seeded shuffle: the same seed always deals the same order, so paging
+        # through a scramble never repeats or skips anyone, and a new seed is a
+        # fresh way to wander the shelves.
+        shuffled = list(rows)
+        random.Random(seed).shuffle(shuffled)
+        return shuffled
+
     def name(row: dict[str, object]) -> list[str | int]:
         return natural(track_text(row, "sortName") or track_text(row, "name"))
 

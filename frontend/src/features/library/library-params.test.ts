@@ -42,6 +42,23 @@ describe('validateLibrarySearch', () => {
     ).toEqual({ q: 'cinder', sort: 'duration', genre: ['Jazz'], year: ['1999', '2011'] })
   })
 
+  it('keeps a scramble seed for artists, and only with the scramble', () => {
+    expect(validateLibrarySearch('artists', { sort: 'scramble', seed: 42 })).toEqual({
+      sort: 'scramble',
+      seed: 42,
+    })
+
+    expect(validateLibrarySearch('artists', { sort: 'scramble', seed: '42' })).toEqual({
+      sort: 'scramble',
+      seed: 42,
+    })
+    expect(validateLibrarySearch('artists', { sort: 'name', seed: 42 })).toEqual({})
+    expect(validateLibrarySearch('artists', { sort: 'scramble', seed: -1 })).toEqual({
+      sort: 'scramble',
+    })
+    expect(validateLibrarySearch('albums', { sort: 'scramble', seed: 42 })).toEqual({})
+  })
+
   it('drops a default sort, an unknown sort and filters that belong to another view', () => {
     expect(validateLibrarySearch('artists', { sort: 'name', visibility: 'public' })).toEqual({})
     expect(validateLibrarySearch('playlists', { sort: 'nope', visibility: 'public' })).toEqual({

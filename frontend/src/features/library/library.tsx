@@ -122,6 +122,7 @@ const sortLabels = {
     name: 'Artist A to Z',
     albums: 'Most albums',
     recent: 'Recently added',
+    scramble: 'Scramble (random)',
   },
   tracks: {
     title: 'Track A to Z',
@@ -304,8 +305,9 @@ export function LibraryPage({
     for (const genre of selectedGenres) params.append('genre', genre)
     for (const year of selectedYears) params.append('year', year)
     if (artistShow) params.set('show', artistShow)
+    if (sort === 'scramble' && browse.seed) params.set('seed', String(browse.seed))
     return params.toString()
-  }, [artistShow, deferredQuery, selectedGenres, selectedYears, sort])
+  }, [artistShow, browse.seed, deferredQuery, selectedGenres, selectedYears, sort])
   const artists = useInfiniteQuery({
     queryKey: ['library-artists', artistSearch],
     queryFn: ({ pageParam, signal }) =>
@@ -992,6 +994,16 @@ export function LibraryPage({
             </span>
           )}
         </nav>
+      )}
+      {showBrowser && tab === 'artists' && sort === 'scramble' && (
+        <div className="mb-[16px] flex flex-wrap items-center gap-[10px]">
+          <Button onClick={browse.reshuffle}>
+            <Shuffle size={15} /> Reshuffle
+          </Button>
+          <span className="text-small text-muted">
+            A random way through your artists. Reshuffle deals a new one.
+          </span>
+        </div>
       )}
       {showBrowser && tab === 'playlists' && showPlaylistForm && (
         <form
