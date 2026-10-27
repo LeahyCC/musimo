@@ -33,6 +33,14 @@
 - Save the Deezer account file as it arrived. When the command is set, it runs on that file and the file is kept only when it plays. When the command is empty, a file that does not play fails that source and the next source runs.
 - Schema 13 stores the title, artist, album, duration and art of a Deezer song kept in a playlist or the queue. Playback still uses the account.
 
+### Phones
+
+- Keep the popularity chart on the artist page. It stacks under Top songs when that part of the page is under 720px, so the dock and the rail no longer push it off the right edge.
+- Stop the Listening room's Now Playing page scrolling into an empty gap under the controls. The tabs stay inside the art, and a large stage's tabs are only as tall as what they show.
+- On a touch screen, pick a visualizer preset from a sheet. It closes with the X, a tap on the picture, or a choice. Full screen fills the viewport even when the browser cannot fullscreen a canvas, which is a phone, and the way out stays on the picture.
+- Keep the song playing when the phone locks. The audio elements sit outside the hidden player bar, and Safari is told the tab is playing music.
+- Jump through Artists by letter from a strip down the right edge of a phone. A wide window keeps one row that scrolls sideways, and typing a letter jumps too.
+
 ### Phones, other computers and the dock
 
 - Accept the app's own writes from a phone, another computer or a reverse proxy such as Tailscale Serve. The cross-origin check now trusts the browser's `Sec-Fetch-Site`, which a page cannot fake, and only falls back to comparing Origin with Host for browsers that do not send it. A page on another site is still refused.

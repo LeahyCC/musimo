@@ -13,8 +13,8 @@ export function PopularityChart({ albums }: { albums: LibraryAlbum[] }) {
   )
   const peak = busiest?.playCount ?? 0
   return (
-    <section className="popularity-chart min-w-0 rounded-[14px] border border-line bg-raised px-[18px] py-[16px]">
-      <div className="flex items-baseline justify-between gap-[8px]">
+    <section className="popularity-chart w-full min-w-0 max-w-full overflow-hidden rounded-[14px] border border-line bg-raised px-[18px] py-[16px]">
+      <div className="flex flex-wrap items-baseline justify-between gap-x-[8px] gap-y-[2px]">
         <h2 className="text-strong">Popularity</h2>
         <span className="text-tiny text-faint">Plays by release year</span>
       </div>

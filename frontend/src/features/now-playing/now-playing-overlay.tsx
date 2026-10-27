@@ -3,6 +3,8 @@ import type { ReactNode, RefObject } from 'react'
 
 import {
   AudioLines,
+  Check,
+  ChevronDown,
   ChevronLeft,
   ChevronRight,
   Disc3,
@@ -20,10 +22,12 @@ import {
   ThumbsUp,
   Volume2,
   VolumeX,
+  X,
 } from 'lucide-react'
 
 import { cx } from '../../lib/cx'
 import type { Layout } from '../../lib/layout'
+import { useCoarsePointer } from '../../lib/use-coarse'
 import { IconButton, Select } from '../../ui'
 import type { IconButtonProps } from '../../ui'
 import { artUrl, durationText, usePlayer } from '../player/player'
@@ -521,37 +525,27 @@ function PresetSteps({
   )
 }
 
-export function NowPlayingOverlay({
-  layout,
-  placement,
+/** Pop out, stage size and full screen, in that order. The size label says where the press goes. */
+function WindowButtons({
+  className,
+  icon,
   fullscreen,
-  controls,
+  fullscreenLabel,
   onFullscreen,
   onPopout,
   size,
   onSize,
-  view,
-  onView,
-  preset,
-  onPreset,
-  onCyclePreset,
-  autoPresets,
-  onAutoPresets,
-  artLabel,
-}: OverlayProps) {
-  const player = usePlayer()
-  const fullscreenLabel =
-    placement === 'popout'
-      ? 'Full screen in the app'
-      : fullscreen
-        ? 'Exit full screen'
-        : 'Full screen'
-  const visualizer = view === 'visualizer'
-  const presetControls = visualizer && preset && onPreset && onCyclePreset
-
-  // Pop out, stage size and full screen, in that order, in both layouts. The size button's label
-  // says where the press goes, as the full screen button's does.
-  const windowButtons = (className: string, icon: number) => (
+}: {
+  className: string
+  icon: number
+  fullscreen: boolean
+  fullscreenLabel: string
+  onFullscreen: () => void
+  onPopout?: () => void
+  size?: StageSize
+  onSize?: () => void
+}) {
+  return (
     <>
       {onPopout && (
         <BarButton label="Pop out player" className={className} onClick={onPopout}>
@@ -572,6 +566,245 @@ export function NowPlayingOverlay({
         {fullscreen ? <Minimize2 size={icon} /> : <Maximize2 size={icon} />}
       </BarButton>
     </>
+  )
+}
+
+/**
+ * Presets on a touch screen. The drawn select has no way to dismiss it once it covers the stage,
+ * so this is a sheet: the X, the dimmed picture, or a row all close it.
+ */
+function PresetSheet({
+  preset,
+  onPreset,
+  onClose,
+}: {
+  preset: string
+  onPreset: (name: string) => void
+  onClose: () => void
+}) {
+  const closeButton = useRef<HTMLButtonElement>(null)
+  const closeRef = useRef(onClose)
+  closeRef.current = onClose
+  useEffect(() => {
+    closeButton.current?.focus()
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      event.preventDefault()
+      closeRef.current()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [])
+
+  return (
+    <div className="pointer-events-auto absolute inset-0 z-20 flex flex-col justify-end">
+      <button
+        type="button"
+        className="absolute inset-0 border-0 bg-scrim/55"
+        aria-label="Close presets"
+        onClick={onClose}
+      />
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-label="Presets"
+        className="relative flex max-h-[min(70%,480px)] flex-col overflow-hidden rounded-t-[18px] bg-raised text-text"
+      >
+        <div className="flex items-center gap-[8px] py-[8px] pr-[8px] pl-[16px]">
+          <h2 className="min-w-0 flex-1 text-body font-semibold">Presets</h2>
+          <button
+            ref={closeButton}
+            type="button"
+            className="grid size-11 place-items-center rounded-full border-0 bg-transparent text-text"
+            aria-label="Close presets"
+            onClick={onClose}
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-[8px] pb-[calc(8px+var(--safe-bottom))]">
+          {PRESET_NAMES.map((name) => {
+            const selected = name === preset
+            return (
+              <button
+                key={name}
+                type="button"
+                aria-current={selected ? 'true' : undefined}
+                title={name}
+                className={cx(
+                  'flex min-h-11 w-full items-center gap-[8px] rounded-[10px] border-0 bg-transparent px-[8px] text-left text-body',
+                  selected ? 'bg-hover text-accent' : 'text-text',
+                )}
+                onClick={() => onPreset(name)}
+              >
+                <Check size={16} className={cx('shrink-0', !selected && 'invisible')} />
+                <span className="min-w-0 truncate">{presetLabel(name)}</span>
+              </button>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** One set of stage controls for a finger: large targets, a preset sheet, and a full screen button. */
+function TouchStageChrome({
+  fullscreen,
+  onFullscreen,
+  onPopout,
+  size,
+  onSize,
+  view,
+  onView,
+  preset,
+  onPreset,
+  onCyclePreset,
+  autoPresets,
+  onAutoPresets,
+  artLabel,
+}: OverlayProps) {
+  const [open, setOpen] = useState(false)
+  const visualizer = view === 'visualizer'
+  const presetControls = Boolean(visualizer && preset && onPreset && onCyclePreset)
+
+  return (
+    <div className="stage-overlay pointer-events-none absolute inset-0">
+      {fullscreen && (
+        <div className="pointer-events-auto absolute top-0 left-0 z-10 pt-[var(--safe-top)] pl-[4px]">
+          <button
+            type="button"
+            className="grid size-11 place-items-center rounded-full border-0 bg-scrim/55 text-on-media"
+            aria-label="Exit full screen"
+            onClick={onFullscreen}
+          >
+            <X size={22} />
+          </button>
+        </div>
+      )}
+      <div className="absolute inset-x-0 bottom-0 z-10 grid gap-[8px] p-[10px] pb-[calc(10px+var(--safe-bottom))]">
+        <div className="stage-view-control pointer-events-auto grid gap-[8px] rounded-[20px] bg-scrim/60 p-[8px] text-on-media backdrop-blur-[8px]">
+          {view && onView && <ViewSwitch view={view} onView={onView} />}
+          {presetControls && preset && onPreset ? (
+            <button
+              type="button"
+              className="flex min-h-11 items-center gap-[8px] rounded-[12px] border-0 bg-on-media/10 px-[12px] text-left text-on-media"
+              aria-haspopup="dialog"
+              aria-expanded={open}
+              aria-label={`Preset, ${presetLabel(preset)}`}
+              title={preset}
+              onClick={() => setOpen(true)}
+            >
+              <span className={cx('min-w-0 flex-1 truncate', monoClassName)}>
+                {presetLabel(preset)}
+              </span>
+              <ChevronDown size={18} aria-hidden="true" />
+            </button>
+          ) : (
+            artLabel && (
+              <span className={cx('truncate px-[8px] uppercase', monoClassName)}>{artLabel}</span>
+            )
+          )}
+          <div className="flex items-center gap-[6px]">
+            {presetControls && onCyclePreset && (
+              <>
+                <PresetSteps
+                  onCyclePreset={onCyclePreset}
+                  className={roomButtonClassName}
+                  size={18}
+                />
+                <AutoHold on={autoPresets} onChange={onAutoPresets} className="rounded-pill" />
+              </>
+            )}
+            <span className="flex-1" />
+            <WindowButtons
+              className={roomButtonClassName}
+              icon={18}
+              fullscreen={fullscreen}
+              fullscreenLabel={fullscreen ? 'Exit full screen' : 'Full screen'}
+              onFullscreen={onFullscreen}
+              onPopout={onPopout}
+              size={size}
+              onSize={onSize}
+            />
+          </div>
+        </div>
+      </div>
+      {open && preset && onPreset && (
+        <PresetSheet
+          preset={preset}
+          onPreset={(name) => {
+            onPreset(name)
+            setOpen(false)
+          }}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+export function NowPlayingOverlay({
+  layout,
+  placement,
+  fullscreen,
+  controls,
+  onFullscreen,
+  onPopout,
+  size,
+  onSize,
+  view,
+  onView,
+  preset,
+  onPreset,
+  onCyclePreset,
+  autoPresets,
+  onAutoPresets,
+  artLabel,
+}: OverlayProps) {
+  const coarse = useCoarsePointer()
+  const player = usePlayer()
+  if (coarse)
+    return (
+      <TouchStageChrome
+        layout={layout}
+        placement={placement}
+        fullscreen={fullscreen}
+        controls={controls}
+        onFullscreen={onFullscreen}
+        onPopout={onPopout}
+        size={size}
+        onSize={onSize}
+        view={view}
+        onView={onView}
+        preset={preset}
+        onPreset={onPreset}
+        onCyclePreset={onCyclePreset}
+        autoPresets={autoPresets}
+        onAutoPresets={onAutoPresets}
+        artLabel={artLabel}
+      />
+    )
+  const fullscreenLabel =
+    placement === 'popout'
+      ? 'Full screen in the app'
+      : fullscreen
+        ? 'Exit full screen'
+        : 'Full screen'
+  const visualizer = view === 'visualizer'
+  const presetControls = visualizer && preset && onPreset && onCyclePreset
+
+  const windowButtons = (className: string, icon: number) => (
+    <WindowButtons
+      className={className}
+      icon={icon}
+      fullscreen={fullscreen}
+      fullscreenLabel={fullscreenLabel}
+      onFullscreen={onFullscreen}
+      onPopout={onPopout}
+      size={size}
+      onSize={onSize}
+    />
   )
 
   // Playing or Paused. Docked, the page's own play button says it, so it is only heard; full

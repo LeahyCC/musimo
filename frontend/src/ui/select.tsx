@@ -52,11 +52,17 @@ function choose(select: HTMLSelectElement, value: string) {
 
 const OPEN_KEYS = new Set(['ArrowDown', 'ArrowUp', 'Enter', ' '])
 
+// `(pointer: coarse)` alone misses a phone that calls its primary pointer fine. Either query is a
+// finger, and a finger gets the system picker: the drawn list has no chrome to close it with.
+const nativePicker = () =>
+  typeof matchMedia === 'function' && matchMedia('(hover: none), (pointer: coarse)').matches
+
 /**
  * A real `<select>` whose list is drawn by the app instead of the browser. The `<select>` keeps the
  * value, the form field, `onChange`, the label and what a screen reader hears; only opening it is
  * taken over, and only with a mouse or trackpad. A touch screen keeps the phone's own picker, which
- * is large, familiar and already accessible.
+ * is large, familiar and already dismissible. Some phones report the tap as a mouse, so the choice
+ * follows the pointer query, not the event's pointer type.
  *
  * The list is a manual popover beside the `<select>`, so it sits in the top layer above any clipping
  * and, inside a modal sheet, is still part of that sheet rather than behind it.
@@ -119,11 +125,21 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
         if (event.target instanceof Node && popup.contains(event.target)) return
         close(false)
       }
+
+      // A tap on the picture does not move focus, so blur never fires and the list stays up.
+      const outside = (event: PointerEvent) => {
+        const target = event.target
+        if (!(target instanceof Node)) return
+        if (popup.contains(target) || element.contains(target)) return
+        close(false)
+      }
       window.addEventListener('scroll', away, true)
       window.addEventListener('resize', away)
+      document.addEventListener('pointerdown', outside)
       return () => {
         window.removeEventListener('scroll', away, true)
         window.removeEventListener('resize', away)
+        document.removeEventListener('pointerdown', outside)
       }
     }, [options, close])
 
@@ -140,7 +156,8 @@ export const Select = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSel
 
     const onSelectPointerDown = (event: ReactPointerEvent<HTMLSelectElement>) => {
       onPointerDown?.(event)
-      if (event.defaultPrevented || event.pointerType === 'touch' || event.button !== 0) return
+      if (event.defaultPrevented || event.button !== 0) return
+      if (event.pointerType === 'touch' || nativePicker()) return
       event.preventDefault()
       select.current?.focus()
       if (options) close(false)

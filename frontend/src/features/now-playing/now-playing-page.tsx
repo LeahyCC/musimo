@@ -837,7 +837,7 @@ function RoomNowPlaying({ track, large, phone, lyricsView, onLyricsView }: Layou
   )
   return (
     // The card's padding and type follow its own width, so the wrapper is the size container.
-    <div className="[container-type:inline-size]">
+    <div className="now-playing-frame [container-type:inline-size]">
       <div className="relative isolate rounded-[22px] p-[clamp(18px,3cqi,36px)]">
         {/* Inside the card, behind everything in it. It stays in sight under the lyrics view, as
             Classic's page wash does. */}
@@ -854,15 +854,22 @@ function RoomNowPlaying({ track, large, phone, lyricsView, onLyricsView }: Layou
           <div className="min-w-0">
             <NowPlayingStage fit="width" />
           </div>
-          {/* Beside the art the tabs are laid out over the row rather than in it, so the art alone
-              sets the row's height and a long queue scrolls inside instead of stretching it.
-              Stacked, they come after the controls in the page too, so Tab follows the screen. */}
-          {beside && <div className="relative min-w-0">{tabs('absolute inset-0')}</div>}
+          {/* Beside the art the tabs are laid over the row, so the art alone sets the row's height
+              and a long queue scrolls inside. The box is clipped: the lyrics leave half a screen
+              under the last line so it can scroll up, and that tail must not become page scroll.
+              Stacked, the tabs come after the controls, so Tab follows the screen. */}
+          {beside && (
+            <div className="relative min-h-0 min-w-0 self-stretch overflow-hidden">
+              {tabs('absolute inset-0 min-h-0 overflow-hidden')}
+            </div>
+          )}
           <div className={cx('min-w-0', beside && 'col-span-2')}>
             <RoomControls track={track} />
           </div>
           {!beside && (
-            <div className="min-w-0">{tabs(large ? 'h-[min(70dvh,560px)]' : undefined)}</div>
+            <div className="min-w-0">
+              {tabs(large ? 'max-h-[min(70dvh,560px)] overflow-hidden' : undefined)}
+            </div>
           )}
         </div>
       </div>

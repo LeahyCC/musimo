@@ -477,7 +477,10 @@ export function ClassicShell() {
           <Sidebar pathname={location.pathname} status={status} downloads={activeDownloads} />
         )}
       </aside>
-      <div className="ml-[calc(var(--sidebar-width)+var(--safe-left))] pr-[var(--safe-right)] max-phone:ml-0 max-phone:pr-0">
+      <div
+        data-page-pane=""
+        className="ml-[calc(var(--sidebar-width)+var(--safe-left))] pr-[var(--safe-right)] max-phone:ml-0 max-phone:pr-0"
+      >
         <header
           data-stage-hide=""
           data-keyboard-hide=""

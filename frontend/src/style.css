@@ -179,8 +179,8 @@
 
 /* The Listening room (`app/shell/room.tsx`). On a wide window its pages scroll inside the page pane,
    between a rail and the player dock, so the measurements the pages add up are the gutter plus the
-   rail and the gutter plus the header. The Classic footer never shows here; it stays in the page
-   only for the audio elements it holds, and the dock or the floating mini player stands in for it.
+   rail and the gutter plus the header. The Classic footer never shows here. The audio elements sit
+   outside it, and the dock or the floating mini player stands in for the bar.
    Under the tablet edge the dock becomes a 76px bar under the page. A phone scrolls the document,
    as Classic does, and `--player-height` is the floating mini player and its gap while one shows. */
 :root:where([data-layout='room']) {
@@ -510,6 +510,48 @@ meter::-webkit-meter-optimum-value {
   aspect-ratio: auto;
   border-radius: 0;
   box-shadow: none;
+}
+/* iOS Safari will not fullscreen a canvas. The stage is taken to the viewport instead.
+   Ancestors that are containers would trap `position: fixed` inside the page, so containment
+   comes off while this is up, and the page pane is lifted over the dock and the side rail. */
+html[data-stage-immersive] :is(#main, .now-playing-frame, .stage-frame, .stage-slot) {
+  container-type: normal !important;
+  contain: none !important;
+  transform: none !important;
+  /* A hidden overflow on the page pane would clip the stage to that pane, dock included. */
+  overflow: visible !important;
+}
+html[data-stage-immersive] [data-page-pane] {
+  position: relative;
+  z-index: 80;
+  overflow: visible !important;
+}
+html[data-stage-immersive] {
+  overflow: hidden !important;
+}
+html[data-stage-immersive] .stage {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  width: auto;
+  height: auto;
+  max-height: none;
+  margin: 0;
+  aspect-ratio: auto;
+  border-radius: 0;
+  box-shadow: none;
+}
+/* Not `display: none`. A phone pauses media inside a hidden bar when the screen locks, and the
+   player bar is hidden on Now Playing, in the Listening room, and while the keyboard is up. */
+.playback-audio {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+  pointer-events: none;
 }
 .popout-body {
   margin: 0;
