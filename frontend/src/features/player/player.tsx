@@ -64,7 +64,7 @@ import {
   toQueueTrack,
 } from './account-play'
 import type { DeezerListen } from './account-play'
-import { audioGraph, resumeAudio } from './audio-graph'
+import { audioGraph, holdPlaybackSession, resumeAudio, setPlaybackWatch } from './audio-graph'
 import { crossfadeSpan } from './crossfade'
 import { useCrossfadeSeconds } from './crossfade-settings'
 import { fadeInGain, fadeOutGain, rampDown } from './fades'
@@ -2330,8 +2330,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }, [volume, muted, replaySettings, shuffle, queue, currentIndex, libraryTrack])
 
   // Browsers suspend the audio context while a tab is hidden for a while, or on
-  // iOS when another app takes the output. Wake it when the tab comes back.
+  // iOS when the screen locks. Wake it when the tab comes back. `playback` is what tells
+  // Safari not to drop the graph on lock in the first place, and the watch resumes it if
+  // it does, including while the page is still hidden.
   useEffect(() => {
+    holdPlaybackSession()
+    setPlaybackWatch(
+      () => mode.current === 'library' && Boolean(library()) && library()?.paused === false,
+    )
     const onVisible = () => {
       if (document.visibilityState !== 'visible' || mode.current !== 'library') return
       if (library() && !library()?.paused) void resumeAudio()
@@ -2962,6 +2968,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             </IconButton>
           )}
         </div>
+      </footer>
+      {/* Outside the footer. Now Playing, the Listening room and the on-screen keyboard hide that
+          bar with `display: none`, and a phone pauses media inside a hidden bar when it locks. */}
+      <div className="playback-audio">
         <audio
           ref={previewAudio}
           className="preview-audio"
@@ -2971,7 +2981,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         {/* Two, swapping roles: `data-role` says which plays and which holds the next track. */}
         <audio ref={libraryA} className="library-audio" preload="metadata" {...mediaHandlers(0)} />
         <audio ref={libraryB} className="library-audio" preload="metadata" {...mediaHandlers(1)} />
-      </footer>
+      </div>
       {/* Outside the footer, which Now Playing hides: `display: none` on an ancestor would take the
           open dialog with it, and the page's Add to playlist button opens this one. */}
       {isLibrary && (

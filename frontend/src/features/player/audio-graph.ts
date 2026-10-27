@@ -9,10 +9,36 @@ type AudioGraph = { context: AudioContext; bus: GainNode; analyser: AnalyserNode
 
 let graph: AudioGraph | undefined
 
+// Read when the graph drops out, including while the page is hidden. The player sets it.
+let stillPlaying: () => boolean = () => false
+
+type PlaybackSession = { type: string }
+
+/**
+ * Tell Safari this tab is playing music. Without it, locking the phone suspends the graph and,
+ * because the library elements are wired through that graph, the song goes silent.
+ */
+export function holdPlaybackSession() {
+  const session = (navigator as Navigator & { audioSession?: PlaybackSession }).audioSession
+  if (session) session.type = 'playback'
+}
+
+/** `playing` is called on an interruption, so it has to read the live element, not a snapshot. */
+export function setPlaybackWatch(playing: () => boolean) {
+  stillPlaying = playing
+}
+
+function wakeIfPlaying(context: AudioContext) {
+  const state = context.state as string
+  if ((state === 'suspended' || state === 'interrupted') && stillPlaying())
+    void context.resume().catch(() => undefined)
+}
+
 /** The graph, built the first time anything asks for it. */
 export function audioGraph(): AudioGraph {
   if (graph) return graph
   const context = new AudioContext()
+  context.addEventListener('statechange', () => wakeIfPlaying(context))
   const bus = context.createGain()
   bus.connect(context.destination)
   const analyser = context.createAnalyser()

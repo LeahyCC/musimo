@@ -581,6 +581,10 @@ export function NowPlayingStage({ fit = 'column' }: { fit?: StageFit }) {
   const player = usePlayer()
   const container = popout.dockedStage
   const [fullscreen, setFullscreen] = useState(false)
+  // iOS will not fullscreen a canvas. This fills the viewport in the page instead.
+  const [immersive, setImmersive] = useState(false)
+  const immersiveRef = useRef(false)
+  immersiveRef.current = immersive
   const track = player.libraryTrack
   const art = track ? artUrl(track) : (player.track?.art ?? '')
   const large = popout.size === 'large' && !popout.phone
@@ -598,29 +602,55 @@ export function NowPlayingStage({ fit = 'column' }: { fit?: StageFit }) {
   }, [popout.canVisualize, popout.markUnsupported])
 
   useEffect(() => {
-    if (!popout.pendingFullscreen || popout.popout) return
-    popout.clearPendingFullscreen()
-    popout.setNotice('')
-    container.current
-      ?.requestFullscreen()
-      .catch(() => popout.setNotice('Press F on the player for full screen.'))
-  }, [popout.pendingFullscreen, popout.popout, popout.clearPendingFullscreen, popout.setNotice])
+    if (!immersive) return
+    const root = document.documentElement
+    root.dataset.stageImmersive = ''
+    const previous = root.style.overflow
+    root.style.overflow = 'hidden'
+    document.querySelector('#main')?.scrollTo(0, 0)
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setImmersive(false)
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      delete root.dataset.stageImmersive
+      root.style.overflow = previous
+      window.removeEventListener('keydown', onKey)
+    }
+  }, [immersive])
 
-  function toggleFullscreen() {
+  const toggleFullscreen = useCallback(() => {
     const element = container.current
     if (!element) return
     popout.setNotice('')
-    if (document.fullscreenElement === element) void document.exitFullscreen()
-    else
-      element
-        .requestFullscreen()
-        .catch(() => popout.setNotice('Full screen is unavailable in this browser.'))
-  }
+    if (document.fullscreenElement === element) {
+      void document.exitFullscreen()
+      return
+    }
+
+    if (immersiveRef.current) {
+      setImmersive(false)
+      return
+    }
+    // A rejected request is the phone case: take the stage to the edges in the page.
+    const supported = document.fullscreenEnabled && typeof element.requestFullscreen === 'function'
+    if (!supported) {
+      setImmersive(true)
+      return
+    }
+    void element.requestFullscreen().catch(() => setImmersive(true))
+  }, [popout.setNotice])
+
+  useEffect(() => {
+    if (!popout.pendingFullscreen || popout.popout) return
+    popout.clearPendingFullscreen()
+    toggleFullscreen()
+  }, [popout.pendingFullscreen, popout.popout, popout.clearPendingFullscreen, toggleFullscreen])
 
   return (
     <div
       className={cx(
-        'flex min-h-0 min-w-0 flex-1 flex-col gap-[10px]',
+        'stage-frame flex min-h-0 min-w-0 flex-1 flex-col gap-[10px]',
         fit === 'column' && '[container-type:inline-size]',
       )}
     >
@@ -632,7 +662,7 @@ export function NowPlayingStage({ fit = 'column' }: { fit?: StageFit }) {
           there it is only a block. */}
       <div
         className={cx(
-          'relative grid min-h-0 flex-1 place-items-start',
+          'stage-slot relative grid min-h-0 flex-1 place-items-start',
           fit === 'column' &&
             'max-h-[100cqi] [container-type:size] max-phone:max-h-none max-phone:[container-type:normal]',
         )}
@@ -658,7 +688,7 @@ export function NowPlayingStage({ fit = 'column' }: { fit?: StageFit }) {
           <Stage
             placement="docked"
             stageRef={container}
-            fullscreen={fullscreen}
+            fullscreen={fullscreen || immersive}
             onFullscreen={toggleFullscreen}
             onPopout={popout.canPopout ? popout.openPopout : undefined}
             className={docked}

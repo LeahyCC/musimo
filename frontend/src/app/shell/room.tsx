@@ -334,6 +334,7 @@ export function RoomShell() {
         })}
       </nav>
       <div
+        data-page-pane=""
         className={cx(
           'flex min-h-0 min-w-0 flex-col overflow-hidden rounded-[18px] bg-canvas',
           'max-phone:block max-phone:overflow-visible max-phone:rounded-none',

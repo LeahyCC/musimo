@@ -63,6 +63,7 @@ import {
 import { remember, songCount, stored, usePlayer, usePlaylistSongs } from '../player/player'
 import { queueActions } from '../player/queue-actions'
 import { albumCountLabel, type AlbumGroup, groupAlbumEditions, yearSpan } from './album-editions'
+import { ArtistLetters, useArtistLetterJump } from './artist-letters'
 import { readReturnAnchor, revealBrowseItem, writeReturnAnchor } from './browse-anchor'
 import { CollectionCover, CollectionHeader } from './collection-header'
 import {
@@ -250,7 +251,6 @@ export function LibraryPage({
   const [openGroupKey, setOpenGroupKey] = useState('')
   const anchorApplied = useRef('')
   const [revealId, setRevealId] = useState('')
-  const [jumping, setJumping] = useState(false)
   const [layout, setLayout] = useState<ViewMode>(() =>
     stored('musimo.library-layout', 'grid') === 'list' ? 'list' : 'grid',
   )
@@ -319,6 +319,14 @@ export function LibraryPage({
     enabled: ready && tab === 'artists',
     gcTime: 30 * 60_000,
   })
+  const { jumping, jump } = useArtistLetterJump(
+    {
+      pages: artists.data?.pages,
+      hasNextPage: Boolean(artists.hasNextPage),
+      fetchNextPage: () => artists.fetchNextPage(),
+    },
+    setRevealId,
+  )
   // Search, filter, sort, totals and shuffle are the server's job so they cover the whole
   // library rather than the pages this browser happens to have scrolled through.
   const trackSearch = useMemo(() => {
@@ -672,33 +680,6 @@ export function LibraryPage({
     }
   }, [])
 
-  async function jumpToLetter(offset: number) {
-    if (jumping) return
-    const loaded = artistItems[offset]
-    if (loaded) {
-      setRevealId(loaded.id)
-      return
-    }
-    setJumping(true)
-    try {
-      // fetchNextPage resolves rather than throwing on a failed page, with the count
-      // unchanged and a next page still on offer — so stop when a fetch errors or
-      // makes no progress, or this would retry the endpoint forever.
-      let result = await artists.fetchNextPage()
-      let count = result.data?.pages.reduce((sum, page) => sum + page.items.length, 0) ?? 0
-      while (count <= offset && result.hasNextPage && !result.isError) {
-        const before = count
-        result = await artists.fetchNextPage()
-        count = result.data?.pages.reduce((sum, page) => sum + page.items.length, 0) ?? 0
-        if (count <= before) break
-      }
-      const target = result.data?.pages.flatMap((page) => page.items)[offset]
-      if (target) setRevealId(target.id)
-    } finally {
-      setJumping(false)
-    }
-  }
-
   useEffect(() => remember('musimo.library-layout', layout), [layout])
 
   useEffect(() => {
@@ -972,28 +953,7 @@ export function LibraryPage({
         />
       )}
       {showBrowser && tab === 'artists' && sort === 'name' && artistLetters.length > 1 && (
-        <nav
-          aria-label="Jump to letter"
-          className="mb-[16px] flex flex-wrap items-center gap-[2px]"
-        >
-          {artistLetters.map(({ letter, offset }) => (
-            <button
-              key={letter}
-              type="button"
-              disabled={jumping}
-              aria-label={`Jump to artists starting with ${letter}`}
-              className="grid h-[30px] min-w-[30px] place-items-center rounded-md px-[6px] font-mono text-small text-muted hover:bg-raised hover:text-text disabled:opacity-50 coarse:min-h-11 coarse:min-w-11"
-              onClick={() => void jumpToLetter(offset)}
-            >
-              {letter}
-            </button>
-          ))}
-          {jumping && (
-            <span role="status" className="ml-[8px] text-small text-muted">
-              Loading artists…
-            </span>
-          )}
-        </nav>
+        <ArtistLetters phone={phone} letters={artistLetters} jumping={jumping} onJump={jump} />
       )}
       {showBrowser && tab === 'artists' && sort === 'scramble' && (
         <div className="mb-[16px] flex flex-wrap items-center gap-[10px]">
@@ -1298,7 +1258,7 @@ export function LibraryPage({
         </InlineError>
       )}
       {artistId && artistDetail.data && (
-        <section className="library-detail grid gap-[16px]">
+        <section className="library-detail @container grid min-w-0 gap-[16px]">
           <CollectionHeader
             className="library-artist-heading"
             cover={
@@ -1362,10 +1322,12 @@ export function LibraryPage({
               <ListMusic size={15} /> {artistSongsMode ? 'Albums' : 'All songs'}
             </Button>
           </CollectionHeader>
+          {/* The page, not the window: the rail and the dock eat the width the old 900px
+              query was measuring, and the chart ran off the right edge. */}
           {!artistSongsMode && (
-            <div className="grid grid-cols-[minmax(0,3fr)_minmax(0,2fr)] items-start gap-[16px] max-[900px]:grid-cols-1">
+            <div className="grid min-w-0 grid-cols-1 items-start gap-[16px] @min-[720px]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
               {topSongs.length > 0 && (
-                <section className="library-top-songs min-w-0">
+                <section className="library-top-songs min-w-0 overflow-x-auto">
                   <div className="mb-[10px] flex items-baseline justify-between">
                     <h2 className="text-strong">Top songs</h2>
                     <button
@@ -1567,7 +1529,9 @@ export function LibraryPage({
         </section>
       )}
       {tab === 'artists' && showBrowser && (
-        <div>
+        <div
+          className={phone && sort === 'name' && artistLetters.length > 1 ? 'pr-[28px]' : undefined}
+        >
           {libraryLoadError}
           <VirtualBrowse
             items={artistItems}
