@@ -70,6 +70,8 @@ type OverlayProps = {
 }
 
 const IDLE_MS = 2500
+/** A finger has no pointer to rest on a control, so a tap gets longer to find the next one. */
+const TOUCH_IDLE_MS = 4000
 
 /* The overlay's controls sit on artwork or the visualizer, not on the page, so they take the
    on-media color. `compact` is the 32 by 36 box they had, and still 44px on a touch screen. */
@@ -106,10 +108,11 @@ const presetSelectClassName = cx(
 // cursor goes with it. It stays while paused, while the pointer rests on a
 // control, and comes back on any movement or key.
 //
-// A touch screen keeps it: there is no pointer to rest or move, and every tap
-// ends with a `pointerleave`, which used to hide the controls between the tap
-// landing and the click, so the stage's buttons could not be pressed while a
-// song played.
+// A touch screen has no pointer to rest or move, and every tap ends with a
+// `pointerleave`, so it keeps its own rules: the controls fade after a longer
+// still spell while music plays, a tap on the picture brings them back or puts
+// them away, a tap on a control keeps them up a while longer, and an open
+// preset sheet holds them.
 export function useOverlayIdle(container: RefObject<HTMLDivElement | null>, playing: boolean) {
   const [idle, setIdle] = useState(false)
 
@@ -119,8 +122,51 @@ export function useOverlayIdle(container: RefObject<HTMLDivElement | null>, play
     const win = element.ownerDocument.defaultView ?? window
     let timer = 0
     const touchOnly = win.matchMedia('(hover: none)').matches
+
+    if (touchOnly) {
+      let hidden = false
+      const set = (value: boolean) => {
+        hidden = value
+        setIdle(value)
+      }
+
+      const rest = () => {
+        if (element.querySelector('.stage-overlay [role="dialog"]')) {
+          timer = win.setTimeout(rest, TOUCH_IDLE_MS)
+          return
+        }
+        set(true)
+      }
+
+      const show = () => {
+        win.clearTimeout(timer)
+        set(false)
+        if (playing) timer = win.setTimeout(rest, TOUCH_IDLE_MS)
+      }
+
+      const tap = (event: Event) => {
+        const onControl =
+          event.target instanceof Element && Boolean(event.target.closest('.stage-overlay'))
+        if (onControl || hidden || !playing) {
+          show()
+          return
+        }
+        win.clearTimeout(timer)
+        set(true)
+      }
+
+      element.addEventListener('click', tap)
+      element.addEventListener('keydown', show)
+      show()
+      return () => {
+        win.clearTimeout(timer)
+        element.removeEventListener('click', tap)
+        element.removeEventListener('keydown', show)
+      }
+    }
+
     const rest = () => {
-      if (!playing || touchOnly) return
+      if (!playing) return
       if (element.querySelector('.stage-overlay :hover')) {
         timer = win.setTimeout(rest, IDLE_MS)
         return
@@ -134,10 +180,12 @@ export function useOverlayIdle(container: RefObject<HTMLDivElement | null>, play
       if (playing) timer = win.setTimeout(rest, IDLE_MS)
     }
 
+    // A tap on a hybrid screen (a laptop with a mouse and a touch screen) ends with a
+    // `pointerleave` too, and must not hide the controls under the finger.
     const leave = (event: PointerEvent) => {
       if (event.pointerType === 'touch') return
       win.clearTimeout(timer)
-      if (playing && !touchOnly) setIdle(true)
+      if (playing) setIdle(true)
     }
 
     element.addEventListener('pointermove', wake)
@@ -671,7 +719,12 @@ function TouchStageChrome({
   return (
     <div className="stage-overlay pointer-events-none absolute inset-0">
       {fullscreen && (
-        <div className="pointer-events-auto absolute top-0 left-0 z-10 pt-[var(--safe-top)] pl-[4px]">
+        <div
+          className={cx(
+            'pointer-events-auto absolute top-0 left-0 z-10 pt-[var(--safe-top)] pl-[4px]',
+            fadeClassName,
+          )}
+        >
           <button
             type="button"
             className="grid size-11 place-items-center rounded-full border-0 bg-scrim/55 text-on-media"
@@ -682,8 +735,15 @@ function TouchStageChrome({
           </button>
         </div>
       )}
+      {/* The block fades with the stage once a tap has gone unanswered, like the desktop bars; the
+          sheet below is not in it, so it stays until it is closed. */}
       <div className="absolute inset-x-0 bottom-0 z-10 grid gap-[8px] p-[10px] pb-[calc(10px+var(--safe-bottom))]">
-        <div className="stage-view-control pointer-events-auto grid gap-[8px] rounded-[20px] bg-scrim/60 p-[8px] text-on-media backdrop-blur-[8px]">
+        <div
+          className={cx(
+            'stage-view-control pointer-events-auto grid gap-[8px] rounded-[20px] bg-scrim/60 p-[8px] text-on-media backdrop-blur-[8px]',
+            fadeClassName,
+          )}
+        >
           {view && onView && <ViewSwitch view={view} onView={onView} />}
           {presetControls && preset && onPreset ? (
             <button

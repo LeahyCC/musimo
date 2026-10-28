@@ -72,6 +72,33 @@ test('the Visualizer control fades with the bars when the docked stage goes idle
   await expect(control).toHaveCSS('opacity', '1')
 })
 
+test('on a phone the stage controls fade after a tap and a tap on the picture brings them back', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(!isMobile, 'The touch fade is checked on the phone.')
+  await playerFixtures(page)
+  await loadTrack(page)
+  await page.goto('/now-playing')
+  await expect(page.getByRole('heading', { name: 'First Light' })).toBeVisible()
+
+  const stage = page.locator('.stage')
+  const control = stage.locator('.stage-view-control')
+  // Paused, the controls stay up for good.
+  await expect(control).toHaveCSS('opacity', '1')
+  await page.getByRole('button', { name: 'Play', exact: true }).click()
+  await expect(page.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+  // Playing, they fade once a few seconds pass without a tap.
+  await expect(stage).toHaveClass(/idle/, { timeout: 10_000 })
+  await expect(control).toHaveCSS('opacity', '0')
+  // A tap on the picture brings them back, and a second tap puts them away at once.
+  await stage.tap({ position: { x: 40, y: 40 } })
+  await expect(stage).not.toHaveClass(/idle/)
+  await expect(control).toHaveCSS('opacity', '1')
+  await stage.tap({ position: { x: 40, y: 40 } })
+  await expect(stage).toHaveClass(/idle/)
+})
+
 test('the sidebar has no Now Playing row until a library track is loaded', async ({
   page,
   isMobile,

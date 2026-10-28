@@ -37,6 +37,7 @@
 
 - Keep the popularity chart on the artist page. It stacks under Top songs when that part of the page is under 720px, so the dock and the rail no longer push it off the right edge.
 - Stop the Listening room's Now Playing page scrolling into an empty gap under the controls. The tabs stay inside the art, and a large stage's tabs are only as tall as what they show.
+- On a phone, the stage controls fade a few seconds after the last tap while music plays, so the picture is clear. A tap on the picture brings them back or hides them, and they stay while paused or while the preset sheet is open.
 - On a touch screen, pick a visualizer preset from a sheet. It closes with the X, a tap on the picture, or a choice. Full screen fills the viewport even when the browser cannot fullscreen a canvas, which is a phone, and the way out stays on the picture.
 - Keep the song playing when the phone locks. The audio elements sit outside the hidden player bar, and Safari is told the tab is playing music.
 - Jump through Artists by letter from a strip down the right edge of a phone. A wide window keeps one row that scrolls sideways, and typing a letter jumps too.
