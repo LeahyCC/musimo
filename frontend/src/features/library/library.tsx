@@ -1107,21 +1107,23 @@ export function LibraryPage({
               )}
               <RowMenu
                 label={`More actions for ${detailTitle}`}
-                disabled={!detailTracks.length}
-                actions={queueActions(
-                  () => player.playNext(detailTracks),
-                  () => player.addToQueue(detailTracks),
-                )}
+                disabled={!album && !detailTracks.length}
+                actions={[
+                  ...queueActions(
+                    () => player.playNext(detailTracks),
+                    () => player.addToQueue(detailTracks),
+                  ).map((action) => ({ ...action, disabled: !detailTracks.length })),
+                  ...(album
+                    ? [
+                        {
+                          label: 'Delete from library…',
+                          disabled: libraryDelete.pending,
+                          onSelect: () => libraryDelete.remove('album', album.id, album.name),
+                        },
+                      ]
+                    : []),
+                ]}
               />
-              {album && (
-                <Button
-                  variant="danger"
-                  onClick={() => libraryDelete.remove('album', album.id, album.name)}
-                  disabled={libraryDelete.pending}
-                >
-                  <Trash2 size={15} /> Delete
-                </Button>
-              )}
               {playlist && !playlistLiked && (
                 <Button
                   variant="danger"
@@ -1331,15 +1333,6 @@ export function LibraryPage({
               {artistDetail.data.starred ? 'Favourite' : 'Add to favourites'}
             </Button>
             <Button
-              variant="danger"
-              disabled={libraryDelete.pending}
-              onClick={() =>
-                libraryDelete.remove('artist', artistId, artistDetail.data?.name ?? '')
-              }
-            >
-              <Trash2 size={15} /> Delete
-            </Button>
-            <Button
               onClick={() =>
                 void navigate(artistPageLocation(artistSongsMode ? 'albums' : 'songs', artistId))
               }
@@ -1347,6 +1340,17 @@ export function LibraryPage({
             >
               <ListMusic size={15} /> {artistSongsMode ? 'Albums' : 'All songs'}
             </Button>
+            <RowMenu
+              label={`More actions for ${artistDetail.data.name}`}
+              actions={[
+                {
+                  label: 'Delete from library…',
+                  disabled: libraryDelete.pending,
+                  onSelect: () =>
+                    libraryDelete.remove('artist', artistId, artistDetail.data?.name ?? ''),
+                },
+              ]}
+            />
           </CollectionHeader>
           {!artistSongsMode && topSongs.length > 0 && (
             <section className="library-top-songs min-w-0 overflow-x-auto">
@@ -1438,11 +1442,13 @@ export function LibraryPage({
                       onQueue={(upNext) =>
                         queueCollection.mutate({ kind: 'album', id: album.id, upNext })
                       }
-                      // A card for several editions would delete only one of them, so it has none.
-                      onDelete={
-                        editions > 1
-                          ? undefined
-                          : () => libraryDelete.remove('album', album.id, album.name)
+                      // A card for several editions deletes all of them; the confirm says how many.
+                      onDelete={() =>
+                        libraryDelete.remove(
+                          'album',
+                          group.editions.map((item) => item.album.id),
+                          album.name,
+                        )
                       }
                     />
                   )
@@ -1590,6 +1596,7 @@ export function LibraryPage({
                 onShuffle={() =>
                   playCollection.mutate({ kind: 'artist', id: artist.id, shuffled: true })
                 }
+                onDelete={() => libraryDelete.remove('artist', artist.id, artist.name)}
               />
             )}
           />
