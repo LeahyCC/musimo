@@ -6,6 +6,9 @@ describe('library delete', () => {
   it('says what goes and that it goes to the trash', () => {
     expect(deleteQuestion('track', 'Song')).toMatch(/^Delete “Song”\? The files move to the trash/)
     expect(deleteQuestion('album', 'Blue')).toMatch(/^Delete the album “Blue”\?/)
+    expect(deleteQuestion('album', 'Blue', 3)).toMatch(
+      /^Delete the album “Blue” \(all 3 editions\)\?/,
+    )
     expect(deleteQuestion('artist', 'Joni')).toMatch(/^Delete “Joni” and all their albums\?/)
   })
 

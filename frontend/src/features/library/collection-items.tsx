@@ -380,8 +380,8 @@ export function AlbumItem({
   onShuffle: () => void
   /** Queues the whole album: right after the playing track, or at the end. */
   onQueue: (upNext: boolean) => void
-  /** Moves the album's files to the trash, after a confirm. Left out where there is no delete. */
-  onDelete?: () => void
+  /** Moves the album's files to the trash, after a confirm. A group card deletes every edition. */
+  onDelete: () => void
 }) {
   const room = useLayout() === 'room'
   const openLabel = editions > 1 ? `Open ${album.name}, ${editions} editions` : `Open ${album.name}`
@@ -395,7 +395,7 @@ export function AlbumItem({
           () => onQueue(true),
           () => onQueue(false),
         ),
-        ...(onDelete ? [{ label: 'Delete from library…', onSelect: onDelete }] : []),
+        { label: 'Delete from library…', onSelect: onDelete },
       ]}
     />
   )
@@ -498,6 +498,7 @@ export function ArtistItem({
   onOpen,
   onPlay,
   onShuffle,
+  onDelete,
 }: {
   artist: LibraryArtist
   layout: ViewMode
@@ -505,10 +506,19 @@ export function ArtistItem({
   onOpen: () => void
   onPlay: () => void
   onShuffle: () => void
+  /** Moves every song by the artist to the trash, after a confirm. */
+  onDelete: () => void
 }) {
   const room = useLayout() === 'room'
   const albums = `${artist.albumCount ?? 0} ${artist.albumCount === 1 ? 'album' : 'albums'}`
   const art = artImage(artist.coverArt, <Disc3 />)
+  const menu = (
+    <RowMenu
+      label={`More actions for ${artist.name}`}
+      disabled={loading}
+      actions={[{ label: 'Delete from library…', onSelect: onDelete }]}
+    />
+  )
 
   // The grid mirrors the album card (big art, copy below, play on hover) so the two views
   // browse the same way. The art stays round so an artist never reads as an album.
@@ -516,6 +526,10 @@ export function ArtistItem({
     return (
       <article className="library-artist-card group min-w-0" data-browse-anchor={artist.id}>
         <div className="relative">
+          {/* Same spot and hover reveal as the album card's menu. */}
+          <div className="absolute top-[6px] right-[6px] z-raised rounded-pill bg-canvas/93 opacity-0 transition-opacity duration-[140ms] group-hover:opacity-100 group-focus-within:opacity-100 no-hover:opacity-100">
+            {menu}
+          </div>
           <button
             className="grid aspect-square w-full place-items-center overflow-hidden rounded-pill border border-line bg-raised p-0 text-faint"
             aria-label={`Open ${artist.name}`}
@@ -575,6 +589,7 @@ export function ArtistItem({
         >
           <Shuffle size={17} />
         </IconButton>
+        {menu}
       </div>
     </article>
   )

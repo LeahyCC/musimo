@@ -1,7 +1,9 @@
 """Delete moves songs into the root's trash folder, and a trashed Deezer track is not downloaded."""
 
 import asyncio
+import os
 import tempfile
+import time
 import unittest
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
@@ -107,6 +109,23 @@ class TrashTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             self.store.db.execute("SELECT count(*) FROM library_trash").fetchone()[0], 0
         )
+
+    async def test_auto_empty_erases_only_files_past_thirty_days(self) -> None:
+        old = index_file(self.store, self.root, "Old/Album/Old.flac", SONG)
+        index_file(self.store, self.root, "New.flac", OTHER)
+        self.library.delete_songs([SONG, OTHER])
+        binned = self.root / ".musimo-trash"
+        month_ago = time.time() - 31 * 86400
+        os.utime(binned / "Old" / "Album" / "Old.flac", (month_ago, month_ago))
+        self.assertFalse(old.exists())
+        self.assertEqual(trash.empty_older(self.store, [self.root]), 1)
+        self.assertFalse((binned / "Old").exists())
+        self.assertTrue((binned / "New.flac").is_file())
+        paths = [row[0] for row in self.store.db.execute("SELECT path FROM library_trash")]
+        self.assertEqual(paths, [str(binned / "New.flac")])
+
+    async def test_auto_empty_is_off_by_default(self) -> None:
+        self.assertFalse(self.store.current().trash_auto_empty)
 
 
 class FakePlayer:

@@ -82,6 +82,8 @@ class Settings(BaseModel):
     # recipe. Off: tempo only. Energy is RMS loudness, which does not separate intensity in a
     # library of loud music, so it stays off until a better measure exists.
     audio_energy: bool = False
+    # Erase files that have sat in the library trash for 30 days. Off keeps them until emptied.
+    trash_auto_empty: bool = False
 
     @field_validator("audio_scalar_recipe")
     @classmethod
@@ -184,6 +186,7 @@ class SettingsPatch(BaseModel):
     audio_embedding_recipe: str | None = Field(default=None, max_length=80)
     audio_analysis_paused: bool | None = None
     audio_energy: bool | None = None
+    trash_auto_empty: bool | None = None
     output_format: Literal["original", "m4a", "opus", "mp3"] | None = None
     concurrency: int | None = Field(default=None, ge=1, le=3)
     max_attempts: int | None = Field(default=None, ge=1, le=4)

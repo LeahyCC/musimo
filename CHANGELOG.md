@@ -6,6 +6,8 @@
 
 - Songs, albums and artists can be deleted from the library. Files move to a `.musimo-trash` folder in their library folder, not erased.
 - Settings shows how big the trash is and can empty it. A track in the trash is not downloaded again until the trash is emptied.
+- Delete from library is in the ⋯ menu everywhere, including artist cards, the artist page and album cards that group several editions.
+- Settings can empty the trash after 30 days on its own. It is off by default.
 
 ### Seek bar
 
