@@ -1,4 +1,13 @@
-"""Waveform peaks for the Now Playing seek bar.
+"""Waveform bars for the Now Playing seek bar.
+
+Each bar is how loud that stretch of the song is (its average power), not its single loudest
+sample. A mastered song hits close to full scale nearly everywhere, so peaks drew a solid block.
+The bars are then stretched to the song's own range, so a breakdown a few decibels down still
+reads as a dip.
+
+The same decode splits the song into bass, mids and highs, the way DJ software colours its
+waveforms, and each point carries how much of each band it has, measured against that band's
+loudest point in the song. The seek bar mixes the three into the bar's colour.
 
 One ffmpeg decode per track, cached in SQLite until the file changes. ffmpeg reads the file
 from disk when its path resolves inside a library root. A missing file, a symlink or a path
@@ -10,12 +19,13 @@ processes.
 import asyncio
 import contextlib
 import subprocess
-import sys
-from array import array
 from collections import OrderedDict
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
+
+import numpy as np
+import numpy.typing as npt
 
 from backend.core.store import Store
 from backend.library.player import Player
@@ -23,13 +33,24 @@ from backend.library.player import Player
 WAVEFORM_POINTS = 800
 # Written into every cache key. Bump it when the way peaks are worked out changes, so rows made by
 # the old rule are worked out again instead of being served.
-WAVEFORM_VERSION = 1
-# Peaks do not need hi-fi, and a low rate keeps the decode and the arithmetic small.
-DECODE_RATE = 8000
+WAVEFORM_VERSION = 3
+# High enough to keep the highs band (cymbals, hats) below its 8 kHz ceiling, and low enough that
+# the decode and the arithmetic stay small.
+DECODE_RATE = 16000
 # 12.5 ms of audio per window. The windows are folded down to WAVEFORM_POINTS at the end, so the
 # result does not depend on how long the file is.
-WINDOW_SAMPLES = 100
+WINDOW_SAMPLES = 200
+# Where bass ends and mids start, and where mids end and highs start, roughly where DJ software
+# splits its three colours. Each filter is applied twice for a steeper edge.
+BASS_TOP_HZ = 200
+HIGHS_FROM_HZ = 2000
+# ffmpeg sends four channels: the whole song, then bass, mids and highs.
+CHANNELS = 4
 READ_BYTES = 1 << 16
+# The bars span the song's loudest point down to its quietest 5%, but never less than this many
+# decibels, so a song that is flat throughout draws flat instead of blowing noise up into hills.
+MIN_RANGE_DB = 6.0
+QUIET_SHARE = 0.05
 # How many requests may wait behind the decode that is running, and how long each may wait.
 QUEUE_LIMIT = 8
 QUEUE_WAIT_SECONDS = 30.0
@@ -49,62 +70,123 @@ class WaveformBusy(Exception):
 Decoder = Callable[[Path], Awaitable[bytes]]
 
 
-class PeakReader:
-    """Folds a stream of little-endian 16-bit mono samples into one peak per fixed window."""
+Powers = npt.NDArray[np.float64]
+
+
+class LoudnessReader:
+    """Folds a stream of little-endian 16-bit samples, CHANNELS to a frame, into one mean power
+    per channel per fixed window."""
 
     def __init__(self) -> None:
-        self.peaks: list[int] = []
-        # The odd byte left when a read splits a sample, and the window that is still filling.
+        self.windows: list[Powers] = []
+        # The bytes left when a read splits a frame, and the frames of the window still filling.
         self.split = b""
-        self.open: array[int] = array("h")
+        self.open: Powers = np.empty((0, CHANNELS))
 
     def feed(self, chunk: bytes) -> None:
         data = self.split + chunk
-        whole = len(data) - len(data) % 2
+        frame = 2 * CHANNELS
+        whole = len(data) - len(data) % frame
         self.split = data[whole:]
-        samples: array[int] = array("h")
-        samples.frombytes(data[:whole])
-        if sys.byteorder == "big":
-            samples.byteswap()
-        self.open.extend(samples)
-        full = len(self.open) - len(self.open) % WINDOW_SAMPLES
-        for start in range(0, full, WINDOW_SAMPLES):
-            self.peaks.append(window_peak(self.open[start : start + WINDOW_SAMPLES]))
-        self.open = self.open[full:]
+        samples = np.frombuffer(data[:whole], dtype="<i2").reshape(-1, CHANNELS)
+        frames = np.concatenate((self.open, samples.astype(np.float64)))
+        full = len(frames) - len(frames) % WINDOW_SAMPLES
+        if full:
+            squared = np.square(frames[:full]).reshape(-1, WINDOW_SAMPLES, CHANNELS)
+            self.windows.append(squared.mean(axis=1))
+        self.open = frames[full:]
 
-    def finish(self) -> list[int]:
-        if self.open:
-            self.peaks.append(window_peak(self.open))
-            self.open = array("h")
-        return self.peaks
+    def finish(self) -> Powers:
+        if len(self.open):
+            self.windows.append(np.square(self.open).mean(axis=0, keepdims=True))
+            self.open = np.empty((0, CHANNELS))
+        return np.concatenate(self.windows) if self.windows else np.empty((0, CHANNELS))
 
 
-def window_peak(samples: array[int]) -> int:
-    # Two scans at C speed beat abs() over every sample, and -min covers -32768.
-    return max(max(samples), -min(samples))
+def fold_windows(powers: Powers, points: int = WAVEFORM_POINTS) -> Powers:
+    """The mean power of each of `points` even runs of windows. Too few windows repeat."""
+    count = len(powers)
+    index = np.arange(points)
+    starts = index * count // points
+    ends = np.maximum(starts + 1, (index + 1) * count // points)
+    running = np.concatenate((np.zeros((1, powers.shape[1])), np.cumsum(powers, axis=0)))
+    folded: Powers = (running[ends] - running[starts]) / (ends - starts)[:, None]
+    return folded
 
 
-def fold_peaks(peaks: list[int], points: int = WAVEFORM_POINTS) -> bytes:
-    """`points` values from 0 to 255, the loudest being 255. Too few windows repeat."""
-    if not peaks:
+def loudness_levels(folded: Powers) -> bytes:
+    """One value from 0 to 255 per point: the loudest is 255 and the song's quiet end is 0.
+
+    Points are in decibels, so they follow how loud a section sounds. The scale runs from the
+    loudest point down to the quietest QUIET_SHARE of points, or MIN_RANGE_DB, whichever is wider.
+    Silence is 0."""
+    heard = folded > 0
+    if not heard.any():
+        return bytes(len(folded))
+    levels = 10 * np.log10(np.where(heard, folded, 1))
+    ranked = np.sort(levels[heard])
+    top = ranked[-1]
+    span = max(MIN_RANGE_DB, top - ranked[int(len(ranked) * QUIET_SHARE)])
+    scaled = np.clip((levels - (top - span)) / span, 0, 1)
+    return bytes(np.where(heard, np.round(scaled * 255), 0).astype(np.uint8))
+
+
+def band_levels(folded: Powers) -> bytes:
+    """One value from 0 to 255 per point: the band's level against its own loudest point.
+
+    Bass carries far more power than highs in nearly every song, so each band is measured against
+    itself, as DJ software does, or every bar would come out the bass colour. Amplitude, not
+    power, so a band at half the level reads as half and not a quarter."""
+    amplitude = np.sqrt(folded)
+    loudest = amplitude.max()
+    if loudest <= 0:
+        return bytes(len(folded))
+    return bytes(np.round(amplitude / loudest * 255).astype(np.uint8))
+
+
+def fold_loudness(powers: Powers, points: int = WAVEFORM_POINTS) -> bytes:
+    """What the cache stores: `points` bar heights, then `points` each of bass, mids and highs.
+    No audio gives nothing."""
+    if not len(powers):
         return b""
-    count = len(peaks)
-    folded: list[int] = []
-    for index in range(points):
-        start = index * count // points
-        folded.append(max(peaks[start : max(start + 1, (index + 1) * count // points)]))
-    loudest = max(folded)
-    if not loudest:
-        return bytes(points)
-    return bytes(round(value * 255 / loudest) for value in folded)
+    folded = fold_windows(powers, points)
+    return loudness_levels(folded[:, 0]) + b"".join(
+        band_levels(folded[:, band]) for band in range(1, CHANNELS)
+    )
 
 
-def peak_values(stored: bytes) -> list[float]:
-    return [round(value / 255, 3) for value in stored]
+def waveform_values(stored: bytes) -> dict[str, object]:
+    """The route's answer: bar heights from 0 to 1, and the bands as one [bass, mids, highs]
+    per point when the row has them."""
+    points = WAVEFORM_POINTS
+    banded = len(stored) == points * CHANNELS
+    heights = stored[:points] if banded else stored
+    answer: dict[str, object] = {"peaks": [round(value / 255, 3) for value in heights]}
+    if banded:
+        bands = [stored[points * band : points * (band + 1)] for band in range(1, CHANNELS)]
+        answer["bands"] = [
+            [round(value / 255, 3) for value in point] for point in zip(*bands, strict=True)
+        ]
+    return answer
 
 
 async def decode_file(source: Path) -> bytes:
-    """Peaks of the first audio stream in `source`, or WaveformUnavailable if ffmpeg cannot."""
+    """Heights and bands of the first audio stream in `source`, or WaveformUnavailable if ffmpeg
+    cannot. The song is folded to mono and split into the whole, bass, mids and highs inside
+    ffmpeg, which sends them as four channels of one stream."""
+    bass = f"lowpass=f={BASS_TOP_HZ},lowpass=f={BASS_TOP_HZ}"
+    mids = (
+        f"highpass=f={BASS_TOP_HZ},highpass=f={BASS_TOP_HZ},"
+        f"lowpass=f={HIGHS_FROM_HZ},lowpass=f={HIGHS_FROM_HZ}"
+    )
+    highs = f"highpass=f={HIGHS_FROM_HZ},highpass=f={HIGHS_FROM_HZ}"
+    graph = (
+        f"[0:a:0]aformat=sample_rates={DECODE_RATE}:channel_layouts=mono,asplit=4[whole][b][m][h];"
+        f"[b]{bass}[bass];[m]{mids}[mids];[h]{highs}[highs];"
+        # join, not amerge: amerge cannot settle a layout for four mono inputs on some files.
+        "[whole][bass][mids][highs]join=inputs=4:channel_layout=4.0:"
+        "map=0.0-FL|1.0-FR|2.0-FC|3.0-BC[out]"
+    )
     try:
         process = await asyncio.create_subprocess_exec(
             "ffmpeg",
@@ -113,11 +195,10 @@ async def decode_file(source: Path) -> bytes:
             "-nostdin",
             "-i",
             str(source),
-            "-vn",
-            "-ac",
-            "1",
-            "-ar",
-            str(DECODE_RATE),
+            "-filter_complex",
+            graph,
+            "-map",
+            "[out]",
             "-f",
             "s16le",
             "-",
@@ -131,7 +212,7 @@ async def decode_file(source: Path) -> bytes:
     stdout = process.stdout
     if stdout is None:
         raise WaveformUnavailable("ffmpeg gave no output")
-    reader = PeakReader()
+    reader = LoudnessReader()
     try:
         while chunk := await stdout.read(READ_BYTES):
             reader.feed(chunk)
@@ -142,7 +223,7 @@ async def decode_file(source: Path) -> bytes:
             with contextlib.suppress(ProcessLookupError):
                 process.kill()
             await process.wait()
-    folded = fold_peaks(reader.finish())
+    folded = fold_loudness(reader.finish())
     if code != 0 or not folded:
         raise WaveformUnavailable("ffmpeg could not decode the file")
     return folded
@@ -170,7 +251,7 @@ class WaveformService:
         self.waiting = 0
         self.failures: OrderedDict[str, str] = OrderedDict()
 
-    async def peaks(self, song_id: str) -> list[float]:
+    async def peaks(self, song_id: str) -> dict[str, object]:
         source = await asyncio.to_thread(self.locate, song_id)
         if source is None:
             raise WaveformUnavailable("This track is not in the library")
@@ -179,7 +260,7 @@ class WaveformService:
             if self.failures.get(song_id) == source.fingerprint:
                 raise WaveformUnavailable("This file could not be decoded")
             stored = await self.compute(song_id, source)
-        return peak_values(stored)
+        return waveform_values(stored)
 
     def locate(self, song_id: str) -> Source | None:
         """The file when it is inside a library root. A symlink or an outside path is refused."""

@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+### Seek bar
+
+- The waveform is coloured by frequency, like DJ software: bass red, mids green, highs blue. Each bar shows which band is above its usual level for that song, so drops go red and hat-only breakdowns go blue. What is still to play is faded.
+- The waveform shows how loud each part of a song is instead of its loudest sample, stretched to that song's own range. It was nearly solid for most songs, because mastered music hits close to full volume almost everywhere. Saved waveforms are worked out again the next time a song plays.
+
+### Artist page
+
+- The popularity chart is gone. It squeezed Top songs into a sideways scroll, and its summary named an album's play total as if it were one song's. Top songs now takes the full width, and each play count has a bar beside it scaled to the most played song.
+
 ### Song analysis
 
 - A Song analysis page (Server settings, Music bot) measures tempo and energy with Beat This!, on an NVIDIA graphics card or the CPU, lets you listen to the fastest, slowest, loudest, quietest and doubtful songs at the exact sections measured, and switches the result on for Octive. Measuring 100 songs and the whole library are buttons; the whole library asks first and can be paused. Nothing is switched on or measured until you do it.

@@ -4,14 +4,27 @@ import { useQuery } from '@tanstack/react-query'
 
 import { api, waveformSchema } from '../../api'
 import { cx } from '../../lib/cx'
-import { barCountFor, barsPath, playedPercent, resamplePeaks, VIEW_HEIGHT } from './waveform'
+import {
+  type Band,
+  bandColor,
+  barCountFor,
+  barPath,
+  barsPath,
+  playedPercent,
+  relativeBands,
+  resampleBands,
+  resamplePeaks,
+  VIEW_HEIGHT,
+} from './waveform'
 
 /**
  * The track's peaks, or undefined while they load and whenever the server has none (a file it could
  * not decode, a wait that ran out, no ffmpeg). Any of those leaves the plain bar, which is what the
  * page had before, so none of them is worth an error on screen.
  */
-function useWaveform(trackId: string): readonly number[] | undefined {
+function useWaveform(
+  trackId: string,
+): { peaks: readonly number[]; bands?: readonly Band[] } | undefined {
   const query = useQuery({
     queryKey: ['player-waveform', trackId],
     queryFn: ({ signal }) =>
@@ -20,7 +33,7 @@ function useWaveform(trackId: string): readonly number[] | undefined {
     staleTime: Infinity,
     retry: false,
   })
-  return query.data?.peaks
+  return query.data
 }
 
 function useWidth(box: RefObject<HTMLElement | null>): number {
@@ -37,14 +50,20 @@ function useWidth(box: RefObject<HTMLElement | null>): number {
   return width
 }
 
+/** Each bar on its own, in the colour its bass, mids and highs mix to. */
+type ColoredBar = { d: string; fill: string }
+
 // One layer of bars. It only changes with the peaks and the bar's width, so the position ticking
-// four times a second moves the clip around it and never redraws it.
+// four times a second moves the clip around it and never redraws it. With bands each bar is its
+// own path in its own colour, and the unplayed layer is the same colours faded.
 const Bars = memo(function Bars({
   path,
+  colored,
   count,
   className,
 }: {
   path: string
+  colored: readonly ColoredBar[] | undefined
   count: number
   className: string
 }) {
@@ -56,7 +75,15 @@ const Bars = memo(function Bars({
       aria-hidden="true"
       focusable="false"
     >
-      <path className={className} d={path} />
+      {colored ? (
+        <g className={className} data-seek-colored="">
+          {colored.map((bar, index) => (
+            <path key={index} d={bar.d} style={{ fill: bar.fill }} />
+          ))}
+        </g>
+      ) : (
+        <path className={className} d={path} />
+      )}
     </svg>
   )
 })
@@ -85,6 +112,9 @@ const TONES = {
   room: { rest: 'fill-text/22', played: 'fill-text', head: 'bg-text', plain: 'accent-text' },
 } as const
 
+/** Coloured bars keep their colour in both layers; what is still to play is faded. */
+const COLORED_LAYERS = { rest: 'opacity-45', played: '' } as const
+
 /**
  * Now Playing's seek bar. The range input is the whole of the control, as it always was: the
  * keyboard, the pointer, the screen reader and the disabled state are all its own. When the track's
@@ -104,15 +134,25 @@ export function SeekBar({
   className = 'h-[36px]',
 }: SeekBarProps) {
   const colors = TONES[tone]
-  const peaks = useWaveform(trackId)
+  const waveform = useWaveform(trackId)
   const box = useRef<HTMLDivElement>(null)
   const width = useWidth(box)
+  const count = waveform ? barCountFor(width, waveform.peaks.length) : 0
   const bars = useMemo(
-    () => (peaks ? resamplePeaks(peaks, barCountFor(width, peaks.length)) : []),
-    [peaks, width],
+    () => (waveform ? resamplePeaks(waveform.peaks, count) : []),
+    [waveform, count],
   )
   const path = useMemo(() => barsPath(bars), [bars])
-  const drawn = peaks !== undefined
+  const colored = useMemo(() => {
+    if (!waveform?.bands) return undefined
+    const bands = resampleBands(relativeBands(waveform.bands), count)
+    return bars.map((bar, index) => ({
+      d: barPath(bar, index),
+      fill: bandColor(bands[index] ?? [0, 0, 0]),
+    }))
+  }, [waveform, count, bars])
+  const layers = colored ? COLORED_LAYERS : colors
+  const drawn = waveform !== undefined
   const played = playedPercent(position, length)
   return (
     <div
@@ -128,13 +168,13 @@ export function SeekBar({
     >
       {drawn && (
         <div className="pointer-events-none absolute inset-0" aria-hidden="true">
-          <Bars path={path} count={bars.length} className={colors.rest} />
+          <Bars path={path} colored={colored} count={bars.length} className={layers.rest} />
           <div
             className="absolute inset-0"
             data-seek-played=""
             style={{ clipPath: `inset(0 ${100 - played}% 0 0)` }}
           >
-            <Bars path={path} count={bars.length} className={colors.played} />
+            <Bars path={path} colored={colored} count={bars.length} className={layers.played} />
           </div>
           <div
             className={cx(
