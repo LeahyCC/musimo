@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from test_holdings import index_file, mark_done
 
 from backend.api.trash_api import install_trash_routes
 from backend.core.store import Store
@@ -18,7 +19,6 @@ from backend.jobs.holdings import batch_skip
 from backend.jobs.job_store import Jobs
 from backend.library import trash
 from backend.library.index import Library
-from tests.test_holdings import index_file, mark_done
 
 SONG = "tr-aaaaaaaaaaaaaaaa"
 OTHER = "tr-bbbbbbbbbbbbbbbb"
