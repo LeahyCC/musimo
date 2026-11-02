@@ -7,16 +7,23 @@ for are refused as downloads; once it is emptied (here or by hand) they can be d
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import os
 import shutil
 import sqlite3
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 
 from backend.core.store import Store
 
 TRASH_FOLDER = ".musimo-trash"
+# With the trash_auto_empty setting on, files older than this go for good.
+KEEP_DAYS = 30
+# How often the server looks. A file can outstay its 30 days by up to this much.
+CHECK_SECONDS = 6 * 3600
 
 
 def trash_folder(root: Path) -> Path:
@@ -41,6 +48,9 @@ def move_into_trash(path: Path, root: Path) -> Path:
     target.parent.mkdir(parents=True, exist_ok=True)
     # Same root, so this is a rename. shutil falls back to copy and delete across mounts.
     shutil.move(path, target)
+    # A move keeps the old modified time. Stamp the delete time instead, so the 30-day auto-empty
+    # counts from here and covers sidecars and covers, which have no row of their own.
+    os.utime(target)
     return target
 
 
@@ -171,15 +181,63 @@ def usage(roots: list[Path]) -> dict[str, object]:
     }
 
 
+def forget_gone(store: Store) -> None:
+    """Drop the rows for trashed files that are no longer there."""
+    with store.lock:
+        paths = [str(row[0]) for row in store.db.execute("SELECT path FROM library_trash")]
+    gone = [path for path in paths if not Path(path).exists()]
+    if gone:
+        forget(store, gone)
+
+
+def empty_older(store: Store, roots: list[Path], days: int = KEEP_DAYS) -> int:
+    """Erase trash files moved there more than this many days ago, and the folders left empty.
+
+    Returns how many files went.
+    """
+    cutoff = time.time() - days * 86400
+    removed = 0
+    for root in roots:
+        folder = trash_folder(root)
+        if not folder.is_dir() or folder.is_symlink():
+            continue
+        # Bottom up, so a folder is looked at after everything in it.
+        for parent, dirs, names in os.walk(folder, topdown=False):
+            for name in names:
+                item = os.path.join(parent, name)
+                try:
+                    if os.lstat(item).st_mtime < cutoff:
+                        os.unlink(item)
+                        removed += 1
+                except OSError:
+                    continue
+            for name in dirs:
+                try:
+                    os.rmdir(os.path.join(parent, name))
+                except OSError:
+                    pass
+    if removed:
+        forget_gone(store)
+    return removed
+
+
+async def keep_emptying(store: Store, roots: list[Path]) -> None:
+    """While the app runs, empty old trash files every few hours if the setting is on."""
+    while True:
+        try:
+            if store.current().trash_auto_empty:
+                await asyncio.to_thread(empty_older, store, roots)
+        except Exception:
+            # One bad pass must not stop the next.
+            logging.getLogger("uvicorn.error").exception("trash auto-empty failed")
+        await asyncio.sleep(CHECK_SECONDS)
+
+
 def empty(store: Store, roots: list[Path]) -> dict[str, object]:
     """Delete every root's trash for good. Whatever could not be removed is still counted after."""
     for root in roots:
         folder = trash_folder(root)
         if folder.is_dir() and not folder.is_symlink():
             shutil.rmtree(folder, ignore_errors=True)
-    with store.lock:
-        paths = [str(row[0]) for row in store.db.execute("SELECT path FROM library_trash")]
-    gone = [path for path in paths if not Path(path).exists()]
-    if gone:
-        forget(store, gone)
+    forget_gone(store)
     return usage(roots)

@@ -134,6 +134,12 @@ const controls: {
     section: 'library',
   },
   {
+    key: 'trash_auto_empty',
+    label: 'Empty trash after 30 days',
+    help: 'Erases deleted songs 30 days after they went to the trash. Off keeps them until you empty it.',
+    section: 'library',
+  },
+  {
     key: 'output_format',
     label: 'Audio format',
     help: 'Original keeps source quality. MP3 requires a lossy conversion. M4A and Opus may require conversion if the source codec differs.',
@@ -375,7 +381,7 @@ export function SettingsPage() {
     const setting = settings.data?.[key]
     if (!setting) return null
     const value = draft[key] ?? setting.value
-    // The switch below is the only boolean; the text and select fields never hold one.
+    // Only switches hold a boolean; the text and select fields never do.
     const entered = typeof value === 'boolean' ? '' : value
     const disabled = setting.locked || save.isPending
     const isSwitch = typeof setting.value === 'boolean'

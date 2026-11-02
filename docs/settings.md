@@ -39,7 +39,9 @@ Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGI
 
 ## Trash
 
-Under Library on the Server page, below the library index: how much the `.musimo-trash` folders hold, the folder per root, and Empty trash, which erases them after a confirm. Deleting from the library fills it; see [the guide](guide.md#library-and-playback). It is not a stored setting.
+Under Library on the Server page, below the library index: how much the `.musimo-trash` folders hold, the folder per root, and Empty trash, which erases them after a confirm. Deleting from the library fills it; see [the guide](guide.md#library-and-playback). That panel is not a stored setting.
+
+`trash_auto_empty` (Empty trash after 30 days, a switch above the library index, default off) is. While it is on, the server looks every six hours and erases trash files whose modified time is more than 30 days old, then any folders left empty. A move into the trash stamps the file's modified time with the delete time, so covers and lyrics count from the same moment as their song.
 
 ## Song analysis worker
 

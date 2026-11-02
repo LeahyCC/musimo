@@ -44,6 +44,7 @@ from backend.integrations.youtube_cookies import drop_copies as drop_youtube_coo
 from backend.integrations.youtube_cookies import publish as publish_youtube_cookies
 from backend.jobs.downloads import Downloads
 from backend.jobs.links import Links
+from backend.library import trash
 from backend.library.audio_analysis import AudioAnalysis
 from backend.library.audio_profile import AudioProfiles
 from backend.library.index import Library
@@ -164,13 +165,17 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             downloads.start()
             # The first page would otherwise wait while this build reads the index.
             ready = asyncio.create_task(player.keep_ready())
+            trash_cleaner = asyncio.create_task(trash.keep_emptying(store, roots))
             links = Links(downloads)
             try:
                 yield
             finally:
                 ready.cancel()
+                trash_cleaner.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
                     await ready
+                with contextlib.suppress(asyncio.CancelledError):
+                    await trash_cleaner
                 await downloads.close()
                 await library.close()
                 holder["store"] = None

@@ -434,6 +434,8 @@ export const settingsSchema = z.object({
     locked: false,
   }),
   audio_energy: field(z.boolean()).default({ value: false, origin: 'default', locked: false }),
+  // Older servers do not send it.
+  trash_auto_empty: field(z.boolean()).default({ value: false, origin: 'default', locked: false }),
   library_label: field(z.string()),
   output_format: field(z.enum(['original', 'm4a', 'opus', 'mp3'])),
   concurrency: field(z.number()),
