@@ -7,7 +7,7 @@ dependencies = [
   "fastapi==0.143.2",
   "uvicorn==0.54.0",
   "httpx==0.28.1",
-  "yt-dlp[default,curl-cffi]==2026.8.19",
+  "yt-dlp[default,curl-cffi]==2026.10.26",
   "bgutil-ytdlp-pot-provider==2.0.2",
   "mutagen==1.48.1",
   "watchdog==6.0.0",
