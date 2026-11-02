@@ -20,6 +20,7 @@ from backend.core.store import Store, drop_song_references, new_song_id, note_li
 from backend.core.text import normalize
 from backend.integrations.catalog import Result
 from backend.jobs.holdings import refresh_holdings
+from backend.library import trash
 from backend.library.player import is_cover_image, ranked_cover_names
 from backend.library.tags import TAGS_VERSION, facts_for
 
@@ -759,6 +760,69 @@ class Library:
                 self.store.db.rollback()
                 raise
 
+    def delete_songs(self, song_ids: list[str]) -> dict[str, object]:
+        """Move these songs' files into the trash and drop them from the index.
+
+        A song in a read-only folder, or whose file has already gone, is reported in `failed`
+        and left alone. Each moved file is recorded with the Deezer tracks it stood for, so a
+        download of them is refused until the trash is emptied.
+        """
+        with self.store.lock:
+            rows = self.store.db.execute(
+                "SELECT f.song_id, f.path, f.root FROM library_files f "
+                "JOIN library_roots r ON r.path=f.root AND r.enabled=1 "
+                "WHERE f.song_id IN (SELECT value FROM json_each(?))",
+                (json.dumps(song_ids),),
+            ).fetchall()
+            tracks = trash.deezer_tracks_for(self.store.db, [str(row["path"]) for row in rows])
+        found = {str(row["song_id"]) for row in rows}
+        failed = [
+            {"id": song_id, "reason": "not_found"} for song_id in song_ids if song_id not in found
+        ]
+        deleted: list[str] = []
+        folders: dict[Path, Path] = {}
+        # The walk and the watcher take this lock, so neither indexes a file half moved.
+        with self.work_lock:
+            for row in rows:
+                song_id, path, root = str(row["song_id"]), Path(row["path"]), Path(row["root"])
+                if path.is_symlink() or not path.is_file():
+                    failed.append({"id": song_id, "reason": "not_found"})
+                    continue
+                if not os.access(path.parent, os.W_OK):
+                    failed.append({"id": song_id, "reason": "read_only"})
+                    continue
+                try:
+                    moved = trash.move_into_trash(path, root)
+                    for extra in trash.sidecars(path):
+                        trash.move_into_trash(extra, root)
+                except OSError:
+                    failed.append({"id": song_id, "reason": "read_only"})
+                    continue
+                with self.store.lock:
+                    self.store.db.execute("BEGIN IMMEDIATE")
+                    try:
+                        trash.record(
+                            self.store.db, str(moved), str(path), str(root), tracks[str(path)]
+                        )
+                        self.store.db.commit()
+                    except Exception:
+                        self.store.db.rollback()
+                        raise
+                self.remove(str(path))
+                deleted.append(song_id)
+                folders[path.parent] = root
+            for folder, root in folders.items():
+                trash.tidy_folder(folder, root, AUDIO_EXTENSIONS)
+                gone = folder
+                while gone.parent != root and not gone.parent.exists():
+                    gone = gone.parent
+                if gone.exists():
+                    self.record_folder_cover(folder)
+                else:
+                    self.store.delete_covers_under(str(gone))
+        self.publish()
+        return {"deleted": deleted, "failed": failed}
+
     def annotate(self, results: list[Result]) -> list[Result]:
         if not results:
             return results
@@ -907,6 +971,24 @@ class Library:
                 result.matched_song = song_id
                 result.matched_paths = [path]
                 result.matched_album = ""
+        binned = trash.trashed_tracks(
+            self.store,
+            [
+                r.id
+                for r in results
+                if r.kind == "track" and r.ownership not in ("owned", "edition")
+            ],
+        )
+        with self.store.lock:
+            # A track deleted to the trash stays refused until the trash is emptied. An owned
+            # copy elsewhere in the library still wins, since that one is really here.
+            for result in results:
+                if result.kind == "track" and result.id in binned:
+                    result.ownership = "trashed"
+                    result.matched_by = "trash"
+                    result.matched_paths = []
+                    result.matched_song = ""
+                    result.matched_album = ""
             for result in results:
                 if result.kind == "album":
                     rows = self.store.db.execute(

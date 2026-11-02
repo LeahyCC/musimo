@@ -34,6 +34,7 @@ from backend.api.player_api import install_account_routes, install_player_routes
 from backend.api.podcast_api import install_podcast_routes
 from backend.api.search_api import install_search_routes
 from backend.api.settings_api import install_settings_routes, scrub_secret_errors
+from backend.api.trash_api import install_trash_routes
 from backend.api.waveform_api import install_waveform_routes
 from backend.core.listener import CHOOSE, HEADER, bind, is_listener_route, reset
 from backend.core.store import Store
@@ -191,6 +192,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_artist_download_routes(app, lambda: downloads)
     install_listener_routes(app, lambda: holder["store"])
     install_player_routes(app, lambda: player)
+    install_trash_routes(app, lambda: player, lambda: library, lambda: store, lambda: library.roots)
     install_account_routes(app, data, lambda: store)
     install_music_bot_routes(app, lambda: music_bot)
     install_audio_worker_routes(

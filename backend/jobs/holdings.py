@@ -320,8 +320,11 @@ def refresh_holdings(store: Store, track_ids: list[int]) -> dict[int, tuple[str,
 
 
 def batch_skip(matched_by: str, certain: bool) -> str | None:
-    """'owned' or 'choice' when a batch must not enqueue this track."""
-    if matched_by == "holding" or certain:
+    """'owned' or 'choice' when a batch must not enqueue this track.
+
+    A track whose file is in the trash counts as owned, so a batch skips it until it is emptied.
+    """
+    if matched_by in ("holding", "trash") or certain:
         return "owned"
     if matched_by in UNCERTAIN:
         return "choice"

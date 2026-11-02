@@ -37,6 +37,10 @@ Set `MUSIMO_` plus the uppercase key in the container environment to seed and lo
 
 Deployment variables are separate: `MUSIMO_BIND`, `MUSIMO_PORT`, `PUID` and `PGID` control Compose. `MUSIMO_LIBRARY_ROOTS` lists the mounted Linux paths the scanner reads. `MUSIMO_ANALYSIS_TOKEN` is the secret the app shares with the optional audio worker; empty keeps the worker's lease routes off, and any long random string set for both turns them on. See [the song analysis worker](#song-analysis-worker). `MUSIMO_WATCH_MODE` is `native` by default; use `poll` for external-change checks on Docker Desktop Windows or network shares. `MUSIMO_POLL_INTERVAL_SECONDS` defaults to 300 (five minutes); lowering it makes external changes appear sooner but uses more CPU. A label does not move or rename a folder. The image fixes application data at `/data`; `MUSIMO_DATA_DIR` is a local-development override, not a supported Compose mount relocation.
 
+## Trash
+
+Under Library on the Server page, below the library index: how much the `.musimo-trash` folders hold, the folder per root, and Empty trash, which erases them after a confirm. Deleting from the library fills it; see [the guide](guide.md#library-and-playback). It is not a stored setting.
+
 ## Song analysis worker
 
 Optional. One of two Compose profiles, run from the Musimo folder:

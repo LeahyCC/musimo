@@ -10,6 +10,7 @@ import { IconButton } from '../../ui'
 import { durationText, usePlayer } from '../player/player'
 import { queueActions } from '../player/queue-actions'
 import { cover } from './collection-items'
+import { useLibraryDelete } from './library-delete'
 import { useBrowseVirtual } from './virtual-browse'
 
 /** Brings the row Now Playing's About tab pointed at into view once it is on screen. */
@@ -74,6 +75,7 @@ export function TrackList({
 }) {
   const table = tableView || detail
   const player = usePlayer()
+  const deleting = useLibraryDelete()
   const room = useLayout() === 'room'
   const highlighted = highlightId ? tracks.findIndex((track) => track.id === highlightId) : -1
   const columns = cx(
@@ -215,10 +217,17 @@ export function TrackList({
         <RowMenu
           className="mr-[5px]"
           label={`More actions for ${track.title}`}
-          actions={queueActions(
-            () => player.playNext([track]),
-            () => player.addToQueue([track]),
-          )}
+          actions={[
+            ...queueActions(
+              () => player.playNext([track]),
+              () => player.addToQueue([track]),
+            ),
+            {
+              label: 'Delete from library…',
+              disabled: deleting.pending,
+              onSelect: () => deleting.remove('track', track.id, track.title),
+            },
+          ]}
         />
         {onRemove && (
           <IconButton

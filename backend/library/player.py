@@ -1462,6 +1462,17 @@ class Player:
                 return detail
         raise SongMissing("Artist not found")
 
+    async def album_song_ids(self, album_id: str) -> list[str]:
+        snapshot = await self._catalog()
+        songs = snapshot.album_songs.get(album_id)
+        if songs is None:
+            raise SongMissing("Album not found")
+        return [song.song_id for song in songs]
+
+    async def artist_song_ids(self, artist_id: str) -> list[str]:
+        """Every song on the artist's albums. A guest spot on someone else's album stays."""
+        return [str(track["id"]) for track in await self.artist_tracks(artist_id)]
+
     async def artist_tracks(self, artist_id: str) -> list[dict[str, object]]:
         snapshot = await self._catalog()
         if not any(row.get("id") == artist_id for row in snapshot.artists):

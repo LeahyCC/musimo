@@ -81,6 +81,7 @@ import {
   type ViewMode,
 } from './collection-items'
 import { artistPageLocation, useArtistSort, useLibraryBrowse } from './library-browse'
+import { useLibraryDelete } from './library-delete'
 import { artistAlbumSorts, artistSongSorts, librarySortValues } from './library-params'
 import { LibraryHeading, LibraryToolbar, SearchField, type TabCounts } from './library-toolbar'
 import { TrackList } from './track-list'
@@ -451,6 +452,14 @@ export function LibraryPage({
       browse.open('playlists')
       void client.invalidateQueries({ queryKey: ['library-playlists'] })
     },
+  })
+  // A deleted album or artist cannot stay open, so its page goes back one level.
+  const libraryDelete = useLibraryDelete((kind, id) => {
+    if (kind === 'album' && id === albumId)
+      void (parentArtistId
+        ? navigate(artistPageLocation('albums', parentArtistId))
+        : browse.open('albums'))
+    if (kind === 'artist' && id === artistId) browse.open('artists')
   })
   const favouriteArtist = useMutation({
     mutationFn: ({ id, favourite }: { id: string; favourite: boolean }) =>
@@ -1104,6 +1113,15 @@ export function LibraryPage({
                   () => player.addToQueue(detailTracks),
                 )}
               />
+              {album && (
+                <Button
+                  variant="danger"
+                  onClick={() => libraryDelete.remove('album', album.id, album.name)}
+                  disabled={libraryDelete.pending}
+                >
+                  <Trash2 size={15} /> Delete
+                </Button>
+              )}
               {playlist && !playlistLiked && (
                 <Button
                   variant="danger"
@@ -1313,6 +1331,15 @@ export function LibraryPage({
               {artistDetail.data.starred ? 'Favourite' : 'Add to favourites'}
             </Button>
             <Button
+              variant="danger"
+              disabled={libraryDelete.pending}
+              onClick={() =>
+                libraryDelete.remove('artist', artistId, artistDetail.data?.name ?? '')
+              }
+            >
+              <Trash2 size={15} /> Delete
+            </Button>
+            <Button
               onClick={() =>
                 void navigate(artistPageLocation(artistSongsMode ? 'albums' : 'songs', artistId))
               }
@@ -1410,6 +1437,12 @@ export function LibraryPage({
                       }
                       onQueue={(upNext) =>
                         queueCollection.mutate({ kind: 'album', id: album.id, upNext })
+                      }
+                      // A card for several editions would delete only one of them, so it has none.
+                      onDelete={
+                        editions > 1
+                          ? undefined
+                          : () => libraryDelete.remove('album', album.id, album.name)
                       }
                     />
                   )
@@ -1516,6 +1549,7 @@ export function LibraryPage({
                 onQueue={(upNext) =>
                   queueCollection.mutate({ kind: 'album', id: album.id, upNext })
                 }
+                onDelete={() => libraryDelete.remove('album', album.id, album.name)}
               />
             )}
           />

@@ -13,6 +13,7 @@ import {
   Disc3,
   Pause,
   Play,
+  Trash2,
 } from 'lucide-react'
 
 import { albumSchema, api } from '../../api'
@@ -74,7 +75,13 @@ function badgeState(item: MusicResult, job?: DownloadJob): BadgeState {
   if (failed) return { variant: 'failed', label: 'Download failed', icon: AlertCircle }
   if (item.kind === 'album')
     return {
-      variant: item.ownership === 'edition' ? 'partial' : item.ownership,
+      // Only a track can be in the trash. An album's chip counts what is still here.
+      variant:
+        item.ownership === 'edition'
+          ? 'partial'
+          : item.ownership === 'trashed'
+            ? 'missing'
+            : item.ownership,
       label:
         item.track_count > 0
           ? `${item.owned_count} of ${item.track_count}${item.coverage_verified ? '' : ' estimated'}`
@@ -82,6 +89,7 @@ function badgeState(item: MusicResult, job?: DownloadJob): BadgeState {
       icon: item.ownership === 'owned' || item.ownership === 'edition' ? Check : null,
     }
   if (item.ownership === 'owned') return { variant: 'owned', label: 'In library', icon: Check }
+  if (item.ownership === 'trashed') return { variant: 'missing', label: 'In trash', icon: Trash2 }
   if (item.ownership === 'edition') {
     const label = item.matched_album
       ? `Another edition in library (${item.matched_album})`
