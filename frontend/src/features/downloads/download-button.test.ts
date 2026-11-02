@@ -52,6 +52,10 @@ describe('download button choice', () => {
     expect(downloadPress({ ownership: 'owned', matched_by: '' })).toBe('hide')
   })
 
+  it('hides the arrow for a track whose file is in the trash', () => {
+    expect(downloadPress({ ownership: 'trashed', matched_by: 'trash' })).toBe('hide')
+  })
+
   it('opens the dialog for an ISRC match and does not queue until Save another copy', () => {
     expect(downloadPress({ ownership: 'owned', matched_by: 'isrc' })).toBe('ask')
     expect(downloadPress({ ownership: 'edition', matched_by: 'tags' })).toBe('ask')

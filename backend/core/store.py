@@ -493,6 +493,16 @@ class Store:
                 fingerprint TEXT NOT NULL,
                 peaks BLOB NOT NULL
             );
+            -- One row per file Delete moved into a root's .musimo-trash folder. track_ids are
+            -- the Deezer tracks that file stood for, so a download of them is refused while
+            -- the file is still in the trash. A row whose file is gone no longer counts.
+            CREATE TABLE IF NOT EXISTS library_trash (
+                path TEXT PRIMARY KEY,
+                original TEXT NOT NULL,
+                root TEXT NOT NULL,
+                track_ids TEXT NOT NULL DEFAULT '[]',
+                trashed_at TEXT NOT NULL
+            );
             -- Song characteristics (docs/audio-profile-spec.md): one measured row per song and
             -- recipe, and the queue the analysis worker leases from. Created here, like the
             -- waveform cache, so dropping either is a safe reset the worker refills.

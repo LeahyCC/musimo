@@ -33,6 +33,7 @@ from backend.jobs.holdings import (
     save_holding,
 )
 from backend.jobs.job_store import JobConflict
+from backend.library import trash
 
 
 def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
@@ -90,6 +91,10 @@ def install_download_routes(app: FastAPI, get: Callable[[], Downloads]) -> None:
         except ValueError as exc:
             raise HTTPException(422, str(exc)) from exc
         service.check_destination(target)
+        if trash.trashed_tracks(service.store, [request.track_id]):
+            raise HTTPException(
+                409, "This track is in the trash. Empty the trash in Settings first."
+            )
         return service.jobs.enqueue(
             request.track_id, request.format or settings.output_format, str(target)
         )

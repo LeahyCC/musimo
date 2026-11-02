@@ -366,6 +366,7 @@ export function AlbumItem({
   onPlay,
   onShuffle,
   onQueue,
+  onDelete,
 }: {
   album: LibraryAlbum
   /** How many editions this card stands for; from two up it wears an "n editions" chip. */
@@ -379,6 +380,8 @@ export function AlbumItem({
   onShuffle: () => void
   /** Queues the whole album: right after the playing track, or at the end. */
   onQueue: (upNext: boolean) => void
+  /** Moves the album's files to the trash, after a confirm. Left out where there is no delete. */
+  onDelete?: () => void
 }) {
   const room = useLayout() === 'room'
   const openLabel = editions > 1 ? `Open ${album.name}, ${editions} editions` : `Open ${album.name}`
@@ -387,10 +390,13 @@ export function AlbumItem({
     <RowMenu
       label={`More actions for ${album.name}`}
       disabled={loading}
-      actions={queueActions(
-        () => onQueue(true),
-        () => onQueue(false),
-      )}
+      actions={[
+        ...queueActions(
+          () => onQueue(true),
+          () => onQueue(false),
+        ),
+        ...(onDelete ? [{ label: 'Delete from library…', onSelect: onDelete }] : []),
+      ]}
     />
   )
   if (layout === 'list')

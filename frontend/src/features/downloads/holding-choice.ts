@@ -7,9 +7,17 @@ export type HouseChoice = 'house' | 'copy' | 'cancel'
 
 const UNCERTAIN = new Set(['isrc', 'mbid', 'tags'])
 
-/** Whether the download arrow hides, asks, or queues. An exact file hides. An uncertain match asks. */
+/**
+ * Whether the download arrow hides, asks, or queues. An exact file hides. An uncertain match asks.
+ * A track deleted to the trash hides too: the server refuses it until the trash is emptied.
+ */
 export function downloadPress(item: { ownership: string; matched_by: string }): DownloadPress {
-  if (item.matched_by === 'download' || item.matched_by === 'holding') return 'hide'
+  if (
+    item.matched_by === 'download' ||
+    item.matched_by === 'holding' ||
+    item.matched_by === 'trash'
+  )
+    return 'hide'
   if (item.ownership === 'owned' && !UNCERTAIN.has(item.matched_by)) return 'hide'
   if (UNCERTAIN.has(item.matched_by)) return 'ask'
   return 'queue'

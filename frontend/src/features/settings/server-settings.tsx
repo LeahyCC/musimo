@@ -35,6 +35,7 @@ import { LibraryPanel } from './library-panel'
 import { SettingRow, SettingsBlock, SettingsSection } from './settings-layout'
 import { cleanArl, settingsPatch, withYoutubeCookies } from './settings-patch'
 import { CatalogOrder, SourceRow } from './source-controls'
+import { TrashPanel } from './trash-panel'
 import { SettingsSwitch } from './user-settings'
 
 /** The sections in the order the page draws them, which is also the order of Classic's index. */
@@ -503,6 +504,7 @@ export function SettingsPage() {
       {id === 'library' && (
         <>
           <LibraryPanel />
+          <TrashPanel />
           <SettingsBlock className="flex gap-[12px] text-small">
             <Folder size={17} className="shrink-0" aria-hidden="true" />
             <div>

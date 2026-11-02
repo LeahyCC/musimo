@@ -2,6 +2,11 @@
 
 ## Unreleased
 
+### Delete
+
+- Songs, albums and artists can be deleted from the library. Files move to a `.musimo-trash` folder in their library folder, not erased.
+- Settings shows how big the trash is and can empty it. A track in the trash is not downloaded again until the trash is emptied.
+
 ### Seek bar
 
 - The waveform is coloured by frequency, like DJ software: bass red, mids green, highs blue. Each bar shows which band is above its usual level for that song, so drops go red and hat-only breakdowns go blue. What is still to play is faded.
