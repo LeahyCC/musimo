@@ -88,7 +88,9 @@ test('bands colour each bar by its bass, mids and highs, and the unplayed part i
     .first()
     .locator('path')
     .evaluateAll((paths) => paths.map((path) => (path as SVGPathElement).style.fill))
-  expect(fills.length).toBeGreaterThan(20)
+  // Bars that mix to one colour share a path: two halves, so a handful of paths, not one a bar.
+  expect(fills.length).toBeGreaterThan(1)
+  expect(fills.length).toBeLessThan(10)
   // Each fill mixes the theme's band tokens: the bass share of the low mix, then the low mix's
   // share against the highs.
   const shares = (fill: string | undefined) =>

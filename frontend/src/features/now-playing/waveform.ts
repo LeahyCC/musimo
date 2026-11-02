@@ -44,31 +44,17 @@ export function resampleBands(bands: readonly Band[], count: number): Band[] {
   return (bass ?? []).map((value, index) => [value, mids?.[index] ?? 0, highs?.[index] ?? 0])
 }
 
-/**
- * Each band against its own average over the song. Most songs keep all three bands busy, so raw
- * levels mix to grey nearly everywhere; against the song's usual balance, a drop with extra bass
- * stands out from the rest of the song even when the bands are close.
- */
-export function relativeBands(bands: readonly Band[]): Band[] {
-  const means = [0, 1, 2].map(
-    (band) => bands.reduce((sum, point) => sum + (point[band] ?? 0), 0) / (bands.length || 1),
-  )
-  return bands.map((point) => {
-    const [bass = 0, mids = 0, highs = 0] = point.map((value, band) => {
-      const mean = means[band] ?? 0
-      return mean > 0 ? value / mean : 0
-    })
-    return [bass, mids, highs]
-  })
-}
-
 /** How hard the mix leans to the band that leads. Bands a tenth above the others still read. */
 export const BAND_CONTRAST = 6
 
-const percent = (share: number) => `${Number((share * 100).toFixed(1))}%`
+// Shares go in steps of 5%, too fine to see, so neighbouring bars land on the same colour and the
+// seek bar can draw each colour as one path.
+const percent = (share: number) => `${Math.round(share * 20) * 5}%`
 
 /**
- * A bar's colour, the three band tokens mixed by how much of each band the bar has. The shares
+ * A bar's colour, the three band tokens mixed by how much of each band the bar has. The server
+ * sends each band against its own average over the song, since most songs keep all three busy and
+ * raw levels mix to grey, so the band above its usual level leads. The shares
  * are raised to `BAND_CONTRAST` first, so the band that leads is the one you see: a drop goes the
  * bass colour, a breakdown with only hats left the highs colour, and a bar where all three are
  * level an even mix. It is a CSS value over theme tokens, so a theme recolours it, and it goes in

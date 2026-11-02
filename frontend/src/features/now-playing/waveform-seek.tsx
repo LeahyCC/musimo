@@ -11,7 +11,6 @@ import {
   barPath,
   barsPath,
   playedPercent,
-  relativeBands,
   resampleBands,
   resamplePeaks,
   VIEW_HEIGHT,
@@ -50,12 +49,12 @@ function useWidth(box: RefObject<HTMLElement | null>): number {
   return width
 }
 
-/** Each bar on its own, in the colour its bass, mids and highs mix to. */
+/** The bars that mix to one colour, drawn as one path. */
 type ColoredBar = { d: string; fill: string }
 
 // One layer of bars. It only changes with the peaks and the bar's width, so the position ticking
-// four times a second moves the clip around it and never redraws it. With bands each bar is its
-// own path in its own colour, and the unplayed layer is the same colours faded.
+// four times a second moves the clip around it and never redraws it. With bands there is one path
+// per colour the bars mix to, and the unplayed layer is the same colours faded.
 const Bars = memo(function Bars({
   path,
   colored,
@@ -77,8 +76,8 @@ const Bars = memo(function Bars({
     >
       {colored ? (
         <g className={className} data-seek-colored="">
-          {colored.map((bar, index) => (
-            <path key={index} d={bar.d} style={{ fill: bar.fill }} />
+          {colored.map((group) => (
+            <path key={group.fill} d={group.d} style={{ fill: group.fill }} />
           ))}
         </g>
       ) : (
@@ -145,11 +144,16 @@ export function SeekBar({
   const path = useMemo(() => barsPath(bars), [bars])
   const colored = useMemo(() => {
     if (!waveform?.bands) return undefined
-    const bands = resampleBands(relativeBands(waveform.bands), count)
-    return bars.map((bar, index) => ({
-      d: barPath(bar, index),
-      fill: bandColor(bands[index] ?? [0, 0, 0]),
-    }))
+    const bands = resampleBands(waveform.bands, count)
+    // `bandColor` steps in 5%, so bars that share a colour share a path: a few dozen paths for
+    // the layer rather than one for every bar.
+    const groups = new Map<string, string>()
+    bars.forEach((bar, index) => {
+      const fill = bandColor(bands[index] ?? [0, 0, 0])
+      groups.set(fill, (groups.get(fill) ?? '') + barPath(bar, index))
+    })
+
+    return [...groups].map(([fill, d]) => ({ fill, d }))
   }, [waveform, count, bars])
   const layers = colored ? COLORED_LAYERS : colors
   const drawn = waveform !== undefined

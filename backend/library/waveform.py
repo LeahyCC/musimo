@@ -7,7 +7,7 @@ reads as a dip.
 
 The same decode splits the song into bass, mids and highs, the way DJ software colours its
 waveforms, and each point carries how much of each band it has, measured against that band's
-loudest point in the song. The seek bar mixes the three into the bar's colour.
+average over the song. The seek bar mixes the three into the bar's colour.
 
 One ffmpeg decode per track, cached in SQLite until the file changes. ffmpeg reads the file
 from disk when its path resolves inside a library root. A missing file, a symlink or a path
@@ -33,7 +33,7 @@ from backend.library.player import Player
 WAVEFORM_POINTS = 800
 # Written into every cache key. Bump it when the way peaks are worked out changes, so rows made by
 # the old rule are worked out again instead of being served.
-WAVEFORM_VERSION = 3
+WAVEFORM_VERSION = 4
 # High enough to keep the highs band (cymbals, hats) below its 8 kHz ceiling, and low enough that
 # the decode and the arithmetic stay small.
 DECODE_RATE = 16000
@@ -46,15 +46,25 @@ BASS_TOP_HZ = 200
 HIGHS_FROM_HZ = 2000
 # ffmpeg sends four channels: the whole song, then bass, mids and highs.
 CHANNELS = 4
-READ_BYTES = 1 << 16
+READ_BYTES = 1 << 18
 # The bars span the song's loudest point down to its quietest 5%, but never less than this many
 # decibels, so a song that is flat throughout draws flat instead of blowing noise up into hills.
 MIN_RANGE_DB = 6.0
 QUIET_SHARE = 0.05
+# Points further than this under the loudest are near-silence (the gap before a hidden track, the
+# tail of a fade). They are left out when finding the quiet end, or a long gap would stretch the
+# scale so far that the music itself drew flat. They still draw, at the bottom.
+MAX_RANGE_DB = 30.0
+# Each band is sent against its own average, and this many times the average is the top of the
+# byte. Against the band's loudest point instead, one big hit would leave the rest of the song a few
+# steps of the byte and the colours would follow the rounding.
+BAND_CEILING = 4.0
 # How many requests may wait behind the decode that is running, and how long each may wait.
 QUEUE_LIMIT = 8
 QUEUE_WAIT_SECONDS = 30.0
-DECODE_SECONDS = 60.0
+# Four channels at 16 kHz is eight times the audio the old mono 8 kHz decode sent, so a long DJ mix
+# or audiobook needs room. A four minute song takes under a second.
+DECODE_SECONDS = 180.0
 # Tracks that failed to decode, remembered so a broken file is not retried on every visit.
 FAILURE_MEMORY = 256
 
@@ -119,29 +129,33 @@ def loudness_levels(folded: Powers) -> bytes:
 
     Points are in decibels, so they follow how loud a section sounds. The scale runs from the
     loudest point down to the quietest QUIET_SHARE of points, or MIN_RANGE_DB, whichever is wider.
-    Silence is 0."""
+    Points more than MAX_RANGE_DB down do not count towards the quiet end. Silence is 0."""
     heard = folded > 0
     if not heard.any():
         return bytes(len(folded))
     levels = 10 * np.log10(np.where(heard, folded, 1))
     ranked = np.sort(levels[heard])
     top = ranked[-1]
-    span = max(MIN_RANGE_DB, top - ranked[int(len(ranked) * QUIET_SHARE)])
+    music = ranked[ranked >= top - MAX_RANGE_DB]
+    span = max(MIN_RANGE_DB, top - music[int(len(music) * QUIET_SHARE)])
     scaled = np.clip((levels - (top - span)) / span, 0, 1)
     return bytes(np.where(heard, np.round(scaled * 255), 0).astype(np.uint8))
 
 
 def band_levels(folded: Powers) -> bytes:
-    """One value from 0 to 255 per point: the band's level against its own loudest point.
+    """One value from 0 to 255 per point: the band's level against its own average, with 255 at
+    BAND_CEILING times the average and anything louder held there.
 
-    Bass carries far more power than highs in nearly every song, so each band is measured against
-    itself, as DJ software does, or every bar would come out the bass colour. Amplitude, not
-    power, so a band at half the level reads as half and not a quarter."""
+    Bass carries far more power than highs in nearly every song, and most songs keep all three
+    bands busy, so each band is measured against its own usual level. Then the band that is above
+    its usual level is the one that shows, or every bar would come out the bass colour or grey.
+    Amplitude, not power, so a band at half the level reads as half and not a quarter."""
     amplitude = np.sqrt(folded)
-    loudest = amplitude.max()
-    if loudest <= 0:
+    usual = amplitude.mean()
+    if usual <= 0:
         return bytes(len(folded))
-    return bytes(np.round(amplitude / loudest * 255).astype(np.uint8))
+    scaled = np.clip(amplitude / (usual * BAND_CEILING), 0, 1)
+    return bytes(np.round(scaled * 255).astype(np.uint8))
 
 
 def fold_loudness(powers: Powers, points: int = WAVEFORM_POINTS) -> bytes:
@@ -157,17 +171,13 @@ def fold_loudness(powers: Powers, points: int = WAVEFORM_POINTS) -> bytes:
 
 def waveform_values(stored: bytes) -> dict[str, object]:
     """The route's answer: bar heights from 0 to 1, and the bands as one [bass, mids, highs]
-    per point when the row has them."""
+    per point. The version in the cache key means every row served is a whole one."""
     points = WAVEFORM_POINTS
-    banded = len(stored) == points * CHANNELS
-    heights = stored[:points] if banded else stored
-    answer: dict[str, object] = {"peaks": [round(value / 255, 3) for value in heights]}
-    if banded:
-        bands = [stored[points * band : points * (band + 1)] for band in range(1, CHANNELS)]
-        answer["bands"] = [
-            [round(value / 255, 3) for value in point] for point in zip(*bands, strict=True)
-        ]
-    return answer
+    bands = [stored[points * band : points * (band + 1)] for band in range(1, CHANNELS)]
+    return {
+        "peaks": [round(value / 255, 3) for value in stored[:points]],
+        "bands": [[round(value / 255, 3) for value in point] for point in zip(*bands, strict=True)],
+    }
 
 
 async def decode_file(source: Path) -> bytes:

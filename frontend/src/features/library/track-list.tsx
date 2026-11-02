@@ -22,18 +22,17 @@ const showRow = (row: HTMLElement | null) => row?.scrollIntoView({ block: 'cente
 type TrackNumbering = 'track' | 'position' | 'none'
 
 // The columns of the Tracks view's table. It adds a cover to the title and a plays column, so it
-// has its own template; the album and artist pages keep the plainer rows.
+// has its own template; the album and artist pages keep the plainer rows. The plays column reads
+// its width from `--plays-width`, which the play bars widen (see `PLAY_BARS_WIDTH`).
 const tableColumns = {
   numbered:
-    'grid-cols-[34px_minmax(170px,2fr)_minmax(100px,1.3fr)_56px_52px_24px] max-phone:grid-cols-[24px_minmax(0,1fr)_24px]',
+    'grid-cols-[34px_minmax(170px,2fr)_minmax(100px,1.3fr)_var(--plays-width,56px)_52px_24px] max-phone:grid-cols-[24px_minmax(0,1fr)_24px]',
   plain:
-    'grid-cols-[minmax(170px,2fr)_minmax(100px,1.3fr)_56px_52px_24px] max-phone:grid-cols-[minmax(0,1fr)_24px]',
-  // A wider plays column, for the bar drawn beside each count.
-  numberedBars:
-    'grid-cols-[34px_minmax(170px,2fr)_minmax(100px,1.3fr)_96px_52px_24px] max-phone:grid-cols-[24px_minmax(0,1fr)_24px]',
-  plainBars:
-    'grid-cols-[minmax(170px,2fr)_minmax(100px,1.3fr)_96px_52px_24px] max-phone:grid-cols-[minmax(0,1fr)_24px]',
+    'grid-cols-[minmax(170px,2fr)_minmax(100px,1.3fr)_var(--plays-width,56px)_52px_24px] max-phone:grid-cols-[minmax(0,1fr)_24px]',
 }
+
+/** A wider plays column, for the bar drawn beside each count. */
+const PLAY_BARS_WIDTH = '[--plays-width:96px]'
 
 export function TrackList({
   tracks,
@@ -77,14 +76,10 @@ export function TrackList({
   const player = usePlayer()
   const room = useLayout() === 'room'
   const highlighted = highlightId ? tracks.findIndex((track) => track.id === highlightId) : -1
-  const columns =
-    numbering === 'none'
-      ? playBars
-        ? tableColumns.plainBars
-        : tableColumns.plain
-      : playBars
-        ? tableColumns.numberedBars
-        : tableColumns.numbered
+  const columns = cx(
+    numbering === 'none' ? tableColumns.plain : tableColumns.numbered,
+    playBars && PLAY_BARS_WIDTH,
+  )
   const peakPlays = playBars ? Math.max(0, ...tracks.map((track) => track.playCount)) : 0
   const browseVirtual = useBrowseVirtual({
     countFor: () => tracks.length,

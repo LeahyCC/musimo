@@ -1,6 +1,6 @@
 import { z } from 'zod'
 
-import { DEFAULT_THEME } from './themes'
+import { BUILT_IN_THEMES, DEFAULT_THEME } from './themes'
 import type { Theme } from './themes'
 import { COLOR_TOKENS } from './tokens'
 import type { ColorToken } from './tokens'
@@ -25,13 +25,20 @@ const colorShape = Object.fromEntries(
   COLOR_TOKENS.map((token) => [token.name, hexValue.optional()]),
 ) as Record<ColorToken, z.ZodOptional<z.ZodString>>
 
-const withDefaults = (colors: Partial<Record<ColorToken, string>>): Record<ColorToken, string> =>
-  Object.fromEntries(
-    COLOR_TOKENS.map((token) => [
-      token.name,
-      colors[token.name] ?? DEFAULT_THEME.colors[token.name],
-    ]),
+/* A light theme is filled from the light default, or a token added later (the waveform's band
+   colours) would arrive in colours picked for a dark canvas. */
+const LIGHT_DEFAULT: Theme =
+  BUILT_IN_THEMES.find((theme) => theme.id === 'musimo-light') ?? DEFAULT_THEME
+
+const withDefaults = (
+  colors: Partial<Record<ColorToken, string>>,
+  scheme: Theme['scheme'],
+): Record<ColorToken, string> => {
+  const fallback = scheme === 'light' ? LIGHT_DEFAULT : DEFAULT_THEME
+  return Object.fromEntries(
+    COLOR_TOKENS.map((token) => [token.name, colors[token.name] ?? fallback.colors[token.name]]),
   ) as Record<ColorToken, string>
+}
 
 const themeFields = {
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,63}$/i, 'A theme id is letters, digits and dashes'),
@@ -41,7 +48,10 @@ const themeFields = {
 
 type ParsedTheme = Omit<Theme, 'colors'> & { colors: Partial<Record<ColorToken, string>> }
 
-const complete = (theme: ParsedTheme): Theme => ({ ...theme, colors: withDefaults(theme.colors) })
+const complete = (theme: ParsedTheme): Theme => ({
+  ...theme,
+  colors: withDefaults(theme.colors, theme.scheme),
+})
 
 export const themeSchema = z
   .strictObject({ ...themeFields, colors: z.strictObject(colorShape) })
