@@ -12,6 +12,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 import httpx
+import numpy as np
 from fastapi import FastAPI
 
 from backend.api.waveform_api import install_waveform_routes
@@ -19,15 +20,18 @@ from backend.core.store import Store
 from backend.library.index import Library
 from backend.library.player import Player
 from backend.library.waveform import (
+    CHANNELS,
     WAVEFORM_POINTS,
-    PeakReader,
+    LoudnessReader,
     WaveformService,
     WaveformUnavailable,
     decode_file,
-    fold_peaks,
+    fold_loudness,
+    waveform_values,
 )
 
-PEAKS = bytes(index % 256 for index in range(WAVEFORM_POINTS))
+# A whole cache row: 800 heights, then 800 each of bass, mids and highs.
+PEAKS = bytes(index % 256 for index in range(WAVEFORM_POINTS * CHANNELS))
 
 
 def write_wav(path: Path) -> None:
@@ -338,37 +342,98 @@ def pcm(*samples: int) -> bytes:
     return struct.pack(f"<{len(samples)}h", *samples)
 
 
-class PeakTests(unittest.TestCase):
-    def test_reader_takes_the_loudest_sample_of_each_window_across_split_reads(self) -> None:
-        data = pcm(100, -300, 20, 5, -32768, 7, 40)
+def loudness(whole: list[float]) -> np.ndarray:
+    """Window powers with the whole song in the first channel and the bands even."""
+    return np.array([[power, 1.0, 1.0, 1.0] for power in whole])
+
+
+class LoudnessTests(unittest.TestCase):
+    def test_reader_takes_the_mean_power_of_each_channel_across_split_reads(self) -> None:
+        # Two frames of four channels to a window, then one frame left over.
+        data = pcm(100, 0, 3, 0, -300, 0, 5, 2, -32768, 1, 0, 0, 0, 1, 0, 0, 40, 0, 0, 0)
         with patch("backend.library.waveform.WINDOW_SAMPLES", 2):
-            reader = PeakReader()
+            reader = LoudnessReader()
             reader.feed(data[:3])
-            reader.feed(data[3:8])
-            reader.feed(data[8:])
-            self.assertEqual(reader.finish(), [300, 20, 32768, 40])
+            reader.feed(data[3:19])
+            reader.feed(data[19:])
+            powers = reader.finish()
 
-    def test_folding_keeps_the_loudest_window_of_each_bucket_and_scales_to_255(self) -> None:
-        peaks = [0] * 1600
-        peaks[3] = 500
-        peaks[1599] = 1000
-        folded = fold_peaks(peaks)
+        self.assertEqual(powers.shape, (3, CHANNELS))
+        self.assertEqual(powers[0].tolist(), [50000, 0, 17, 2])
+        self.assertEqual(powers[1].tolist(), [32768**2 / 2, 1, 0, 0])
+        self.assertEqual(powers[2].tolist(), [1600, 0, 0, 0])
 
-        self.assertEqual(len(folded), WAVEFORM_POINTS)
-        self.assertEqual(folded[1], 128)
-        self.assertEqual(folded[799], 255)
-        self.assertEqual(folded[0], 0)
+    def test_a_loud_song_still_shows_a_breakdown_a_few_decibels_down(self) -> None:
+        # Peaks would draw this solid: 3 dB is nothing on a full-scale bar.
+        whole = [1e6] * 1600
+        whole[400:600] = [5e5] * 200
+        folded = fold_loudness(loudness(whole))
+
+        self.assertEqual(len(folded), WAVEFORM_POINTS * CHANNELS)
+        self.assertEqual(folded[0], 255)
+        # 3 dB down on the 6 dB minimum range sits about halfway.
+        self.assertIn(folded[250], range(125, 131))
+
+    def test_the_quiet_end_of_a_wide_song_reaches_the_bottom(self) -> None:
+        folded = fold_loudness(loudness([1e6] * 1200 + [1e3] * 400))
+
+        self.assertEqual(folded[0], 255)
+        self.assertEqual(folded[WAVEFORM_POINTS - 1], 0)
+
+    def test_each_band_is_measured_against_its_own_average(self) -> None:
+        # Bass carries a hundred times the highs' power, and still the highs read the same as the
+        # bass wherever each is at its usual level, so a bar where only hats are left can read blue.
+        powers = np.array([[1e6, 1e6, 1e4, 1e2]] * 800 + [[1e6, 1e4, 1e4, 4e2]] * 800)
+        values = waveform_values(fold_loudness(powers))
+        bands = values["bands"]
+        assert isinstance(bands, list)
+
+        # The top of the byte is four times the band's average amplitude: bass averages 550, so
+        # 1000 is 116 of 255. Mids never move, so they sit at a quarter.
+        self.assertEqual(bands[0], [0.455, 0.251, 0.165])
+        self.assertEqual(bands[-1], [0.047, 0.251, 0.333])
+
+    def test_one_big_hit_does_not_flatten_the_rest_of_a_band(self) -> None:
+        # Against the band's loudest point the rest of the song would be 3 of 255, and the colour
+        # would follow the rounding.
+        powers = np.array([[1e6, 1e4, 1e4, 1e4]] * 800)
+        powers[400, 1] = 1e8
+        bands = waveform_values(fold_loudness(powers))["bands"]
+        assert isinstance(bands, list)
+
+        self.assertGreater(bands[0][0], 0.2)
+        self.assertEqual(bands[400][0], 1.0)
 
     def test_a_short_track_repeats_its_windows_to_fill_the_points(self) -> None:
-        folded = fold_peaks([10, 20, 40])
+        folded = fold_loudness(loudness([1e4, 1e4, 1e6]))
 
-        self.assertEqual(len(folded), WAVEFORM_POINTS)
-        self.assertEqual(folded[0], 64)
-        self.assertEqual(folded[-1], 255)
+        self.assertEqual(len(folded), WAVEFORM_POINTS * CHANNELS)
+        self.assertEqual(folded[0], folded[1])
+        self.assertEqual(folded[WAVEFORM_POINTS - 1], 255)
 
     def test_silence_stays_silent_and_no_audio_gives_nothing(self) -> None:
-        self.assertEqual(fold_peaks([0, 0, 0]), bytes(WAVEFORM_POINTS))
-        self.assertEqual(fold_peaks([]), b"")
+        silent = fold_loudness(np.zeros((3, CHANNELS)))
+        self.assertEqual(silent, bytes(WAVEFORM_POINTS * CHANNELS))
+        self.assertEqual(fold_loudness(np.empty((0, CHANNELS))), b"")
+
+    def test_a_long_near_silent_gap_does_not_flatten_the_music(self) -> None:
+        # The gap before a hidden track sits near -90 dB. Counted towards the quiet end it would
+        # stretch the scale to 90 dB and a 3 dB breakdown would barely move.
+        whole = [1e6] * 1000 + [5e5] * 200 + [1e-3] * 400
+        folded = fold_loudness(loudness(whole))
+
+        self.assertEqual(folded[0], 255)
+        self.assertIn(folded[550], range(125, 131))
+        self.assertEqual(folded[700], 0)
+
+    def test_the_answer_has_a_band_triple_for_every_height(self) -> None:
+        values = waveform_values(PEAKS)
+        peaks, bands = values["peaks"], values["bands"]
+        assert isinstance(peaks, list) and isinstance(bands, list)
+
+        self.assertEqual(len(peaks), WAVEFORM_POINTS)
+        self.assertEqual(len(bands), WAVEFORM_POINTS)
+        self.assertEqual(bands[0], [round(32 / 255, 3), round(64 / 255, 3), round(96 / 255, 3)])
 
 
 @unittest.skipUnless(shutil.which("ffmpeg"), "ffmpeg is not installed")
@@ -385,9 +450,34 @@ class FfmpegTests(unittest.IsolatedAsyncioTestCase):
 
             folded = await decode_file(track)
 
-            self.assertEqual(len(folded), WAVEFORM_POINTS)
+            self.assertEqual(len(folded), WAVEFORM_POINTS * CHANNELS)
             self.assertLess(folded[100], 30)
             self.assertGreater(folded[700], 240)
+
+    async def test_a_low_hum_then_a_hiss_reads_bass_then_highs(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            track = Path(directory) / "bands.wav"
+            rate = 16000
+            hum = [int(12000 * np.sin(2 * np.pi * 60 * n / rate)) for n in range(rate * 2)]
+            hiss = [int(12000 * np.sin(2 * np.pi * 5000 * n / rate)) for n in range(rate * 2)]
+            with wave.open(str(track), "wb") as out:
+                out.setnchannels(1)
+                out.setsampwidth(2)
+                out.setframerate(rate)
+                out.writeframes(pcm(*hum, *hiss))
+
+            values = waveform_values(await decode_file(track))
+            bands = values["bands"]
+            assert isinstance(bands, list)
+
+            # Each band is on for half the song, so where it is on it is about twice its average,
+            # half of the BAND_CEILING of four.
+            bass, _, highs = bands[200]
+            self.assertGreater(bass, 0.4)
+            self.assertLess(highs, 0.1)
+            bass, _, highs = bands[600]
+            self.assertLess(bass, 0.1)
+            self.assertGreater(highs, 0.4)
 
     async def test_a_file_that_is_not_audio_is_unavailable(self) -> None:
         with tempfile.TemporaryDirectory() as directory:

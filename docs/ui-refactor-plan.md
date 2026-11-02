@@ -94,17 +94,17 @@ Owns: `src/style.css` tokens, `src/theme/*`, `src/ui/*` (new primitives), `src/l
 
 Every screen card builds both layouts of its screen, switching on `useLayout()`. Shared parts go in the feature folder, not in a layout file.
 
-| Card                     | Prototype                        | Owns                                                                                                                     |
-| ------------------------ | -------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
-| Home dashboard           | A:99-225, B:76-174, Welcome      | `features/home/*`                                                                                                        |
-| Search and catalog pages | A:364-428, B:262-313, Catalog    | `features/search/*`, `features/podcasts/*`                                                                               |
-| Library browse           | A:228-351, B:177-249             | `features/library/library.tsx` browse views, `library-params.ts`, `collection-items.tsx`                                 |
-| Library detail           | Collection                       | `features/library/collection-header.tsx`, `track-list.tsx`, `popularity-chart.tsx`, the detail branches of `library.tsx` |
-| Now Playing              | A:431-543, B:316-410             | `features/now-playing/*`, `features/visualizer/*` (controls only)                                                        |
-| Octive                   | A:546-616, B:413-485             | `features/music-bot/*` page and chat (not the pet)                                                                       |
-| Downloads                | A:619-672, B:488-538, Jobs       | `features/downloads/*`                                                                                                   |
-| Settings and Diagnostics | A:675-781, B:541-620, Appearance | `features/settings/*`, `features/diagnostics/*`                                                                          |
-| Overlays                 | Overlay                          | `src/app/palette.tsx`, `features/links/*`, `features/player` playlist picker, `features/downloads/artist-download.tsx`   |
+| Card                     | Prototype                        | Owns                                                                                                                   |
+| ------------------------ | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| Home dashboard           | A:99-225, B:76-174, Welcome      | `features/home/*`                                                                                                      |
+| Search and catalog pages | A:364-428, B:262-313, Catalog    | `features/search/*`, `features/podcasts/*`                                                                             |
+| Library browse           | A:228-351, B:177-249             | `features/library/library.tsx` browse views, `library-params.ts`, `collection-items.tsx`                               |
+| Library detail           | Collection                       | `features/library/collection-header.tsx`, `track-list.tsx`, the detail branches of `library.tsx`                       |
+| Now Playing              | A:431-543, B:316-410             | `features/now-playing/*`, `features/visualizer/*` (controls only)                                                      |
+| Octive                   | A:546-616, B:413-485             | `features/music-bot/*` page and chat (not the pet)                                                                     |
+| Downloads                | A:619-672, B:488-538, Jobs       | `features/downloads/*`                                                                                                 |
+| Settings and Diagnostics | A:675-781, B:541-620, Appearance | `features/settings/*`, `features/diagnostics/*`                                                                        |
+| Overlays                 | Overlay                          | `src/app/palette.tsx`, `features/links/*`, `features/player` playlist picker, `features/downloads/artist-download.tsx` |
 
 Library detail waits for Library browse because both edit `library.tsx`.
 

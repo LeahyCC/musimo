@@ -383,7 +383,18 @@ export const playerCapabilitiesSchema = z.object({
   detail: z.string(),
 })
 // Two peaks is the least there is to draw; anything shorter is treated as no waveform at all.
-export const waveformSchema = z.object({ peaks: z.array(z.number().min(0).max(1)).min(2) })
+// `bands` is one [bass, mids, highs] per peak, each 0 to 1 against that band's loudest point; a
+// server that has none, or a list that does not line up with the peaks, leaves the bars uncoloured.
+const level = z.number().min(0).max(1)
+export const waveformSchema = z
+  .object({
+    peaks: z.array(level).min(2),
+    bands: z.array(z.tuple([level, level, level])).optional(),
+  })
+  .transform(({ peaks, bands }) => ({
+    peaks,
+    bands: bands?.length === peaks.length ? bands : undefined,
+  }))
 export const lyricsSchema = z.object({
   items: z.array(
     z.object({

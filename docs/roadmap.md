@@ -39,7 +39,7 @@ Version 0.4.0 (10 September 2026) completed the core search, download and playba
 - ✓ Playlist CRUD with inline rename
 - ✓ Linked liked playlist with thumbs up button
 - ✓ Add to playlist picker with inline creation
-- ✓ Artist All songs subpage with popularity chart
+- ✓ Artist All songs subpage (the popularity chart was removed on 2026-11-01)
 - ✓ Server side Tracks view filters by search, genre, year and sort order
 - ✓ Now Playing full screen and popout stage
 - ✓ Download failure explanations with plain language messages

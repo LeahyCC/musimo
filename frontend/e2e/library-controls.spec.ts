@@ -348,7 +348,8 @@ test('an artist page dates, sorts and charts its albums', async ({ page }) => {
   await expect(page).toHaveURL(/sort=oldest/)
   await expect.poll(names).toEqual(['Stone Lines', 'Clear Water'])
 
-  await expect(page.getByRole('img', { name: /Clear Water leads with 30 plays/ })).toBeVisible()
+  // The popularity chart is gone; the play bars sit in Top songs instead.
+  await expect(page.getByRole('heading', { name: 'Popularity' })).toHaveCount(0)
   // The most played songs lead the page, most played first, and link on to the whole list.
   await expect(page.getByRole('heading', { name: 'Top songs' })).toBeVisible()
   await expect(page.locator('.library-top-songs .library-track-play strong').first()).toHaveText(

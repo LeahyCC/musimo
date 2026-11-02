@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { CUSTOM_THEMES_VERSION, customThemesSchema, MAX_CUSTOM_THEMES, themeSchema } from './schema'
-import { DEFAULT_THEME } from './themes'
+import { BUILT_IN_THEMES, DEFAULT_THEME } from './themes'
 import { COLOR_TOKENS } from './tokens'
 
 const aTheme = (colors: Record<string, string> = {}) => ({
@@ -25,17 +25,20 @@ describe('themeSchema', () => {
     expect(themeSchema.safeParse(aTheme({ '--color-canvas': '#ABCDEF' })).success).toBe(true)
   })
 
-  it('fills a token the saved theme never had from the default', () => {
+  it('fills a token the saved theme never had from the default of its scheme', () => {
     const colors: Record<string, string> = { ...DEFAULT_THEME.colors }
     delete colors['--color-partial-line']
-    delete colors['--color-on-media']
-    const parsed = themeSchema.safeParse({ ...aTheme(), colors })
+    delete colors['--color-wave-mids']
+    const light = themeSchema.safeParse({ ...aTheme(), colors })
+    const dark = themeSchema.safeParse({ ...aTheme(), scheme: 'dark', colors })
+    const lightDefault = BUILT_IN_THEMES.find((theme) => theme.id === 'musimo-light')
 
-    expect(parsed.success).toBe(true)
-    expect(parsed.data?.colors['--color-partial-line']).toBe(
+    expect(light.success).toBe(true)
+    expect(light.data?.colors['--color-wave-mids']).toBe(lightDefault?.colors['--color-wave-mids'])
+    expect(dark.data?.colors['--color-partial-line']).toBe(
       DEFAULT_THEME.colors['--color-partial-line'],
     )
-    expect(Object.keys(parsed.data?.colors ?? {})).toHaveLength(COLOR_TOKENS.length)
+    expect(Object.keys(light.data?.colors ?? {})).toHaveLength(COLOR_TOKENS.length)
   })
 
   it('refuses a token name the app does not paint with', () => {

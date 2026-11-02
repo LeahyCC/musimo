@@ -73,6 +73,43 @@ test('the peaks are drawn behind the same slider, one bar to each four pixels', 
   await expect.poll(() => asked).toEqual(['song-1', 'song-2'])
 })
 
+test('bands colour each bar by its bass, mids and highs, and the unplayed part is faded', async ({
+  page,
+}) => {
+  // Bass leads the first half and highs the second, so the bars turn from red to blue.
+  const bands = peaks.map((_, index) => (index < 400 ? [1, 0.2, 0.1] : [0.1, 0.2, 1]))
+  await openNowPlaying(page, (route) => route.fulfill({ json: { peaks, bands } }))
+
+  await expect(seekBar(page)).toHaveAttribute('data-seek-bar', 'waveform')
+  const layers = seekBar(page).locator('[data-seek-colored]')
+  await expect(layers).toHaveCount(2)
+  await expect(layers.first()).toHaveClass(/opacity-45/)
+  const fills = await layers
+    .first()
+    .locator('path')
+    .evaluateAll((paths) => paths.map((path) => (path as SVGPathElement).style.fill))
+  // Bars that mix to one colour share a path: two halves, so a handful of paths, not one a bar.
+  expect(fills.length).toBeGreaterThan(1)
+  expect(fills.length).toBeLessThan(10)
+  // Each fill mixes the theme's band tokens: the bass share of the low mix, then the low mix's
+  // share against the highs.
+  const shares = (fill: string | undefined) =>
+    [...(fill ?? '').matchAll(/([\d.]+)%/g)].map((match) => Number(match[1]))
+  expect(fills[0]).toContain('var(--color-wave-bass)')
+  const [firstBass = 0, firstLow = 0] = shares(fills[0])
+  const [, lastLow = 100] = shares(fills.at(-1))
+  expect(firstBass).toBeGreaterThan(90)
+  expect(firstLow).toBeGreaterThan(90)
+  expect(lastLow).toBeLessThan(10)
+})
+
+test('bands that do not line up with the peaks are ignored', async ({ page }) => {
+  await openNowPlaying(page, (route) => route.fulfill({ json: { peaks, bands: [[1, 0, 0]] } }))
+
+  await expect(seekBar(page)).toHaveAttribute('data-seek-bar', 'waveform')
+  await expect(seekBar(page).locator('[data-seek-colored]')).toHaveCount(0)
+})
+
 test('the keyboard and the pointer seek as they did without the peaks', async ({
   page,
   browserName,

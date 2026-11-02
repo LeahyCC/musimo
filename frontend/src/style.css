@@ -37,8 +37,12 @@
   /* Lines */
   --color-line: #2a3630;
   --color-line-strong: #344035;
-  /* The bars of a chart that are not the one picked out: past weeks, other years. */
+  /* The bars of a chart that are not the one picked out: past weeks, songs below the most played. */
   --color-chart-idle: #3d4b43;
+  /* The seek bar's frequency colours, the DJ software convention: bass, mids, highs. */
+  --color-wave-bass: #ff4d5e;
+  --color-wave-mids: #4ade80;
+  --color-wave-highs: #4da6ff;
 
   /* Accent */
   --color-accent: #c3e4a2;

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  BAND_CONTRAST,
+  bandColor,
   BAR_FILL,
   barCountFor,
   barsPath,
@@ -8,6 +10,7 @@ import {
   MIN_BAR_HEIGHT,
   MIN_BARS,
   playedPercent,
+  resampleBands,
   resamplePeaks,
 } from './waveform'
 
@@ -30,8 +33,8 @@ describe('barCountFor', () => {
 })
 
 describe('resamplePeaks', () => {
-  it('keeps the loudest peak of each slice', () => {
-    expect(resamplePeaks([0.1, 0.9, 0.2, 0.3, 0.5, 0.4], 3)).toEqual([0.9, 0.3, 0.5])
+  it('averages each slice', () => {
+    expect(resamplePeaks([0.25, 0.75, 0.5, 0.5, 0.125, 0.375], 3)).toEqual([0.5, 0.5, 0.25])
   })
 
   it('leaves the peaks alone when there are no more bars than peaks', () => {
@@ -40,7 +43,7 @@ describe('resamplePeaks', () => {
   })
 
   it('returns one bar for a count below one, and one silent bar for no peaks', () => {
-    expect(resamplePeaks([0.4, 0.8], 0)).toEqual([0.8])
+    expect(resamplePeaks([0.25, 0.75], 0)).toEqual([0.5])
     expect(resamplePeaks([], 5)).toEqual([0])
   })
 })
@@ -73,5 +76,53 @@ describe('playedPercent', () => {
     expect(playedPercent(40, 30)).toBe(100)
     expect(playedPercent(5, 0)).toBe(0)
     expect(playedPercent(Number.NaN, 30)).toBe(0)
+  })
+})
+
+describe('resampleBands', () => {
+  it('averages each band over its slice, like the peaks', () => {
+    expect(
+      resampleBands(
+        [
+          [1, 0, 0.5],
+          [0, 1, 0.5],
+          [0.5, 0.5, 0],
+          [0.5, 0.5, 1],
+        ],
+        2,
+      ),
+    ).toEqual([
+      [0.5, 0.5, 0.5],
+      [0.5, 0.5, 0.5],
+    ])
+  })
+})
+
+describe('bandColor', () => {
+  const mix = (bass: string, low: string) =>
+    `color-mix(in oklab, color-mix(in oklab, var(--color-wave-bass) ${bass}, var(--color-wave-mids)) ${low}, var(--color-wave-highs))`
+
+  it('is the band token when only that band is there', () => {
+    expect(bandColor([1, 0, 0])).toBe(mix('100%', '100%'))
+    expect(bandColor([0, 0.4, 0])).toBe(mix('0%', '100%'))
+    expect(bandColor([0, 0, 1])).toBe(
+      'color-mix(in oklab, var(--color-wave-mids) 0%, var(--color-wave-highs))',
+    )
+  })
+
+  it('leans hard towards the band that leads', () => {
+    // A tenth more bass than highs is weighted 1.1 ** 6, close to twice.
+    const lead = 1.1 ** BAND_CONTRAST
+    const low = Math.round((lead / (lead + 1)) * 20) * 5
+    expect(bandColor([1.1, 0, 1])).toBe(mix('100%', `${low}%`))
+  })
+
+  it('steps in 5%, so neighbouring bars share a colour', () => {
+    expect(bandColor([1, 0, 1.001])).toBe(bandColor([1, 0, 1.002]))
+    expect(bandColor([0.5, 0.5, 0])).toBe(mix('50%', '100%'))
+  })
+
+  it('is the faint token for a silent bar', () => {
+    expect(bandColor([0, 0, 0])).toBe('var(--color-faint)')
   })
 })
