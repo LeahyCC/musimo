@@ -83,7 +83,6 @@ import {
 import { artistPageLocation, useArtistSort, useLibraryBrowse } from './library-browse'
 import { artistAlbumSorts, artistSongSorts, librarySortValues } from './library-params'
 import { LibraryHeading, LibraryToolbar, SearchField, type TabCounts } from './library-toolbar'
-import { PopularityChart } from './popularity-chart'
 import { TrackList } from './track-list'
 import { VirtualBrowse } from './virtual-browse'
 
@@ -1322,32 +1321,26 @@ export function LibraryPage({
               <ListMusic size={15} /> {artistSongsMode ? 'Albums' : 'All songs'}
             </Button>
           </CollectionHeader>
-          {/* The page, not the window: the rail and the dock eat the width the old 900px
-              query was measuring, and the chart ran off the right edge. */}
-          {!artistSongsMode && (
-            <div className="grid min-w-0 grid-cols-1 items-start gap-[16px] @min-[720px]:grid-cols-[minmax(0,3fr)_minmax(0,2fr)]">
-              {topSongs.length > 0 && (
-                <section className="library-top-songs min-w-0 overflow-x-auto">
-                  <div className="mb-[10px] flex items-baseline justify-between">
-                    <h2 className="text-strong">Top songs</h2>
-                    <button
-                      type="button"
-                      className="border-0 bg-transparent text-small text-muted hover:text-text coarse:min-h-11"
-                      onClick={() => void navigate(artistPageLocation('songs', artistId))}
-                    >
-                      All {artistSongs.length} songs
-                    </button>
-                  </div>
-                  <TrackList
-                    detail
-                    numbering="position"
-                    tracks={topSongs}
-                    source={`artist:${artistId}:top`}
-                  />
-                </section>
-              )}
-              <PopularityChart albums={artistDetail.data.album} />
-            </div>
+          {!artistSongsMode && topSongs.length > 0 && (
+            <section className="library-top-songs min-w-0 overflow-x-auto">
+              <div className="mb-[10px] flex items-baseline justify-between">
+                <h2 className="text-strong">Top songs</h2>
+                <button
+                  type="button"
+                  className="border-0 bg-transparent text-small text-muted hover:text-text coarse:min-h-11"
+                  onClick={() => void navigate(artistPageLocation('songs', artistId))}
+                >
+                  All {artistSongs.length} songs
+                </button>
+              </div>
+              <TrackList
+                detail
+                playBars
+                numbering="position"
+                tracks={topSongs}
+                source={`artist:${artistId}:top`}
+              />
+            </section>
           )}
           {!artistSongsMode && <h2 className="mt-[12px] text-strong">Albums</h2>}
           <div className="flex flex-wrap items-center gap-[10px] mt-[4px] mb-[12px]">
