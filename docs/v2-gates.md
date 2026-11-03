@@ -65,6 +65,7 @@ Pass marks, on at least 50 recorded engine outcomes rendered in both voices:
 - **Colin:** see the repo. The [genre trial](genre-analysis-trial.md) has 28 clips Colin labelled on 14 October. The 13 held-out answers have been opened and reviewed, so they cannot validate a new candidate ([label review](genre-label-review.md)). All 28 become development data.
 - Recommended: a new blind set of about 120 clips, labelled with the existing review page. Half development, half held-out. The held-out export is checksummed and not opened until every frozen candidate has run once.
 - The set is chosen for the hard cases in #179: liquid versus other drum and bass, vocal versus instrumental, loud but mellow versus quiet but intense, tempo changes, long intros and spoken word. Labels say what was heard in the section played, and allow "unknown".
+- The blind set is built by `scripts/pick_label_4a.py`, labelled at `/label-4a`, and exported by `scripts/export_label_4a.py`. See `evals/audio/README.md` for the label meanings, the seal rule and the run commands.
 
 ### Candidates
 
