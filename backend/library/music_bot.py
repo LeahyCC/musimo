@@ -864,13 +864,13 @@ class MusicBot:
         rows = data.get("models") if isinstance(data, dict) else None
         if not isinstance(rows, list) or len(rows) > 200:
             raise BotError("Ollama returned an invalid model list.")
-        names = []
+        names: list[str] = []
         for row in rows:
             name = row.get("name") if isinstance(row, dict) else None
             if not isinstance(name, str) or not 1 <= len(name) <= 200:
                 raise BotError("Ollama returned an invalid model name.")
             names.append(name)
-        result = {"models": names}
+        result: dict[str, object] = {"models": names}
         self._models_cache = (time.monotonic(), result)
         return result | {"elapsed_ms": round((time.monotonic() - started) * 1000)}
 
@@ -1167,10 +1167,11 @@ class MusicBot:
 
     async def _reply(self, reply: "Reply") -> dict[str, object]:
         """A non-search reply as an engine result the chat can show directly."""
-        from backend.library.engine import Engine, EngineError
+        from backend.library.engine import Engine
         from backend.library.engine_contract import (
             CONTRACT_VERSION,
             Context,
+            EngineError,
             Filters,
             Intent,
         )
@@ -1386,7 +1387,8 @@ class MusicBot:
 
     async def _interpreted_chat(self, request: BotRequest) -> dict[str, object]:
         """New path: model -> Interpretation -> to_intent -> Engine.run."""
-        from backend.library.engine import Engine, EngineError
+        from backend.library.engine import Engine
+        from backend.library.engine_contract import EngineError
         from backend.library.interpreter import Reply
 
         try:

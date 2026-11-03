@@ -64,15 +64,15 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         }
         self.metadata: object = {"capabilities": ["completion"]}
         self.names = ["fixture"]
-        self.fail = ""
+        self.outage = ""
         self.paths: list[str] = []
         self.chat_bodies: list[dict[str, object]] = []
 
         async def transport(request: httpx.Request) -> httpx.Response:
             self.paths.append(request.url.path)
-            if self.fail == "timeout":
+            if self.outage == "timeout":
                 raise httpx.ReadTimeout("slow")
-            if self.fail == "offline":
+            if self.outage == "offline":
                 raise httpx.ConnectError("offline")
             if request.url.path == "/api/tags":
                 return httpx.Response(200, json={"models": [{"name": name} for name in self.names]})
@@ -113,6 +113,11 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
     async def chat(self, request: BotRequest | None = None) -> dict[str, object]:
         return await self.bot.chat(request or BotRequest(prompt="fixture"))
 
+    def ids_of(self, result: dict[str, object]) -> list[str]:
+        ids = result["ids"]
+        assert isinstance(ids, list)
+        return [str(item) for item in ids]
+
     def interpretation(self, **updates: object) -> None:
         base: dict[str, object] = {
             "action": "search",
@@ -152,12 +157,14 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["action"], "search")
         self.assertEqual(result["generation_seed"], 0)
-        self.assertIn(self.ids["Rock Bottom Ada Vance"], result["ids"])
+        self.assertIn(self.ids["Rock Bottom Ada Vance"], self.ids_of(result))
         self.assertIn("elapsed_ms", result)
         self.assertFalse(result["state_changed"])
         self.assertEqual(self._proposals(), 0)
-        self.assertEqual(self.chat_bodies[-1]["options"]["temperature"], 0)
-        self.assertEqual(self.chat_bodies[-1]["options"]["seed"], 42)
+        options = self.chat_bodies[-1]["options"]
+        assert isinstance(options, dict)
+        self.assertEqual(options["temperature"], 0)
+        self.assertEqual(options["seed"], 42)
 
     async def test_an_hour_keeps_total_length_on_the_intent(self) -> None:
         self.interpretation(
@@ -174,7 +181,7 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(filters, dict)
         self.assertEqual(filters["total_length"], {"mode": "about", "seconds": 3600})
         self.assertNotIn("total_length", plan_body)
-        self.assertIn(self.ids["Rock Bottom Ada Vance"], result["ids"])
+        self.assertIn(self.ids["Rock Bottom Ada Vance"], self.ids_of(result))
 
     async def test_play_rock_bottom_is_a_preview_of_that_song(self) -> None:
         self.interpretation(named_songs=[{"title": "Rock Bottom"}])
@@ -191,9 +198,10 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         )
         result = await self.chat()
         self.assertEqual(result["reference_id"], self.ids["Night Bus Orchard"])
-        self.assertIn(self.ids["Paper Lantern Marrow"], result["ids"])
-        self.assertNotIn(self.ids["Night Bus Orchard"], result["ids"])
-        self.assertNotIn(self.ids["Rock Bottom Ada Vance"], result["ids"])
+        found = self.ids_of(result)
+        self.assertIn(self.ids["Paper Lantern Marrow"], found)
+        self.assertNotIn(self.ids["Night Bus Orchard"], found)
+        self.assertNotIn(self.ids["Rock Bottom Ada Vance"], found)
         self.assertEqual(self._proposals(), 0)
 
     async def test_two_night_buses_ask_which_one(self) -> None:
@@ -225,7 +233,7 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
             result = await self.chat()
         self.assertEqual(called, ["not json"])
         self.assertEqual(result["action"], "search")
-        self.assertIn(self.ids["Rock Bottom Ada Vance"], result["ids"])
+        self.assertIn(self.ids["Rock Bottom Ada Vance"], self.ids_of(result))
 
     async def test_schema_wrong_output_is_an_unsupported_reply(self) -> None:
         self.output = {"action": "dance"}
@@ -242,7 +250,7 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["ids"], [])
 
     async def test_offline_stays_an_http_error(self) -> None:
-        self.fail = "offline"
+        self.outage = "offline"
         with self.assertRaises(BotError) as caught:
             await self.chat()
         self.assertEqual(caught.exception.status, 503)
@@ -250,7 +258,7 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self._proposals(), 0)
 
     async def test_timeout_is_a_plain_reply(self) -> None:
-        self.fail = "timeout"
+        self.outage = "timeout"
         result = await self.chat()
         self.assertEqual(result["action"], "unsupported")
         self.assertIn("timed out", str(result["summary"]))
@@ -258,9 +266,9 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_a_failed_trip_is_not_served_from_the_cache(self) -> None:
         await self.chat()
-        self.fail = "timeout"
+        self.outage = "timeout"
         await self.chat()
-        self.fail = ""
+        self.outage = ""
         self.paths.clear()
         await self.chat()
         self.assertIn("/api/tags", self.paths)
