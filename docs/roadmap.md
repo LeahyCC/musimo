@@ -67,6 +67,19 @@ Not yet in a release; the [changelog](../CHANGELOG.md#unreleased) has the full l
 
 The SoundCloud match source has not been run against the live site or measured. [More sources](more-sources.md) records what was checked against real sites and what was not.
 
+## Merged for the next release
+
+The V2 packages from [#179](https://github.com/LeahyCC/musimo/issues/179), plus names and delete. The changelog has the full list.
+
+- ✓ Engine boundary (1A): `POST /api/music-bot/intent` takes a versioned intent with no model call and answers real ids with the snapshot they came from, and `GET /api/music-bot/capabilities` lists what it supports
+- ✓ Proposals and commit (1B): a result is a stored revision, refined in place and committed once to a playlist or a queue receipt, and a commit refuses as stale rather than swapping a song
+- ✓ Shown-song memory (1B): the server remembers the library results it showed and puts them after the songs that fit as well
+- ✓ Preview and confirm in the chat (1B): the card shows the stored revision, another set, adding, removing, pinning and a stale refresh
+- ✓ Duration modes and edits (6A): `total_length` with under, at most, at least, over and about, and proposal edits (another, add, remove)
+- ✓ Interpreter suite (2A): 72 development and 56 held-out cases in [evals/interpreter](../evals/interpreter/README.md), sealed by checksum; no model has run against it
+- ✓ Names: a name keeps its own queue, playlists, likes, play counts and shown songs, while music files and downloads stay shared
+- ✓ Delete and trash: songs, albums and artists move to a `.musimo-trash` folder, Settings shows its size and can empty it or empty it after 30 days, and a trashed track is not downloaded again
+
 ## Finish the existing journey first
 
 Search → inspect recording → choose destination/format → queue → see progress → handle failure → find the finished file in the library. The core flow is working in 0.4.0; validation of the complete path still depends on your chosen provider, the library setup and storage configuration.

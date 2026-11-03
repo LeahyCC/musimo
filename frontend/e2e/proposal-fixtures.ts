@@ -317,7 +317,7 @@ export async function proposalFixtures(page: Page, start: LibraryTrack[]): Promi
     const complete = ids.length <= 12
     return {
       contract_version: 5,
-      engine_version: 4,
+      engine_version: 5,
       status: 'ok',
       proposal: {
         id,

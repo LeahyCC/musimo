@@ -277,6 +277,8 @@ class OctaveBotTests(unittest.IsolatedAsyncioTestCase):
         titles, summary = self.titles(plan(tempo="fast"))
         self.assertEqual(set(titles), {"Arrow", "Blaze"})
         self.assertNotIn("half or double", summary)
+        self.assertIn(f"Tempo from {BEAT_RECIPE}:", summary)
+        self.assertNotIn("Tempo and energy", summary)
         faster, _ = self.titles(plan(tempo_compared="faster"), reference="Flint")
         self.assertEqual(set(faster), {"Arrow", "Blaze", "Grove"})
         scalar, embedding = self.bot.active_recipes()

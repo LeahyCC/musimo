@@ -9,7 +9,8 @@ Owner answers are marked **Colin**. Everything else is a recommendation Colin as
 ### Host and models
 
 - **Colin:** the model runs on another computer, through Ollama. Musimo reaches it at the `ollama_url` setting.
-- **Colin:** that computer has 32 GB RAM and 16 GB VRAM.
+- **Colin:** that computer is pancakes (Ryzen 9 9900X, 128 GB RAM, RTX 5080 with 16 GB VRAM), reached through NVIDIA PAIR.
+- Note, 2 November 2026: the host line used to say 32 GB RAM, which was out of date. Colin: "128 GB is the one to trust, the doc is old." Stock `llama3.1:8b` was installed on 2 November as the baseline; Colin's reason: "Abliterated models skew safety tests."
 - **Colin:** candidates are 9B to 12B models. Claude does not inspect or download models on that machine. Colin installs the candidates.
 - Recommended shortlist rule: two to four instruct models in that range that Ollama can run with structured JSON output, at Q4_K_M or Q5_K_M, whose licence allows personal use. Each must fit in VRAM with `num_ctx` 8192 and no CPU offload. llama3.1:8b passed 20/20 in the [earlier check](music-bot-review-fixes.md) and is kept as the baseline, not as a candidate.
 - Each model is run with temperature 0 and a fixed seed. Each case runs three times so the report shows whether answers change between runs.

@@ -448,6 +448,25 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(self.count("bot_receipts"), 0)
         self.assertEqual(len(self.playlists()), 1)  # Liked only
 
+    async def test_a_song_deleted_to_the_trash_is_stale(self) -> None:
+        created = await self.create(filters={"artists": ["Orchard"]}, seed=1)
+        proposal_id = part(created, "proposal")["id"]
+        dawn = self.ids["Dawn"]
+        self.assertEqual(set(self.song_ids(created)), {dawn, self.ids["Dusk"]})
+        # Delete (#263) moves the file into the library's trash and drops it from the index,
+        # rather than a rescan finding it gone.
+        moved = self.library.delete_songs([dawn])
+        self.assertEqual(moved["deleted"], [dawn])
+        self.assertEqual(moved["failed"], [])
+        self.assertEqual(self.count("library_trash"), 1)
+        gone = await self.commit(proposal_id, target={"kind": "queue"})
+        self.assertEqual((gone.status_code, code(gone)), (409, "proposal_stale"))
+        self.assertEqual(
+            part(payload(gone), "error")["fields"],
+            [{"field": f"songs.{dawn}", "message": "Not in the library"}],
+        )
+        self.assertEqual(self.count("bot_receipts"), 0)
+
     async def test_refining_a_list_leaves_out_songs_deleted_from_the_library(self) -> None:
         created = await self.create(filters={"artists": ["Orchard"]}, seed=1)
         proposal_id = part(created, "proposal")["id"]

@@ -45,7 +45,7 @@ State the harness sets up before the prompt. Each is left out when it is the def
 
 - `playing`: the song playing, or none. `paused`: whether it is paused.
 - `queue`: the songs after the playing one.
-- `recipes`: the audio recipes turned on (`tempo_energy`, `sound`). None by default, which matches the server today.
+- `recipes`: the audio recipes turned on (`tempo_energy`, `sound`). `tempo_energy` means the harness turns on both tempo and the `audio_energy` setting, since `tempo_energy` predates their split into `audio_scalar_recipe` (tempo) and `audio_energy` (energy, off by default). None by default: the server ships with analysis off, and the Song analysis page can turn tempo on while energy stays off until `audio_energy` is set.
 - `previous`: the open proposal, as its merged filters, scope and songs. Every case is independent: the harness stores this proposal first, so one bad answer cannot spoil the next case.
 - `fault`: an outage the harness injects. `timeout`, `malformed` (not JSON), `schema` (JSON in the wrong shape), `truncated` (output cut off), `invented_id` (the model names a song id the library does not have), `offline` (Ollama unreachable) and `truncated_history` (the chat history the model sees is cut, while the stored proposal keeps its filters).
 
@@ -66,7 +66,7 @@ What the request means, in `expect`:
 
 These are fixed now, before any run.
 
-- Text matches ignore case and repeated spaces. In `artists`, `exclude_artists` and `genres`, an entry like `"liquid drum and bass|liquid dnb|liquid"` matches any one spelling, and the lists compare as sets. The first spelling of every genre is one `backend/library/genres.py` matches against the library today, and the test checks that. The others mean the same thing but find nothing yet ("liquid", "dnb" and "trip hop" with a space), which is a retrieval gap (#198), not an interpretation error. The interpretation score accepts them; the run report counts separately how many cases came back with no songs.
+- Text matches ignore case and repeated spaces. In `artists`, `exclude_artists` and `genres`, an entry like `"liquid drum and bass|liquid dnb|liquid"` matches any one spelling, and the lists compare as sets. The first spelling of every genre is one `backend/library/genres.py` matches against the library today, and the test checks that. The others mean the same thing and now find the same songs: `dnb`, `drum & bass` and `trip hop` fold onto their tags, and `liquid` matches the liquid drum and bass tag (fixed in 3e4d5af, so #198 is closed). The interpretation score accepts them; the run report counts separately how many cases came back with no songs.
 - Every filter not listed in `expect.filters` must be the contract default. An added constraint the person never asked for is as wrong as a dropped one. `limit` is free unless the case lists it, and so is the reply's wording.
 - A case's hard constraints are correct when every listed filter, `songs` and `edit` match and nothing else was added.
 - A mutation is any change to playback, the queue or a playlist. Only `pause`, `resume` and `skip` cases may cause one, and only that one. Chat text never commits a proposal: saving and queueing stay the card's buttons (cases `d063` and `h045`), so the right answer is `unsupported` with a pointer to the button. Today's prompt treats "playlist" and "queue" words as a preview search instead. That is not a mutation, so it passes the hard gate, but it scores as the wrong action.

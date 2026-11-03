@@ -1112,7 +1112,9 @@ class MusicBot:
             )
         library = list(view.stored.values())
         if plan.uses_scalar() and scalar is not None and gates.scalar is not None:
-            summary += f" Tempo and energy from {scalar.id}:" + _coverage(
+            # Energy is only on with its setting, so say what the search actually read.
+            measured = "Tempo and energy" if scalar.energy else "Tempo"
+            summary += f" {measured} from {scalar.id}:" + _coverage(
                 gates.scalar, library, missing["missing_scalar"], _uses_tempo(plan)
             )
         if plan.similar_to_current and embedding is None:

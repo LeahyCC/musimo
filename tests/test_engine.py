@@ -971,7 +971,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
                 CANDIDATE_CAP,
                 WORK_LIMIT,
             ),
-            (4, 2, 4.0, 500, 2**53, 300, 600, 50_000),
+            (5, 2, 4.0, 500, 2**53, 300, 600, 50_000),
         )
 
     # Kept, pinned and excluded songs (contract version 5)
