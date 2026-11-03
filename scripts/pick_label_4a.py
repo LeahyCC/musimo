@@ -12,11 +12,21 @@ import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import NotRequired, TypedDict, cast
 
 from backend.core.store import Store
 from backend.library.genres import _fold, tag_profile
 
-type Song = dict[str, object]
+
+class Song(TypedDict):
+    song_id: str
+    artist_key: str
+    duration: float
+    genres: list[str]
+    title: str
+    rms: NotRequired[float]
+
+
 CLIP_SECONDS = 30
 LONG_SECONDS = 600
 
@@ -87,7 +97,7 @@ def tag_set(song: Song) -> set[str]:
     return {_fold(tag) for tag in song["genres"] if tag.strip()}
 
 
-def broad_groups(song: Song) -> set[str]:
+def broad_groups(song: Song) -> frozenset[str]:
     """Broad genre groups the song's tags map to."""
     return tag_profile(tuple(song["genres"]))[1]
 
@@ -217,7 +227,7 @@ def build_manifest(songs: list[Song], store: Store, seed: str) -> dict[str, obje
     # 2. Other drum and bass
     other_dnb = pick(
         songs,
-        lambda s: (DNB_TAGS & tag_set(s)) and LIQUID_TAG not in tag_set(s),
+        lambda s: bool(DNB_TAGS & tag_set(s)) and LIQUID_TAG not in tag_set(s),
         20,
         used_artists,
         seed,
@@ -333,11 +343,13 @@ def main() -> None:
     with output.open("w", encoding="utf-8") as handle:
         json.dump(manifest, handle, indent=2)
 
-    print(f"Wrote {manifest['total']} clips to {output}")
-    print(f"Snapshot time: {manifest['snapshot_time']}")
-    if manifest["shortfalls"]:
+    total = cast(int, manifest["total"])
+    print(f"Wrote {total} clips to {output}")
+    print(f"Snapshot time: {cast(str, manifest['snapshot_time'])}")
+    shortfalls = cast(dict[str, int], manifest["shortfalls"])
+    if shortfalls:
         print("Shortfalls (target - actual):")
-        for group, shortfall in manifest["shortfalls"].items():
+        for group, shortfall in shortfalls.items():
             print(f"  {group}: {shortfall}")
     else:
         print("All groups filled.")

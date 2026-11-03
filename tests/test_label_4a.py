@@ -6,8 +6,10 @@ import sys
 import tempfile
 import unittest
 import wave
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
+from typing import cast
 from unittest.mock import patch
 
 from fastapi.testclient import TestClient
@@ -17,7 +19,7 @@ from mutagen.wave import WAVE
 from backend.core.store import Store
 from backend.library.index import Library
 from backend.library.label_4a import (
-    Label4AAnswer,
+    Label4AClip,
     clip_start,
     load_manifest,
     shuffled_order,
@@ -125,9 +127,9 @@ class ClipLogicTests(unittest.TestCase):
 
     def test_shuffled_order_is_deterministic_for_a_seed(self) -> None:
         clips = [
-            Label4AAnswer.model_construct(clip_id="C001"),
-            Label4AAnswer.model_construct(clip_id="C002"),
-            Label4AAnswer.model_construct(clip_id="C003"),
+            Label4AClip.model_construct(clip_id="C001"),
+            Label4AClip.model_construct(clip_id="C002"),
+            Label4AClip.model_construct(clip_id="C003"),
         ]
         first = shuffled_order(clips, "seed-a")
         second = shuffled_order(clips, "seed-a")
@@ -244,13 +246,15 @@ class PickerTests(unittest.TestCase):
         self._fill_library()
         first = build_manifest(load_songs(self.store), self.store, "seed-one")
         second = build_manifest(load_songs(self.store), self.store, "seed-one")
+        first_clips = cast(list[dict[str, object]], first["clips"])
+        second_clips = cast(list[dict[str, object]], second["clips"])
         self.assertEqual(
-            [clip["clip_id"] for clip in first["clips"]],
-            [clip["clip_id"] for clip in second["clips"]],
+            [clip["clip_id"] for clip in first_clips],
+            [clip["clip_id"] for clip in second_clips],
         )
         self.assertEqual(
-            [clip["song_id"] for clip in first["clips"]],
-            [clip["song_id"] for clip in second["clips"]],
+            [clip["song_id"] for clip in first_clips],
+            [clip["song_id"] for clip in second_clips],
         )
 
     def test_no_artist_appears_in_both_splits(self) -> None:
@@ -258,8 +262,9 @@ class PickerTests(unittest.TestCase):
         manifest = build_manifest(load_songs(self.store), self.store, "seed-split")
         dev_artists: set[str] = set()
         held_artists: set[str] = set()
+        clips = cast(list[dict[str, object]], manifest["clips"])
         with self.store.lock:
-            for clip in manifest["clips"]:
+            for clip in clips:
                 row = self.store.db.execute(
                     "SELECT artist_key FROM library_files WHERE song_id=?",
                     (clip["song_id"],),
@@ -284,8 +289,9 @@ class PickerTests(unittest.TestCase):
             "speech",
             "random",
         }
+        manifest_clips = cast(list[dict[str, object]], manifest["clips"])
         for group in groups:
-            clips = [c for c in manifest["clips"] if c["group"] == group]
+            clips = [c for c in manifest_clips if c["group"] == group]
             if clips:
                 dev = len([c for c in clips if c["split"] == "dev"])
                 held = len([c for c in clips if c["split"] == "held"])
@@ -337,14 +343,15 @@ class Label4AApiTests(unittest.IsolatedAsyncioTestCase):
     def _insert_manifest(self, store: Store) -> None:
         # The scan already populated library_files; build a manifest from it.
         manifest = build_manifest(load_songs(store), store, "api-seed")
-        manifest["clips"] = manifest["clips"][:6]
-        for index, clip in enumerate(manifest["clips"], start=1):
+        clips = cast(list[dict[str, object]], manifest["clips"])
+        clips[:] = clips[:6]
+        for index, clip in enumerate(clips, start=1):
             clip["clip_id"] = f"C{index:03d}"
-        manifest["total"] = len(manifest["clips"])
+        manifest["total"] = len(clips)
         self.manifest.write_text(json.dumps(manifest), encoding="utf-8")
 
     @contextmanager
-    def _client(self):
+    def _client(self) -> Iterator[TestClient]:
         env = {
             "MUSIMO_LIBRARY_ROOTS": str(self.root),
             "MUSIMO_LABEL_4A_MANIFEST": str(self.manifest),

@@ -11,11 +11,18 @@ import hashlib
 import json
 import os
 import sys
+from collections.abc import Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 
 from backend.core.store import Store
-from backend.library.label_4a import default_manifest_path, load_answers, load_manifest
+from backend.library.label_4a import (
+    Label4AAnswer,
+    Label4AClip,
+    default_manifest_path,
+    load_answers,
+    load_manifest,
+)
 
 DEFAULT_OUTPUT = "evals/audio"
 
@@ -57,23 +64,25 @@ def answer_to_dict(answer: object, clip_id: str = "") -> dict[str, object]:
     """Flatten a Label4AAnswer or a plain dict into the export shape."""
     if isinstance(answer, dict):
         return {
-            "clip_id": answer.get("clip_id", clip_id),
-            "sections_played": answer.get("sections_played", []),
+            "clip_id": str(answer.get("clip_id", clip_id)),
+            "sections_played": list(answer.get("sections_played", [])),
             "vocals": answer.get("vocals"),
             "intensity": answer.get("intensity"),
             "speech": answer.get("speech"),
             "dnb": answer.get("dnb"),
             "dnb_subtype": answer.get("dnb_subtype"),
         }
-    return {
-        "clip_id": answer.clip_id,
-        "sections_played": answer.sections_played,
-        "vocals": answer.vocals,
-        "intensity": answer.intensity,
-        "speech": answer.speech,
-        "dnb": answer.dnb,
-        "dnb_subtype": answer.dnb_subtype,
-    }
+    if isinstance(answer, Label4AAnswer):
+        return {
+            "clip_id": answer.clip_id,
+            "sections_played": answer.sections_played,
+            "vocals": answer.vocals,
+            "intensity": answer.intensity,
+            "speech": answer.speech,
+            "dnb": answer.dnb,
+            "dnb_subtype": answer.dnb_subtype,
+        }
+    raise TypeError(f"Expected a dict or Label4AAnswer, got {type(answer).__name__}")
 
 
 def load_synthetic_answers(path: Path) -> dict[str, dict[str, object]]:
@@ -133,7 +142,7 @@ def main() -> None:
         "exported_at": datetime.now(UTC).isoformat(),
     }
 
-    def split_entries(clips: list[object]) -> list[dict[str, object]]:
+    def split_entries(clips: Sequence[Label4AClip]) -> list[dict[str, object]]:
         result: list[dict[str, object]] = []
         for clip in clips:
             clip_id = clip.clip_id
