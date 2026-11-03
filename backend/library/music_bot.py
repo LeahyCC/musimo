@@ -427,12 +427,6 @@ those are buttons. Anything that is not about this library is unsupported, with 
 An ambiguous library request uses action clarify and asks a short question.
 """
 
-_INTERPRETATION_AUDIO_OFF = """\
-Mood, energy, tempo, instruments and vocals need audio analysis that is not enabled: use
-action unsupported with a reason. Do not approximate them with genres. "More like this" can
-use filters.similar_to_current.
-"""
-
 _INTERPRETATION_TEMPO_ENERGY_ON = """\
 Tempo and energy are measured for songs the analysis has reached. filters.tempo is slow
 (under 90 BPM), medium (90 to 139) or fast (140 and up), or "". An explicit BPM goes in
