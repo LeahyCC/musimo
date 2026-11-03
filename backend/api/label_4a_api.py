@@ -21,13 +21,13 @@ from backend.library.label_4a import (
     DnbSubtype,
     Intensity,
     Label4AAnswer,
+    Label4AClip,
     Section,
     Speech,
     Vocals,
     clip_start,
     load_answers,
     load_manifest,
-    manifest_clips,
     save_answer,
     shuffled_order,
 )
@@ -52,12 +52,12 @@ class ClipsOut(BaseModel):
     answers: dict[str, AnswerIn]
 
 
-def _load_clips() -> dict[str, object]:
+def _load_clips() -> dict[str, Label4AClip]:
     try:
         manifest = load_manifest()
     except FileNotFoundError as exc:
         raise HTTPException(503, "No label set has been generated yet") from exc
-    return manifest_clips(manifest)
+    return {clip.clip_id: clip for clip in manifest.clips}
 
 
 async def _stream_ffmpeg(path: Path, start: int) -> AsyncIterator[bytes]:
@@ -107,7 +107,7 @@ def install_label_4a_routes(
     @app.get("/api/label-4a/clips")
     async def list_clips() -> ClipsOut:
         manifest = load_manifest()
-        clips = manifest_clips(manifest)
+        clips = {clip.clip_id: clip for clip in manifest.clips}
         answers = {
             clip_id: AnswerIn(**answer.model_dump(exclude={"clip_id", "updated_at"}))
             for clip_id, answer in load_answers(get_store()).items()
@@ -131,7 +131,7 @@ def install_label_4a_routes(
     @app.get("/api/label-4a/clips/{clip_id}")
     async def stream_clip(
         clip_id: str,
-        section: Annotated[Section, Query(default="middle")],
+        section: Annotated[Section, Query()] = "middle",
     ) -> StreamingResponse:
         clips = _load_clips()
         clip = clips.get(clip_id)

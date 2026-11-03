@@ -53,11 +53,11 @@ def digest_file(path: Path) -> str:
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def answer_to_dict(answer: object) -> dict[str, object]:
+def answer_to_dict(answer: object, clip_id: str = "") -> dict[str, object]:
     """Flatten a Label4AAnswer or a plain dict into the export shape."""
     if isinstance(answer, dict):
         return {
-            "clip_id": answer["clip_id"],
+            "clip_id": answer.get("clip_id", clip_id),
             "sections_played": answer.get("sections_played", []),
             "vocals": answer.get("vocals"),
             "intensity": answer.get("intensity"),
@@ -137,7 +137,7 @@ def main() -> None:
         result: list[dict[str, object]] = []
         for clip in clips:
             clip_id = clip.clip_id
-            entry = answer_to_dict(answers.get(clip_id, {"clip_id": clip_id}))
+            entry = answer_to_dict(answers.get(clip_id, {"clip_id": clip_id}), clip_id)
             entry["clip_id"] = clip_id
             result.append(entry)
         return result

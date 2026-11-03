@@ -248,9 +248,7 @@ def build_manifest(songs: list[Song], store: Store, seed: str) -> dict[str, obje
     else:
         calm = pick(songs, lambda s: bool(tag_set(s) & CALM_TAGS), 10, used_artists, seed)
         intense = pick(songs, lambda s: bool(tag_set(s) & INTENSE_TAGS), 10, used_artists, seed)
-        group_clips.append(
-            ("loud_quiet", note("loud_quiet", 20, split_group(calm + intense, seed)))
-        )
+        group_clips.append(("loud_quiet", note("loud_quiet", 20, calm + intense)))
 
     # 5. Long intro / tempo change
     long_songs = pick(songs, lambda s: s["duration"] >= LONG_SECONDS, 15, used_artists, seed)
