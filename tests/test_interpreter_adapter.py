@@ -136,22 +136,68 @@ class ParseModelOutputTests(unittest.TestCase):
         self.assertIsInstance(result, Reply)
         self.assertEqual(result.action, "unsupported")
 
+    def test_repair_that_times_out_still_returns_reply(self) -> None:
+        def repair(text: str) -> str:
+            raise TimeoutError("the model host did not answer")
+
+        result = parse_model_output("broken", repair=repair)
+        self.assertIsInstance(result, Reply)
+
+    def test_brace_inside_a_string_is_not_cut_short(self) -> None:
+        text = '{"action": "clarify", "question": "Which one} do you mean?"}'
+        result = parse_model_output(text)
+        assert isinstance(result, Interpretation)
+        self.assertEqual(result.question, "Which one} do you mean?")
+
 
 class ToIntentTests(unittest.TestCase):
-    def test_search_with_named_song_builds_proposal_ids(self) -> None:
+    def test_named_song_becomes_a_preview_in_scope_proposal(self) -> None:
+        # The engine rejects proposal_ids outside scope proposal, so "play Rock Bottom"
+        # must arrive as a one-song preview.
         interp = Interpretation(
             action="search",
-            filters=FilterSet(genres=["jazz"]),
-            named_songs=[NamedSong(title="Night Bus", artist="Orchard")],
+            named_songs=[NamedSong(title="Rock Bottom", artist="Ada Vance")],
         )
-        reg = fake_registry()
-        result = to_intent(interp, CATALOGUE, reg)
-        self.assertIsInstance(result, Intent)
+        result = to_intent(interp, CATALOGUE, fake_registry())
         assert isinstance(result, Intent)
         self.assertEqual(result.action, "search")
+        self.assertEqual(result.scope, "proposal")
+        self.assertEqual(result.context.proposal_ids, ["tr-0000000000000003"])
+
+    def test_named_song_to_compare_with_becomes_the_reference(self) -> None:
+        interp = Interpretation(
+            action="search",
+            filters=FilterSet(similar_to_current=True),
+            named_songs=[NamedSong(title="Night Bus", artist="Orchard")],
+        )
+        result = to_intent(interp, CATALOGUE, fake_registry())
+        assert isinstance(result, Intent)
         self.assertEqual(result.scope, "library")
-        self.assertEqual(result.context.proposal_ids, ["tr-0000000000000001"])
-        self.assertEqual(result.filters.genres, ["jazz"])
+        self.assertEqual(result.context.reference_id, "tr-0000000000000001")
+        self.assertEqual(result.context.proposal_ids, [])
+
+    def test_two_songs_to_compare_with_asks_which(self) -> None:
+        interp = Interpretation(
+            action="search",
+            filters=FilterSet(similar_to_current=True),
+            named_songs=[
+                NamedSong(title="Night Bus", artist="Orchard"),
+                NamedSong(title="Tidal", artist="Kestrel Run"),
+            ],
+        )
+        result = to_intent(interp, CATALOGUE, fake_registry())
+        assert isinstance(result, Reply)
+        self.assertEqual(result.action, "clarify")
+
+    def test_named_song_inside_a_refinement_is_refused(self) -> None:
+        interp = Interpretation(
+            action="search",
+            scope="queue",
+            named_songs=[NamedSong(title="Tidal", artist="Kestrel Run")],
+        )
+        result = to_intent(interp, CATALOGUE, fake_registry())
+        assert isinstance(result, Reply)
+        self.assertEqual(result.action, "unsupported")
 
     def test_unknown_song_returns_clarify(self) -> None:
         interp = Interpretation(

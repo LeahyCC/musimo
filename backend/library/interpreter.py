@@ -10,7 +10,6 @@ turning named songs into `context.proposal_ids`. Anything the engine cannot hono
 as a `Reply` rather than loosened.
 """
 
-import json
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Annotated, Literal
@@ -287,9 +286,26 @@ def to_intent(
         # Handled by the registry check above; keep a clear refusal for negated descriptions.
         return Reply("unsupported", "That description cannot be used to search.")
 
-    proposal_ids, question = _lookup(interpretation.named_songs, catalogue)
+    song_ids, question = _lookup(interpretation.named_songs, catalogue)
     if question is not None:
         return Reply("clarify", question)
+
+    # The contract has no title filter. A named song is either the song to compare with
+    # ("songs like Night Bus") or a request for those songs, which becomes a preview of just
+    # them in scope proposal. The engine rejects proposal_ids outside that scope.
+    scope = interpretation.scope
+    context = Context()
+    if song_ids and filters.similar_to_current:
+        if len(song_ids) != 1:
+            return Reply("clarify", "Which one song should I compare with?")
+        context = Context(reference_id=song_ids[0])
+    elif song_ids:
+        if scope != "library":
+            return Reply("unsupported", "I can't pick named songs out of this list yet.")
+        if "proposal" not in available:
+            return Reply("unsupported", "Previewing named songs is not available.")
+        scope = "proposal"
+        context = Context(proposal_ids=song_ids)
 
     total_length = (
         TotalLength.model_validate(
@@ -329,9 +345,9 @@ def to_intent(
     return Intent(
         contract_version=CONTRACT_VERSION,
         action="search",
-        scope=interpretation.scope,
+        scope=scope,
         filters=intent_filters,
-        context=Context(proposal_ids=proposal_ids),
+        context=context,
         explanation="",
     )
 
@@ -383,21 +399,21 @@ def parse_model_output(
     the original text. If that still fails, a `Reply` is returned so the chat can answer the
     user instead of running an action.
     """
-    candidate = _extract_json(text)
-    for source in (candidate, text if candidate is None else None):
-        if source is None:
-            continue
+    # The whole text first: the brace scan ignores strings, so a "}" inside a question would
+    # cut a valid answer short.
+    for source in dict.fromkeys(item for item in (text.strip(), _extract_json(text)) if item):
         try:
             return Interpretation.model_validate_json(source)
         except ValidationError:
             pass
-        try:
-            return Interpretation.model_validate(json.loads(source))
-        except (json.JSONDecodeError, ValidationError):
-            pass
 
     if repair is not None:
-        repaired = repair(text)
+        try:
+            repaired = repair(text)
+        except Exception:
+            # The repair is a second model call. A timeout or outage there must still end in a
+            # reply, never an error the chat can't show.
+            repaired = ""
         if isinstance(repaired, str):
             result = parse_model_output(repaired, repair=None)
             if isinstance(result, Interpretation):
