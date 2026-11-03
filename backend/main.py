@@ -27,6 +27,7 @@ from backend.api.audio_worker_api import install_audio_worker_routes
 from backend.api.diagnostics_api import install_diagnostics_routes
 from backend.api.download_api import install_download_routes
 from backend.api.events_api import install_event_routes
+from backend.api.label_4a_api import install_label_4a_routes
 from backend.api.link_api import install_link_routes
 from backend.api.listener_api import install_listener_routes
 from backend.api.music_bot_api import install_music_bot_routes
@@ -44,7 +45,7 @@ from backend.integrations.youtube_cookies import drop_copies as drop_youtube_coo
 from backend.integrations.youtube_cookies import publish as publish_youtube_cookies
 from backend.jobs.downloads import Downloads
 from backend.jobs.links import Links
-from backend.library import trash
+from backend.library import label_4a, trash
 from backend.library.audio_analysis import AudioAnalysis
 from backend.library.audio_profile import AudioProfiles
 from backend.library.index import Library
@@ -161,6 +162,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             waveforms = WaveformService(store, player)
             library = Library(store, roots, changed)
             library.start()
+            label_4a.ensure_tables(store)
             downloads = Downloads(store, catalog, library, changed)
             downloads.start()
             # The first page would otherwise wait while this build reads the index.
@@ -214,6 +216,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
     install_link_routes(app, lambda: links)
     install_settings_routes(app, data, lambda: store, lambda: downloads, changed.set)
     install_event_routes(app, data, lambda: store, changed)
+    install_label_4a_routes(app, lambda: store, lambda: player)
     install_diagnostics_routes(
         app,
         data,
