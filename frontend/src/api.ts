@@ -727,6 +727,30 @@ export const snapshotSchema = z.object({
   summary: jobSummarySchema,
 })
 
+export const label4aSectionSchema = z.enum(['early', 'middle', 'late'])
+export type Label4ASection = z.infer<typeof label4aSectionSchema>
+export const label4aVocalsSchema = z.enum(['none', 'a_bit', 'yes', 'unknown'])
+export const label4aIntensitySchema = z.enum(['calm', 'medium', 'intense', 'unknown'])
+export const label4aSpeechSchema = z.enum(['music', 'speech', 'both', 'unknown'])
+export const label4aDnbSchema = z.enum(['no', 'yes', 'unknown'])
+export const label4aDnbSubtypeSchema = z.enum(['liquid', 'other', 'unknown'])
+export const label4aAnswerSchema = z.object({
+  sections_played: z.array(label4aSectionSchema).default([]),
+  vocals: label4aVocalsSchema.nullable().default(null),
+  intensity: label4aIntensitySchema.nullable().default(null),
+  speech: label4aSpeechSchema.nullable().default(null),
+  dnb: label4aDnbSchema.nullable().default(null),
+  dnb_subtype: label4aDnbSubtypeSchema.nullable().default(null),
+})
+export type Label4AAnswer = z.infer<typeof label4aAnswerSchema>
+export const label4aClipsSchema = z.object({
+  seed: z.string(),
+  total: z.number(),
+  order: z.array(z.string()),
+  answers: z.record(z.string(), label4aAnswerSchema),
+})
+export type Label4AClips = z.infer<typeof label4aClipsSchema>
+
 export class ApiError extends Error {
   code?: string
   constructor(message: string, code?: string) {
