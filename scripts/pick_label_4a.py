@@ -1,20 +1,22 @@
 """Build a blind 120-clip label set for the 4A audio evidence package.
 
 Reads the catalogue read-only, picks hard cases with a fixed seed and SHA-256 ordering,
-and writes a manifest under runtime/label-4a/. It does not scan files or run any model.
+and writes a manifest to <data dir>/label-4a/. It opens the database read-only, does not scan
+files and does not run any model.
 """
 
 import argparse
 import hashlib
 import json
 import os
+import sqlite3
 import sys
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import NotRequired, TypedDict, cast
 
-from backend.core.store import Store
+from backend.core.text import normalize
 from backend.library.genres import _fold, tag_profile
 
 
@@ -40,7 +42,6 @@ INTENSE_TAGS = {_fold(t) for t in ("Metal", "Hardcore", "Hard Rock", "Punk")}
 VOCAL_HEAVY_GROUPS = {"pop", "hip-hop", "soul-rnb", "reggae"}
 
 DEFAULT_SEED = "label-4a-v1"
-DEFAULT_OUTPUT = "runtime/label-4a/manifest.json"
 
 
 def parse_args() -> argparse.Namespace:
@@ -52,19 +53,24 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output",
-        default=os.environ.get("MUSIMO_LABEL_4A_MANIFEST", DEFAULT_OUTPUT),
-        help="Where to write the manifest (default: runtime/label-4a/manifest.json)",
+        default=os.environ.get("MUSIMO_LABEL_4A_MANIFEST", ""),
+        help="Where to write the manifest (default: <data dir>/label-4a/manifest.json)",
     )
     parser.add_argument("--seed", default=DEFAULT_SEED, help="Deterministic ordering seed")
     parser.add_argument("--force", action="store_true", help="Overwrite an existing manifest")
+    parser.add_argument(
+        "--artists",
+        default="",
+        help='JSON file {"liquid": [...], "other_dnb": [...]} of artist names. The library '
+        "has no liquid tag and few dnb tags, so Colin names the artists.",
+    )
     return parser.parse_args()
 
 
-def load_songs(store: Store) -> list[Song]:
+def load_songs(db: sqlite3.Connection) -> list[Song]:
     """All indexed songs from enabled roots, with raw tags."""
-    with store.lock:
-        rows = store.db.execute(
-            """
+    rows = db.execute(
+        """
             SELECT
                 f.song_id,
                 f.artist_key,
@@ -75,7 +81,7 @@ def load_songs(store: Store) -> list[Song]:
             JOIN library_roots r ON r.path = f.root AND r.enabled = 1
             WHERE f.song_id != ''
             """
-        ).fetchall()
+    ).fetchall()
     songs: list[Song] = []
     for row in rows:
         raw_genres = json.loads(str(row["genres"]))
@@ -102,23 +108,21 @@ def broad_groups(song: Song) -> frozenset[str]:
     return tag_profile(tuple(song["genres"]))[1]
 
 
-def has_rms_rows(store: Store) -> bool:
+def has_rms_rows(db: sqlite3.Connection) -> bool:
     """True if any RMS-style audio profile rows exist today."""
-    with store.lock:
-        row = store.db.execute(
-            """
+    row = db.execute(
+        """
             SELECT 1 FROM audio_profile
             WHERE recipe LIKE 'rms-%' AND status = 'done' LIMIT 1
             """
-        ).fetchone()
+    ).fetchone()
     return row is not None
 
 
-def fetch_rms_songs(store: Store, used: set[str], target: int, seed: str) -> list[Song]:
+def fetch_rms_songs(db: sqlite3.Connection, used: set[str], target: int, seed: str) -> list[Song]:
     """Songs with the most extreme RMS/loudness values, avoiding used artists."""
-    with store.lock:
-        rows = store.db.execute(
-            """
+    rows = db.execute(
+        """
             SELECT f.song_id, f.artist_key, f.duration, f.genres, f.title, ap.energy
             FROM audio_profile ap
             JOIN library_files f ON f.song_id = ap.song_id
@@ -126,8 +130,8 @@ def fetch_rms_songs(store: Store, used: set[str], target: int, seed: str) -> lis
             WHERE ap.recipe LIKE 'rms-%' AND ap.status = 'done' AND ap.energy IS NOT NULL
               AND f.song_id != '' AND f.duration >= ?
             """,
-            (CLIP_SECONDS,),
-        ).fetchall()
+        (CLIP_SECONDS,),
+    ).fetchall()
     candidates: list[Song] = []
     for row in rows:
         raw_genres = json.loads(str(row["genres"]))
@@ -172,25 +176,46 @@ def pick(
     target: int,
     used_artists: set[str],
     seed: str,
+    per_artist: int = 1,
 ) -> list[Song]:
-    """Pick up to `target` songs matching the predicate, one per artist, in hash order."""
+    """Pick up to `target` songs matching the predicate, in hash order.
+
+    At most `per_artist` songs per artist, and never an artist another group already used.
+    Groups with few artists (dnb, speech) allow more than one so they can fill.
+    """
     eligible = [s for s in songs if predicate(s) and s["duration"] >= CLIP_SECONDS]
     eligible.sort(key=lambda s: _order_key(seed, s["song_id"]))
     chosen: list[Song] = []
+    counts: dict[str, int] = {}
     for song in eligible:
-        if song["artist_key"] in used_artists:
+        artist = song["artist_key"]
+        if artist in used_artists or counts.get(artist, 0) >= per_artist:
             continue
         chosen.append(song)
-        used_artists.add(song["artist_key"])
+        counts[artist] = counts.get(artist, 0) + 1
         if len(chosen) >= target:
             break
+    used_artists.update(counts)
     return chosen
 
 
 def split_group(songs: list[Song], seed: str) -> list[tuple[Song, str]]:
-    """Assign a group alternately to dev and held using a separate deterministic key."""
-    ordered = sorted(songs, key=lambda s: _order_key(f"{seed}|split", s["song_id"]))
-    return [(song, "dev" if index % 2 == 0 else "held") for index, song in enumerate(ordered)]
+    """Split a group into dev and held by artist, so no artist is in both splits.
+
+    Artists go in hash order to whichever split has fewer songs so far.
+    """
+    by_artist: dict[str, list[Song]] = {}
+    for song in songs:
+        by_artist.setdefault(song["artist_key"], []).append(song)
+    artists = sorted(by_artist, key=lambda a: _order_key(f"{seed}|split", a))
+    sizes = {"dev": 0, "held": 0}
+    result: list[tuple[Song, str]] = []
+    for artist in artists:
+        split = "dev" if sizes["dev"] <= sizes["held"] else "held"
+        for song in by_artist[artist]:
+            result.append((song, split))
+        sizes[split] += len(by_artist[artist])
+    return result
 
 
 def section_start(song: Song, group: str) -> int:
@@ -204,7 +229,13 @@ def section_start(song: Song, group: str) -> int:
     return min(middle, int(duration) - CLIP_SECONDS)
 
 
-def build_manifest(songs: list[Song], store: Store, seed: str) -> dict[str, object]:
+def build_manifest(
+    songs: list[Song],
+    db: sqlite3.Connection,
+    seed: str,
+    liquid_artists: frozenset[str] = frozenset(),
+    dnb_artists: frozenset[str] = frozenset(),
+) -> dict[str, object]:
     used_artists: set[str] = set()
     shortfalls: dict[str, int] = {}
     group_clips: list[tuple[str, list[tuple[Song, str]]]] = []
@@ -214,46 +245,37 @@ def build_manifest(songs: list[Song], store: Store, seed: str) -> dict[str, obje
             shortfalls[name] = target - len(chosen)
         return split_group(chosen, seed)
 
-    # 1. Liquid drum and bass
-    liquid = pick(
-        songs,
-        lambda s: LIQUID_TAG in tag_set(s) and not (DNB_TAGS - {LIQUID_TAG}) & tag_set(s),
-        20,
-        used_artists,
-        seed,
-    )
-    group_clips.append(("liquid", note("liquid", 20, liquid)))
+    # 1 and 2. Drum and bass. Colin's artist lists come first, since the tags barely cover it.
+    def is_liquid(song: Song) -> bool:
+        return song["artist_key"] in liquid_artists or LIQUID_TAG in tag_set(song)
 
-    # 2. Other drum and bass
-    other_dnb = pick(
-        songs,
-        lambda s: bool(DNB_TAGS & tag_set(s)) and LIQUID_TAG not in tag_set(s),
-        20,
-        used_artists,
-        seed,
-    )
+    def is_other_dnb(song: Song) -> bool:
+        dnb = song["artist_key"] in dnb_artists or bool(DNB_TAGS & tag_set(song))
+        return dnb and not is_liquid(song)
+
+    liquid = pick(songs, is_liquid, 20, used_artists, seed, per_artist=3)
+    group_clips.append(("liquid", note("liquid", 20, liquid)))
+    other_dnb = pick(songs, is_other_dnb, 20, used_artists, seed, per_artist=3)
     group_clips.append(("other_dnb", note("other_dnb", 20, other_dnb)))
 
-    # 3. Vocals unclear
-    def vocals_unclear(song: Song) -> bool:
-        title = _fold(song["title"])
+    # 3. Vocals unclear: half that lean instrumental, half from vocal-heavy genres, so the
+    # set has both answers instead of mostly pop and hip-hop from the largest groups.
+    def leans_instrumental(song: Song) -> bool:
         tags = tag_set(song)
-        groups = broad_groups(song)
-        return (
-            "instrumental" in title
-            or "instrumental" in tags
-            or "ambient" in tags
-            or "classical" in tags
-            or len(groups) >= 2
-            or bool(groups & VOCAL_HEAVY_GROUPS)
+        return "instrumental" in _fold(song["title"]) or bool(
+            {"instrumental", "ambient", "classical"} & tags
         )
 
-    vocals = pick(songs, vocals_unclear, 20, used_artists, seed)
+    def vocal_heavy(song: Song) -> bool:
+        return bool(broad_groups(song) & VOCAL_HEAVY_GROUPS) and not leans_instrumental(song)
+
+    vocals = pick(songs, leans_instrumental, 10, used_artists, seed)
+    vocals += pick(songs, vocal_heavy, 10, used_artists, seed)
     group_clips.append(("vocals_unclear", note("vocals_unclear", 20, vocals)))
 
     # 4. Loud but calm / quiet but intense
-    if has_rms_rows(store):
-        loud_quiet = fetch_rms_songs(store, used_artists, 20, seed)
+    if has_rms_rows(db):
+        loud_quiet = fetch_rms_songs(db, used_artists, 20, seed)
         group_clips.append(("loud_quiet", note("loud_quiet", 20, loud_quiet)))
     else:
         calm = pick(songs, lambda s: bool(tag_set(s) & CALM_TAGS), 10, used_artists, seed)
@@ -265,7 +287,9 @@ def build_manifest(songs: list[Song], store: Store, seed: str) -> dict[str, obje
     group_clips.append(("long_intro", note("long_intro", 15, long_songs)))
 
     # 6. Speech
-    speech = pick(songs, lambda s: bool(tag_set(s) & SPEECH_TAGS), 10, used_artists, seed)
+    speech = pick(
+        songs, lambda s: bool(tag_set(s) & SPEECH_TAGS), 10, used_artists, seed, per_artist=3
+    )
     group_clips.append(("speech", note("speech", 10, speech)))
 
     # 7. Random from the library, prioritising untagged songs
@@ -319,26 +343,38 @@ def build_manifest(songs: list[Song], store: Store, seed: str) -> dict[str, obje
     }
 
 
+def load_artists(path: str) -> tuple[frozenset[str], frozenset[str]]:
+    """Liquid and other dnb artist keys from Colin's list. The file stays out of the repo."""
+    if not path:
+        return frozenset(), frozenset()
+    with open(path, encoding="utf-8") as handle:
+        data = json.load(handle)
+    liquid = frozenset(normalize(str(name)) for name in data.get("liquid", []))
+    other = frozenset(normalize(str(name)) for name in data.get("other_dnb", []))
+    return liquid, other
+
+
 def main() -> None:
     args = parse_args()
-    output = Path(args.output)
+    data = Path(args.data_dir)
+    if not data.is_dir():
+        print(f"Data directory not found: {data}", file=sys.stderr)
+        sys.exit(1)
+    output = Path(args.output) if args.output else data / "label-4a" / "manifest.json"
     if output.exists() and not args.force:
         print(f"Manifest already exists: {output}", file=sys.stderr)
         print("Use --force to overwrite.", file=sys.stderr)
         sys.exit(1)
     output.parent.mkdir(parents=True, exist_ok=True)
 
-    data = Path(args.data_dir)
-    if not data.is_dir():
-        print(f"Data directory not found: {data}", file=sys.stderr)
-        sys.exit(1)
-
-    store = Store(data / "musimo.sqlite3")
+    # Read-only: opening a Store would run its schema setup against the live database.
+    db = sqlite3.connect(f"{(data / 'musimo.sqlite3').resolve().as_uri()}?mode=ro", uri=True)
+    db.row_factory = sqlite3.Row
     try:
-        songs = load_songs(store)
-        manifest = build_manifest(songs, store, args.seed)
+        songs = load_songs(db)
+        manifest = build_manifest(songs, db, args.seed, *load_artists(args.artists))
     finally:
-        store.close()
+        db.close()
 
     with output.open("w", encoding="utf-8") as handle:
         json.dump(manifest, handle, indent=2)

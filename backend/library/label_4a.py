@@ -1,6 +1,6 @@
 """Blind labelling for the 4A audio evidence set.
 
-Nothing here runs an audio model. It reads the picker manifest from runtime/label-4a,
+Nothing here runs an audio model. It reads the picker manifest from <data dir>/label-4a,
 persists Colin's answers, and serves short anonymised clips so the page never sees a
 song id, title, artist or tag.
 """
@@ -19,7 +19,9 @@ from pydantic import BaseModel, Field
 from backend.core.store import Store
 
 MANIFEST_ENV = "MUSIMO_LABEL_4A_MANIFEST"
-DEFAULT_MANIFEST = "runtime/label-4a/manifest.json"
+# In the data directory, so the manifest survives a container rebuild. The answers live in
+# the database next to it, and they are useless without the clip-to-song mapping.
+MANIFEST_NAME = "label-4a/manifest.json"
 CLIP_ID_PREFIX = "C"
 CLIP_SECONDS = 30
 
@@ -42,7 +44,7 @@ class Label4AClip(BaseModel):
 
 
 class Label4AManifest(BaseModel):
-    """The picker manifest. It lives in runtime/label-4a and is not committed."""
+    """The picker manifest. It lives in <data dir>/label-4a until the export commits it."""
 
     seed: str
     snapshot_time: str
@@ -74,7 +76,10 @@ class Label4AAnswer(BaseModel):
 
 
 def default_manifest_path() -> Path:
-    return Path(os.environ.get(MANIFEST_ENV, DEFAULT_MANIFEST))
+    override = os.environ.get(MANIFEST_ENV)
+    if override:
+        return Path(override)
+    return Path(os.environ.get("MUSIMO_DATA_DIR", "/data")) / MANIFEST_NAME
 
 
 def load_manifest(path: Path | None = None) -> Label4AManifest:
@@ -200,17 +205,17 @@ def load_answer(store: Store, clip_id: str) -> Label4AAnswer | None:
 def clip_start(section: Section, base_start: int, duration: float) -> int:
     """Where a 30-second clip begins for the chosen section button.
 
-    Early and Late move 15 seconds either side of the manifest start, clamped to the
-    track. The long-intro group uses a base start of zero, so its buttons audition the
-    opening at 0, 15 and 30 seconds.
+    Middle is the manifest start (the opening, for the long-intro group). Early and Late are
+    10% and 75% of the way through, so they play clearly different parts of the song. The
+    answer records which were played, and this function maps them back to seconds.
     """
-    if duration <= 0:
+    if duration <= CLIP_SECONDS:
         return 0
-    offset = {"early": -15, "middle": 0, "late": 15}[section]
-    start = max(0, base_start + offset)
-    if start >= duration:
-        start = max(0, int(duration) - CLIP_SECONDS)
-    return start
+    last = int(duration) - CLIP_SECONDS
+    if section == "middle":
+        return min(max(0, base_start), last)
+    fraction = 0.10 if section == "early" else 0.75
+    return min(int(duration * fraction), last)
 
 
 def shuffled_order(clips: Sequence[Label4AClip], seed: str) -> list[str]:

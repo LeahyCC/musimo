@@ -92,12 +92,27 @@ export function Label4APage() {
     queryFn: ({ signal }) => api('label-4a/clips', label4aClipsSchema, { signal }),
   })
 
-  const [index, setIndex] = useState(0)
+  const [index, setIndex] = useState<number | null>(null)
+  const [finished, setFinished] = useState(false)
   const [section, setSection] = useState<Label4ASection>('middle')
   const [localAnswer, setLocalAnswer] = useState<Label4AAnswer>(EMPTY_ANSWER)
 
   const order = clips.data?.order ?? []
-  const clipId = order[index]
+  // Start at the first clip without a full answer, so labelling resumes on any device.
+  useEffect(() => {
+    if (index !== null || !clips.data) return
+    const first = clips.data.order.findIndex((id) => {
+      const saved = clips.data.answers[id]
+      return !saved || !isComplete(saved)
+    })
+    if (first === -1) {
+      setIndex(Math.max(0, clips.data.order.length - 1))
+      setFinished(true)
+    } else {
+      setIndex(first)
+    }
+  }, [clips.data, index])
+  const clipId = index === null ? undefined : order[index]
   const total = clips.data?.total ?? 0
 
   const clipIdKey = clipId ?? ''
@@ -130,11 +145,12 @@ export function Label4APage() {
     save.mutate(next)
   }
 
-  const chooseSection = (nextSection: Label4ASection) => {
-    setSection(nextSection)
+  // A section counts as played when its audio starts, not when its button is pressed, so
+  // the default Middle is recorded too.
+  const markPlayed = () => {
     const played = localAnswer.sections_played
-    const nextPlayed = played.includes(nextSection) ? played : [...played, nextSection]
-    updateAnswer({ sections_played: nextPlayed })
+    if (played.includes(section)) return
+    updateAnswer({ sections_played: [...played, section] })
   }
 
   useEffect(() => {
@@ -165,6 +181,27 @@ export function Label4APage() {
     )
   }
 
+  if (finished) {
+    return (
+      <main className="mx-auto max-w-md p-[16px]" role="status">
+        <p className="mb-[18px] text-body font-medium">
+          All {total} clips are labelled. Thank you.
+        </p>
+        <Button variant="default" onClick={() => setFinished(false)}>
+          Go back to the last clip
+        </Button>
+      </main>
+    )
+  }
+
+  if (index === null) {
+    return (
+      <main className="mx-auto max-w-md p-[16px]" role="status">
+        <p className="text-muted">Loading clips…</p>
+      </main>
+    )
+  }
+
   if (!clipId) {
     return (
       <main className="mx-auto max-w-md p-[16px]" role="status">
@@ -191,17 +228,17 @@ export function Label4APage() {
           <SectionButton
             label="Early"
             selected={section === 'early'}
-            onClick={() => chooseSection('early')}
+            onClick={() => setSection('early')}
           />
           <SectionButton
             label="Middle"
             selected={section === 'middle'}
-            onClick={() => chooseSection('middle')}
+            onClick={() => setSection('middle')}
           />
           <SectionButton
             label="Late"
             selected={section === 'late'}
-            onClick={() => chooseSection('late')}
+            onClick={() => setSection('late')}
           />
         </div>
       </div>
@@ -213,6 +250,7 @@ export function Label4APage() {
           controls
           className="mb-[24px] w-full"
           preload="auto"
+          onPlay={markPlayed}
         />
       )}
 
@@ -284,7 +322,7 @@ export function Label4APage() {
         <Button
           variant="default"
           className={cx('min-h-[52px] px-[16px]', !canGoBack && 'invisible')}
-          onClick={() => canGoBack && setIndex((i) => i - 1)}
+          onClick={() => canGoBack && setIndex(index - 1)}
           aria-label="Previous clip"
         >
           <ChevronLeft className="size-5" />
@@ -294,7 +332,9 @@ export function Label4APage() {
           className="min-h-[52px] flex-1 text-lg"
           onClick={() => {
             if (canGoForward) {
-              setIndex((i) => i + 1)
+              setIndex(index + 1)
+            } else {
+              setFinished(true)
             }
           }}
           disabled={!isComplete(localAnswer)}

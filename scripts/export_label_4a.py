@@ -1,6 +1,6 @@
 """Export 4A blind labels to evals/audio for the evidence trial.
 
-Reads runtime/label-4a/manifest.json and the saved answers (or a synthetic answers file
+Reads <data dir>/label-4a/manifest.json and the saved answers (or a synthetic answers file
 for tests) and writes manifest.json, dev.json, heldout.json and seal.json.
 
 Never prints held-out answers; only counts.
@@ -17,9 +17,9 @@ from pathlib import Path
 
 from backend.core.store import Store
 from backend.library.label_4a import (
+    MANIFEST_NAME,
     Label4AAnswer,
     Label4AClip,
-    default_manifest_path,
     load_answers,
     load_manifest,
 )
@@ -36,8 +36,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--manifest",
-        default=str(default_manifest_path()),
-        help="Picker manifest path",
+        default="",
+        help="Picker manifest path (default: <data dir>/label-4a/manifest.json)",
     )
     parser.add_argument(
         "--answers",
@@ -97,7 +97,7 @@ def load_synthetic_answers(path: Path) -> dict[str, dict[str, object]]:
 
 def main() -> None:
     args = parse_args()
-    manifest_path = Path(args.manifest)
+    manifest_path = Path(args.manifest) if args.manifest else Path(args.data_dir) / MANIFEST_NAME
     output = Path(args.output)
     output.mkdir(parents=True, exist_ok=True)
 

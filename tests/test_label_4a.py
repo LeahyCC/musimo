@@ -1,6 +1,7 @@
 """Blind label set picker, page API and export for package 4A."""
 
 import json
+import os
 import subprocess
 import sys
 import tempfile
@@ -21,12 +22,13 @@ from backend.library.index import Library
 from backend.library.label_4a import (
     Label4AClip,
     clip_start,
+    default_manifest_path,
     load_manifest,
     shuffled_order,
 )
 from backend.main import create_app
 from scripts.export_label_4a import digest_file
-from scripts.pick_label_4a import build_manifest, load_songs
+from scripts.pick_label_4a import Song, build_manifest, load_songs, pick, split_group
 
 
 def write_wav(path: Path, frames: int = 800) -> None:
@@ -124,6 +126,39 @@ class ClipLogicTests(unittest.TestCase):
 
     def test_clip_start_clamps_to_track_duration(self) -> None:
         self.assertEqual(clip_start("late", 80, 90.0), 60)
+
+    def test_early_and_late_play_different_parts_of_the_song(self) -> None:
+        # A 4-minute song with its middle clip at 105 s: Early and Late must not overlap it.
+        self.assertEqual(clip_start("early", 105, 240.0), 24)
+        self.assertEqual(clip_start("middle", 105, 240.0), 105)
+        self.assertEqual(clip_start("late", 105, 240.0), 180)
+
+    def test_manifest_lives_in_the_data_directory(self) -> None:
+        # The container rebuild wipes the app folder; only the data volume survives.
+        env = {"MUSIMO_DATA_DIR": "/somewhere/data"}
+        with patch.dict("os.environ", env, clear=False):
+            os.environ.pop("MUSIMO_LABEL_4A_MANIFEST", None)
+            self.assertEqual(
+                default_manifest_path(), Path("/somewhere/data") / "label-4a" / "manifest.json"
+            )
+
+    def test_an_artist_with_several_songs_stays_in_one_split(self) -> None:
+        songs = [
+            {
+                "song_id": f"tr-{n:016x}",
+                "artist_key": f"a{n % 3}",
+                "duration": 200.0,
+                "genres": [],
+                "title": f"t{n}",
+            }
+            for n in range(9)
+        ]
+        chosen = pick(cast(list[Song], songs), lambda s: True, 9, set(), "seed", per_artist=3)
+        self.assertEqual(len(chosen), 9)
+        splits: dict[str, set[str]] = {}
+        for song, split in split_group(chosen, "seed"):
+            splits.setdefault(song["artist_key"], set()).add(split)
+        self.assertTrue(all(len(found) == 1 for found in splits.values()))
 
     def test_shuffled_order_is_deterministic_for_a_seed(self) -> None:
         clips = [
@@ -244,8 +279,8 @@ class PickerTests(unittest.TestCase):
 
     def test_picker_is_deterministic_for_a_fixed_seed(self) -> None:
         self._fill_library()
-        first = build_manifest(load_songs(self.store), self.store, "seed-one")
-        second = build_manifest(load_songs(self.store), self.store, "seed-one")
+        first = build_manifest(load_songs(self.store.db), self.store.db, "seed-one")
+        second = build_manifest(load_songs(self.store.db), self.store.db, "seed-one")
         first_clips = cast(list[dict[str, object]], first["clips"])
         second_clips = cast(list[dict[str, object]], second["clips"])
         self.assertEqual(
@@ -259,7 +294,7 @@ class PickerTests(unittest.TestCase):
 
     def test_no_artist_appears_in_both_splits(self) -> None:
         self._fill_library()
-        manifest = build_manifest(load_songs(self.store), self.store, "seed-split")
+        manifest = build_manifest(load_songs(self.store.db), self.store.db, "seed-split")
         dev_artists: set[str] = set()
         held_artists: set[str] = set()
         clips = cast(list[dict[str, object]], manifest["clips"])
@@ -279,7 +314,7 @@ class PickerTests(unittest.TestCase):
 
     def test_split_counts_are_balanced_within_each_group(self) -> None:
         self._fill_library()
-        manifest = build_manifest(load_songs(self.store), self.store, "seed-balance")
+        manifest = build_manifest(load_songs(self.store.db), self.store.db, "seed-balance")
         groups = {
             "liquid",
             "other_dnb",
@@ -342,7 +377,7 @@ class Label4AApiTests(unittest.IsolatedAsyncioTestCase):
 
     def _insert_manifest(self, store: Store) -> None:
         # The scan already populated library_files; build a manifest from it.
-        manifest = build_manifest(load_songs(store), store, "api-seed")
+        manifest = build_manifest(load_songs(store.db), store.db, "api-seed")
         clips = cast(list[dict[str, object]], manifest["clips"])
         clips[:] = clips[:6]
         for index, clip in enumerate(clips, start=1):

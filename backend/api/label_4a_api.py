@@ -106,7 +106,10 @@ def install_label_4a_routes(
 ) -> None:
     @app.get("/api/label-4a/clips")
     async def list_clips() -> ClipsOut:
-        manifest = load_manifest()
+        try:
+            manifest = load_manifest()
+        except FileNotFoundError as exc:
+            raise HTTPException(503, "No label set has been generated yet") from exc
         clips = {clip.clip_id: clip for clip in manifest.clips}
         answers = {
             clip_id: AnswerIn(**answer.model_dump(exclude={"clip_id", "updated_at"}))
