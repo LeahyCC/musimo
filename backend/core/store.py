@@ -2023,6 +2023,18 @@ class Store:
         """True when names exist and this row is not the caller's. The caller holds the lock."""
         return self._has_listeners() and owner != self._listener()
 
+    def latest_proposal(self) -> tuple[str, int] | None:
+        """The most recently touched proposal and its latest revision for the current name."""
+        with self.lock:
+            row = self.db.execute(
+                "SELECT id, latest FROM bot_proposals WHERE listener_id=? "
+                "ORDER BY touched DESC LIMIT 1",
+                (self._listener(),),
+            ).fetchone()
+        if row is None:
+            return None
+        return str(row["id"]), int(row["latest"])
+
     def _prune_proposals(self, listener_id: str) -> None:
         self.db.execute(
             "DELETE FROM bot_proposals WHERE listener_id=? AND id NOT IN "
