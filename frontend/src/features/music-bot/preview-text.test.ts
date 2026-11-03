@@ -73,6 +73,8 @@ describe('overviewFacts', () => {
     expect(facts.measured).toContain(
       'Loudness 0.04–0.11 (RMS level, not mood), measured for 40 of 40 songs',
     )
+    // The measure is loudness, so it is never presented as energy.
+    expect(facts.measured.join(' ')).not.toMatch(/energy/i)
     expect(facts.unknown).toEqual(['10 songs not measured for tempo'])
   })
 

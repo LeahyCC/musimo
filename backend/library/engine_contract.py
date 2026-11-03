@@ -41,7 +41,9 @@ COMMIT_VERSIONS = (2, 3, 4, 5)
 # Version 2 added the total-length search in duration.py. Version 3: a library search with no
 # shown_ids reads the server's memory of presented results. Version 4: kept songs go first as
 # they are, excluded songs are never picked, and a set number of songs can follow the kept ones.
-ENGINE_VERSION = 4
+# Version 5: a half or double tempo match is ordered after the direct matches (7eacb91), and
+# genre folding covers dnb, drum & bass, trip hop and liquid (3e4d5af).
+ENGINE_VERSION = 5
 
 # Stripped first, so a blank name cannot match every untagged song.
 Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]

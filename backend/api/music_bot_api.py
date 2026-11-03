@@ -174,8 +174,8 @@ def install_music_bot_routes(app: FastAPI, get: Callable[[], MusicBot]) -> None:
 
         return await _answer(run)
 
-    # Recent shown-song memory: one default listener profile, shared by every device. It is
-    # suggestion memory, not a taste score, and the profile key is not authentication.
+    # Recent shown-song memory: one profile per name (#230), shared by every device using that
+    # name. It is suggestion memory, not a taste score, and the profile key is not authentication.
 
     @app.get("/api/music-bot/memory", response_model=None)
     async def memory() -> JSONResponse | dict[str, object]:
