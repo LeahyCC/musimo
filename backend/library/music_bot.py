@@ -620,6 +620,12 @@ def merge_plan(previous: SearchPlan | None, plan: SearchPlan) -> SearchPlan:
         ) from exc
 
 
+# Seconds to cache Ollama /api/tags and /api/show answers, so one chat makes one model trip.
+_OLLAMA_CACHE_TTL = 60
+# Fixed seed the chat sends with temperature 0 for reproducible interpreter output.
+_CHAT_SEED = 42
+
+
 class MusicBot:
     def __init__(
         self,
@@ -636,6 +642,8 @@ class MusicBot:
         # Where a library search gets its generation seed when the request names none.
         self.new_seed = new_seed
         self.busy = False
+        self._models_cache: tuple[float, dict[str, object]] | None = None
+        self._options_cache: dict[str, tuple[float, dict[str, object]]] = {}
 
     def active_recipes(self) -> tuple[Recipe | None, Recipe | None]:
         """The scalar and embedding recipes the settings name. Empty, or unregistered, is off."""
@@ -680,6 +688,9 @@ class MusicBot:
 
     async def models(self) -> dict[str, object]:
         started = time.monotonic()
+        cached = self._cached(self._models_cache)
+        if cached is not None:
+            return {"models": cached["models"], "elapsed_ms": 0}
         data = await self._json("GET", "/api/tags")
         rows = data.get("models") if isinstance(data, dict) else None
         if not isinstance(rows, list) or len(rows) > 200:
@@ -690,9 +701,19 @@ class MusicBot:
             if not isinstance(name, str) or not 1 <= len(name) <= 200:
                 raise BotError("Ollama returned an invalid model name.")
             names.append(name)
-        return {"models": names, "elapsed_ms": round((time.monotonic() - started) * 1000)}
+        result = {"models": names}
+        self._models_cache = (time.monotonic(), result)
+        return result | {"elapsed_ms": round((time.monotonic() - started) * 1000)}
+
+    def _cached(self, cached: tuple[float, dict[str, object]] | None) -> dict[str, object] | None:
+        if cached is None or time.monotonic() - cached[0] > _OLLAMA_CACHE_TTL:
+            return None
+        return cached[1]
 
     async def chat_options(self, model: str) -> dict[str, object]:
+        cached = self._cached(self._options_cache.get(model))
+        if cached is not None:
+            return cached
         metadata = await self._json("POST", "/api/show", {"model": model})
         if not isinstance(metadata, dict):
             raise BotError("Ollama returned invalid model capabilities.")
@@ -709,6 +730,7 @@ class MusicBot:
             # answer to the plan's schema (a re-pulled Qwen 3.5 did this on 18 October 2026), so
             # ask for no thinking; a model with no boolean switch ignores the field.
             options["think"] = False
+        self._options_cache[model] = (time.monotonic(), options)
         return options
 
     async def chat(self, request: BotRequest) -> dict[str, object]:
@@ -766,7 +788,12 @@ class MusicBot:
                     "model": settings.ollama_model,
                     "stream": False,
                     "format": SearchPlan.model_json_schema(),
-                    "options": {"temperature": 0, "num_predict": 1200, "num_ctx": 8192},
+                    "options": {
+                        "temperature": 0,
+                        "num_predict": 1200,
+                        "num_ctx": 8192,
+                        "seed": _CHAT_SEED,
+                    },
                     "messages": [
                         {"role": "system", "content": prompt},
                         *[message.model_dump() for message in request.history],
