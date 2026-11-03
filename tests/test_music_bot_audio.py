@@ -64,7 +64,7 @@ class AudioBotTests(unittest.IsolatedAsyncioTestCase):
         self.music = self.root / "music"
         self.music.mkdir()
         self.store = Store(self.root / "state.sqlite3")
-        self.store.update({"ollama_model": "fixture"})
+        self.store.update({"ollama_model": "fixture", "music_bot_legacy_chat": True})
         self.player = Player(self.store, [self.music])
         self.library = Library(self.store, [self.music], asyncio.Event())
         for index, (title, artist, *_) in enumerate([*SONGS, ("Isle", "Quarry", 0.0, 0.0, ())]):

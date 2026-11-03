@@ -62,7 +62,13 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
         self.music = self.root / "music"
         self.music.mkdir()
         self.store = Store(self.root / "state.sqlite3")
-        self.store.update({"ollama_model": "fixture", "music_timezone": "Pacific/Honolulu"})
+        self.store.update(
+            {
+                "ollama_model": "fixture",
+                "music_timezone": "Pacific/Honolulu",
+                "music_bot_legacy_chat": True,
+            }
+        )
         self.player = Player(self.store, [self.music])
         self.library = Library(self.store, [self.music], asyncio.Event())
         for index, (title, artist, year) in enumerate(
@@ -818,12 +824,15 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
         ]:
             with self.subTest(metadata=metadata):
                 self.metadata = metadata
+                # The cached /api/show answer is per-model; clear it so each metadata is fresh.
+                self.bot._options_cache = {}
                 before = len(self.chat_bodies)
                 await self.bot.chat(BotRequest(prompt="rock"))
                 self.assertEqual(len(self.chat_bodies), before + 1)
                 body = self.chat_bodies[-1]
                 self.assertEqual({key: body[key] for key in ["think"] if key in body}, expected)
         self.metadata = []
+        self.bot._options_cache = {}
         with self.assertRaisesRegex(BotError, "invalid model capabilities"):
             await self.bot.chat(BotRequest(prompt="rock"))
 
@@ -950,6 +959,7 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             Settings(music_timezone="Pacific/Honolulu").music_timezone, "Pacific/Honolulu"
         )
+        self.assertFalse(Settings().music_bot_legacy_chat)
         with self.assertRaises(ValidationError):
             plan(year_from=2000, year_to=1990)
         with self.assertRaises(ValidationError):

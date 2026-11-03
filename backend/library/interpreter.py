@@ -192,6 +192,17 @@ def _normalize(value: str) -> str:
     return normalize(value)
 
 
+def resolve_named_songs(
+    songs: list[NamedSong], catalogue: Sequence[object]
+) -> tuple[list[str], str | None]:
+    """Find ids for named songs, or return a clarification question.
+
+    A title with no artist matches only when exactly one catalogue song has that title.
+    This is the same lookup to_intent uses, exposed for edits that name songs.
+    """
+    return _lookup(songs, catalogue)
+
+
 def _lookup(songs: list[NamedSong], catalogue: Sequence[object]) -> tuple[list[str], str | None]:
     """Find ids for named songs, or return a clarification question.
 

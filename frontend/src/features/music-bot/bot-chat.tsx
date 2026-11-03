@@ -38,6 +38,7 @@ import {
   commitProposal,
   createProposal,
   editProposal,
+  followUpIntent,
   forgetMemory,
   idChanges,
   intentFromReply,
@@ -51,6 +52,7 @@ import {
   refineProposal,
   refreshIntent,
   sameSearch,
+  storedRevision,
   unavailableSongs,
   UnknownOutcome,
 } from './proposals'
@@ -580,6 +582,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
           current_id: live.libraryTrack?.id ?? null,
           reference_id: reference?.id ?? null,
           ...(scope ? { scope } : {}),
+          ...(latestPreview.current ? { proposal_id: latestPreview.current.id } : {}),
         }),
       })
       if (serial.current !== id) return
@@ -618,7 +621,8 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         }
       } else if (action === 'search') {
         // The server keeps the result as a revision, and the card shows that revision.
-        const stored = await previewFor(answer, context, controller.signal)
+        const held = storedRevision(answer)
+        const stored = held ? { made: held } : await previewFor(answer, context, controller.signal)
         if (serial.current !== id) return
         if (stored === 'changed') {
           // The open revision was refined elsewhere or is gone. Nothing was added, and the card is
@@ -763,6 +767,20 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       ? answer.tracks.map((track) => track.id).filter((song) => !removed.has(song))
       : undefined
     if (keep?.length === 0) return null
+    const echoed = intentSchema.safeParse(answer.intent)
+    if (echoed.success && keep === undefined) {
+      // The engine already ran this. A named song is a new proposal. A follow-up of the open
+      // card is its next revision, without the ids the refine route rejects.
+      const decided = followUpIntent(echoed.data, context.proposalIds, open !== null, carry)
+      if (!open || decided.fresh) return { made: await createProposal(decided.intent, signal) }
+      try {
+        return { made: await refineProposal(open.id, open.revision, decided.intent, signal) }
+      } catch (problem) {
+        if (problem instanceof ProposalError && REVISION_GONE.includes(problem.code))
+          return 'changed'
+        throw problem
+      }
+    }
     const intent = intentFromReply(answer, context, keep, carry)
     if (open && keep === undefined) {
       try {

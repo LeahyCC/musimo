@@ -67,6 +67,15 @@ describe('botReplySchema', () => {
     })
   })
 
+  it('defaults a missing intent and stored revision, and keeps them when the server sends them', () => {
+    const older = reply()
+    expect(older.intent).toBeNull()
+    expect(older.stored).toBeNull()
+    const echoed = reply({}, 3, { intent: { action: 'search' }, stored: { proposal: 1 } })
+    expect(echoed.intent).toEqual({ action: 'search' })
+    expect(echoed.stored).toEqual({ proposal: 1 })
+  })
+
   it('keeps the songs a plan was measured against, and defaults them for an older server', () => {
     const older = reply()
     expect(older.reference_id).toBeNull()

@@ -84,6 +84,9 @@ class Settings(BaseModel):
     audio_energy: bool = False
     # Erase files that have sat in the library trash for 30 days. Off keeps them until emptied.
     trash_auto_empty: bool = False
+    # Route chat through the old SearchPlan parser instead of the engine interpreter.
+    # Off by default; kept for one release so the new path can be compared.
+    music_bot_legacy_chat: bool = False
 
     @field_validator("audio_scalar_recipe")
     @classmethod
@@ -187,6 +190,7 @@ class SettingsPatch(BaseModel):
     audio_analysis_paused: bool | None = None
     audio_energy: bool | None = None
     trash_auto_empty: bool | None = None
+    music_bot_legacy_chat: bool | None = None
     output_format: Literal["original", "m4a", "opus", "mp3"] | None = None
     concurrency: int | None = Field(default=None, ge=1, le=3)
     max_attempts: int | None = Field(default=None, ge=1, le=4)
