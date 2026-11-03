@@ -11,11 +11,11 @@ import { withListener } from '../listener/identity'
 
 /** The engine's contract version. An intent may say 1 to 5, a commit 2 to 5 and an edit only 5, so
  *  this one number is accepted by create, refine, edit and commit. Version 3 added
- *  `filters.total_length`, which the chat never sets but a stored intent can carry, so it is kept
- *  when an intent is sent again. Version 4 is the first where an omitted `shown_ids` means the
- *  server's memory of shown songs, which is what the chat relies on. Version 5 added the edit route
- *  and the fields behind it (`exclude_ids`, `keep_ids`, `pinned_ids`, `add_count`), so the chat
- *  never sends an older one. */
+ *  `filters.total_length`, which a chat reply keeps when the engine set one and a stored intent
+ *  can carry, so it is kept when an intent is sent again. Version 4 is the first where an omitted
+ *  `shown_ids` means the server's memory of shown songs, which is what the chat relies on.
+ *  Version 5 added the edit route and the fields behind it (`exclude_ids`, `keep_ids`,
+ *  `pinned_ids`, `add_count`), so the chat never sends an older one. */
 export const CONTRACT_VERSION = 5
 
 const idList = z.array(z.string())
@@ -508,6 +508,61 @@ export function sameSearch(reply: BotReply, open: Intent): boolean {
       (reply.reference_id === open.context.reference_id &&
         reply.current_id === open.context.current_id))
   )
+}
+
+function sameSongIds(left: readonly string[], right: readonly string[]): boolean {
+  return [...left].sort().join('\0') === [...right].sort().join('\0')
+}
+
+/**
+ * The intent to store for a chat answer that already ran on the engine.
+ *
+ * A named song is a new proposal. Its ids are not the open card's, and a refine would drop
+ * them and search the old list. A follow-up of the open card carries those ids only so the
+ * engine could run, and the refine route refuses them, so they are cleared. Songs a person
+ * removed, and pins on a library search, travel when the engine intent does not already
+ * have them.
+ */
+export function followUpIntent(
+  echoed: Intent,
+  openSongIds: readonly string[],
+  hasOpen: boolean,
+  carry?: Carry,
+): { intent: Intent; fresh: boolean } {
+  let filters = echoed.filters
+  let context = echoed.context
+
+  if (filters.exclude_ids.length === 0 && carry && carry.excludeIds.length > 0) {
+    filters = { ...filters, exclude_ids: [...carry.excludeIds] }
+  }
+
+  if (
+    echoed.scope === 'library' &&
+    context.keep_ids.length === 0 &&
+    carry &&
+    carry.pinnedIds.length > 0
+  ) {
+    const pins = [...carry.pinnedIds]
+    context = { ...context, keep_ids: pins, pinned_ids: pins }
+  }
+
+  const intent =
+    filters === echoed.filters && context === echoed.context
+      ? echoed
+      : { ...echoed, filters, context }
+  const named =
+    intent.scope === 'proposal' &&
+    intent.context.proposal_ids.length > 0 &&
+    !sameSongIds(intent.context.proposal_ids, openSongIds)
+
+  if (!hasOpen || named) return { intent, fresh: true }
+  return { intent: refinementOf(intent), fresh: false }
+}
+
+/** The revision a chat edit already stored, or null when this answer is not one. */
+export function storedRevision(reply: { stored: unknown }): ProposalReply | null {
+  if (reply.stored == null) return null
+  return proposalReplySchema.parse(reply.stored)
 }
 
 /** A refinement of a stored revision uses that revision's songs, so the server refuses ids. */

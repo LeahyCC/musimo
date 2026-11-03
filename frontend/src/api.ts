@@ -419,6 +419,12 @@ export const settingsSchema = z.object({
     locked: false,
   }),
   ollama_model: field(z.string()).default({ value: '', origin: 'default', locked: false }),
+  // The old search-plan chat. Off, so chat goes through the engine. No page switch.
+  music_bot_legacy_chat: field(z.boolean()).default({
+    value: false,
+    origin: 'default',
+    locked: false,
+  }),
   music_timezone: field(z.string()).default({ value: 'UTC', origin: 'default', locked: false }),
   // Song characteristic recipes the bot may read. Empty is off. Older servers send neither.
   audio_scalar_recipe: field(z.string()).default({ value: '', origin: 'default', locked: false }),
@@ -625,6 +631,11 @@ export const botReplySchema = z.object({
   // Repeats a library selection on the same library state, for debugging. Set only when the
   // server drew one; older servers send none.
   generation_seed: z.number().int().min(0).max(Number.MAX_SAFE_INTEGER).nullable().default(null),
+  // The engine intent, so a total length the plan cannot carry is kept when this is stored.
+  // Parsed in the music-bot module. Unknown here to avoid a cycle with that module.
+  intent: z.unknown().nullable().default(null),
+  // An edit the server already stored. The page shows that revision and does not store another.
+  stored: z.unknown().nullable().default(null),
 })
 export const botSelectionSchema = z.object({ tracks: z.array(libraryTrackSchema).max(500) })
 export type BotReply = z.infer<typeof botReplySchema>

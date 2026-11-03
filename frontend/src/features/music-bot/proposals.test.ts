@@ -7,6 +7,7 @@ import {
   CONTRACT_VERSION,
   createProposal,
   editProposal,
+  followUpIntent,
   forgetMemory,
   idChanges,
   intentFromReply,
@@ -20,6 +21,7 @@ import {
   refineProposal,
   refreshIntent,
   sameSearch,
+  storedRevision,
   unavailableSongs,
   UnknownOutcome,
 } from './proposals'
@@ -337,6 +339,48 @@ describe('refreshIntent', () => {
   })
 })
 
+describe('followUpIntent', () => {
+  it('stores a named song as a new proposal and keeps its ids', () => {
+    const echoed = intentFromReply(reply({ scope: 'proposal' }), context)
+    const decided = followUpIntent(echoed, [song(9)], true)
+    expect(decided.fresh).toBe(true)
+    expect(decided.intent.context.proposal_ids).toEqual([song(1), song(2)])
+  })
+
+  it('refines the open card and drops the ids the refine route rejects', () => {
+    const echoed = intentFromReply(reply({ scope: 'proposal' }), context)
+    const decided = followUpIntent(echoed, [song(2), song(1)], true)
+    expect(decided.fresh).toBe(false)
+    expect(decided.intent.context.proposal_ids).toEqual([])
+    expect(decided.intent.contract_version).toBe(CONTRACT_VERSION)
+  })
+
+  it('carries removed songs and pins onto a library follow-up', () => {
+    const echoed = intentFromReply(reply(), context)
+    const decided = followUpIntent(echoed, [], true, {
+      excludeIds: [song(4)],
+      pinnedIds: [song(1)],
+    })
+    expect(decided.fresh).toBe(false)
+    expect(decided.intent.filters.exclude_ids).toEqual([song(4)])
+    expect(decided.intent.context.keep_ids).toEqual([song(1)])
+    expect(decided.intent.context.pinned_ids).toEqual([song(1)])
+  })
+
+  it('leaves exclusions the engine already set, and starts fresh with no card', () => {
+    const echoed = intentFromReply(reply(), context)
+    const kept = {
+      ...echoed,
+      filters: { ...echoed.filters, exclude_ids: [song(5)] },
+    }
+    expect(
+      followUpIntent(kept, [], true, { excludeIds: [song(4)], pinnedIds: [] }).intent.filters
+        .exclude_ids,
+    ).toEqual([song(5)])
+    expect(followUpIntent(echoed, [], false).fresh).toBe(true)
+  })
+})
+
 describe('idChanges', () => {
   it('counts the songs that came in and the songs that left', () => {
     expect(idChanges([song(1), song(2), song(3)], [song(2), song(3), song(4), song(5)])).toEqual({
@@ -410,6 +454,15 @@ function sentBody(fetcher: ReturnType<typeof answer>): Record<string, unknown> {
 }
 
 afterEach(() => vi.unstubAllGlobals())
+
+describe('storedRevision', () => {
+  it('is null until the server stored the edit, then the revision', () => {
+    expect(storedRevision(reply())).toBeNull()
+    const made = storedRevision(reply({}, { stored: { proposal, tracks: [], missing_ids: [] } }))
+    expect(made?.proposal.revision).toBe(1)
+    expect(made?.proposal.id).toBe(proposal.id)
+  })
+})
 
 describe('the proposal routes', () => {
   it('creates a proposal from an intent and reads the revision back', async () => {
