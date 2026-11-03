@@ -309,6 +309,7 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
                 "settings",
                 "settings/user",
                 "diagnostics",
+                "label-4a",
             )
             and not (
                 path.startswith(("albums/", "artists/", "podcasts/"))

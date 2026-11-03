@@ -15,6 +15,7 @@ import { SongAnalysisPage } from '../features/analysis/song-analysis'
 import { DiagnosticsPage } from '../features/diagnostics/diagnostics'
 import { DownloadsPage } from '../features/downloads/downloads'
 import { HomePage } from '../features/home/home'
+import { Label4APage } from '../features/label-4a/label-4a'
 import {
   lastLibraryView,
   libraryPaths,
@@ -274,6 +275,11 @@ const diagnosticsRoute = createRoute({
   path: '/diagnostics',
   component: DiagnosticsPage,
 })
+const label4aRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/label-4a',
+  component: Label4APage,
+})
 export const router = createRouter({
   routeTree: rootRoute.addChildren([
     indexRoute,
@@ -298,6 +304,7 @@ export const router = createRouter({
     musicBotRoute,
     userSettingsRoute,
     diagnosticsRoute,
+    label4aRoute,
   ]),
   defaultPreload: 'intent',
   // Come back to where a list was left, not its top. On the library lists the key is the
