@@ -1,0 +1,112 @@
+{
+  "suite": "fixture",
+  "version": 1,
+  "split": "heldout",
+  "cases": [
+    {
+      "id": "h001",
+      "covers": ["genre"],
+      "prompt": "fixture search",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["jazz"]
+        }
+      }
+    },
+    {
+      "id": "h002",
+      "covers": ["follow-up"],
+      "previous": {
+        "prompt": "fixture previous",
+        "scope": "library",
+        "filters": {
+          "genres": ["jazz"],
+          "year_from": 1990,
+          "year_to": 1999
+        },
+        "songs": ["s01"]
+      },
+      "prompt": "fixture follow-up",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "genres": ["jazz"],
+          "year_from": 1990,
+          "year_to": 1999
+        },
+        "keeps": ["genres", "year_from", "year_to"]
+      }
+    },
+    {
+      "id": "h003",
+      "covers": ["edit"],
+      "previous": {
+        "prompt": "fixture previous",
+        "scope": "library",
+        "filters": {
+          "genres": ["jazz"]
+        },
+        "songs": ["s01", "s02"]
+      },
+      "prompt": "fixture edit",
+      "expect": {
+        "action": "edit",
+        "edit": {
+          "kind": "another",
+          "pinned": ["s01"]
+        }
+      }
+    },
+    {
+      "id": "h004",
+      "covers": ["outage"],
+      "fault": "timeout",
+      "prompt": "fixture outage",
+      "expect": {
+        "outcome": ["template", "retry"]
+      }
+    },
+    {
+      "id": "h005",
+      "covers": ["ambiguous"],
+      "prompt": "fixture ambiguous",
+      "expect": {
+        "action": "clarify",
+        "ambiguous": true
+      }
+    },
+    {
+      "id": "h006",
+      "covers": ["entity"],
+      "prompt": "fixture named song",
+      "expect": {
+        "action": "search",
+        "filters": {
+          "artists": ["Ada Vance"]
+        },
+        "songs": ["s01"]
+      }
+    },
+    {
+      "id": "h007",
+      "covers": ["edit"],
+      "previous": {
+        "prompt": "fixture previous",
+        "scope": "library",
+        "filters": {
+          "genres": ["jazz"]
+        },
+        "songs": ["s01", "s02"]
+      },
+      "prompt": "fixture remove",
+      "expect": {
+        "action": "edit",
+        "edit": {
+          "kind": "remove",
+          "ids": ["s02"]
+        }
+      }
+    }
+  ]
+}
