@@ -260,7 +260,7 @@ class SummaryTests(unittest.TestCase):
         self.assertIsNone(passes["cold"])
 
     def test_a_question_on_a_filtered_search_is_not_a_hard_fail(self) -> None:
-        case = {
+        case: dict[str, object] = {
             "id": "d001",
             "expect": {"action": "search", "filters": {"artists": ["Harbor Static"]}},
         }
@@ -289,7 +289,7 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(counts["clear_question"], [1, 1])
 
     def test_a_dropped_filter_on_the_right_action_is_a_hard_fail(self) -> None:
-        case = {
+        case: dict[str, object] = {
             "id": "d001",
             "expect": {"action": "search", "filters": {"artists": ["Harbor Static"]}},
         }
