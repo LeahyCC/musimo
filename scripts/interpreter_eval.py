@@ -298,6 +298,14 @@ class CaseScore:
         }
 
 
+def note_engine_ids(score: CaseScore, intents: list[dict[str, object]], library: set[str]) -> None:
+    """An id that reached `Engine.run` fails the gate even when the reply dropped it."""
+    if any(_intent_unknown(item, library) for item in intents):
+        score.invented_id = True
+        if "invented_id" not in score.failures:
+            score.failures.append("invented_id")
+
+
 def score_case(
     case: dict[str, object],
     result: dict[str, object],
@@ -794,6 +802,13 @@ class VramSampler:
         return self.peak
 
 
+def _under(value: object, limit: float) -> bool | None:
+    """None when the clock has no sample, so a missing time is not a pass."""
+    if not isinstance(value, (int, float)):
+        return None
+    return float(value) <= limit
+
+
 def _percentile(values: list[float], percent: float) -> float | None:
     if not values:
         return None
@@ -943,8 +958,11 @@ async def evaluate(args: argparse.Namespace) -> dict[str, object]:
                             wall_ms = (time.perf_counter() - started) * 1000
                             after = playback_state(store, player)
                             primary = transport.primary()
-                            interpreter_ms = sum(
-                                float(str(call.get("seconds") or 0)) for call in transport.calls
+                            interpreter_ms = (
+                                sum(
+                                    float(str(call.get("seconds") or 0)) for call in transport.calls
+                                )
+                                * 1000
                             )
                             for call in primary:
                                 body = _as_dict(call.get("body"))
@@ -980,6 +998,7 @@ async def evaluate(args: argparse.Namespace) -> dict[str, object]:
                                 error=error,
                                 mutated=before != after,
                             )
+                            note_engine_ids(score, engine_intents, set(ids.values()))
                             scores.append(score)
                             runs.append(
                                 {
@@ -1106,11 +1125,10 @@ def summarize(report: dict[str, object]) -> dict[str, object]:
                 fail(case_id, "outage")
             continue
         action_total += 1
-        if score.get("action_ok") is True:
+        # scope_ok is unset when the case is not a search. A wrong scope is a miss.
+        if score.get("action_ok") is True and score.get("scope_ok") is not False:
             action_ok += 1
         else:
-            fail(case_id, "action_scope")
-        if score.get("scope_ok") is False:
             fail(case_id, "action_scope")
         constraint = score.get("filters_ok")
         if constraint is None:
@@ -1179,9 +1197,9 @@ def summarize(report: dict[str, object]) -> dict[str, object]:
         "follow_ups": (rates["follow_ups"] or 0) >= GATES["follow_ups"],
         "ambiguous": (rates["ambiguous"] or 0) >= GATES["ambiguous"],
         "clear_question": (rates["clear_question"] or 0) <= GATES["clear_question"],
-        "warm_p50": (timing["interpreter_p50"] or 0) <= GATES["warm_p50"],
-        "warm_p95": (timing["interpreter_p95"] or 0) <= GATES["warm_p95"],
-        "cold": (timing["cold"] or 0) <= GATES["cold"],
+        "warm_p50": _under(timing["interpreter_p50"], GATES["warm_p50"]),
+        "warm_p95": _under(timing["interpreter_p95"], GATES["warm_p95"]),
+        "cold": _under(timing["cold"], GATES["cold"]),
         "vram": (
             None
             if not vram.get("available")

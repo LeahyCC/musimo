@@ -16,10 +16,13 @@ from backend.core.listener import CHOOSE, HEADER
 from backend.library.engine_contract import Filters
 from backend.main import create_app
 from scripts.interpreter_eval import (
+    CaseScore,
     SealError,
     _outcome,
     load_split,
+    note_engine_ids,
     score_case,
+    summarize,
 )
 
 FIXTURE = Path(__file__).resolve().parent / "fixtures" / "interpreter_eval"
@@ -192,6 +195,79 @@ class ScorerTests(unittest.TestCase):
             _outcome({"action": "unsupported", "summary": "That failed."}, None), "template"
         )
         self.assertIsNone(_outcome({}, "BotError: offline"))
+
+
+class SummaryTests(unittest.TestCase):
+    def test_interpreter_milliseconds_become_seconds(self) -> None:
+        report: dict[str, object] = {
+            "rows": [
+                {
+                    "case": "d001",
+                    "stable": True,
+                    "runs": [
+                        {"interpreter_ms": 30000.0, "engine_ms": 10.0},
+                        {"interpreter_ms": 2000.0, "engine_ms": 10.0},
+                        {"interpreter_ms": 4000.0, "engine_ms": 10.0},
+                    ],
+                    "score": {
+                        "action_ok": True,
+                        "scope_ok": True,
+                        "filters_ok": True,
+                        "mutation_ok": True,
+                        "no_songs": False,
+                    },
+                }
+            ],
+            "vram": {"available": False},
+        }
+        summary = summarize(report)
+        timing = summary["timing"]
+        assert isinstance(timing, dict)
+        self.assertEqual(timing["cold"], 30.0)
+        self.assertEqual(timing["interpreter_p50"], 3.0)
+        passes = summary["passes"]
+        assert isinstance(passes, dict)
+        self.assertFalse(passes["warm_p50"])
+
+    def test_a_wrong_scope_is_not_an_action_pass(self) -> None:
+        report: dict[str, object] = {
+            "rows": [
+                {
+                    "case": "d002",
+                    "stable": True,
+                    "runs": [],
+                    "score": {
+                        "action_ok": True,
+                        "scope_ok": False,
+                        "filters_ok": True,
+                        "mutation_ok": True,
+                        "no_songs": False,
+                    },
+                }
+            ],
+            "vram": {"available": False},
+        }
+        summary = summarize(report)
+        counts = summary["counts"]
+        assert isinstance(counts, dict)
+        self.assertEqual(counts["action_scope"], [0, 1])
+
+    def test_a_missing_clock_does_not_pass(self) -> None:
+        summary = summarize({"rows": [], "vram": {"available": False}})
+        passes = summary["passes"]
+        assert isinstance(passes, dict)
+        self.assertIsNone(passes["warm_p50"])
+        self.assertIsNone(passes["cold"])
+
+    def test_an_id_that_reached_the_engine_fails_even_when_the_reply_dropped_it(self) -> None:
+        score = CaseScore("h001")
+        note_engine_ids(
+            score,
+            [{"context": {"proposal_ids": ["tr-ffffffffffffffff"]}}],
+            {"tr-0000000000000001"},
+        )
+        self.assertTrue(score.invented_id)
+        self.assertIn("invented_id", score.failures)
 
 
 class SealTests(unittest.TestCase):
