@@ -259,6 +259,67 @@ class SummaryTests(unittest.TestCase):
         self.assertIsNone(passes["warm_p50"])
         self.assertIsNone(passes["cold"])
 
+    def test_a_question_on_a_filtered_search_is_not_a_hard_fail(self) -> None:
+        case = {
+            "id": "d001",
+            "expect": {"action": "search", "filters": {"artists": ["Harbor Static"]}},
+        }
+        score = score_case(
+            case,
+            {"action": "clarify", "scope": "library", "summary": "Which one?"},
+            IDS,
+        )
+        summary = summarize(
+            {
+                "rows": [
+                    {
+                        "case": "d001",
+                        "stable": True,
+                        "runs": [],
+                        "score": score.as_dict(),
+                    }
+                ],
+                "vram": {"available": False},
+            }
+        )
+        self.assertEqual(summary["hard_gate_failures"], [])
+        counts = summary["counts"]
+        assert isinstance(counts, dict)
+        self.assertEqual(counts["action_scope"], [0, 1])
+        self.assertEqual(counts["clear_question"], [1, 1])
+
+    def test_a_dropped_filter_on_the_right_action_is_a_hard_fail(self) -> None:
+        case = {
+            "id": "d001",
+            "expect": {"action": "search", "filters": {"artists": ["Harbor Static"]}},
+        }
+        score = score_case(
+            case,
+            {
+                "action": "search",
+                "scope": "library",
+                "intent": {"action": "search", "scope": "library", "filters": {}},
+            },
+            IDS,
+        )
+        summary = summarize(
+            {
+                "rows": [
+                    {
+                        "case": "d001",
+                        "stable": True,
+                        "runs": [],
+                        "score": score.as_dict(),
+                    }
+                ],
+                "vram": {"available": False},
+            }
+        )
+        self.assertEqual(summary["hard_gate_failures"], ["d001: constraint"])
+        counts = summary["counts"]
+        assert isinstance(counts, dict)
+        self.assertEqual(counts["action_scope"], [1, 1])
+
     def test_an_id_that_reached_the_engine_fails_even_when_the_reply_dropped_it(self) -> None:
         score = CaseScore("h001")
         note_engine_ids(

@@ -1146,12 +1146,18 @@ def summarize(report: dict[str, object]) -> dict[str, object]:
             else:
                 fail(case_id, "constraints")
                 dropped = cast(list[str], score.get("dropped") or [])
+                # A question or a refusal is the action measure. The hard gate is an
+                # accepted search or edit that dropped a constraint.
                 if (
-                    dropped
-                    or score.get("songs_ok") is False
-                    or score.get("edit_ok") is False
-                    or score.get("keeps_ok") is False
-                    or score.get("drops_ok") is False
+                    score.get("action_ok") is True
+                    and score.get("ambiguous_ok") is None
+                    and (
+                        dropped
+                        or score.get("songs_ok") is False
+                        or score.get("edit_ok") is False
+                        or score.get("keeps_ok") is False
+                        or score.get("drops_ok") is False
+                    )
                 ):
                     hard.append(f"{case_id}: constraint")
         if score.get("keeps_ok") is not None:
