@@ -208,9 +208,16 @@ def install_account_routes(app: FastAPI, data: Path, get_store: Callable[[], Sto
         if range_header and not BYTE_RANGE.fullmatch(range_header):
             raise HTTPException(416, "Only one byte range is supported")
         number = track_number(checked_id(song_id))
-        if number is None or not get_store().current().deezer_audio:
+        if number is None:
             raise HTTPException(404, "Track not found")
-        path = listen_file(data, number)
+
+        # current() takes the store lock, so it goes off the loop with the file lookup.
+        def lookup() -> Path | None:
+            if not get_store().current().deezer_audio:
+                return None
+            return listen_file(data, number)
+
+        path = await asyncio.to_thread(lookup)
         if path is None:
             raise HTTPException(404, "Track not found")
         return FileResponse(path, media_type=_LISTEN_TYPES.get(path.suffix.lower(), "audio/mpeg"))
@@ -393,14 +400,19 @@ def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:
         if range_header and not BYTE_RANGE.fullmatch(range_header):
             raise HTTPException(416, "Only one byte range is supported")
         song = checked_id(song_id)
-        # Off the event loop: the lookup waits for the store lock, and a scan or download holding
-        # it would otherwise stall every other request, the playing stream's included.
-        path = await asyncio.to_thread(get().local_file, song)
+        # Off the event loop: both lookups wait for the store lock, and a scan or download holding
+        # it would otherwise stall every other request, the playing stream's included. One hop
+        # for the pair, since each hop queues behind the same busy thread pool.
+        player = get()
+
+        def lookup() -> tuple[Path | None, str]:
+            path = player.local_file(song)
+            return path, player.media_type(song) if path is not None else ""
+
+        path, media_type = await asyncio.to_thread(lookup)
         if path is None:
             raise HTTPException(404, "Track not found")
-        return FileResponse(
-            path, media_type=get().media_type(song), headers={"Cache-Control": STREAM_CACHE}
-        )
+        return FileResponse(path, media_type=media_type, headers={"Cache-Control": STREAM_CACHE})
 
     @app.get("/api/player/art/{cover_id}")
     async def art(cover_id: str) -> Response:
