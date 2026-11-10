@@ -352,11 +352,14 @@ function ClosePlayer() {
   )
 }
 
-/** A failed queue save (the player also shows it as a toast), at the head of Up next. */
+/**
+ * A failed queue save (the player also shows it as a toast), at the head of Up next. It follows
+ * `queueTrouble`, not the notice, which the next song replaces while saves still fail.
+ */
 function QueueSaveStrip() {
   const player = usePlayer()
-  const failed = player.notice === QUEUE_SAVE_FAILED
-  if (!failed && player.notice !== QUEUE_REPLACED) return null
+  if (!player.queueTrouble) return null
+  const failed = player.queueTrouble === 'failed'
   return (
     <div className="mx-[12px] mt-[4px] mb-[6px] flex items-center gap-[8px] rounded-[10px] bg-warn-bg py-[6px] pr-[6px] pl-[10px] text-small text-warn">
       <CloudOff size={14} className="shrink-0" />

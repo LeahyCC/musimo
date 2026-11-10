@@ -196,6 +196,11 @@ type Playback = {
   setSleep: (choice: SleepChoice | null) => void
   /** Saves the queue again after a failed save. One that lands takes the failure notice away. */
   retryQueueSave: () => void
+  /**
+   * Why the queue is not saved, until a save goes through: 'failed' for a save that did not land,
+   * 'replaced' when another browser took the queue over. Up next's strip shows it.
+   */
+  queueTrouble: QueueTrouble
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -249,6 +254,7 @@ const PlayerContext = createContext<Playback>({
   sleep: null,
   setSleep: () => undefined,
   retryQueueSave: () => undefined,
+  queueTrouble: null,
 })
 export const usePlayer = () => useContext(PlayerContext)
 
@@ -276,6 +282,7 @@ export function useNowPlayingTakesOver() {
 const LIBRARY_NOTICE = 'Your music library'
 const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
 /** The notices a failed queue save leaves, so the Listening room can show them in Up next too. */
+export type QueueTrouble = 'failed' | 'replaced' | null
 export const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
 export const QUEUE_REPLACED =
   'Another browser saved the queue. Refresh to restore it before saving more changes.'
@@ -705,7 +712,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const prefetcher = useRef(new TrackPrefetcher())
   // The queue saves itself every 10 seconds while music plays, so a server that is down would
   // raise the same toast each time. It is said once per kind, until a save goes through again.
-  const queueFailureShown = useRef<'failed' | 'replaced' | null>(null)
+  // This only gates the toast; `queueTrouble` is what the page shows.
+  const queueFailureShown = useRef<QueueTrouble>(null)
   // The collection that filled the queue. Edits leave it alone; `queueSource` says what it counts as.
   const sourceRef = useRef('')
   const editedRef = useRef(false)
@@ -860,6 +868,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return value === 'all' || value === 'one' ? value : 'off'
   })
   const [notice, setNoticeText] = useState('Choose a track to start listening.')
+  // Kept apart from `notice`: the next song or a reconnect replaces that line, and the strip must
+  // not go with it while saves are still failing.
+  const [queueTrouble, setQueueTrouble] = useState<QueueTrouble>(null)
   const toast = useToast()
   // The toasts still up, by text, so a message that comes again replaces itself rather than stacking.
   const toasts = useRef(new Map<string, () => void>())
@@ -1055,6 +1066,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // is raised once until a save goes through: a server that is down fails them all, and a toast
   // that came back after each one would never leave. Up next's strip keeps saying it meanwhile.
   function queueSaveFailed() {
+    setQueueTrouble('failed')
     if (queueFailureShown.current === 'failed') return
     queueFailureShown.current = 'failed'
     setNotice(
@@ -1072,6 +1084,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         queueSaveFailed()
         return
       }
+      setQueueTrouble('replaced')
       if (queueFailureShown.current === 'replaced') return
       queueFailureShown.current = 'replaced'
       setNotice(QUEUE_REPLACED, 'warn')
@@ -1084,9 +1097,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return writer()
       .save(body, begun)
       .then((response) => {
-        if (response?.ok) queueFailureShown.current = null
+        if (response?.ok) clearQueueTrouble()
         return response
       })
+  }
+
+  // Any save that lands, a timed one or Retry, means the queue is stored. The strip, the toast and
+  // the line must stop saying otherwise, or the page reads "not saved" over a saved queue.
+  function clearQueueTrouble() {
+    queueFailureShown.current = null
+    setQueueTrouble(null)
+    setNoticeText((now) =>
+      now === QUEUE_SAVE_FAILED || now === QUEUE_REPLACED
+        ? libraryCurrent.current?.origin === 'deezer'
+          ? 'Deezer account'
+          : LIBRARY_NOTICE
+        : now,
+    )
+    for (const text of [QUEUE_SAVE_FAILED, QUEUE_REPLACED]) {
+      toasts.current.get(text)?.()
+      toasts.current.delete(text)
+    }
   }
 
   function saveQueue(announce = false): Promise<boolean> {
@@ -2428,6 +2459,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   arriveRef.current = async () => {
     queueWriter.current?.reset()
+    // Whatever went wrong was the last name's queue; this name's has not been saved yet.
+    clearQueueTrouble()
     reloadHistory()
     return restoreFromServer(true)
   }
@@ -2737,15 +2770,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   // Retry is asked for, so a failure is said again even though the last one already was.
+  // A retry that lands is cleared by `persistQueue`, like any other save.
   function retryQueueSave() {
     if (queueFailureShown.current === 'failed') queueFailureShown.current = null
-    void saveQueue(true).then((saved) => {
-      if (!saved) return
-      setNoticeText((now) => (now === QUEUE_SAVE_FAILED ? LIBRARY_NOTICE : now))
-      // The failure's toast says the queue is not saved; it must not outlive the save that fixed it.
-      toasts.current.get(QUEUE_SAVE_FAILED)?.()
-      toasts.current.delete(QUEUE_SAVE_FAILED)
-    })
+    void saveQueue(true)
   }
 
   function submitNewPlaylist(event: FormEvent<HTMLFormElement>) {
@@ -2817,6 +2845,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         sleep,
         setSleep: startSleep,
         retryQueueSave,
+        queueTrouble,
       }}
     >
       <LibraryLoadedContext.Provider value={isLibrary}>{children}</LibraryLoadedContext.Provider>
