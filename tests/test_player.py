@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import httpx
 from fastapi import FastAPI
+from fastapi.testclient import TestClient
 from mutagen.id3 import (
     APIC,
     ID3,
@@ -50,6 +51,7 @@ from backend.library.player import (
     Player,
     StoredSong,
 )
+from backend.main import create_app
 from backend.version import VERSION
 
 
@@ -1089,6 +1091,48 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(stream.status_code, 200)
             self.assertEqual(stream.headers["content-type"], "audio/wav")
             self.assertEqual(stream.content, published.read_bytes())
+
+
+class StreamCacheHeaderTests(unittest.IsolatedAsyncioTestCase):
+    """The stream route sets its own Cache-Control, so these go through the real middleware."""
+
+    async def asyncSetUp(self) -> None:
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = Path(self.tmp.name).resolve()
+        music = self.base / "music"
+        music.mkdir()
+        write_wav(music / "song.wav")
+        tag(music / "song.wav", title="Song", artist="Artist", album="Album", album_artist="Artist")
+        # Scanned up front so the app under test finds the row without waiting for its own scan.
+        store = Store(self.base / "musimo.sqlite3")
+        Library(store, [music], asyncio.Event()).scan()
+        row = store.db.execute("SELECT song_id FROM library_files").fetchone()
+        self.song_id = str(row["song_id"])
+        store.close()
+        env = patch.dict("os.environ", {"MUSIMO_LIBRARY_ROOTS": str(music)})
+        env.start()
+        self.addCleanup(env.stop)
+
+    async def asyncTearDown(self) -> None:
+        self.tmp.cleanup()
+
+    async def test_stream_errors_are_never_cached_but_audio_is(self) -> None:
+        with TestClient(create_app(self.base)) as client:
+            audio = client.get(f"/api/player/stream/{self.song_id}")
+            self.assertEqual(audio.status_code, 200)
+            self.assertEqual(audio.headers["cache-control"], "private, max-age=3600")
+            part = client.get(f"/api/player/stream/{self.song_id}", headers={"Range": "bytes=0-1"})
+            self.assertEqual(part.status_code, 206)
+            self.assertEqual(part.headers["cache-control"], "private, max-age=3600")
+            # A cached 404 or 416 would keep failing after the file is back or the range is fixed.
+            missing = client.get("/api/player/stream/nothing-here")
+            self.assertEqual(missing.status_code, 404)
+            self.assertEqual(missing.headers["cache-control"], "no-store")
+            multi = client.get(
+                f"/api/player/stream/{self.song_id}", headers={"Range": "bytes=0-1,2-3"}
+            )
+            self.assertEqual(multi.status_code, 416)
+            self.assertEqual(multi.headers["cache-control"], "no-store")
 
 
 class SortTests(unittest.TestCase):
