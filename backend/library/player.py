@@ -1546,13 +1546,16 @@ class Player:
         return CONTENT_TYPES.get(f".{row['suffix']}", "application/octet-stream")
 
     async def play_queue(self) -> dict[str, object]:
-        saved = self.store.read_play_queue()
+        # Store calls run off the event loop: they wait for the store lock, and a scan or a
+        # download holding it would otherwise stall every request, audio streams included.
+        # to_thread carries the bound listener with it.
+        saved = await asyncio.to_thread(self.store.read_play_queue)
         snapshot = await self._catalog()
         raw_ids = saved.get("song_ids")
         ids = [str(item) for item in raw_ids] if isinstance(raw_ids, list) else []
         position = saved.get("position")
-        remembered = remembered_tracks(
-            self.store, [text for text in ids if text not in snapshot.by_song]
+        remembered = await asyncio.to_thread(
+            remembered_tracks, self.store, [text for text in ids if text not in snapshot.by_song]
         )
         entry: list[dict[str, object]] = []
         for text in ids:
@@ -1576,7 +1579,9 @@ class Player:
         epoch: int | None = None,
         sequence: int | None = None,
     ) -> bool:
-        return self.store.write_play_queue(ids, current, position, epoch, sequence)
+        return await asyncio.to_thread(
+            self.store.write_play_queue, ids, current, position, epoch, sequence
+        )
 
     async def scrobble(self, song_id: str, submission: bool) -> None:
         if not submission:

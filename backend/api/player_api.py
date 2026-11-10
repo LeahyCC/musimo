@@ -37,6 +37,11 @@ ArtistShow = Annotated[str, Query(pattern=f"^({'|'.join(ARTIST_SHOWS)})?$")]
 BYTE_RANGE = re.compile(r"^bytes=\d*-\d*$")
 # The cover id changes when the image does, so a browser can keep the bytes.
 ART_CACHE = "public, max-age=31536000, immutable"
+# The player prefetches upcoming songs into the browser cache, and the audio element's range
+# requests are then served from it, so a slow or busy server does not stall the next song.
+# Private: a song id is not a secret, but a shared cache has no business keeping the music.
+# An hour, then the ETag revalidates it, so a retagged file is picked up within the hour.
+STREAM_CACHE = "private, max-age=3600"
 
 
 class ShuffleWindow(BaseModel):
@@ -371,7 +376,7 @@ def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:
 
     @app.post("/api/player/queue/writer")
     async def begin_queue_writer() -> dict[str, int]:
-        return {"epoch": get().store.begin_queue_writer()}
+        return {"epoch": await asyncio.to_thread(get().store.begin_queue_writer)}
 
     @app.post("/api/player/scrobble", status_code=204)
     async def scrobble(update: ScrobbleUpdate) -> None:
@@ -388,10 +393,14 @@ def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:
         if range_header and not BYTE_RANGE.fullmatch(range_header):
             raise HTTPException(416, "Only one byte range is supported")
         song = checked_id(song_id)
-        path = get().local_file(song)
+        # Off the event loop: the lookup waits for the store lock, and a scan or download holding
+        # it would otherwise stall every other request, the playing stream's included.
+        path = await asyncio.to_thread(get().local_file, song)
         if path is None:
             raise HTTPException(404, "Track not found")
-        return FileResponse(path, media_type=get().media_type(song))
+        return FileResponse(
+            path, media_type=get().media_type(song), headers={"Cache-Control": STREAM_CACHE}
+        )
 
     @app.get("/api/player/art/{cover_id}")
     async def art(cover_id: str) -> Response:

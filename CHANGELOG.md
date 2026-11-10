@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Playback
+
+- The next two songs in the queue are fetched ahead while the current one plays, so they start from the browser's cache and a slow or busy server no longer stalls them. A Deezer song coming up next is prepared on the server ahead of time. Nothing is fetched ahead when the browser asks to save data.
+- Audio streams, queue saves and loads, and the name check on each request no longer wait on the event loop for the database, so a scan or download holding it cannot stall every other request and stop the music.
+- When the connection to the server drops under the playing song, the player loads it again from where it stopped, up to three times, instead of skipping it.
+- "The queue changed here but could not be saved" shows once until a save goes through, rather than coming back after every save while the server is unreachable. Retry in the toast now also clears the strip in Up next when it succeeds.
+
 ### Delete
 
 - Songs, albums and artists can be deleted from the library. Files move to a `.musimo-trash` folder in their library folder, not erased.

@@ -248,8 +248,9 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         if found is not None and is_listener_route(request.url.path):
             # A blank header is the same as a missing one. The id is not a secret.
             presented = request.headers.get(HEADER, "").strip()
-            if found.has_listeners():
-                if not presented or not found.listener_exists(presented):
+            # Off the event loop, like every store call that waits for its lock.
+            if await asyncio.to_thread(found.has_listeners):
+                if not presented or not await asyncio.to_thread(found.listener_exists, presented):
                     return JSONResponse({"detail": CHOOSE}, status_code=401)
                 token = bind(presented)
             elif presented:
@@ -270,9 +271,10 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             "img-src 'self' https: data:; media-src 'self' https:; "
             "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
         )
-        # Cover ids change with the image, so those responses may be cached.
+        # Cover ids change with the image, so those responses may be cached. A library stream
+        # sets its own header, so the player can prefetch upcoming songs into the browser cache.
         if request.url.path.startswith("/api/") and not request.url.path.startswith(
-            "/api/player/art/"
+            ("/api/player/art/", "/api/player/stream/")
         ):
             response.headers["Cache-Control"] = "no-store"
         return response

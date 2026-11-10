@@ -700,6 +700,9 @@ class PlayerTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(audio.headers["content-range"], f"bytes 0-1/{len(raw)}")
             self.assertEqual(audio.headers["content-type"], "audio/wav")
             self.assertEqual(audio.headers["accept-ranges"], "bytes")
+            # Cacheable in the browser only, so the player can prefetch upcoming songs.
+            self.assertEqual(audio.headers["cache-control"], "private, max-age=3600")
+            self.assertIn("etag", audio.headers)
             size = len(raw)
             self.assertEqual(
                 (

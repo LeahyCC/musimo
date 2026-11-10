@@ -210,6 +210,44 @@ test('a quiet track is boosted the same on both library elements', async ({ page
   await expect.poll(boost).toBeCloseTo(10 ** (6 / 20), 1)
 })
 
+/** The stream ids fetched by the prefetcher, as opposed to the audio elements. */
+function prefetchedStreams(page: Page) {
+  const ids: string[] = []
+  page.on('request', (request) => {
+    const match = /\/api\/player\/stream\/([^/?]+)/.exec(request.url())
+    if (match?.[1] && request.resourceType() === 'fetch') ids.push(match[1])
+  })
+
+  return ids
+}
+
+test('the next two songs are fetched ahead, long before the standby element loads', async ({
+  page,
+}) => {
+  await restoreQueue(page, [alpha, bravo, charlie, delta])
+  const prefetched = prefetchedStreams(page)
+  // Past the prefetch delay, and well before the last 15 seconds when the standby element loads.
+  await playToTheEnd(page, 6)
+  await expect.poll(() => prefetched).toEqual(['song-b', 'song-c'])
+  const standby = page.locator('audio.library-audio[data-role="standby"]')
+  await expect(standby).not.toHaveAttribute('src', /song-b/)
+})
+
+test('a metered connection fetches nothing ahead', async ({ page }) => {
+  await page.addInitScript(() =>
+    Object.defineProperty(navigator, 'connection', {
+      value: { saveData: true },
+      configurable: true,
+    }),
+  )
+  await restoreQueue(page, [alpha, bravo, charlie])
+  const prefetched = prefetchedStreams(page)
+  await playToTheEnd(page)
+  const standby = page.locator('audio.library-audio[data-role="standby"]')
+  await expect(standby).toHaveAttribute('src', /song-b/)
+  expect(prefetched).toEqual([])
+})
+
 test('a metered connection preloads the metadata only', async ({ page }) => {
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'connection', {
@@ -224,6 +262,44 @@ test('a metered connection preloads the metadata only', async ({ page }) => {
   await expect
     .poll(() => standby.evaluate((element: HTMLAudioElement) => element.preload))
     .toBe('metadata')
+})
+
+/** Makes the playing element report a dropped connection, as a busy or restarting server would. */
+async function dropConnection(page: Page) {
+  await page.locator('audio.library-audio[data-role="active"]').evaluate((element) => {
+    Object.defineProperty(element, 'error', {
+      configurable: true,
+      get: () => ({ code: MediaError.MEDIA_ERR_NETWORK }),
+    })
+    element.dispatchEvent(new Event('error'))
+    // The reload replaces the error, as a real one would.
+    setTimeout(() => Reflect.deleteProperty(element, 'error'), 0)
+  })
+}
+
+test('a dropped connection reloads the song where it stopped instead of skipping it', async ({
+  page,
+}) => {
+  await restoreQueue(page, [alpha, bravo])
+  const streams: string[] = []
+  page.on('request', (request) => {
+    if (request.resourceType() === 'media' && request.url().includes('song-a')) {
+      streams.push(request.url())
+    }
+  })
+  await playToTheEnd(page, 10)
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  const before = streams.length
+  await dropConnection(page)
+  await expect.poll(() => streams.length).toBeGreaterThan(before)
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => !element.paused))
+    .toBe(true)
+  await expect(page.getByRole('contentinfo')).toContainText('Alpha')
+  expect(await active.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeGreaterThan(
+    9,
+  )
+  await expect(toasts(page)).not.toContainText('Skipped')
 })
 
 test('a song that cannot be played is skipped and the player says which', async ({ page }) => {
