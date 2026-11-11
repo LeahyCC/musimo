@@ -349,8 +349,24 @@ class AccountListenTests(unittest.TestCase):
                     worker.join(10)
             self.assertEqual(results, [200] * PREPARE_SLOTS)
             # The slots came back, so the next prepare runs.
-            release.set()
             again = client.post("/api/player/account/dz-5", json={"title": "S"})
+            self.assertEqual(again.json()["play"], "preview")
+
+    def test_a_prepare_that_never_reaches_its_thread_does_not_use_up_a_slot(self) -> None:
+        # Stands in for a request cancelled while still queued for a pool thread: run() never
+        # starts. More of them than there are slots, then a real prepare must still run.
+        async def never_starts(*_args: object) -> dict[str, object]:
+            raise RuntimeError("cancelled before the thread started")
+
+        with (
+            TestClient(create_app(self.data), raise_server_exceptions=False) as client,
+            patch("backend.api.player_api.prepare_track", lambda *_a: {"play": "preview"}),
+        ):
+            with patch("backend.api.player_api.asyncio.to_thread", never_starts):
+                for number in range(1, PREPARE_SLOTS + 2):
+                    lost = client.post(f"/api/player/account/dz-{number}", json={"title": "S"})
+                    self.assertEqual(lost.status_code, 500)
+            again = client.post("/api/player/account/dz-9", json={"title": "S"})
             self.assertEqual(again.json()["play"], "preview")
 
     def test_a_short_clip_stays_unavailable_and_is_not_cached(self) -> None:

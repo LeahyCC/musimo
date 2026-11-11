@@ -214,13 +214,15 @@ def install_account_routes(app: FastAPI, data: Path, get_store: Callable[[], Sto
         number = track_number(checked_id(song_id))
         if number is None:
             raise HTTPException(404, "Track not found")
-        if not slots.acquire(blocking=False):
-            return {"play": "busy", "detail": BUSY, "url": "", "id": ""}
         store = get_store()
 
         def run() -> dict[str, object]:
-            # Released here, not in the handler: a dropped request cancels the await but not
-            # the thread, which keeps working (and keeps its pool slot) until it is done.
+            # The slot is taken here, in the worker thread, not in the handler. A request
+            # cancelled while still queued for a pool thread never starts run(), so it never
+            # takes a slot; taking it earlier would leak it, since only run() can release it.
+            # Once running, the thread owns the slot until it is done, even if the request drops.
+            if not slots.acquire(blocking=False):
+                return {"play": "busy", "detail": BUSY, "url": "", "id": ""}
             try:
                 return prepare_track(store, data, number, facts.model_dump())
             finally:
