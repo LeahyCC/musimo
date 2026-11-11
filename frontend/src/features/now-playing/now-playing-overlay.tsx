@@ -10,9 +10,7 @@ import {
   Disc3,
   Maximize2,
   Minimize2,
-  Pause,
   PictureInPicture2,
-  Play,
   RectangleHorizontal,
   Repeat,
   Shuffle,
@@ -30,6 +28,7 @@ import type { Layout } from '../../lib/layout'
 import { useCoarsePointer } from '../../lib/use-coarse'
 import { IconButton, Select } from '../../ui'
 import type { IconButtonProps } from '../../ui'
+import { PlayIcon, playLabel } from '../player/play-icon'
 import { artUrl, durationText, usePlayer } from '../player/player'
 import { PRESET_NAMES, presetLabel } from '../visualizer/visualizer-presets'
 
@@ -356,11 +355,11 @@ function StageControls() {
         </StageButton>
         <IconButton
           variant="play"
-          aria-label={player.playing ? 'Pause' : 'Play'}
+          aria-label={playLabel(player)}
           disabled={!track && !player.track}
           onClick={player.toggle}
         >
-          {player.playing ? <Pause size={19} /> : <Play size={19} />}
+          <PlayIcon playing={player.playing} reconnecting={player.reconnecting} size={19} />
         </IconButton>
         <StageButton aria-label="Next track" disabled={!track} onClick={player.next}>
           <SkipForward size={17} />

@@ -72,6 +72,7 @@ export function useContinue() {
     track,
     live: live !== null,
     playing: live !== null && player.playing,
+    reconnecting: live !== null && player.reconnecting,
     position: live ? player.position : 0,
     length: live ? player.length || track.duration : track.duration,
     queueNumber: live && player.currentIndex >= 0 ? player.currentIndex + 1 : null,

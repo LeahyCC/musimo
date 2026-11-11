@@ -12,8 +12,6 @@ import {
   ListMusic,
   ListPlus,
   Maximize2,
-  Pause,
-  Play,
   Repeat,
   RotateCcw,
   Save,
@@ -34,6 +32,7 @@ import { PetSpot } from '../music-bot/pet-host'
 import { DockStage, useNowPlayingPopout } from '../now-playing/now-playing-popout'
 import { SleepTimerControl } from '../now-playing/sleep-timer-control'
 import { SeekBar } from '../now-playing/waveform-seek'
+import { PlayIcon, playLabel } from './play-icon'
 import {
   artUrl,
   durationText,
@@ -41,6 +40,7 @@ import {
   QUEUE_REPLACED,
   QUEUE_SAVE_FAILED,
   queueEntryKey,
+  RECONNECTING_NOTICE,
   songCount,
   usePlayer,
 } from './player'
@@ -152,14 +152,7 @@ function LikeButton() {
 /** Shuffle, previous, play, next and repeat. A preview has only restart and play. */
 function Transport({ disc, className }: { disc: number; className?: string }) {
   const { player, isLibrary, title } = useNowPlaying()
-  const { playing } = player
-  const playLabel = isLibrary
-    ? playing
-      ? 'Pause'
-      : 'Play'
-    : playing
-      ? 'Pause preview'
-      : 'Play preview'
+  const { playing, reconnecting } = player
   return (
     <div className={cx('flex items-center', className)}>
       {isLibrary && (
@@ -193,11 +186,11 @@ function Transport({ disc, className }: { disc: number; className?: string }) {
         type="button"
         className={playDiscClassName}
         style={{ width: disc, height: disc }}
-        aria-label={playLabel}
+        aria-label={playLabel(player, !isLibrary)}
         disabled={!title}
         onClick={player.toggle}
       >
-        {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+        <PlayIcon playing={playing} reconnecting={reconnecting} size={20} filled />
       </button>
       {isLibrary && (
         <IconButton size="compact" aria-label="Next track" onClick={player.next}>
@@ -848,14 +841,11 @@ export function RoomMiniPlayer() {
       <button
         type="button"
         className={cx(playDiscClassName, 'size-[44px]')}
-        aria-label={player.playing ? 'Pause' : 'Play'}
+        aria-label={playLabel(player)}
+        title={player.reconnecting ? RECONNECTING_NOTICE : undefined}
         onClick={player.toggle}
       >
-        {player.playing ? (
-          <Pause size={18} fill="currentColor" />
-        ) : (
-          <Play size={18} fill="currentColor" />
-        )}
+        <PlayIcon playing={player.playing} reconnecting={player.reconnecting} size={18} filled />
       </button>
     </section>
   )
