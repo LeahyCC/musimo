@@ -321,7 +321,10 @@ def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:
 
     @app.get("/api/library/playlists")
     async def playlists() -> dict[str, object]:
-        return {"items": await get().playlists(), "liked_id": get().liked_id()}
+        return {
+            "items": await get().playlists(),
+            "liked_id": await asyncio.to_thread(get().liked_id),
+        }
 
     @app.get("/api/library/playlists/liked")
     async def liked_playlist() -> dict[str, object]:
