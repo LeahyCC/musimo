@@ -280,10 +280,12 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         )
         # Cover ids change with the image, so those responses may be cached. A library stream sets
         # its own header, so the player can prefetch upcoming songs into the browser cache. Its
-        # errors set none, and must not be cached, so only a header already present is kept.
+        # errors must not be cached, so the header is kept only on a full or partial success.
         path = request.url.path
         keeps_own_cache = (
-            path.startswith("/api/player/stream/") and "cache-control" in response.headers
+            path.startswith("/api/player/stream/")
+            and "cache-control" in response.headers
+            and response.status_code in (200, 206)
         )
         if (
             path.startswith("/api/")

@@ -11,6 +11,7 @@ from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
+from backend.api.player_api import PREPARE_SLOTS
 from backend.integrations import deezer_cookie
 from backend.integrations.deezer_audio import Saved, allows_full
 from backend.jobs.account_listen import (
@@ -306,6 +307,67 @@ class AccountListenTests(unittest.TestCase):
             self.assertEqual(played.json()["detail"], UNAVAILABLE)
             again = client.get("/api/diagnostics").json()["deezer_listen"]
             self.assertIn(4, again["unavailable"])
+
+    def test_prepares_past_the_cap_are_told_busy_while_listener_routes_answer(self) -> None:
+        entered = threading.Semaphore(0)
+        release = threading.Event()
+
+        def slow(*_args: object) -> dict[str, object]:
+            entered.release()
+            release.wait(10)
+            return {"play": "preview", "detail": "", "url": "", "id": ""}
+
+        results: list[int] = []
+        with (
+            TestClient(create_app(self.data)) as client,
+            patch("backend.api.player_api.prepare_track", slow),
+        ):
+
+            def post(number: int) -> None:
+                results.append(
+                    client.post(f"/api/player/account/dz-{number}", json={"title": "S"}).status_code
+                )
+
+            workers = [
+                threading.Thread(target=post, args=(number,))
+                for number in range(1, PREPARE_SLOTS + 1)
+            ]
+            for worker in workers:
+                worker.start()
+            try:
+                for _ in workers:
+                    self.assertTrue(entered.acquire(timeout=10))
+                extra = client.post("/api/player/account/dz-99", json={"title": "S"})
+                self.assertEqual(extra.status_code, 200)
+                self.assertEqual(extra.json()["play"], "busy")
+                self.assertEqual(extra.json()["detail"], BUSY)
+                # A listener route still gets a thread while the cap is full.
+                self.assertEqual(client.get("/api/player/stream/nothing-here").status_code, 404)
+            finally:
+                release.set()
+                for worker in workers:
+                    worker.join(10)
+            self.assertEqual(results, [200] * PREPARE_SLOTS)
+            # The slots came back, so the next prepare runs.
+            again = client.post("/api/player/account/dz-5", json={"title": "S"})
+            self.assertEqual(again.json()["play"], "preview")
+
+    def test_a_prepare_that_never_reaches_its_thread_does_not_use_up_a_slot(self) -> None:
+        # Stands in for a request cancelled while still queued for a pool thread: run() never
+        # starts. More of them than there are slots, then a real prepare must still run.
+        async def never_starts(*_args: object) -> dict[str, object]:
+            raise RuntimeError("cancelled before the thread started")
+
+        with (
+            TestClient(create_app(self.data), raise_server_exceptions=False) as client,
+            patch("backend.api.player_api.prepare_track", lambda *_a: {"play": "preview"}),
+        ):
+            with patch("backend.api.player_api.asyncio.to_thread", never_starts):
+                for number in range(1, PREPARE_SLOTS + 2):
+                    lost = client.post(f"/api/player/account/dz-{number}", json={"title": "S"})
+                    self.assertEqual(lost.status_code, 500)
+            again = client.post("/api/player/account/dz-9", json={"title": "S"})
+            self.assertEqual(again.json()["play"], "preview")
 
     def test_a_short_clip_stays_unavailable_and_is_not_cached(self) -> None:
         deezer_cookie.write(self.data, COOKIE)

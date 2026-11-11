@@ -14,6 +14,7 @@ from unittest.mock import patch
 
 import httpx
 from fastapi import FastAPI
+from fastapi.responses import Response
 from fastapi.testclient import TestClient
 from mutagen.id3 import (
     APIC,
@@ -33,7 +34,7 @@ from mutagen.id3 import (
 )
 from mutagen.wave import WAVE
 
-from backend.api.player_api import install_player_routes
+from backend.api.player_api import STREAM_CACHE, install_player_routes
 from backend.core.job_models import Metadata
 from backend.core.store import Store
 from backend.integrations.catalog import Catalog
@@ -1133,6 +1134,17 @@ class StreamCacheHeaderTests(unittest.IsolatedAsyncioTestCase):
             )
             self.assertEqual(multi.status_code, 416)
             self.assertEqual(multi.headers["cache-control"], "no-store")
+
+    async def test_only_a_200_or_206_keeps_the_stream_cache_header(self) -> None:
+        # A response that carries the header but is not a success must still get no-store.
+        def failing(*_args: object, **_kwargs: object) -> Response:
+            return Response(b"", status_code=503, headers={"Cache-Control": STREAM_CACHE})
+
+        with TestClient(create_app(self.base)) as client:
+            with patch("backend.api.player_api.FileResponse", failing):
+                failed = client.get(f"/api/player/stream/{self.song_id}")
+            self.assertEqual(failed.status_code, 503)
+            self.assertEqual(failed.headers["cache-control"], "no-store")
 
     async def test_a_range_past_the_end_of_the_file_is_never_cached(self) -> None:
         # Starlette's FileResponse answers this 416 itself, not the route, and the route's
