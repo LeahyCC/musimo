@@ -281,8 +281,9 @@ export function useNowPlayingTakesOver() {
 
 const LIBRARY_NOTICE = 'Your music library'
 const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
-/** The notices a failed queue save leaves, so the Listening room can show them in Up next too. */
+/** Why the queue is not saved: a save that did not land, or another browser took it over. */
 export type QueueTrouble = 'failed' | 'replaced' | null
+/** The notices a failed queue save leaves, so the Listening room can show them in Up next too. */
 export const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
 export const QUEUE_REPLACED =
   'Another browser saved the queue. Refresh to restore it before saving more changes.'
