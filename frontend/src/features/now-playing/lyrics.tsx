@@ -4,13 +4,14 @@ import type { KeyboardEvent, PointerEvent } from 'react'
 import { createPortal } from 'react-dom'
 
 import { useQuery } from '@tanstack/react-query'
-import { Maximize2, Pause, Play, SkipBack, SkipForward, X } from 'lucide-react'
+import { Maximize2, SkipBack, SkipForward, X } from 'lucide-react'
 import type { z } from 'zod'
 
 import { api, lyricsSchema } from '../../api'
 import type { LibraryTrack } from '../../api'
 import { cx } from '../../lib/cx'
 import { Button, IconButton } from '../../ui'
+import { PlayIcon, playLabel } from '../player/play-icon'
 import { artUrl, durationText, remember, stored, usePlayer } from '../player/player'
 import { pageKeyIsFree } from './now-playing-shortcuts'
 import { SeekBar } from './waveform-seek'
@@ -360,12 +361,8 @@ function StripTransport() {
       <IconButton size="compact" aria-label="Previous track" onClick={player.previous}>
         <SkipBack size={17} />
       </IconButton>
-      <IconButton
-        variant="play"
-        aria-label={player.playing ? 'Pause' : 'Play'}
-        onClick={player.toggle}
-      >
-        {player.playing ? <Pause size={19} /> : <Play size={19} />}
+      <IconButton variant="play" aria-label={playLabel(player)} onClick={player.toggle}>
+        <PlayIcon playing={player.playing} reconnecting={player.reconnecting} size={19} />
       </IconButton>
       <IconButton size="compact" aria-label="Next track" onClick={player.next}>
         <SkipForward size={17} />

@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { Activity, Heart, Pause, Play, SlidersHorizontal } from 'lucide-react'
+import { Activity, Heart, SlidersHorizontal } from 'lucide-react'
 
 import { cx } from '../../lib/cx'
 import { formatDuration } from '../../lib/format'
@@ -8,6 +8,7 @@ import { usePhone } from '../../lib/use-phone'
 import { buttonClassName } from '../../ui'
 import { PetFace } from '../music-bot/pet-host'
 import { historyTrack } from '../player/play-history'
+import { PlayIcon } from '../player/play-icon'
 import { usePlayer } from '../player/player'
 import { Cover, OCTIVE_PROMPTS, useAskOctive, useContinue, useNow } from './home-parts'
 import {
@@ -111,11 +112,12 @@ function Continue() {
         )}
         <div className="mt-[14px] flex flex-wrap gap-[8px]">
           <button type="button" className={buttonClassName('primary')} onClick={current.press}>
-            {current.playing ? (
-              <Pause size={15} fill="currentColor" />
-            ) : (
-              <Play size={15} fill="currentColor" />
-            )}
+            <PlayIcon
+              playing={current.playing}
+              reconnecting={current.reconnecting}
+              size={15}
+              filled
+            />
             {current.live ? (current.playing ? 'Pause' : 'Resume') : 'Play again'}
           </button>
           {current.live && (

@@ -3,8 +3,6 @@ import type { ReactNode } from 'react'
 import { Link, useNavigate } from '@tanstack/react-router'
 import {
   ListPlus,
-  Pause,
-  Play,
   Repeat,
   Shuffle,
   SkipBack,
@@ -22,6 +20,7 @@ import { IconButton } from '../../ui'
 import { useBotChat } from '../music-bot/bot-chat'
 import { PetSpot } from '../music-bot/pet-host'
 import { sourceName } from '../player/account-play'
+import { PlayIcon, playLabel } from '../player/play-icon'
 import { durationText, isPassiveNotice, usePlayer } from '../player/player'
 import { TrackFormatChips } from './about-track'
 import { SleepTimerControl } from './sleep-timer-control'
@@ -230,16 +229,8 @@ function Transport({
         <SquareButton label="Previous track" className={skip} onClick={player.previous}>
           <SkipBack size={22} fill="currentColor" />
         </SquareButton>
-        <SquareButton
-          label={player.playing ? 'Pause' : 'Play'}
-          className={play}
-          onClick={player.toggle}
-        >
-          {player.playing ? (
-            <Pause size={24} fill="currentColor" />
-          ) : (
-            <Play size={24} fill="currentColor" />
-          )}
+        <SquareButton label={playLabel(player)} className={play} onClick={player.toggle}>
+          <PlayIcon playing={player.playing} reconnecting={player.reconnecting} size={24} filled />
         </SquareButton>
         <SquareButton label="Next track" className={skip} onClick={player.next}>
           <SkipForward size={22} fill="currentColor" />

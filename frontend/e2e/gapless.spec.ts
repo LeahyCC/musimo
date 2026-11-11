@@ -536,6 +536,10 @@ test('a dropped connection reloads the song where it stopped instead of skipping
   const from = await mediaCount(page)
   const at = await dropConnection(page)
   await expect(status).toBeVisible()
+  const reconnecting = page
+    .getByRole('button', { name: 'Pause, reconnecting', exact: true })
+    .filter({ visible: true })
+  await expect(reconnecting.first()).toBeVisible()
   await waitForReload(page, from, true)
 
   // Started from where it stopped, not from the top.
@@ -547,9 +551,55 @@ test('a dropped connection reloads the song where it stopped instead of skipping
     .toBe(true)
   await expect(page.getByRole('heading', { level: 1 })).toHaveText('Alpha')
   await expect(status).toHaveCount(0)
+  await expect(reconnecting).toHaveCount(0)
   await expect(toasts(page)).not.toContainText('Skipped')
   // The reload is the same listen, so "now playing" went out once.
   expect(scrobbles.filter((entry) => entry.id === 'song-a' && !entry.submission)).toHaveLength(1)
+})
+
+test('a reload saves the queue where the song stopped, not at its start', async ({ page }) => {
+  await logMedia(page)
+  // Loading the song again resets the element to 0 and reports that before the seek back lands.
+  await page.addInitScript(() => {
+    const times: number[] = []
+    Object.assign(window, { timeLog: times })
+    document.addEventListener(
+      'timeupdate',
+      (event) => {
+        const element = event.target
+        if (element instanceof HTMLAudioElement && element.dataset.role === 'active')
+          times.push(element.currentTime)
+      },
+      true,
+    )
+  })
+  await restoreQueue(page, [alpha, bravo])
+  const saved: number[] = []
+  await page.route('**/api/player/queue', async (route) => {
+    if (route.request().method() === 'PUT') saved.push(Number(requestBody(route).position))
+    await route.fallback()
+  })
+  await playFrom(page, 15)
+  const from = await mediaCount(page)
+  const savedBefore = saved.length
+  const timesBefore = await page.evaluate(
+    () => (window as unknown as { timeLog: number[] }).timeLog.length,
+  )
+  const at = await dropConnection(page)
+  await waitForReload(page, from, true)
+  // A pause saves the queue, and saves go out in order, so once this one is in any save the
+  // reload made is in too.
+  const afterReload = saved.length
+  await page.keyboard.press('Space')
+  await expect.poll(() => saved.length).toBeGreaterThan(afterReload)
+  // The element did report 0 while it loaded. The saved queue did not take it.
+  const times = await page.evaluate(
+    (start) => (window as unknown as { timeLog: number[] }).timeLog.slice(start),
+    timesBefore,
+  )
+  expect(times).toContain(0)
+  for (const position of saved.slice(savedBefore))
+    expect(position).toBeGreaterThanOrEqual((at - 1) * 1000)
 })
 
 test('a reload the server refuses is tried again rather than skipping the song', async ({
@@ -578,33 +628,87 @@ test('a reload the server refuses is tried again rather than skipping the song',
   await expect(toasts(page)).not.toContainText('Skipped')
 })
 
-test('a song that keeps losing its connection is skipped once the reloads run out', async ({
-  page,
-}) => {
+test('the play button shows it is reconnecting until the song is back', async ({ page }) => {
+  // The clock is held still so the wait before the reload lasts until the test moves it on.
+  await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
   await playFrom(page, 10)
+  const player = page.getByRole('contentinfo')
+  const reconnecting = player.getByRole('button', { name: 'Pause, reconnecting', exact: true })
+  const now = await page.evaluate(() => Date.now())
+  await page.clock.pauseAt(now + 1000)
+  const from = await mediaCount(page)
+  await dropConnection(page)
+  // Classic has no status line, so the button is what says it.
+  await expect(reconnecting).toBeVisible()
+  await expect(reconnecting.locator('[data-reconnecting]')).toBeVisible()
+  await expect(toasts(page)).not.toContainText('Lost the connection')
+  await page.clock.runFor(RETRY_DELAY_MS)
+  await waitForReload(page, from, true)
+  await expect(player.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+  await expect(reconnecting).toHaveCount(0)
+})
+
+test('a playing song that keeps losing its connection stops on it once the reloads run out', async ({
+  page,
+}) => {
+  await page.clock.install()
+  await logMedia(page)
+  await restoreQueue(page, [alpha, bravo])
+  await playFrom(page, 10)
+  const player = page.getByRole('contentinfo')
+  const active = page.locator('audio.library-audio[data-role="active"]')
   // Each drop comes as soon as the reload plays, so the song never gets far enough past the
-  // last drop for the count to start again.
+  // last drop for the count to start again. The clock skips each wait rather than sitting it out.
   for (let reload = 0; reload < 3; reload += 1) {
     const from = await mediaCount(page)
     await dropConnection(page)
+    await page.clock.fastForward(RETRY_DELAY_MS * (reload + 1))
     await waitForReload(page, from, true)
   }
-  await dropConnection(page)
-  await expect(toasts(page)).toHaveText('Skipped Alpha, it could not be played')
-  await expect(page.getByRole('contentinfo')).toContainText('Bravo')
+  const at = await dropConnection(page)
+  // A server restart outlasts the reloads. Skipping would fail the next songs too and blame the
+  // music folder, so it stays on this one.
+  const lost = toasts(page)
+    .locator('[data-ui="toast"]')
+    .filter({ hasText: 'Lost the connection to the server. Press play to try again.' })
+  await expect(lost).toBeVisible()
+  await expect(toasts(page)).not.toContainText('Skipped')
+  await expect(player).toContainText('Alpha')
+  await expect(player.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
+  await expect.poll(() => active.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true)
+  // A toast with an action stays until it is used.
+  await page.clock.fastForward(10_000)
+  await expect(lost).toBeVisible()
+
+  // Its Play loads the song again and carries on from where it stopped.
+  const from = await mediaCount(page)
+  await lost.getByRole('button', { name: 'Play', exact: true }).click()
+  await waitForReload(page, from, true)
+  const seeked = (await reloadSince(page, from)).find((entry) => entry.type === 'seeked')
+  expect(seeked?.time).toBeGreaterThanOrEqual(at - 0.5)
+  await expect(lost).toHaveCount(0)
+  await expect(player).toContainText('Alpha')
+  await expect(player.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
 })
 
 test('a pause while the reload waits keeps the song paused', async ({ page }) => {
+  await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
   await playFrom(page, 10)
   const active = page.locator('audio.library-audio[data-role="active"]')
+  const now = await page.evaluate(() => Date.now())
+  await page.clock.pauseAt(now + 1000)
   const from = await mediaCount(page)
   await dropConnection(page)
   // The player still shows it playing, so the press pauses it.
-  await page.getByRole('contentinfo').getByRole('button', { name: 'Pause', exact: true }).click()
+  await page
+    .getByRole('contentinfo')
+    .getByRole('button', { name: 'Pause, reconnecting', exact: true })
+    .click()
+  await page.clock.runFor(RETRY_DELAY_MS)
   await waitForReload(page, from, false)
   const reload = await reloadSince(page, from)
   expect(reload.filter((entry) => entry.type === 'playing')).toEqual([])
@@ -617,6 +721,7 @@ test('a pause while the reload waits keeps the song paused', async ({ page }) =>
 test('a paused song that keeps losing its connection waits for play instead of skipping', async ({
   page,
 }) => {
+  await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
   await playFrom(page, 10)
@@ -626,6 +731,7 @@ test('a paused song that keeps losing its connection waits for play instead of s
   for (let reload = 0; reload < 3; reload += 1) {
     const from = await mediaCount(page)
     await dropConnection(page)
+    await page.clock.fastForward(RETRY_DELAY_MS * (reload + 1))
     await waitForReload(page, from, false)
   }
   const at = await dropConnection(page)
@@ -645,20 +751,31 @@ test('a paused song that keeps losing its connection waits for play instead of s
 })
 
 test('a song chosen while the reload waits is the one that plays', async ({ page }) => {
+  await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
   await playFrom(page, 10)
   const active = page.locator('audio.library-audio[data-role="active"]')
+  const now = await page.evaluate(() => Date.now())
+  await page.clock.pauseAt(now + 1000)
   const from = await mediaCount(page)
   await dropConnection(page)
+  await expect(
+    page.getByRole('contentinfo').getByRole('button', { name: 'Pause, reconnecting' }),
+  ).toBeVisible()
   await page.getByRole('contentinfo').getByRole('button', { name: 'Next track' }).click()
   await expect(page.getByRole('contentinfo')).toContainText('Bravo')
   await expect
     .poll(() => active.evaluate((element: HTMLAudioElement) => !element.paused))
     .toBe(true)
+
+  // The new song does not show the old one reconnecting.
+  await expect(
+    page.getByRole('contentinfo').getByRole('button', { name: 'Pause', exact: true }),
+  ).toBeVisible()
   // Past the moment the reload would have happened. Nothing can be polled for here: the check is
   // that nothing happens.
-  await page.waitForTimeout(RETRY_DELAY_MS * 2)
+  await page.clock.fastForward(RETRY_DELAY_MS * 2)
   const reloads = (await mediaSince(page, from)).filter(
     (entry) => entry.src === 'song-a' && entry.type === 'loadstart',
   )
