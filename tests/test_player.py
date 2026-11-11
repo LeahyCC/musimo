@@ -1134,6 +1134,16 @@ class StreamCacheHeaderTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(multi.status_code, 416)
             self.assertEqual(multi.headers["cache-control"], "no-store")
 
+    async def test_a_range_past_the_end_of_the_file_is_never_cached(self) -> None:
+        # Starlette's FileResponse answers this 416 itself, not the route, and the route's
+        # own Cache-Control header must not ride along on it.
+        with TestClient(create_app(self.base)) as client:
+            past = client.get(
+                f"/api/player/stream/{self.song_id}", headers={"Range": "bytes=999999-"}
+            )
+            self.assertEqual(past.status_code, 416)
+            self.assertEqual(past.headers["cache-control"], "no-store")
+
 
 class SortTests(unittest.TestCase):
     def test_artist_names_sort_numbers_as_numbers(self) -> None:
