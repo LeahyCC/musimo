@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
 import { ORIGIN } from './env'
-import { librarySong, playerFixtures } from './library-fixtures'
+import { generatedPlayerAudio, librarySong, playerFixtures } from './library-fixtures'
 import { mainNav, toasts } from './nav'
 import { writableDestination } from './queue-fixtures'
 import { expect, test } from './test'
@@ -1576,6 +1576,70 @@ test.describe('Listening room layout', () => {
     await dock.getByRole('button', { name: 'Retry' }).click()
     await expect(strip).toBeHidden()
     await expect(toast).toHaveCount(0)
+  })
+
+  test('a queue that still fails to save stays in Up next after the song changes', async ({
+    page,
+  }) => {
+    let status = 500
+    await roomQueue(page, () => status)
+    await generatedPlayerAudio(page)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    const upNext = dock.getByRole('region', { name: 'Up next' })
+    const rows = upNext.getByRole('button', { name: /^Play Song/ })
+    const strip = dock.getByText('Queue not saved to server')
+    const toast = toasts(page).getByText('The queue changed here but could not be saved.')
+    await upNext.getByRole('button', { name: 'Play Song song-2' }).press('Alt+ArrowDown')
+    await expect(strip).toBeVisible()
+    await expect(toast).toBeVisible()
+    await toasts(page).getByRole('button', { name: 'Dismiss' }).click()
+    await expect(toast).toBeHidden()
+
+    // The next song replaces the player's line, which the strip used to be read from.
+    await dock.getByRole('button', { name: 'Next track' }).click()
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toHaveAccessibleName('Play Song song-2')
+    await expect(strip).toBeVisible()
+
+    // An edit that fails too still says so. The toast was raised once for this failing stretch.
+    await rows.first().hover()
+    await upNext.getByRole('button', { name: 'Remove Song song-2 from the queue' }).click()
+    await expect(rows).toHaveCount(0)
+    await expect(strip).toBeVisible()
+    await expect(toast).toBeHidden()
+
+    // A save that lands, here the one a pause makes, takes the strip away. Next track started it.
+    status = 204
+    await dock.getByRole('button', { name: 'Pause', exact: true }).click()
+    await expect(strip).toBeHidden()
+  })
+
+  test('a save that lands without Retry clears the strip and the toast', async ({ page }) => {
+    let status = 500
+    await roomQueue(page, () => status)
+    await generatedPlayerAudio(page)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    const strip = dock.getByText('Queue not saved to server')
+    const toast = toasts(page).getByText('The queue changed here but could not be saved.')
+    await dock.getByRole('button', { name: 'Clear queue' }).click()
+    await expect(strip).toBeVisible()
+    await expect(toast).toBeVisible()
+    // Retry is asked for, so one that fails says so again.
+    await toasts(page).getByRole('button', { name: 'Dismiss' }).click()
+    await expect(toast).toBeHidden()
+    await dock.getByRole('button', { name: 'Retry' }).click()
+    await expect(toast).toBeVisible()
+    await expect(strip).toBeVisible()
+
+    status = 204
+    await dock.getByRole('button', { name: 'Play', exact: true }).click()
+    await dock.getByRole('button', { name: 'Pause', exact: true }).click()
+    await expect(strip).toBeHidden()
+    await expect(toast).toBeHidden()
   })
 
   test('under the tablet edge the dock is a bar under the page with Up next above it', async ({

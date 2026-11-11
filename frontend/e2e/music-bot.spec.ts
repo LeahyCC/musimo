@@ -257,10 +257,11 @@ test('a hung queue save times out, coalesces later edits and persists Undo befor
   await undo(page).click()
   await page.getByRole('button', { name: 'Replace upcoming' }).click()
   await undo(page).click()
-  await expect(
-    page.getByText('The queue changed here but could not be saved.').first(),
-  ).toBeVisible({ timeout: 12000 })
+  // The writer sends one save at a time, so the second goes out only once the hung one times out.
+  await expect.poll(() => saves.length, { timeout: 12000 }).toBe(2)
   await expect.poll(() => committed).toEqual([playing.id])
+  // That second save landed, so nothing still says the queue is not saved.
+  await expect(page.getByText('The queue changed here but could not be saved.')).toHaveCount(0)
   expect(saves).toHaveLength(2)
   release?.()
   await expect.poll(() => lateFinished).toBe(true)
