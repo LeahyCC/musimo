@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test'
 
-import type { LibraryTrack } from '../src/api'
+import { libraryAlbumsSchema, type LibraryTrack } from '../src/api'
+import { PREFETCH_AFTER_SECONDS } from '../src/features/player/track-prefetch'
 import { bodyText, librarySong, playerFixtures, requestBody } from './library-fixtures'
 import { toasts } from './nav'
 import { expect, test } from './test'
@@ -11,6 +12,8 @@ const alpha = song('song-a', 'Alpha')
 const bravo = song('song-b', 'Bravo')
 const charlie = song('song-c', 'Charlie')
 const delta = song('song-d', 'Delta')
+// Long enough for a request started at the prefetch point to have reached the page's listener.
+const NO_PREFETCH_WAIT_MS = 1500
 // How much sooner than the real end the hidden-tab test's songs say they end.
 const EARLY_END = 5
 
@@ -238,6 +241,78 @@ test('the next two songs are fetched ahead, long before the standby element load
   await expect(standby).not.toHaveAttribute('src', /song-b/)
 })
 
+test('the prefetched start of the next song answers the element from the browser cache', async ({
+  page,
+  request,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', 'Only Chromium has the DevTools protocol.')
+  test.setTimeout(60_000)
+  // No stream mock: a mocked response is never cached, and any route turns the cache off for the
+  // whole page. The real stream route, the real local files and the real cache have to agree.
+  expect((await request.post('/api/library/scan')).ok()).toBeTruthy()
+  await expect
+    .poll(
+      async () => {
+        const response = await request.get('/api/library/albums?q=Local%20Playback%20Fixture')
+        return libraryAlbumsSchema.parse(await response.json()).items.length
+      },
+      { timeout: 30_000 },
+    )
+    .toBe(1)
+  const response = await request.get('/api/library/albums?q=Local%20Playback%20Fixture')
+  const album = libraryAlbumsSchema.parse(await response.json()).items[0]!
+  // The listener fixture's route would switch the cache off. The page keeps the name it stored.
+  await page.unroute('**/api/listeners')
+
+  const cdp = await page.context().newCDPSession(page)
+  await cdp.send('Network.enable')
+  const streams = new Map<string, { requestId: string; type: string }[]>()
+  const servedFromCache = new Set<string>()
+  cdp.on('Network.requestWillBeSent', (event) => {
+    const id = /\/api\/player\/stream\/([^/?]+)/.exec(event.request.url)?.[1]
+    if (id)
+      streams.set(id, [
+        ...(streams.get(id) ?? []),
+        { requestId: event.requestId, type: event.type ?? '' },
+      ])
+  })
+  // Chrome says "served from cache" in two ways: this event for its memory cache, and a flag on
+  // the response for its disk cache. A media request is answered from the disk cache.
+  cdp.on('Network.requestServedFromCache', (event) => servedFromCache.add(event.requestId))
+  cdp.on('Network.responseReceived', (event) => {
+    if (event.response.fromDiskCache) servedFromCache.add(event.requestId)
+  })
+
+  await page.goto(`/library/albums/${album.id}`)
+  await page.getByRole('button', { name: 'Play all', exact: true }).click()
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  const standby = page.locator('audio.library-audio[data-role="standby"]')
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => element.currentTime), {
+      timeout: 15_000,
+    })
+    .toBeGreaterThan(PREFETCH_AFTER_SECONDS)
+
+  // The prefetch is a fetch() for the second song, made while the first still plays.
+  await expect
+    .poll(() => [...streams.values()].flat().filter((item) => item.type === 'Fetch').length)
+    .toBe(1)
+  const [secondId] = [...streams.entries()].find(([, items]) => items[0]?.type === 'Fetch') ?? []
+  expect(secondId).toBeTruthy()
+
+  // Into the last 15 seconds, when the standby element loads the second song.
+  await active.evaluate((element: HTMLAudioElement) => {
+    element.currentTime = element.duration - 10
+  })
+  await expect(standby).toHaveAttribute('src', new RegExp(`/${secondId}$`))
+  await expect
+    .poll(() => (streams.get(secondId!) ?? []).some((item) => item.type === 'Media'))
+    .toBe(true)
+  const firstMedia = streams.get(secondId!)!.find((item) => item.type === 'Media')!
+  await expect.poll(() => servedFromCache.has(firstMedia.requestId)).toBe(true)
+})
+
 test('a metered connection fetches nothing ahead', async ({ page }) => {
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'connection', {
@@ -247,10 +322,17 @@ test('a metered connection fetches nothing ahead', async ({ page }) => {
   )
   await restoreQueue(page, [alpha, bravo, charlie])
   const prefetched = prefetchedStreams(page)
-  await playToTheEnd(page)
-  const standby = page.locator('audio.library-audio[data-role="standby"]')
-  await expect(standby).toHaveAttribute('src', /song-b/)
+  // Past the point where a prefetch would have started, and still before the standby element
+  // loads at 15 seconds from the end. The delay below runs out the time an in-flight fetch needs.
+  await playToTheEnd(page, 6)
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => element.currentTime))
+    .toBeGreaterThan(PREFETCH_AFTER_SECONDS)
+  await page.waitForTimeout(NO_PREFETCH_WAIT_MS)
   expect(prefetched).toEqual([])
+  const standby = page.locator('audio.library-audio[data-role="standby"]')
+  await expect(standby).not.toHaveAttribute('src', /song-b/)
 })
 
 test('a metered connection preloads the metadata only', async ({ page }) => {

@@ -4,10 +4,10 @@
 
 ### Playback
 
-- The next two songs in the queue are fetched ahead while the current one plays, so they start from the browser's cache and a slow or busy server no longer stalls them. A Deezer song coming up next is prepared on the server ahead of time. Nothing is fetched ahead when the browser asks to save data.
-- Audio streams, queue saves and loads, and the name check on each request no longer wait on the event loop for the database, so a scan or download holding it cannot stall every other request and stop the music.
-- When the connection to the server drops under the playing song, the player loads it again from where it stopped, up to three times, instead of skipping it.
-- "The queue changed here but could not be saved" shows once until a save goes through, rather than coming back after every save while the server is unreachable. Retry in the toast now also clears the strip in Up next when it succeeds.
+- The first part of the next two songs (4 MB) is fetched ahead while the current one plays, so the player starts them from the browser's cache and a slow or busy server no longer holds them up. A Deezer song coming up next is prepared on the server ahead of time, one prepare at a time. Nothing is fetched ahead when the browser asks to save data.
+- Audio streams, the Deezer account file and the name check on each request no longer wait on the event loop for the database, so a scan or download holding it cannot stall every other request and stop the music. A stream that fails is never kept by the browser.
+- When the connection to the server drops under the playing song, the player loads it again from where it stopped, up to three times, waiting a little longer each time, instead of skipping it. A song that was paused stays paused, and one that keeps failing waits for you to press play instead of being skipped.
+- "The queue changed here but could not be saved" shows once until a save goes through, rather than coming back after every save while the server is unreachable. The strip in Up next stays up until a save lands. Any save that goes through, timed or Retry, clears the strip and the toast.
 
 ### Delete
 
