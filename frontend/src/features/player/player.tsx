@@ -554,7 +554,29 @@ export const PRELOAD_LEAD_SECONDS = 15
 export const NETWORK_RETRIES = 3
 /** The wait before the first reload. Each later one waits this much longer. */
 export const NETWORK_RETRY_DELAY_MS = 1000
+/**
+ * How far past the point it last dropped a reloaded track has to play before its reloads are
+ * counted from zero again. Starting to play is not enough: a server that fails the same range every
+ * time lets each reload start and then drops it at the same spot, and would reload it forever.
+ */
+export const NETWORK_RECOVERED_SECONDS = 5
+type NetworkRetries = {
+  item: LibraryTrack | null
+  count: number
+  at: number
+  reloading: boolean
+  /** Whether the listener wants it playing once it is back. */
+  resume: boolean
+}
+const noNetworkRetries = (): NetworkRetries => ({
+  item: null,
+  count: 0,
+  at: 0,
+  reloading: false,
+  resume: false,
+})
 export const RECONNECTING_NOTICE = 'Lost the connection to the server. Trying again…'
+export const CONNECTION_LOST_NOTICE = 'Lost the connection to the server. Press play to try again.'
 /** Tracks that may fail one after another before playback stops, rather than racing the queue. */
 export const MAX_FAILURES = 3
 /** True once the next track should be loading: the last seconds of a track, all of a short one. */
@@ -844,11 +866,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const previewStage = useRef(0)
   const pendingSeek = useRef(0)
-  // Reloads of the playing track after a dropped connection, counted per track until it plays.
-  const networkRetries = useRef<{ item: LibraryTrack | null; count: number }>({
-    item: null,
-    count: 0,
-  })
+  // Reloads of the playing track after a dropped connection, where it last dropped, whether a
+  // reload is still waiting for its metadata, and whether the listener wants it playing. Kept until
+  // it plays NETWORK_RECOVERED_SECONDS past that point, or another track loads; `item` is null then.
+  // Each retry writes a new object, so a wait can tell a newer reload has taken over from it.
+  // `reloading` and `resume` are changed in place.
+  const networkRetries = useRef(noNetworkRetries())
+  // Whether "now playing" has gone out for the loaded library track. A reload after a dropped
+  // connection plays it again, and that is not a new listen.
+  const announced = useRef(false)
   const lastSavedSecond = useRef(-1)
   // Whether the loaded library track has been written to the history yet.
   const recorded = useRef(false)
@@ -1578,35 +1604,65 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // The connection to the server dropped under the playing track: a busy or restarting server, or
   // a network change. That is not a broken song, so it is loaded again from where it stopped, after
   // a short wait, rather than skipped. A song that will not load at all fails with another code.
-  // True when a retry was scheduled; false leaves the error to `skipUnplayable`.
+  // True when the error was handled here; false leaves it to `skipUnplayable`.
   function retryAfterNetworkError(element: HTMLAudioElement): boolean {
     const item = libraryCurrent.current
-    if (!item || element.error?.code !== MediaError.MEDIA_ERR_NETWORK) return false
-    const tries = networkRetries.current.item === item ? networkRetries.current.count : 0
-    if (tries >= NETWORK_RETRIES) return false
-    networkRetries.current = { item, count: tries + 1 }
-    const at = Number.isFinite(element.currentTime) ? element.currentTime : 0
-    // An error does not pause the element, so this is whether it was playing when it failed.
-    const resume = !element.paused
-    const src = element.src
+    if (!item) return false
+    const last = networkRetries.current.item === item ? networkRetries.current : null
+    // A server still down when the reload goes out refuses it, and Chromium reports that as a
+    // source it cannot play rather than a dropped connection. The song played a moment ago, so it
+    // is the same outage, and the reload is tried again.
+    const reloadFailed = last?.reloading === true
+    if (element.error?.code !== MediaError.MEDIA_ERR_NETWORK && !reloadFailed) return false
+    // A failed reload has nothing loaded, so it goes back to where the drop was.
+    const at = reloadFailed
+      ? last.at
+      : Number.isFinite(element.currentTime)
+        ? element.currentTime
+        : 0
+    // An error does not pause the element, so a first drop asks the element. A failed reload has
+    // already had its play cut short, and play and pause since are kept on the record.
+    const resume = last ? last.resume : !element.paused
+    const tries = last?.count ?? 0
+    if (tries >= NETWORK_RETRIES) {
+      // A paused song is not skipped: nothing is playing for the next one to replace, and the
+      // listener comes back to the song they left. Play loads it again, in `toggle`.
+      if (resume) return false
+      networkRetries.current = { item, count: tries, at, reloading: false, resume }
+      setNotice(CONNECTION_LOST_NOTICE, 'warn')
+      return true
+    }
+    const retry = { item, count: tries + 1, at, reloading: false, resume }
+    networkRetries.current = retry
     const loads = libraryLoads.current
     setNotice(RECONNECTING_NOTICE)
     window.setTimeout(
       () => {
-        // Anything loaded since, or a close, owns the element now.
+        // Anything loaded since, or a close, owns the element now. So does a press of play during
+        // the wait, which reloads it at once.
         if (libraryLoads.current !== loads || libraryCurrent.current !== item) return
-        if (library() !== element) return
-        pendingSeek.current = at
-        element.src = src
-        if (!resume) return
-        element.play().catch(() => {
-          // A failed load says so through its own error event, which comes back here.
-        })
+        if (library() !== element || networkRetries.current !== retry) return
+        // Asked now rather than at the error, so a pause during the wait wins: a press, a media
+        // key, or headphones coming out.
+        reloadAt(element, at, retry.resume)
       },
       NETWORK_RETRY_DELAY_MS * (tries + 1),
     )
 
     return true
+  }
+
+  // Loads the library element's track again and seeks to `at` once its metadata is in.
+  function reloadAt(element: HTMLAudioElement, at: number, resume: boolean) {
+    networkRetries.current.reloading = true
+    pendingSeek.current = at
+    // Setting the same address again starts a fresh load, which clears the error.
+    const src = element.src
+    element.src = src
+    if (!resume) return
+    element.play().catch(() => {
+      // A failed load says so through its own error event, which comes back here.
+    })
   }
 
   async function loadAccount(item: LibraryTrack, autoplay: boolean) {
@@ -1861,6 +1917,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     pendingSeek.current = seek
     lastSavedSecond.current = -1
     recorded.current = false
+    announced.current = false
+    networkRetries.current = noNetworkRetries()
     setTrack(null)
     setLibraryTrack(item)
     setCurrentIndex(index)
@@ -2246,6 +2304,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const element = current()
     const hasItem = mode.current === 'library' ? libraryCurrent.current : previewCurrent.current
     if (!element || !hasItem) return
+    const retries = networkRetries.current
+    if (mode.current === 'library' && element.error && retries.item === libraryCurrent.current) {
+      lostConnectionPressed(element, retries)
+      return
+    }
+
     if (!element.paused) {
       // Pausing in the middle of a crossfade cuts the old track rather than freezing two.
       endCrossfade()
@@ -2257,6 +2321,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       previewStage.current = 1
       void loadPreview(previewCurrent.current, false)
     }
+  }
+
+  // Play or pause on a track whose connection dropped. The element has nothing to play, and may
+  // not even say it is playing, so the press goes by what the listener asked for last.
+  function lostConnectionPressed(element: HTMLAudioElement, retries: NetworkRetries) {
+    if (retries.resume) {
+      // Stays put when the reload comes.
+      retries.resume = false
+      if (!element.paused) element.pause()
+      setPlaying(false)
+      return
+    }
+    // A fresh go at loading it again, whether its reloads had run out or one was still waiting.
+    const { item, at } = retries
+    networkRetries.current = { item, count: 0, at, reloading: false, resume: true }
+    toasts.current.get(CONNECTION_LOST_NOTICE)?.()
+    toasts.current.delete(CONNECTION_LOST_NOTICE)
+    setNotice(RECONNECTING_NOTICE)
+    reloadAt(element, at, true)
   }
 
   function play(item: MusicResult) {
@@ -2697,13 +2780,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           event.currentTarget.currentTime = pendingSeek.current
           pendingSeek.current = 0
         }
-        if (forLibrary) publishPosition(event.currentTarget)
+        if (!forLibrary) return
+        publishPosition(event.currentTarget)
+        // A reload after a dropped connection is back, so the status line stops saying it is
+        // trying again. Whether it holds is for timeupdate to tell.
+        if (networkRetries.current.item) {
+          networkRetries.current.reloading = false
+          const item = libraryCurrent.current
+          setNotice(item?.origin === 'deezer' ? 'Deezer account' : LIBRARY_NOTICE)
+        }
       },
       onPlay: (event: MediaEvent) => {
         if (!inPlay()) return
         setPlaying(true)
         if (!forLibrary) return
-        scrobble(false)
+        if (networkRetries.current.item) networkRetries.current.resume = true
+        if (!announced.current) {
+          announced.current = true
+          scrobble(false)
+        }
         const element = event.currentTarget
         publishPosition(element)
         // The gain stage exists only once this has run, so the level is applied again after it.
@@ -2715,13 +2810,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       onPlaying: () => {
         if (!inPlay() || !forLibrary) return
         failures.current = 0
-        if (networkRetries.current.count === 0) return
-        networkRetries.current = { item: null, count: 0 }
-        const item = libraryCurrent.current
-        setNotice(item?.origin === 'deezer' ? 'Deezer account' : LIBRARY_NOTICE)
       },
       onPause: (event: MediaEvent) => {
         if (!inPlay()) return
+        const element = event.currentTarget
+        const retries = networkRetries.current
+        if (forLibrary && retries.item) {
+          // Chromium pauses an element whose load failed. That is the reload being refused, not
+          // the listener, who still wants it back playing.
+          const refused =
+            element.error && element.networkState === HTMLMediaElement.NETWORK_NO_SOURCE
+          if (refused) return
+          retries.resume = false
+        }
         cancelHandover()
         setPlaying(false)
         saveQueue()
@@ -2754,6 +2855,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (!forLibrary) return
         // Not while paused: restoring a saved queue seeks a paused element past the threshold.
         if (!element.paused && seconds >= HISTORY_LISTEN_SECONDS) recordPlay()
+        // Far enough past where it last dropped that the connection has held.
+        const retries = networkRetries.current
+        if (retries.item && seconds >= retries.at + NETWORK_RECOVERED_SECONDS) {
+          networkRetries.current = noNetworkRetries()
+        }
+
         if (Math.floor(seconds / 10) !== lastSavedSecond.current) {
           lastSavedSecond.current = Math.floor(seconds / 10)
           saveQueue()
@@ -2781,13 +2888,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           return
         }
         if (!inPlay()) return
-        setPlaying(false)
         setReady(false)
         if (forLibrary) {
-          if (retryAfterNetworkError(event.currentTarget)) return
+          // While a reload is waiting the play button stays as it was, so a press or a media key
+          // pauses it, rather than pausing an element the screen says is already paused.
+          const element = event.currentTarget
+          if (retryAfterNetworkError(element)) {
+            setPlaying(networkRetries.current.resume)
+            return
+          }
+          setPlaying(false)
           skipUnplayable()
           return
         }
+        setPlaying(false)
         const item = previewCurrent.current
         if (!item) return
         if (previewStage.current < 2) {
