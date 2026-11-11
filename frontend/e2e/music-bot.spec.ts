@@ -261,7 +261,7 @@ test('a hung queue save times out, coalesces later edits and persists Undo befor
   await expect.poll(() => saves.length, { timeout: 12000 }).toBe(2)
   await expect.poll(() => committed).toEqual([playing.id])
   // That second save landed, so nothing still says the queue is not saved.
-  await expect(page.getByText('The queue changed here but could not be saved.')).toHaveCount(0)
+  await expect(page.getByText("Couldn't save the queue to the server.")).toHaveCount(0)
   expect(saves).toHaveLength(2)
   release?.()
   await expect.poll(() => lateFinished).toBe(true)
@@ -601,9 +601,13 @@ test('a full queue refuses additions and a failed save is reported', async ({ pa
   await expect(page.getByText('No room on the shelf!')).toBeVisible()
   await expect(page.getByRole('button', { name: 'Replace upcoming instead' })).toBeVisible()
   await page.getByRole('main').getByRole('button', { name: 'Play now', exact: true }).click()
-  await expect(
-    page.getByText('The queue changed here but could not be saved.').first(),
-  ).toBeVisible()
+  await expect(page.getByText("Couldn't save the queue to the server.").first()).toBeVisible()
+  // Classic keeps its queue on Now Playing, where the strip says it again with a Retry.
+  await page.getByRole('link', { name: 'Open Now Playing' }).first().click()
+  await page.getByRole('tab', { name: 'Up next' }).click()
+  const strip = page.getByRole('tabpanel', { name: 'Up next' })
+  await expect(strip.getByText('Queue not saved to server')).toBeVisible()
+  await expect(strip.getByRole('button', { name: 'Retry' })).toBeEnabled()
 })
 
 test('connection settings and model selection persist through reload', async ({

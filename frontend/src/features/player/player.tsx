@@ -207,6 +207,8 @@ type Playback = {
    * 'replaced' when another browser took the queue over. Up next's strip shows it.
    */
   queueTrouble: QueueTrouble
+  /** A Retry is out and has not answered yet, so its button reads "Saving…" and waits. */
+  queueSaving: boolean
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -262,6 +264,7 @@ const PlayerContext = createContext<Playback>({
   setSleep: () => undefined,
   retryQueueSave: () => undefined,
   queueTrouble: null,
+  queueSaving: false,
 })
 export const usePlayer = () => useContext(PlayerContext)
 
@@ -291,7 +294,7 @@ const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
 /** Why the queue is not saved: a save that did not land, or another browser took it over. */
 export type QueueTrouble = 'failed' | 'replaced' | null
 /** The notices a failed queue save leaves, so the Listening room can show them in Up next too. */
-export const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
+export const QUEUE_SAVE_FAILED = "Couldn't save the queue to the server."
 export const QUEUE_REPLACED =
   'Another browser saved the queue. Refresh to restore it before saving more changes.'
 const SLEEP_ENDED_NOTICE = 'Sleep timer ended. Playback paused.'
@@ -918,6 +921,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Kept apart from `notice`: the next song or a reconnect replaces that line, and the strip must
   // not go with it while saves are still failing.
   const [queueTrouble, setQueueTrouble] = useState<QueueTrouble>(null)
+  // A Retry in flight. The ref is what stops a second press in the same tick, before the state
+  // has redrawn the button as disabled.
+  const [queueSaving, setQueueSaving] = useState(false)
+  const retrying = useRef(false)
   const toast = useToast()
   // The toasts still up, by text, so a message that comes again replaces itself rather than stacking.
   const toasts = useRef(new Map<string, () => void>())
@@ -1112,14 +1119,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Every failed save comes here, the timed ones, the edits' and the writer's own, and the toast
   // is raised once until a save goes through: a server that is down fails them all, and a toast
   // that came back after each one would never leave. Up next's strip keeps saying it meanwhile.
+  // Only a toast with Retry closes the gate: one without it (nothing loaded) offers nothing to
+  // act on, so it must not hide the one that does once a song is loaded.
   function queueSaveFailed() {
     setQueueTrouble('failed')
     if (queueFailureShown.current === 'failed') return
-    queueFailureShown.current = 'failed'
+    const canRetry = libraryCurrent.current !== null
+    if (canRetry) queueFailureShown.current = 'failed'
     setNotice(
       QUEUE_SAVE_FAILED,
       'warn',
-      libraryCurrent.current ? { label: 'Retry', run: retryQueueSave } : undefined,
+      canRetry ? { label: 'Retry', run: retryQueueSave } : undefined,
     )
   }
 
@@ -1197,6 +1207,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       position: Math.round(at * 1000),
     })
     const write = () => persistQueue(body, begun)
+    // The writer reports its own failures, timed or not. This request is not the writer's, so its
+    // failure is raised here, on a timed save too: without it the queue would stay unsaved silently.
+    let rememberFailed = false
     const ready = remembered.length
       ? fetch(
           '/api/player/account/tracks',
@@ -1205,10 +1218,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tracks: remembered }),
           }),
-        ).then((response) => {
-          // A queue of dz- ids is dropped on restore when these rows were never saved.
-          if (!response.ok) throw new Error('The queue could not be saved.')
-        })
+        )
+          .then((response) => {
+            // A queue of dz- ids is dropped on restore when these rows were never saved.
+            if (!response.ok) throw new Error('The queue could not be saved.')
+          })
+          .catch((error: unknown) => {
+            rememberFailed = true
+            throw error
+          })
       : Promise.resolve()
     return ready
       .then(write)
@@ -1224,7 +1242,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return true
       })
       .catch(() => {
-        if (generation === queueSave.current && announce) queueSaveFailed()
+        if (generation === queueSave.current && (announce || rememberFailed)) queueSaveFailed()
         return false
       })
   }
@@ -2977,9 +2995,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // Retry is asked for, so a failure is said again even though the last one already was.
   // A retry that lands is cleared by `persistQueue`, like any other save.
+  // One at a time: a save can wait up to its deadline, and each press would start another.
   function retryQueueSave() {
+    if (retrying.current) return
+    retrying.current = true
+    setQueueSaving(true)
     if (queueFailureShown.current === 'failed') queueFailureShown.current = null
-    void saveQueue(true)
+    void saveQueue(true).finally(() => {
+      retrying.current = false
+      setQueueSaving(false)
+    })
   }
 
   function submitNewPlaylist(event: FormEvent<HTMLFormElement>) {
@@ -3053,6 +3078,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         setSleep: startSleep,
         retryQueueSave,
         queueTrouble,
+        queueSaving,
       }}
     >
       <LibraryLoadedContext.Provider value={isLibrary}>{children}</LibraryLoadedContext.Provider>
