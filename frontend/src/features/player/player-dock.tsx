@@ -7,7 +7,6 @@ import {
   AudioLines,
   ChevronDown,
   ChevronUp,
-  CloudOff,
   Disc3,
   ListMusic,
   ListPlus,
@@ -44,6 +43,7 @@ import {
   songCount,
   usePlayer,
 } from './player'
+import { QueueSaveStrip } from './queue-save-strip'
 
 /* The Listening room's player. A wide window gets the dock: a column beside the page with the
    cover, the transport and Up next. Under the tablet edge the same parts lie down as a bar under
@@ -113,7 +113,7 @@ function TrackLines({ titleClassName }: { titleClassName: string }) {
       {artist && (
         <div className="mt-[3px] truncate text-small text-muted">
           {artistLink}
-          {album && <> — {albumLink}</>}
+          {album && <> · {albumLink}</>}
         </div>
       )}
     </div>
@@ -345,31 +345,6 @@ function ClosePlayer() {
   )
 }
 
-/**
- * A failed queue save (the player also shows it as a toast), at the head of Up next. It follows
- * `queueTrouble`, not the notice, which the next song replaces while saves still fail.
- */
-function QueueSaveStrip() {
-  const player = usePlayer()
-  if (!player.queueTrouble) return null
-  const failed = player.queueTrouble === 'failed'
-  return (
-    <div className="mx-[12px] mt-[4px] mb-[6px] flex items-center gap-[8px] rounded-[10px] bg-warn-bg py-[6px] pr-[6px] pl-[10px] text-small text-warn">
-      <CloudOff size={14} className="shrink-0" />
-      <span className="flex-1 text-text">
-        {failed ? 'Queue not saved to server' : 'Another browser saved the queue'}
-      </span>
-      <button
-        type="button"
-        className="h-[28px] shrink-0 rounded-[6px] border-0 bg-warn/15 px-[8px] text-small font-medium text-warn coarse:min-h-11"
-        onClick={failed ? player.retryQueueSave : () => location.reload()}
-      >
-        {failed ? 'Retry' : 'Reload'}
-      </button>
-    </div>
-  )
-}
-
 /** Where a dragged row would land: the gap before row `slot`, counted in the whole queue. */
 type QueueDrag = { from: number; slot: number }
 // A drag this close to the list's top or bottom edge scrolls it, so a long queue can be reached.
@@ -539,7 +514,7 @@ function UpNext({ className }: { className?: string }) {
           )}
         </form>
       )}
-      <QueueSaveStrip />
+      <QueueSaveStrip className="mx-[12px] mt-[4px] mb-[6px]" />
       <div
         ref={list}
         className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-[8px] pb-[10px]"
@@ -770,12 +745,28 @@ function DockBar() {
           size="compact"
           active={queueOpen}
           aria-pressed={undefined}
-          aria-label={`Up next, ${songCount(upcoming)}`}
+          className="relative"
+          // The panel is closed on this bar, so the strip inside it cannot be seen: the dot, and the
+          // name that goes with it, tell the listener there is something to look at in there.
+          aria-label={`Up next, ${songCount(upcoming)}${
+            player.queueTrouble === 'failed'
+              ? ', queue not saved to server'
+              : player.queueTrouble === 'replaced'
+                ? ', another browser saved the queue'
+                : ''
+          }`}
           aria-expanded={queueOpen}
           aria-controls={panelId}
           onClick={() => setQueueOpen(!queueOpen)}
         >
           <ListMusic size={17} />
+          {player.queueTrouble && (
+            <span
+              aria-hidden="true"
+              data-ui="queue-trouble-dot"
+              className="absolute top-[5px] right-[4px] size-[8px] rounded-pill bg-warn ring-2 ring-sunken"
+            />
+          )}
         </IconButton>
       )}
       <ClosePlayer />

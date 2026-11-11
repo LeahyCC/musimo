@@ -346,10 +346,10 @@ test('a queue that could not be saved says so in a toast, and Retry saves it aga
 
   await page.getByRole('button', { name: 'More actions for Charlie' }).click()
   await page.getByRole('menuitem', { name: 'Add to queue' }).click()
-  const toast = toasts(page).getByText('The queue changed here but could not be saved.')
+  const toast = toasts(page).getByText("Couldn't save the queue to the server.")
   await expect(toast).toBeVisible()
   // It is a toast, not a line in the player.
-  await expect(page.locator('.live-player')).not.toContainText('could not be saved')
+  await expect(page.locator('.live-player')).not.toContainText("Couldn't save the queue")
 
   refuse = false
   const before = saves.length
