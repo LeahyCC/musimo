@@ -165,10 +165,19 @@ export async function fetchIntoCache(
     await response.body?.cancel()
     throw new Error(`Prefetch failed with ${response.status}`)
   }
+  // A server or proxy that ignores Range answers 200 with the whole file. Stop after the part this
+  // wanted rather than download all of it.
+  const partial = response.status === 206
   const reader = response.body.getReader()
+  let read = 0
   for (;;) {
-    const { done } = await reader.read()
+    const { done, value } = await reader.read()
     if (done) return
+    read += value.byteLength
+    if (!partial && read >= PREFETCH_BYTES) {
+      await reader.cancel()
+      return
+    }
   }
 }
 
