@@ -1,5 +1,6 @@
 """Names on this install. Creating one does not require a name already chosen."""
 
+import asyncio
 from collections.abc import Callable
 
 from fastapi import FastAPI, HTTPException
@@ -20,7 +21,8 @@ def install_listener_routes(app: FastAPI, get: Callable[[], Store | None]) -> No
         store = get()
         if store is None:
             raise HTTPException(503, "Not ready")
-        return {"items": store.list_listeners()}
+        # Off the event loop: the store lock may be held by a scan or a download.
+        return {"items": await asyncio.to_thread(store.list_listeners)}
 
     @app.post("/api/listeners")
     async def create_listener(body: ListenerCreate) -> dict[str, str]:
@@ -28,6 +30,6 @@ def install_listener_routes(app: FastAPI, get: Callable[[], Store | None]) -> No
         if store is None:
             raise HTTPException(503, "Not ready")
         try:
-            return store.create_listener(body.name)
+            return await asyncio.to_thread(store.create_listener, body.name)
         except ListenerNameError as exc:
             raise HTTPException(exc.status, str(exc)) from exc
