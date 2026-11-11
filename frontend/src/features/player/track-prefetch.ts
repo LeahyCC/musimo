@@ -1,17 +1,30 @@
 /**
  * Fetches upcoming songs ahead of time, one at a time, so they are ready before their turn.
  *
- * A library song is read to the end and thrown away: the point is the browser's HTTP cache, which
- * the stream route allows, so the audio element's own range requests are answered from disk and a
- * slow or busy server does not hold up the next song. A Deezer song is prepared on the server
- * instead, since that download is the slow part of starting one.
+ * The start of a library song is read and thrown away: the point is the browser's HTTP cache,
+ * which the stream route allows, so the audio element's own first range request is answered from
+ * disk and a slow or busy server does not hold up the next song. A Deezer song is prepared on the
+ * server instead, since that download is the slow part of starting one.
  */
 
 /** Start prefetching once the playing song has run this long, so its own start is not slowed. */
 export const PREFETCH_AFTER_SECONDS = 5
 /** How many songs after the playing one to fetch ahead. */
 export const PREFETCH_AHEAD = 2
-// Keys remembered as fetched, so a song is not fetched twice in one session. Oldest go first.
+/**
+ * How much of a library song to fetch ahead. Chrome's disk cache drops an entry past a size limit,
+ * so a whole large FLAC could be downloaded and then thrown away. A range request instead lands as
+ * a partial 206 entry, which Chrome keeps sparsely, and the element's first range request at the
+ * start of the song is served from it while the rest streams as usual. A few MB is tens of seconds
+ * of lossless audio, plenty to start on.
+ */
+export const PREFETCH_BYTES = 4 * 1024 * 1024
+/**
+ * How long a fetched key counts as fetched. Matches the hour of the backend's `STREAM_CACHE`
+ * max-age: after that the cached copy is stale, so the song is worth fetching again.
+ */
+export const PREFETCH_FRESH_MS = 60 * 60 * 1000
+// Keys remembered as fetched, so a song is not fetched twice within the hour. Oldest go first.
 const REMEMBERED_KEYS = 100
 
 export type PrefetchTask = {
@@ -26,11 +39,14 @@ export type PrefetchTask = {
 }
 
 type Running = { task: PrefetchTask; controller: AbortController; finished: Promise<void> }
+type Hold = { prefix: string }
 
 export class TrackPrefetcher {
   private wanted: PrefetchTask[] = []
-  private attempted = new Set<string>()
+  // When each key was last started, oldest first.
+  private attempted = new Map<string, number>()
   private running: Running | null = null
+  private holds = new Set<Hold>()
 
   /** Replaces what should be fetched, in order. A running task no longer wanted is stopped. */
   want(tasks: PrefetchTask[]) {
@@ -40,6 +56,24 @@ export class TrackPrefetcher {
       running.controller.abort()
     }
     this.pump()
+  }
+
+  /**
+   * Keeps any task whose key starts with `prefix` from starting until the returned function is
+   * called. One already running is left alone; see `settled`. Holds stack, and releasing one twice
+   * does nothing.
+   */
+  hold(prefix: string): () => void {
+    const hold: Hold = { prefix }
+    this.holds.add(hold)
+    return () => {
+      if (this.holds.delete(hold)) this.pump()
+    }
+  }
+
+  /** Whether the task with exactly this key is running. */
+  isRunning(key: string): boolean {
+    return this.running?.task.key === key
   }
 
   /** Settles when no running task's key starts with `prefix`. Never rejects. */
@@ -56,7 +90,7 @@ export class TrackPrefetcher {
 
   private pump() {
     if (this.running) return
-    const task = this.wanted.find((item) => !this.attempted.has(item.key))
+    const task = this.wanted.find((item) => !this.fresh(item.key) && !this.held(item.key))
     if (!task) return
     // Marked before it runs: a failed fetch is not retried in a loop on every timeupdate. The
     // song is still loaded the ordinary way when its turn comes.
@@ -75,24 +109,40 @@ export class TrackPrefetcher {
     this.running = { task, controller, finished }
   }
 
+  private fresh(key: string) {
+    const at = this.attempted.get(key)
+    return at !== undefined && Date.now() - at < PREFETCH_FRESH_MS
+  }
+
+  private held(key: string) {
+    for (const hold of this.holds) if (key.startsWith(hold.prefix)) return true
+    return false
+  }
+
   private remember(key: string) {
-    this.attempted.add(key)
+    // Deleted first so a key fetched again moves to the newest end.
+    this.attempted.delete(key)
+    this.attempted.set(key, Date.now())
     if (this.attempted.size <= REMEMBERED_KEYS) return
-    const oldest = this.attempted.values().next().value
+    const oldest = this.attempted.keys().next().value
     if (oldest !== undefined) this.attempted.delete(oldest)
   }
 }
 
 /**
- * Reads a response to its end without keeping it, so a large file costs no memory here and lands
- * whole in the HTTP cache. Low priority, so it gives way to the playing stream.
+ * Reads the first `PREFETCH_BYTES` of a file without keeping them, so they cost no memory here and
+ * land in the HTTP cache. Low priority, so it gives way to the playing stream.
  */
 export async function fetchIntoCache(
   url: string,
   signal: AbortSignal,
   fetcher: typeof fetch = fetch,
 ): Promise<void> {
-  const response = await fetcher(url, { signal, priority: 'low' })
+  const response = await fetcher(url, {
+    signal,
+    priority: 'low',
+    headers: { Range: `bytes=0-${PREFETCH_BYTES - 1}` },
+  })
   if (!response.ok || !response.body) {
     await response.body?.cancel()
     throw new Error(`Prefetch failed with ${response.status}`)
