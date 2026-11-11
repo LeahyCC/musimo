@@ -1,6 +1,15 @@
 import { libraryAlbumsSchema, playerQueueSchema } from '../src/api'
 import { expect, test } from './test'
 
+// This test saves a real queue on the server, and every later page restores it: a song in the
+// player bar, a save the next test may block, a stream it never asked for. The page leaves the app
+// first (it sends nothing on the way out), so no save from it can land after the clear. It is not
+// closed: the `test` fixture still takes its routes down afterwards.
+test.afterEach(async ({ page, request }) => {
+  await page.goto('about:blank')
+  await request.put('/api/player/queue', { data: { ids: [], current: '', position: 0 } })
+})
+
 // No route mocks: the scanner, SQLite, stream and browser must agree on the same ids.
 test('local files play, seek, restore their queue and persist playlist edits', async ({
   page,
@@ -8,6 +17,8 @@ test('local files play, seek, restore their queue and persist playlist edits', a
   isMobile,
 }) => {
   test.setTimeout(60_000)
+  // Start from no saved queue, whatever an earlier test or run left behind.
+  await request.put('/api/player/queue', { data: { ids: [], current: '', position: 0 } })
   expect((await request.post('/api/library/scan')).ok()).toBeTruthy()
   await expect
     .poll(

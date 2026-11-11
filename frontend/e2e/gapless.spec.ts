@@ -19,6 +19,16 @@ const EARLY_END = 5
 
 type Scrobble = { id: string; submission: boolean }
 
+const clearSavedQueue = { data: { ids: [], current: '', position: 0 } }
+
+// The cache test saves a real queue on the server, and every later page restores it. The page
+// leaves the app first (it sends nothing on the way out), so no save from it can land after the
+// clear. It is not closed: the `test` fixture still takes its routes down afterwards.
+test.afterEach(async ({ page, request }) => {
+  await page.goto('about:blank')
+  await request.put('/api/player/queue', clearSavedQueue)
+})
+
 /**
  * Restores this queue with its first song loaded and not playing, answers 404 for the streams of
  * `unplayable`, and records every scrobble.
@@ -250,6 +260,9 @@ test('the prefetched start of the next song answers the element from the browser
   test.setTimeout(60_000)
   // No stream mock: a mocked response is never cached, and any route turns the cache off for the
   // whole page. The real stream route, the real local files and the real cache have to agree.
+  // A saved queue would be restored on load, and its song's stream requested before the prefetch,
+  // so the second song's first request would not be the prefetch this test looks for.
+  await request.put('/api/player/queue', clearSavedQueue)
   expect((await request.post('/api/library/scan')).ok()).toBeTruthy()
   await expect
     .poll(
