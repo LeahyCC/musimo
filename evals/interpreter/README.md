@@ -74,6 +74,33 @@ These are fixed now, before any run.
 - Duration words follow the decisions in #179. "Under" is strict and "at most" is inclusive, for the whole list (`total_length`) and for each song (`max_seconds`, `min_seconds`, both inclusive in the engine, so "under 4 minutes" each is `max_seconds` 239). "About", "roughly", "give or take" and a bare "an hour of" mean `about`, the closest total within five minutes. `target_seconds` stays 0. The per-song fields are whole seconds, so "under 4 minutes" leaves out a 239.5 s song. That is the nearest the contract can say.
 - A request the engine cannot express is `unsupported`, never a search with the hard part dropped. Today that covers genre exclusions ("anything except rock"), vocals, mood and tempo with the recipes off, volume, skipping a count of songs, going back and shuffling.
 
+## How to run it
+
+`scripts/interpreter_eval.py` is the harness. It builds the 25 invented songs in a temporary folder and SQLite database, never the live one, then sends each case through `MusicBot.chat`, the same path the server uses. It scores the intent the engine received, not the reply text, and records the outgoing `/api/chat` controls, timings, VRAM and failing case ids. It prints no prompts.
+
+```sh
+# Development split, against the PAIR proxy Musimo already calls.
+uv run python -m scripts.interpreter_eval --model qwen3.5:9b --split dev
+
+# The held-out split, once the prompt is frozen. The seal is checked first.
+uv run python -m scripts.interpreter_eval --model qwen3.5:9b --split heldout
+
+# Only some cases, while working on a prompt.
+uv run python -m scripts.interpreter_eval --model qwen3.5:9b --case d001 --case d044
+```
+
+Options: `--ollama-url` defaults to `http://127.0.0.1:11434` (the PAIR proxy; Ollama itself listens on `127.0.0.1:11435`), `--runs` defaults to 3, and `--case` may be repeated. The model must be installed on that host.
+
+The run stops before scoring when the model thinks and `/api/show` lists no off switch, or when an interpreter request does not send `think: false`, temperature 0, seed 42 and `num_ctx` 8192. A model that thinks by default with no off switch cannot be evaluated as the gates require.
+
+The report is written to `evals/interpreter/reports/<date>-<model>.json` with a short Markdown table beside it. That folder is git ignored. The table has the git SHA, model digest, recorded settings, each measure against its pass mark in [docs/v2-gates.md](../../docs/v2-gates.md), and the failing case ids with the measure that failed.
+
+The runner injects the faults from a transport in front of Ollama, so `interpreter.py` and `music_bot.py` are not changed to fake them. `timeout` and `offline` fail the call, `malformed`, `schema` and `truncated` replace the model's answer (including the one repair), `invented_id` names a song the library does not have, and `truncated_history` removes the previous state from the context the model sees while the stored proposal keeps its filters.
+
+`X-Musimo-Listener` is needed only on the HTTP route. The timed cases call `MusicBot.chat` in process, which is the server clock the gates mean, including the hop to Ollama. A missing or unknown header on `/api/music-bot/chat` is a 401; `tests/test_interpreter_eval.py` covers that.
+
+VRAM is read from `nvidia-smi` (idle, then peak during the run), not from `/api/ps`. `/api/ps` is used only for the no-CPU-offload check, which passes when `size_vram` equals `size` for the model under test. If `nvidia-smi` is missing, the VRAM gate is skipped and the report says so.
+
 ## Coverage
 
 | Area                                             | Dev | Held-out |

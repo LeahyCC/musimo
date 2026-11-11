@@ -22,3 +22,5 @@ coverage.xml
 htmlcov/
 frontend/playwright-report/
 frontend/test-results/
+# Interpreter eval reports are per-machine evidence, not source.
+evals/interpreter/reports/

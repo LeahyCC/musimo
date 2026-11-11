@@ -1,0 +1,7 @@
+{
+  "file": "heldout.json",
+  "sha256": "d00fb888ddeb6f9da35e63795bef67a473b5c5ccde6cd7ac30bd85af0c7a7f32",
+  "cases": 7,
+  "sealed": "fixture",
+  "note": "Test fixture, not the real held-out set."
+}
