@@ -92,6 +92,8 @@ import type { Deck } from './shuffle-deck'
 import { SLEEP_FADE_SECONDS, sleepChoiceLabel } from './sleep-timer'
 import type { SleepChoice, SleepStatus } from './sleep-timer'
 import {
+  ACCOUNT_PREPARE_TIMEOUT_MS,
+  accountPrepareDue,
   fetchIntoCache,
   PREFETCH_AFTER_SECONDS,
   PREFETCH_AHEAD,
@@ -592,7 +594,10 @@ const ACCOUNT_PREFETCH = 'account:'
 // The longest `loadAccount` waits for a prepare started ahead of time for another song. That
 // prepare cannot be stopped and may be a whole download, so past this the song is asked for
 // anyway: told the account is busy, rather than showing "Fetching…" for minutes. A prepare of the
-// song itself is waited out, since it is the download that song needs.
+// song itself is waited for longer, up to `ACCOUNT_PREPARE_TIMEOUT_MS`, since it is the download
+// that song needs; a hung server is not waited on past that. Because the next Deezer song is only
+// prepared in the last `ACCOUNT_PREFETCH_LEAD_SECONDS` of the playing one, a skip rarely lands on
+// another song's prepare at all.
 const ACCOUNT_PREFETCH_WAIT_MS = 30_000
 
 const streamUrl = (track: LibraryTrack) =>
@@ -1351,14 +1356,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Runs on the playing element's timeupdate. A few seconds in, fetches the next songs ahead of
   // their turn: the start of a library song into the browser cache, which the standby element's
   // first range request then reads from, and a Deezer song (the very next one only, since it holds
-  // the account) prepared on the server. A queue edit changes the list on the next timeupdate; a
-  // new song empties it at once, in `loadLibrary`.
-  function prefetchAhead(seconds: number) {
+  // the account) prepared on the server, but only in the last `ACCOUNT_PREFETCH_LEAD_SECONDS` of
+  // the playing song. A queue edit changes the list on the next timeupdate; a new song empties it
+  // at once, in `loadLibrary`.
+  function prefetchAhead(seconds: number, length: number) {
     if (seconds < PREFETCH_AFTER_SECONDS || dataSaverOn()) return
-    prefetcher.want(prefetchTasks())
+    prefetcher.want(prefetchTasks(accountPrepareDue(length, seconds)))
   }
 
-  function prefetchTasks(): PrefetchTask[] {
+  function prefetchTasks(accountDue: boolean): PrefetchTask[] {
     const queue = queueRef.current
     // Repeat one plays the same song, already loaded. A random shuffle has not picked yet.
     if (repeat === 'one' || (shuffle && !deck.current)) return []
@@ -1376,7 +1382,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (url === playingUrl) return []
         return [{ key: url, abortable: true, run: (signal) => fetchIntoCache(url, signal) }]
       }
-      if (step > 0 || !item.deezerId) return []
+      // Not yet near the end: a prepare can't be stopped, so it would make a skip wait behind it.
+      if (step > 0 || !item.deezerId || !accountDue) return []
       return [
         {
           key: `${ACCOUNT_PREFETCH}${item.id}`,
@@ -1389,10 +1396,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // The same request `loadAccount` makes. Its answer is not used: a song the server prepared is
   // answered at once when its turn comes.
+  // It has a deadline, so a hung server does not keep the task, and the song waiting on it, forever.
   async function prepareAccountTrack(item: LibraryTrack) {
     const response = await fetch(
       `/api/player/account/${encodeURIComponent(item.id)}`,
       withListener({
+        signal: AbortSignal.timeout(ACCOUNT_PREPARE_TIMEOUT_MS),
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1765,7 +1774,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   // Settles when no prepare started ahead of time is running, when this load is given up, or
-  // after `ACCOUNT_PREFETCH_WAIT_MS` if the running one is for another song. Never rejects.
+  // after a cap if one is still running: `ACCOUNT_PREFETCH_WAIT_MS` when it is for another song,
+  // `ACCOUNT_PREPARE_TIMEOUT_MS` (the prepare's own deadline) when it is for this one. Never
+  // rejects.
   function waitForPrepare(item: LibraryTrack, signal: AbortSignal) {
     const ownSong = prefetcher.isRunning(`${ACCOUNT_PREFETCH}${item.id}`)
     return new Promise<void>((resolve) => {
@@ -1774,7 +1785,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         signal.removeEventListener('abort', done)
         resolve()
       }
-      const timer = ownSong ? undefined : setTimeout(done, ACCOUNT_PREFETCH_WAIT_MS)
+      const timer = setTimeout(
+        done,
+        ownSong ? ACCOUNT_PREPARE_TIMEOUT_MS : ACCOUNT_PREFETCH_WAIT_MS,
+      )
       signal.addEventListener('abort', done)
       void prefetcher.settled(ACCOUNT_PREFETCH).then(done)
     })
@@ -2869,7 +2883,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
         if (!element.paused) {
           ensurePreload(element)
-          prefetchAhead(seconds)
+          prefetchAhead(seconds, element.duration)
         }
         maybeCrossfade(element)
         scheduleHandover(element)

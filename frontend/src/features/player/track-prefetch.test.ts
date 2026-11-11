@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
+  ACCOUNT_PREFETCH_LEAD_SECONDS,
+  accountPrepareDue,
   fetchIntoCache,
   PREFETCH_BYTES,
   PREFETCH_FRESH_MS,
@@ -28,6 +30,28 @@ function pending(key: string, abortable = true) {
 }
 
 const flush = () => new Promise((resolve) => setTimeout(resolve, 0))
+
+describe('accountPrepareDue', () => {
+  it('is not due early in a long song', () => {
+    expect(accountPrepareDue(240, 5)).toBe(false)
+    expect(accountPrepareDue(240, 240 - ACCOUNT_PREFETCH_LEAD_SECONDS - 1)).toBe(false)
+  })
+
+  it('is due from the lead time before the end', () => {
+    expect(accountPrepareDue(240, 240 - ACCOUNT_PREFETCH_LEAD_SECONDS)).toBe(true)
+    expect(accountPrepareDue(240, 239)).toBe(true)
+  })
+
+  it('is due at once in a song shorter than the lead time', () => {
+    expect(accountPrepareDue(ACCOUNT_PREFETCH_LEAD_SECONDS - 10, 0)).toBe(true)
+  })
+
+  it('is not due while the length is unknown', () => {
+    expect(accountPrepareDue(NaN, 100)).toBe(false)
+    expect(accountPrepareDue(Infinity, 100)).toBe(false)
+    expect(accountPrepareDue(0, 0)).toBe(false)
+  })
+})
 
 describe('upcomingIndexes', () => {
   it('lists the songs after the playing one, in order', () => {

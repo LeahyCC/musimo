@@ -313,6 +313,53 @@ test('the prefetched start of the next song answers the element from the browser
   await expect.poll(() => servedFromCache.has(firstMedia.requestId)).toBe(true)
 })
 
+test('the next Deezer song is prepared only in the last minute of the playing one', async ({
+  page,
+}) => {
+  const echo = librarySong('dz-9', {
+    title: 'Echo',
+    duration: 30,
+    origin: 'deezer',
+    deezerId: 9,
+  })
+  await restoreQueue(page, [alpha, echo])
+  // The test stream is 30 seconds long. The library elements report that plus a length set from
+  // the test, so Alpha can be a long song at first and then one with under a minute left.
+  await page.addInitScript(() => {
+    Object.assign(window, { extraLength: 270 })
+    const real = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'duration')?.get
+    Object.defineProperty(HTMLMediaElement.prototype, 'duration', {
+      configurable: true,
+      get(this: HTMLMediaElement) {
+        const length = real?.call(this) as number
+        const extra = (window as unknown as { extraLength: number }).extraLength
+        return this.classList.contains('library-audio') && Number.isFinite(length)
+          ? length + extra
+          : length
+      },
+    })
+  })
+  const prepares: string[] = []
+  // Only the prepare: a POST for the song. The account's track list is asked for as well.
+  await page.route('**/api/player/account/dz-9', async (route) => {
+    if (route.request().method() === 'POST') prepares.push(route.request().url())
+    await route.fulfill({ json: { play: 'busy', detail: 'The Deezer account is busy.' } })
+  })
+
+  await playToTheEnd(page, 6)
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => element.currentTime))
+    .toBeGreaterThan(PREFETCH_AFTER_SECONDS)
+  // Past the prefetch point with five minutes to go: nothing is asked of the server.
+  await page.waitForTimeout(NO_PREFETCH_WAIT_MS)
+  expect(prepares).toEqual([])
+
+  // Inside the last minute the prepare goes out, once.
+  await page.evaluate(() => Object.assign(window, { extraLength: 0 }))
+  await expect.poll(() => prepares).toHaveLength(1)
+})
+
 test('a metered connection fetches nothing ahead', async ({ page }) => {
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'connection', {

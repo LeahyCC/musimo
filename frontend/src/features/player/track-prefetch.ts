@@ -12,6 +12,24 @@ export const PREFETCH_AFTER_SECONDS = 5
 /** How many songs after the playing one to fetch ahead. */
 export const PREFETCH_AHEAD = 2
 /**
+ * How near the end of the playing song the next Deezer song is prepared. A prepare cannot be
+ * stopped and holds the Deezer account until its download ends. If it started 5 seconds into a
+ * long song, a listener who skipped or jumped to another Deezer song in all that time would wait
+ * behind it, then be told the account is busy. Started only in the last minute, the window for
+ * that is a minute at most. A song shorter than this prepares at once.
+ */
+export const ACCOUNT_PREFETCH_LEAD_SECONDS = 60
+/**
+ * The longest a Deezer prepare is waited on, by the request itself and by a song that is loading
+ * and needs it. Past this a hung server is given up on and the song is asked for in the ordinary
+ * way, rather than "Fetching…" showing forever.
+ */
+export const ACCOUNT_PREPARE_TIMEOUT_MS = 120_000
+
+/** True once the next Deezer song should be prepared: the last minute of a song, all of a short one. */
+export const accountPrepareDue = (length: number, time: number) =>
+  Number.isFinite(length) && length > 0 && length - time <= ACCOUNT_PREFETCH_LEAD_SECONDS
+/**
  * How much of a library song to fetch ahead. Chrome's disk cache drops an entry past a size limit,
  * so a whole large FLAC could be downloaded and then thrown away. A range request instead lands as
  * a partial 206 entry, which Chrome keeps sparsely, and the element's first range request at the
