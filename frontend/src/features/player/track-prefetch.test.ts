@@ -1,7 +1,9 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 
 import {
   fetchIntoCache,
+  PREFETCH_BYTES,
+  PREFETCH_FRESH_MS,
   type PrefetchTask,
   TrackPrefetcher,
   upcomingIndexes,
@@ -97,10 +99,91 @@ describe('TrackPrefetcher', () => {
     expect(settled).toBe(true)
   })
 
+  it('says whether the task with exactly that key runs', () => {
+    const prefetcher = new TrackPrefetcher()
+    prefetcher.want([pending('account:dz-12', false).task])
+    expect(prefetcher.isRunning('account:dz-12')).toBe(true)
+    expect(prefetcher.isRunning('account:dz-1')).toBe(false)
+  })
+
   it('is settled at once when nothing with that prefix runs', async () => {
     const prefetcher = new TrackPrefetcher()
     prefetcher.want([pending('/api/player/stream/tr-1').task])
     await expect(prefetcher.settled('account:')).resolves.toBeUndefined()
+  })
+
+  it('starts no held task, even one queued behind another, until the hold is released', async () => {
+    const prefetcher = new TrackPrefetcher()
+    const library = pending('/api/player/stream/tr-1')
+    const account = pending('account:dz-1', false)
+    prefetcher.want([library.task, account.task])
+    const release = prefetcher.hold('account:')
+    library.finish()
+    await flush()
+    expect(account.run).not.toHaveBeenCalled()
+    release()
+    expect(account.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a task held while any one hold on it is left, and ignores a second release', () => {
+    const prefetcher = new TrackPrefetcher()
+    const account = pending('account:dz-1', false)
+    const first = prefetcher.hold('account:')
+    const second = prefetcher.hold('account:')
+    prefetcher.want([account.task])
+    first()
+    first()
+    expect(account.run).not.toHaveBeenCalled()
+    second()
+    expect(account.run).toHaveBeenCalledTimes(1)
+  })
+
+  it('starts nothing from a list that was replaced, while the old task finishes', async () => {
+    const prefetcher = new TrackPrefetcher()
+    const account = pending('account:dz-1', false)
+    const stale = pending('/api/player/stream/tr-2')
+    prefetcher.want([account.task, stale.task])
+    prefetcher.want([])
+    account.finish()
+    await flush()
+    expect(stale.run).not.toHaveBeenCalled()
+  })
+
+  it('forgets the oldest key past 100, so only that one may be fetched again', async () => {
+    const prefetcher = new TrackPrefetcher()
+    const done = (key: string) => ({ key, abortable: true, run: vi.fn(() => Promise.resolve()) })
+    const tasks = Array.from({ length: 101 }, (_, index) => done(`key-${index}`))
+    for (const task of tasks) {
+      prefetcher.want([task])
+      await flush()
+    }
+    const oldest = done('key-0')
+    const second = done('key-1')
+    prefetcher.want([second])
+    expect(second.run).not.toHaveBeenCalled()
+    prefetcher.want([oldest])
+    expect(oldest.run).toHaveBeenCalledTimes(1)
+  })
+
+  describe('after the cached copy has gone stale', () => {
+    afterEach(() => {
+      vi.useRealTimers()
+    })
+
+    it('fetches a key again', async () => {
+      vi.useFakeTimers()
+      const prefetcher = new TrackPrefetcher()
+      const a = pending('a')
+      prefetcher.want([a.task])
+      a.finish()
+      await vi.runAllTimersAsync()
+      vi.advanceTimersByTime(PREFETCH_FRESH_MS - 1)
+      prefetcher.want([a.task])
+      expect(a.run).toHaveBeenCalledTimes(1)
+      vi.advanceTimersByTime(1)
+      prefetcher.want([a.task])
+      expect(a.run).toHaveBeenCalledTimes(2)
+    })
   })
 })
 
@@ -119,6 +202,42 @@ describe('fetchIntoCache', () => {
       '/api/player/stream/tr-1',
       expect.objectContaining({ priority: 'low' }),
     )
+  })
+
+  it('asks for the start of the file only', async () => {
+    const fetcher = vi.fn((_url: RequestInfo | URL, _init?: RequestInit) =>
+      Promise.resolve(new Response(new Uint8Array([1]), { status: 206 })),
+    )
+    await fetchIntoCache('/api/player/stream/tr-1', new AbortController().signal, fetcher)
+    expect(fetcher.mock.calls[0]?.[1]?.headers).toEqual({
+      Range: `bytes=0-${PREFETCH_BYTES - 1}`,
+    })
+  })
+
+  it('stops reading when aborted', async () => {
+    const controller = new AbortController()
+    // A body that has sent a little and waits for more, errored on abort the way fetch errors it.
+    const fetcher = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      const body = new ReadableStream<Uint8Array>({
+        start(stream) {
+          stream.enqueue(new Uint8Array([1]))
+          init?.signal?.addEventListener('abort', () =>
+            stream.error(new DOMException('Aborted', 'AbortError')),
+          )
+        },
+      })
+      return Promise.resolve(new Response(body, { status: 206 }))
+    })
+    const reading = fetchIntoCache('/api/player/stream/tr-1', controller.signal, fetcher)
+    let finished = false
+    void reading.then(
+      () => (finished = true),
+      () => (finished = true),
+    )
+    await flush()
+    expect(finished).toBe(false)
+    controller.abort()
+    await expect(reading).rejects.toThrow('Aborted')
   })
 
   it('fails on an error response', async () => {

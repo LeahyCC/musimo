@@ -566,6 +566,11 @@ export const failureLimitNotice = `Stopped after ${MAX_FAILURES} tracks in a row
 
 // The prefetch key prefix of a Deezer prepare, which `loadAccount` waits on.
 const ACCOUNT_PREFETCH = 'account:'
+// The longest `loadAccount` waits for a prepare started ahead of time for another song. That
+// prepare cannot be stopped and may be a whole download, so past this the song is asked for
+// anyway: told the account is busy, rather than showing "Fetching…" for minutes. A prepare of the
+// song itself is waited out, since it is the download that song needs.
+const ACCOUNT_PREFETCH_WAIT_MS = 30_000
 
 const streamUrl = (track: LibraryTrack) =>
   track.origin === 'deezer'
@@ -709,7 +714,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const queueSave = useRef(0)
   const queueWriter = useRef<QueueWriter | null>(null)
   // Fetches the songs after the playing one ahead of their turn. See `prefetchAhead`.
-  const prefetcher = useRef(new TrackPrefetcher())
+  const [prefetcher] = useState(() => new TrackPrefetcher())
   // The queue saves itself every 10 seconds while music plays, so a server that is down would
   // raise the same toast each time. It is said once per kind, until a save goes through again.
   // This only gates the toast; `queueTrouble` is what the page shows.
@@ -1317,12 +1322,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   // Runs on the playing element's timeupdate. A few seconds in, fetches the next songs ahead of
-  // their turn: a library song into the browser cache, which the standby element and any later
-  // range request then read from, and a Deezer song (the very next one only, since it holds the
-  // account) prepared on the server. A queue edit changes the list on the next timeupdate.
+  // their turn: the start of a library song into the browser cache, which the standby element's
+  // first range request then reads from, and a Deezer song (the very next one only, since it holds
+  // the account) prepared on the server. A queue edit changes the list on the next timeupdate; a
+  // new song empties it at once, in `loadLibrary`.
   function prefetchAhead(seconds: number) {
     if (seconds < PREFETCH_AFTER_SECONDS || dataSaverOn()) return
-    prefetcher.current.want(prefetchTasks())
+    prefetcher.want(prefetchTasks())
   }
 
   function prefetchTasks(): PrefetchTask[] {
@@ -1332,11 +1338,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     // Songs still waiting in a library shuffle come before any wrap to the start.
     const wrap = repeat === 'all' && !(deck.current && stillWaiting(deck.current) > 0)
     const indexes = upcomingIndexes(queue.length, indexRef.current, PREFETCH_AHEAD, wrap)
+    const playing = libraryCurrent.current
+    const playingUrl = playing ? streamUrl(playing) : ''
     return indexes.flatMap((index, step): PrefetchTask[] => {
       const item = queue[index]
       if (!item) return []
       if (item.origin !== 'deezer') {
         const url = streamUrl(item)
+        // A later copy of the playing song is already being read by the element itself.
+        if (url === playingUrl) return []
         return [{ key: url, abortable: true, run: (signal) => fetchIntoCache(url, signal) }]
       }
       if (step > 0 || !item.deezerId) return []
@@ -1609,10 +1619,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setFetchingId(deezerId)
     setReady(false)
     setNotice('Fetching…')
+    // No prepare may start while this one asks, or one of the two is told the account is busy.
+    const release = prefetcher.hold(ACCOUNT_PREFETCH)
     try {
       // A prepare started ahead of time holds the account until it is done. Asking now would only
       // be told the account is busy, so wait for it; for this song it means the file is ready.
-      await prefetcher.current.settled(ACCOUNT_PREFETCH)
+      await waitForPrepare(item, controller.signal)
       if (generation !== libraryLoads.current || controller.signal.aborted) return
       const result = await api(`player/account/${encodeURIComponent(item.id)}`, accountPlaySchema, {
         method: 'POST',
@@ -1687,11 +1699,28 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       )
       setPlaying(false)
     } finally {
+      release()
       if (accountRequest.current === controller) {
         accountRequest.current = null
         setFetchingId(null)
       }
     }
+  }
+
+  // Settles when no prepare started ahead of time is running, when this load is given up, or
+  // after `ACCOUNT_PREFETCH_WAIT_MS` if the running one is for another song. Never rejects.
+  function waitForPrepare(item: LibraryTrack, signal: AbortSignal) {
+    const ownSong = prefetcher.isRunning(`${ACCOUNT_PREFETCH}${item.id}`)
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', done)
+        resolve()
+      }
+      const timer = ownSong ? undefined : setTimeout(done, ACCOUNT_PREFETCH_WAIT_MS)
+      signal.addEventListener('abort', done)
+      void prefetcher.settled(ACCOUNT_PREFETCH).then(done)
+    })
   }
 
   function playPreviewKeepingQueue(item: LibraryTrack, detail: string, autoplay: boolean) {
@@ -1825,6 +1854,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     saveChosen()
     publishSource()
     indexRef.current = index
+    // The list was worked out for the song before. Emptied now so nothing from it starts while
+    // this one loads; it is filled again a few seconds into this song.
+    prefetcher.want([])
     void extendDeck()
     pendingSeek.current = seek
     lastSavedSecond.current = -1
@@ -2332,7 +2364,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function stop() {
     accountRequest.current?.abort()
-    prefetcher.current.clear()
+    prefetcher.clear()
     setFetchingId(null)
     request.current?.abort()
     saveQueue()
@@ -2381,7 +2413,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // onto the name just opened, and an empty queue must not wipe the one the server kept.
   function unloadWithoutSaving() {
     accountRequest.current?.abort()
-    prefetcher.current.clear()
+    prefetcher.clear()
     setFetchingId(null)
     request.current?.abort()
     cancelHandover()
