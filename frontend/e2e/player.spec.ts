@@ -172,7 +172,9 @@ test('library playback opens the full player', async ({ page, isMobile }) => {
   )
   await page.getByRole('button', { name: 'Grid view' }).click()
   await closeLibraryFilters(page, isMobile)
-  const grid = page.locator('.library-grid')
+  // The album list is virtualised, so there is no grid element to find. Its labelled region
+  // (named for the search while one is typed) sits where the grid starts and holds the cards.
+  const grid = page.getByRole('region', { name: /^Album(s| results)$/ })
   const gridTop = await grid.evaluate((element) => element.getBoundingClientRect().top + scrollY)
   const idleOpacity = await page.evaluate(() => (matchMedia('(hover: none)').matches ? 1 : 0))
   let releasePlayback: () => void = () => undefined
