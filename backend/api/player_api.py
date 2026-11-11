@@ -1,5 +1,6 @@
 import asyncio
 import re
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
@@ -9,7 +10,13 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from backend.core.store import Store
-from backend.jobs.account_listen import listen_file, prepare_track, remember_many, track_number
+from backend.jobs.account_listen import (
+    BUSY,
+    listen_file,
+    prepare_track,
+    remember_many,
+    track_number,
+)
 from backend.library.player import (
     ALBUM_SORTS,
     ARTIST_SHOWS,
@@ -40,8 +47,11 @@ ART_CACHE = "public, max-age=31536000, immutable"
 # The player prefetches upcoming songs into the browser cache, and the audio element's range
 # requests are then served from it, so a slow or busy server does not stall the next song.
 # Private: a song id is not a secret, but a shared cache has no business keeping the music.
-# An hour, then the ETag revalidates it, so a retagged file is picked up within the hour.
+# An hour, then the entry is stale and downloads again in full: FileResponse never answers 304,
+# so the ETag does not save the transfer. A retagged file is picked up within the hour.
 STREAM_CACHE = "private, max-age=3600"
+# Most prepares allowed to run at once. See install_account_routes.
+PREPARE_SLOTS = 3
 
 
 class ShuffleWindow(BaseModel):
@@ -188,6 +198,10 @@ _LISTEN_TYPES = {
 
 def install_account_routes(app: FastAPI, data: Path, get_store: Callable[[], Store]) -> None:
     """Listening files for a signed-in Deezer account. The cookie never leaves the server."""
+    # prepare_track only refuses a second download of the same song, so prepares for many
+    # different songs could each hold a pool thread for minutes and stall every listener
+    # route, which shares the pool. A few at once is plenty; the rest are told it is busy.
+    slots = threading.BoundedSemaphore(PREPARE_SLOTS)
 
     @app.post("/api/player/account/tracks", status_code=204)
     async def remember(body: AccountRemember) -> None:
@@ -200,7 +214,19 @@ def install_account_routes(app: FastAPI, data: Path, get_store: Callable[[], Sto
         number = track_number(checked_id(song_id))
         if number is None:
             raise HTTPException(404, "Track not found")
-        return await asyncio.to_thread(prepare_track, get_store(), data, number, facts.model_dump())
+        if not slots.acquire(blocking=False):
+            return {"play": "busy", "detail": BUSY, "url": "", "id": ""}
+        store = get_store()
+
+        def run() -> dict[str, object]:
+            # Released here, not in the handler: a dropped request cancels the await but not
+            # the thread, which keeps working (and keeps its pool slot) until it is done.
+            try:
+                return prepare_track(store, data, number, facts.model_dump())
+            finally:
+                slots.release()
+
+        return await asyncio.to_thread(run)
 
     @app.get("/api/player/account/{song_id}/file")
     async def account_file(song_id: str, request: Request) -> FileResponse:
