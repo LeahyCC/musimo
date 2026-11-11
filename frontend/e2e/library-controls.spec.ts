@@ -458,7 +458,7 @@ test('the A-Z rail jumps to a letter further down the artists list', async ({ pa
   await page.goto('/library/artists')
 
   await page.getByRole('button', { name: 'Jump to artists starting with Z' }).click()
-  const card = page.getByRole('button', { name: 'Open Zebra 1' })
+  const card = page.getByRole('button', { name: 'Open Zebra 1', exact: true })
   await expect(card).toBeInViewport()
   await expect(card).toBeFocused()
 })
