@@ -15,8 +15,6 @@ import {
   Disc3,
   ListMusic,
   Maximize2,
-  Pause,
-  Play,
   Plus,
   Repeat,
   RotateCcw,
@@ -71,6 +69,7 @@ import { fadeInGain, fadeOutGain, rampDown } from './fades'
 import { HANDOVER_WINDOW_SECONDS, handoverDelay, lengthsAgree } from './handover'
 import { createHandoverClock } from './handover-clock'
 import type { HandoverClock } from './handover-clock'
+import { NETWORK_RECOVERED_SECONDS, NETWORK_RETRIES, NETWORK_RETRY_DELAY_MS } from './network-retry'
 import {
   addToHistory,
   HISTORY_LISTEN_SECONDS,
@@ -78,6 +77,7 @@ import {
   readHistory,
   writeHistory,
 } from './play-history'
+import { PlayIcon, playLabel } from './play-icon'
 import { PlaylistPicker } from './playlist-picker'
 import { type QueueSave, QueueWriter } from './queue-writer'
 import {
@@ -91,6 +91,16 @@ import { dropForRoom, needsMore, QUEUE_LIMIT, SHUFFLE_FETCH, stillWaiting } from
 import type { Deck } from './shuffle-deck'
 import { SLEEP_FADE_SECONDS, sleepChoiceLabel } from './sleep-timer'
 import type { SleepChoice, SleepStatus } from './sleep-timer'
+import {
+  ACCOUNT_PREPARE_TIMEOUT_MS,
+  accountPrepareDue,
+  fetchIntoCache,
+  PREFETCH_AFTER_SECONDS,
+  PREFETCH_AHEAD,
+  type PrefetchTask,
+  TrackPrefetcher,
+  upcomingIndexes,
+} from './track-prefetch'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 export type BotQueueAction = 'play' | 'next' | 'append' | 'replace'
@@ -115,6 +125,11 @@ type Playback = {
   edited: boolean
   currentIndex: number
   playing: boolean
+  /**
+   * The playing song lost its connection and is waiting to load again. Every play button shows
+   * it, since only Now Playing and the Room dock have room for the line that says so.
+   */
+  reconnecting: boolean
   position: number
   length: number
   shuffle: boolean
@@ -188,6 +203,13 @@ type Playback = {
   setSleep: (choice: SleepChoice | null) => void
   /** Saves the queue again after a failed save. One that lands takes the failure notice away. */
   retryQueueSave: () => void
+  /**
+   * Why the queue is not saved, until a save goes through: 'failed' for a save that did not land,
+   * 'replaced' when another browser took the queue over. Up next's strip shows it.
+   */
+  queueTrouble: QueueTrouble
+  /** A Retry is out and has not answered yet, so its button reads "Saving…" and waits. */
+  queueSaving: boolean
 }
 const PlayerContext = createContext<Playback>({
   track: null,
@@ -197,6 +219,7 @@ const PlayerContext = createContext<Playback>({
   edited: false,
   currentIndex: -1,
   playing: false,
+  reconnecting: false,
   position: 0,
   length: 0,
   shuffle: false,
@@ -241,6 +264,8 @@ const PlayerContext = createContext<Playback>({
   sleep: null,
   setSleep: () => undefined,
   retryQueueSave: () => undefined,
+  queueTrouble: null,
+  queueSaving: false,
 })
 export const usePlayer = () => useContext(PlayerContext)
 
@@ -267,8 +292,10 @@ export function useNowPlayingTakesOver() {
 
 const LIBRARY_NOTICE = 'Your music library'
 const RESTORED_NOTICE = 'Queue restored. Press play to continue.'
+/** Why the queue is not saved: a save that did not land, or another browser took it over. */
+export type QueueTrouble = 'failed' | 'replaced' | null
 /** The notices a failed queue save leaves, so the Listening room can show them in Up next too. */
-export const QUEUE_SAVE_FAILED = 'The queue changed here but could not be saved.'
+export const QUEUE_SAVE_FAILED = "Couldn't save the queue to the server."
 export const QUEUE_REPLACED =
   'Another browser saved the queue. Refresh to restore it before saving more changes.'
 const SLEEP_ENDED_NOTICE = 'Sleep timer ended. Playback paused.'
@@ -535,6 +562,23 @@ const runningBooster = (element: HTMLMediaElement) => {
 
 /** How long before a track ends the next one starts loading. A shorter track loads it at once. */
 export const PRELOAD_LEAD_SECONDS = 15
+type NetworkRetries = {
+  item: LibraryTrack | null
+  count: number
+  at: number
+  reloading: boolean
+  /** Whether the listener wants it playing once it is back. */
+  resume: boolean
+}
+const noNetworkRetries = (): NetworkRetries => ({
+  item: null,
+  count: 0,
+  at: 0,
+  reloading: false,
+  resume: false,
+})
+export const RECONNECTING_NOTICE = 'Lost the connection to the server. Trying again…'
+export const CONNECTION_LOST_NOTICE = 'Lost the connection to the server. Press play to try again.'
 /** Tracks that may fail one after another before playback stops, rather than racing the queue. */
 export const MAX_FAILURES = 3
 /** True once the next track should be loading: the last seconds of a track, all of a short one. */
@@ -543,6 +587,17 @@ export const preloadDue = (length: number, time: number) =>
 
 export const skippedNotice = (title: string) => `Skipped ${title}, it could not be played`
 export const failureLimitNotice = `Stopped after ${MAX_FAILURES} tracks in a row could not be played. Check that the music folder is mounted.`
+
+// The prefetch key prefix of a Deezer prepare, which `loadAccount` waits on.
+const ACCOUNT_PREFETCH = 'account:'
+// The longest `loadAccount` waits for a prepare started ahead of time for another song. That
+// prepare cannot be stopped and may be a whole download, so past this the song is asked for
+// anyway: told the account is busy, rather than showing "Fetching…" for minutes. A prepare of the
+// song itself is waited for longer, up to `ACCOUNT_PREPARE_TIMEOUT_MS`, since it is the download
+// that song needs; a hung server is not waited on past that. Because the next Deezer song is only
+// prepared in the last `ACCOUNT_PREFETCH_LEAD_SECONDS` of the playing one, a skip rarely lands on
+// another song's prepare at all.
+const ACCOUNT_PREFETCH_WAIT_MS = 30_000
 
 const streamUrl = (track: LibraryTrack) =>
   track.origin === 'deezer'
@@ -685,9 +740,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Bumped on every queue save so an older response cannot count as the latest one.
   const queueSave = useRef(0)
   const queueWriter = useRef<QueueWriter | null>(null)
+  // Fetches the songs after the playing one ahead of their turn. See `prefetchAhead`.
+  const [prefetcher] = useState(() => new TrackPrefetcher())
   // The queue saves itself every 10 seconds while music plays, so a server that is down would
   // raise the same toast each time. It is said once per kind, until a save goes through again.
-  const queueFailureShown = useRef<'failed' | 'replaced' | null>(null)
+  // This only gates the toast; `queueTrouble` is what the page shows.
+  const queueFailureShown = useRef<QueueTrouble>(null)
   // The collection that filled the queue. Edits leave it alone; `queueSource` says what it counts as.
   const sourceRef = useRef('')
   const editedRef = useRef(false)
@@ -726,6 +784,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     element?.pause()
     element?.removeAttribute('src')
     element?.load()
+    endNetworkRetries()
     libraryCurrent.current = null
     setLibraryTrack(null)
     setPlaying(false)
@@ -813,6 +872,18 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const previewStage = useRef(0)
   const pendingSeek = useRef(0)
+  // Reloads of the playing track after a dropped connection, where it last dropped, whether a
+  // reload is still waiting for its metadata, and whether the listener wants it playing. Kept until
+  // it plays NETWORK_RECOVERED_SECONDS past that point, or another track loads; `item` is null then.
+  // Each retry writes a new object, so a wait can tell a newer reload has taken over from it.
+  // `reloading` and `resume` are changed in place.
+  const networkRetries = useRef(noNetworkRetries())
+  // The wait before the next reload. Each wait also checks it still owns the element, so this is
+  // cleared to stop a wait that has nothing left to do, not to keep a stale one from acting.
+  const retryTimer = useRef<number | undefined>(undefined)
+  // Whether "now playing" has gone out for the loaded library track. A reload after a dropped
+  // connection plays it again, and that is not a new listen.
+  const announced = useRef(false)
   const lastSavedSecond = useRef(-1)
   // Whether the loaded library track has been written to the history yet.
   const recorded = useRef(false)
@@ -826,6 +897,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const [edited, setEdited] = useState(false)
   const [currentIndex, setCurrentIndex] = useState(-1)
   const [playing, setPlaying] = useState(false)
+  const [reconnecting, setReconnecting] = useState(false)
   const [position, setPosition] = useState(0)
   const [length, setLength] = useState(30)
   const [ready, setReady] = useState(false)
@@ -837,6 +909,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return value === 'all' || value === 'one' ? value : 'off'
   })
   const [notice, setNoticeText] = useState('Choose a track to start listening.')
+  // Kept apart from `notice`: the next song or a reconnect replaces that line, and the strip must
+  // not go with it while saves are still failing.
+  const [queueTrouble, setQueueTrouble] = useState<QueueTrouble>(null)
+  // A Retry in flight. The ref is what stops a second press in the same tick, before the state
+  // has redrawn the button as disabled.
+  const [queueSaving, setQueueSaving] = useState(false)
+  const retrying = useRef(false)
   const toast = useToast()
   // The toasts still up, by text, so a message that comes again replaces itself rather than stacking.
   const toasts = useRef(new Map<string, () => void>())
@@ -1028,11 +1107,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   // Retry saves the queue as it is now, not as it was when the failure happened.
   // With nothing loaded there is no queue for Retry to send, so the toast goes without it.
+  // Every failed save comes here, the timed ones, the edits' and the writer's own, and the toast
+  // is raised once until a save goes through: a server that is down fails them all, and a toast
+  // that came back after each one would never leave. Up next's strip keeps saying it meanwhile.
+  // Only a toast with Retry closes the gate: one without it (nothing loaded) offers nothing to
+  // act on, so it must not hide the one that does once a song is loaded.
   function queueSaveFailed() {
+    setQueueTrouble('failed')
+    if (queueFailureShown.current === 'failed') return
+    const canRetry = libraryCurrent.current !== null
+    if (canRetry) queueFailureShown.current = 'failed'
     setNotice(
       QUEUE_SAVE_FAILED,
       'warn',
-      libraryCurrent.current ? { label: 'Retry', run: () => void saveQueue(true) } : undefined,
+      canRetry ? { label: 'Retry', run: retryQueueSave } : undefined,
     )
   }
 
@@ -1040,11 +1128,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // to hear about, since the queue on screen would then differ from the one that restores.
   function writer(): QueueWriter {
     queueWriter.current ??= new QueueWriter((replaced) => {
-      const kind = replaced ? 'replaced' : 'failed'
-      if (queueFailureShown.current === kind) return
-      queueFailureShown.current = kind
-      if (replaced) setNotice(QUEUE_REPLACED, 'warn')
-      else queueSaveFailed()
+      if (!replaced) {
+        queueSaveFailed()
+        return
+      }
+      setQueueTrouble('replaced')
+      if (queueFailureShown.current === 'replaced') return
+      queueFailureShown.current = 'replaced'
+      setNotice(QUEUE_REPLACED, 'warn')
     })
 
     return queueWriter.current
@@ -1054,9 +1145,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return writer()
       .save(body, begun)
       .then((response) => {
-        if (response?.ok) queueFailureShown.current = null
+        if (response?.ok) clearQueueTrouble()
         return response
       })
+  }
+
+  // Any save that lands, a timed one or Retry, means the queue is stored. The strip, the toast and
+  // the line must stop saying otherwise, or the page reads "not saved" over a saved queue.
+  function clearQueueTrouble() {
+    queueFailureShown.current = null
+    setQueueTrouble(null)
+    setNoticeText((now) =>
+      now === QUEUE_SAVE_FAILED || now === QUEUE_REPLACED
+        ? libraryCurrent.current?.origin === 'deezer'
+          ? 'Deezer account'
+          : LIBRARY_NOTICE
+        : now,
+    )
+    for (const text of [QUEUE_SAVE_FAILED, QUEUE_REPLACED]) {
+      toasts.current.get(text)?.()
+      toasts.current.delete(text)
+    }
   }
 
   function saveQueue(announce = false): Promise<boolean> {
@@ -1081,12 +1190,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         : [],
     )
     const deckAtSave = deck.current
+    // Until a load's seek lands the element sits at 0, and a reload that failed stays there.
+    const at = pendingSeek.current || (library()?.currentTime ?? 0)
     const body = JSON.stringify({
       ids,
       current: libraryCurrent.current.id,
-      position: Math.round((library()?.currentTime ?? 0) * 1000),
+      position: Math.round(at * 1000),
     })
     const write = () => persistQueue(body, begun)
+    // The writer reports its own failures, timed or not. This request is not the writer's, so its
+    // failure is raised here, on a timed save too: without it the queue would stay unsaved silently.
+    let rememberFailed = false
     const ready = remembered.length
       ? fetch(
           '/api/player/account/tracks',
@@ -1095,10 +1209,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ tracks: remembered }),
           }),
-        ).then((response) => {
-          // A queue of dz- ids is dropped on restore when these rows were never saved.
-          if (!response.ok) throw new Error('The queue could not be saved.')
-        })
+        )
+          .then((response) => {
+            // A queue of dz- ids is dropped on restore when these rows were never saved.
+            if (!response.ok) throw new Error('The queue could not be saved.')
+          })
+          .catch((error: unknown) => {
+            rememberFailed = true
+            throw error
+          })
       : Promise.resolve()
     return ready
       .then(write)
@@ -1114,7 +1233,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         return true
       })
       .catch(() => {
-        if (generation === queueSave.current && announce) queueSaveFailed()
+        if (generation === queueSave.current && (announce || rememberFailed)) queueSaveFailed()
         return false
       })
   }
@@ -1253,6 +1372,72 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function cancelHandover() {
     handoverClock.current?.cancel()
+  }
+
+  // Runs on the playing element's timeupdate. A few seconds in, fetches the next songs ahead of
+  // their turn: the start of a library song into the browser cache, which the standby element's
+  // first range request then reads from, and a Deezer song (the very next one only, since it holds
+  // the account) prepared on the server, but only in the last `ACCOUNT_PREFETCH_LEAD_SECONDS` of
+  // the playing song. A queue edit changes the list on the next timeupdate; a new song empties it
+  // at once, in `loadLibrary`.
+  function prefetchAhead(seconds: number, length: number) {
+    if (seconds < PREFETCH_AFTER_SECONDS || dataSaverOn()) return
+    prefetcher.want(prefetchTasks(accountPrepareDue(length, seconds)))
+  }
+
+  function prefetchTasks(accountDue: boolean): PrefetchTask[] {
+    const queue = queueRef.current
+    // Repeat one plays the same song, already loaded. A random shuffle has not picked yet.
+    if (repeat === 'one' || (shuffle && !deck.current)) return []
+    // Songs still waiting in a library shuffle come before any wrap to the start.
+    const wrap = repeat === 'all' && !(deck.current && stillWaiting(deck.current) > 0)
+    const indexes = upcomingIndexes(queue.length, indexRef.current, PREFETCH_AHEAD, wrap)
+    const playing = libraryCurrent.current
+    const playingUrl = playing ? streamUrl(playing) : ''
+    // The standby element is already loading this one; a second fetch would only race it.
+    const standbyItem = preload.current?.item
+    const standbyUrl = standbyItem ? streamUrl(standbyItem) : ''
+    return indexes.flatMap((index, step): PrefetchTask[] => {
+      const item = queue[index]
+      if (!item) return []
+      if (item.origin !== 'deezer') {
+        const url = streamUrl(item)
+        // A later copy of the playing song is already being read by the element itself.
+        if (url === playingUrl || url === standbyUrl) return []
+        return [{ key: url, abortable: true, run: (signal) => fetchIntoCache(url, signal) }]
+      }
+      // Not yet near the end: a prepare can't be stopped, so it would make a skip wait behind it.
+      if (step > 0 || !item.deezerId || !accountDue) return []
+      return [
+        {
+          key: `${ACCOUNT_PREFETCH}${item.id}`,
+          abortable: false,
+          run: () => prepareAccountTrack(item),
+        },
+      ]
+    })
+  }
+
+  // The same request `loadAccount` makes. Its answer is not used: a song the server prepared is
+  // answered at once when its turn comes.
+  // It has a deadline, so a hung server does not keep the task, and the song waiting on it, forever.
+  async function prepareAccountTrack(item: LibraryTrack) {
+    const response = await fetch(
+      `/api/player/account/${encodeURIComponent(item.id)}`,
+      withListener({
+        signal: AbortSignal.timeout(ACCOUNT_PREPARE_TIMEOUT_MS),
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: item.title,
+          artist: item.artist,
+          album: item.album,
+          duration: item.duration,
+          art: item.coverArt ?? '',
+        }),
+      }),
+    )
+    if (!response.ok) throw new Error(`Prepare failed with ${response.status}`)
   }
 
   // Starts the standby element just before the playing one ends. The wait is kept by a worker, so a
@@ -1450,6 +1635,86 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setNotice(skippedNotice(failed.title), 'warn')
   }
 
+  // The connection to the server dropped under the playing track: a busy or restarting server, or
+  // a network change. That is not a broken song, so it is loaded again from where it stopped, after
+  // a short wait, rather than skipped. A song that will not load at all fails with another code.
+  // True when the error was handled here; false leaves it to `skipUnplayable`.
+  function retryAfterNetworkError(element: HTMLAudioElement): boolean {
+    const item = libraryCurrent.current
+    if (!item) return false
+    const last = networkRetries.current.item === item ? networkRetries.current : null
+    // A server still down when the reload goes out refuses it, and Chromium reports that as a
+    // source it cannot play rather than a dropped connection. The song played a moment ago, so it
+    // is the same outage, and the reload is tried again.
+    const reloadFailed = last?.reloading === true
+    if (element.error?.code !== MediaError.MEDIA_ERR_NETWORK && !reloadFailed) return false
+    // A failed reload has nothing loaded, so it goes back to where the drop was.
+    const at = reloadFailed
+      ? last.at
+      : Number.isFinite(element.currentTime)
+        ? element.currentTime
+        : 0
+    // An error does not pause the element, so a first drop asks the element. A failed reload has
+    // already had its play cut short, and play and pause since are kept on the record.
+    const resume = last ? last.resume : !element.paused
+    const tries = last?.count ?? 0
+    if (tries >= NETWORK_RETRIES) {
+      // The song stays, playing or paused. A server restart outlasts the reloads, so the next
+      // songs would fail at once too and stop the queue blaming the music folder. Play loads it
+      // again, in `toggle`.
+      networkRetries.current = { item, count: tries, at, reloading: false, resume: false }
+      setReconnecting(false)
+      if (!element.paused) element.pause()
+      setNotice(CONNECTION_LOST_NOTICE, 'warn', { label: 'Play', run: () => toggleRef.current() })
+      return true
+    }
+    const retry = { item, count: tries + 1, at, reloading: false, resume }
+    networkRetries.current = retry
+    const loads = libraryLoads.current
+    setNotice(RECONNECTING_NOTICE)
+    setReconnecting(resume)
+    window.clearTimeout(retryTimer.current)
+    retryTimer.current = window.setTimeout(
+      () => {
+        retryTimer.current = undefined
+        // Anything loaded since, or a close, owns the element now. So does a press of play during
+        // the wait, which reloads it at once.
+        if (libraryLoads.current !== loads || libraryCurrent.current !== item) return
+        if (library() !== element || networkRetries.current !== retry) return
+        // Asked now rather than at the error, so a pause during the wait wins: a press, a media
+        // key, or headphones coming out.
+        reloadAt(element, at, retry.resume)
+      },
+      NETWORK_RETRY_DELAY_MS * (tries + 1),
+    )
+
+    return true
+  }
+
+  // Forgets a dropped connection: another song or a close took over, or the song held.
+  function endNetworkRetries() {
+    window.clearTimeout(retryTimer.current)
+    retryTimer.current = undefined
+    networkRetries.current = noNetworkRetries()
+    setReconnecting(false)
+    // Its Play would act on whatever is loaded now.
+    toasts.current.get(CONNECTION_LOST_NOTICE)?.()
+    toasts.current.delete(CONNECTION_LOST_NOTICE)
+  }
+
+  // Loads the library element's track again and seeks to `at` once its metadata is in.
+  function reloadAt(element: HTMLAudioElement, at: number, resume: boolean) {
+    networkRetries.current.reloading = true
+    pendingSeek.current = at
+    // Setting the same address again starts a fresh load, which clears the error.
+    const src = element.src
+    element.src = src
+    if (!resume) return
+    element.play().catch(() => {
+      // A failed load says so through its own error event, which comes back here.
+    })
+  }
+
   async function loadAccount(item: LibraryTrack, autoplay: boolean) {
     const deezerId = item.deezerId
     const generation = libraryLoads.current
@@ -1460,7 +1725,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setFetchingId(deezerId)
     setReady(false)
     setNotice('Fetching…')
+    // No prepare may start while this one asks, or one of the two is told the account is busy.
+    const release = prefetcher.hold(ACCOUNT_PREFETCH)
     try {
+      // A prepare started ahead of time holds the account until it is done. Asking now would only
+      // be told the account is busy, so wait for it; for this song it means the file is ready.
+      await waitForPrepare(item, controller.signal)
+      if (generation !== libraryLoads.current || controller.signal.aborted) return
       const result = await api(`player/account/${encodeURIComponent(item.id)}`, accountPlaySchema, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1534,11 +1805,33 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       )
       setPlaying(false)
     } finally {
+      release()
       if (accountRequest.current === controller) {
         accountRequest.current = null
         setFetchingId(null)
       }
     }
+  }
+
+  // Settles when no prepare started ahead of time is running, when this load is given up, or
+  // after a cap if one is still running: `ACCOUNT_PREFETCH_WAIT_MS` when it is for another song,
+  // `ACCOUNT_PREPARE_TIMEOUT_MS` (the prepare's own deadline) when it is for this one. Never
+  // rejects.
+  function waitForPrepare(item: LibraryTrack, signal: AbortSignal) {
+    const ownSong = prefetcher.isRunning(`${ACCOUNT_PREFETCH}${item.id}`)
+    return new Promise<void>((resolve) => {
+      const done = () => {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', done)
+        resolve()
+      }
+      const timer = setTimeout(
+        done,
+        ownSong ? ACCOUNT_PREPARE_TIMEOUT_MS : ACCOUNT_PREFETCH_WAIT_MS,
+      )
+      signal.addEventListener('abort', done)
+      void prefetcher.settled(ACCOUNT_PREFETCH).then(done)
+    })
   }
 
   function playPreviewKeepingQueue(item: LibraryTrack, detail: string, autoplay: boolean) {
@@ -1672,10 +1965,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     saveChosen()
     publishSource()
     indexRef.current = index
+    // The list was worked out for the song before. Emptied now so nothing from it starts while
+    // this one loads; it is filled again a few seconds into this song.
+    prefetcher.want([])
     void extendDeck()
     pendingSeek.current = seek
     lastSavedSecond.current = -1
     recorded.current = false
+    announced.current = false
+    endNetworkRetries()
     setTrack(null)
     setLibraryTrack(item)
     setCurrentIndex(index)
@@ -2053,6 +2351,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setNotice(`Shuffling ${count.toLocaleString()} songs.`, 'info')
   }
 
+  // The connection-lost toast's Play runs after renders this one has not seen.
+  const toggleRef = useRef(toggle)
+  toggleRef.current = toggle
+
   function toggle() {
     if (accountRequest.current) {
       cancelFetch()
@@ -2061,6 +2363,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const element = current()
     const hasItem = mode.current === 'library' ? libraryCurrent.current : previewCurrent.current
     if (!element || !hasItem) return
+    const retries = networkRetries.current
+    if (mode.current === 'library' && element.error && retries.item === libraryCurrent.current) {
+      lostConnectionPressed(element, retries)
+      return
+    }
+
     if (!element.paused) {
       // Pausing in the middle of a crossfade cuts the old track rather than freezing two.
       endCrossfade()
@@ -2072,6 +2380,30 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       previewStage.current = 1
       void loadPreview(previewCurrent.current, false)
     }
+  }
+
+  // Play or pause on a track whose connection dropped. The element has nothing to play, and may
+  // not even say it is playing, so the press goes by what the listener asked for last.
+  function lostConnectionPressed(element: HTMLAudioElement, retries: NetworkRetries) {
+    if (retries.resume) {
+      // Stays put when the reload comes.
+      retries.resume = false
+      if (!element.paused) element.pause()
+      setPlaying(false)
+      setReconnecting(false)
+      return
+    }
+    // A fresh go at loading it again, whether its reloads had run out or one was still waiting.
+    // A wait still running has nothing left to do.
+    window.clearTimeout(retryTimer.current)
+    retryTimer.current = undefined
+    const { item, at } = retries
+    networkRetries.current = { item, count: 0, at, reloading: false, resume: true }
+    toasts.current.get(CONNECTION_LOST_NOTICE)?.()
+    toasts.current.delete(CONNECTION_LOST_NOTICE)
+    setNotice(RECONNECTING_NOTICE)
+    setReconnecting(true)
+    reloadAt(element, at, true)
   }
 
   function play(item: MusicResult) {
@@ -2096,6 +2428,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     if (sleepRef.current && sleepRef.current.choice.kind !== 'minutes') clearSleep()
     discardPreload()
     setPlaying(false)
+    endNetworkRetries()
     mode.current = 'preview'
     libraryCurrent.current = null
     previewCurrent.current = item
@@ -2179,6 +2512,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function stop() {
     accountRequest.current?.abort()
+    prefetcher.clear()
     setFetchingId(null)
     request.current?.abort()
     saveQueue()
@@ -2186,6 +2520,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     cancelHandover()
     preload.current = null
     failures.current = 0
+    endNetworkRetries()
     previewCurrent.current = null
     libraryCurrent.current = null
     sourceRef.current = ''
@@ -2227,11 +2562,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // onto the name just opened, and an empty queue must not wipe the one the server kept.
   function unloadWithoutSaving() {
     accountRequest.current?.abort()
+    prefetcher.clear()
     setFetchingId(null)
     request.current?.abort()
     cancelHandover()
     preload.current = null
     failures.current = 0
+    endNetworkRetries()
     previewCurrent.current = null
     libraryCurrent.current = null
     sourceRef.current = ''
@@ -2304,6 +2641,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   arriveRef.current = async () => {
     queueWriter.current?.reset()
+    // Whatever went wrong was the last name's queue; this name's has not been saved yet.
+    clearQueueTrouble()
     reloadHistory()
     return restoreFromServer(true)
   }
@@ -2364,6 +2703,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   useEffect(
     () => () => {
       window.clearInterval(envelopeTimer.current)
+      window.clearTimeout(retryTimer.current)
       handoverClock.current?.dispose()
     },
     [],
@@ -2386,6 +2726,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener('keydown', key)
       request.current?.abort()
+      prefetcher.clear()
     }
   }, [])
 
@@ -2508,13 +2849,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           event.currentTarget.currentTime = pendingSeek.current
           pendingSeek.current = 0
         }
-        if (forLibrary) publishPosition(event.currentTarget)
+        if (!forLibrary) return
+        publishPosition(event.currentTarget)
+        // A reload after a dropped connection is back, so the status line stops saying it is
+        // trying again. Whether it holds is for timeupdate to tell.
+        if (networkRetries.current.item) {
+          networkRetries.current.reloading = false
+          setReconnecting(false)
+          const item = libraryCurrent.current
+          setNotice(item?.origin === 'deezer' ? 'Deezer account' : LIBRARY_NOTICE)
+        }
       },
       onPlay: (event: MediaEvent) => {
         if (!inPlay()) return
         setPlaying(true)
         if (!forLibrary) return
-        scrobble(false)
+        if (networkRetries.current.item) networkRetries.current.resume = true
+        if (!announced.current) {
+          announced.current = true
+          scrobble(false)
+        }
         const element = event.currentTarget
         publishPosition(element)
         // The gain stage exists only once this has run, so the level is applied again after it.
@@ -2524,10 +2878,22 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       },
       // A track that has started playing ends a run of failures.
       onPlaying: () => {
-        if (inPlay() && forLibrary) failures.current = 0
+        if (!inPlay() || !forLibrary) return
+        failures.current = 0
       },
       onPause: (event: MediaEvent) => {
         if (!inPlay()) return
+        const element = event.currentTarget
+        const retries = networkRetries.current
+        if (forLibrary && retries.item) {
+          // Chromium pauses an element that has just errored: right after a dropped connection
+          // (network state idle) and when the reload is refused (no source). That pause is the
+          // browser's, not the listener's, who still wants it back playing. The listener's own
+          // pause during the wait goes through `toggle`, which records it there.
+          if (element.error) return
+          retries.resume = false
+          setReconnecting(false)
+        }
         cancelHandover()
         setPlaying(false)
         saveQueue()
@@ -2556,15 +2922,27 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (!inPlay()) return
         const element = event.currentTarget
         const seconds = element.currentTime
+        // Loading a song resets the element to 0 and says so before the seek to where it should
+        // be lands on loadedmetadata. A reload after a dropped connection does it every time.
+        // That 0 is not where the song is, so it neither moves the bar nor gets saved.
+        if (forLibrary && pendingSeek.current) return
         setPosition(seconds)
         if (!forLibrary) return
         // Not while paused: restoring a saved queue seeks a paused element past the threshold.
         if (!element.paused && seconds >= HISTORY_LISTEN_SECONDS) recordPlay()
+        // Far enough past where it last dropped that the connection has held.
+        const retries = networkRetries.current
+        if (retries.item && seconds >= retries.at + NETWORK_RECOVERED_SECONDS) endNetworkRetries()
+
         if (Math.floor(seconds / 10) !== lastSavedSecond.current) {
           lastSavedSecond.current = Math.floor(seconds / 10)
           saveQueue()
         }
-        if (!element.paused) ensurePreload(element)
+
+        if (!element.paused) {
+          ensurePreload(element)
+          prefetchAhead(seconds, element.duration)
+        }
         maybeCrossfade(element)
         scheduleHandover(element)
       },
@@ -2574,7 +2952,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         if (Number.isFinite(duration)) setLength(duration)
         if (forLibrary) publishPosition(event.currentTarget)
       },
-      onError: () => {
+      onError: (event: MediaEvent) => {
         if (forLibrary && !inPlay()) {
           // The standby element could not load what it was given. Nothing is skipped for that: the
           // song is loaded the ordinary way when its turn comes, and skipped then if it still fails.
@@ -2583,12 +2961,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           return
         }
         if (!inPlay()) return
-        setPlaying(false)
         setReady(false)
         if (forLibrary) {
+          // While a reload is waiting the play button stays as it was, so a press or a media key
+          // pauses it, rather than pausing an element the screen says is already paused.
+          const element = event.currentTarget
+          if (retryAfterNetworkError(element)) {
+            setPlaying(networkRetries.current.resume)
+            return
+          }
+          setPlaying(false)
           skipUnplayable()
           return
         }
+        setPlaying(false)
         const item = previewCurrent.current
         if (!item) return
         if (previewStage.current < 2) {
@@ -2602,13 +2988,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  // Retry is asked for, so a failure is said again even though the last one already was.
+  // A retry that lands is cleared by `persistQueue`, like any other save.
+  // One at a time: a save can wait up to its deadline, and each press would start another.
   function retryQueueSave() {
-    void saveQueue(true).then((saved) => {
-      if (!saved) return
-      setNoticeText((now) => (now === QUEUE_SAVE_FAILED ? LIBRARY_NOTICE : now))
-      // The failure's toast says the queue is not saved; it must not outlive the save that fixed it.
-      toasts.current.get(QUEUE_SAVE_FAILED)?.()
-      toasts.current.delete(QUEUE_SAVE_FAILED)
+    if (retrying.current) return
+    retrying.current = true
+    setQueueSaving(true)
+    if (queueFailureShown.current === 'failed') queueFailureShown.current = null
+    void saveQueue(true).finally(() => {
+      retrying.current = false
+      setQueueSaving(false)
     })
   }
 
@@ -2631,6 +3021,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         edited,
         currentIndex,
         playing,
+        reconnecting,
         position,
         length,
         shuffle,
@@ -2681,6 +3072,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         sleep,
         setSleep: startSleep,
         retryQueueSave,
+        queueTrouble,
+        queueSaving,
       }}
     >
       <LibraryLoadedContext.Provider value={isLibrary}>{children}</LibraryLoadedContext.Provider>
@@ -2830,23 +3223,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
               data-ui="icon-button"
               data-variant="play"
               className="inline-flex size-[38px] shrink-0 items-center justify-center rounded-pill border-0 bg-accent p-0 text-accent-ink coarse:min-h-11 coarse:min-w-11 max-phone:size-[44px] max-phone:bg-transparent max-phone:text-text"
-              aria-label={
-                isLibrary
-                  ? playing
-                    ? 'Pause'
-                    : 'Play'
-                  : playing
-                    ? 'Pause preview'
-                    : 'Play preview'
-              }
+              aria-label={playLabel({ playing, reconnecting }, !isLibrary)}
+              title={reconnecting ? RECONNECTING_NOTICE : undefined}
               disabled={!activeTitle}
               onClick={toggle}
             >
-              {playing ? (
-                <Pause size={18} fill="currentColor" />
-              ) : (
-                <Play size={18} fill="currentColor" />
-              )}
+              <PlayIcon playing={playing} reconnecting={reconnecting} size={18} filled />
             </button>
             {isLibrary && (
               <IconButton

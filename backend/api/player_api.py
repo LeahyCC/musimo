@@ -1,5 +1,6 @@
 import asyncio
 import re
+import threading
 from collections.abc import Callable
 from pathlib import Path
 from typing import Annotated
@@ -9,7 +10,13 @@ from fastapi.responses import FileResponse, JSONResponse, Response
 from pydantic import BaseModel, Field, StringConstraints, field_validator, model_validator
 
 from backend.core.store import Store
-from backend.jobs.account_listen import listen_file, prepare_track, remember_many, track_number
+from backend.jobs.account_listen import (
+    BUSY,
+    listen_file,
+    prepare_track,
+    remember_many,
+    track_number,
+)
 from backend.library.player import (
     ALBUM_SORTS,
     ARTIST_SHOWS,
@@ -37,6 +44,14 @@ ArtistShow = Annotated[str, Query(pattern=f"^({'|'.join(ARTIST_SHOWS)})?$")]
 BYTE_RANGE = re.compile(r"^bytes=\d*-\d*$")
 # The cover id changes when the image does, so a browser can keep the bytes.
 ART_CACHE = "public, max-age=31536000, immutable"
+# The player prefetches upcoming songs into the browser cache, and the audio element's range
+# requests are then served from it, so a slow or busy server does not stall the next song.
+# Private: a song id is not a secret, but a shared cache has no business keeping the music.
+# An hour, then the entry is stale and downloads again in full: FileResponse never answers 304,
+# so the ETag does not save the transfer. A retagged file is picked up within the hour.
+STREAM_CACHE = "private, max-age=3600"
+# Most prepares allowed to run at once. See install_account_routes.
+PREPARE_SLOTS = 3
 
 
 class ShuffleWindow(BaseModel):
@@ -183,6 +198,10 @@ _LISTEN_TYPES = {
 
 def install_account_routes(app: FastAPI, data: Path, get_store: Callable[[], Store]) -> None:
     """Listening files for a signed-in Deezer account. The cookie never leaves the server."""
+    # prepare_track only refuses a second download of the same song, so prepares for many
+    # different songs could each hold a pool thread for minutes and stall every listener
+    # route, which shares the pool. A few at once is plenty; the rest are told it is busy.
+    slots = threading.BoundedSemaphore(PREPARE_SLOTS)
 
     @app.post("/api/player/account/tracks", status_code=204)
     async def remember(body: AccountRemember) -> None:
@@ -195,7 +214,21 @@ def install_account_routes(app: FastAPI, data: Path, get_store: Callable[[], Sto
         number = track_number(checked_id(song_id))
         if number is None:
             raise HTTPException(404, "Track not found")
-        return await asyncio.to_thread(prepare_track, get_store(), data, number, facts.model_dump())
+        store = get_store()
+
+        def run() -> dict[str, object]:
+            # The slot is taken here, in the worker thread, not in the handler. A request
+            # cancelled while still queued for a pool thread never starts run(), so it never
+            # takes a slot; taking it earlier would leak it, since only run() can release it.
+            # Once running, the thread owns the slot until it is done, even if the request drops.
+            if not slots.acquire(blocking=False):
+                return {"play": "busy", "detail": BUSY, "url": "", "id": ""}
+            try:
+                return prepare_track(store, data, number, facts.model_dump())
+            finally:
+                slots.release()
+
+        return await asyncio.to_thread(run)
 
     @app.get("/api/player/account/{song_id}/file")
     async def account_file(song_id: str, request: Request) -> FileResponse:
@@ -203,9 +236,16 @@ def install_account_routes(app: FastAPI, data: Path, get_store: Callable[[], Sto
         if range_header and not BYTE_RANGE.fullmatch(range_header):
             raise HTTPException(416, "Only one byte range is supported")
         number = track_number(checked_id(song_id))
-        if number is None or not get_store().current().deezer_audio:
+        if number is None:
             raise HTTPException(404, "Track not found")
-        path = listen_file(data, number)
+
+        # current() takes the store lock, so it goes off the loop with the file lookup.
+        def lookup() -> Path | None:
+            if not get_store().current().deezer_audio:
+                return None
+            return listen_file(data, number)
+
+        path = await asyncio.to_thread(lookup)
         if path is None:
             raise HTTPException(404, "Track not found")
         return FileResponse(path, media_type=_LISTEN_TYPES.get(path.suffix.lower(), "audio/mpeg"))
@@ -309,7 +349,10 @@ def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:
 
     @app.get("/api/library/playlists")
     async def playlists() -> dict[str, object]:
-        return {"items": await get().playlists(), "liked_id": get().liked_id()}
+        return {
+            "items": await get().playlists(),
+            "liked_id": await asyncio.to_thread(get().liked_id),
+        }
 
     @app.get("/api/library/playlists/liked")
     async def liked_playlist() -> dict[str, object]:
@@ -371,7 +414,7 @@ def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:
 
     @app.post("/api/player/queue/writer")
     async def begin_queue_writer() -> dict[str, int]:
-        return {"epoch": get().store.begin_queue_writer()}
+        return {"epoch": await asyncio.to_thread(get().store.begin_queue_writer)}
 
     @app.post("/api/player/scrobble", status_code=204)
     async def scrobble(update: ScrobbleUpdate) -> None:
@@ -388,10 +431,19 @@ def install_player_routes(app: FastAPI, get: Callable[[], Player]) -> None:
         if range_header and not BYTE_RANGE.fullmatch(range_header):
             raise HTTPException(416, "Only one byte range is supported")
         song = checked_id(song_id)
-        path = get().local_file(song)
+        # Off the event loop: both lookups wait for the store lock, and a scan or download holding
+        # it would otherwise stall every other request, the playing stream's included. One hop
+        # for the pair, since each hop queues behind the same busy thread pool.
+        player = get()
+
+        def lookup() -> tuple[Path | None, str]:
+            path = player.local_file(song)
+            return path, player.media_type(song) if path is not None else ""
+
+        path, media_type = await asyncio.to_thread(lookup)
         if path is None:
             raise HTTPException(404, "Track not found")
-        return FileResponse(path, media_type=get().media_type(song))
+        return FileResponse(path, media_type=media_type, headers={"Cache-Control": STREAM_CACHE})
 
     @app.get("/api/player/art/{cover_id}")
     async def art(cover_id: str) -> Response:

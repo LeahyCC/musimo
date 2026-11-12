@@ -5,11 +5,13 @@ import tempfile
 import threading
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import httpx
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from test_holdings import index_file
+from test_player import tag, write_wav
 
 from backend.api.download_api import install_download_routes
 from backend.core.listener import CHOOSE, HEADER, ForeignListener, ListenerNameError, scope
@@ -360,6 +362,69 @@ class ListenerRouteTests(unittest.TestCase):
                 # House routes ignore the header.
                 settings = client.get("/api/settings", headers={HEADER: listener_id})
                 self.assertNotEqual(settings.status_code, 401)
+
+
+class ListenerQueueRouteTests(unittest.IsolatedAsyncioTestCase):
+    """Two names save and read a queue through the real middleware and see only their own."""
+
+    async def asyncSetUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.base = Path(self._tmp.name).resolve()
+        music = self.base / "music"
+        music.mkdir()
+        for name in ("First", "Second"):
+            write_wav(music / f"{name}.wav")
+            tag(music / f"{name}.wav", title=name, artist="Artist", album="Album")
+        # Scanned up front so the app under test finds the rows without waiting for its own scan.
+        store = Store(self.base / "musimo.sqlite3")
+        Library(store, [music], asyncio.Event()).scan()
+        self.songs = {
+            str(row["title"]): str(row["song_id"])
+            for row in store.db.execute("SELECT title, song_id FROM library_files")
+        }
+        store.close()
+        env = patch.dict("os.environ", {"MUSIMO_LIBRARY_ROOTS": str(music)})
+        env.start()
+        self.addCleanup(env.stop)
+
+    async def test_each_name_keeps_its_own_queue_and_writer_epoch(self) -> None:
+        first_song, second_song = self.songs["First"], self.songs["Second"]
+        with TestClient(create_app(self.base)) as client:
+            colin = client.post("/api/listeners", json={"name": "Colin"}).json()["id"]
+            sam = client.post("/api/listeners", json={"name": "Sam"}).json()["id"]
+            as_colin, as_sam = {HEADER: colin}, {HEADER: sam}
+
+            # Colin has opened two browsers, so his writer is on epoch 2. Sam's is on epoch 1.
+            client.post("/api/player/queue/writer", headers=as_colin)
+            colin_epoch = client.post("/api/player/queue/writer", headers=as_colin).json()["epoch"]
+            sam_epoch = client.post("/api/player/queue/writer", headers=as_sam).json()["epoch"]
+            self.assertEqual((colin_epoch, sam_epoch), (2, 1))
+
+            def save(who: dict[str, str], song: str, epoch: int) -> int:
+                body = {"ids": [song], "current": song, "position": 7, "epoch": epoch}
+                saved = client.put("/api/player/queue", headers=who, json=body | {"sequence": 1})
+                return int(saved.status_code)
+
+            self.assertEqual(save(as_colin, first_song, colin_epoch), 204)
+            # Colin's token is not Sam's: Sam's writer is a different row.
+            self.assertEqual(save(as_sam, second_song, colin_epoch), 409)
+            self.assertEqual(save(as_sam, second_song, sam_epoch), 204)
+
+            for who, song in ((as_colin, first_song), (as_sam, second_song)):
+                saved = client.get("/api/player/queue", headers=who).json()
+                self.assertEqual(saved["current"], song)
+                self.assertEqual([row["id"] for row in saved["entry"]], [song])
+
+            # A name that does not exist is refused, whatever the route.
+            unknown = {HEADER: "ln-aaaaaaaaaaaaaaaa"}
+            for refused in (
+                client.get("/api/player/queue", headers=unknown),
+                client.put("/api/player/queue", headers=unknown, json={"ids": []}),
+                client.post("/api/player/queue/writer", headers=unknown),
+            ):
+                self.assertEqual(refused.status_code, 401)
+                self.assertEqual(refused.json()["detail"], CHOOSE)
 
 
 class HoldingRouteTests(unittest.IsolatedAsyncioTestCase):

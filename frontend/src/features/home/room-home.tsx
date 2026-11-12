@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { ArrowRight, ArrowUp, Heart, Pause, Play, SkipForward } from 'lucide-react'
+import { ArrowRight, ArrowUp, Heart, SkipForward } from 'lucide-react'
 
 import { cx } from '../../lib/cx'
 import { formatDuration } from '../../lib/format'
@@ -7,6 +7,7 @@ import type { HomeSections } from '../../lib/layout'
 import { StatTile } from '../../ui'
 import { PetFace } from '../music-bot/pet-host'
 import { historyTrack } from '../player/play-history'
+import { PlayIcon, RECONNECTING_LABEL } from '../player/play-icon'
 import { usePlayer } from '../player/player'
 import { Cover, OCTIVE_PROMPTS, useAskOctive, useContinue, useNow } from './home-parts'
 import { listeningTime, mostPlayedThisMonth, weekStats } from './listening-stats'
@@ -49,15 +50,24 @@ function Continue() {
         <div className="flex items-center gap-[10px]">
           <button
             type="button"
-            aria-label={current.playing ? 'Pause' : current.live ? 'Resume' : 'Play again'}
+            aria-label={
+              current.reconnecting
+                ? RECONNECTING_LABEL
+                : current.playing
+                  ? 'Pause'
+                  : current.live
+                    ? 'Resume'
+                    : 'Play again'
+            }
             onClick={current.press}
             className="grid size-[48px] place-items-center rounded-full bg-text text-canvas coarse:size-12"
           >
-            {current.playing ? (
-              <Pause size={20} fill="currentColor" />
-            ) : (
-              <Play size={20} fill="currentColor" />
-            )}
+            <PlayIcon
+              playing={current.playing}
+              reconnecting={current.reconnecting}
+              size={20}
+              filled
+            />
           </button>
           {current.live && (
             <>

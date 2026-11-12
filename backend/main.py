@@ -84,6 +84,16 @@ def cross_origin_write(headers: Mapping[str, str], scheme: str) -> bool:
     return parts.netloc != headers.get("host") or parts.scheme != scheme
 
 
+def listener_allowed(store: Store, presented: str) -> bool:
+    """Both store calls wait for the lock, so the middleware runs this in one thread hop.
+
+    With listeners, the header must name one. With none, a header is refused rather than ignored.
+    """
+    if store.has_listeners():
+        return bool(presented) and store.listener_exists(presented)
+    return not presented
+
+
 def runtime_versions() -> dict[str, str]:
     versions = {"Musimo": VERSION, "Python": platform.python_version()}
     for package in ("fastapi", "uvicorn", "yt-dlp", "yt-dlp-ejs", "bgutil-ytdlp-pot-provider"):
@@ -248,14 +258,12 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
         if found is not None and is_listener_route(request.url.path):
             # A blank header is the same as a missing one. The id is not a secret.
             presented = request.headers.get(HEADER, "").strip()
-            if found.has_listeners():
-                if not presented or not found.listener_exists(presented):
-                    return JSONResponse({"detail": CHOOSE}, status_code=401)
-                token = bind(presented)
-            elif presented:
+            # Off the event loop, like every store call that waits for its lock. One hop for the
+            # whole check. bind() stays here: it sets a contextvar the request must see, and a
+            # thread only gets a copy of the context.
+            if not await asyncio.to_thread(listener_allowed, found, presented):
                 return JSONResponse({"detail": CHOOSE}, status_code=401)
-            else:
-                token = bind("")
+            token = bind(presented)
         try:
             response = await call_next(request)
         finally:
@@ -270,9 +278,19 @@ def create_app(data_dir: Path | None = None, static_dir: Path | None = None) -> 
             "img-src 'self' https: data:; media-src 'self' https:; "
             "style-src 'self' 'unsafe-inline'; frame-ancestors 'none'"
         )
-        # Cover ids change with the image, so those responses may be cached.
-        if request.url.path.startswith("/api/") and not request.url.path.startswith(
-            "/api/player/art/"
+        # Cover ids change with the image, so those responses may be cached. A library stream sets
+        # its own header, so the player can prefetch upcoming songs into the browser cache. Its
+        # errors must not be cached, so the header is kept only on a full or partial success.
+        path = request.url.path
+        keeps_own_cache = (
+            path.startswith("/api/player/stream/")
+            and "cache-control" in response.headers
+            and response.status_code in (200, 206)
+        )
+        if (
+            path.startswith("/api/")
+            and not path.startswith("/api/player/art/")
+            and not keeps_own_cache
         ):
             response.headers["Cache-Control"] = "no-store"
         return response

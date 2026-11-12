@@ -1136,6 +1136,10 @@ class Player:
         }
 
     async def favourite_artist(self, artist_id: str, favourite: bool) -> None:
+        # One hop off the event loop: every store call here waits on the store lock.
+        await asyncio.to_thread(self._star_artist, artist_id, favourite)
+
+    def _star_artist(self, artist_id: str, favourite: bool) -> None:
         starred = self.store.set_artist_favourite(artist_id, favourite)
         if self.store.has_listeners():
             who = current_listener()
@@ -1224,7 +1228,9 @@ class Player:
         seed = ""
         if len(ids) > limit:
             seed = secrets.token_urlsafe(16)
-            self.remember_shuffle(seed, ids)
+            # The key reads the store (is this a named listener?), so it is built off the
+            # loop. The order table itself is only touched here on the loop.
+            self._keep_shuffle(await asyncio.to_thread(self._deck_key, seed), ids)
         return {
             "items": [by_id[text] for text in ids[:cursor] if text in by_id],
             "rest": [],
@@ -1242,11 +1248,16 @@ class Player:
 
     def remember_shuffle(self, seed: str, ids: list[str], replaces: str = "") -> None:
         """Keep a pass under its seed. `replaces` is the finished pass this one follows."""
+        self._keep_shuffle(
+            self._deck_key(seed), ids, self._deck_key(replaces) if replaces else None
+        )
+
+    def _keep_shuffle(self, key: str, ids: list[str], replaced_key: str | None = None) -> None:
+        """remember_shuffle with the deck keys already built, so it never touches the store."""
         now = time.monotonic()
         self.expire_shuffles(now)
-        key = self._deck_key(seed)
-        if replaces:
-            self.shuffle_orders.pop(self._deck_key(replaces), None)
+        if replaced_key is not None:
+            self.shuffle_orders.pop(replaced_key, None)
         self.shuffle_orders[key] = (now, ids)
         self.shuffle_orders.move_to_end(key)
         held = sum(len(order) for _fetched, order in self.shuffle_orders.values())
@@ -1264,9 +1275,11 @@ class Player:
             del self.shuffle_orders[key]
 
     def borrow_shuffle(self, seed: str) -> list[str]:
+        return self._borrow_deck(self._deck_key(seed))
+
+    def _borrow_deck(self, key: str) -> list[str]:
         now = time.monotonic()
         self.expire_shuffles(now)
-        key = self._deck_key(seed)
         found = self.shuffle_orders.get(key)
         if found is None:
             raise ShuffleExpired("That shuffle is no longer on the server")
@@ -1282,7 +1295,10 @@ class Player:
 
         Songs still in the queue are left out of the new pass so the join does not repeat them.
         """
-        ids = self.borrow_shuffle(seed)
+        # Deck keys read the store, so they are built off the loop; the order table is only
+        # touched on the loop, which keeps its bookkeeping single threaded.
+        key = await asyncio.to_thread(self._deck_key, seed)
+        ids = self._borrow_deck(key)
         if cursor >= len(ids):
             skip_set = set(skip)
             nxt = [text for text in ids if text not in skip_set]
@@ -1295,9 +1311,8 @@ class Player:
                     "total": len(ids),
                 }
             random.shuffle(nxt)
-            finished = seed
             seed = secrets.token_urlsafe(16)
-            self.remember_shuffle(seed, nxt, replaces=finished)
+            self._keep_shuffle(await asyncio.to_thread(self._deck_key, seed), nxt, key)
             ids = nxt
             cursor = 0
         chunk = ids[cursor : cursor + limit]
@@ -1321,6 +1336,10 @@ class Player:
 
     async def playlists(self) -> list[dict[str, object]]:
         snapshot = await self._catalog()
+        # Every playlist read waits on the store lock, so it runs off the event loop.
+        return await asyncio.to_thread(self._playlist_items, snapshot)
+
+    def _playlist_items(self, snapshot: LibraryView) -> list[dict[str, object]]:
         items: list[dict[str, object]] = []
         for row in self.store.list_playlists():
             number = row_number(row)
@@ -1353,23 +1372,27 @@ class Player:
         return ""
 
     async def linked_playlist(self) -> dict[str, object]:
-        current = self.liked_id()
+        current = await asyncio.to_thread(self.liked_id)
         if current:
             return await self.playlist(current)
         created = await self.create_playlist(LIKED_PLAYLIST_NAME, [])
         created_id = created.get("id")
         if isinstance(created_id, str) and created_id:
-            self.store.set_linked_playlist(LIKED_PLAYLIST_KEY, created_id)
+            await asyncio.to_thread(self.store.set_linked_playlist, LIKED_PLAYLIST_KEY, created_id)
         return created
 
     async def playlist(self, playlist_id: str) -> dict[str, object]:
         number = playlist_number(playlist_id)
         if number is None:
             raise SongMissing("Playlist not found")
+        snapshot = await self._catalog()
+        return await asyncio.to_thread(self._playlist_detail, number, snapshot)
+
+    def _playlist_detail(self, number: int, snapshot: LibraryView) -> dict[str, object]:
         detail = self.store.playlist(number)
         if detail is None:
             raise SongMissing("Playlist not found")
-        return self._playlist_item(detail, song_list(detail), await self._catalog(), True)
+        return self._playlist_item(detail, song_list(detail), snapshot, True)
 
     def _playlist_item(
         self,
@@ -1409,28 +1432,40 @@ class Player:
         return item
 
     async def create_playlist(self, name: str, song_ids: list[str]) -> dict[str, object]:
-        created = self.store.create_playlist(name, song_ids)
+        created = await asyncio.to_thread(self.store.create_playlist, name, song_ids)
         return await self.playlist(f"pl-{created['id']}")
 
     async def update_playlist(self, playlist_id: str, name: str) -> dict[str, object]:
         number = playlist_number(playlist_id)
-        if number is None or self.store.rename_playlist(number, name) is None:
+        if (
+            number is None
+            or await asyncio.to_thread(self.store.rename_playlist, number, name) is None
+        ):
             raise SongMissing("Playlist not found")
         return await self.playlist(playlist_id)
 
     async def add_playlist_song(self, playlist_id: str, song_id: str) -> dict[str, object]:
         number = playlist_number(playlist_id)
-        if number is None or self.store.add_playlist_song(number, song_id) is None:
+        if (
+            number is None
+            or await asyncio.to_thread(self.store.add_playlist_song, number, song_id) is None
+        ):
             raise SongMissing("Playlist not found")
         return await self.playlist(playlist_id)
 
     async def remove_playlist_song(self, playlist_id: str, song_index: int) -> dict[str, object]:
         number = playlist_number(playlist_id)
-        if number is None or self.store.remove_playlist_song(number, song_index) is None:
+        if (
+            number is None
+            or await asyncio.to_thread(self.store.remove_playlist_song, number, song_index) is None
+        ):
             raise SongMissing("Playlist not found")
         return await self.playlist(playlist_id)
 
     async def delete_playlist(self, playlist_id: str) -> None:
+        await asyncio.to_thread(self._delete_playlist, playlist_id)
+
+    def _delete_playlist(self, playlist_id: str) -> None:
         if playlist_id and playlist_id == self.liked_id():
             raise PlaylistProtected("The liked playlist cannot be deleted")
         number = playlist_number(playlist_id)
@@ -1546,13 +1581,16 @@ class Player:
         return CONTENT_TYPES.get(f".{row['suffix']}", "application/octet-stream")
 
     async def play_queue(self) -> dict[str, object]:
-        saved = self.store.read_play_queue()
+        # Store calls run off the event loop: they wait for the store lock, and a scan or a
+        # download holding it would otherwise stall every request, audio streams included.
+        # to_thread carries the bound listener with it.
+        saved = await asyncio.to_thread(self.store.read_play_queue)
         snapshot = await self._catalog()
         raw_ids = saved.get("song_ids")
         ids = [str(item) for item in raw_ids] if isinstance(raw_ids, list) else []
         position = saved.get("position")
-        remembered = remembered_tracks(
-            self.store, [text for text in ids if text not in snapshot.by_song]
+        remembered = await asyncio.to_thread(
+            remembered_tracks, self.store, [text for text in ids if text not in snapshot.by_song]
         )
         entry: list[dict[str, object]] = []
         for text in ids:
@@ -1576,7 +1614,9 @@ class Player:
         epoch: int | None = None,
         sequence: int | None = None,
     ) -> bool:
-        return self.store.write_play_queue(ids, current, position, epoch, sequence)
+        return await asyncio.to_thread(
+            self.store.write_play_queue, ids, current, position, epoch, sequence
+        )
 
     async def scrobble(self, song_id: str, submission: bool) -> None:
         if not submission:
@@ -1584,6 +1624,12 @@ class Player:
         # An account listen is not a library play. The count stays on the file.
         if song_id.startswith("dz-"):
             return
+        # This runs at every song end, as the next stream starts, so all of its store work
+        # is one hop off the loop. to_thread (unlike run_in_executor) copies the context,
+        # so current_listener() still names the right listener inside the thread.
+        await asyncio.to_thread(self._record_scrobble, song_id)
+
+    def _record_scrobble(self, song_id: str) -> None:
         if not self.store.record_play(song_id):
             raise SongMissing("Track not found")
         if self.store.has_listeners():

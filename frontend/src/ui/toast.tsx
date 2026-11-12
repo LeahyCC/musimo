@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { CircleAlert, CircleCheck, Info, TriangleAlert, X } from 'lucide-react'
 
 import { cx } from '../lib/cx'
+import { withinCap } from './toast-cap'
 
 export type ToastTone = 'info' | 'good' | 'warn' | 'danger'
 
@@ -25,9 +26,6 @@ type ToastApi = {
 
 /** How long a toast without an action stays, unless a pointer or focus is on it. */
 const HIDE_AFTER_MS = 6000
-/** More than this and the oldest goes, so a burst of failures cannot fill the screen. */
-const MAX_TOASTS = 3
-
 const ToastContext = createContext<ToastApi | null>(null)
 
 const toneClassNames: Record<ToastTone, string> = {
@@ -117,7 +115,7 @@ export function ToastProvider({ children, page }: { children: ReactNode; page?: 
   const show = useCallback(
     (input: ToastInput) => {
       const id = nextId.current++
-      setToasts((current) => [...current, { ...input, id }].slice(-MAX_TOASTS))
+      setToasts((current) => withinCap([...current, { ...input, id }]))
       return () => dismiss(id)
     },
     [dismiss],

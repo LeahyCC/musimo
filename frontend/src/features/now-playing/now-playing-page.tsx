@@ -50,6 +50,7 @@ import {
   usePlayer,
 } from '../player/player'
 import { queueActions } from '../player/queue-actions'
+import { QueueSaveStrip } from '../player/queue-save-strip'
 import { AboutPanel } from './about-track'
 import { LyricsPanel } from './lyrics'
 import { ClassicControls, RoomControls } from './now-playing-controls'
@@ -358,6 +359,7 @@ function UpNext({ tone }: { tone: Tone }) {
           )}
         </form>
       )}
+      <QueueSaveStrip className="mx-[8px] mb-[10px]" />
       <div ref={list}>
         {upcoming.length ? (
           upcoming.map((track, position) => {

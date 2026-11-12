@@ -26,10 +26,10 @@ export default async function setup() {
 from pathlib import Path
 from mutagen.wave import WAVE
 from mutagen.id3 import TIT2, TPE1, TALB, TRCK, TDRC, TCON
-def silence(path):
+def silence(path, rate=8000, seconds=30):
     with wave.open(str(path), 'wb') as stream:
-        stream.setparams((1, 2, 8000, 0, 'NONE', 'not compressed'))
-        stream.writeframes(bytes(30 * 8000 * 2))
+        stream.setparams((1, 2, rate, 0, 'NONE', 'not compressed'))
+        stream.writeframes(bytes(seconds * rate * 2))
 silence('/app/frontend/dist/assets/e2e-silence.wav')
 folder = Path('/music/e2e-local-player')
 folder.mkdir(exist_ok=True)
@@ -41,6 +41,20 @@ for number, title in enumerate(('Local First Light', 'Local Second Light'), 1):
     audio.tags.add(TIT2(encoding=3, text=title))
     audio.tags.add(TPE1(encoding=3, text='Generated Local Artist'))
     audio.tags.add(TALB(encoding=3, text='Local Playback Fixture'))
+    audio.tags.add(TRCK(encoding=3, text=str(number)))
+    audio.save()
+folder = Path('/music/e2e-prefetch-cache')
+folder.mkdir(exist_ok=True)
+# The player fetches the first 4 MiB of the next song ahead. The second song is 5.3 MB, so what
+# the prefetch read is only the start of it. The first is small and only has to play.
+for number, (title, rate, seconds) in enumerate((('Cache First', 8000, 30), ('Cache Second', 44100, 60)), 1):
+    path = folder / f'{number}.wav'
+    silence(path, rate, seconds)
+    audio = WAVE(path)
+    audio.add_tags()
+    audio.tags.add(TIT2(encoding=3, text=title))
+    audio.tags.add(TPE1(encoding=3, text='Generated Cache Artist'))
+    audio.tags.add(TALB(encoding=3, text='Prefetch Cache Fixture'))
     audio.tags.add(TRCK(encoding=3, text=str(number)))
     audio.save()
 folder = Path('/music/e2e-music-bot')

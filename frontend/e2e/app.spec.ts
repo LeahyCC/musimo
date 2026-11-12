@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 
 import type { MusicResult } from '../src/api'
 import { ORIGIN } from './env'
-import { librarySong, playerFixtures } from './library-fixtures'
+import { generatedPlayerAudio, librarySong, playerFixtures } from './library-fixtures'
 import { mainNav, toasts } from './nav'
 import { writableDestination } from './queue-fixtures'
 import { expect, test } from './test'
@@ -1566,7 +1566,7 @@ test.describe('Listening room layout', () => {
     const strip = dock.getByText('Queue not saved to server')
     const toast = page.locator('[data-ui="toast"]')
     await expect(strip).toBeVisible()
-    await expect(toast).toContainText('The queue changed here but could not be saved.')
+    await expect(toast).toContainText("Couldn't save the queue to the server.")
     // The toast sits over the page's corner, clear of the dock and its Up next.
     const toastBox = await toast.boundingBox()
     const dockBox = await dock.boundingBox()
@@ -1576,6 +1576,261 @@ test.describe('Listening room layout', () => {
     await dock.getByRole('button', { name: 'Retry' }).click()
     await expect(strip).toBeHidden()
     await expect(toast).toHaveCount(0)
+  })
+
+  test('a queue that still fails to save stays in Up next after the song changes', async ({
+    page,
+  }) => {
+    let status = 500
+    await roomQueue(page, () => status)
+    await generatedPlayerAudio(page)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    const upNext = dock.getByRole('region', { name: 'Up next' })
+    const rows = upNext.getByRole('button', { name: /^Play Song/ })
+    const strip = dock.getByText('Queue not saved to server')
+    const toast = toasts(page).getByText("Couldn't save the queue to the server.")
+    await upNext.getByRole('button', { name: 'Play Song song-2' }).press('Alt+ArrowDown')
+    await expect(strip).toBeVisible()
+    await expect(toast).toBeVisible()
+    await toasts(page).getByRole('button', { name: 'Dismiss' }).click()
+    await expect(toast).toBeHidden()
+
+    // The next song replaces the player's line, which the strip used to be read from.
+    await dock.getByRole('button', { name: 'Next track' }).click()
+    await expect(rows).toHaveCount(1)
+    await expect(rows.first()).toHaveAccessibleName('Play Song song-2')
+    await expect(strip).toBeVisible()
+
+    // An edit that fails too still says so. The toast was raised once for this failing stretch.
+    // The 500 has to come back before the toast can be judged: a check made earlier passes
+    // whether or not the gate holds.
+    await rows.first().hover()
+    const failedSave = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/player/queue' &&
+        response.request().method() === 'PUT' &&
+        response.status() === 500,
+    )
+    await upNext.getByRole('button', { name: 'Remove Song song-2 from the queue' }).click()
+    await failedSave
+    // Two frames let the page act on the response before the toast is checked.
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    )
+    await expect(rows).toHaveCount(0)
+    await expect(strip).toBeVisible()
+    await expect(toast).toBeHidden()
+
+    // A save that lands, here the one a pause makes, takes the strip away. Next track started it.
+    status = 204
+    await dock.getByRole('button', { name: 'Pause', exact: true }).click()
+    await expect(strip).toBeHidden()
+  })
+
+  test('a save that lands without Retry clears the strip and the toast', async ({ page }) => {
+    let status = 500
+    await roomQueue(page, () => status)
+    await generatedPlayerAudio(page)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    const strip = dock.getByText('Queue not saved to server')
+    const toast = toasts(page).getByText("Couldn't save the queue to the server.")
+    await dock.getByRole('button', { name: 'Clear queue' }).click()
+    await expect(strip).toBeVisible()
+    await expect(toast).toBeVisible()
+    // Retry is asked for, so one that fails says so again.
+    await toasts(page).getByRole('button', { name: 'Dismiss' }).click()
+    await expect(toast).toBeHidden()
+    await dock.getByRole('button', { name: 'Retry' }).click()
+    await expect(toast).toBeVisible()
+    await expect(strip).toBeVisible()
+
+    status = 204
+    await dock.getByRole('button', { name: 'Play', exact: true }).click()
+    await dock.getByRole('button', { name: 'Pause', exact: true }).click()
+    await expect(strip).toBeHidden()
+    await expect(toast).toBeHidden()
+  })
+
+  test('a failed queue save shows in the Now Playing Up next tab too, and Retry clears it', async ({
+    page,
+  }) => {
+    let status = 500
+    await roomQueue(page, () => status)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    await dock.getByRole('button', { name: 'Clear queue' }).click()
+    await expect(dock.getByText('Queue not saved to server')).toBeVisible()
+
+    await dock.getByRole('link', { name: 'Open Now Playing' }).first().click()
+    await expect(page).toHaveURL(/\/now-playing$/)
+    await page.getByRole('tab', { name: 'Up next' }).click()
+    const panel = page.getByRole('tabpanel', { name: 'Up next' })
+    await expect(panel.getByText('Queue not saved to server')).toBeVisible()
+
+    status = 204
+    await panel.getByRole('button', { name: 'Retry' }).click()
+    await expect(panel.getByText('Queue not saved to server')).toBeHidden()
+  })
+
+  test('Retry waits for its save: the button reads Saving and cannot be pressed again', async ({
+    page,
+  }) => {
+    await roomQueue(page)
+    let mode: 'fail' | 'hold' = 'fail'
+    let puts = 0
+    let release: () => void = () => undefined
+    // Later routes answer first. The save fails at once, then Retry's is held until released.
+    await page.route('**/api/player/queue', async (route) => {
+      if (route.request().method() === 'GET') return route.fallback()
+      puts += 1
+      if (mode === 'fail') return route.fulfill({ status: 500 })
+      await new Promise<void>((resolve) => {
+        release = resolve
+      })
+
+      return route.fulfill({ status: 204 })
+    })
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    await dock.getByRole('button', { name: 'Clear queue' }).click()
+    const strip = dock.getByText('Queue not saved to server')
+    await expect(strip).toBeVisible()
+    const before = puts
+
+    mode = 'hold'
+    await dock.getByRole('button', { name: 'Retry' }).click()
+    const saving = dock.getByRole('button', { name: 'Saving…' })
+    await expect(saving).toBeDisabled()
+    await expect.poll(() => puts).toBe(before + 1)
+    // A press on a button that is waiting starts nothing.
+    await saving.click({ force: true })
+    await page.waitForTimeout(300)
+    expect(puts).toBe(before + 1)
+    await expect(strip).toBeVisible()
+
+    release()
+    await expect(strip).toBeHidden()
+    expect(puts).toBe(before + 1)
+  })
+
+  test('a timed save that cannot store a Deezer song says so, with no edit made', async ({
+    page,
+  }) => {
+    await roomQueue(page)
+    const echo = librarySong('dz-9', { title: 'Echo', origin: 'deezer', deezerId: 9 })
+    let remembered = 0
+    await page.route('**/api/player/queue', (route) =>
+      route.request().method() === 'GET'
+        ? route.fulfill({
+            json: { current: 'song-1', position: 0, entry: [librarySong('song-1'), echo] },
+          })
+        : route.fallback(),
+    )
+
+    await page.route('**/api/player/account/tracks', (route) => {
+      if (route.request().method() !== 'POST') return route.fallback()
+      remembered += 1
+      return route.fulfill({ status: 500, json: { detail: 'Deezer account unavailable' } })
+    })
+
+    await page.route('**/api/player/account/dz-9', (route) =>
+      route.fulfill({ json: { play: 'busy', detail: 'The Deezer account is busy.' } }),
+    )
+    await generatedPlayerAudio(page)
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    // Playing and pausing makes the timed save; no edit was made, so nothing announces it.
+    await dock.getByRole('button', { name: 'Play', exact: true }).click()
+    await dock.getByRole('button', { name: 'Pause', exact: true }).click()
+    await expect(dock.getByText('Queue not saved to server')).toBeVisible()
+    await expect(toasts(page).getByText("Couldn't save the queue to the server.")).toBeVisible()
+    expect(remembered).toBeGreaterThan(0)
+  })
+
+  test('a queue another browser took over says so, saves nothing more, and Reload starts again', async ({
+    page,
+  }) => {
+    let status = 204
+    await roomQueue(page, () => status)
+    let puts = 0
+    await page.route('**/api/player/queue', async (route) => {
+      if (route.request().method() === 'PUT') puts += 1
+      await route.fallback()
+    })
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    const upNext = dock.getByRole('region', { name: 'Up next' })
+    const strip = upNext.locator('[data-ui="queue-save-strip"]')
+
+    // This browser owns the queue, so a save goes through and nothing is said.
+    await upNext.getByRole('button', { name: 'Play Song song-2' }).press('Alt+ArrowDown')
+    await expect.poll(() => puts).toBe(1)
+    await expect(strip).toBeHidden()
+
+    // The server now answers 409: another browser has the queue.
+    status = 409
+    await upNext.getByRole('button', { name: 'Play Song song-2' }).press('Alt+ArrowUp')
+    await expect(strip).toContainText('Another browser saved the queue')
+    await expect(strip).not.toContainText('Queue not saved to server')
+    await expect(
+      toasts(page).getByText(
+        'Another browser saved the queue. Refresh to restore it before saving more changes.',
+      ),
+    ).toBeVisible()
+    // Retrying would take the queue back with this browser's older copy, so there is no Retry.
+    await expect(strip.getByRole('button', { name: 'Retry' })).toHaveCount(0)
+    const refused = puts
+    expect(refused).toBe(2)
+
+    // Further edits change the screen but are not sent.
+    await dock.getByRole('button', { name: 'Clear queue' }).click()
+    await expect(upNext.getByRole('button', { name: /^Play Song/ })).toHaveCount(0)
+    await page.waitForTimeout(500)
+    expect(puts).toBe(refused)
+    await expect(strip).toContainText('Another browser saved the queue')
+
+    // Reload loads the page again, and with it the queue the other browser saved.
+    await Promise.all([
+      page.waitForEvent('load'),
+      strip.getByRole('button', { name: 'Reload' }).click(),
+    ])
+    await expect(upNext.getByRole('button', { name: /^Play Song/ })).toHaveCount(2)
+    await expect(upNext.locator('[data-ui="queue-save-strip"]')).toBeHidden()
+  })
+
+  test('a failed save marks the closed Up next button of the bar', async ({ page }) => {
+    let status = 500
+    await roomQueue(page, () => status)
+    await page.setViewportSize({ width: 1024, height: 768 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    const dot = dock.locator('[data-ui="queue-trouble-dot"]')
+    await expect(dot).toHaveCount(0)
+
+    await dock.getByRole('button', { name: 'Up next, 2 songs' }).click()
+    const upNext = dock.getByRole('region', { name: 'Up next' })
+    await upNext.getByRole('button', { name: 'Play Song song-2' }).press('Alt+ArrowDown')
+    await expect(upNext.getByText('Queue not saved to server')).toBeVisible()
+    // The panel closes, and with it the strip. The button still says something is wrong.
+    await page.keyboard.press('Escape')
+    await expect(upNext).toBeHidden()
+    await expect(dot).toBeVisible()
+    const button = dock.getByRole('button', { name: 'Up next, 2 songs, queue not saved to server' })
+    await expect(button).toBeVisible()
+
+    status = 204
+    await button.click()
+    await upNext.getByRole('button', { name: 'Retry' }).click()
+    await expect(dot).toHaveCount(0)
+    await expect(dock.getByRole('button', { name: 'Up next, 2 songs', exact: true })).toBeVisible()
   })
 
   test('under the tablet edge the dock is a bar under the page with Up next above it', async ({

@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+### Playback
+
+- The first part of the next two songs (4 MB) is fetched ahead while the current one plays, so the player starts them from the browser's cache and a slow or busy server no longer holds them up. A Deezer song coming up next is prepared on the server ahead of time, one prepare at a time, once the playing song is in its last minute (a prepare can't be stopped, so starting it earlier made a skip wait behind it). A prepare that hangs is given up on after two minutes. Nothing is fetched ahead when the browser asks to save data.
+- Requests that wait for the database no longer freeze the server while a scan or download holds it. That covers stream and account file lookups, the name check on each request, the names list, scrobbles, shuffle, artist favourites and playlists. A song already playing keeps playing, and a request that needs no database answers as usual. A request that needs the database itself, such as looking up a new stream, still waits its turn; the fetch-ahead of the next songs is what covers the gap. A stream that fails is never kept by the browser, a range past the end of the file included.
+- When the connection to the server drops under the playing song, the player loads it again from where it stopped, up to three times, waiting a little longer each time, instead of skipping it. While it waits, the play button in every layout shows a spinner. A song that was paused stays paused, and one that keeps failing stops on that song, playing or paused, with a "Press play to try again" message that has its own Play button, instead of being skipped. A reload no longer saves the queue at the start of the song.
+- "Couldn't save the queue to the server" shows once until a save goes through, rather than coming back after every save while the server is unreachable. The strip in Up next, in the Room dock and on the Now Playing page, stays up until a save lands. Any save that goes through, timed or Retry, clears the strip and the toast.
+- A toast with a Retry button is no longer pushed out by a run of other toasts, so a save that failed during an outage is not left unsaid. A save that fails while storing a Deezer song now shows the strip and the toast on the timed saves too, not only after an edit.
+- On the Room's bottom bar, the Up next button shows a warn dot while the queue is not saved. Retry reads "Saving…" and waits while its save is out, instead of letting it be pressed again.
+- The Room dock's artist line puts a middle dot between artist and album, as Classic's footer does.
+
 ### Delete
 
 - Songs, albums and artists can be deleted from the library. Files move to a `.musimo-trash` folder in their library folder, not erased.

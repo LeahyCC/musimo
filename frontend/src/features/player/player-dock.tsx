@@ -7,13 +7,10 @@ import {
   AudioLines,
   ChevronDown,
   ChevronUp,
-  CloudOff,
   Disc3,
   ListMusic,
   ListPlus,
   Maximize2,
-  Pause,
-  Play,
   Repeat,
   RotateCcw,
   Save,
@@ -34,6 +31,7 @@ import { PetSpot } from '../music-bot/pet-host'
 import { DockStage, useNowPlayingPopout } from '../now-playing/now-playing-popout'
 import { SleepTimerControl } from '../now-playing/sleep-timer-control'
 import { SeekBar } from '../now-playing/waveform-seek'
+import { PlayIcon, playLabel } from './play-icon'
 import {
   artUrl,
   durationText,
@@ -41,9 +39,11 @@ import {
   QUEUE_REPLACED,
   QUEUE_SAVE_FAILED,
   queueEntryKey,
+  RECONNECTING_NOTICE,
   songCount,
   usePlayer,
 } from './player'
+import { QueueSaveStrip } from './queue-save-strip'
 
 /* The Listening room's player. A wide window gets the dock: a column beside the page with the
    cover, the transport and Up next. Under the tablet edge the same parts lie down as a bar under
@@ -113,7 +113,7 @@ function TrackLines({ titleClassName }: { titleClassName: string }) {
       {artist && (
         <div className="mt-[3px] truncate text-small text-muted">
           {artistLink}
-          {album && <> — {albumLink}</>}
+          {album && <> · {albumLink}</>}
         </div>
       )}
     </div>
@@ -152,14 +152,7 @@ function LikeButton() {
 /** Shuffle, previous, play, next and repeat. A preview has only restart and play. */
 function Transport({ disc, className }: { disc: number; className?: string }) {
   const { player, isLibrary, title } = useNowPlaying()
-  const { playing } = player
-  const playLabel = isLibrary
-    ? playing
-      ? 'Pause'
-      : 'Play'
-    : playing
-      ? 'Pause preview'
-      : 'Play preview'
+  const { playing, reconnecting } = player
   return (
     <div className={cx('flex items-center', className)}>
       {isLibrary && (
@@ -193,11 +186,11 @@ function Transport({ disc, className }: { disc: number; className?: string }) {
         type="button"
         className={playDiscClassName}
         style={{ width: disc, height: disc }}
-        aria-label={playLabel}
+        aria-label={playLabel(player, !isLibrary)}
         disabled={!title}
         onClick={player.toggle}
       >
-        {playing ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
+        <PlayIcon playing={playing} reconnecting={reconnecting} size={20} filled />
       </button>
       {isLibrary && (
         <IconButton size="compact" aria-label="Next track" onClick={player.next}>
@@ -349,28 +342,6 @@ function ClosePlayer() {
     >
       <X size={15} />
     </IconButton>
-  )
-}
-
-/** A failed queue save (the player also shows it as a toast), at the head of Up next. */
-function QueueSaveStrip() {
-  const player = usePlayer()
-  const failed = player.notice === QUEUE_SAVE_FAILED
-  if (!failed && player.notice !== QUEUE_REPLACED) return null
-  return (
-    <div className="mx-[12px] mt-[4px] mb-[6px] flex items-center gap-[8px] rounded-[10px] bg-warn-bg py-[6px] pr-[6px] pl-[10px] text-small text-warn">
-      <CloudOff size={14} className="shrink-0" />
-      <span className="flex-1 text-text">
-        {failed ? 'Queue not saved to server' : 'Another browser saved the queue'}
-      </span>
-      <button
-        type="button"
-        className="h-[28px] shrink-0 rounded-[6px] border-0 bg-warn/15 px-[8px] text-small font-medium text-warn coarse:min-h-11"
-        onClick={failed ? player.retryQueueSave : () => location.reload()}
-      >
-        {failed ? 'Retry' : 'Reload'}
-      </button>
-    </div>
   )
 }
 
@@ -543,7 +514,7 @@ function UpNext({ className }: { className?: string }) {
           )}
         </form>
       )}
-      <QueueSaveStrip />
+      <QueueSaveStrip className="mx-[12px] mt-[4px] mb-[6px]" />
       <div
         ref={list}
         className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain px-[8px] pb-[10px]"
@@ -774,12 +745,28 @@ function DockBar() {
           size="compact"
           active={queueOpen}
           aria-pressed={undefined}
-          aria-label={`Up next, ${songCount(upcoming)}`}
+          className="relative"
+          // The panel is closed on this bar, so the strip inside it cannot be seen: the dot, and the
+          // name that goes with it, tell the listener there is something to look at in there.
+          aria-label={`Up next, ${songCount(upcoming)}${
+            player.queueTrouble === 'failed'
+              ? ', queue not saved to server'
+              : player.queueTrouble === 'replaced'
+                ? ', another browser saved the queue'
+                : ''
+          }`}
           aria-expanded={queueOpen}
           aria-controls={panelId}
           onClick={() => setQueueOpen(!queueOpen)}
         >
           <ListMusic size={17} />
+          {player.queueTrouble && (
+            <span
+              aria-hidden="true"
+              data-ui="queue-trouble-dot"
+              className="absolute top-[5px] right-[4px] size-[8px] rounded-pill bg-warn ring-2 ring-sunken"
+            />
+          )}
         </IconButton>
       )}
       <ClosePlayer />
@@ -845,14 +832,11 @@ export function RoomMiniPlayer() {
       <button
         type="button"
         className={cx(playDiscClassName, 'size-[44px]')}
-        aria-label={player.playing ? 'Pause' : 'Play'}
+        aria-label={playLabel(player)}
+        title={player.reconnecting ? RECONNECTING_NOTICE : undefined}
         onClick={player.toggle}
       >
-        {player.playing ? (
-          <Pause size={18} fill="currentColor" />
-        ) : (
-          <Play size={18} fill="currentColor" />
-        )}
+        <PlayIcon playing={player.playing} reconnecting={player.reconnecting} size={18} filled />
       </button>
     </section>
   )
