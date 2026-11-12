@@ -226,6 +226,11 @@ test('a hung queue save times out, coalesces later edits and persists Undo befor
   let high = 0
   let lateFinished = false
   let release: (() => void) | undefined
+  // The second save is held, so the toast the timeout raised is still up when it is looked for.
+  let letSecondLand: (() => void) | undefined
+  const secondMayLand = new Promise<void>((resolve) => {
+    letSecondLand = resolve
+  })
   const commit = (body: Record<string, unknown>) => {
     const sequence = Number(body.sequence)
     if (sequence > high) {
@@ -247,21 +252,28 @@ test('a hung queue save times out, coalesces later edits and persists Undo befor
       await route.fulfill({ status: 204 }).catch(() => undefined)
       return
     }
+    await secondMayLand
     commit(body)
     await route.fulfill({ status: 204 })
   })
+  const failure = page.getByText("Couldn't save the queue to the server.")
   await page.goto('/music-bot')
   await ask(page)
   await page.getByRole('button', { name: 'Add to queue', exact: true }).click()
   await expect.poll(() => saves.length).toBe(1)
+  // Nothing has failed while the save is only slow.
+  await expect(failure).toHaveCount(0)
   await undo(page).click()
   await page.getByRole('button', { name: 'Replace upcoming' }).click()
   await undo(page).click()
   // The writer sends one save at a time, so the second goes out only once the hung one times out.
   await expect.poll(() => saves.length, { timeout: 12000 }).toBe(2)
+  // The timeout is the failure: the toast is raised before the next save has an answer.
+  await expect(failure).toBeVisible()
+  letSecondLand?.()
   await expect.poll(() => committed).toEqual([playing.id])
   // That second save landed, so nothing still says the queue is not saved.
-  await expect(page.getByText("Couldn't save the queue to the server.")).toHaveCount(0)
+  await expect(failure).toHaveCount(0)
   expect(saves).toHaveLength(2)
   release?.()
   await expect.poll(() => lateFinished).toBe(true)

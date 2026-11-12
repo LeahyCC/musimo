@@ -69,6 +69,7 @@ import { fadeInGain, fadeOutGain, rampDown } from './fades'
 import { HANDOVER_WINDOW_SECONDS, handoverDelay, lengthsAgree } from './handover'
 import { createHandoverClock } from './handover-clock'
 import type { HandoverClock } from './handover-clock'
+import { NETWORK_RECOVERED_SECONDS, NETWORK_RETRIES, NETWORK_RETRY_DELAY_MS } from './network-retry'
 import {
   addToHistory,
   HISTORY_LISTEN_SECONDS,
@@ -561,16 +562,6 @@ const runningBooster = (element: HTMLMediaElement) => {
 
 /** How long before a track ends the next one starts loading. A shorter track loads it at once. */
 export const PRELOAD_LEAD_SECONDS = 15
-/** Reloads of the playing track after a dropped connection, before it is skipped as unplayable. */
-export const NETWORK_RETRIES = 3
-/** The wait before the first reload. Each later one waits this much longer. */
-export const NETWORK_RETRY_DELAY_MS = 1000
-/**
- * How far past the point it last dropped a reloaded track has to play before its reloads are
- * counted from zero again. Starting to play is not enough: a server that fails the same range every
- * time lets each reload start and then drops it at the same spot, and would reload it forever.
- */
-export const NETWORK_RECOVERED_SECONDS = 5
 type NetworkRetries = {
   item: LibraryTrack | null
   count: number

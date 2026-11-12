@@ -1604,8 +1604,21 @@ test.describe('Listening room layout', () => {
     await expect(strip).toBeVisible()
 
     // An edit that fails too still says so. The toast was raised once for this failing stretch.
+    // The 500 has to come back before the toast can be judged: a check made earlier passes
+    // whether or not the gate holds.
     await rows.first().hover()
+    const failedSave = page.waitForResponse(
+      (response) =>
+        new URL(response.url()).pathname === '/api/player/queue' &&
+        response.request().method() === 'PUT' &&
+        response.status() === 500,
+    )
     await upNext.getByRole('button', { name: 'Remove Song song-2 from the queue' }).click()
+    await failedSave
+    // Two frames let the page act on the response before the toast is checked.
+    await page.evaluate(
+      () => new Promise((done) => requestAnimationFrame(() => requestAnimationFrame(done))),
+    )
     await expect(rows).toHaveCount(0)
     await expect(strip).toBeVisible()
     await expect(toast).toBeHidden()
