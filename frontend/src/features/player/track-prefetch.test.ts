@@ -264,6 +264,22 @@ describe('fetchIntoCache', () => {
     await expect(reading).rejects.toThrow('Aborted')
   })
 
+  it('stops after the wanted part when the server ignores the range', async () => {
+    let cancelled = false
+    // A 200 with the whole file, far more than was asked for, that never ends by itself.
+    const body = new ReadableStream<Uint8Array>({
+      pull(stream) {
+        stream.enqueue(new Uint8Array(PREFETCH_BYTES / 4))
+      },
+      cancel() {
+        cancelled = true
+      },
+    })
+    const fetcher = vi.fn(() => Promise.resolve(new Response(body, { status: 200 })))
+    await fetchIntoCache('/api/player/stream/tr-1', new AbortController().signal, fetcher)
+    expect(cancelled).toBe(true)
+  })
+
   it('fails on an error response', async () => {
     const fetcher = vi.fn(() => Promise.resolve(new Response('gone', { status: 404 })))
     await expect(

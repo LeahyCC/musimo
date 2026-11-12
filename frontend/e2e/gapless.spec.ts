@@ -373,6 +373,40 @@ test('the next Deezer song is prepared only in the last minute of the playing on
   await expect.poll(() => prepares).toHaveLength(1)
 })
 
+test('skipping stops the prefetch that is still running', async ({ page }) => {
+  // A fetch() for a stream that never answers and records when it is aborted.
+  await page.addInitScript(() => {
+    const aborted: string[] = []
+    const started: string[] = []
+    Object.assign(window, { prefetchAborted: aborted, prefetchStarted: started })
+    const real = window.fetch.bind(window)
+    window.fetch = (input, init) => {
+      const url = String(input instanceof Request ? input.url : input)
+      if (!url.includes('/api/player/stream/')) return real(input, init)
+      started.push(url)
+      return new Promise<Response>((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => {
+          aborted.push(url)
+          reject(new DOMException('Aborted', 'AbortError'))
+        })
+      })
+    }
+  })
+  await restoreQueue(page, [alpha, bravo, charlie, delta])
+  await playToTheEnd(page, 6)
+  // The first fetch is under way and never finishes.
+  await expect
+    .poll(() =>
+      page.evaluate(() => (window as unknown as { prefetchStarted: string[] }).prefetchStarted),
+    )
+    .toEqual([expect.stringContaining('song-b')])
+  const aborted = () =>
+    page.evaluate(() => (window as unknown as { prefetchAborted: string[] }).prefetchAborted)
+  expect(await aborted()).toEqual([])
+  await page.getByRole('contentinfo').getByRole('button', { name: 'Next track' }).click()
+  await expect.poll(aborted).toEqual([expect.stringContaining('song-b')])
+})
+
 test('a metered connection fetches nothing ahead', async ({ page }) => {
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'connection', {

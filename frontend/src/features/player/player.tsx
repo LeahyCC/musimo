@@ -1403,13 +1403,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const indexes = upcomingIndexes(queue.length, indexRef.current, PREFETCH_AHEAD, wrap)
     const playing = libraryCurrent.current
     const playingUrl = playing ? streamUrl(playing) : ''
+    // The standby element is already loading this one; a second fetch would only race it.
+    const standbyItem = preload.current?.item
+    const standbyUrl = standbyItem ? streamUrl(standbyItem) : ''
     return indexes.flatMap((index, step): PrefetchTask[] => {
       const item = queue[index]
       if (!item) return []
       if (item.origin !== 'deezer') {
         const url = streamUrl(item)
         // A later copy of the playing song is already being read by the element itself.
-        if (url === playingUrl) return []
+        if (url === playingUrl || url === standbyUrl) return []
         return [{ key: url, abortable: true, run: (signal) => fetchIntoCache(url, signal) }]
       }
       // Not yet near the end: a prepare can't be stopped, so it would make a skip wait behind it.
@@ -2732,6 +2735,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     return () => {
       window.removeEventListener('keydown', key)
       request.current?.abort()
+      prefetcher.clear()
     }
   }, [])
 
