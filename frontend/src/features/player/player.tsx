@@ -2886,11 +2886,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         const element = event.currentTarget
         const retries = networkRetries.current
         if (forLibrary && retries.item) {
-          // Chromium pauses an element whose load failed. That is the reload being refused, not
-          // the listener, who still wants it back playing.
-          const refused =
-            element.error && element.networkState === HTMLMediaElement.NETWORK_NO_SOURCE
-          if (refused) return
+          // Chromium pauses an element that has just errored: right after a dropped connection
+          // (network state idle) and when the reload is refused (no source). That pause is the
+          // browser's, not the listener's, who still wants it back playing. The listener's own
+          // pause during the wait goes through `toggle`, which records it there.
+          if (element.error) return
           retries.resume = false
           setReconnecting(false)
         }

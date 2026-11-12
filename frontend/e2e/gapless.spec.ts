@@ -1488,16 +1488,11 @@ test('a song that was playing when the connection really dropped plays again aft
   page,
   browserName,
 }) => {
-  // Found by this test: Chromium pauses the element right after it reports the network error
-  // (`error`, then `pause`, with the network state idle). The player takes that pause for the
-  // listener's, so the song comes back where it stopped but stays paused. The made-up error in the
-  // tests above never pauses anything, so they cannot see it. When the player is fixed this test
-  // starts to pass, and Playwright then fails it until this line is removed.
+  // Chromium pauses the element right after it reports the network error (`error`, then `pause`,
+  // with the network state idle). The player must not take that pause for the listener's, or the
+  // song comes back where it stopped but stays paused. The made-up error in the tests above never
+  // pauses anything, so only this test can see it.
   test.skip(browserName !== 'chromium', CHROMIUM_STALL_ONLY)
-  test.fail(
-    true,
-    'Chromium pauses the element after a network error and the player does not resume it.',
-  )
   test.setTimeout(60_000)
   const stream = await cuttableStream()
   try {
