@@ -1754,6 +1754,58 @@ test.describe('Listening room layout', () => {
     expect(remembered).toBeGreaterThan(0)
   })
 
+  test('a queue another browser took over says so, saves nothing more, and Reload starts again', async ({
+    page,
+  }) => {
+    let status = 204
+    await roomQueue(page, () => status)
+    let puts = 0
+    await page.route('**/api/player/queue', async (route) => {
+      if (route.request().method() === 'PUT') puts += 1
+      await route.fallback()
+    })
+    await page.setViewportSize({ width: 1280, height: 800 })
+    await page.goto('/')
+    const dock = page.getByRole('complementary', { name: 'Player' })
+    const upNext = dock.getByRole('region', { name: 'Up next' })
+    const strip = upNext.locator('[data-ui="queue-save-strip"]')
+
+    // This browser owns the queue, so a save goes through and nothing is said.
+    await upNext.getByRole('button', { name: 'Play Song song-2' }).press('Alt+ArrowDown')
+    await expect.poll(() => puts).toBe(1)
+    await expect(strip).toBeHidden()
+
+    // The server now answers 409: another browser has the queue.
+    status = 409
+    await upNext.getByRole('button', { name: 'Play Song song-2' }).press('Alt+ArrowUp')
+    await expect(strip).toContainText('Another browser saved the queue')
+    await expect(strip).not.toContainText('Queue not saved to server')
+    await expect(
+      toasts(page).getByText(
+        'Another browser saved the queue. Refresh to restore it before saving more changes.',
+      ),
+    ).toBeVisible()
+    // Retrying would take the queue back with this browser's older copy, so there is no Retry.
+    await expect(strip.getByRole('button', { name: 'Retry' })).toHaveCount(0)
+    const refused = puts
+    expect(refused).toBe(2)
+
+    // Further edits change the screen but are not sent.
+    await dock.getByRole('button', { name: 'Clear queue' }).click()
+    await expect(upNext.getByRole('button', { name: /^Play Song/ })).toHaveCount(0)
+    await page.waitForTimeout(500)
+    expect(puts).toBe(refused)
+    await expect(strip).toContainText('Another browser saved the queue')
+
+    // Reload loads the page again, and with it the queue the other browser saved.
+    await Promise.all([
+      page.waitForEvent('load'),
+      strip.getByRole('button', { name: 'Reload' }).click(),
+    ])
+    await expect(upNext.getByRole('button', { name: /^Play Song/ })).toHaveCount(2)
+    await expect(upNext.locator('[data-ui="queue-save-strip"]')).toBeHidden()
+  })
+
   test('a failed save marks the closed Up next button of the bar', async ({ page }) => {
     let status = 500
     await roomQueue(page, () => status)
