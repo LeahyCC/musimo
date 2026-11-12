@@ -18,15 +18,6 @@ const NO_PREFETCH_WAIT_MS = 1500
 // How much sooner than the real end the hidden-tab test's songs say they end.
 const EARLY_END = 5
 
-/**
- * Why the tests that play invented songs do not run on WebKit. Its media requests do not go
- * through the page's routes (checked: a route that answers a stream is never asked), so the mocked
- * stream does not answer and the invented song ids reach the real server, which has no such songs.
- * The element then fails with a source it cannot play, and nothing starts. Chromium and Firefox
- * route media, and run these.
- */
-const WEBKIT_BYPASSES_ROUTES = 'WebKit media requests bypass page routing, so invented songs 404.'
-
 type Scrobble = { id: string; submission: boolean }
 
 /** Empties the saved queue. A refused clear would leave a song for every later page to restore. */
@@ -95,9 +86,7 @@ async function playToTheEnd(page: Page, seconds = 27, path = '/') {
 
 test('the next song loads into the standby element and takes over when the song ends', async ({
   page,
-  browserName,
 }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
   const scrobbles = await restoreQueue(page, [alpha, bravo, charlie])
   await playToTheEnd(page)
   const active = page.locator('audio.library-audio[data-role="active"]')
@@ -182,9 +171,7 @@ test('a hidden tab with slow timers starts the next song before the last one end
 
 test('both library elements feed the analyser, so the visualizer survives a handover', async ({
   page,
-  browserName,
 }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
   // The picture is not checked here, only the audio graph: count the distinct elements that get a
   // source on it. One would mean every other song plays past the analyser.
   await page.addInitScript(() => {
@@ -203,11 +190,7 @@ test('both library elements feed the analyser, so the visualizer survives a hand
   await expect(page.locator('html')).toHaveAttribute('data-wired', '2')
 })
 
-test('a quiet track is boosted the same on both library elements', async ({
-  page,
-  browserName,
-}) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
+test('a quiet track is boosted the same on both library elements', async ({ page }) => {
   // +6 dB is about twice as loud, and a peak of 0.3 leaves room for it. At full volume the
   // element cannot go past 1, so the rest has to come from that element's gain stage, and both
   // elements must have one or every other track would miss it.
@@ -265,9 +248,7 @@ function prefetchedStreams(page: Page) {
 
 test('the next two songs are fetched ahead from the fifth second, long before the standby element loads', async ({
   page,
-  browserName,
 }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
   // Counts the position updates a playing song makes in the second before the prefetch point, so
   // the check that nothing was fetched yet is made after the player has really seen that second.
   await page.addInitScript(
@@ -424,9 +405,7 @@ test('the prefetched start of the next song answers the element from the browser
 
 test('the next Deezer song is prepared only in the last minute of the playing one', async ({
   page,
-  browserName,
 }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
   const echo = librarySong('dz-9', {
     title: 'Echo',
     duration: 30,
@@ -493,8 +472,7 @@ test('the next Deezer song is prepared only in the last minute of the playing on
   expect(prepares).toHaveLength(1)
 })
 
-test('skipping stops the prefetch that is still running', async ({ page, browserName }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
+test('skipping stops the prefetch that is still running', async ({ page }) => {
   // A fetch() for a stream that never answers and records when it is aborted.
   await page.addInitScript(() => {
     const aborted: string[] = []
@@ -528,8 +506,7 @@ test('skipping stops the prefetch that is still running', async ({ page, browser
   await expect.poll(aborted).toEqual([expect.stringContaining('song-b')])
 })
 
-test('a metered connection fetches nothing ahead', async ({ page, browserName }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
+test('a metered connection fetches nothing ahead', async ({ page }) => {
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'connection', {
       value: { saveData: true },
@@ -551,8 +528,7 @@ test('a metered connection fetches nothing ahead', async ({ page, browserName })
   await expect(standby).not.toHaveAttribute('src', /song-b/)
 })
 
-test('a metered connection preloads the metadata only', async ({ page, browserName }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
+test('a metered connection preloads the metadata only', async ({ page }) => {
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'connection', {
       value: { saveData: true },
@@ -730,9 +706,7 @@ async function waitForReload(page: Page, from: number, playing: boolean) {
 
 test('a dropped connection reloads the song where it stopped instead of skipping it', async ({
   page,
-  browserName,
 }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
   await logMedia(page)
   const scrobbles = await restoreQueue(page, [alpha, bravo])
   // Now Playing is where the status line shows.
@@ -763,11 +737,7 @@ test('a dropped connection reloads the song where it stopped instead of skipping
   expect(scrobbles.filter((entry) => entry.id === 'song-a' && !entry.submission)).toHaveLength(1)
 })
 
-test('a reload saves the queue where the song stopped, not at its start', async ({
-  page,
-  browserName,
-}) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
+test('a reload saves the queue where the song stopped, not at its start', async ({ page }) => {
   await logMedia(page)
   // Loading the song again resets the element to 0 and reports that before the seek back lands.
   await page.addInitScript(() => {
@@ -814,9 +784,7 @@ test('a reload saves the queue where the song stopped, not at its start', async 
 
 test('a reload the server refuses is tried again rather than skipping the song', async ({
   page,
-  browserName,
 }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
   await playFrom(page, 10)
@@ -840,11 +808,7 @@ test('a reload the server refuses is tried again rather than skipping the song',
   await expect(toasts(page)).not.toContainText('Skipped')
 })
 
-test('the play button shows it is reconnecting until the song is back', async ({
-  page,
-  browserName,
-}) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
+test('the play button shows it is reconnecting until the song is back', async ({ page }) => {
   // The clock is held still so the wait before the reload lasts until the test moves it on.
   await page.clock.install()
   await logMedia(page)
@@ -868,9 +832,7 @@ test('the play button shows it is reconnecting until the song is back', async ({
 
 test('a playing song that keeps losing its connection stops on it once the reloads run out', async ({
   page,
-  browserName,
 }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
   await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
@@ -915,8 +877,7 @@ test('a playing song that keeps losing its connection stops on it once the reloa
   await expect(player.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
 })
 
-test('a pause while the reload waits keeps the song paused', async ({ page, browserName }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
+test('a pause while the reload waits keeps the song paused', async ({ page }) => {
   await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
@@ -945,9 +906,7 @@ test('a pause while the reload waits keeps the song paused', async ({ page, brow
 
 test('a paused song that keeps losing its connection waits for play instead of skipping', async ({
   page,
-  browserName,
 }) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
   await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
@@ -979,11 +938,7 @@ test('a paused song that keeps losing its connection waits for play instead of s
   await expect(page.getByRole('contentinfo')).toContainText('Alpha')
 })
 
-test('a song chosen while the reload waits is the one that plays', async ({
-  page,
-  browserName,
-}) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
+test('a song chosen while the reload waits is the one that plays', async ({ page }) => {
   await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
@@ -1022,11 +977,7 @@ test('a song chosen while the reload waits is the one that plays', async ({
   expect(await active.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeLessThan(10)
 })
 
-test('a song that cannot be played is skipped and the player says which', async ({
-  page,
-  browserName,
-}) => {
-  test.skip(browserName === 'webkit', WEBKIT_BYPASSES_ROUTES)
+test('a song that cannot be played is skipped and the player says which', async ({ page }) => {
   await restoreQueue(page, [alpha, bravo, charlie], ['song-b'])
   await playToTheEnd(page)
   const player = page.getByRole('contentinfo')
