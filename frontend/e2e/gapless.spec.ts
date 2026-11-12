@@ -1,8 +1,17 @@
 import type { APIRequestContext, Page } from '@playwright/test'
+import { createServer } from 'node:http'
+import type { AddressInfo } from 'node:net'
 
 import { libraryAlbumsSchema, type LibraryTrack } from '../src/api'
-import { NETWORK_RETRY_DELAY_MS } from '../src/features/player/network-retry'
-import { PREFETCH_AFTER_SECONDS, PREFETCH_BYTES } from '../src/features/player/track-prefetch'
+import {
+  NETWORK_RECOVERED_SECONDS,
+  NETWORK_RETRY_DELAY_MS,
+} from '../src/features/player/network-retry'
+import {
+  ACCOUNT_PREPARE_TIMEOUT_MS,
+  PREFETCH_AFTER_SECONDS,
+  PREFETCH_BYTES,
+} from '../src/features/player/track-prefetch'
 import { bodyText, librarySong, playerFixtures, requestBody } from './library-fixtures'
 import { toasts } from './nav'
 import { expect, test } from './test'
@@ -17,6 +26,14 @@ const delta = song('song-d', 'Delta')
 const NO_PREFETCH_WAIT_MS = 1500
 // How much sooner than the real end the hidden-tab test's songs say they end.
 const EARLY_END = 5
+// How long `loadAccount` waits for a prepare that was started ahead of time for another song.
+// player.tsx keeps this to itself, so the value is repeated here: if it changes, the cap test
+// below fails and says so.
+const ACCOUNT_PREFETCH_WAIT_MS = 30_000
+
+/** A Deezer account song, as the queue holds it. */
+const deezerSong = (deezerId: number, title: string) =>
+  librarySong(`dz-${deezerId}`, { title, duration: 30, origin: 'deezer', deezerId })
 
 type Scrobble = { id: string; submission: boolean }
 
@@ -37,10 +54,15 @@ test.afterEach(async ({ page, request }) => {
 })
 
 /**
- * Restores this queue with its first song loaded and not playing, answers 404 for the streams of
- * `unplayable`, and records every scrobble.
+ * Restores this queue with the song at `start` loaded and not playing, answers 404 for the streams
+ * of `unplayable`, and records every scrobble.
  */
-async function restoreQueue(page: Page, queue: LibraryTrack[], unplayable: string[] = []) {
+async function restoreQueue(
+  page: Page,
+  queue: LibraryTrack[],
+  unplayable: string[] = [],
+  start = 0,
+) {
   const scrobbles: Scrobble[] = []
   // Pinned so the stage does not depend on the machine's graphics.
   await page.addInitScript(() => localStorage.setItem('musimo.now-playing-view', 'artwork'))
@@ -48,9 +70,14 @@ async function restoreQueue(page: Page, queue: LibraryTrack[], unplayable: strin
   await page.route('**/api/player/queue', (route) =>
     route.fulfill(
       route.request().method() === 'GET'
-        ? { json: { current: queue[0]?.id ?? '', position: 0, entry: queue } }
+        ? { json: { current: queue[start]?.id ?? '', position: 0, entry: queue } }
         : { status: 204 },
     ),
+  )
+
+  // A queue with Deezer songs remembers them first. Answered here so a save never fails on it.
+  await page.route('**/api/player/account/tracks', (route) =>
+    route.request().method() === 'POST' ? route.fulfill({ status: 204 }) : route.fallback(),
   )
 
   await page.route('**/api/player/scrobble', async (route) => {
@@ -403,23 +430,33 @@ test('the prefetched start of the next song answers the element from the browser
   expect(media.network).toBeLessThanOrEqual(Math.max(0, media.bytes - PREFETCH_BYTES) + 64 * 1024)
 })
 
-test('the next Deezer song is prepared only in the last minute of the playing one', async ({
-  page,
-}) => {
-  const echo = librarySong('dz-9', {
-    title: 'Echo',
-    duration: 30,
-    origin: 'deezer',
-    deezerId: 9,
-  })
-  await restoreQueue(page, [alpha, echo])
-  // The library elements report a length that always leaves `secondsLeft` to go, however far the
-  // stream has played, and the test sets it. That puts the song exactly where it needs to be, a
-  // second either side of the last minute, instead of waiting for the playhead to get there.
-  // `ticks` counts the position updates the page has had, so a check that nothing was asked for
-  // is made after the player has really looked.
+/**
+ * Counts the position updates the page has had, as `window.ticks`, so a check that nothing was
+ * asked for is made after the player has really looked.
+ */
+async function countTicks(page: Page) {
   await page.addInitScript(() => {
-    Object.assign(window, { secondsLeft: 61, ticks: 0 })
+    Object.assign(window, { ticks: 0 })
+    document.addEventListener(
+      'timeupdate',
+      (event) => {
+        if (event.target instanceof HTMLAudioElement && event.target.dataset.role === 'active')
+          (window as unknown as { ticks: number }).ticks += 1
+      },
+      true,
+    )
+  })
+}
+
+/**
+ * The library elements report a length that always leaves `window.secondsLeft` to go, however far
+ * the stream has played, and the test sets it. That puts the song exactly where it needs to be, a
+ * second either side of the last minute, instead of waiting for the playhead to get there.
+ */
+async function controlSecondsLeft(page: Page, secondsLeft = 61) {
+  await countTicks(page)
+  await page.addInitScript((initial) => {
+    Object.assign(window, { secondsLeft: initial })
     const real = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, 'duration')?.get
     Object.defineProperty(HTMLMediaElement.prototype, 'duration', {
       configurable: true,
@@ -431,22 +468,47 @@ test('the next Deezer song is prepared only in the last minute of the playing on
           : length
       },
     })
+  }, secondsLeft)
+}
 
-    document.addEventListener(
-      'timeupdate',
-      (event) => {
-        if (event.target instanceof HTMLAudioElement && event.target.dataset.role === 'active')
-          (window as unknown as { ticks: number }).ticks += 1
-      },
-      true,
-    )
-  })
-  const ticks = () => page.evaluate(() => (window as unknown as { ticks: number }).ticks)
-  /** Waits for the player to have handled `count` more position updates. */
-  const laterTicks = async (count: number) => {
-    const start = await ticks()
-    await expect.poll(ticks).toBeGreaterThanOrEqual(start + count)
-  }
+const setSecondsLeft = (page: Page, seconds: number) =>
+  page.evaluate((left) => Object.assign(window, { secondsLeft: left }), seconds)
+
+const pageTicks = (page: Page) =>
+  page.evaluate(() => (window as unknown as { ticks: number }).ticks)
+
+/** Waits for the player to have handled `count` more position updates. */
+async function laterTicks(page: Page, count: number) {
+  const start = await pageTicks(page)
+  await expect.poll(() => pageTicks(page)).toBeGreaterThanOrEqual(start + count)
+}
+
+/**
+ * Moves the playing library song to `seconds` and waits until the player has seen it there. The
+ * browsers disagree on whether `timeupdate` comes before or after `seeked`, so this waits for the
+ * seek and then for one more position update, which the playing song makes every quarter second.
+ */
+async function seekActive(page: Page, seconds: number) {
+  await page.locator('audio.library-audio[data-role="active"]').evaluate(
+    (element: HTMLAudioElement, at) =>
+      new Promise<void>((done) => {
+        element.addEventListener(
+          'seeked',
+          () => element.addEventListener('timeupdate', () => done(), { once: true }),
+          { once: true },
+        )
+        element.currentTime = at
+      }),
+    seconds,
+  )
+}
+
+test('the next Deezer song is prepared only in the last minute of the playing one', async ({
+  page,
+}) => {
+  const echo = deezerSong(9, 'Echo')
+  await restoreQueue(page, [alpha, echo])
+  await controlSecondsLeft(page)
   const prepares: string[] = []
   // Only the prepare: a POST for the song. The account's track list is asked for as well.
   await page.route('**/api/player/account/dz-9', async (route) => {
@@ -461,19 +523,137 @@ test('the next Deezer song is prepared only in the last minute of the playing on
     .toBeGreaterThan(PREFETCH_AFTER_SECONDS)
   // Past the prefetch point with 61 seconds to go, one second short of the last minute. The song
   // is next in the queue and prefetching is on, so only that second keeps the prepare back.
-  await laterTicks(3)
+  await laterTicks(page, 3)
   expect(prepares).toEqual([])
 
   // With 60 seconds to go the prepare goes out.
-  await page.evaluate(() => Object.assign(window, { secondsLeft: 60 }))
+  await setSecondsLeft(page, 60)
   await expect.poll(() => prepares).toHaveLength(1)
   // It was made once: later updates in the same minute do not ask again.
-  await laterTicks(3)
+  await laterTicks(page, 3)
   expect(prepares).toHaveLength(1)
 })
 
-test('skipping stops the prefetch that is still running', async ({ page }) => {
-  // A fetch() for a stream that never answers and records when it is aborted.
+/**
+ * A Deezer account that answers every prepare "busy". It holds the first prepare for each id in
+ * `hold` until `release` is called for it, which is how a prepare "still running" is made. `posted`
+ * lists the songs a prepare was asked for, in order.
+ */
+async function deezerAccount(page: Page, hold: string[]) {
+  const posted: string[] = []
+  const waiting = new Set(hold)
+  const releases = new Map<string, () => void>()
+  await page.route(/\/api\/player\/account\/dz-\d+$/, async (route) => {
+    if (route.request().method() !== 'POST') return route.fallback()
+    const id = new URL(route.request().url()).pathname.split('/').pop() ?? ''
+    posted.push(id)
+    if (waiting.delete(id))
+      await new Promise<void>((resolve) => {
+        releases.set(id, resolve)
+      })
+    // The page may be gone by now, when a test ends with a request still held.
+    await route
+      .fulfill({ json: { play: 'busy', detail: 'The Deezer account is busy.' } })
+      .catch(() => undefined)
+  })
+
+  return { posted, release: (id: string) => releases.get(id)?.() }
+}
+
+test('no Deezer song is prepared ahead while a Deezer song is still being asked for', async ({
+  page,
+  isMobile,
+}) => {
+  test.skip(isMobile, 'The phone mini player has no Previous track button.')
+  const echo = deezerSong(9, 'Echo')
+  await restoreQueue(page, [alpha, echo])
+  await controlSecondsLeft(page)
+  const account = await deezerAccount(page, ['dz-9'])
+  await playToTheEnd(page, 1)
+  const player = page.getByRole('contentinfo')
+
+  // Next asks the account for Echo, and the answer is held.
+  await player.getByRole('button', { name: 'Next track' }).click()
+  await expect.poll(() => account.posted).toEqual(['dz-9'])
+  // Back to Alpha while that request is out. The request carries on, and so does its hold.
+  await player.getByRole('button', { name: 'Previous track' }).click()
+  await expect(player).toContainText('Alpha')
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => !element.paused))
+    .toBe(true)
+
+  // Alpha is past the prefetch point with a minute to go, and Echo is next: a prepare is due.
+  await setSecondsLeft(page, 60)
+  await seekActive(page, PREFETCH_AFTER_SECONDS + 1)
+  await laterTicks(page, 3)
+  // A second prepare now would make one of the two be told the account is busy.
+  expect(account.posted).toEqual(['dz-9'])
+
+  // The answer comes, the hold ends, and the prepare that was due goes out.
+  account.release('dz-9')
+  await expect.poll(() => account.posted).toEqual(['dz-9', 'dz-9'])
+})
+
+test.describe('a Deezer song that loads while a prepare is running', () => {
+  // Foxtrot is before Alpha and Echo after it, so Previous goes to one Deezer song while the
+  // prepare for the other is running.
+  const foxtrot = deezerSong(8, 'Foxtrot')
+  const echo = deezerSong(9, 'Echo')
+
+  /** Alpha playing in its last minute, with the prepare for Echo started and held. */
+  async function prepareRunning(page: Page) {
+    // The clock is only moved by the test, so each cap is measured to the millisecond.
+    await page.clock.install()
+    await restoreQueue(page, [foxtrot, alpha, echo], [], 1)
+    await controlSecondsLeft(page)
+    const account = await deezerAccount(page, ['dz-9'])
+    await playToTheEnd(page, 1)
+    await setSecondsLeft(page, 60)
+    await seekActive(page, PREFETCH_AFTER_SECONDS + 1)
+    await expect.poll(() => account.posted).toEqual(['dz-9'])
+    await holdClock(page)
+    return account
+  }
+
+  test('another song is waited on for 30 seconds, then asked for anyway', async ({
+    page,
+    isMobile,
+  }) => {
+    test.skip(isMobile, 'The phone mini player has no Previous track button.')
+    const account = await prepareRunning(page)
+    // Back to the start of Alpha, then to the song before it.
+    await seekActive(page, 0)
+    await page.getByRole('contentinfo').getByRole('button', { name: 'Previous track' }).click()
+    await expect(page.getByRole('contentinfo')).toContainText('Foxtrot')
+
+    await page.clock.runFor(ACCOUNT_PREFETCH_WAIT_MS - 1)
+    expect(account.posted).toEqual(['dz-9'])
+    await page.clock.runFor(1)
+    await expect.poll(() => account.posted).toEqual(['dz-9', 'dz-8'])
+  })
+
+  test('its own song is waited on for the prepare deadline, not 30 seconds', async ({ page }) => {
+    const account = await prepareRunning(page)
+    await page.getByRole('contentinfo').getByRole('button', { name: 'Next track' }).click()
+    await expect(page.getByRole('contentinfo')).toContainText('Echo')
+
+    // Past the cap for another song's prepare, and still waiting: this one is the song's own.
+    await page.clock.runFor(ACCOUNT_PREFETCH_WAIT_MS + 1)
+    expect(account.posted).toEqual(['dz-9'])
+    await page.clock.runFor(ACCOUNT_PREPARE_TIMEOUT_MS - ACCOUNT_PREFETCH_WAIT_MS - 2)
+    expect(account.posted).toEqual(['dz-9'])
+    await page.clock.runFor(1)
+    await expect.poll(() => account.posted).toEqual(['dz-9', 'dz-9'])
+  })
+})
+
+/**
+ * Stream fetches (the prefetcher's, as opposed to the audio elements') that never answer. The page
+ * records when each starts and when it is aborted, as `window.prefetchStarted` and
+ * `window.prefetchAborted`.
+ */
+async function hangPrefetches(page: Page) {
   await page.addInitScript(() => {
     const aborted: string[] = []
     const started: string[] = []
@@ -491,19 +671,98 @@ test('skipping stops the prefetch that is still running', async ({ page }) => {
       })
     }
   })
+}
+
+const prefetchStarts = (page: Page) =>
+  page.evaluate(() => (window as unknown as { prefetchStarted: string[] }).prefetchStarted)
+
+const prefetchAborts = (page: Page) =>
+  page.evaluate(() => (window as unknown as { prefetchAborted: string[] }).prefetchAborted)
+
+test('skipping stops the prefetch that is still running', async ({ page }) => {
+  await hangPrefetches(page)
   await restoreQueue(page, [alpha, bravo, charlie, delta])
   await playToTheEnd(page, 6)
   // The first fetch is under way and never finishes.
-  await expect
-    .poll(() =>
-      page.evaluate(() => (window as unknown as { prefetchStarted: string[] }).prefetchStarted),
-    )
-    .toEqual([expect.stringContaining('song-b')])
-  const aborted = () =>
-    page.evaluate(() => (window as unknown as { prefetchAborted: string[] }).prefetchAborted)
-  expect(await aborted()).toEqual([])
+  await expect.poll(() => prefetchStarts(page)).toEqual([expect.stringContaining('song-b')])
+  expect(await prefetchAborts(page)).toEqual([])
   await page.getByRole('contentinfo').getByRole('button', { name: 'Next track' }).click()
-  await expect.poll(aborted).toEqual([expect.stringContaining('song-b')])
+  await expect.poll(() => prefetchAborts(page)).toEqual([expect.stringContaining('song-b')])
+})
+
+test('a new song empties the prefetch list, so nothing from the old list starts', async ({
+  page,
+}) => {
+  await countTicks(page)
+  await hangPrefetches(page)
+  await restoreQueue(page, [alpha, bravo, charlie, delta])
+  await playToTheEnd(page, 6)
+  await expect.poll(() => prefetchStarts(page)).toEqual([expect.stringContaining('song-b')])
+  await page.getByRole('contentinfo').getByRole('button', { name: 'Next track' }).click()
+  // The fetch for Bravo is stopped. The one behind it on the old list, Charlie, is not started in
+  // its place: Bravo now plays, and its own list is made a few seconds in.
+  await expect.poll(() => prefetchAborts(page)).toEqual([expect.stringContaining('song-b')])
+  await expect(page.getByRole('contentinfo')).toContainText('Bravo')
+  await laterTicks(page, 3)
+  expect(await prefetchStarts(page)).toEqual([expect.stringContaining('song-b')])
+
+  // Five seconds into Bravo its list is made, and Charlie is first on it.
+  await seekActive(page, PREFETCH_AFTER_SECONDS + 1)
+  await expect
+    .poll(() => prefetchStarts(page))
+    .toEqual([expect.stringContaining('song-b'), expect.stringContaining('song-c')])
+})
+
+test('removing the next song from the queue stops its prefetch and fetches the one after', async ({
+  page,
+}) => {
+  await hangPrefetches(page)
+  await restoreQueue(page, [alpha, bravo, charlie, delta])
+  await playToTheEnd(page, 6, '/now-playing')
+  await expect.poll(() => prefetchStarts(page)).toEqual([expect.stringContaining('song-b')])
+  expect(await prefetchAborts(page)).toEqual([])
+
+  // The list is made again from the queue as it is, on the next position update.
+  await page
+    .getByRole('tabpanel', { name: 'Up next' })
+    .getByRole('button', { name: 'Remove Bravo from the queue' })
+    .click()
+  await expect.poll(() => prefetchAborts(page)).toEqual([expect.stringContaining('song-b')])
+  await expect
+    .poll(() => prefetchStarts(page))
+    .toEqual([expect.stringContaining('song-b'), expect.stringContaining('song-c')])
+})
+
+test('repeat one fetches nothing ahead, since the same song plays again', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('musimo.player-repeat', 'one'))
+  await countTicks(page)
+  await restoreQueue(page, [alpha, bravo, charlie])
+  const prefetched = prefetchedStreams(page)
+  await playToTheEnd(page, 6)
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => element.currentTime))
+    .toBeGreaterThan(PREFETCH_AFTER_SECONDS)
+  // Past the prefetch point, and the player has seen it there.
+  await laterTicks(page, 3)
+  await page.waitForTimeout(NO_PREFETCH_WAIT_MS)
+  expect(prefetched).toEqual([])
+})
+
+test('a random shuffle that has not picked yet fetches nothing ahead', async ({ page }) => {
+  // The next song is not known until the shuffle picks it, so there is nothing to fetch.
+  await page.addInitScript(() => localStorage.setItem('musimo.player-shuffle', 'true'))
+  await countTicks(page)
+  await restoreQueue(page, [alpha, bravo, charlie])
+  const prefetched = prefetchedStreams(page)
+  await playToTheEnd(page, 6)
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => element.currentTime))
+    .toBeGreaterThan(PREFETCH_AFTER_SECONDS)
+  await laterTicks(page, 3)
+  await page.waitForTimeout(NO_PREFETCH_WAIT_MS)
+  expect(prefetched).toEqual([])
 })
 
 test('a metered connection fetches nothing ahead', async ({ page }) => {
@@ -615,16 +874,17 @@ async function holdClock(page: Page) {
 /**
  * Reports a network error with the clock held, then moves it to the last millisecond of `wait`
  * and checks the song has not been loaded again, and one millisecond on and checks it has, once.
- * A wait that was shorter would have loaded the song by the first check.
+ * A wait that was shorter would have loaded the song by the first check. Gives back where the log
+ * stood and where the song was when the error came.
  */
 async function expectReloadAfter(page: Page, wait: number) {
   const from = await mediaCount(page)
-  await fireNetworkError(page)
+  const at = await fireNetworkError(page)
   await page.clock.runFor(wait - 1)
   expect(await sourceWrites(page, from)).toBe(0)
   await page.clock.runFor(1)
   expect(await sourceWrites(page, from)).toBe(1)
-  return from
+  return { from, at }
 }
 
 /**
@@ -844,7 +1104,7 @@ test('a playing song that keeps losing its connection stops on it once the reloa
   // last drop for the count to start again. The clock is moved by the test, so each wait is
   // measured: 1, 2 and then 3 times the base.
   for (let reload = 0; reload < 3; reload += 1) {
-    const from = await expectReloadAfter(page, NETWORK_RETRY_DELAY_MS * (reload + 1))
+    const { from } = await expectReloadAfter(page, NETWORK_RETRY_DELAY_MS * (reload + 1))
     await waitForReload(page, from, true)
   }
   const afterThird = await mediaCount(page)
@@ -916,7 +1176,7 @@ test('a paused song that keeps losing its connection waits for play instead of s
   await expect.poll(() => active.evaluate((element: HTMLAudioElement) => element.paused)).toBe(true)
   await holdClock(page)
   for (let reload = 0; reload < 3; reload += 1) {
-    const from = await expectReloadAfter(page, NETWORK_RETRY_DELAY_MS * (reload + 1))
+    const { from } = await expectReloadAfter(page, NETWORK_RETRY_DELAY_MS * (reload + 1))
     await waitForReload(page, from, false)
   }
   const afterThird = await mediaCount(page)
@@ -975,6 +1235,282 @@ test('a song chosen while the reload waits is the one that plays', async ({ page
   await expect(page.getByRole('contentinfo')).toContainText('Bravo')
   // Alpha dropped at 10 seconds, and Bravo has only just started.
   expect(await active.evaluate((element: HTMLAudioElement) => element.currentTime)).toBeLessThan(10)
+})
+
+test('a play pressed while the reload waits reloads at once, and the wait then does nothing', async ({
+  page,
+}) => {
+  await page.clock.install()
+  await logMedia(page)
+  await restoreQueue(page, [alpha, bravo])
+  await playFrom(page, 10)
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  const player = page.getByRole('contentinfo')
+  await holdClock(page)
+  const from = await mediaCount(page)
+  const at = await fireNetworkError(page)
+  // A pause first, so that the next press is a play.
+  await player.getByRole('button', { name: 'Pause, reconnecting', exact: true }).click()
+  await expect(player.getByRole('button', { name: 'Play', exact: true })).toBeVisible()
+  expect(await sourceWrites(page, from)).toBe(0)
+
+  // The clock has not moved, so this load is the press and not the wait running out.
+  await player.getByRole('button', { name: 'Play', exact: true }).click()
+  expect(await sourceWrites(page, from)).toBe(1)
+  await waitForReload(page, from, true)
+  const seeked = (await reloadSince(page, from)).find((entry) => entry.type === 'seeked')
+  expect(seeked?.time).toBeGreaterThanOrEqual(at - 0.5)
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => !element.paused))
+    .toBe(true)
+
+  // Well past the wait that was out when play was pressed. It must not load the song a second time.
+  const settled = await mediaCount(page)
+  await page.clock.runFor(NETWORK_RETRY_DELAY_MS * 3)
+  expect(await sourceWrites(page, from)).toBe(1)
+  expect(
+    (await mediaSince(page, settled)).filter(
+      (entry) => entry.type === 'emptied' || entry.type === 'loadstart',
+    ),
+  ).toEqual([])
+  await expect(player.getByRole('button', { name: 'Pause', exact: true })).toBeVisible()
+})
+
+test('the count of reloads starts again once the song has played five seconds past the drop', async ({
+  page,
+}) => {
+  await page.clock.install()
+  await logMedia(page)
+  await restoreQueue(page, [alpha, bravo])
+  await playFrom(page, 6)
+  await holdClock(page)
+
+  const first = await expectReloadAfter(page, NETWORK_RETRY_DELAY_MS)
+  await waitForReload(page, first.from, true)
+  // A second short of the distance: the connection has not yet shown it holds, so the count goes on
+  // and this second drop waits twice as long.
+  await seekActive(page, first.at + NETWORK_RECOVERED_SECONDS - 1)
+  const second = await expectReloadAfter(page, NETWORK_RETRY_DELAY_MS * 2)
+  await waitForReload(page, second.from, true)
+
+  // The whole distance: the count starts from zero, so a third drop waits the base time again.
+  await seekActive(page, second.at + NETWORK_RECOVERED_SECONDS)
+  const third = await expectReloadAfter(page, NETWORK_RETRY_DELAY_MS)
+  await waitForReload(page, third.from, true)
+  await expect(page.getByRole('contentinfo')).toContainText('Alpha')
+  await expect(toasts(page)).not.toContainText('Skipped')
+})
+
+// `MediaError.MEDIA_ERR_NETWORK` and `HTMLMediaElement.HAVE_FUTURE_DATA`, which the test process
+// has no DOM to read them from.
+const MEDIA_ERR_NETWORK = 2
+const HAVE_FUTURE_DATA = 3
+
+/** A WAV of silence at 8 kHz, 16 bits, mono: one second is this many bytes, plus a 44 byte header. */
+const WAV_BYTES_PER_SECOND = 16_000
+const WAV_HEADER_BYTES = 44
+
+function silenceWav(seconds: number) {
+  const data = WAV_BYTES_PER_SECOND * seconds
+  const header = Buffer.alloc(WAV_HEADER_BYTES)
+  header.write('RIFF', 0)
+  header.writeUInt32LE(36 + data, 4)
+  header.write('WAVEfmt ', 8)
+  header.writeUInt32LE(16, 16)
+  header.writeUInt16LE(1, 20)
+  header.writeUInt16LE(1, 22)
+  header.writeUInt32LE(8000, 24)
+  header.writeUInt32LE(WAV_BYTES_PER_SECOND, 28)
+  header.writeUInt16LE(2, 32)
+  header.writeUInt16LE(16, 34)
+  header.write('data', 36)
+  header.writeUInt32LE(data, 40)
+  return Buffer.concat([header, Buffer.alloc(data)])
+}
+
+/** How far into the song the test's server stops sending, in seconds. */
+const CUT_SECONDS = 24
+
+/**
+ * A stream server of the test's own, because the browser only reports a dropped connection when a
+ * real one drops. It serves 30 seconds of silence with ranges, in one of three states:
+ *   up    answers every request in full.
+ *   cut   sends the song up to `CUT_SECONDS` and closes the connection part-way through the body,
+ *         which is what a server that dies or a network that goes away does.
+ *   busy  answers 503, which is a server that is back up but not yet ready, or a proxy in front of
+ *         one that is not.
+ * `starts` lists where in the file each request began.
+ *
+ * What Chromium does with each, found by trying them: a connection closed mid-body alone leaves the
+ * element stalled and retrying without end, with no `error` event at all (the same for a connection
+ * that is refused or closed empty). A 503 on the retry it makes is what ends in an `error` event
+ * with `MEDIA_ERR_NETWORK`, which is the event the player's reload waits for. So the test cuts the
+ * connection and then makes the server busy.
+ */
+async function cuttableStream() {
+  const wav = silenceWav(30)
+  const cutAt = WAV_HEADER_BYTES + WAV_BYTES_PER_SECOND * CUT_SECONDS
+  const state = { mode: 'up' as 'up' | 'cut' | 'busy', starts: [] as number[] }
+  const server = createServer((request, response) => {
+    const range = /^bytes=(\d+)-(\d*)$/.exec(request.headers.range ?? '')
+    const start = range ? Number(range[1]) : 0
+    const end = range?.[2] ? Math.min(Number(range[2]), wav.length - 1) : wav.length - 1
+    state.starts.push(start)
+    if (state.mode === 'busy') {
+      response.writeHead(503, { 'Content-Type': 'text/plain', 'Access-Control-Allow-Origin': '*' })
+      response.end('busy')
+      return
+    }
+
+    response.writeHead(range ? 206 : 200, {
+      'Content-Type': 'audio/wav',
+      'Accept-Ranges': 'bytes',
+      'Content-Length': end - start + 1,
+      ...(range ? { 'Content-Range': `bytes ${start}-${end}/${wav.length}` } : {}),
+      'Cache-Control': 'no-store',
+      'Access-Control-Allow-Origin': '*',
+    })
+    if (state.mode === 'up') {
+      response.end(wav.subarray(start, end + 1))
+      return
+    }
+
+    response.write(wav.subarray(start, Math.max(start, Math.min(cutAt, end + 1))))
+    // Closed without finishing the body, so the browser sees the connection drop.
+    setTimeout(() => response.destroy(), 20)
+  })
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve))
+  const { port } = server.address() as AddressInfo
+  return {
+    url: `http://127.0.0.1:${port}/song.wav`,
+    state,
+    close: () =>
+      new Promise<void>((resolve) => {
+        server.closeAllConnections()
+        server.close(() => resolve())
+      }),
+  }
+}
+
+const LOST_STATUS = 'Lost the connection to the server. Trying again…'
+
+/**
+ * Plays Alpha from the test's server up to where it stops sending, and makes the browser report
+ * the drop itself. Leaves the clock held, so the wait before the reload is the test's to end, and
+ * returns where the log stood and what the element reported.
+ */
+async function dropMidStream(page: Page, stream: Awaited<ReturnType<typeof cuttableStream>>) {
+  // What the element itself reported, and where it was: the browser's own word for the drop.
+  await page.addInitScript(() => {
+    const errors: { code: number; time: number }[] = []
+    Object.assign(window, { elementErrors: errors })
+    document.addEventListener(
+      'error',
+      (event) => {
+        const element = event.target
+        if (element instanceof HTMLAudioElement && element.classList.contains('library-audio'))
+          errors.push({ code: element.error?.code ?? 0, time: element.currentTime })
+      },
+      true,
+    )
+  })
+  await page.clock.install()
+  await logMedia(page)
+  await restoreQueue(page, [alpha, bravo])
+  // Alpha comes from the test's server, which stops sending `CUT_SECONDS` in.
+  await page.route('**/api/player/stream/song-a', (route) => route.continue({ url: stream.url }))
+  stream.state.mode = 'cut'
+  await playFrom(page, CUT_SECONDS - 4, '/now-playing')
+  await holdClock(page)
+  const active = page.locator('audio.library-audio[data-role="active"]')
+  const errors = () =>
+    page.evaluate(
+      () =>
+        (window as unknown as { elementErrors: { code: number; time: number }[] }).elementErrors,
+    )
+  const from = await mediaCount(page)
+
+  // The song plays up to the last byte it was sent and stalls there. The browser has said nothing
+  // yet, and the player shows nothing wrong.
+  await expect
+    .poll(() => active.evaluate((element: HTMLAudioElement) => element.readyState), {
+      timeout: 15_000,
+    })
+    .toBeLessThan(HAVE_FUTURE_DATA)
+  expect(await errors()).toEqual([])
+  await expect(page.getByText(LOST_STATUS)).toHaveCount(0)
+  // The server answers the browser's next try with a 503, and that is reported as a lost connection.
+  stream.state.mode = 'busy'
+  await expect.poll(async () => (await errors()).length, { timeout: 20_000 }).toBeGreaterThan(0)
+  const [dropped] = await errors()
+  expect(dropped?.code).toBe(MEDIA_ERR_NETWORK)
+  // The element stalls a little before the end of what it was sent, not at the last byte.
+  expect(dropped?.time).toBeGreaterThan(CUT_SECONDS - 4)
+  expect(dropped?.time).toBeLessThanOrEqual(CUT_SECONDS)
+  await expect(page.getByText(LOST_STATUS)).toBeVisible()
+  await expect(toasts(page)).not.toContainText('Skipped')
+
+  // The server is back before the wait is out.
+  stream.state.mode = 'up'
+  return { from, at: dropped?.time ?? 0, active }
+}
+
+/** Why the two real-drop tests run on Chromium (and the phone project, which is Chromium) only. */
+const CHROMIUM_STALL_ONLY =
+  'The cut stream, stall, then 503 sequence was worked out in Chromium. Firefox never stalled on the cut stream: readyState stayed at 4 for 15 seconds.'
+
+test('a connection that really drops part-way through the stream reloads the song where it stopped', async ({
+  page,
+  browserName,
+}) => {
+  test.skip(browserName !== 'chromium', CHROMIUM_STALL_ONLY)
+  test.setTimeout(60_000)
+  const stream = await cuttableStream()
+  try {
+    const { from, at } = await dropMidStream(page, stream)
+    const requests = stream.state.starts.length
+    await page.clock.runFor(NETWORK_RETRY_DELAY_MS)
+    // Whether it plays again is the next test's question: this one is about where it picks up.
+    await waitForReload(page, from, false)
+    expect(stream.state.starts.length).toBeGreaterThan(requests)
+    const seeked = (await reloadSince(page, from)).find((entry) => entry.type === 'seeked')
+    expect(seeked?.time).toBeGreaterThanOrEqual(at - 0.5)
+    expect(seeked?.time).toBeLessThan(at + 2)
+    await expect(page.getByText(LOST_STATUS)).toHaveCount(0)
+    await expect(page.getByRole('heading', { level: 1 })).toHaveText('Alpha')
+    await expect(toasts(page)).not.toContainText('Skipped')
+  } finally {
+    await stream.close()
+  }
+})
+
+test('a song that was playing when the connection really dropped plays again after the reload', async ({
+  page,
+  browserName,
+}) => {
+  // Found by this test: Chromium pauses the element right after it reports the network error
+  // (`error`, then `pause`, with the network state idle). The player takes that pause for the
+  // listener's, so the song comes back where it stopped but stays paused. The made-up error in the
+  // tests above never pauses anything, so they cannot see it. When the player is fixed this test
+  // starts to pass, and Playwright then fails it until this line is removed.
+  test.skip(browserName !== 'chromium', CHROMIUM_STALL_ONLY)
+  test.fail(
+    true,
+    'Chromium pauses the element after a network error and the player does not resume it.',
+  )
+  test.setTimeout(60_000)
+  const stream = await cuttableStream()
+  try {
+    const { from, at, active } = await dropMidStream(page, stream)
+    await page.clock.runFor(NETWORK_RETRY_DELAY_MS)
+    await waitForReload(page, from, true)
+    await expect
+      .poll(() => active.evaluate((element: HTMLAudioElement) => element.currentTime))
+      .toBeGreaterThan(at + 1)
+    expect(await active.evaluate((element: HTMLAudioElement) => element.paused)).toBe(false)
+  } finally {
+    await stream.close()
+  }
 })
 
 test('a song that cannot be played is skipped and the player says which', async ({ page }) => {
