@@ -165,12 +165,12 @@ test('opening the album from About marks the playing song there', async ({ page 
   const panel = page.getByRole('tabpanel', { name: 'About' })
   await panel.getByRole('link', { name: 'Open album' }).click()
   await expect(page).toHaveURL(/\/library\/albums\/album-1\?track=song-a$/)
-  await expect(page.getByRole('button', { name: /^(Play|Pause) Alpha$/ })).toHaveAttribute(
+  await expect(page.getByRole('button', { name: /\b(Play|Pause) Alpha\b/ })).toHaveAttribute(
     'aria-current',
     'true',
   )
 
-  await expect(page.getByRole('button', { name: /^(Play|Pause) Bravo$/ })).not.toHaveAttribute(
+  await expect(page.getByRole('button', { name: /\b(Play|Pause) Bravo\b/ })).not.toHaveAttribute(
     'aria-current',
     'true',
   )

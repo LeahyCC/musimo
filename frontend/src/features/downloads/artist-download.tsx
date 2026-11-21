@@ -179,7 +179,6 @@ export function ArtistDownloadButton({
                 '[&>span]:grid [&>span]:gap-[3px] [&>span]:text-left [&>span]:text-small [&>span]:leading-none [&>span]:font-semibold',
                 '[&_small]:font-medium [&_small]:tracking-[0.12em] [&_small]:text-caption [&_small]:text-muted [&_small]:uppercase',
               )}
-              aria-label={includeAll ? 'Download all music' : 'Download all albums'}
               key={label}
               onClick={() => open(includeAll)}
             >

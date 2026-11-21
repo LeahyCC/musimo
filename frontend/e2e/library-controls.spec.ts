@@ -827,6 +827,6 @@ test('the Listening room shows one Library page with counted tabs and removable 
 
   // One that is off is a dashed chip that opens its choices.
   await page.getByRole('button', { name: 'Year' }).click()
-  await page.getByLabel('1999').click()
+  await page.getByLabel('1999', { exact: true }).click()
   await expect(page.getByRole('button', { name: 'Remove filter Year: 1999' })).toBeVisible()
 })

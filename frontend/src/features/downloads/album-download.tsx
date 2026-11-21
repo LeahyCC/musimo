@@ -64,13 +64,18 @@ export function AlbumDownloadButton({
   const result = download.data
   const batchStatus = albumBatchStatus(queued, result ?? null)
   const disabled = complete || checkingCoverage || download.isPending
-  const ariaLabel = complete
+  const iconLabel = complete
     ? `Nothing to download for ${item.title}`
     : checkingCoverage
       ? `Checking coverage for ${item.title}`
       : missingOnly
         ? `Download missing tracks from ${item.title}`
         : `Download ${item.title}`
+  // With visible text the name starts with that text, so a voice command that says what the button
+  // shows finds it, and the album follows to tell this button from the others on the page.
+  const ariaLabel = label
+    ? `${label}: ${complete || checkingCoverage ? iconLabel : item.title}`
+    : iconLabel
   const title = complete
     ? 'Already in your library'
     : missingOnly

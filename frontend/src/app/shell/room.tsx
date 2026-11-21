@@ -289,12 +289,12 @@ export function RoomShell() {
       >
         <Link
           to="/"
-          aria-label="Musimo home"
           className="mb-[10px] grid h-[48px] place-items-center text-display font-bold tracking-[-1px] max-phone:hidden"
         >
           <span aria-hidden="true">
             m<span className="text-accent">.</span>
           </span>
+          <span className="sr-only">Musimo home</span>
         </Link>
         {mainNav.map((item) => {
           const Icon = item.icon

@@ -384,8 +384,12 @@ export function AlbumItem({
   onDelete: () => void
 }) {
   const room = useLayout() === 'room'
-  const openLabel = editions > 1 ? `Open ${album.name}, ${editions} editions` : `Open ${album.name}`
   const year = years ?? (album.year ? String(album.year) : '')
+  // The cover button shows the year (in the room) and the edition count, so its name carries both,
+  // in the order they are drawn.
+  const openLabel = [`Open ${album.name}`, room && year, editions > 1 && `${editions} editions`]
+    .filter(Boolean)
+    .join(', ')
   const menu = (
     <RowMenu
       label={`More actions for ${album.name}`}

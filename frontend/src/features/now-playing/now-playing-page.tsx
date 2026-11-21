@@ -396,7 +396,6 @@ function UpNext({ tone }: { tone: Tone }) {
                   type="button"
                   data-control="play"
                   className={rowButtonClassName(tone)}
-                  aria-label={`Play ${track.title}`}
                   aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                   onClick={() => player.playLibrary(player.queue, index, player.source)}
                   onKeyDown={(event) => {
@@ -408,6 +407,7 @@ function UpNext({ tone }: { tone: Tone }) {
                 >
                   <RowArt track={track} />
                   <span className="grid min-w-0 gap-[2px]">
+                    <span className="sr-only">Play </span>
                     <strong className="truncate font-medium">{track.title}</strong>
                     <small className="truncate text-small text-muted">{track.artist}</small>
                   </span>
@@ -573,7 +573,6 @@ function History({ visible, tone }: { visible: boolean; tone: Tone }) {
               <button
                 type="button"
                 className={rowButtonClassName(tone)}
-                aria-label={`Play ${entry.title}`}
                 onClick={() => {
                   // With a queue loaded, the song slots in after the playing one and plays, so
                   // looking back three songs does not throw away everything that was lined up.
@@ -585,6 +584,7 @@ function History({ visible, tone }: { visible: boolean; tone: Tone }) {
               >
                 <RowArt track={track} />
                 <span className="grid min-w-0 gap-[2px]">
+                  <span className="sr-only">Play </span>
                   <strong className="truncate font-medium">{entry.title}</strong>
                   <small className="truncate text-small text-muted">
                     {entry.artist}

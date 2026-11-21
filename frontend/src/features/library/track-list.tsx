@@ -127,7 +127,6 @@ export function TrackList({
                 : 'grid-cols-[34px_minmax(170px,2fr)_minmax(100px,1fr)_52px_24px] max-phone:grid-cols-[24px_minmax(0,1fr)_24px]'),
             table && marked ? 'bg-transparent' : marked ? 'bg-hover' : 'bg-transparent',
           )}
-          aria-label={`${playing ? 'Pause' : 'Play'} ${track.title}`}
           onClick={() => (current ? player.toggle() : player.playLibrary(tracks, index, source))}
         >
           {numbering !== 'none' && (
@@ -163,6 +162,9 @@ export function TrackList({
               </span>
             )}
             <span className="grid min-w-0 gap-[3px]">
+              {/* No aria-label: the name is the row's own text, so it holds what is shown, with the
+                  verb ahead of the title. */}
+              <span className="sr-only">{playing ? 'Pause' : 'Play'} </span>
               <strong
                 className={cx(table && 'text-body font-medium', table && marked && 'text-accent')}
               >
