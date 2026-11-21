@@ -16,6 +16,8 @@ frontend/playwright-report
 frontend/test-results
 htmlcov
 coverage.xml
+# Eval run reports, git ignored. Leave them as the scripts wrote them.
+evals/*/reports
 # Working notes for in-progress branches. Formatting them is optional.
 todo
 # Claude Design prototypes, kept as exported.
