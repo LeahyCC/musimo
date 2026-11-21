@@ -17,6 +17,7 @@ from test_player import tag, write_wav
 from backend.api.music_bot_api import install_music_bot_routes
 from backend.core.models import Settings
 from backend.core.store import Store
+from backend.library.duration import TotalLength
 from backend.library.index import Library
 from backend.library.music_bot import BotError, BotRequest, MusicBot, SearchPlan, ValidateSelection
 from backend.library.player import Player
@@ -788,6 +789,26 @@ class MusicBotTests(unittest.IsolatedAsyncioTestCase):
         with self.assertRaisesRegex(BotError, "invalid plan"):
             await self.bot.chat(BotRequest(prompt="rock"))
         self.assertFalse(self.bot.busy)
+
+    async def test_the_legacy_request_never_offers_total_length(self) -> None:
+        with_length = plan(total_length={"mode": "about", "seconds": 3600})
+        self.assertEqual(with_length.total_length, TotalLength(mode="about", seconds=3600))
+        for previous in (with_length, plan()):
+            with self.subTest(previous=previous.total_length):
+                await self.bot.chat(BotRequest(prompt="rock", previous=previous))
+                body = self.chat_bodies[-1]
+                schema = body["format"]
+                assert isinstance(schema, dict)
+                self.assertNotIn("total_length", schema["properties"])
+                self.assertNotIn("TotalLength", json.dumps(schema))
+                data = str(body["messages"][-1]["content"])  # type: ignore[index]
+                self.assertNotIn("total_length", data)
+        # An older client's previous plan has no such key and still validates.
+        old = plan().model_dump()
+        del old["total_length"]
+        request = BotRequest.model_validate({"prompt": "rock", "previous": old})
+        assert request.previous is not None
+        self.assertIsNone(request.previous.total_length)
 
     async def test_chat_reads_the_servers_shown_songs_not_the_body(self) -> None:
         remembered = [self.ids["E other"], self.ids["A yesterday"]]

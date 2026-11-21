@@ -519,6 +519,8 @@ class Engine:
                     "add_count": 0,
                     "explanation": intent.explanation,
                     **intent.filters.model_dump(exclude={"total_length", "exclude_ids"}),
+                    # The model itself: SearchPlan is strict, so a dumped dict would not pass.
+                    "total_length": intent.filters.total_length,
                 }
             )
         except ValidationError as exc:
