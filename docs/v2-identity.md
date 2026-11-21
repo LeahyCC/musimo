@@ -2,6 +2,19 @@
 
 Status: proposal, not signed off. Part of [#179](https://github.com/LeahyCC/musimo/issues/179), phase 1: separating recording identity from file and provider availability, in small steps, with remixes, live and remastered versions kept apart. Nothing here is built. Questions for Colin are at the end and are not answered.
 
+## What the issue already decides
+
+Taken from #179 (goal, phase 1, phase 7, edge-case table and "Existing behavior to extend, not repeat"). This page does not reopen these.
+
+- Existing `tr-` ids are not invalidated, and live, remix and remaster versions are not collapsed by title alone. Identity and availability contracts are added incrementally. No catalogue-wide migration was required for 1A, and identity migration was outside it.
+- Recommendation, availability, playback and acquisition are separate concepts and actions. Discovery never downloads, buys or changes a queue by itself.
+- Exact identity stays deterministic. The same intent, seed and snapshot give the same ordered ids.
+- A title shared by several tracks, or a seed that is a remix or live version, is resolved with version and artist context. Real ambiguity gets a clarifying question, not a silent pick.
+- Unknown artist tags must not collapse unrelated tracks into one artist or duplicate group.
+- An external candidate that already exists locally resolves to its recording and version and shows its local availability. No duplicate acquisition is suggested.
+- A provider with only a preview, no audio, or an outage is reported as such. A preview is not whole-track analysis. Local features work offline.
+- Provider adapters (phase 7, package 7A) come after stable local identity and retrieval. Providers are chosen after local acceptance, and no existing integration is assumed to supply playback rights or audio evidence.
+
 ## Today
 
 ### What a song id is
@@ -71,6 +84,8 @@ The existing `tr-` id stays the id of the playable file entry. A new table maps 
 
 A proposal or a queue may only contain `local_file` and `externally_playable` items. `recommendation_only` items are never selected as ids by the engine. Later external discovery fills this kind without changing the file model.
 
+Acquisition is not an availability kind. It is a separate action that is never implied by a recommendation or by playability. A recording that has a `local_file` is never offered for acquisition. An availability row also says what evidence exists: a preview-only or metadata-only source has no audio evidence for analysis, and missing evidence is unknown, never a negative label. Losing a provider changes only that source's rows. Local files stay usable.
+
 ### What may link files to one recording
 
 Strong, may link on their own:
@@ -88,10 +103,13 @@ Supporting, link only when combined and with no conflict:
 Never enough alone:
 
 - title alone, or artist and title alone;
+- an empty or unknown artist or title key (untitled or untagged files never group, as the existing duplicate rule already treats them);
 - album name, folder name or file name;
 - a Deezer or ISRC match when version words or duration disagree (an ISRC is reused across some re-releases).
 
 Any difference in version words (live, remix, remaster, radio edit, extended, acoustic, instrumental) keeps files on separate recordings unless a user links them. Duration far outside tolerance does the same.
+
+When a request names a title that belongs to several recordings (or its seed is a remix or live version), the engine resolves it with artist and version context. If that still leaves more than one, it asks which one rather than picking. Exact identity lookups stay deterministic: with no recording rows they behave as today.
 
 ### Confidence and provenance
 
@@ -100,7 +118,7 @@ Each link records: the file or source, the recording, the signal that made it (`
 ## Migration
 
 - Existing `tr-` ids keep working and are never rewritten or invalidated. Nothing in this plan changes the `tr-` pattern, `library_files.song_id` or how ids are minted.
-- Stored proposals, receipts and `bot_memory` stay as they are. Their ids resolve through the file as before. A song with no recording row behaves exactly as today.
+- Stored proposals, receipts and shown memory (kept per name since #230) stay as they are. Their ids resolve through the file as before. A song deleted to the trash already makes an open proposal stale at commit (#263, #264), and that stays the rule. A song with no recording row behaves exactly as today.
 - No catalogue-wide pass is needed first. A recording row is created lazily, the first time something needs one (a link, a duplicate check, an external item).
 
 Steps, each separately shippable:
@@ -110,15 +128,15 @@ Steps, each separately shippable:
 3. **Record links, no behaviour.** Store links with confidence and provenance for `certain` signals only. Acceptance: a link can be removed and re-made; a "not the same" block survives a rescan; no playlist, queue or snapshot output changes.
 4. **Survive a move.** When a vanished `tr-` id and a new file share a recording by a `certain` signal, carry plays, playlist places and holdings over, instead of dropping them. Acceptance: move and rename a file and its plays and playlist entry follow; a re-tag does not break the link; a real deletion still drops references.
 5. **Duplicates in the engine.** The duplicate rule reads recording ids where present and falls back to title and artist. Acceptance: two copies of one recording appear once in a proposal; a remix and an original both appear; with no recording rows the output is byte-identical to today.
-6. **Availability kinds.** Populate `local_file` from files and `externally_playable` from the account. Acceptance: a `dz-` song shows as externally playable; a recommendation-only item is refused as a proposal id.
+6. **Availability kinds.** Populate `local_file` from files and `externally_playable` from the existing account songs only. Acceptance: a `dz-` song shows as externally playable; a recommendation-only item is refused as a proposal id; a Deezer track held locally reports `local_file` and no acquisition offer; with the account offline, local results are unchanged. New provider adapters are 7A, after this, and have their own contract tests for duplicates, versions, unavailable tracks, rate limits and outages.
 
 ## Effect on the engine contract
 
 - Steps 1 to 4 do not change the intent, the result or the receipt, so `CONTRACT_VERSION` stays 5 and `SUPPORTED_VERSIONS` is unchanged.
 - Step 5 changes which songs are chosen, so it bumps `ENGINE_VERSION` (6), as an earlier selection change did. A replay of an old intent that names an older engine version is not claimed to match.
-- A recording id in results or a proposal's items would be a visible shape change, so it would be a contract version 6, added only when a client needs it. Ids in `SongId` stay `tr-` and `dz-` until then. Whether a recording id may appear as an id is open question 3.
+- A recording id in results or a proposal's items would be a visible shape change, so it would be a contract version 6, added only when a client needs it. `SongId` (today `tr-` only) is unchanged until then. Whether a recording id may appear as an id is open question 3.
 - The snapshot gains one digest: recordings and links, over the rows the selection read. With no rows, the digest is constant and the snapshot differs only by that field, so snapshot ids change once at the step that adds it. Stored snapshots stay readable, and an old one that lacks the field is compared on the fields it has.
-- Reproducibility: the same intent, library, links and seed give the same ids. A new link or a removed one changes the digest, like a re-tag does now. Link rule versions are recorded so a changed rule is visible.
+- Reproducibility: the same intent, library, links and seed give the same ids, and the snapshot records enough (rule version, link digest) to explain a difference instead of claiming the seed alone replays. A new link or a removed one changes the digest, like a re-tag does now. Link rule versions are recorded so a changed rule is visible.
 - Duplicates: a proposal holds at most one song per recording, chosen by a fixed preference (stated in open question 5). The other file is not removed, only not offered twice. A proposal already stored keeps its ids and is not re-deduplicated.
 
 ## Open questions for Colin
