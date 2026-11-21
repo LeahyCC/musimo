@@ -184,6 +184,7 @@
 ### Testing and CI
 
 - Add the 2A interpreter suite: 128 labelled music bot requests against an invented library, the held-out part sealed by checksum, and a test that checks every label against the engine contract (#199)
+- Add the playlist and action correctness suite: labelled HTTP scenarios run in process against a temporary library with no model, covering previews, commits, retries, stale revisions, the queue writer, chat transport commands, edits and the 500 song limit (#179)
 - Add a Vitest unit test runner for the frontend (#49)
 - Pin the stage view in the Now Playing popout test, which passed headless and failed on any machine with a WebGPU adapter (#62)
 - Keep prettier out of `.git` and the agent worktrees under `.claude`, so `npm run format` finishes instead of dying on a plugin it cannot resolve (#62)

@@ -1,0 +1,1948 @@
+{
+  "version": 1,
+  "library": [
+    {
+      "key": "s01",
+      "title": "Dawn",
+      "artist": "Orchard",
+      "album": "Paper Rooms",
+      "year": 1994,
+      "genre": "Rock",
+      "seconds": 200,
+      "plays": 5
+    },
+    {
+      "key": "s02",
+      "title": "Dusk",
+      "artist": "Orchard",
+      "album": "Paper Rooms",
+      "year": 1995,
+      "genre": "Rock",
+      "seconds": 200,
+      "plays": 0
+    },
+    {
+      "key": "s03",
+      "title": "Harbor Light",
+      "artist": "Harbor",
+      "album": "Low Tide",
+      "year": 1991,
+      "genre": "Rock",
+      "seconds": 200,
+      "plays": 0
+    },
+    {
+      "key": "s04",
+      "title": "Low Tide",
+      "artist": "Harbor",
+      "album": "Low Tide",
+      "year": 1992,
+      "genre": "Rock",
+      "seconds": 200,
+      "plays": 0
+    },
+    {
+      "key": "s05",
+      "title": "Mist",
+      "artist": "Meadow",
+      "album": "Grass",
+      "year": 1999,
+      "genre": "Jazz",
+      "seconds": 200,
+      "plays": 5
+    },
+    {
+      "key": "s06",
+      "title": "Fog",
+      "artist": "Meadow",
+      "album": "Grass",
+      "year": 2001,
+      "genre": "Jazz",
+      "seconds": 200,
+      "plays": 0
+    },
+    {
+      "key": "s07",
+      "title": "Rain",
+      "artist": "Quarry",
+      "album": "Stone",
+      "year": 1989,
+      "genre": "Rock",
+      "seconds": 200,
+      "plays": 0
+    },
+    {
+      "key": "s08",
+      "title": "Snow",
+      "artist": "Quarry",
+      "album": "Stone",
+      "year": 1990,
+      "genre": "Rock",
+      "seconds": 200,
+      "plays": 0
+    },
+    {
+      "key": "s09",
+      "title": "Hail",
+      "artist": "Ridge",
+      "album": "Weather",
+      "year": 1988,
+      "genre": "Rock",
+      "seconds": 200,
+      "plays": 0
+    },
+    {
+      "key": "s10",
+      "title": "Sleet",
+      "artist": "Ridge",
+      "album": "Weather",
+      "year": 1987,
+      "genre": "Rock",
+      "seconds": 200,
+      "plays": 0
+    },
+    {
+      "key": "s11",
+      "title": "Creek",
+      "artist": "Willow",
+      "album": "Water",
+      "year": 2003,
+      "genre": "Folk",
+      "seconds": 200,
+      "plays": 0
+    },
+    {
+      "key": "s12",
+      "title": "Pine",
+      "artist": "Willow",
+      "album": "Water",
+      "year": 2004,
+      "genre": "Folk",
+      "seconds": 200,
+      "plays": 0
+    }
+  ],
+  "cases": [
+    {
+      "id": "a01",
+      "title": "A structured intent preview changes no state",
+      "covers": ["preview", "intent"],
+      "steps": [
+        {
+          "name": "preview",
+          "call": "POST /api/music-bot/intent",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 6 }
+          },
+          "expect": {
+            "status": 200,
+            "json": { "action": "search", "state_changed": false },
+            "len": { "ids": 6 }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a02",
+      "title": "A stored preview writes only its proposal",
+      "covers": ["preview", "proposal"],
+      "steps": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 6 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200, "json": { "state_changed": false, "proposal.revision": 1 } }
+        }
+      ],
+      "expect": {
+        "unchanged": ["playback", "playlists", "receipts"],
+        "delta": { "proposals": 1, "revisions": 1 }
+      }
+    },
+    {
+      "id": "a03",
+      "title": "A chat search changes no state and stores no proposal",
+      "covers": ["preview", "chat"],
+      "ollama": {
+        "reply": {
+          "action": "search",
+          "scope": "library",
+          "filters": { "genres": ["Rock"] },
+          "named_songs": [],
+          "edit": null,
+          "question": "",
+          "reason": ""
+        }
+      },
+      "steps": [
+        {
+          "name": "chat",
+          "call": "POST /api/music-bot/chat",
+          "json": { "prompt": "some rock please" },
+          "expect": {
+            "status": 200,
+            "json": { "status": "ok", "action": "search", "state_changed": false }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a04",
+      "title": "Asking for a song by name previews that song and plays nothing",
+      "covers": ["preview", "chat"],
+      "ollama": {
+        "reply": {
+          "action": "search",
+          "scope": "library",
+          "filters": {},
+          "named_songs": [{ "title": "Dawn" }],
+          "edit": null,
+          "question": "",
+          "reason": ""
+        }
+      },
+      "steps": [
+        {
+          "name": "chat",
+          "call": "POST /api/music-bot/chat",
+          "json": { "prompt": "play Dawn" },
+          "expect": { "status": 200, "json": { "ids": ["{s01}"], "state_changed": false } }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a05",
+      "title": "Save as playlist stores exactly the approved ids in order",
+      "covers": ["commit", "playlist"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit playlist",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "playlist", "name": "Evening" }
+          },
+          "save": { "r": "receipt" },
+          "expect": {
+            "status": 200,
+            "json": {
+              "receipt.status": "saved",
+              "receipt.target": "playlist",
+              "receipt.revision": 1,
+              "receipt.ids": "{p.ids}",
+              "replayed": false
+            }
+          }
+        },
+        {
+          "name": "read playlist",
+          "call": "GET /api/library/playlists/{r.playlist_id}",
+          "expect": { "status": 200, "json": { "entry.*.id": "{p.ids}" } }
+        }
+      ],
+      "expect": { "unchanged": ["queue", "plays"], "delta": { "playlists": 1, "receipts": 1 } }
+    },
+    {
+      "id": "a06",
+      "title": "Play uses exactly the approved ids and order",
+      "covers": ["commit", "queue"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Jazz"] }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit queue",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" }
+          },
+          "save": { "r": "receipt" },
+          "expect": {
+            "status": 200,
+            "json": {
+              "receipt.status": "ready_for_player",
+              "receipt.target": "queue",
+              "receipt.ids": "{p.ids}",
+              "replayed": false
+            }
+          }
+        },
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "apply play",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{r.ids.0}", "{r.ids.1}"],
+            "current": "{r.ids.0}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        },
+        {
+          "name": "read queue",
+          "call": "GET /api/player/queue",
+          "expect": { "status": 200, "json": { "entry.*.id": ["{r.ids.0}", "{r.ids.1}"] } }
+        }
+      ],
+      "expect": { "unchanged": ["plays", "playlist_rows", "playlists"], "delta": { "receipts": 1 } }
+    },
+    {
+      "id": "a07",
+      "title": "Play next uses exactly the approved ids and order",
+      "covers": ["commit", "queue"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Jazz"] }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "save queue",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s11}", "{s12}"],
+            "current": "{s11}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit queue",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" }
+          },
+          "save": { "r": "receipt" },
+          "expect": {
+            "status": 200,
+            "json": {
+              "receipt.status": "ready_for_player",
+              "receipt.target": "queue",
+              "receipt.ids": "{p.ids}",
+              "replayed": false
+            }
+          }
+        },
+        {
+          "name": "apply play next",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s11}", "{r.ids.0}", "{r.ids.1}", "{s12}"],
+            "current": "{s11}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 2
+          },
+          "expect": { "status": 204 }
+        },
+        {
+          "name": "read queue",
+          "call": "GET /api/player/queue",
+          "expect": {
+            "status": 200,
+            "json": { "entry.*.id": ["{s11}", "{r.ids.0}", "{r.ids.1}", "{s12}"] }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["plays", "playlist_rows", "playlists"], "delta": { "receipts": 1 } }
+    },
+    {
+      "id": "a08",
+      "title": "Add to queue uses exactly the approved ids and order",
+      "covers": ["commit", "queue"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Jazz"] }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "save queue",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s11}", "{s12}"],
+            "current": "{s11}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit queue",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" }
+          },
+          "save": { "r": "receipt" },
+          "expect": {
+            "status": 200,
+            "json": {
+              "receipt.status": "ready_for_player",
+              "receipt.target": "queue",
+              "receipt.ids": "{p.ids}",
+              "replayed": false
+            }
+          }
+        },
+        {
+          "name": "apply add to queue",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s11}", "{s12}", "{r.ids.0}", "{r.ids.1}"],
+            "current": "{s11}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 2
+          },
+          "expect": { "status": 204 }
+        },
+        {
+          "name": "read queue",
+          "call": "GET /api/player/queue",
+          "expect": {
+            "status": 200,
+            "json": { "entry.*.id": ["{s11}", "{s12}", "{r.ids.0}", "{r.ids.1}"] }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["plays", "playlist_rows", "playlists"], "delta": { "receipts": 1 } }
+    },
+    {
+      "id": "a09",
+      "title": "Replace upcoming uses exactly the approved ids and order",
+      "covers": ["commit", "queue"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Jazz"] }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "save queue",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s11}", "{s12}", "{s07}"],
+            "current": "{s11}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit queue",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" }
+          },
+          "save": { "r": "receipt" },
+          "expect": {
+            "status": 200,
+            "json": {
+              "receipt.status": "ready_for_player",
+              "receipt.target": "queue",
+              "receipt.ids": "{p.ids}",
+              "replayed": false
+            }
+          }
+        },
+        {
+          "name": "apply replace upcoming",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s11}", "{r.ids.0}", "{r.ids.1}"],
+            "current": "{s11}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 2
+          },
+          "expect": { "status": 204 }
+        },
+        {
+          "name": "read queue",
+          "call": "GET /api/player/queue",
+          "expect": { "status": 200, "json": { "entry.*.id": ["{s11}", "{r.ids.0}", "{r.ids.1}"] } }
+        }
+      ],
+      "expect": { "unchanged": ["plays", "playlist_rows", "playlists"], "delta": { "receipts": 1 } }
+    },
+    {
+      "id": "a10",
+      "title": "Retrying a playlist commit saves nothing twice and returns the first receipt",
+      "covers": ["retry", "playlist"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit playlist",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "playlist", "name": "Evening" }
+          },
+          "save": { "r1": "receipt" },
+          "expect": { "status": 200, "json": { "replayed": false } }
+        },
+        {
+          "name": "retry commit playlist",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "playlist", "name": "Evening" }
+          },
+          "expect": { "status": 200, "json": { "replayed": true, "receipt": "{r1}" } }
+        }
+      ],
+      "expect": { "unchanged": ["queue", "plays"], "delta": { "playlists": 1, "receipts": 1 } }
+    },
+    {
+      "id": "a11",
+      "title": "Retrying a queue commit records nothing twice and returns the first receipt",
+      "covers": ["retry", "queue"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit queue",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" }
+          },
+          "save": { "r1": "receipt" },
+          "expect": { "status": 200, "json": { "replayed": false } }
+        },
+        {
+          "name": "retry commit queue",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" }
+          },
+          "expect": { "status": 200, "json": { "replayed": true, "receipt": "{r1}" } }
+        }
+      ],
+      "expect": { "unchanged": ["queue", "plays", "playlists"], "delta": { "receipts": 1 } }
+    },
+    {
+      "id": "a12",
+      "title": "An operation id used for another target is refused, not run again",
+      "covers": ["retry", "conflict"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit queue",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" }
+          },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "same id, save as playlist",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "playlist", "name": "Evening" }
+          },
+          "expect": { "status": 409, "error": "operation_conflict" }
+        }
+      ],
+      "expect": { "unchanged": ["queue", "plays", "playlists"], "delta": { "receipts": 1 } }
+    },
+    {
+      "id": "a13",
+      "title": "A second save of the same revision needs repeat, and is refused without it",
+      "covers": ["retry", "playlist"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit playlist",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "playlist", "name": "Evening" }
+          },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "commit playlist again, new id",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-02",
+            "target": { "kind": "playlist", "name": "Evening" }
+          },
+          "expect": { "status": 409, "error": "already_committed" }
+        }
+      ],
+      "expect": { "unchanged": ["queue", "plays"], "delta": { "playlists": 1, "receipts": 1 } }
+    },
+    {
+      "id": "a14",
+      "title": "Retrying an edit with the same operation id makes one revision",
+      "covers": ["retry", "edit"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "edit add",
+          "call": "POST /api/music-bot/proposals/{p.id}/edits",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-edit-01",
+            "edit": { "kind": "add", "count": 2 }
+          },
+          "save": { "e1": "proposal" },
+          "expect": { "status": 200, "json": { "replayed": false, "proposal.revision": 2 } }
+        },
+        {
+          "name": "retry edit add",
+          "call": "POST /api/music-bot/proposals/{p.id}/edits",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-edit-01",
+            "edit": { "kind": "add", "count": 2 }
+          },
+          "expect": {
+            "status": 200,
+            "json": { "replayed": true, "proposal.revision": 2, "proposal.ids": "{e1.ids}" }
+          }
+        }
+      ],
+      "expect": {
+        "unchanged": ["playback", "playlists"],
+        "delta": { "revisions": 1, "receipts": 1 }
+      }
+    },
+    {
+      "id": "a15",
+      "title": "A superseded revision is refused and nothing is saved",
+      "covers": ["stale", "superseded"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "refine",
+          "call": "POST /api/music-bot/proposals/{p.id}/revisions",
+          "json": {
+            "revision": 1,
+            "intent": {
+              "contract_version": 5,
+              "action": "search",
+              "scope": "proposal",
+              "filters": { "limit": 2 }
+            }
+          },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit playlist",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "playlist", "name": "Evening" }
+          },
+          "expect": {
+            "status": 409,
+            "error": "revision_superseded",
+            "error_fields": [{ "field": "revision", "message": "Latest is 2" }]
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a16",
+      "title": "Refining from a superseded revision is refused",
+      "covers": ["stale", "superseded"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "refine",
+          "call": "POST /api/music-bot/proposals/{p.id}/revisions",
+          "json": {
+            "revision": 1,
+            "intent": {
+              "contract_version": 5,
+              "action": "search",
+              "scope": "proposal",
+              "filters": { "limit": 2 }
+            }
+          },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "refine revision 1 again",
+          "call": "POST /api/music-bot/proposals/{p.id}/revisions",
+          "json": {
+            "revision": 1,
+            "intent": {
+              "contract_version": 5,
+              "action": "search",
+              "scope": "proposal",
+              "filters": { "limit": 2 }
+            }
+          },
+          "expect": { "status": 409, "error": "revision_superseded" }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a17",
+      "title": "Editing a superseded revision is refused",
+      "covers": ["stale", "superseded", "edit"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "refine",
+          "call": "POST /api/music-bot/proposals/{p.id}/revisions",
+          "json": {
+            "revision": 1,
+            "intent": {
+              "contract_version": 5,
+              "action": "search",
+              "scope": "proposal",
+              "filters": { "limit": 2 }
+            }
+          },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "edit add on revision 1",
+          "call": "POST /api/music-bot/proposals/{p.id}/edits",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-edit-01",
+            "edit": { "kind": "add", "count": 1 }
+          },
+          "expect": { "status": 409, "error": "revision_superseded" }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a18",
+      "title": "An older revision commits only when named, and is that revision, not the latest",
+      "covers": ["stale", "superseded", "commit"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "refine",
+          "call": "POST /api/music-bot/proposals/{p.id}/revisions",
+          "json": {
+            "revision": 1,
+            "intent": {
+              "contract_version": 5,
+              "action": "search",
+              "scope": "proposal",
+              "filters": { "limit": 2 }
+            }
+          },
+          "save": { "p2": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit revision 1 on purpose",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" },
+            "older_revision": true
+          },
+          "save": { "r": "receipt" },
+          "expect": {
+            "status": 200,
+            "json": { "receipt.revision": 1, "receipt.ids": "{p.ids}" },
+            "len": { "receipt.ids": 4 }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["playback", "playlists"], "delta": { "receipts": 1 } }
+    },
+    {
+      "id": "a19",
+      "title": "A revision that does not exist is refused",
+      "covers": ["stale", "refusal"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit revision 9",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 9,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "playlist", "name": "Evening" }
+          },
+          "expect": { "status": 404, "error": "revision_not_found" }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a20",
+      "title": "A proposal that does not exist is refused",
+      "covers": ["stale", "refusal"],
+      "steps": [
+        {
+          "name": "commit",
+          "call": "POST /api/music-bot/proposals/pr-0123456789abcdef/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" }
+          },
+          "expect": { "status": 404, "error": "proposal_not_found" }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a21",
+      "title": "A song deleted from the library makes a queue commit stale",
+      "covers": ["gone", "queue"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "artists": ["Orchard"] }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "delete song",
+          "call": "DELETE /api/library/tracks/{s01}",
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit queue",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" }
+          },
+          "expect": {
+            "status": 409,
+            "error": "proposal_stale",
+            "error_fields": [{ "field": "songs.{s01}", "message": "Not in the library" }]
+          }
+        }
+      ],
+      "expect": { "unchanged": ["playback", "playlists", "receipts", "proposals", "revisions"] }
+    },
+    {
+      "id": "a22",
+      "title": "A song deleted from the library makes a save stale, and no playlist is made",
+      "covers": ["gone", "playlist"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "artists": ["Orchard"] }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "delete song",
+          "call": "DELETE /api/library/tracks/{s01}",
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "commit playlist",
+          "call": "POST /api/music-bot/proposals/{p.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "playlist", "name": "Evening" }
+          },
+          "expect": {
+            "status": 409,
+            "error": "proposal_stale",
+            "error_fields": [{ "field": "songs.{s01}", "message": "Not in the library" }]
+          }
+        }
+      ],
+      "expect": { "unchanged": ["playback", "playlists", "receipts", "proposals", "revisions"] }
+    },
+    {
+      "id": "a23",
+      "title": "A stored proposal still lists a deleted song and names it as missing",
+      "covers": ["gone", "read"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "artists": ["Orchard"] }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "delete song",
+          "call": "DELETE /api/library/tracks/{s01}",
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "read",
+          "call": "GET /api/music-bot/proposals/{p.id}",
+          "expect": {
+            "status": 200,
+            "json": { "missing_ids": ["{s01}"] },
+            "includes": { "proposal.ids": ["{s01}"] }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a24",
+      "title": "A refinement leaves a deleted song out and says which",
+      "covers": ["gone", "refine"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "artists": ["Orchard"] }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "delete song",
+          "call": "DELETE /api/library/tracks/{s01}",
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "refine",
+          "call": "POST /api/music-bot/proposals/{p.id}/revisions",
+          "json": {
+            "revision": 1,
+            "intent": { "contract_version": 5, "action": "search", "scope": "proposal" }
+          },
+          "expect": {
+            "status": 200,
+            "json": { "proposal.dropped_ids": ["{s01}"], "proposal.ids": ["{s02}"] }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["playback", "playlists", "receipts"], "delta": { "revisions": 1 } }
+    },
+    {
+      "id": "a25",
+      "title": "A stale queue sequence is rejected with 409 and the queue stays",
+      "covers": ["queue", "writer"],
+      "setup": [
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "first save",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s01}"],
+            "current": "{s01}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 3
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "older sequence",
+          "call": "PUT /api/player/queue",
+          "json": { "ids": [], "current": "", "position": 1000, "epoch": "{e}", "sequence": 2 },
+          "expect": { "status": 409 }
+        },
+        {
+          "name": "repeated sequence",
+          "call": "PUT /api/player/queue",
+          "json": { "ids": [], "current": "", "position": 1000, "epoch": "{e}", "sequence": 3 },
+          "expect": { "status": 409 }
+        },
+        {
+          "name": "much older sequence",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s05}"],
+            "current": "{s05}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 409 }
+        },
+        {
+          "name": "read queue",
+          "call": "GET /api/player/queue",
+          "expect": { "status": 200, "json": { "entry.*.id": ["{s01}"], "position": 1000 } }
+        }
+      ],
+      "expect": { "unchanged": ["queue"] }
+    },
+    {
+      "id": "a26",
+      "title": "A queue save from a replaced writer epoch is rejected with 409 and the queue stays",
+      "covers": ["queue", "writer"],
+      "setup": [
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "first save",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s01}"],
+            "current": "{s01}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "a second browser begins",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e2": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "old writer saves late",
+          "call": "PUT /api/player/queue",
+          "json": { "ids": [], "current": "", "position": 1000, "epoch": "{e}", "sequence": 9 },
+          "expect": { "status": 409 }
+        },
+        {
+          "name": "read queue",
+          "call": "GET /api/player/queue",
+          "expect": { "status": 200, "json": { "entry.*.id": ["{s01}"] } }
+        }
+      ],
+      "expect": { "unchanged": ["queue"] }
+    },
+    {
+      "id": "a27",
+      "title": "A rejected old writer does not block the newer one",
+      "covers": ["queue", "writer"],
+      "setup": [
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "first save",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s01}"],
+            "current": "{s01}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "a second browser begins",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e2": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "old writer saves late",
+          "call": "PUT /api/player/queue",
+          "json": { "ids": [], "current": "", "position": 1000, "epoch": "{e}", "sequence": 9 },
+          "expect": { "status": 409 }
+        },
+        {
+          "name": "new writer saves",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s02}"],
+            "current": "{s02}",
+            "position": 1000,
+            "epoch": "{e2}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        },
+        {
+          "name": "read queue",
+          "call": "GET /api/player/queue",
+          "expect": { "status": 200, "json": { "entry.*.id": ["{s02}"] } }
+        }
+      ],
+      "expect": { "delta": {} }
+    },
+    {
+      "id": "a28",
+      "title": "Chat pause through the model changes no server state",
+      "covers": ["transport", "pause"],
+      "ollama": {
+        "reply": {
+          "action": "pause",
+          "scope": "library",
+          "filters": {},
+          "named_songs": [],
+          "edit": null,
+          "question": "",
+          "reason": ""
+        }
+      },
+      "setup": [
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "a queue is playing",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s01}", "{s02}"],
+            "current": "{s01}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "chat",
+          "call": "POST /api/music-bot/chat",
+          "json": { "prompt": "hold the music for a moment" },
+          "expect": {
+            "status": 200,
+            "json": { "status": "ok", "action": "pause", "state_changed": false, "ids": [] }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a29",
+      "title": "Chat pause with Ollama offline changes no server state",
+      "covers": ["transport", "pause", "offline"],
+      "ollama": "offline",
+      "setup": [
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "a queue is playing",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s01}", "{s02}"],
+            "current": "{s01}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "chat",
+          "call": "POST /api/music-bot/chat",
+          "json": { "prompt": "pause" },
+          "expect": {
+            "status": 200,
+            "json": { "status": "ok", "action": "pause", "state_changed": false, "ids": [] }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a30",
+      "title": "Chat resume through the model changes no server state",
+      "covers": ["transport", "resume"],
+      "ollama": {
+        "reply": {
+          "action": "resume",
+          "scope": "library",
+          "filters": {},
+          "named_songs": [],
+          "edit": null,
+          "question": "",
+          "reason": ""
+        }
+      },
+      "setup": [
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "a queue is playing",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s01}", "{s02}"],
+            "current": "{s01}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "chat",
+          "call": "POST /api/music-bot/chat",
+          "json": { "prompt": "carry on with the music" },
+          "expect": {
+            "status": 200,
+            "json": { "status": "ok", "action": "resume", "state_changed": false, "ids": [] }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a31",
+      "title": "Chat resume with Ollama offline changes no server state",
+      "covers": ["transport", "resume", "offline"],
+      "ollama": "offline",
+      "setup": [
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "a queue is playing",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s01}", "{s02}"],
+            "current": "{s01}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "chat",
+          "call": "POST /api/music-bot/chat",
+          "json": { "prompt": "resume" },
+          "expect": {
+            "status": 200,
+            "json": { "status": "ok", "action": "resume", "state_changed": false, "ids": [] }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a32",
+      "title": "Chat skip through the model changes no server state",
+      "covers": ["transport", "skip"],
+      "ollama": {
+        "reply": {
+          "action": "skip",
+          "scope": "library",
+          "filters": {},
+          "named_songs": [],
+          "edit": null,
+          "question": "",
+          "reason": ""
+        }
+      },
+      "setup": [
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "a queue is playing",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s01}", "{s02}"],
+            "current": "{s01}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "chat",
+          "call": "POST /api/music-bot/chat",
+          "json": { "prompt": "next song please" },
+          "expect": {
+            "status": 200,
+            "json": { "status": "ok", "action": "skip", "state_changed": false, "ids": [] }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a33",
+      "title": "Chat skip with Ollama offline changes no server state",
+      "covers": ["transport", "skip", "offline"],
+      "ollama": "offline",
+      "setup": [
+        {
+          "name": "begin writer",
+          "call": "POST /api/player/queue/writer",
+          "save": { "e": "epoch" },
+          "expect": { "status": 200 }
+        },
+        {
+          "name": "a queue is playing",
+          "call": "PUT /api/player/queue",
+          "json": {
+            "ids": ["{s01}", "{s02}"],
+            "current": "{s01}",
+            "position": 1000,
+            "epoch": "{e}",
+            "sequence": 1
+          },
+          "expect": { "status": 204 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "chat",
+          "call": "POST /api/music-bot/chat",
+          "json": { "prompt": "skip" },
+          "expect": {
+            "status": 200,
+            "json": { "status": "ok", "action": "skip", "state_changed": false, "ids": [] }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a34",
+      "title": "Another keeps the pinned song first and makes revision 2",
+      "covers": ["edit", "another"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "edit another",
+          "call": "POST /api/music-bot/proposals/{p.id}/edits",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-edit-01",
+            "edit": { "kind": "another", "pinned_ids": ["{p.ids.0}"] }
+          },
+          "expect": {
+            "status": 200,
+            "json": { "proposal.revision": 2, "proposal.latest_revision": 2, "replayed": false },
+            "starts_with": { "proposal.ids": ["{p.ids.0}"] },
+            "len": { "proposal.ids": 4 }
+          }
+        }
+      ],
+      "expect": {
+        "unchanged": ["playback", "playlists"],
+        "delta": { "revisions": 1, "receipts": 1 }
+      }
+    },
+    {
+      "id": "a35",
+      "title": "Add keeps every song in order, then adds more, as revision 2",
+      "covers": ["edit", "add"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "edit add",
+          "call": "POST /api/music-bot/proposals/{p.id}/edits",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-edit-01",
+            "edit": { "kind": "add", "count": 2 }
+          },
+          "expect": {
+            "status": 200,
+            "json": { "proposal.revision": 2 },
+            "starts_with": { "proposal.ids": "{p.ids}" },
+            "len": { "proposal.ids": 6 }
+          }
+        }
+      ],
+      "expect": {
+        "unchanged": ["playback", "playlists"],
+        "delta": { "revisions": 1, "receipts": 1 }
+      }
+    },
+    {
+      "id": "a36",
+      "title": "A removed song leaves the revision, the commit, and every later add",
+      "covers": ["edit", "remove", "commit"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "edit remove",
+          "call": "POST /api/music-bot/proposals/{p.id}/edits",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-edit-01",
+            "edit": { "kind": "remove", "ids": ["{p.ids.1}"] }
+          },
+          "save": { "p2": "proposal" },
+          "expect": {
+            "status": 200,
+            "json": {
+              "proposal.revision": 2,
+              "proposal.ids": ["{p.ids.0}", "{p.ids.2}", "{p.ids.3}"]
+            },
+            "excludes": { "proposal.ids": ["{p.ids.1}"] }
+          }
+        },
+        {
+          "name": "commit queue",
+          "call": "POST /api/music-bot/proposals/{p2.id}/commit",
+          "json": {
+            "contract_version": 5,
+            "revision": 2,
+            "operation_id": "op-commit-01",
+            "target": { "kind": "queue" }
+          },
+          "save": { "r": "receipt" },
+          "expect": {
+            "status": 200,
+            "json": { "receipt.revision": 2, "receipt.ids": "{p2.ids}" },
+            "excludes": { "receipt.ids": ["{p.ids.1}"] }
+          }
+        },
+        {
+          "name": "edit add",
+          "call": "POST /api/music-bot/proposals/{p2.id}/edits",
+          "json": {
+            "contract_version": 5,
+            "revision": 2,
+            "operation_id": "op-edit-02",
+            "edit": { "kind": "add", "count": 3 }
+          },
+          "save": { "p3": "proposal" },
+          "expect": {
+            "status": 200,
+            "json": { "proposal.revision": 3 },
+            "starts_with": { "proposal.ids": "{p2.ids}" },
+            "excludes": { "proposal.ids": ["{p.ids.1}"] }
+          }
+        }
+      ],
+      "expect": {
+        "unchanged": ["playback", "playlists"],
+        "delta": { "receipts": 3, "revisions": 2 }
+      }
+    },
+    {
+      "id": "a37",
+      "title": "Removing a song that is not in the revision is refused",
+      "covers": ["edit", "remove"],
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "edit remove",
+          "call": "POST /api/music-bot/proposals/{p.id}/edits",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-edit-01",
+            "edit": { "kind": "remove", "ids": ["{s11}"] }
+          },
+          "expect": { "status": 422, "error": "invalid_edit" }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a38",
+      "title": "A preview of more than 500 songs is refused with the limit stated",
+      "covers": ["limit", "intent"],
+      "steps": [
+        {
+          "name": "preview",
+          "call": "POST /api/music-bot/intent",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "limit": 501 }
+          },
+          "expect": { "status": 422, "error": "selection_too_large", "message_has": "500" }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a39",
+      "title": "A stored proposal of more than 500 songs is refused and none is stored",
+      "covers": ["limit", "proposal"],
+      "steps": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "limit": 501 }
+          },
+          "expect": { "status": 422, "error": "selection_too_large", "message_has": "500" }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a40",
+      "title": "Exactly 500 songs is accepted",
+      "covers": ["limit", "boundary"],
+      "steps": [
+        {
+          "name": "preview",
+          "call": "POST /api/music-bot/intent",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "limit": 500 }
+          },
+          "expect": { "status": 200, "json": { "state_changed": false } }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a41",
+      "title": "An edit that adds more than 500 songs is refused with the limit stated",
+      "covers": ["limit", "edit"],
+      "expected_failure": "The edit route refuses count 501 as invalid_request (\"The request is not valid.\") and does not say the 500 song limit, unlike limit, proposal_ids, queue_ids and keep_ids, which answer selection_too_large.",
+      "setup": [
+        {
+          "name": "create",
+          "call": "POST /api/music-bot/proposals",
+          "json": {
+            "contract_version": 5,
+            "action": "search",
+            "seed": 5,
+            "filters": { "genres": ["Rock"], "limit": 4 }
+          },
+          "save": { "p": "proposal" },
+          "expect": { "status": 200 }
+        }
+      ],
+      "steps": [
+        {
+          "name": "edit add 501",
+          "call": "POST /api/music-bot/proposals/{p.id}/edits",
+          "json": {
+            "contract_version": 5,
+            "revision": 1,
+            "operation_id": "op-edit-01",
+            "edit": { "kind": "add", "count": 501 }
+          },
+          "expect": { "status": 422, "error": "selection_too_large", "message_has": "500" }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    },
+    {
+      "id": "a42",
+      "title": "A chat request for 600 songs is refused with the limit stated, and nothing is cut",
+      "covers": ["limit", "chat"],
+      "expected_failure": "A model answer with a limit over 500 fails the interpreter's schema, so the reply is \"The model's answer could not be read. Please try again.\" and does not say the 500 song limit. Nothing is cut, saved or played.",
+      "ollama": {
+        "reply": {
+          "action": "search",
+          "scope": "library",
+          "filters": { "limit": 600 },
+          "named_songs": [],
+          "edit": null,
+          "question": "",
+          "reason": ""
+        }
+      },
+      "steps": [
+        {
+          "name": "chat",
+          "call": "POST /api/music-bot/chat",
+          "json": { "prompt": "give me 600 rock songs" },
+          "expect": {
+            "status": 200,
+            "json": { "status": "ok", "ids": [] },
+            "has": { "summary": "500" }
+          }
+        }
+      ],
+      "expect": { "unchanged": ["everything"] }
+    }
+  ]
+}

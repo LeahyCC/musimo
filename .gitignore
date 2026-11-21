@@ -24,3 +24,5 @@ frontend/playwright-report/
 frontend/test-results/
 # Interpreter eval reports are per-machine evidence, not source.
 evals/interpreter/reports/
+# Action suite reports are the same.
+evals/actions/reports/
