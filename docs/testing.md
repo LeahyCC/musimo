@@ -195,9 +195,7 @@ CodeQL scans Python, JavaScript/TypeScript and Actions when dispatched by hand. 
 
 `scripts/check.sh full` verifies that the Python runtime export matches the uv lock:
 
-```sh
-uv export --locked --no-header --no-dev --no-emit-project --format requirements-txt --output-file requirements.lock
-```
+It also checks the worker and tempo-beat exports. Dependabot's uv PRs change `pyproject.toml` and `uv.lock` but not these exported files, so on a Dependabot Python PR, run `scripts/relock.sh` before merging and commit any changed `requirements*.lock` files. The script holds the `uv export` flags for all four files; `check.sh` uses it too.
 
 Main requires a pull request and resolved review conversations. Its ruleset blocks deletion and force pushes. It no longer requires status checks or CodeQL results, because nothing runs them automatically. No actor has a bypass. A second maintainer's approval is optional while the project has one maintainer.
 
