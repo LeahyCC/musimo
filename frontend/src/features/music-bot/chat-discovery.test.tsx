@@ -5,8 +5,11 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import { MusicBotProvider, useBotChat } from './bot-chat'
-import { DiscoveryBar } from './chat-discovery'
+import { DiscoveryBar, DiscoveryPick } from './chat-discovery'
 
+// jsdom has no media queries, so the test says whether the window is a phone.
+let onPhone = false
+vi.mock('../../lib/use-phone', () => ({ usePhone: () => onPhone }))
 vi.mock('../player/player', () => ({
   usePlayer: () => ({
     libraryTrack: null,
@@ -133,6 +136,7 @@ function Harness() {
   return (
     <>
       <DiscoveryBar />
+      <DiscoveryPick />
       <button type="button" onClick={() => void chat.send('some rock')}>
         Ask
       </button>
@@ -161,6 +165,7 @@ const radio = (name: string) => screen.getByRole('radio', { name })
 
 beforeEach(() => {
   sent = []
+  onPhone = false
   sessionStorage.clear()
   vi.stubGlobal(
     'fetch',
@@ -176,8 +181,14 @@ afterEach(() => {
 async function ask(user: ReturnType<typeof open>, count: number) {
   await user.click(screen.getByRole('button', { name: 'Ask' }))
   await waitFor(() => expect(stored()).toHaveLength(count))
-  // The control is held while a request is out, and free again once the card is shown.
-  await waitFor(() => expect((radio('Balanced') as HTMLButtonElement).disabled).toBe(false))
+  // The control is held while a request is out, and free again once the card is shown. On a phone
+  // it is the select beside the box, not the radio group.
+  const control = () =>
+    screen.queryByRole('radio', { name: 'Balanced' }) ??
+    screen.getByRole('combobox', { name: 'Discovery' })
+  await waitFor(() =>
+    expect((control() as HTMLButtonElement | HTMLSelectElement).disabled).toBe(false),
+  )
 }
 
 describe('the discovery control', () => {
@@ -197,6 +208,29 @@ describe('the discovery control', () => {
     expect(radio('Explore').getAttribute('aria-checked')).toBe('true')
     await user.keyboard('{ArrowLeft}{ArrowLeft}')
     expect(radio('Stay close').getAttribute('aria-checked')).toBe('true')
+  })
+})
+
+describe('on a phone', () => {
+  it('has no row of its own, only a labelled select beside the box', async () => {
+    onPhone = true
+    const user = open()
+    const pick = await screen.findByRole('combobox', { name: 'Discovery' })
+    expect(screen.queryByRole('radiogroup')).toBeNull()
+    expect(screen.getAllByRole('option').map((option) => option.textContent)).toEqual([
+      'Stay close',
+      'Balanced',
+      'Explore',
+    ])
+    await user.selectOptions(pick, 'Explore')
+    await ask(user, 1)
+    expect(stored()[0]?.body.contract_version).toBe(6)
+    expect(stored()[0]?.body.filters.discovery).toBe('explore')
+  })
+
+  it('is not shown beside the box on a wide screen', () => {
+    open()
+    expect(screen.queryByRole('combobox', { name: 'Discovery' })).toBeNull()
   })
 })
 

@@ -7,6 +7,7 @@ import { usePhone } from '../../lib/use-phone'
 import { Button } from '../../ui'
 import { usePlayer } from '../player/player'
 import { MAX_PROMPT, useBotChat } from './bot-chat'
+import { DiscoveryPick } from './chat-discovery'
 import { LIKE_STARTER, startersFor } from './starters'
 import { usePetLook } from './use-pet'
 
@@ -157,6 +158,7 @@ export function Composer({
               : 'min-h-[39px] rounded-[8px] border border-line-strong bg-sunken px-[11px] py-[10px]',
           )}
         />
+        <DiscoveryPick />
         {cancellable ? (
           <Button className="shrink-0" onClick={chat.cancel}>
             Cancel
