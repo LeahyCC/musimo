@@ -848,6 +848,22 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
                 # The chat's reply has no duration report at all.
                 self.assertNotIn("duration", expected)
 
+    def test_the_plan_carries_the_intent_total_length_and_the_ids_do_not_move(self) -> None:
+        self.lengths({"Rain": 151, "Snow": 233, "Hail": 307, "Dawn": 419, "Mist": 97})
+        timed = self.timed("about", 1000, seed=5)
+        plan = timed["plan"]
+        assert isinstance(plan, dict)
+        self.assertEqual(plan["total_length"], {"mode": "about", "seconds": 1000})
+        # The same filters without the length: no length on the plan, the ids resolve gives.
+        plain = self.run_at(intent(filters={}, seed=5))
+        plain_plan = plain["plan"]
+        assert isinstance(plain_plan, dict)
+        self.assertIsNone(plain_plan["total_length"])
+        self.assertEqual(self.ids_of(plain), self.legacy_ids(self.legacy({}, generation_seed=5)))
+        # The plan holds no other length field the intent did not set, and no exclusions.
+        self.assertNotIn("exclude_ids", plan)
+        self.assertEqual(plan["target_seconds"], 0)
+
     def test_total_length_needs_version_three_and_no_target_seconds(self) -> None:
         total = {"total_length": {"mode": "about", "seconds": 600}}
         for version in (1, 2):
