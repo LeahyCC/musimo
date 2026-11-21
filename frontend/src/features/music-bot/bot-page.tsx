@@ -11,6 +11,7 @@ import { usePlayer } from '../player/player'
 import { useBotChat } from './bot-chat'
 import { headerButton } from './chat-buttons'
 import { Composer } from './chat-composer'
+import { DiscoveryBar } from './chat-discovery'
 import { Conversation, DOT, ScopeBar, statusLine } from './chat-panel'
 import { ChatSettings } from './chat-settings'
 import { Pet } from './pet'
@@ -315,6 +316,7 @@ export function PhoneBotPage({ autoFocus, look }: { autoFocus: boolean; look: 'p
             <ChatTools onSettings={() => setSettings(true)} />
           </div>
           {!chat.locked && <ScopeBar flush />}
+          {!chat.locked && <DiscoveryBar flush />}
           <Conversation petState={petState} autoFocus={autoFocus} flush />
           <Composer autoFocus={autoFocus} look={look} />
         </>

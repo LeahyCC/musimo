@@ -28,7 +28,8 @@ export default defineConfig({
       },
     },
   },
-  // Unit tests are for pure TypeScript and run in Node. Anything that needs a
-  // browser belongs in the Playwright suite under e2e.
-  test: { include: ['src/**/*.test.ts'], environment: 'node' },
+  // Unit tests are for pure TypeScript and run in Node. A component test (*.test.tsx) opts into
+  // jsdom with a `@vitest-environment jsdom` docblock. Anything that needs a real browser belongs
+  // in the Playwright suite under e2e.
+  test: { include: ['src/**/*.test.{ts,tsx}'], environment: 'node' },
 })

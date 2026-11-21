@@ -30,6 +30,7 @@ import { durationText, usePlayer } from '../player/player'
 import { useBotChat } from './bot-chat'
 import { appliedText, filterChips, lengthText, loosenChips, shortMinutes } from './bot-replies'
 import { MissingPanel, PreviewFacts, ProblemPanel, SavedLine } from './preview-panels'
+import { DISCOVERY_LABELS } from './proposals'
 
 const SCOPE_LABELS = {
   library: 'WHOLE LIBRARY',
@@ -174,6 +175,9 @@ export function ResultCard({
           </span>
           <span className="whitespace-nowrap">
             {SCOPE_LABELS[reply.plan.scope]}
+            {preview?.intent.filters.discovery
+              ? ` · ${DISCOVERY_LABELS[preview.intent.filters.discovery].toUpperCase()}`
+              : ''}
             {preview && preview.revision > 1 ? ` · REVISION ${preview.revision}` : ''}
           </span>
         </div>

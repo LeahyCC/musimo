@@ -13,6 +13,7 @@ import { useBotChat } from './bot-chat'
 import type { LogEntry } from './bot-chat'
 import { headerButton, softButton } from './chat-buttons'
 import { Composer } from './chat-composer'
+import { DiscoveryBar } from './chat-discovery'
 import { Centered, Locked } from './chat-locked'
 import { ChatSettings } from './chat-settings'
 import { Pet } from './pet'
@@ -148,6 +149,7 @@ export function ChatPanel({
       </div>
 
       {!settings && !chat.locked && <ScopeBar />}
+      {!settings && !chat.locked && <DiscoveryBar />}
 
       {settings ? (
         <ChatSettings petState={petState} />

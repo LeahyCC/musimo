@@ -17,6 +17,17 @@ import { withListener } from '../listener/identity'
  *  Version 5 added the edit route and the fields behind it (`exclude_ids`, `keep_ids`,
  *  `pinned_ids`, `add_count`), so the chat never sends an older one. */
 export const CONTRACT_VERSION = 5
+/** The first contract version with `filters.discovery`. Sent only with `close` or `explore` (or a
+ *  `balanced` that resets a lean the open proposal holds), so a request that leaves the setting
+ *  alone is the same bytes as before. */
+export const DISCOVERY_VERSION = 6
+
+export type Discovery = 'close' | 'balanced' | 'explore'
+export const DISCOVERY_LABELS: Record<Discovery, string> = {
+  close: 'Stay close',
+  balanced: 'Balanced',
+  explore: 'Explore',
+}
 
 const idList = z.array(z.string())
 const range = z.object({ min: z.number(), max: z.number() }).nullable()
@@ -48,6 +59,13 @@ const filtersSchema = z.object({
   // Version 5: songs never picked, the ones a person removed. An intent an older build stored
   // has none, and says so.
   exclude_ids: idList.default([]),
+  // Version 6. A server's echo of `balanced` is dropped on reading, so the field is present only for
+  // a lean, and a request built from it stays what it was for anyone who never set one.
+  discovery: z
+    .enum(['close', 'balanced', 'explore'])
+    .optional()
+    .transform((value): Discovery | undefined => (value === 'balanced' ? undefined : value))
+    .optional(),
 })
 
 const contextSchema = z.object({
@@ -493,7 +511,7 @@ export function sameSearch(reply: BotReply, open: Intent): boolean {
   const now: Record<string, unknown> = {
     ...intentFromReply(reply, { proposalIds: [], queueIds: [] }).filters,
   }
-  for (const left of ['exclude_ids', 'total_length', 'limit']) {
+  for (const left of ['exclude_ids', 'total_length', 'limit', 'discovery']) {
     delete asked[left]
     delete now[left]
   }
@@ -566,13 +584,39 @@ export function storedRevision(reply: { stored: unknown }): ProposalReply | null
   return proposalReplySchema.parse(reply.stored)
 }
 
+/** The version an intent is sent with: the one the chat has always sent, unless it says discovery. */
+const versionOf = (intent: Intent) =>
+  intent.filters.discovery === undefined ? CONTRACT_VERSION : DISCOVERY_VERSION
+
+/**
+ * The intent with the person's discovery strength on it. Only a library search can carry a lean (the
+ * server refuses it on a proposal or queue refinement), so any other scope is left as it is.
+ * Balanced adds nothing, unless the proposal being refined holds a lean: a refinement that leaves
+ * the field out keeps that one, so the reset has to be said.
+ */
+export function withDiscovery(
+  intent: Intent,
+  discovery: Discovery,
+  open: Intent | null = null,
+): Intent {
+  if (intent.scope !== 'library') return intent
+  const reset = discovery === 'balanced' && open?.scope === 'library' && open.filters.discovery
+  if (discovery === 'balanced' && !reset) {
+    if (intent.filters.discovery === undefined) return intent
+    const filters = { ...intent.filters, discovery: undefined }
+    return { ...intent, filters, contract_version: versionOf({ ...intent, filters }) }
+  }
+  const filters = { ...intent.filters, discovery }
+  return { ...intent, filters, contract_version: DISCOVERY_VERSION }
+}
+
 /** A refinement of a stored revision uses that revision's songs, so the server refuses ids. */
 function refinementOf(intent: Intent): Intent {
   // A repeat reads the memory as it is now, not a list an older build stored with the intent.
   // It also says the current version, since an intent an older build stored says 3 or lower,
   // which reads no memory.
   const context = { ...intent.context, shown_ids: null }
-  const current = { ...intent, contract_version: CONTRACT_VERSION }
+  const current = { ...intent, contract_version: versionOf(intent) }
   return intent.scope === 'proposal'
     ? { ...current, context: { ...context, proposal_ids: [] } }
     : { ...current, context }
