@@ -323,6 +323,7 @@ test('preview, follow-up, queue, Undo, playlist and desktop/phone layout', async
       energy_compared: '',
       tempo_compared: '',
       sound: '',
+      total_length: null,
     })
 
     await route.fulfill({
