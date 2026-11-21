@@ -23,6 +23,7 @@ from pydantic import (
     ValidationError,
     model_validator,
 )
+from pydantic.json_schema import SkipJsonSchema
 
 from backend.core.audio_recipes import Recipe, recipe_for
 from backend.core.store import Store
@@ -256,6 +257,9 @@ class SearchPlan(BaseModel):
     energy_compared: Literal["", "calmer", "more_intense"] = ""
     tempo_compared: Literal["", "slower", "faster"] = ""
     sound: str = Field(default="", max_length=120)
+    # Carried by the engine's reply and a client's previous plan. Left out of the schema sent to
+    # the legacy chat model, whose prompt never asks for it.
+    total_length: SkipJsonSchema[TotalLength | None] = None
 
     @model_validator(mode="after")
     def ranges(self) -> "SearchPlan":
@@ -963,6 +967,7 @@ class MusicBot:
                         "add_count",
                         "allow_artists",
                         "suggestions",
+                        "total_length",
                     }
                 ),
             }
@@ -1233,6 +1238,7 @@ class MusicBot:
                     "add_count",
                     "allow_artists",
                     "suggestions",
+                    "total_length",
                 }
             )
             if request.previous
@@ -1307,7 +1313,7 @@ class MusicBot:
 
         The engine reports the drawn seed as `seed` and the songs it compared as
         `intent.context`. The page reads `generation_seed`, `reference_id` and `current_id`.
-        The plan drops `total_length`, so `intent` is left on the result for the page to store.
+        `intent` is left on the result for the page to store; it wins over the plan.
         """
         intent = result.get("intent")
         context = intent.get("context") if isinstance(intent, dict) else None

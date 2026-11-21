@@ -166,7 +166,7 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(options["temperature"], 0)
         self.assertEqual(options["seed"], 42)
 
-    async def test_an_hour_keeps_total_length_on_the_intent(self) -> None:
+    async def test_an_hour_keeps_total_length_on_the_plan_and_the_intent(self) -> None:
         self.interpretation(
             filters={
                 "genres": ["Soul & Funk"],
@@ -180,7 +180,7 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         filters = intent["filters"]
         assert isinstance(filters, dict)
         self.assertEqual(filters["total_length"], {"mode": "about", "seconds": 3600})
-        self.assertNotIn("total_length", plan_body)
+        self.assertEqual(plan_body["total_length"], {"mode": "about", "seconds": 3600})
         self.assertIn(self.ids["Rock Bottom Ada Vance"], self.ids_of(result))
 
     async def test_play_rock_bottom_is_a_preview_of_that_song(self) -> None:

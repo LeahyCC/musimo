@@ -615,6 +615,9 @@ export const botPlanSchema = z.object({
   energy_compared: z.enum(['', 'calmer', 'more_intense']).default(''),
   tempo_compared: z.enum(['', 'slower', 'faster']).default(''),
   sound: z.string().default(''),
+  // The engine's total length, `{ mode, seconds }`. Null for a plan with none, and absent from an
+  // older server's reply.
+  total_length: z.record(z.string(), z.unknown()).nullable().default(null),
 })
 export type BotScope = z.infer<typeof botPlanSchema>['scope']
 export const botReplySchema = z.object({

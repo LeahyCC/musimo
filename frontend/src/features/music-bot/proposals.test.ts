@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
-import { botReplySchema, libraryTrackSchema } from '../../api'
+import { botPlanSchema, botReplySchema, libraryTrackSchema } from '../../api'
 import type { BotReply } from '../../api'
 import {
   commitProposal,
@@ -295,8 +295,25 @@ describe('contract version', () => {
     expect(refreshIntent({ ...older, scope: 'proposal' }).contract_version).toBe(CONTRACT_VERSION)
   })
 
-  it('asks for no total length, since the chat has only the old fill target', () => {
+  it('asks for no total length when the plan has none', () => {
     expect(intentFromReply(reply(), context).filters.total_length).toBeNull()
+  })
+
+  it('keeps the total length the plan carries', () => {
+    const length = { mode: 'about', seconds: 3600 }
+    expect(intentFromReply(reply({ total_length: length }), context).filters.total_length).toEqual(
+      length,
+    )
+  })
+
+  it('asks for no total length when it keeps an exact list', () => {
+    const length = { mode: 'about', seconds: 3600 }
+    const kept = intentFromReply(reply({ total_length: length }), context, [song(1)])
+    expect(kept.filters.total_length).toBeNull()
+  })
+
+  it('reads a plan from an older server, with no total length, as none', () => {
+    expect(botPlanSchema.parse(plan).total_length).toBeNull()
   })
 
   it('keeps a total length a stored intent carries, so a refresh asks for the same one', () => {
