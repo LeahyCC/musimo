@@ -1539,7 +1539,7 @@ test.describe('Listening room layout', () => {
     const rows = upNext.getByRole('button', { name: /^Play Song/ })
     await expect(rows).toHaveCount(2)
     await upNext.getByRole('button', { name: 'Play Song song-2' }).press('Alt+ArrowDown')
-    await expect(rows.first()).toHaveAccessibleName('Play Song song-3')
+    await expect(rows.first()).toHaveAccessibleName(/^Play Song song-3 /)
     await rows.first().hover()
     await upNext.getByRole('button', { name: 'Remove Song song-3 from the queue' }).click()
     await expect(rows).toHaveCount(1)
@@ -1600,7 +1600,7 @@ test.describe('Listening room layout', () => {
     // The next song replaces the player's line, which the strip used to be read from.
     await dock.getByRole('button', { name: 'Next track' }).click()
     await expect(rows).toHaveCount(1)
-    await expect(rows.first()).toHaveAccessibleName('Play Song song-2')
+    await expect(rows.first()).toHaveAccessibleName(/^Play Song song-2 /)
     await expect(strip).toBeVisible()
 
     // An edit that fails too still says so. The toast was raised once for this failing stretch.

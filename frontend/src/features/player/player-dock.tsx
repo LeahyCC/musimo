@@ -551,7 +551,6 @@ function UpNext({ className }: { className?: string }) {
                 <button
                   type="button"
                   className="grid min-w-0 flex-1 grid-cols-[36px_minmax(0,1fr)_auto] items-center gap-[10px] border-0 bg-transparent py-[5px] pr-[4px] text-left text-inherit coarse:min-h-11"
-                  aria-label={`Play ${track.title}`}
                   aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
                   onClick={() => player.playLibrary(player.queue, index, player.source)}
                   onKeyDown={(event) => {
@@ -563,6 +562,7 @@ function UpNext({ className }: { className?: string }) {
                 >
                   <Cover art={artUrl(track)} className="size-[36px] rounded-[6px]" />
                   <span className="min-w-0">
+                    <span className="sr-only">Play </span>
                     <span className="block truncate text-small font-medium">{track.title}</span>
                     <span className="block truncate text-tiny text-muted">{track.artist}</span>
                   </span>

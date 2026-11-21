@@ -294,7 +294,6 @@ function MostPlayed() {
           <li key={entry.id} className="border-t border-line first:border-t-0">
             <button
               type="button"
-              aria-label={`Play ${entry.title} by ${entry.artist}`}
               onClick={() => playLibrary([historyTrack(entry)])}
               className="grid w-full grid-cols-[24px_40px_minmax(0,1fr)_auto] items-center gap-[12px] px-[14px] py-[8px] text-left hover:bg-sunken"
             >
@@ -305,7 +304,9 @@ function MostPlayed() {
                 iconSize={16}
               />
               <span className="min-w-0">
+                <span className="sr-only">Play </span>
                 <span className="block truncate font-medium">{entry.title}</span>
+                <span className="sr-only"> by </span>
                 <span className="block truncate text-small text-muted">{entry.artist}</span>
               </span>
               <span className="text-small text-faint">{plays} plays</span>
