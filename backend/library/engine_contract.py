@@ -14,7 +14,7 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints
 
 from backend.core.audio_recipes import Recipe
 from backend.library.duration import ABOUT_WINDOW, CANDIDATE_CAP, WORK_LIMIT, TotalLength
-from backend.library.music_bot import SongId
+from backend.library.music_bot import Discovery, SongId
 from backend.library.selection import SEED_LIMIT, SHOWN_LIMIT
 
 # The shape of the intent and the result. Bump on any change a client could notice.
@@ -24,17 +24,21 @@ from backend.library.selection import SEED_LIMIT, SHOWN_LIMIT
 # context.shown_ids means the server's memory of presented results, where it meant none
 # before. An intent that says 3 or lower keeps the old meaning. Version 5 added the edits of a
 # proposal: filters.exclude_ids and context.keep_ids, pinned_ids and add_count, and the edit
-# route. An intent without them is unchanged.
-CONTRACT_VERSION = 5
-SUPPORTED_VERSIONS = (1, 2, 3, 4, 5)
+# route. An intent without them is unchanged. Version 6 added filters.discovery, and a library
+# refinement that leaves it out keeps the refined revision's. An intent that leaves it at
+# balanced is unchanged.
+CONTRACT_VERSION = 6
+SUPPORTED_VERSIONS = (1, 2, 3, 4, 5, 6)
 # The first version with total_length.
 TOTAL_LENGTH_VERSION = 3
 # The first version where an omitted shown_ids reads the server's memory.
 MEMORY_VERSION = 4
 # The first version with kept, pinned and excluded songs.
 EDIT_VERSION = 5
+# The first version with filters.discovery.
+DISCOVERY_VERSION = 6
 # A commit body has not changed since proposals arrived in version 2.
-COMMIT_VERSIONS = (2, 3, 4, 5)
+COMMIT_VERSIONS = (2, 3, 4, 5, 6)
 # The rules that order and choose songs: the gates in resolve, the artist cap and the draw in
 # selection.py. Bump when any of them changes, so a replay across versions is not mistaken
 # for a replay of the same engine. tests/test_engine.py pins the constants that feed it.
@@ -42,7 +46,9 @@ COMMIT_VERSIONS = (2, 3, 4, 5)
 # shown_ids reads the server's memory of presented results. Version 4: kept songs go first as
 # they are, excluded songs are never picked, and a set number of songs can follow the kept ones.
 # Version 5: a half or double tempo match is ordered after the direct matches (7eacb91), and
-# genre folding covers dnb, drum & bass, trip hop and liquid (3e4d5af).
+# genre folding covers dnb, drum & bass, trip hop and liquid (3e4d5af). Contract version 6's
+# discovery left it at 5: balanced, the only value an older intent can hold, walks exactly as
+# before, and close and explore are new intents rather than new answers to old ones.
 ENGINE_VERSION = 5
 
 # Stripped first, so a blank name cannot match every untagged song.
@@ -87,6 +93,11 @@ class Filters(BaseModel):
     sound: str = Field(default="", max_length=120)
     # Songs never picked, in any scope: the ones a person removed. Version 5.
     exclude_ids: list[SongId] = Field(default_factory=list, max_length=EXCLUDE_LIMIT)
+    # A soft preference, library scope only: it reorders the songs that pass every filter and
+    # never adds one that fails. Close leans to the artists and genres of the reference, playing
+    # and open proposal songs; explore to songs not played in Musimo by artists not shown lately
+    # or in the open proposal. Version 6.
+    discovery: Discovery = "balanced"
 
 
 class Context(BaseModel):
@@ -198,8 +209,8 @@ class Edit(BaseModel):
     edit: Annotated[Another | AddSongs | RemoveSongs, Field(discriminator="kind")]
 
 
-# The edit route arrived in version 5.
-EDIT_VERSIONS = (5,)
+# The edit route arrived in version 5. Its body did not change in 6.
+EDIT_VERSIONS = (5, 6)
 
 
 class PlaylistTarget(BaseModel):
@@ -353,6 +364,16 @@ def registry(scalar: Recipe | None, embedding: Recipe | None) -> list[Capability
             "Needs a text-aligned embedding recipe, and a phrase that is not only a negation.",
         ),
         Capability("exclude_ids", "filter", True, "Never picked. Contract version 5."),
+        Capability(
+            "discovery",
+            "filter",
+            True,
+            "close, balanced (the default) or explore. A soft preference that only reorders "
+            "songs that pass every filter, within each relevance tier: close leans to the "
+            "artists and genres of the reference, playing and open proposal songs, explore to "
+            "songs not played in Musimo by artists not shown lately or in the open proposal. "
+            "Library scope only; refused on a refinement. Contract version 6.",
+        ),
         Capability("seed", "context", True, "Repeats a library selection. Library scope only."),
         Capability("current_id", "context", True, "The playing song, for comparisons."),
         Capability("reference_id", "context", True, "The song to compare with."),

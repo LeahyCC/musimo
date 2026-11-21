@@ -82,6 +82,22 @@ class Kept:
     new_songs: int | None = None
 
 
+# How far a library search leans from the songs in view. A soft preference, never a filter.
+Discovery = Literal["close", "balanced", "explore"]
+
+
+@dataclass(frozen=True)
+class Leaning:
+    """A structured intent's discovery strength and the open proposal it leans against. The
+    chat never sets it, so the chat's selection is unchanged.
+
+    `open_ids` are the songs of the proposal a refinement or an edit was made from, besides the
+    kept songs, which count already. Only close and explore read them."""
+
+    mode: Discovery = "balanced"
+    open_ids: tuple[str, ...] = ()
+
+
 def _add_within(
     total_length: TotalLength, items: list[Item], taken: list[Item], count: int, cut: bool
 ) -> Outcome:
@@ -1521,16 +1537,20 @@ class MusicBot:
         now: datetime | None = None,
         total_length: TotalLength | None = None,
         kept: Kept | None = None,
+        leaning: Leaning | None = None,
     ) -> dict[str, object]:
         """`now` pins the local clock for a caller that records it; None reads it here.
         `total_length` is the structured intent's total-length comparator. The chat never sets
         it, so its `target_seconds` fill is unchanged. `kept` is an edit's kept and excluded
-        songs (see Kept); the chat never sets it either."""
+        songs (see Kept); the chat never sets it either, nor `leaning` (see Leaning)."""
         if total_length is not None and (plan.target_seconds or plan.add_count):
             raise BotError("A total length replaces target_seconds and add_count.", 422)
         kept = kept or Kept()
+        leaning = leaning or Leaning()
         if kept.ids and plan.scope != "library":
             raise BotError("Kept songs belong to a library search.", 422)
+        if leaning.mode != "balanced" and plan.scope != "library":
+            raise BotError("Discovery belongs to a library search.", 422)
         plan = merge_plan(request.previous, plan)
         if plan.action not in {"clarify", "unsupported"}:
             plan = plan.model_copy(update={"suggestions": []})
@@ -1655,7 +1675,9 @@ class MusicBot:
         shown = frozenset(request.shown_ids)
         generation_seed: int | None = None
         drawn: Drawn | None = None
+        prefer: dict[str, int] | None = None
         if plan.scope == "library":
+            prefer = _lean(leaning, matched, view, request, kept)
             generation_seed = (
                 request.generation_seed if request.generation_seed is not None else self.new_seed()
             )
@@ -1671,6 +1693,7 @@ class MusicBot:
                 need,
                 relevance,
                 shown,
+                prefer,
             )
             if octave:
                 # Direct matches first: an octave match is used only once they run out or are
@@ -1681,6 +1704,7 @@ class MusicBot:
                     need,
                     relevance,
                     shown,
+                    prefer,
                 )
                 drawn = Drawn(drawn.ids + later.ids, drawn.window, len(matched) > max(need, 1))
             walk = drawn.ids
@@ -1749,6 +1773,8 @@ class MusicBot:
                 summary += f" Picked from the closest of {len(matched):,} matches."
             else:
                 summary += f" Picked from your most played of {len(matched):,} matches."
+        if prefer is not None and added:
+            summary += _lean_sentence(leaning.mode, [prefer[str(t["id"])] for t in added])
         if reused:
             repeats = (
                 "1 song repeats from an earlier answer"
@@ -2121,6 +2147,84 @@ def _artist_key(artist: str) -> str:
     as "!!!", normalizes to nothing, so it keeps its own spelling, spaced as `_same_artist`
     compares it. "" means no artist tag."""
     return normalize(artist) or " ".join(artist.casefold().split())
+
+
+def _genre_tags(song: StoredSong) -> tuple[str, ...]:
+    """A song's genres as the genre filter reads them."""
+    return song.genres or ((song.genre,) if song.genre else ())
+
+
+# A song in a discovery lean is by an artist already in view (close), or shares a genre with one.
+_SAME_ARTIST, _SAME_GENRE, _ELSEWHERE = 0, 1, 2
+
+
+def _lean(
+    leaning: Leaning,
+    matched: list[StoredSong],
+    view: LibraryView,
+    request: BotRequest,
+    kept: Kept,
+) -> dict[str, int] | None:
+    """Each match's place in the discovery lean, lower first among songs that fit as well, or
+    None for no lean. It reads only songs that already passed every filter, so it can reorder
+    them and never add one.
+
+    Explore counts what makes a song familiar: played in Musimo, and by an artist in the shown
+    songs or the open proposal (0 is neither). Close puts songs by the artists of the reference,
+    playing and open proposal songs first, then songs sharing one of their genres by the genre
+    filter's rule. Close with no such artist or genre is no lean at all, so it is balanced."""
+    if leaning.mode == "balanced":
+        return None
+    proposal = [*kept.ids, *leaning.open_ids]
+    if leaning.mode == "explore":
+        known = {
+            key
+            for sid in [*request.shown_ids, *proposal]
+            if (song := view.stored.get(sid)) is not None and (key := _artist_key(song.artist))
+        }
+        return {
+            song.song_id: int(song.play_count > 0) + int(_artist_key(song.artist) in known)
+            for song in matched
+        }
+    anchors = [
+        view.stored[sid]
+        for sid in dict.fromkeys([request.reference_id or "", request.current_id or "", *proposal])
+        if sid in view.stored
+    ]
+    artists = {key for song in anchors if (key := _artist_key(song.artist))}
+    genres = tuple(dict.fromkeys(tag for song in anchors for tag in _genre_tags(song)))
+    if not artists and not genres:
+        return None
+
+    def place(song: StoredSong) -> int:
+        if _artist_key(song.artist) in artists:
+            return _SAME_ARTIST
+        if genres and matches_genres(genres, _genre_tags(song)):
+            return _SAME_GENRE
+        return _ELSEWHERE
+
+    return {song.song_id: place(song) for song in matched}
+
+
+def _lean_sentence(mode: Discovery, places: list[int]) -> str:
+    """What the lean did to the songs it picked. Explore says when unfamiliar songs ran out;
+    close says how many stayed near the songs in view."""
+    count = len(places)
+    if mode == "explore":
+        unfamiliar = sum(1 for place in places if place == 0)
+        if unfamiliar == count:
+            return ""
+        lead = f"Only {unfamiliar} of {count}" if unfamiliar else f"None of the {count}"
+        return (
+            f" {lead} picked songs are unfamiliar (not played in Musimo, by an artist not "
+            "shown lately or in the proposal); not enough unfamiliar matches fit as well, and "
+            "no filters were relaxed."
+        )
+    near = sum(1 for place in places if place != _ELSEWHERE)
+    return (
+        f" Staying close: {near} of {count} picked songs share an artist or genre with the "
+        "reference, playing or proposal songs; no filters were relaxed."
+    )
 
 
 def _reply(

@@ -17,6 +17,7 @@ from backend.library.engine import ATTEMPTS, Engine, _digest, _row, parse_body, 
 from backend.library.engine_contract import (
     COMMIT_VERSIONS,
     CONTRACT_VERSION,
+    DISCOVERY_VERSION,
     EDIT_VERSIONS,
     ENGINE_VERSION,
     EXCLUDE_LIMIT,
@@ -97,8 +98,11 @@ class Proposals:
             assert isinstance(ids, list)
             context = intent.context.model_copy(update={"proposal_ids": ids})
             intent = intent.model_copy(update={"context": context})
+        intent = _carry_discovery(intent, Intent.model_validate(base["intent"]))
         intent, dropped = self._in_library(intent)
-        return self._save(proposal_id, body.revision, intent, cancelled, dropped=dropped)
+        return self._save(
+            proposal_id, body.revision, intent, cancelled, dropped=dropped, open_ids=_ids(base)
+        )
 
     def edit(
         self, proposal_id: str, raw: object, cancelled: Callable[[], bool]
@@ -135,7 +139,9 @@ class Proposals:
             raise self._superseded(latest)
         intent = _edited(Intent.model_validate(base["intent"]), _ids(base), body.edit)
         intent, dropped = self._in_library(intent)
-        saved = self._save(proposal_id, body.revision, intent, cancelled, wanted, dropped)
+        saved = self._save(
+            proposal_id, body.revision, intent, cancelled, wanted, dropped, _ids(base)
+        )
         if "replayed" in saved:
             return saved
         return saved | {"replayed": False}
@@ -278,7 +284,11 @@ class Proposals:
         cancelled: Callable[[], bool],
         edit: dict[str, object] | None = None,
         dropped: list[str] | None = None,
+        open_ids: list[str] | None = None,
     ) -> dict[str, object]:
+        """Run and store one revision. `open_ids` are the songs of the revision it was made
+        from, which a discovery lean leans against; none for a new proposal."""
+        opened = open_ids or []
         if intent.action != "search":
             raise EngineError(
                 "invalid_intent",
@@ -287,14 +297,14 @@ class Proposals:
                 [ErrorField(field="action", message="Must be search")],
             )
         for _ in range(ATTEMPTS):
-            result = self.engine.run(intent)
+            result = self.engine.run(intent, opened)
             ids = result["ids"]
             snapshot = result["snapshot"]
             assert isinstance(ids, list) and isinstance(snapshot, dict)
             ran = Intent.model_validate(result["intent"])
             checks = self._checks(ran, ids, self.bot.player.view())
             # The checks are read after run, so they count only if nothing moved in between.
-            if self.engine.unchanged(intent, snapshot):
+            if self.engine.unchanged(intent, snapshot, opened):
                 break
         else:
             raise EngineError(
@@ -579,6 +589,22 @@ def _ids(stored: dict[str, object]) -> list[str]:
     ids = stored["ids"]
     assert isinstance(ids, list)
     return [str(sid) for sid in ids]
+
+
+def _carry_discovery(intent: Intent, stored: Intent) -> Intent:
+    """A library refinement that leaves discovery out keeps the refined revision's, so the lean
+    lasts for the conversation until it is sent again (balanced resets it). Only from contract
+    version 6, so an older intent runs as it always did, and only into a library search, the
+    one scope that reads it. A new proposal starts balanced."""
+    if (
+        intent.scope != "library"
+        or intent.contract_version < DISCOVERY_VERSION
+        or "discovery" in intent.filters.model_fields_set
+        or stored.filters.discovery == intent.filters.discovery
+    ):
+        return intent
+    filters = intent.filters.model_copy(update={"discovery": stored.filters.discovery})
+    return intent.model_copy(update={"filters": filters})
 
 
 def _edited(intent: Intent, ids: list[str], edit: Another | AddSongs | RemoveSongs) -> Intent:

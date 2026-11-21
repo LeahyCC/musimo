@@ -100,6 +100,7 @@
 
 ### Music bot
 
+- Choose how adventurous a library search is from the structured entry point (contract version 6): `filters.discovery` is `close` (lean towards the artists and genres of the reference, playing and open proposal songs), `balanced` (the default, today's selection exactly) or `explore` (lean towards songs not played in Musimo by artists not shown lately or in the open proposal). It only reorders songs that pass every filter and never relaxes one. A follow-up search on the same proposal keeps it until it is changed, an edit keeps it, and a refinement of a list refuses it. The summary says when explore ran out of unfamiliar songs. The chat doesn't set it yet (#179)
 - The plan in a chat or engine reply now carries `total_length`, so a length such as "an hour" is no longer lost when the page builds an intent from the plan. The legacy chat's request to Ollama is unchanged (#179)
 - A bare "pause", "stop", "resume", "carry on", "skip" or "skip this" in the chat now answers with that action even when Ollama can't be reached, instead of a "Cannot reach Ollama" error. It no longer waits on the model at all, and the browser still applies it. A longer request such as "pause the hip hop", and any search or question, still needs the model and still shows the error when Ollama is down (#179)
 - Keep a refined list usable after one of its songs is deleted. Refresh preview, Remove and a chat follow-up leave the deleted song out and say how many were dropped, where they used to fail every time (#200)

@@ -7,7 +7,7 @@ honour is refused with a typed error, never loosened until it succeeds.
 
 import hashlib
 import json
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -17,6 +17,7 @@ from backend.core.audio_recipes import Recipe
 from backend.library.audio_profile import BPM_WINDOW, ProfileSet
 from backend.library.engine_contract import (
     CONTRACT_VERSION,
+    DISCOVERY_VERSION,
     EDIT_VERSION,
     ENGINE_VERSION,
     MEMORY_VERSION,
@@ -32,6 +33,7 @@ from backend.library.music_bot import (
     BotError,
     BotRequest,
     Kept,
+    Leaning,
     MusicBot,
     SearchPlan,
     negation_only,
@@ -197,10 +199,13 @@ class Engine:
             "capabilities": [item.public() for item in registry(*self.bot.active_recipes())],
         }
 
-    def run(self, intent: Intent) -> dict[str, object]:
+    def run(self, intent: Intent, open_ids: Sequence[str] = ()) -> dict[str, object]:
         """Resolve one intent. Everything it reads is captured with the result, and a read
-        that changed underneath it is repeated, so the snapshot is the one the ids came from."""
+        that changed underneath it is repeated, so the snapshot is the one the ids came from.
+        `open_ids` are the songs of the stored revision a proposal refinement or edit was made
+        from: the open proposal a discovery lean leans against. Nothing else reads them."""
         plan = self._plan(intent)
+        opened = self._open(intent, open_ids)
         scalar, embedding = self.bot.active_recipes()
         self._check_capabilities(intent, scalar, embedding)
         view = self.bot.player.view()
@@ -216,7 +221,7 @@ class Engine:
         )
         for _ in range(ATTEMPTS):
             now = datetime.now(ZoneInfo(self.bot.store.current().music_timezone))
-            before = self._snapshot(intent, now)
+            before = self._snapshot(intent, now, opened)
             # Read after `before`: the same memory revision on both sides of the call means this
             # is the memory the snapshot names, since the revision only ever rises.
             _, shown = self._shown(intent)
@@ -231,10 +236,11 @@ class Engine:
                         frozenset(intent.filters.exclude_ids),
                         intent.context.add_count,
                     ),
+                    Leaning(intent.filters.discovery, opened),
                 )
             except BotError as exc:
                 raise EngineError("engine_rejected", exc.detail, exc.status) from exc
-            if before == self._snapshot(intent, now):
+            if before == self._snapshot(intent, now, opened):
                 return self._result(intent, reply, before)
         raise EngineError(
             "snapshot_changed", "The library changed while the request ran. Try again.", 409
@@ -244,12 +250,21 @@ class Engine:
         """The local day in the music timezone, as the snapshot records it."""
         return datetime.now(ZoneInfo(self.bot.store.current().music_timezone)).date().isoformat()
 
-    def unchanged(self, intent: Intent, snapshot: dict[str, object]) -> bool:
+    def unchanged(
+        self, intent: Intent, snapshot: dict[str, object], open_ids: Sequence[str] = ()
+    ) -> bool:
         """Whether the inputs a result was read from are still as they were, so something
-        read after `run` belongs to the same state."""
+        read after `run` belongs to the same state. `open_ids` are those `run` was given."""
         now = datetime.now(ZoneInfo(self.bot.store.current().music_timezone))
         stored = {key: value for key, value in snapshot.items() if key not in ("seed", "id")}
-        return self._snapshot(intent, now) == stored
+        return self._snapshot(intent, now, self._open(intent, open_ids)) == stored
+
+    def _open(self, intent: Intent, open_ids: Sequence[str]) -> tuple[str, ...]:
+        """The open proposal's songs when a discovery lean reads them, otherwise none, so a
+        balanced search's snapshot does not depend on them."""
+        if intent.filters.discovery == "balanced" or intent.scope != "library":
+            return ()
+        return tuple(dict.fromkeys(open_ids))
 
     def _check_capabilities(
         self, intent: Intent, scalar: Recipe | None, embedding: Recipe | None
@@ -272,6 +287,13 @@ class Engine:
                 f"Kept, pinned and excluded songs need contract version {EDIT_VERSION}.",
                 422,
                 [ErrorField(field=name, message="Unknown field") for name in newer],
+            )
+        if filters.discovery != "balanced" and intent.contract_version < DISCOVERY_VERSION:
+            raise EngineError(
+                "unknown_field",
+                f"discovery needs contract version {DISCOVERY_VERSION}.",
+                422,
+                [ErrorField(field="filters.discovery", message="Unknown field")],
             )
         if filters.total_length is not None:
             if intent.contract_version < TOTAL_LENGTH_VERSION:
@@ -385,19 +407,22 @@ class Engine:
                 [ErrorField(field="context.queue_ids", message="Wrong scope")],
             )
         if intent.scope != "library":
-            # resolve draws and reads these only for a library search.
+            # resolve draws and reads these only for a library search. A refinement keeps the
+            # person's order, so a discovery lean would have nothing to reorder: refused, not
+            # dropped.
             ignored = [
                 ErrorField(field=name, message="Library scope only")
                 for name, given in (
                     ("seed", intent.seed is not None),
                     ("context.shown_ids", context.shown_ids is not None),
+                    ("filters.discovery", intent.filters.discovery != "balanced"),
                 )
                 if given
             ]
             if ignored:
                 raise EngineError(
                     "invalid_intent",
-                    "A seed and shown_ids apply to a library search.",
+                    "A seed, shown_ids and discovery apply to a library search.",
                     422,
                     ignored,
                 )
@@ -518,7 +543,9 @@ class Engine:
                     "allow_artists": [],
                     "add_count": 0,
                     "explanation": intent.explanation,
-                    **intent.filters.model_dump(exclude={"total_length", "exclude_ids"}),
+                    **intent.filters.model_dump(
+                        exclude={"total_length", "exclude_ids", "discovery"}
+                    ),
                     # The model itself: SearchPlan is strict, so a dumped dict would not pass.
                     "total_length": intent.filters.total_length,
                 }
@@ -537,11 +564,13 @@ class Engine:
                 ],
             ) from exc
 
-    def _snapshot(self, intent: Intent, now: datetime) -> dict[str, object]:
+    def _snapshot(
+        self, intent: Intent, now: datetime, opened: tuple[str, ...] = ()
+    ) -> dict[str, object]:
         """Every input besides the intent that decides the ids. A seed alone is not enough:
         the same seed over another catalogue, history, likes, reference, day or shown list is
-        another selection. The files on disk are read as they are when songs are filled, and
-        are not part of this."""
+        another selection, nor, for a discovery lean, over another open proposal. The files on
+        disk are read as they are when songs are filled, and are not part of this."""
         bot = self.bot
         view = bot.player.view()
         scalar, embedding = bot.active_recipes()
@@ -577,6 +606,9 @@ class Engine:
                 "digest": _digest(shown),
             },
         }
+        if intent.filters.discovery != "balanced" and intent.scope == "library":
+            # Only a lean reads the open proposal, so a balanced snapshot is as it was.
+            body["open"] = {"count": len(opened), "digest": _digest(opened)}
         return body
 
     def _shown(self, intent: Intent) -> tuple[int | None, list[str]]:

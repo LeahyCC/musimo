@@ -6,8 +6,12 @@ a phrase, or play count only when the person asked for familiar music) samples b
 inside a window that never reaches far below the best matches, so variety never costs relevance.
 Songs the chat showed lately go after the others that fit as well, and are never excluded.
 
-The order depends only on the seed, the ids, their relevance and the shown songs. Each song's
-draw is a hash of the seed and its id, so one seed repeats one selection. Without a rank key,
+A discovery lean (close or explore) is a soft preference inside a tier of fit; balanced has
+none. It reorders songs that already fit and never adds one.
+
+The order depends only on the seed, the ids, their relevance, the shown songs and the lean.
+Each song's draw is a hash of the seed and its id, so one seed repeats one selection. Without a
+rank key,
 adding, removing or playing one song never reorders the others; with one, a change to the best
 or the weakest fit in the window rescales the draw and can.
 """
@@ -78,6 +82,7 @@ def broad_order(
     need: int,
     relevance: Mapping[str, float] | None,
     shown: Collection[str],
+    prefer: Mapping[str, int] | None = None,
 ) -> Drawn:
     """The order a library search fills from.
 
@@ -87,13 +92,20 @@ def broad_order(
     top songs spread; it is drawn by Gumbel-top-k (sampling without replacement, weighted by
     fit), unshown songs first. Everything below the window follows in fit order, for when the
     artist cap, duplicates, missing files or a length target use up the window.
+
+    `prefer` is a discovery lean: a lower number goes first among songs that fit equally and are
+    equally shown, and inside the drawn window, which counts as one tier of fit. It only
+    reorders the ids given. None, or the same number for every song, is the order above.
     """
     keys = {sid: sample_key(seed, sid) for sid in dict.fromkeys(ids)}
 
     def fit(sid: str) -> float:
         return relevance[sid] if relevance is not None else 0.0
 
-    base = sorted(keys, key=lambda sid: (-fit(sid), sid in shown, keys[sid], sid))
+    def lean(sid: str) -> int:
+        return prefer.get(sid, 0) if prefer is not None else 0
+
+    base = sorted(keys, key=lambda sid: (-fit(sid), sid in shown, lean(sid), keys[sid], sid))
     count = len(base)
     needed = min(max(need, 1), count)
     sampled = count > needed
@@ -115,7 +127,8 @@ def broad_order(
         return (fit(sid) - best) / scale + noise[sid] if scale else noise[sid]
 
     drawn = sorted(window, key=lambda sid: (-score(sid), keys[sid], sid))
-    walk = [sid for sid in drawn if sid not in shown] + [sid for sid in drawn if sid in shown]
+    # Stable, so the draw's order holds inside each group.
+    walk = sorted(drawn, key=lambda sid: (sid in shown, lean(sid)))
     return Drawn(walk + base[width:], width, sampled)
 
 
