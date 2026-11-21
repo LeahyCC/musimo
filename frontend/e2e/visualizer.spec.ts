@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 
 const song = librarySong('song-1', { title: 'First Light', duration: 30 })
 const NOTICE = 'This browser has no WebGL 2'
@@ -84,6 +84,7 @@ test('artwork is the default even with WebGL 2, and the Visualizer button turns 
   page,
   isMobile,
 }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   const stage = await openNowPlaying(page)
   test.skip(!(await hasWebGl2(page)), 'No WebGL 2 in this browser.')
@@ -101,6 +102,7 @@ test('the visualizer stops drawing while the tab is hidden and resumes, audio un
   page,
   isMobile,
 }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await showVisualizerFirst(page)
   const stage = await openNowPlaying(page)
@@ -125,6 +127,7 @@ test('the visualizer rests after a long pause, keeps its picture through a short
   page,
   isMobile,
 }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await showVisualizerFirst(page)
   const stage = await openNowPlaying(page)
@@ -147,6 +150,7 @@ test('with WebGL 2 V and the button switch the view, and the choice sticks', asy
   page,
   isMobile,
 }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await showVisualizerFirst(page)
   const stage = await openNowPlaying(page)
@@ -190,6 +194,7 @@ test('the preset picker, [ and ], and the choice surviving a reload', async ({
   page,
   isMobile,
 }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await showVisualizerFirst(page)
   // A beat would change the preset under test. This one is about the picker.
@@ -234,6 +239,7 @@ test('the preset picker, [ and ], and the choice surviving a reload', async ({
 })
 
 test('a preset left by the old visualizer starts on the default', async ({ page, isMobile }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await page.addInitScript(() => localStorage.setItem('musimo.visualizer-preset', 'plume'))
   await showVisualizerFirst(page)
@@ -248,6 +254,7 @@ test('the preset bar steps the presets, and Auto or Hold is the stored choice', 
   page,
   isMobile,
 }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await showVisualizerFirst(page)
   const stage = await openNowPlaying(page)

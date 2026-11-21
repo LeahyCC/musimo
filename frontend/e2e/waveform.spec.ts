@@ -2,7 +2,7 @@ import type { Page, Route } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
 import { libraryLink } from './nav'
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 
 const queue = [
   librarySong('song-1', { title: 'First Light', duration: 30 }),
@@ -46,6 +46,7 @@ test.beforeEach(({ isMobile }) => {
 test('the peaks are drawn behind the same slider, one bar to each four pixels', async ({
   page,
 }) => {
+  skipWithoutAudio()
   const asked: string[] = []
   await openNowPlaying(page, (route) => {
     asked.push(route.request().url().split('/').pop() ?? '')
@@ -76,6 +77,7 @@ test('the peaks are drawn behind the same slider, one bar to each four pixels', 
 test('bands colour each bar by its bass, mids and highs, and the unplayed part is faded', async ({
   page,
 }) => {
+  skipWithoutAudio()
   // Bass leads the first half and highs the second, so the bars turn from red to blue.
   const bands = peaks.map((_, index) => (index < 400 ? [1, 0.2, 0.1] : [0.1, 0.2, 1]))
   await openNowPlaying(page, (route) => route.fulfill({ json: { peaks, bands } }))
@@ -104,6 +106,7 @@ test('bands colour each bar by its bass, mids and highs, and the unplayed part i
 })
 
 test('bands that do not line up with the peaks are ignored', async ({ page }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, (route) => route.fulfill({ json: { peaks, bands: [[1, 0, 0]] } }))
 
   await expect(seekBar(page)).toHaveAttribute('data-seek-bar', 'waveform')
@@ -114,6 +117,7 @@ test('the keyboard and the pointer seek as they did without the peaks', async ({
   page,
   browserName,
 }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, answerWithPeaks)
   await expect(seekBar(page)).toHaveAttribute('data-seek-bar', 'waveform')
   await expect(slider(page)).toBeEnabled()
@@ -156,6 +160,7 @@ test('the keyboard and the pointer seek as they did without the peaks', async ({
 test('the played part is the accent and the rest is the strong line color, both read from the theme tokens', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, answerWithPeaks)
   await expect(seekBar(page)).toHaveAttribute('data-seek-bar', 'waveform')
 
@@ -188,6 +193,7 @@ test('the played part is the accent and the rest is the strong line color, both 
 test('the plain bar shows while the peaks load, and it is the same slider once they arrive', async ({
   page,
 }) => {
+  skipWithoutAudio()
   let release: () => void = () => undefined
   const gate = new Promise<void>((resolve) => {
     release = resolve
@@ -214,6 +220,7 @@ for (const [name, answer] of [
   ['sends too few peaks', (route: Route) => route.fulfill({ json: { peaks: [0.5] } })],
 ] as const) {
   test(`the plain bar stays when the server ${name}`, async ({ page }) => {
+    skipWithoutAudio()
     await openNowPlaying(page, answer)
 
     await expect(slider(page)).toBeEnabled()
@@ -228,6 +235,7 @@ for (const [name, answer] of [
 }
 
 test('the footer player keeps the plain bar', async ({ page }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, answerWithPeaks)
   await expect(seekBar(page)).toHaveAttribute('data-seek-bar', 'waveform')
 

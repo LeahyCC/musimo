@@ -1,7 +1,7 @@
 import AxeBuilder from '@axe-core/playwright'
 import type { Page, Route } from '@playwright/test'
 
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 
 /* Song analysis (/library/analysis) with its routes mocked: the stack under test has no worker
    and no measured songs, and the page must never change the shared installation's settings. */
@@ -237,6 +237,7 @@ test.describe('Song analysis', () => {
   test('the listen groups play the measured sections and say tempo can read half or double', async ({
     page,
   }) => {
+    skipWithoutAudio()
     await mockAnalysis(page)
     await page.goto('/library/analysis')
     await expect(page.getByText(/Tempo can read half or double/)).toBeVisible()

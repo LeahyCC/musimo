@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
 import { mainNav } from './nav'
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 
 const song = librarySong('song-1', { title: 'First Light', duration: 30 })
 
@@ -29,6 +29,7 @@ const withWebGl2 = (page: Page) =>
   )
 
 test('the footer cover rings only while a library track plays', async ({ page }) => {
+  skipWithoutAudio()
   await playerFixtures(page)
   // Nothing is loaded yet, so there is no cover to ring.
   await page.goto('/settings/user')
@@ -51,6 +52,7 @@ test('the Visualizer control fades with the bars when the docked stage goes idle
   page,
   isMobile,
 }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'The stage controls are checked on desktop.')
   await withWebGl2(page)
   await playerFixtures(page)

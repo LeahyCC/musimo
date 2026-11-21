@@ -394,6 +394,15 @@ test('returning to the artists list restores the place it was left', async ({ pa
   await page.goto('/library/artists')
 
   const card = page.getByRole('button', { name: 'Open Artist 36' })
+  // The grid draws only the rows near the screen. On a phone Artist 36 is a long way down and not
+  // in the page yet, so scroll until it is drawn.
+  await expect(async () => {
+    await page.evaluate(() => {
+      window.scrollBy(0, 600)
+      document.querySelector('#main')?.scrollBy(0, 600)
+    })
+    await expect(card).toBeAttached({ timeout: 250 })
+  }).toPass()
   await card.scrollIntoViewIfNeeded()
   // The list scrolls on the window in Classic and on `#main` in the Listening room.
   const place = () =>
@@ -416,7 +425,7 @@ test('returning to the artists list restores the place it was left', async ({ pa
   }
 })
 
-test('the A-Z rail jumps to a letter further down the artists list', async ({ page }) => {
+test('the A-Z rail jumps to a letter further down the artists list', async ({ page, isMobile }) => {
   await libraryFixtures(page)
   const artists = [
     ['a', 'Alpha'],
@@ -457,7 +466,12 @@ test('the A-Z rail jumps to a letter further down the artists list', async ({ pa
   )
   await page.goto('/library/artists')
 
-  await page.getByRole('button', { name: 'Jump to artists starting with Z' }).click()
+  // On a phone the rail takes the touch itself and its buttons ignore the pointer, so Playwright
+  // would wait for a click that can never land on one. Forcing it presses the rail at the letter's
+  // place, the way a finger does.
+  await page
+    .getByRole('button', { name: 'Jump to artists starting with Z' })
+    .click({ force: isMobile })
   const card = page.getByRole('button', { name: 'Open Zebra 1', exact: true })
   await expect(card).toBeInViewport()
   await expect(card).toBeFocused()

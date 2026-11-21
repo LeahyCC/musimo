@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 
 const alpha = librarySong('song-a', { title: 'Alpha' })
 const bravo = librarySong('song-b', { title: 'Bravo', track: 2, duration: 180 })
@@ -74,6 +74,7 @@ async function openNowPlaying(page: Page, song: Record<string, unknown> | null, 
 }
 
 test('the file is summed up in chips under the artist, read as one line', async ({ page }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, flac, 'up-next')
   const chips = page.getByRole('list', { name: 'FLAC, 44.1 kHz, 1,012 kbps' })
   await expect(chips).toBeVisible()
@@ -83,6 +84,7 @@ test('the file is summed up in chips under the artist, read as one line', async 
 test('About lists the file, the release, the listening and what else is owned', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, flac)
   const panel = page.getByRole('tabpanel', { name: 'About' })
   await expect(page.getByRole('tab', { name: 'About' })).toHaveAttribute('aria-selected', 'true')
@@ -122,6 +124,7 @@ test('About lists the file, the release, the listening and what else is owned', 
 test('About reads values at body size and labels smaller, two to a row, at any width', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, flac)
   const panel = page.getByRole('tabpanel', { name: 'About' })
   const label = panel.locator('dt', { hasText: 'Sample rate' })
@@ -147,12 +150,14 @@ test('About reads values at body size and labels smaller, two to a row, at any w
 })
 
 test('a good file has no suggestion to look for another', async ({ page }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, flac)
   await expect(page.getByRole('tabpanel', { name: 'About' })).toContainText('1,012 kbps')
   await expect(page.getByRole('link', { name: 'Look for a better version' })).toHaveCount(0)
 })
 
 test('a small lossy file has a quiet link that searches for it', async ({ page }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, { ...flac, suffix: 'mp3', bitRate: 128 })
   await expect(page.getByRole('link', { name: 'Look for a better version' })).toHaveAttribute(
     'href',
@@ -161,6 +166,7 @@ test('a small lossy file has a quiet link that searches for it', async ({ page }
 })
 
 test('opening the album from About marks the playing song there', async ({ page }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, flac)
   const panel = page.getByRole('tabpanel', { name: 'About' })
   await panel.getByRole('link', { name: 'Open album' }).click()
@@ -177,6 +183,7 @@ test('opening the album from About marks the playing song there', async ({ page 
 })
 
 test('with nothing known about the file the tab shows no empty labels', async ({ page }) => {
+  skipWithoutAudio()
   await openNowPlaying(page, null)
   const panel = page.getByRole('tabpanel', { name: 'About' })
   await expect(panel.getByRole('heading', { name: 'Release' })).toBeVisible()

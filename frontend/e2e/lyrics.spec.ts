@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 
 const song = librarySong('song-1', { title: 'First Light', duration: 30 })
 
@@ -133,6 +133,7 @@ test('clicking a line in the lyrics view seeks, and the nudge is in reach', asyn
 })
 
 test('the strip in the lyrics view plays and pauses', async ({ page }) => {
+  skipWithoutAudio()
   await openLyrics(page, SYNCED)
   await page.getByRole('button', { name: 'Large type' }).click()
   const strip = view(page)

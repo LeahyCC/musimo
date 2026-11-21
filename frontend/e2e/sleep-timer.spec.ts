@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 
 const alpha = librarySong('song-a', { title: 'Alpha', duration: 30 })
 const bravo = librarySong('song-b', { title: 'Bravo', duration: 30 })
@@ -34,6 +34,7 @@ async function choose(page: Page, name: string) {
 test('a timed sleep counts down, can be cancelled, and pauses when it runs out', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await playOnNowPlaying(page)
   const timer = page.getByRole('button', { name: 'Sleep timer', exact: true })
   const left = page.getByRole('timer', { name: 'Sleep time left' })
@@ -71,6 +72,7 @@ test('a timed sleep counts down, can be cancelled, and pauses when it runs out',
 test('the menu opens from the keyboard, moves with the arrows and returns focus on Escape', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await playOnNowPlaying(page)
   const timer = page.getByRole('button', { name: 'Sleep timer', exact: true })
 
@@ -95,6 +97,7 @@ test('the menu opens from the keyboard, moves with the arrows and returns focus 
 })
 
 test('end of album or queue is not offered with shuffle on', async ({ page }) => {
+  skipWithoutAudio()
   await playOnNowPlaying(page)
   const timer = page.getByRole('button', { name: 'Sleep timer', exact: true })
   const item = page.getByRole('menuitemradio', { name: /End of album or queue/ })
@@ -113,6 +116,7 @@ test('the row under the transport stays on one line at 1280 by 720 with a timer 
   page,
   isMobile,
 }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'A laptop width is checked from a desktop browser, without 44px touch sizes.')
   await page.setViewportSize({ width: 1280, height: 720 })
   await playOnNowPlaying(page)
