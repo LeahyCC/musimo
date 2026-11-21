@@ -5,6 +5,9 @@ description = "A self-hosted music library companion"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi==0.143.2",
+  # Transitive via fastapi, pinned so pydantic-core is a release with a CPython 3.15 wheel (the
+  # python:3.15-slim image has no compiler to build it).
+  "pydantic==2.14.4",
   "uvicorn==0.54.0",
   "httpx==0.28.1",
   "yt-dlp[default,curl-cffi]==2026.10.26",
@@ -17,7 +20,7 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-    "coverage==7.16.2",
+    "coverage==7.17.3",
     "mypy==2.4.1",
     "pip-audit==2.10.1",
     "ruff==0.17.1",

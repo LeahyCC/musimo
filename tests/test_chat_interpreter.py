@@ -257,6 +257,48 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("Cannot reach Ollama", caught.exception.detail)
         self.assertEqual(self._proposals(), 0)
 
+    async def test_offline_transport_commands_still_answer(self) -> None:
+        self.outage = "offline"
+        for prompt, action in (
+            ("pause", "pause"),
+            ("skip", "skip"),
+            ("resume", "resume"),
+            ("stop", "pause"),
+            ("carry on", "resume"),
+            ("Skip this.", "skip"),
+        ):
+            with self.subTest(prompt=prompt):
+                self.paths.clear()
+                result = await self.chat(BotRequest(prompt=prompt))
+                self.assertEqual(result["status"], "ok")
+                self.assertEqual(result["action"], action)
+                self.assertEqual(result["ids"], [])
+                self.assertFalse(result["state_changed"])
+                self.assertNotIn("/api/chat", self.paths)
+                self.assertEqual(self.paths, [])
+                self.assertEqual(self._playback(), self.playback)
+        self.assertEqual(self.chat_bodies, [])
+        self.assertEqual(self._proposals(), 0)
+
+    async def test_a_bare_pause_matches_the_model_reply(self) -> None:
+        self.interpretation(action="pause")
+        from_model = await self.chat()
+        self.outage = "offline"
+        offline = await self.chat(BotRequest(prompt="pause"))
+        from_model.pop("elapsed_ms")
+        offline.pop("elapsed_ms")
+        self.assertEqual(offline, from_model)
+
+    async def test_offline_longer_transport_wording_stays_an_http_error(self) -> None:
+        self.outage = "offline"
+        for prompt in ("pause the hip hop", "skip three songs", "stop and play jazz"):
+            with self.subTest(prompt=prompt):
+                with self.assertRaises(BotError) as caught:
+                    await self.chat(BotRequest(prompt=prompt))
+                self.assertEqual(caught.exception.status, 503)
+                self.assertIn("Cannot reach Ollama", caught.exception.detail)
+        self.assertEqual(self._proposals(), 0)
+
     async def test_timeout_is_a_plain_reply(self) -> None:
         self.outage = "timeout"
         result = await self.chat()

@@ -27,17 +27,13 @@ fast() {
 full() {
   fast
   step uv run mypy
-  exported="$(mktemp)"
-  uv export --locked --no-header --no-dev --no-emit-project --format requirements-txt --output-file "$exported" > /dev/null
-  step diff -u requirements.lock "$exported"
-  uv export --locked --project worker --no-header --no-emit-project --format requirements-txt --output-file "$exported" > /dev/null
-  step diff -u worker/requirements.lock "$exported"
-  # The tempo-beat-v1 images: one lock, exported once for the CPU and once for CUDA.
-  for variant in cpu gpu; do
-    uv export --locked --project worker/beat --extra "$variant" --no-header --no-emit-project --format requirements-txt --output-file "$exported" > /dev/null
-    step diff -u "worker/beat/requirements-$variant.lock" "$exported"
+  # scripts/relock.sh holds the export flags; fix a failure with `scripts/relock.sh`.
+  exported="$(mktemp -d)"
+  sh scripts/relock.sh "$exported"
+  for lock in requirements.lock worker/requirements.lock worker/beat/requirements-cpu.lock worker/beat/requirements-gpu.lock; do
+    step diff -u "$lock" "$exported/$lock"
   done
-  rm -f "$exported"
+  rm -rf "$exported"
   step uv run coverage run -m unittest discover -s tests
   step uv run coverage report
   step npm run --silent test --prefix frontend
