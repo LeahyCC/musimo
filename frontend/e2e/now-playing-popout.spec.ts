@@ -5,7 +5,7 @@ import { DEFAULT_THEME } from '../src/theme/themes'
 import type { Theme } from '../src/theme/themes'
 import { librarySong, playerFixtures } from './library-fixtures'
 import { libraryLink } from './nav'
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 import { LIGHT_THEME, rgb, themeVars } from './theme-fixtures'
 
 const song = librarySong('song-1', { title: 'First Light', duration: 30 })
@@ -115,6 +115,7 @@ async function openNowPlaying(page: Page, queue: LibraryTrack[], lyrics: string[
 test('a very long title stays on one line in Up next and stops after two under the stage', async ({
   page,
 }) => {
+  skipWithoutAudio()
   // The first song is the one playing and so is not in Up next; the next two are.
   await openNowPlaying(page, [
     librarySong('song-long', { title: LONG_TITLE }),
@@ -196,6 +197,7 @@ test('on a desktop the stage and its controls sit beside one tabbed panel, all i
   page,
   isMobile,
 }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'The phone layout is checked below.')
   await page.setViewportSize({ width: 1440, height: 900 })
   await openNowPlaying(page, [song, next])

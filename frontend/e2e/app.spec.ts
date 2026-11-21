@@ -5,7 +5,7 @@ import { ORIGIN } from './env'
 import { generatedPlayerAudio, librarySong, playerFixtures } from './library-fixtures'
 import { mainNav, toasts } from './nav'
 import { writableDestination } from './queue-fixtures'
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 
 // Invented catalog records. Settings, queue, diagnostics and events use the real API.
 const track: MusicResult = {
@@ -1512,6 +1512,7 @@ test.describe('Listening room layout', () => {
   }
 
   test('a rail, a page pane and a player dock with Up next', async ({ page }) => {
+    skipWithoutAudio()
     await roomQueue(page)
     await page.setViewportSize({ width: 1280, height: 800 })
     await page.goto('/')
@@ -1557,6 +1558,7 @@ test.describe('Listening room layout', () => {
   test('a failed queue save shows in Up next and as a toast, and Retry clears both', async ({
     page,
   }) => {
+    skipWithoutAudio()
     let status = 500
     await roomQueue(page, () => status)
     await page.setViewportSize({ width: 1280, height: 800 })
@@ -1658,6 +1660,7 @@ test.describe('Listening room layout', () => {
   test('a failed queue save shows in the Now Playing Up next tab too, and Retry clears it', async ({
     page,
   }) => {
+    skipWithoutAudio()
     let status = 500
     await roomQueue(page, () => status)
     await page.setViewportSize({ width: 1280, height: 800 })
@@ -1680,6 +1683,7 @@ test.describe('Listening room layout', () => {
   test('Retry waits for its save: the button reads Saving and cannot be pressed again', async ({
     page,
   }) => {
+    skipWithoutAudio()
     await roomQueue(page)
     let mode: 'fail' | 'hold' = 'fail'
     let puts = 0
@@ -1757,6 +1761,7 @@ test.describe('Listening room layout', () => {
   test('a queue another browser took over says so, saves nothing more, and Reload starts again', async ({
     page,
   }) => {
+    skipWithoutAudio()
     let status = 204
     await roomQueue(page, () => status)
     let puts = 0
@@ -1807,6 +1812,7 @@ test.describe('Listening room layout', () => {
   })
 
   test('a failed save marks the closed Up next button of the bar', async ({ page }) => {
+    skipWithoutAudio()
     let status = 500
     await roomQueue(page, () => status)
     await page.setViewportSize({ width: 1024, height: 768 })
@@ -1836,6 +1842,7 @@ test.describe('Listening room layout', () => {
   test('under the tablet edge the dock is a bar under the page with Up next above it', async ({
     page,
   }) => {
+    skipWithoutAudio()
     await roomQueue(page)
     await page.setViewportSize({ width: 1024, height: 768 })
     await page.goto('/')

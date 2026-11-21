@@ -1,7 +1,7 @@
 import type { Page } from '@playwright/test'
 
 import { librarySong, playerFixtures } from './library-fixtures'
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 
 const alpha = librarySong('song-a', { title: 'Alpha' })
 const bravo = librarySong('song-b', { title: 'Bravo' })
@@ -58,6 +58,7 @@ test('history lists what played, newest first, with how long ago', async ({ page
 test('playing a history row keeps the queue and puts the song straight after what was playing', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await openHistory(page)
   await page.getByRole('button', { name: 'Play Xylophone' }).click()
   await expect(page.getByRole('heading', { level: 1, name: 'Xylophone' })).toBeVisible()

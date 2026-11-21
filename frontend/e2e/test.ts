@@ -66,3 +66,25 @@ export const test = base.extend<{ quietRoutes: void; listener: void }>({
     { auto: true },
   ],
 })
+
+/**
+ * Call first in a test that needs a song to load or play. It skips the test on WebKit on Windows
+ * and nowhere else, so the test still runs on Linux and macOS, in Chromium and Firefox, and in the
+ * phone project (Chromium).
+ *
+ * Why: Playwright's WebKit build for Windows has no media backend. An `<audio>` element fails the
+ * WAV fixtures with MEDIA_ERR_SRC_NOT_SUPPORTED (code 4), and `play()` rejects with
+ * NotSupportedError, even though `canPlayType` answers "probably" for WAV, MP3, FLAC and MP4, so
+ * it cannot be used to detect this. The player is right to skip a song it cannot play, so a test
+ * that needs the song cannot reach what it checks. Use it in the one test that needs audio, not
+ * for a whole spec file.
+ */
+export function skipWithoutAudio(): void {
+  // The project's browser, not `browserName`, so this needs no fixture and no change to the
+  // test's signature. Desktop Safari is the only WebKit project.
+  const webkit = test.info().project.use.defaultBrowserType === 'webkit'
+  test.skip(
+    webkit && process.platform === 'win32',
+    'Playwright WebKit on Windows cannot decode audio, so no song loads or plays.',
+  )
+}

@@ -95,6 +95,8 @@ uv run python scripts/benchmark.py --url http://127.0.0.1:18765 --output runtime
 docker compose -f compose.ci.yaml -p musimo-ci down --volumes
 ```
 
+On Windows, Playwright's WebKit has no media backend, so no song can load or play there. The player skips a song it cannot play, and a test that needs the song fails. Those tests call `skipWithoutAudio()` from `frontend/e2e/test.ts` first, which skips them on WebKit on Windows only. They still run on Linux and macOS and in the other projects, so a Windows run reports them as skipped, not passed.
+
 The explicit Compose file, project name, port 18765 and named test volumes keep these checks separate from a running installation. They do not mount host music or load `compose.override.yaml`. Cleanup removes only this test project's containers and volumes. To run several stacks side by side (parallel branches on one machine), give each its own `MUSIMO_CI_PORT`, `MUSIMO_CI_TAG` and `-p` project name when starting Compose, and point Playwright at it with `PLAYWRIGHT_BASE_URL` and `MUSIMO_CI_PROJECT`:
 
 ```sh

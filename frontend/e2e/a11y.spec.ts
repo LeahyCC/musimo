@@ -4,6 +4,9 @@ import type { Page } from '@playwright/test'
 import { librarySong, playerFixtures } from './library-fixtures'
 import { expect, test } from './test'
 
+/** goto resolves on load, before the app has drawn; axe on that blank page misses main and h1. */
+const appDrawn = (page: Page) => page.waitForSelector('h1', { state: 'attached' })
+
 async function libraryFixtures(page: Page) {
   await playerFixtures(page)
   await page.route('/api/library/albums/album-1', (route) =>
@@ -51,6 +54,7 @@ for (const layout of ['classic', 'room'] as const) {
 
     test('search page should not have accessibility violations', async ({ page }) => {
       await page.goto('/search')
+      await appDrawn(page)
       const results = await new AxeBuilder({ page }).analyze()
       expect(results.violations).toEqual([])
     })
@@ -64,18 +68,21 @@ for (const layout of ['classic', 'room'] as const) {
 
     test('downloads page should not have accessibility violations', async ({ page }) => {
       await page.goto('/downloads')
+      await appDrawn(page)
       const results = await new AxeBuilder({ page }).analyze()
       expect(results.violations).toEqual([])
     })
 
     test('settings page should not have accessibility violations', async ({ page }) => {
       await page.goto('/settings')
+      await appDrawn(page)
       const results = await new AxeBuilder({ page }).analyze()
       expect(results.violations).toEqual([])
     })
 
     test('diagnostics page should not have accessibility violations', async ({ page }) => {
       await page.goto('/diagnostics')
+      await appDrawn(page)
       const results = await new AxeBuilder({ page }).analyze()
       expect(results.violations).toEqual([])
     })

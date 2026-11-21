@@ -14,7 +14,7 @@ import {
 } from '../src/features/player/track-prefetch'
 import { bodyText, librarySong, playerFixtures, requestBody } from './library-fixtures'
 import { toasts } from './nav'
-import { expect, test } from './test'
+import { expect, skipWithoutAudio, test } from './test'
 
 // The test stream is 30 seconds of silence whatever the song says, so the songs say the same.
 const song = (id: string, title: string) => librarySong(id, { title, duration: 30 })
@@ -114,6 +114,7 @@ async function playToTheEnd(page: Page, seconds = 27, path = '/') {
 test('the next song loads into the standby element and takes over when the song ends', async ({
   page,
 }) => {
+  skipWithoutAudio()
   const scrobbles = await restoreQueue(page, [alpha, bravo, charlie])
   await playToTheEnd(page)
   const active = page.locator('audio.library-audio[data-role="active"]')
@@ -199,6 +200,7 @@ test('a hidden tab with slow timers starts the next song before the last one end
 test('both library elements feed the analyser, so the visualizer survives a handover', async ({
   page,
 }) => {
+  skipWithoutAudio()
   // The picture is not checked here, only the audio graph: count the distinct elements that get a
   // source on it. One would mean every other song plays past the analyser.
   await page.addInitScript(() => {
@@ -218,6 +220,7 @@ test('both library elements feed the analyser, so the visualizer survives a hand
 })
 
 test('a quiet track is boosted the same on both library elements', async ({ page }) => {
+  skipWithoutAudio()
   // +6 dB is about twice as loud, and a peak of 0.3 leaves room for it. At full volume the
   // element cannot go past 1, so the rest has to come from that element's gain stage, and both
   // elements must have one or every other track would miss it.
@@ -276,6 +279,7 @@ function prefetchedStreams(page: Page) {
 test('the next two songs are fetched ahead from the fifth second, long before the standby element loads', async ({
   page,
 }) => {
+  skipWithoutAudio()
   // Counts the position updates a playing song makes in the second before the prefetch point, so
   // the check that nothing was fetched yet is made after the player has really seen that second.
   await page.addInitScript(
@@ -506,6 +510,7 @@ async function seekActive(page: Page, seconds: number) {
 test('the next Deezer song is prepared only in the last minute of the playing one', async ({
   page,
 }) => {
+  skipWithoutAudio()
   const echo = deezerSong(9, 'Echo')
   await restoreQueue(page, [alpha, echo])
   await controlSecondsLeft(page)
@@ -564,6 +569,7 @@ test('no Deezer song is prepared ahead while a Deezer song is still being asked 
   page,
   isMobile,
 }) => {
+  skipWithoutAudio()
   test.skip(isMobile, 'The phone mini player has no Previous track button.')
   const echo = deezerSong(9, 'Echo')
   await restoreQueue(page, [alpha, echo])
@@ -620,6 +626,7 @@ test.describe('a Deezer song that loads while a prepare is running', () => {
     page,
     isMobile,
   }) => {
+    skipWithoutAudio()
     test.skip(isMobile, 'The phone mini player has no Previous track button.')
     const account = await prepareRunning(page)
     // Back to the start of Alpha, then to the song before it.
@@ -634,6 +641,7 @@ test.describe('a Deezer song that loads while a prepare is running', () => {
   })
 
   test('its own song is waited on for the prepare deadline, not 30 seconds', async ({ page }) => {
+    skipWithoutAudio()
     const account = await prepareRunning(page)
     await page.getByRole('contentinfo').getByRole('button', { name: 'Next track' }).click()
     await expect(page.getByRole('contentinfo')).toContainText('Echo')
@@ -680,6 +688,7 @@ const prefetchAborts = (page: Page) =>
   page.evaluate(() => (window as unknown as { prefetchAborted: string[] }).prefetchAborted)
 
 test('skipping stops the prefetch that is still running', async ({ page }) => {
+  skipWithoutAudio()
   await hangPrefetches(page)
   await restoreQueue(page, [alpha, bravo, charlie, delta])
   await playToTheEnd(page, 6)
@@ -693,6 +702,7 @@ test('skipping stops the prefetch that is still running', async ({ page }) => {
 test('a new song empties the prefetch list, so nothing from the old list starts', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await countTicks(page)
   await hangPrefetches(page)
   await restoreQueue(page, [alpha, bravo, charlie, delta])
@@ -716,6 +726,7 @@ test('a new song empties the prefetch list, so nothing from the old list starts'
 test('removing the next song from the queue stops its prefetch and fetches the one after', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await hangPrefetches(page)
   await restoreQueue(page, [alpha, bravo, charlie, delta])
   await playToTheEnd(page, 6, '/now-playing')
@@ -734,6 +745,7 @@ test('removing the next song from the queue stops its prefetch and fetches the o
 })
 
 test('repeat one fetches nothing ahead, since the same song plays again', async ({ page }) => {
+  skipWithoutAudio()
   await page.addInitScript(() => localStorage.setItem('musimo.player-repeat', 'one'))
   await countTicks(page)
   await restoreQueue(page, [alpha, bravo, charlie])
@@ -750,6 +762,7 @@ test('repeat one fetches nothing ahead, since the same song plays again', async 
 })
 
 test('a random shuffle that has not picked yet fetches nothing ahead', async ({ page }) => {
+  skipWithoutAudio()
   // The next song is not known until the shuffle picks it, so there is nothing to fetch.
   await page.addInitScript(() => localStorage.setItem('musimo.player-shuffle', 'true'))
   await countTicks(page)
@@ -766,6 +779,7 @@ test('a random shuffle that has not picked yet fetches nothing ahead', async ({ 
 })
 
 test('a metered connection fetches nothing ahead', async ({ page }) => {
+  skipWithoutAudio()
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'connection', {
       value: { saveData: true },
@@ -788,6 +802,7 @@ test('a metered connection fetches nothing ahead', async ({ page }) => {
 })
 
 test('a metered connection preloads the metadata only', async ({ page }) => {
+  skipWithoutAudio()
   await page.addInitScript(() =>
     Object.defineProperty(navigator, 'connection', {
       value: { saveData: true },
@@ -967,6 +982,7 @@ async function waitForReload(page: Page, from: number, playing: boolean) {
 test('a dropped connection reloads the song where it stopped instead of skipping it', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await logMedia(page)
   const scrobbles = await restoreQueue(page, [alpha, bravo])
   // Now Playing is where the status line shows.
@@ -998,6 +1014,7 @@ test('a dropped connection reloads the song where it stopped instead of skipping
 })
 
 test('a reload saves the queue where the song stopped, not at its start', async ({ page }) => {
+  skipWithoutAudio()
   await logMedia(page)
   // Loading the song again resets the element to 0 and reports that before the seek back lands.
   await page.addInitScript(() => {
@@ -1045,6 +1062,7 @@ test('a reload saves the queue where the song stopped, not at its start', async 
 test('a reload the server refuses is tried again rather than skipping the song', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
   await playFrom(page, 10)
@@ -1069,6 +1087,7 @@ test('a reload the server refuses is tried again rather than skipping the song',
 })
 
 test('the play button shows it is reconnecting until the song is back', async ({ page }) => {
+  skipWithoutAudio()
   // The clock is held still so the wait before the reload lasts until the test moves it on.
   await page.clock.install()
   await logMedia(page)
@@ -1093,6 +1112,7 @@ test('the play button shows it is reconnecting until the song is back', async ({
 test('a playing song that keeps losing its connection stops on it once the reloads run out', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
@@ -1138,6 +1158,7 @@ test('a playing song that keeps losing its connection stops on it once the reloa
 })
 
 test('a pause while the reload waits keeps the song paused', async ({ page }) => {
+  skipWithoutAudio()
   await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
@@ -1167,6 +1188,7 @@ test('a pause while the reload waits keeps the song paused', async ({ page }) =>
 test('a paused song that keeps losing its connection waits for play instead of skipping', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
@@ -1199,6 +1221,7 @@ test('a paused song that keeps losing its connection waits for play instead of s
 })
 
 test('a song chosen while the reload waits is the one that plays', async ({ page }) => {
+  skipWithoutAudio()
   await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
@@ -1240,6 +1263,7 @@ test('a song chosen while the reload waits is the one that plays', async ({ page
 test('a play pressed while the reload waits reloads at once, and the wait then does nothing', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
@@ -1279,6 +1303,7 @@ test('a play pressed while the reload waits reloads at once, and the wait then d
 test('the count of reloads starts again once the song has played five seconds past the drop', async ({
   page,
 }) => {
+  skipWithoutAudio()
   await page.clock.install()
   await logMedia(page)
   await restoreQueue(page, [alpha, bravo])
@@ -1509,6 +1534,7 @@ test('a song that was playing when the connection really dropped plays again aft
 })
 
 test('a song that cannot be played is skipped and the player says which', async ({ page }) => {
+  skipWithoutAudio()
   await restoreQueue(page, [alpha, bravo, charlie], ['song-b'])
   await playToTheEnd(page)
   const player = page.getByRole('contentinfo')

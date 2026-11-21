@@ -451,9 +451,10 @@ test('the mini player is one row and hands the rest to Now Playing', async ({ pa
   await expect(seek).toBeEnabled()
   await seek.focus()
   await seek.press('ArrowRight')
+  // The audio elements sit outside the player bar, so a hidden bar cannot pause them.
   await expect
     .poll(() =>
-      player
+      page
         .locator('audio.library-audio[data-role="active"]')
         .evaluate((element: HTMLAudioElement) => element.currentTime),
     )
