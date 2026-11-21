@@ -26,7 +26,7 @@ import tempfile
 import threading
 import time
 import wave
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
@@ -745,10 +745,10 @@ def engine_timer(sink: list[float], intents: list[dict[str, object]]) -> Iterato
     id outside the library cannot pass unseen."""
     original = Engine.run
 
-    def timed(self: Engine, intent: Intent) -> dict[str, object]:
+    def timed(self: Engine, intent: Intent, open_ids: Sequence[str] = ()) -> dict[str, object]:
         started = time.perf_counter()
         try:
-            return original(self, intent)
+            return original(self, intent, open_ids)
         finally:
             sink.append(time.perf_counter() - started)
             intents.append(intent.model_dump())

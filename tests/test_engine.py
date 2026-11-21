@@ -44,7 +44,7 @@ from backend.library.engine_contract import (
     registry,
 )
 from backend.library.index import Library
-from backend.library.music_bot import ARTIST_CAP, BotRequest, Kept, MusicBot, SearchPlan
+from backend.library.music_bot import ARTIST_CAP, BotRequest, Kept, Leaning, MusicBot, SearchPlan
 from backend.library.player import Player
 from backend.library.selection import RELEVANCE_RATIO, SEED_LIMIT, SHOWN_LIMIT
 
@@ -152,7 +152,7 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             ([], "malformed_request"),
             ("search", "malformed_request"),
             ({"action": "search"}, "malformed_request"),
-            ({"contract_version": 6, "action": "search"}, "unsupported_version"),
+            ({"contract_version": CONTRACT_VERSION + 1, "action": "search"}, "unsupported_version"),
             ({"contract_version": "1", "action": "search"}, "unsupported_version"),
             ({"contract_version": True, "action": "search"}, "unsupported_version"),
             (PLAIN | {"duration_mode": "about"}, "unknown_field"),
@@ -359,8 +359,8 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             body = (await client.get("/api/music-bot/capabilities")).json()
         self.assertEqual(body["contract_version"], CONTRACT_VERSION)
         self.assertEqual(body["engine_version"], ENGINE_VERSION)
-        self.assertEqual(body["supported_versions"], [1, 2, 3, 4, CONTRACT_VERSION])
-        self.assertEqual(CONTRACT_VERSION, 5)
+        self.assertEqual(body["supported_versions"], [1, 2, 3, 4, 5, CONTRACT_VERSION])
+        self.assertEqual(CONTRACT_VERSION, 6)
         found = {item["id"]: item["available"] for item in body["capabilities"]}
         self.assertTrue(found["total_length"])
         self.assertNotIn("duration_comparators", found)
@@ -548,8 +548,9 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             now: datetime | None = None,
             total_length: TotalLength | None = None,
             kept: Kept | None = None,
+            leaning: Leaning | None = None,
         ) -> dict[str, object]:
-            reply = real(plan, request, now, total_length, kept)
+            reply = real(plan, request, now, total_length, kept, leaning)
             calls.append(1)
             with self.store.lock:
                 self.store.db.execute("UPDATE library_files SET play_count=play_count+1")
@@ -570,8 +571,9 @@ class EngineTests(unittest.IsolatedAsyncioTestCase):
             now: datetime | None = None,
             total_length: TotalLength | None = None,
             kept: Kept | None = None,
+            leaning: Leaning | None = None,
         ) -> dict[str, object]:
-            reply = real(plan, request, now, total_length, kept)
+            reply = real(plan, request, now, total_length, kept, leaning)
             if not calls:
                 calls.append(1)
                 self.store.bump_library_revision()

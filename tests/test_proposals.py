@@ -264,7 +264,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         cases: list[tuple[JsonObject, str]] = [
             ({"action": "pause"}, "invalid_intent"),
             ({"filters": {"limit": 501}}, "selection_too_large"),
-            ({"contract_version": 6}, "unsupported_version"),
+            ({"contract_version": 7}, "unsupported_version"),
             ({"extra": 1}, "unknown_field"),
         ]
         for body, expected in cases:
@@ -776,7 +776,7 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
         body = payload(await self.http.get("/api/music-bot/capabilities"))
         found = {item["id"]: item["available"] for item in body["capabilities"]}  # type: ignore[attr-defined]
         self.assertTrue(found["proposal_commit"])
-        self.assertEqual(body["supported_versions"], [1, 2, 3, 4, 5])
+        self.assertEqual(body["supported_versions"], [1, 2, 3, 4, 5, 6])
 
     # Edits of the latest revision
 
@@ -982,8 +982,9 @@ class ProposalTests(unittest.IsolatedAsyncioTestCase):
                     {"kind": "remove", "ids": [ids[0]]},
                     f"op-version-{version}",
                 )
-                # Kept and excluded songs are version 5 fields, so the stored intent says 5.
-                self.assertEqual(self.intent_of(second)["contract_version"], 5)
+                # Kept and excluded songs are version 5 fields, so the stored intent says the
+                # current version, 6.
+                self.assertEqual(self.intent_of(second)["contract_version"], 6)
                 self.assertEqual(self.song_ids(second), ids[1:])
 
     async def test_removing_from_a_refined_list_refines_what_is_left_in_its_order(self) -> None:
