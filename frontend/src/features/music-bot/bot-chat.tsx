@@ -55,11 +55,14 @@ import {
   storedRevision,
   unavailableSongs,
   UnknownOutcome,
+  withDiscovery,
 } from './proposals'
 import type {
   Carry,
   CommitReply,
+  Discovery,
   EditReply,
+  Intent,
   IntentContext,
   ProposalEdit,
   ProposalReply,
@@ -231,6 +234,9 @@ type BotChat = {
   setScope: (scope: BotScope | null) => void
   /** What the radio shows: the pick, or what the last answer used. */
   shownScope: BotScope
+  /** How far library searches reach from what the person knows. Balanced is the plain search. */
+  discovery: Discovery
+  setDiscovery: (discovery: Discovery) => void
   thinking: boolean
   startedAt: number | null
   cold: boolean
@@ -361,6 +367,10 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
   const [applied, setApplied] = useState<Applied | null>(null)
   const [reference, setReference] = useState<Reference | null>(null)
   const [scope, setScope] = useState<BotScope | null>(null)
+  // Per conversation, never saved. After a reload it starts from the open preview's own lean.
+  const [discovery, setDiscovery] = useState<Discovery>(
+    () => preview?.intent.filters.discovery ?? 'balanced',
+  )
   const [thinking, setThinking] = useState(false)
   const [startedAt, setStartedAt] = useState<number | null>(null)
   const [cold, setCold] = useState(false)
@@ -495,6 +505,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       setOpen(false)
       setStamp('')
       setApplied(null)
+      setDiscovery('balanced')
     }
     window.addEventListener(BOT_RESET, reset)
     return () => window.removeEventListener(BOT_RESET, reset)
@@ -737,7 +748,15 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     if (!answer.tracks.length) return null
     const open = latestPreview.current
     const adding = answer.plan.add_count > 0
-    if (open && adding && sameSearch(answer, open.intent)) {
+    // The person's lean applies to what is stored. An add is the server's edit only while the lean
+    // is the one the open revision already holds, since an edit keeps it as it is.
+    const lean = (intent: Intent) => withDiscovery(intent, discovery, open?.intent ?? null)
+    if (
+      open &&
+      adding &&
+      sameSearch(answer, open.intent) &&
+      (open.intent.filters.discovery ?? 'balanced') === discovery
+    ) {
       // The same search with more songs is the server's `add` edit: it keeps every song, picks the
       // new ones against its memory of what was shown, and the card shows its revision, not the
       // chat's own list.
@@ -772,16 +791,17 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
       // The engine already ran this. A named song is a new proposal. A follow-up of the open
       // card is its next revision, without the ids the refine route rejects.
       const decided = followUpIntent(echoed.data, context.proposalIds, open !== null, carry)
-      if (!open || decided.fresh) return { made: await createProposal(decided.intent, signal) }
+      if (!open || decided.fresh)
+        return { made: await createProposal(withDiscovery(decided.intent, discovery), signal) }
       try {
-        return { made: await refineProposal(open.id, open.revision, decided.intent, signal) }
+        return { made: await refineProposal(open.id, open.revision, lean(decided.intent), signal) }
       } catch (problem) {
         if (problem instanceof ProposalError && REVISION_GONE.includes(problem.code))
           return 'changed'
         throw problem
       }
     }
-    const intent = intentFromReply(answer, context, keep, carry)
+    const intent = lean(intentFromReply(answer, context, keep, carry))
     if (open && keep === undefined) {
       try {
         return { made: await refineProposal(open.id, open.revision, intent, signal) }
@@ -793,7 +813,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
         throw problem
       }
     }
-    return { made: await createProposal(intent, signal) }
+    return { made: await createProposal(withDiscovery(intent, discovery), signal) }
   }
 
   /**
@@ -1416,6 +1436,7 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     setApplied(null)
     setReference(null)
     setScope(null)
+    setDiscovery('balanced')
     setUnread(false)
     setOutcome(null)
   }
@@ -1468,6 +1489,8 @@ export function MusicBotProvider({ children }: { children: ReactNode }) {
     scope,
     setScope,
     shownScope: scope ?? reply?.plan.scope ?? 'library',
+    discovery,
+    setDiscovery,
     thinking,
     startedAt,
     cold,
