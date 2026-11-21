@@ -187,6 +187,25 @@ def _stays_http(exc: BotError) -> bool:
     return any(mark in exc.detail for mark in _HTTP_ERROR_MARKS)
 
 
+# A whole prompt that is one of these is a transport command and needs no model, so it still
+# answers when Ollama is down. The words are the ones the interpretation prompt maps. Anything
+# longer, such as "pause the hip hop", goes to the model.
+_TRANSPORT_PROMPTS: dict[str, Literal["pause", "resume", "skip"]] = {
+    "pause": "pause",
+    "stop": "pause",
+    "resume": "resume",
+    "carry on": "resume",
+    "skip": "skip",
+    "skip this": "skip",
+}
+
+
+def transport_command(prompt: str) -> Literal["pause", "resume", "skip"] | None:
+    """The transport action a bare command asks for, or None for anything else."""
+    words = " ".join(prompt.casefold().split()).rstrip(".!")
+    return _TRANSPORT_PROMPTS.get(words)
+
+
 class SearchPlan(BaseModel):
     model_config = ConfigDict(extra="forbid", strict=True)
 
@@ -1354,30 +1373,50 @@ class MusicBot:
             settings = self.store.current()
             if not settings.ollama_model:
                 raise BotError("Choose an installed Ollama model first.", 422)
-            try:
-                models = await self.models()
-                installed = models["models"]
-                if not isinstance(installed, list) or settings.ollama_model not in installed:
-                    raise BotError(
-                        "The selected model is no longer installed. Choose another.", 422
-                    )
-                if settings.music_bot_legacy_chat:
-                    result = await self._legacy_chat(request)
-                else:
-                    result = await self._interpreted_chat(request)
-            except BotError as exc:
-                # The old path still raises. The new path answers, except where the page
-                # locks on the HTTP error (no model, model gone, offline, busy).
-                if settings.music_bot_legacy_chat or _stays_http(exc):
-                    raise
-                from backend.library.interpreter import Reply
+            command = None if settings.music_bot_legacy_chat else transport_command(request.prompt)
+            if command is not None:
+                # A bare pause, resume or skip needs no model, so it answers before any
+                # Ollama call and still works when Ollama is down. The browser applies it.
+                result = await self._transport(command)
+            else:
+                try:
+                    models = await self.models()
+                    installed = models["models"]
+                    if not isinstance(installed, list) or settings.ollama_model not in installed:
+                        raise BotError(
+                            "The selected model is no longer installed. Choose another.", 422
+                        )
+                    if settings.music_bot_legacy_chat:
+                        result = await self._legacy_chat(request)
+                    else:
+                        result = await self._interpreted_chat(request)
+                except BotError as exc:
+                    # The old path still raises. The new path answers, except where the page
+                    # locks on the HTTP error (no model, model gone, offline, busy).
+                    if settings.music_bot_legacy_chat or _stays_http(exc):
+                        raise
+                    from backend.library.interpreter import Reply
 
-                result = await self._reply(Reply("unsupported", exc.detail))
+                    result = await self._reply(Reply("unsupported", exc.detail))
             return self._chat_fields(result, request) | {
                 "elapsed_ms": round((time.monotonic() - started) * 1000)
             }
         finally:
             self.busy = False
+
+    async def _transport(self, action: Literal["pause", "resume", "skip"]) -> dict[str, object]:
+        """The reply the model path gives for this transport action, without the model."""
+        from backend.library.engine import Engine
+        from backend.library.engine_contract import EngineError, registry
+        from backend.library.interpreter import Interpretation, Reply, to_intent
+
+        intent = to_intent(Interpretation(action=action), [], registry(*self.active_recipes()))
+        if isinstance(intent, Reply):
+            return await self._reply(intent)
+        try:
+            return Engine(self).run(intent)
+        except EngineError as exc:
+            return await self._reply(Reply("unsupported", exc.message))
 
     async def _interpreted_chat(self, request: BotRequest) -> dict[str, object]:
         """New path: model -> Interpretation -> to_intent -> Engine.run."""

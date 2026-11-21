@@ -105,6 +105,24 @@ class ScorerTests(unittest.TestCase):
         self.assertFalse(failed.outage_ok)
         self.assertIn("outage", failed.failures)
 
+    def test_an_offline_transport_command_scores_as_control(self) -> None:
+        dev_file = FIXTURE.parents[2] / "evals" / "interpreter" / "dev.json"
+        dev = json.loads(dev_file.read_text(encoding="utf-8"))
+        d070: dict[str, object] = next(case for case in dev["cases"] if case["id"] == "d070")
+        # The held-out skip case has this shape. The sealed file is not opened here.
+        h051: dict[str, object] = {
+            "id": "h051",
+            "fault": "offline",
+            "expect": {"outcome": ["control"]},
+        }
+        for case, action in ((d070, "pause"), (h051, "skip")):
+            with self.subTest(case=case["id"]):
+                score = score_case(case, {"action": action, "ids": []}, IDS)
+                self.assertTrue(score.outage_ok)
+                self.assertEqual(score.failures, [])
+                failed = score_case(case, {}, IDS, error="BotError: Cannot reach Ollama")
+                self.assertFalse(failed.outage_ok)
+
     def test_an_edit_scores_the_applied_revision(self) -> None:
         case = cases()["h003"]
         result: dict[str, object] = {
