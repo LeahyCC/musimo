@@ -11,8 +11,8 @@ import { withListener } from '../listener/identity'
 
 /** The engine's contract version. An intent may say 1 to 5, a commit 2 to 5 and an edit only 5, so
  *  this one number is accepted by create, refine, edit and commit. Version 3 added
- *  `filters.total_length`, which a chat reply keeps when the engine set one and a stored intent
- *  can carry, so it is kept when an intent is sent again. Version 4 is the first where an omitted
+ *  `filters.total_length`, which a chat reply's plan and a stored intent can carry, so it is kept
+ *  when an intent is sent again. Version 4 is the first where an omitted
  *  `shown_ids` means the server's memory of shown songs, which is what the chat relies on.
  *  Version 5 added the edit route and the fields behind it (`exclude_ids`, `keep_ids`,
  *  `pinned_ids`, `add_count`), so the chat never sends an older one. */
@@ -437,7 +437,8 @@ export function intentFromReply(
       min_seconds: plan.min_seconds,
       max_seconds: plan.max_seconds,
       target_seconds: plan.target_seconds,
-      total_length: null,
+      // An exact list kept as it is must not be cut to a length again.
+      total_length: frozen ? null : plan.total_length,
       limit: plan.limit,
       similar_to_current: plan.similar_to_current,
       tempo: plan.tempo,
