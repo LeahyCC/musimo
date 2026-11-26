@@ -718,6 +718,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     chosen: Set<LibraryTrack>
     source: string
     deck: Deck | null
+    unshuffled: LibraryTrack[] | null
     edited: boolean
   } | null>(null)
   const [canUndoBotQueue, setCanUndoBotQueue] = useState(false)
@@ -2233,6 +2234,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       source: sourceRef.current,
       // Clone: an in-flight window fetch may still hold the former object after the edit.
       deck: deck.current ? { ...deck.current } : null,
+      // A bot Play replaces it, and Undo has to bring back the order shuffle-off returns to.
+      unshuffled: unshuffledOrder.current,
       edited: editedRef.current,
     }
     if (action === 'play')
@@ -2266,6 +2269,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const sameSong =
       before.tracks.length > 0 && before.tracks[before.index] === libraryCurrent.current
     chosen.current = before.chosen
+    unshuffledOrder.current = before.unshuffled
     sourceRef.current = before.source
     editedRef.current = before.edited
     queueRef.current = before.tracks
