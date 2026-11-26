@@ -98,10 +98,11 @@ export function TrackList({
     // A playlist may hold the same song twice, and the same song appears in several
     // collections, so the queue and the position are both part of "the playing row".
     // An edited queue no longer lines up with the list, so its places say nothing about a row.
+    // A shuffled one does not either, so there the song alone marks the row.
     const current =
       player.source === source &&
       !player.edited &&
-      player.currentIndex === index &&
+      (player.shuffle || player.currentIndex === index) &&
       player.libraryTrack?.id === track.id
     const playing = current && player.playing
     const marked = current || index === highlighted

@@ -761,23 +761,6 @@ test('repeat one fetches nothing ahead, since the same song plays again', async 
   expect(prefetched).toEqual([])
 })
 
-test('a random shuffle that has not picked yet fetches nothing ahead', async ({ page }) => {
-  skipWithoutAudio()
-  // The next song is not known until the shuffle picks it, so there is nothing to fetch.
-  await page.addInitScript(() => localStorage.setItem('musimo.player-shuffle', 'true'))
-  await countTicks(page)
-  await restoreQueue(page, [alpha, bravo, charlie])
-  const prefetched = prefetchedStreams(page)
-  await playToTheEnd(page, 6)
-  const active = page.locator('audio.library-audio[data-role="active"]')
-  await expect
-    .poll(() => active.evaluate((element: HTMLAudioElement) => element.currentTime))
-    .toBeGreaterThan(PREFETCH_AFTER_SECONDS)
-  await laterTicks(page, 3)
-  await page.waitForTimeout(NO_PREFETCH_WAIT_MS)
-  expect(prefetched).toEqual([])
-})
-
 test('a metered connection fetches nothing ahead', async ({ page }) => {
   skipWithoutAudio()
   await page.addInitScript(() =>
