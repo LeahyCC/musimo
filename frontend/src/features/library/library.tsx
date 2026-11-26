@@ -477,7 +477,7 @@ export function LibraryPage({
     onSuccess: (items, { kind, id, shuffled }) => {
       const source = `${kind}:${id}`
       if (shuffled) player.shuffleLibrary(items, source)
-      else player.playLibrary(items, 0, source)
+      else player.playAll(items, source)
     },
   })
   // An album or playlist card has not loaded its songs, so queueing one reads them first.
@@ -504,7 +504,7 @@ export function LibraryPage({
           selection.cursor,
           trackSource,
         )
-      else player.playLibrary(selection.items, 0, trackSource)
+      else player.playAll(selection.items, trackSource)
     },
   })
 
@@ -1079,7 +1079,7 @@ export function LibraryPage({
                 variant="primary"
                 size={15}
                 disabled={!detailTracks.length}
-                onPlay={() => player.playLibrary(detailTracks, 0, detailSource)}
+                onPlay={() => player.playAll(detailTracks, detailSource)}
               />
               <Button
                 onClick={() => player.shuffleLibrary(detailTracks, detailSource)}
@@ -1305,7 +1305,7 @@ export function LibraryPage({
               disabled={busy || (artistSongsMode ? !artistSongs.length : !artistAlbums.length)}
               onPlay={() =>
                 artistSongsMode
-                  ? player.playLibrary(artistSongs, 0, `artist:${artistId}`)
+                  ? player.playAll(artistSongs, `artist:${artistId}`)
                   : playCollection.mutate({ kind: 'artist', id: artistId, shuffled: false })
               }
             />

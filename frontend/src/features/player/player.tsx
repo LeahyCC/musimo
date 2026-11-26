@@ -137,6 +137,8 @@ type Playback = {
   repeat: RepeatMode
   play: (track: MusicResult) => void
   playLibrary: (tracks: LibraryTrack[], index?: number, source?: string) => void
+  /** Play all: the list in its own order from the top, with shuffle turned off. */
+  playAll: (tracks: LibraryTrack[], source?: string) => void
   shuffleLibrary: (tracks: LibraryTrack[], source?: string) => void
   /**
    * A Tracks shuffle. `items` is the first window, already in play order. When the pass is
@@ -227,6 +229,7 @@ const PlayerContext = createContext<Playback>({
   repeat: 'off',
   play: () => undefined,
   playLibrary: () => undefined,
+  playAll: () => undefined,
   shuffleLibrary: () => undefined,
   playDeck: () => undefined,
   playNext: () => undefined,
@@ -2330,6 +2333,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     editQueue([playing], 0)
   }
 
+  // Play all sits beside a Shuffle button, which is the way to mix the list, so Play all always
+  // means this order and turns shuffle off rather than shuffling as well.
+  function playAll(items: LibraryTrack[], origin = '') {
+    if (!items.length) return
+    setShuffle(false)
+    startQueue(items, 0, origin)
+  }
+
   function shuffleLibrary(items: LibraryTrack[], origin = '') {
     if (!items.length) return
     setShuffle(true)
@@ -3058,6 +3069,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         cancelFetch,
         listen,
         playLibrary,
+        playAll,
         shuffleLibrary,
         playDeck,
         playNext,
