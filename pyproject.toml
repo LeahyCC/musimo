@@ -13,7 +13,7 @@ dependencies = [
   "yt-dlp[default,curl-cffi]==2026.10.26",
   "bgutil-ytdlp-pot-provider==2.0.2",
   "mutagen==1.48.1",
-  "watchdog==6.0.0",
+  "watchdog==7.1.0",
   "tzdata==2026.5",
   "numpy==2.5.4",
 ]
