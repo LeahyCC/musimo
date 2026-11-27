@@ -217,11 +217,8 @@ test('removing a row keeps where the queue came from, and the album still shows 
 test('after a reload with shuffle on, a song queued to play next still plays next', async ({
   page,
 }) => {
-  // Chance would take the last song in the queue, so only the saved choice can put Echo first.
-  await page.addInitScript(() => {
-    Math.random = () => 0.99
-    localStorage.setItem('musimo.player-shuffle', 'true')
-  })
+  // Shuffle plays the queue in its order, and the saved choice keeps Echo straight after Alpha.
+  await page.addInitScript(() => localStorage.setItem('musimo.player-shuffle', 'true'))
   const saves = await restoreQueue(page, [alpha, bravo, charlie, delta])
   await page.route('**/api/library/albums/album-2', (route) =>
     route.fulfill({
@@ -249,6 +246,59 @@ test('after a reload with shuffle on, a song queued to play next still plays nex
   await expect(page.locator('.live-player')).toContainText('Alpha')
   await page.getByRole('button', { name: 'Next track' }).click()
   await expect(page.locator('.live-player')).toContainText('Echo')
+})
+
+test('shuffle mixes the songs after the playing one once, and off puts the order back', async ({
+  page,
+}) => {
+  // A random source of 0 always takes the first slot, so the order is known: Charlie, Delta, Bravo.
+  await page.addInitScript(() => {
+    Math.random = () => 0
+  })
+  const saves = await restoreQueue(page, [alpha, bravo, charlie, delta])
+  await page.goto('/now-playing')
+  const upNext = page.getByRole('tabpanel', { name: 'Up next' })
+  const titles = upNext.locator('[data-queue-index] strong')
+  const shuffle = page.getByRole('button', { name: 'Shuffle', exact: true }).first()
+  await expect(titles).toHaveText(['Bravo', 'Charlie', 'Delta'])
+
+  await shuffle.click()
+  await expect(titles).toHaveText(['Charlie', 'Delta', 'Bravo'])
+  await expect.poll(() => lastSave(saves)?.ids).toEqual(['song-a', 'song-c', 'song-d', 'song-b'])
+
+  // Next plays the next row, so no song is skipped and none drops out of Up next.
+  await page.getByRole('button', { name: 'Next track' }).first().click()
+  await expect(page.getByRole('heading', { name: 'Charlie' })).toBeVisible()
+  await expect(titles).toHaveText(['Delta', 'Bravo'])
+
+  await shuffle.click()
+  await expect(titles).toHaveText(['Delta'])
+  await expect.poll(() => lastSave(saves)?.ids).toEqual(['song-a', 'song-b', 'song-c', 'song-d'])
+})
+
+test('Play all plays the album in order and turns shuffle off', async ({ page }) => {
+  // A random source of 0 would mix the album as Bravo, Delta, Charlie, so in order means unmixed.
+  await page.addInitScript(() => {
+    Math.random = () => 0
+    localStorage.setItem('musimo.player-shuffle', 'true')
+  })
+  await restoreQueue(page, [alpha])
+  await page.route('**/api/library/albums/album-1', (route) =>
+    route.fulfill({ json: { ...album, songCount: 3, song: [bravo, charlie, delta] } }),
+  )
+  await page.goto('/library/albums/album-1')
+  await expect(page.locator('.live-player')).toContainText('Alpha')
+  await page.getByRole('button', { name: 'Play all' }).click()
+  await expect(page.locator('.live-player')).toContainText('Bravo')
+
+  // Not page.goto: the init script would switch shuffle back on in a fresh page.
+  await page.getByRole('link', { name: 'Open Now Playing' }).click()
+  const upNext = page.getByRole('tabpanel', { name: 'Up next' })
+  await expect(upNext.locator('[data-queue-index] strong')).toHaveText(['Charlie', 'Delta'])
+  await expect(page.getByRole('button', { name: 'Shuffle', exact: true }).first()).toHaveAttribute(
+    'aria-pressed',
+    'false',
+  )
 })
 
 test('adding past the 500 songs the queue keeps is refused with a message', async ({ page }) => {

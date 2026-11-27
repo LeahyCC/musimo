@@ -82,15 +82,25 @@ type RoundButtonProps = {
   label: string
   onClick: () => void
   disabled?: boolean
+  /** For an on/off control, so its state is not shown by colour alone. */
+  pressed?: boolean
   className: string
   children: ReactNode
 }
 
-function SquareButton({ label, onClick, disabled, className, children }: RoundButtonProps) {
+function SquareButton({
+  label,
+  onClick,
+  disabled,
+  pressed,
+  className,
+  children,
+}: RoundButtonProps) {
   return (
     <button
       type="button"
       aria-label={label}
+      aria-pressed={pressed}
       disabled={disabled}
       className={cx(
         'grid shrink-0 place-items-center border-0 p-0 disabled:opacity-50 coarse:min-h-11 coarse:min-w-11',
@@ -220,6 +230,7 @@ function Transport({
     <div className={className}>
       <SquareButton
         label="Shuffle"
+        pressed={player.shuffle}
         className={cx(side, player.shuffle ? 'text-accent' : 'text-muted')}
         onClick={player.toggleShuffle}
       >

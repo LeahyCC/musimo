@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 
 import type { LibraryTrack } from '../../api'
 import {
-  chosenIndex,
   decodeChosen,
   durationText,
   EDITED_SOURCE,
@@ -107,20 +106,6 @@ describe('playNextPosition', () => {
 
   it('ignores a chosen song that is not directly after the playing one', () => {
     expect(playNextPosition(queue, 0, chosenAt(3))).toBe(1)
-  })
-})
-
-describe('chosenIndex', () => {
-  it('leaves the pick to chance when nothing was chosen', () => {
-    expect(chosenIndex(queue, 1, chosenAt())).toBe(-1)
-  })
-
-  it('takes the nearest chosen song after the playing one', () => {
-    expect(chosenIndex(queue, 1, chosenAt(0, 2, 3))).toBe(2)
-  })
-
-  it('goes back to the first chosen song when none is left ahead', () => {
-    expect(chosenIndex(queue, 3, chosenAt(1))).toBe(1)
   })
 })
 

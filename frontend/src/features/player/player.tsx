@@ -89,6 +89,7 @@ import {
 import { useReplayGainSettings } from './replay-gain-settings'
 import { dropForRoom, needsMore, QUEUE_LIMIT, SHUFFLE_FETCH, stillWaiting } from './shuffle-deck'
 import type { Deck } from './shuffle-deck'
+import { shuffled, shuffleFrom, unshuffle } from './shuffle-order'
 import { SLEEP_FADE_SECONDS, sleepChoiceLabel } from './sleep-timer'
 import type { SleepChoice, SleepStatus } from './sleep-timer'
 import {
@@ -136,6 +137,8 @@ type Playback = {
   repeat: RepeatMode
   play: (track: MusicResult) => void
   playLibrary: (tracks: LibraryTrack[], index?: number, source?: string) => void
+  /** Play all: the list in its own order from the top, with shuffle turned off. */
+  playAll: (tracks: LibraryTrack[], source?: string) => void
   shuffleLibrary: (tracks: LibraryTrack[], source?: string) => void
   /**
    * A Tracks shuffle. `items` is the first window, already in play order. When the pass is
@@ -226,6 +229,7 @@ const PlayerContext = createContext<Playback>({
   repeat: 'off',
   play: () => undefined,
   playLibrary: () => undefined,
+  playAll: () => undefined,
   shuffleLibrary: () => undefined,
   playDeck: () => undefined,
   playNext: () => undefined,
@@ -391,19 +395,6 @@ export function playNextPosition(
   let at = current + 1
   for (let item = queue[at]; item && chosen.has(item); item = queue[at]) at += 1
   return at
-}
-
-/**
- * The song shuffle plays next when one was chosen by hand: the nearest chosen song after the
- * playing one, else the first chosen song anywhere. -1 leaves it to chance.
- */
-export function chosenIndex(
-  queue: readonly LibraryTrack[],
-  current: number,
-  chosen: ReadonlySet<LibraryTrack>,
-) {
-  const at = queue.findIndex((item, index) => index > current && chosen.has(item))
-  return at >= 0 ? at : queue.findIndex((item) => chosen.has(item))
 }
 
 // A queue entry is its own object, so a song queued twice is two rows with two keys. The key
@@ -730,6 +721,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     chosen: Set<LibraryTrack>
     source: string
     deck: Deck | null
+    unshuffled: LibraryTrack[] | null
     edited: boolean
   } | null>(null)
   const [canUndoBotQueue, setCanUndoBotQueue] = useState(false)
@@ -749,8 +741,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // The collection that filled the queue. Edits leave it alone; `queueSource` says what it counts as.
   const sourceRef = useRef('')
   const editedRef = useRef(false)
-  // Entries the listener queued by hand, which shuffle plays before the rest. Each entry is its
-  // own copy of the song, so the set can tell a song queued twice apart.
+  // The queue's order before shuffle mixed it, so turning shuffle off can put it back. Null when
+  // there is none to go back to: shuffle is off, a Tracks shuffle (the server chose the order),
+  // or a queue restored after a reload.
+  const unshuffledOrder = useRef<LibraryTrack[] | null>(null)
+  // Entries the listener queued by hand, which play straight after the playing one. Each entry is
+  // its own copy of the song, so the set can tell a song queued twice apart.
   const chosen = useRef(new Set<LibraryTrack>())
   // The same entries for good: `chosen` forgets one when it plays, this remembers it was not the
   // collection's own song, so the source can follow the playing track.
@@ -1307,19 +1303,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     }
   }
 
-  // Which queue index plays after the playing one, or -1 at the end of the queue. Shuffle plays
-  // the songs queued by hand first, in order, then chooses at random.
+  // Which queue index plays after the playing one, or -1 at the end of the queue. Shuffle has
+  // already put the queue in its random order, so this is always the next row.
   function nextIndex() {
     const queue = queueRef.current
-    // A library shuffle already has its order. Picking at random here would only see the window.
-    if (shuffle && !deck.current && queue.length > 1) {
-      const chosenAt = chosenIndex(queue, indexRef.current, chosen.current)
-      if (chosenAt >= 0) return chosenAt
-      let index: number
-      do index = Math.floor(Math.random() * queue.length)
-      while (index === indexRef.current)
-      return index
-    }
     const index = indexRef.current + 1
     if (index < queue.length) return index
     // Songs still waiting must not wrap around the window that happens to be loaded.
@@ -1340,8 +1327,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   }
 
   // Runs on the playing element's timeupdate. Once the end is close, decides what plays next and
-  // loads it into the standby element. That decision is kept, because shuffle's pick is random
-  // and the handover has to play the song that was loaded.
+  // loads it into the standby element. That decision is kept, because the handover has to play
+  // the song that was loaded.
   function ensurePreload(active: HTMLAudioElement) {
     const item = libraryCurrent.current
     const element = standby()
@@ -1387,8 +1374,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function prefetchTasks(accountDue: boolean): PrefetchTask[] {
     const queue = queueRef.current
-    // Repeat one plays the same song, already loaded. A random shuffle has not picked yet.
-    if (repeat === 'one' || (shuffle && !deck.current)) return []
+    // Repeat one plays the same song, already loaded.
+    if (repeat === 'one') return []
     // Songs still waiting in a library shuffle come before any wrap to the start.
     const wrap = repeat === 'all' && !(deck.current && stillWaiting(deck.current) > 0)
     const indexes = upcomingIndexes(queue.length, indexRef.current, PREFETCH_AHEAD, wrap)
@@ -2139,12 +2126,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   function playLibrary(items: LibraryTrack[], index = 0, origin = '') {
     if (!items.length) return
+    const at = Math.max(0, Math.min(index, items.length - 1))
+    // With shuffle on, a new list plays the song asked for first and the rest in a random order.
+    if (shuffle && items !== queueRef.current) {
+      startQueue(shuffleFrom(items, at), 0, origin)
+      unshuffledOrder.current = [...items]
+      return
+    }
+    startQueue(items, at, origin)
+  }
+
+  // Loads `items` as the queue in the order given and plays the one at `index`.
+  function startQueue(items: LibraryTrack[], index: number, origin: string) {
     failures.current = 0
     // Playing a row of the queue itself keeps the queue, what was chosen by hand in it, and where
     // it came from. Any other list starts a queue of its own.
     if (items !== queueRef.current) {
       clearDeck()
       chosen.current.clear()
+      unshuffledOrder.current = null
       sourceRef.current = origin
       editedRef.current = false
       setEdited(false)
@@ -2158,19 +2158,25 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // keeps the collection it began as, marked edited, for as long as the playing track is one of
   // that collection's own.
   function editQueue(items: LibraryTrack[], index: number) {
-    queueGeneration.current += 1
-    setCanUndoBotQueue(false)
     // A hand edit ends a library shuffle. The queue on screen is the whole queue again.
     clearDeck()
+    editedRef.current = true
+    setEdited(true)
+    reorderQueue(items, index)
+    publishSource()
+  }
+
+  // A new order for the queue and the save. Shuffle uses it on its own: putting the same songs in
+  // another order is not a hand edit, so the queue keeps its collection and is not marked edited.
+  function reorderQueue(items: LibraryTrack[], index: number) {
+    queueGeneration.current += 1
+    setCanUndoBotQueue(false)
     queueRef.current = items
     indexRef.current = index
-    editedRef.current = true
     // What plays next may have changed, so what the standby element loaded may be wrong.
     discardPreload()
     setQueue(items)
     setCurrentIndex(index)
-    setEdited(true)
-    publishSource()
     saveChosen()
     saveQueue(true)
   }
@@ -2231,6 +2237,8 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       source: sourceRef.current,
       // Clone: an in-flight window fetch may still hold the former object after the edit.
       deck: deck.current ? { ...deck.current } : null,
+      // A bot Play replaces it, and Undo has to bring back the order shuffle-off returns to.
+      unshuffled: unshuffledOrder.current,
       edited: editedRef.current,
     }
     if (action === 'play')
@@ -2264,6 +2272,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     const sameSong =
       before.tracks.length > 0 && before.tracks[before.index] === libraryCurrent.current
     chosen.current = before.chosen
+    unshuffledOrder.current = before.unshuffled
     sourceRef.current = before.source
     editedRef.current = before.edited
     queueRef.current = before.tracks
@@ -2324,10 +2333,19 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     editQueue([playing], 0)
   }
 
+  // Play all sits beside a Shuffle button, which is the way to mix the list, so Play all always
+  // means this order and turns shuffle off rather than shuffling as well.
+  function playAll(items: LibraryTrack[], origin = '') {
+    if (!items.length) return
+    setShuffle(false)
+    startQueue(items, 0, origin)
+  }
+
   function shuffleLibrary(items: LibraryTrack[], origin = '') {
     if (!items.length) return
     setShuffle(true)
-    playLibrary(items, Math.floor(Math.random() * items.length), origin)
+    startQueue(shuffled(items), 0, origin)
+    unshuffledOrder.current = [...items]
   }
 
   function playDeck(
@@ -2339,9 +2357,10 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   ) {
     if (!items.length) return
     setShuffle(true)
-    playLibrary(items, 0, origin)
+    // Already in the server's random order, so it is not shuffled again here.
+    startQueue(items, 0, origin)
     const count = total > 0 ? total : items.length
-    // The deck is what stops the shuffle toggle from picking at random inside this window.
+    // The deck is how the rest of the pass, past this window, is fetched as it plays.
     deck.current = {
       seed,
       cursor: cursor > 0 ? cursor : items.length,
@@ -2501,9 +2520,24 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     setMuted(!muted)
   }
 
+  // Turning shuffle on puts the songs after the playing one in a random order, behind any queued
+  // by hand. Turning it off puts back the order from before, when the player still has it.
   function toggleShuffle() {
-    if (shuffle) clearDeck()
     setShuffle(!shuffle)
+    if (shuffle) {
+      clearDeck()
+      const original = unshuffledOrder.current
+      unshuffledOrder.current = null
+      if (!original || !libraryCurrent.current) return
+      const back = unshuffle(queueRef.current, indexRef.current, original)
+      reorderQueue(back.items, back.index)
+      return
+    }
+    if (!libraryCurrent.current) return
+    const queue = queueRef.current
+    const keep = playNextPosition(queue, indexRef.current, chosen.current)
+    unshuffledOrder.current = [...queue]
+    reorderQueue([...queue.slice(0, keep), ...shuffled(queue.slice(keep))], indexRef.current)
   }
 
   function cycleRepeat() {
@@ -2575,6 +2609,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     editedRef.current = false
     deck.current = null
     chosen.current = new Set()
+    unshuffledOrder.current = null
     queueRef.current = []
     fadingOut.current = null
     clearSleep()
@@ -2616,6 +2651,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         saved.entry.findIndex((item) => item.id === saved.current),
       )
       queueRef.current = saved.entry
+      unshuffledOrder.current = null
       setQueue(saved.entry)
       const savedDeck = readDeck(saved.entry.map((item) => item.id))
       if (savedDeck) {
@@ -3033,6 +3069,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         cancelFetch,
         listen,
         playLibrary,
+        playAll,
         shuffleLibrary,
         playDeck,
         playNext,
