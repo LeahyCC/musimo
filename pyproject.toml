@@ -4,7 +4,7 @@ version = "0.4.0"
 description = "A self-hosted music library companion"
 requires-python = ">=3.12"
 dependencies = [
-  "fastapi==0.143.2",
+  "fastapi==0.165.0",
   # Transitive via fastapi, pinned so pydantic-core is a release with a CPython 3.15 wheel (the
   # python:3.15-slim image has no compiler to build it).
   "pydantic==2.14.4",
@@ -13,7 +13,7 @@ dependencies = [
   "yt-dlp[default,curl-cffi]==2026.10.26",
   "bgutil-ytdlp-pot-provider==2.0.2",
   "mutagen==1.48.1",
-  "watchdog==6.0.0",
+  "watchdog==7.1.0",
   "tzdata==2026.5",
   "numpy==2.5.4",
 ]
@@ -23,7 +23,7 @@ dev = [
     "coverage==7.17.3",
     "mypy==2.4.1",
     "pip-audit==2.10.1",
-    "ruff==0.17.1",
+    "ruff==0.17.6",
 ]
 
 [tool.mypy]
