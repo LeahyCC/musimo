@@ -4,6 +4,7 @@ prompt longer than the context it was given, as the real server does."""
 
 import asyncio
 import json
+import re
 import tempfile
 import unittest
 from collections.abc import Mapping
@@ -32,9 +33,20 @@ SEARCH: dict[str, object] = {
 }
 
 
+# The fake counts tokens a fifth more strictly than the bot's budget (ids at 1.25 characters a
+# token, not 1.5; other text at 2.5, not 3), so a budget that undercounts gets refused here. The
+# budget's room for the answer (1,456 tokens of 8,192) is what lets an honest estimate pass.
+_FAKE_ID = re.compile(r"[a-z]{2}-[0-9a-f]{16}")
+
+
+def fake_tokens(text: str) -> int:
+    id_chars = sum(len(found) for found in _FAKE_ID.findall(text))
+    return id_chars * 4 // 5 + (len(text) - id_chars) * 2 // 5
+
+
 class FakeOllama:
     """Answers /api/tags, /api/show and /api/chat. A chat whose messages run past its num_ctx
-    (three characters a token) is refused with Ollama's own error body."""
+    (counted by `fake_tokens`) is refused with Ollama's own error body."""
 
     def __init__(self) -> None:
         self.show: dict[str, object] = {"capabilities": ["completion"]}
@@ -56,7 +68,7 @@ class FakeOllama:
             return httpx.Response(200, json=self.show)
         body = json.loads(request.content)
         self.chats.append(body)
-        tokens = sum(len(message["content"]) for message in body["messages"]) // 3
+        tokens = sum(fake_tokens(message["content"]) for message in body["messages"])
         if tokens > body["options"]["num_ctx"]:
             return httpx.Response(400, json={"error": TOO_LONG})
         content = self.replies[min(len(self.chats), len(self.replies)) - 1]
@@ -166,6 +178,18 @@ class OllamaContextTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(messages, list)
         self.assertTrue(str(messages[-1]["content"]).endswith(request.prompt))
         self.assertEqual(messages[0]["role"], "system")
+
+    async def test_shown_ids_are_counted_at_their_own_rate(self) -> None:
+        # 500 hex ids and nothing else long. At three characters a token they looked like room
+        # to spare at 8192, and a real tokenizer took them past it.
+        self.ollama.show = {"model_info": {"llama.context_length": 8192}}
+        self.store.record_shown("ids", [f"tr-{index:016x}" for index in range(500)])
+        result = await self.bot.chat(BotRequest(prompt="rock"))
+        self.assertEqual(result["action"], "search")
+        shown = context_data(self.ollama.chats[-1])["shown"]
+        assert isinstance(shown, list)
+        self.assertGreater(len(shown), 0)
+        self.assertLess(len(shown), 500)
 
     async def test_the_context_comes_from_the_model_up_to_the_cap(self) -> None:
         cases: list[tuple[dict[str, object], int, int]] = [

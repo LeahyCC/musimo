@@ -4,6 +4,7 @@ import asyncio
 import json
 import logging
 import math
+import re
 import time
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
@@ -832,9 +833,13 @@ _NUM_PREDICT = 1200
 _FALLBACK_CONTEXT = 8192
 # Tokens kept free for the chat template's own words around each message.
 _TEMPLATE_TOKENS = 256
-# Characters per token for the budget. English runs about 4 and JSON ids fewer, so 3 keeps the
-# estimate on the safe side without a tokenizer for every model.
+# Characters per token for the budget. English runs about 4, so 3 keeps the estimate on the
+# safe side without a tokenizer for every model.
 _CHARS_PER_TOKEN = 3
+# Song and proposal ids ("tr-" plus 16 hex) tokenize far worse: hex runs about 2 characters a
+# token. Up to 500 shown ids ride in every chat, so they are counted apart at 1.5, below that.
+_ID_CHARS_PER_TOKEN = 1.5
+_OPAQUE_ID = re.compile(r"\b[a-z]{2}-[0-9a-f]{16}\b")
 # How much of a refusal body is read and logged. Ollama's errors are one short JSON object.
 _ERROR_BODY_BYTES = 4096
 _LOGGED_BODY_CHARS = 500
@@ -881,7 +886,13 @@ def _model_context(metadata: dict[str, object]) -> int | None:
 
 
 def _estimated_tokens(messages: list[dict[str, str]]) -> int:
-    return sum(len(message["content"]) for message in messages) // _CHARS_PER_TOKEN + 1
+    """A token count that errs high: ids at their own rate, everything else at the prose rate."""
+    total = 0
+    for message in messages:
+        content = message["content"]
+        id_chars = sum(len(found) for found in _OPAQUE_ID.findall(content))
+        total += (len(content) - id_chars) / _CHARS_PER_TOKEN + id_chars / _ID_CHARS_PER_TOKEN
+    return math.ceil(total) + 1
 
 
 def _fitted_messages(
