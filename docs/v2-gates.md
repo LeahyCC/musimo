@@ -44,6 +44,8 @@ Quality, measured on the held-out set:
 | Cold load                                 | at most 30 s                  |
 | Peak VRAM at `num_ctx` 8192               | at most 14 GB, no CPU offload |
 
+The bot now sends the model's own `num_ctx`, up to `music_bot_context_cap` (default 32768), not a fixed 8192. VRAM grows with the context, so a model that passes at 8192 can offload at 32768. Measure peak VRAM at the `num_ctx` the bot will actually send for that model, or lower `music_bot_context_cap` to 8192 for the run, and record which.
+
 Latency includes the network hop to the other computer and is measured from the Musimo server. Retrieval and rendering time are reported separately.
 
 ## 3A: persona
