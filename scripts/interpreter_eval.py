@@ -17,6 +17,7 @@ import argparse
 import asyncio
 import hashlib
 import json
+import os
 import platform
 import shutil
 import statistics
@@ -51,6 +52,9 @@ TRANSPORT = {"pause", "resume", "skip"}
 SPELLED = {"artists", "exclude_artists", "genres"}
 SOUND_RECIPE = Recipe("eval-sound-v1", "embedding", dim=3, text_aligned=True)
 SEED = 42
+# The 2A gates in docs/v2-gates.md are frozen at this context size. The app now sizes num_ctx
+# from the model up to `music_bot_context_cap` (32768 by default), so the runner pins the cap to
+# this value in its own temporary settings to keep scoring the same request the gates mean.
 NUM_CTX = 8192
 
 # docs/v2-gates.md, 2A pass marks. Hard gates are all-or-nothing; quality is a rate.
@@ -477,6 +481,47 @@ def _timestamp(days_ago: int | None) -> str | None:
     return when.strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
 
 
+def open_store(path: Path) -> Store:
+    """A fresh store seeded from app defaults only.
+
+    `Store` seeds missing settings from `MUSIMO_*` variables and locks them, so a variable left
+    set in the shell (say a context cap) would leak into the eval and make the runner's own
+    settings refuse to apply. Hiding them while the store seeds keeps the run reproducible.
+    """
+    hidden = {name: os.environ.pop(name) for name in list(os.environ) if name.startswith("MUSIMO_")}
+    try:
+        return Store(path)
+    finally:
+        os.environ.update(hidden)
+
+
+def runner_settings(ollama_url: str, model: str) -> dict[str, object]:
+    """The settings the runner writes into its temporary store before the live run."""
+    return {
+        "ollama_url": ollama_url,
+        "ollama_model": model,
+        "music_bot_legacy_chat": False,
+        "music_bot_context_cap": NUM_CTX,
+    }
+
+
+def check_controls(body: dict[str, object], thinking: bool) -> None:
+    """Stop the run when an interpreter request is not the one the gates were frozen for."""
+    options = _as_dict(body.get("options"))
+    if thinking and body.get("think") is not False:
+        raise ModelError("The interpreter did not turn thinking off. Nothing was scored.")
+    if options.get("temperature") != 0 or options.get("seed") != SEED:
+        raise ModelError(
+            f"The interpreter sent temperature {options.get('temperature')} and seed "
+            f"{options.get('seed')}, expected 0 and {SEED}. Nothing was scored."
+        )
+    if options.get("num_ctx") != NUM_CTX:
+        raise ModelError(
+            f"The interpreter sent num_ctx {options.get('num_ctx')}, expected {NUM_CTX}. "
+            "Nothing was scored."
+        )
+
+
 async def build_library(root: Path) -> tuple[Store, Player, dict[str, str]]:
     """The invented library, scanned into its own temp folder and sqlite database."""
     data = cast(dict[str, list[dict[str, object]]], read_json(SUITE / "library.json"))
@@ -487,7 +532,7 @@ async def build_library(root: Path) -> tuple[Store, Player, dict[str, str]]:
         path = music / f"{song['key']}.wav"
         write_wav(path)
         tag(path, song)
-    store = Store(root / "state.sqlite3")
+    store = open_store(root / "state.sqlite3")
     store.update({"music_timezone": "UTC"})
     library = Library(store, [music], asyncio.Event())
     library.scan()
@@ -916,13 +961,7 @@ async def evaluate(args: argparse.Namespace) -> dict[str, object]:
 
     with tempfile.TemporaryDirectory(prefix="musimo-interpreter-") as folder:
         store, player, ids = await build_library(Path(folder))
-        store.update(
-            {
-                "ollama_url": args.ollama_url,
-                "ollama_model": args.model,
-                "music_bot_legacy_chat": False,
-            }
-        )
+        store.update(runner_settings(args.ollama_url, args.model))
         transport = FaultTransport(httpx.AsyncHTTPTransport())
         async with httpx.AsyncClient(transport=transport, timeout=120) as client:
             bot = MusicBot(store, player, client, new_seed=lambda: 0)
@@ -976,20 +1015,7 @@ async def evaluate(args: argparse.Namespace) -> dict[str, object]:
                                         "keep_alive": body.get("keep_alive"),
                                     }
                                 primary_bodies.append(body)
-                                if thinking and body.get("think") is not False:
-                                    raise ModelError(
-                                        "The interpreter did not turn thinking off. "
-                                        "Nothing was scored."
-                                    )
-                                if (
-                                    options.get("temperature") != 0
-                                    or options.get("seed") != SEED
-                                    or options.get("num_ctx") != NUM_CTX
-                                ):
-                                    raise ModelError(
-                                        "The interpreter did not send temperature 0, seed 42 "
-                                        "and num_ctx 8192. Nothing was scored."
-                                    )
+                                check_controls(body, thinking)
                             score = score_case(
                                 case,
                                 result,
@@ -1051,6 +1077,7 @@ async def evaluate(args: argparse.Namespace) -> dict[str, object]:
             "temperature": 0,
             "seed": SEED,
             "num_ctx": NUM_CTX,
+            "music_bot_context_cap": NUM_CTX,
             "runs": args.runs,
         },
         "controls": controls,
