@@ -966,7 +966,7 @@ def _unreachable_detail(url: str) -> str:
     if urlsplit(url).hostname in _LOOPBACK_HOSTS and _DOCKERENV.exists():
         detail += (
             " Musimo runs in Docker, where 127.0.0.1 is the container itself. "
-            "Try http://host.docker.internal:11434."
+            "On Docker Desktop, try http://host.docker.internal:11434."
         )
     return detail
 

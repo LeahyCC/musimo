@@ -325,7 +325,7 @@ class DockerAddressTests(unittest.IsolatedAsyncioTestCase):
                 self.store.update({"ollama_url": url})
                 detail = await self.detail()
                 self.assertIn("Cannot reach Ollama", detail)
-                self.assertIn("http://host.docker.internal:11434", detail)
+                self.assertIn("On Docker Desktop, try http://host.docker.internal:11434", detail)
 
     async def test_no_hint_outside_docker_or_for_another_host(self) -> None:
         self.assertNotIn("host.docker.internal", await self.detail())
