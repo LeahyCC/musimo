@@ -69,6 +69,8 @@ from backend.library.selection import (
 
 # How many places one artist may fill in a result, unless the plan names that artist.
 ARTIST_CAP = 2
+# Asked when a comparison ("more like this", "calmer") arrives with no song playing or named.
+MISSING_REFERENCE_QUESTION = "Which song should I base it on? Play one, or name it."
 
 
 @dataclass(frozen=True)
@@ -1671,6 +1673,10 @@ class MusicBot:
 
             return Engine(self).run(intent_or_reply)
         except EngineError as exc:
+            if exc.code == "missing_reference":
+                # "More like this" or "calmer" with nothing playing is a fair request that
+                # lacks a song, not something the bot cannot do: ask for the song.
+                return await self._reply(Reply("clarify", MISSING_REFERENCE_QUESTION))
             return await self._reply(Reply("unsupported", exc.message))
 
     def _liked(self) -> set[str]:
