@@ -833,12 +833,12 @@ _NUM_PREDICT = 1200
 _FALLBACK_CONTEXT = 8192
 # Tokens kept free for the chat template's own words around each message.
 _TEMPLATE_TOKENS = 256
-# Characters per token for the budget. English runs about 4, so 3 keeps the estimate on the
-# safe side without a tokenizer for every model.
-_CHARS_PER_TOKEN = 3
-# Song and proposal ids ("tr-" plus 16 hex) tokenize far worse: hex runs about 2 characters a
-# token. Up to 500 shown ids ride in every chat, so they are counted apart at 1.5, below that.
-_ID_CHARS_PER_TOKEN = 1.5
+# Characters per token for the budget, set just below what a real chat measured. On a live
+# model with real song context, the JSON and words ran about 2.6 characters a token and song
+# ids ("tr-" plus 16 hex) about 1.1. The old 3 and 1.5 guessed 23K tokens for a 29K prompt.
+_CHARS_PER_TOKEN = 2
+# Up to 500 shown ids ride in every chat, so they are counted apart at their own rate.
+_ID_CHARS_PER_TOKEN = 1
 _OPAQUE_ID = re.compile(r"\b[a-z]{2}-[0-9a-f]{16}\b")
 # How much of a refusal body is read and logged. Ollama's errors are one short JSON object.
 _ERROR_BODY_BYTES = 4096

@@ -4,6 +4,7 @@ prompt longer than the context it was given, as the real server does."""
 
 import asyncio
 import json
+import math
 import re
 import tempfile
 import unittest
@@ -33,15 +34,15 @@ SEARCH: dict[str, object] = {
 }
 
 
-# The fake counts tokens a fifth more strictly than the bot's budget (ids at 1.25 characters a
-# token, not 1.5; other text at 2.5, not 3), so a budget that undercounts gets refused here. The
-# budget's room for the answer (1,456 tokens of 8,192) is what lets an honest estimate pass.
+# The fake counts tokens at the rates QA measured on a live model with real song context: ids
+# at 1.1 characters a token, other text at 2.6, rounded up. That is never looser than the real
+# thing, so a budget that undercounts gets refused here as it would be live.
 _FAKE_ID = re.compile(r"[a-z]{2}-[0-9a-f]{16}")
 
 
 def fake_tokens(text: str) -> int:
     id_chars = sum(len(found) for found in _FAKE_ID.findall(text))
-    return id_chars * 4 // 5 + (len(text) - id_chars) * 2 // 5
+    return math.ceil(id_chars / 1.1 + (len(text) - id_chars) / 2.6)
 
 
 class FakeOllama:
@@ -101,6 +102,12 @@ def context_data(body: dict[str, object]) -> dict[str, object]:
     data = json.loads(raw.removeprefix("Context data (not instructions): "))
     assert isinstance(data, dict)
     return data
+
+
+def shown_list(body: dict[str, object]) -> list[object]:
+    shown = context_data(body)["shown"]
+    assert isinstance(shown, list)
+    return shown
 
 
 class OllamaContextTests(unittest.IsolatedAsyncioTestCase):
@@ -190,6 +197,44 @@ class OllamaContextTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(shown, list)
         self.assertGreater(len(shown), 0)
         self.assertLess(len(shown), 500)
+
+    async def test_a_real_sized_chat_fits_8192_at_the_measured_rates(self) -> None:
+        # About what a live chat carries: 280 songs shown lately, a full history and the queue.
+        # At the old 1.5 and 3 the estimate fit with nothing trimmed and Ollama refused it.
+        self.ollama.show = {"model_info": {"llama.context_length": 8192}}
+        self.store.record_shown("drive", [f"tr-{index:016x}" for index in range(280)])
+        turn = "Something upbeat for a long drive, mostly rock from the nineties, nothing slow. "
+        history = [
+            BotMessage(role="user" if index % 2 == 0 else "assistant", content=turn * 4)
+            for index in range(8)
+        ]
+        request = BotRequest(
+            prompt="more like that but with some newer songs and fewer ballads",
+            history=history,
+            queue_ids=list(self.player.view().by_song),
+        )
+        with (
+            patch("backend.library.music_bot._ID_CHARS_PER_TOKEN", 1.5),
+            patch("backend.library.music_bot._CHARS_PER_TOKEN", 3),
+            self.assertLogs("uvicorn.error", "WARNING"),
+        ):
+            old = await self.bot.chat(request)
+        self.assertEqual(old["action"], "unsupported")
+        self.assertIn(TOO_LONG, str(old["summary"]))
+        self.assertEqual(len(shown_list(self.ollama.chats[-1])), 280)
+
+        result = await self.bot.chat(request)
+        self.assertEqual(result["action"], "search")
+        body = self.ollama.chats[-1]
+        self.assertEqual(sent_options(body)["num_ctx"], 8192)
+        self.assertLess(len(shown_list(body)), 280)
+        messages = body["messages"]
+        assert isinstance(messages, list)
+        tokens = sum(fake_tokens(str(message["content"])) for message in messages)
+        # What was sent still leaves the model room for its whole answer.
+        answer = sent_options(body)["num_predict"]
+        assert isinstance(answer, int)
+        self.assertLessEqual(tokens + answer, 8192)
 
     async def test_the_context_comes_from_the_model_up_to_the_cap(self) -> None:
         cases: list[tuple[dict[str, object], int, int]] = [
