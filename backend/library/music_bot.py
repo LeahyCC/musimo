@@ -895,7 +895,7 @@ def _model_context(metadata: dict[str, object]) -> int | None:
 
 def _estimated_tokens(messages: list[dict[str, str]]) -> int:
     """A token count that errs high: ids at their own rate, everything else at the prose rate."""
-    total = 0
+    total = 0.0
     for message in messages:
         content = message["content"]
         id_chars = sum(len(found) for found in _OPAQUE_ID.findall(content))
