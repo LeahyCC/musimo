@@ -287,6 +287,102 @@ class ToIntentTests(unittest.TestCase):
         self.assertEqual(result.action, "unsupported")
 
 
+def fake_model(answer: dict[str, object]) -> str:
+    """A stand-in for the local model: the raw text it would send back for one answer."""
+    return "Here is the plan: " + json.dumps(answer)
+
+
+class PromptExampleTests(unittest.TestCase):
+    """The prompt tells the model how to answer, and those answers survive the adapter.
+
+    The local models answered "unsupported" for artist exclusions, ambiguous titles and
+    lengths because the prompt never said how. These pin the rules and their examples.
+    """
+
+    def setUp(self) -> None:
+        from backend.library.music_bot import interpretation_prompt
+
+        self.prompt = interpretation_prompt(None, None)
+
+    def adapt(self, answer: dict[str, object]) -> Intent | Reply:
+        parsed = parse_model_output(fake_model(answer))
+        assert isinstance(parsed, Interpretation), parsed
+        return to_intent(parsed, CATALOGUE, fake_registry())
+
+    def test_prompt_says_only_genre_exclusion_is_unsupported(self) -> None:
+        self.assertIn('"nothing by X" or "not by X" for an artist puts X in', self.prompt)
+        self.assertIn("filters.exclude_artists", self.prompt)
+        self.assertIn("Only genre exclusion is unsupported", self.prompt)
+        self.assertNotIn("There is no genre exclusion", self.prompt)
+
+    def test_artist_exclusion_example_becomes_a_search(self) -> None:
+        self.assertIn('"folk but not by Marrow"', self.prompt)
+        result = self.adapt(
+            {
+                "action": "search",
+                "scope": "library",
+                "filters": {"genres": ["folk"], "exclude_artists": ["Marrow"], "artists": []},
+            }
+        )
+        assert isinstance(result, Intent)
+        self.assertEqual(result.filters.exclude_artists, ["Marrow"])
+
+    def test_bare_title_goes_in_named_songs_and_the_server_asks(self) -> None:
+        self.assertIn("the server asks which version", self.prompt)
+        self.assertNotIn("The same title by two artists", self.prompt)
+        result = self.adapt(
+            {"action": "search", "scope": "library", "named_songs": [{"title": "Night Bus"}]}
+        )
+        assert isinstance(result, Reply)
+        self.assertEqual(result.action, "clarify")
+        self.assertIn("Which version", result.explanation)
+
+    def test_clarify_examples_are_in_the_prompt_and_accepted(self) -> None:
+        self.assertIn('"More like this" with current and reference empty', self.prompt)
+        self.assertIn('"Make it longer" or "shorter" with no amount', self.prompt)
+        for question in ("Which song should I match?", "How long should it be?"):
+            with self.subTest(question=question):
+                self.assertIn(question, self.prompt)
+                result = self.adapt({"action": "clarify", "question": question})
+                assert isinstance(result, Reply)
+                self.assertEqual(result.action, "clarify")
+                self.assertEqual(result.explanation, question)
+
+    def test_total_length_keeps_target_seconds_at_zero(self) -> None:
+        self.assertIn("target_seconds MUST be 0 whenever filters.total_length is set", self.prompt)
+        self.assertNotIn("every field required", self.prompt)
+        result = self.adapt(
+            {
+                "action": "search",
+                "scope": "library",
+                "filters": {
+                    "total_length": {"mode": "about", "seconds": 3600},
+                    "max_seconds": 239,
+                    "target_seconds": 0,
+                },
+            }
+        )
+        assert isinstance(result, Intent)
+        self.assertEqual(result.filters.max_seconds, 239)
+        assert result.filters.total_length is not None
+        self.assertEqual(result.filters.total_length.seconds, 3600)
+
+    def test_filling_both_lengths_is_still_refused(self) -> None:
+        # The reason the prompt insists on 0: the adapter rejects the pair outright.
+        parsed = parse_model_output(
+            fake_model(
+                {
+                    "action": "search",
+                    "filters": {
+                        "total_length": {"mode": "about", "seconds": 3600},
+                        "target_seconds": 3600,
+                    },
+                }
+            )
+        )
+        self.assertIsInstance(parsed, Reply)
+
+
 class DevCasesInterpretationTests(unittest.TestCase):
     def test_every_expected_meaning_builds_an_interpretation(self) -> None:
         suite = Path(__file__).resolve().parent.parent / "evals" / "interpreter"

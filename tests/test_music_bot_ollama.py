@@ -201,11 +201,13 @@ class OllamaContextTests(unittest.IsolatedAsyncioTestCase):
     async def test_a_real_sized_chat_fits_8192_at_the_measured_rates(self) -> None:
         # About what a live chat carries: 280 songs shown lately, a full history and the queue.
         # At the old 1.5 and 3 the estimate fit with nothing trimmed and Ollama refused it.
+        # The turn length sits in that gap for the current system prompt; a longer prompt
+        # needs shorter turns here, or the old rates start trimming and the refusal is lost.
         self.ollama.show = {"model_info": {"llama.context_length": 8192}}
         self.store.record_shown("drive", [f"tr-{index:016x}" for index in range(280)])
         turn = "Something upbeat for a long drive, mostly rock from the nineties, nothing slow. "
         history = [
-            BotMessage(role="user" if index % 2 == 0 else "assistant", content=turn * 4)
+            BotMessage(role="user" if index % 2 == 0 else "assistant", content=turn * 2)
             for index in range(8)
         ]
         request = BotRequest(
