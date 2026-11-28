@@ -26,8 +26,10 @@ from scripts.interpreter_eval import (
     _outcome,
     check_controls,
     load_split,
+    markdown,
     note_engine_ids,
     open_store,
+    reply_text,
     runner_settings,
     score_case,
     summarize,
@@ -355,6 +357,37 @@ class SummaryTests(unittest.TestCase):
         )
         self.assertTrue(score.invented_id)
         self.assertIn("invented_id", score.failures)
+
+    def test_a_failed_case_row_carries_the_reply_summary(self) -> None:
+        case: dict[str, object] = {"id": "d025", "expect": {"action": "search"}}
+        result: dict[str, object] = {
+            "action": "unsupported",
+            "scope": "library",
+            "summary": "I could not read that answer. " + "x" * 400,
+            "intent": {"action": "unsupported", "explanation": "Unreadable model output."},
+        }
+        score = score_case(case, result, IDS)
+        run = {"run": 1, "error": None, "action": "unsupported", **reply_text(result)}
+        self.assertEqual(run["summary"], result["summary"])
+        self.assertEqual(run["reason"], "Unreadable model output.")
+        self.assertIsNone(run["error_code"])
+        report: dict[str, object] = {
+            "model": "test-model",
+            "split": "heldout",
+            "git_sha": "abc",
+            "model_digest": "def",
+            "controls": {},
+            "settings": {"temperature": 0, "seed": 0, "num_ctx": NUM_CTX, "runs": 1},
+            "vram": {"available": False},
+            "rows": [{"case": "d025", "stable": True, "runs": [run], "score": score.as_dict()}],
+        }
+        text = markdown(report, summarize(report))
+        line = next(item for item in text.splitlines() if item.startswith("- d025: action"))
+        self.assertIn("reason: Unreadable model output.", line)
+        self.assertIn("summary: I could not read that answer.", line)
+        shown = line.split("summary: ", 1)[1]
+        self.assertEqual(len(shown), 300)
+        self.assertTrue(shown.endswith("..."))
 
 
 class SealTests(unittest.TestCase):

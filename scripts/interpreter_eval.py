@@ -217,6 +217,21 @@ def _outcome(result: dict[str, object], error: str | None) -> str | None:
     return None
 
 
+def reply_text(result: dict[str, object]) -> dict[str, object]:
+    """What the reply said, kept so a failed case can be read back.
+
+    Only the reply's own words: the summary the chat shows, the model's explanation on a
+    clarify or unsupported reply, and a typed error code. Never the prompt or the messages.
+    """
+    intent = _as_dict(result.get("intent"))
+    error = _as_dict(result.get("error"))
+    return {
+        "summary": str(result.get("summary") or "") or None,
+        "reason": str(intent.get("explanation") or "") or None,
+        "error_code": str(error.get("code") or "") or None,
+    }
+
+
 def _intent_unknown(intent: dict[str, object], library: set[str]) -> bool:
     """Whether an id outside the library sits anywhere in an intent."""
     context = _as_dict(intent.get("context"))
@@ -1031,6 +1046,7 @@ async def evaluate(args: argparse.Namespace) -> dict[str, object]:
                                     "run": run + 1,
                                     "error": error,
                                     "action": result.get("action"),
+                                    **reply_text(result),
                                     "scope": result.get("scope"),
                                     "ids": result_ids(result),
                                     "score": score.as_dict(),
@@ -1335,9 +1351,40 @@ def markdown(report: dict[str, object], summary: dict[str, object]) -> str:
         for measure, case_ids in sorted(failing.items()):
             lines.append(f"- {measure}: {', '.join(case_ids)}")
         lines.append("")
+    if failing:
+        lines += failing_replies(report, failing)
     if not hard and not failing:
         lines += ["No failing cases.", ""]
     return "\n".join(lines)
+
+
+# Long enough for a sentence or two of the reply, short enough to keep the report readable.
+REPLY_CHARS = 300
+
+
+def _short(text: str) -> str:
+    # One line, so a reply with newlines cannot break the Markdown list.
+    flat = " ".join(text.split())
+    return flat if len(flat) <= REPLY_CHARS else flat[: REPLY_CHARS - 3] + "..."
+
+
+def failing_replies(report: dict[str, object], failing: dict[str, list[str]]) -> list[str]:
+    """The first run's reply for each failing case, so the report shows why it failed."""
+    failed = {case_id for case_ids in failing.values() for case_id in case_ids}
+    lines = ["## Failing case replies", ""]
+    for row in cast(list[dict[str, object]], report.get("rows") or []):
+        case_id = str(row.get("case") or "")
+        runs = cast(list[dict[str, object]], row.get("runs") or [])
+        if case_id not in failed or not runs:
+            continue
+        run = runs[0]
+        parts = [f"action `{run.get('action')}`"]
+        for key in ("error_code", "error", "reason", "summary"):
+            value = run.get(key)
+            if value:
+                parts.append(f"{key}: {_short(str(value))}")
+        lines.append(f"- {case_id}: " + "; ".join(parts))
+    return lines + [""]
 
 
 def write_report(report: dict[str, object]) -> tuple[Path, Path]:
