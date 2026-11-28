@@ -79,7 +79,7 @@ These are fixed now, before any run.
 `scripts/interpreter_eval.py` is the harness. It builds the 25 invented songs in a temporary folder and SQLite database, never the live one, then sends each case through `MusicBot.chat`, the same path the server uses. It scores the intent the engine received, not the reply text, and records the outgoing `/api/chat` controls, timings, VRAM and failing case ids. It prints no prompts.
 
 ```sh
-# Development split, against the PAIR proxy Musimo already calls.
+# Development split, against the local Ollama Musimo already calls.
 uv run python -m scripts.interpreter_eval --model qwen3.5:9b --split dev
 
 # The held-out split, once the prompt is frozen. The seal is checked first.
@@ -89,7 +89,7 @@ uv run python -m scripts.interpreter_eval --model qwen3.5:9b --split heldout
 uv run python -m scripts.interpreter_eval --model qwen3.5:9b --case d001 --case d044
 ```
 
-Options: `--ollama-url` defaults to `http://127.0.0.1:11434` (the PAIR proxy; Ollama itself listens on `127.0.0.1:11435`), `--runs` defaults to 3, and `--case` may be repeated. The model must be installed on that host.
+Options: `--ollama-url` defaults to `http://127.0.0.1:11434`, where Ollama listens, `--runs` defaults to 3, and `--case` may be repeated. The model must be installed on that host.
 
 The run stops before scoring when the model thinks and `/api/show` lists no off switch, or when an interpreter request does not send `think: false`, temperature 0, seed 42 and `num_ctx` 8192. A model that thinks by default with no off switch cannot be evaluated as the gates require. The runner sets `music_bot_context_cap` to 8192 in its temporary settings, so the app's model-sized context (up to 32768) does not change the request, and it ignores any `MUSIMO_*` variables in your shell.
 

@@ -977,6 +977,7 @@ async def evaluate(args: argparse.Namespace) -> dict[str, object]:
     with tempfile.TemporaryDirectory(prefix="musimo-interpreter-") as folder:
         store, player, ids = await build_library(Path(folder))
         store.update(runner_settings(args.ollama_url, args.model))
+        context_cap = store.current().music_bot_context_cap
         transport = FaultTransport(httpx.AsyncHTTPTransport())
         async with httpx.AsyncClient(transport=transport, timeout=120) as client:
             bot = MusicBot(store, player, client, new_seed=lambda: 0)
@@ -1093,7 +1094,7 @@ async def evaluate(args: argparse.Namespace) -> dict[str, object]:
             "temperature": 0,
             "seed": SEED,
             "num_ctx": NUM_CTX,
-            "music_bot_context_cap": NUM_CTX,
+            "music_bot_context_cap": context_cap,
             "runs": args.runs,
         },
         "controls": controls,

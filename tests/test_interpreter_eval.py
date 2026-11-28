@@ -4,6 +4,8 @@ The fixture is not the real held-out set. It exists so the scoring rules can be 
 model, a network or the sealed file.
 """
 
+import argparse
+import asyncio
 import json
 import os
 import shutil
@@ -12,17 +14,20 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+import httpx
 from fastapi.testclient import TestClient
 
 from backend.core.listener import CHOOSE, HEADER
 from backend.core.models import Settings
 from backend.library.engine_contract import Filters
 from backend.main import create_app
+from scripts import interpreter_eval
 from scripts.interpreter_eval import (
     NUM_CTX,
     CaseScore,
     ModelError,
     SealError,
+    _as_dict,
     _outcome,
     check_controls,
     load_split,
@@ -414,7 +419,7 @@ class ContextTests(unittest.TestCase):
         # A cap left in the shell must neither leak in nor lock the runner out of its setting.
         with (
             tempfile.TemporaryDirectory() as folder,
-            mock.patch.dict(os.environ, {"MUSIMO_MUSIC_BOT_CONTEXT_CAP": "32768"}),
+            mock.patch.dict(os.environ, {"MUSIMO_MUSIC_BOT_CONTEXT_CAP": "16384"}),
         ):
             store = open_store(Path(folder) / "state.sqlite3")
             try:
@@ -423,7 +428,7 @@ class ContextTests(unittest.TestCase):
                 self.assertEqual(store.current().music_bot_context_cap, 8192)
             finally:
                 store.close()
-            self.assertEqual(os.environ["MUSIMO_MUSIC_BOT_CONTEXT_CAP"], "32768")
+            self.assertEqual(os.environ["MUSIMO_MUSIC_BOT_CONTEXT_CAP"], "16384")
         self.assertEqual(Settings().music_bot_context_cap, 32768)
 
     def test_a_mismatched_num_ctx_still_stops_the_run(self) -> None:
@@ -435,6 +440,45 @@ class ContextTests(unittest.TestCase):
         body["options"] = {"temperature": 0, "seed": 42, "num_ctx": 32768}
         with self.assertRaisesRegex(ModelError, "num_ctx 32768, expected 8192"):
             check_controls(body, thinking=True)
+
+    def test_evaluate_sends_the_pinned_cap_to_a_bigger_model(self) -> None:
+        # The fake model is trained for 65536, so without the runner's cap the app would send
+        # its own 32768 default. evaluate() must apply runner_settings before any chat call.
+        sent: list[object] = []
+
+        def ollama(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/tags":
+                return httpx.Response(200, json={"models": [{"name": "fake:1b"}]})
+            if request.url.path == "/api/show":
+                return httpx.Response(200, json={"model_info": {"fake.context_length": 65536}})
+            if request.url.path == "/api/chat":
+                body = json.loads(request.content)
+                sent.append(body.get("options", {}).get("num_ctx"))
+                reply = {"role": "assistant", "content": "{}"}
+                return httpx.Response(200, json={"message": reply, "done": True})
+            return httpx.Response(404)
+
+        args = argparse.Namespace(
+            split="dev", case=["d001"], ollama_url="http://ollama.test", model="fake:1b", runs=1
+        )
+        with (
+            mock.patch(
+                "scripts.interpreter_eval.httpx.AsyncHTTPTransport",
+                lambda: httpx.MockTransport(ollama),
+            ),
+            mock.patch.object(
+                interpreter_eval, "model_info", mock.AsyncMock(return_value={"digest": "d"})
+            ),
+            mock.patch.object(interpreter_eval, "unload", mock.AsyncMock()),
+            mock.patch.object(interpreter_eval, "ps_info", mock.AsyncMock(return_value=None)),
+            mock.patch.object(interpreter_eval, "_query_vram", return_value=None),
+            mock.patch.object(interpreter_eval, "VramSampler"),
+        ):
+            report = asyncio.run(interpreter_eval.evaluate(args))
+        self.assertTrue(sent)
+        self.assertEqual(set(sent), {8192})
+        self.assertEqual(_as_dict(report["controls"])["num_ctx"], 8192)
+        self.assertEqual(_as_dict(report["settings"])["music_bot_context_cap"], 8192)
 
 
 class ChatHeaderTests(unittest.TestCase):
