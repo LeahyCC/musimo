@@ -199,26 +199,38 @@ class OllamaContextTests(unittest.IsolatedAsyncioTestCase):
         self.assertLess(len(shown), 500)
 
     async def test_a_real_sized_chat_fits_8192_at_the_measured_rates(self) -> None:
-        # About what a live chat carries: 280 songs shown lately, a full history and the queue.
-        # At the old 1.5 and 3 the estimate fit with nothing trimmed and Ollama refused it.
+        # About what a live chat carries: 280 songs shown lately, a history and the queue. At the
+        # old 1.5 and 3 such a chat fit by the estimate with nothing trimmed and Ollama refused
+        # it. The history grows a turn at a time until the old rates hit that refusal, so the
+        # proof holds whatever the system prompt's length, instead of hanging on a fixed size.
         self.ollama.show = {"model_info": {"llama.context_length": 8192}}
         self.store.record_shown("drive", [f"tr-{index:016x}" for index in range(280)])
         turn = "Something upbeat for a long drive, mostly rock from the nineties, nothing slow. "
-        history = [
-            BotMessage(role="user" if index % 2 == 0 else "assistant", content=turn * 4)
-            for index in range(8)
-        ]
-        request = BotRequest(
-            prompt="more like that but with some newer songs and fewer ballads",
-            history=history,
-            queue_ids=list(self.player.view().by_song),
-        )
+
+        def request_with(turns: int) -> BotRequest:
+            history = [
+                BotMessage(role="user" if index % 2 == 0 else "assistant", content=turn * 2)
+                for index in range(turns)
+            ]
+            return BotRequest(
+                prompt="more like that but with some newer songs and fewer ballads",
+                history=history,
+                queue_ids=list(self.player.view().by_song),
+            )
+
+        old: dict[str, object] = {}
+        request = request_with(0)
         with (
             patch("backend.library.music_bot._ID_CHARS_PER_TOKEN", 1.5),
             patch("backend.library.music_bot._CHARS_PER_TOKEN", 3),
             self.assertLogs("uvicorn.error", "WARNING"),
         ):
-            old = await self.bot.chat(request)
+            for turns in range(40):
+                request = request_with(turns)
+                old = await self.bot.chat(request)
+                if old["action"] == "unsupported":
+                    break
+        # The first refusal came with every shown id still sent: the old estimate called it a fit.
         self.assertEqual(old["action"], "unsupported")
         self.assertIn(TOO_LONG, str(old["summary"]))
         self.assertEqual(len(shown_list(self.ollama.chats[-1])), 280)
