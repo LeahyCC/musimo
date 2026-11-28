@@ -864,14 +864,19 @@ def _model_context(metadata: dict[str, object]) -> int | None:
     """The context a model is set up for, from its /api/show answer.
 
     The Modelfile's num_ctx comes first: Ollama loads the model at that size, and asking for a
-    different one makes it reload. Without one, the trained context_length is the most it takes.
+    different one makes it reload. A small one (2048, 4096) is raised to the 8192 every chat
+    used to send, or the trained length when that is less, so a chat never gets less room than
+    it had. Without a num_ctx, the trained context_length is the most it takes.
     """
+    modelfile: int | None = None
     parameters = metadata.get("parameters")
     if isinstance(parameters, str):
         for line in parameters.splitlines():
             parts = line.split()
             if len(parts) == 2 and parts[0] == "num_ctx" and parts[1].isdigit():
-                return int(parts[1]) or None
+                modelfile = int(parts[1]) or None
+                break
+    trained: int | None = None
     info = metadata.get("model_info")
     if isinstance(info, dict):
         for key, value in info.items():
@@ -881,8 +886,11 @@ def _model_context(metadata: dict[str, object]) -> int | None:
                 and type(value) is int
                 and value > 0
             ):
-                return value
-    return None
+                trained = value
+                break
+    if modelfile is None:
+        return trained
+    return max(modelfile, min(trained or _FALLBACK_CONTEXT, _FALLBACK_CONTEXT))
 
 
 def _estimated_tokens(messages: list[dict[str, str]]) -> int:

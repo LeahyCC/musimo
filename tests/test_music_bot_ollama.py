@@ -203,6 +203,19 @@ class OllamaContextTests(unittest.IsolatedAsyncioTestCase):
                 32768,
                 12288,
             ),
+            # A small Modelfile num_ctx never sends less than the old 8192, or the trained length
+            # when that is less.
+            (
+                {"parameters": "num_ctx 2048", "model_info": {"qwen3.context_length": 40960}},
+                32768,
+                8192,
+            ),
+            ({"parameters": "num_ctx 4096"}, 32768, 8192),
+            (
+                {"parameters": "num_ctx 2048", "model_info": {"llama.context_length": 4096}},
+                32768,
+                4096,
+            ),
             # Nothing named: the size the bot always sent.
             ({"capabilities": ["completion"]}, 32768, 8192),
             ({"model_info": {"x.context_length": True}}, 32768, 8192),
