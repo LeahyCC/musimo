@@ -87,6 +87,10 @@ class Settings(BaseModel):
     # Route chat through the old SearchPlan parser instead of the engine interpreter.
     # Off by default; kept for one release so the new path can be compared.
     music_bot_legacy_chat: bool = False
+    # The most context, in tokens, the music bot asks Ollama for. The bot sends the model's own
+    # context up to this, so a 64K model is not cut to 8K, and a big model does not take all
+    # the graphics memory a 256K context would need.
+    music_bot_context_cap: int = Field(default=32768, ge=2048, le=262144)
 
     @field_validator("audio_scalar_recipe")
     @classmethod

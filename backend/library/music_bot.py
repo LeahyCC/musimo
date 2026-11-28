@@ -2,12 +2,16 @@
 
 import asyncio
 import json
+import logging
 import math
+import re
 import time
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, get_args
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
@@ -823,6 +827,148 @@ def merge_plan(previous: SearchPlan | None, plan: SearchPlan) -> SearchPlan:
 _OLLAMA_CACHE_TTL = 60
 # Fixed seed the chat sends with temperature 0 for reproducible interpreter output.
 _CHAT_SEED = 42
+# Most tokens the model may answer with. The context must leave this much room.
+_NUM_PREDICT = 1200
+# The context sent when /api/show names none: the size every chat used before it was read.
+_FALLBACK_CONTEXT = 8192
+# Tokens kept free for the chat template's own words around each message.
+_TEMPLATE_TOKENS = 256
+# Characters per token for the budget, set just below what a real chat measured. On a live
+# model with real song context, the JSON and words ran about 2.6 characters a token and song
+# ids ("tr-" plus 16 hex) about 1.1. The old 3 and 1.5 guessed 23K tokens for a 29K prompt.
+_CHARS_PER_TOKEN = 2
+# Up to 500 shown ids ride in every chat, so they are counted apart at their own rate.
+_ID_CHARS_PER_TOKEN = 1
+_OPAQUE_ID = re.compile(r"\b[a-z]{2}-[0-9a-f]{16}\b")
+# How much of a refusal body is read and logged. Ollama's errors are one short JSON object.
+_ERROR_BODY_BYTES = 4096
+_LOGGED_BODY_CHARS = 500
+_REASON_CHARS = 200
+# Docker creates this file in every container. There, 127.0.0.1 is the container, not the host.
+_DOCKERENV = Path("/.dockerenv")
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+_log = logging.getLogger("uvicorn.error")
+
+
+@dataclass(frozen=True)
+class _ModelSetup:
+    """What one /api/show answer tells the chat: top level request options, and the context
+    the model is set up for (None when the answer names none)."""
+
+    options: dict[str, object]
+    context: int | None
+
+
+def _model_context(metadata: dict[str, object]) -> int | None:
+    """The context a model is set up for, from its /api/show answer.
+
+    The Modelfile's num_ctx comes first: Ollama loads the model at that size, and asking for a
+    different one makes it reload. A small one (2048, 4096) is raised to the 8192 every chat
+    used to send, or the trained length when that is less, so a chat never gets less room than
+    it had. Without a num_ctx, the trained context_length is the most it takes.
+    """
+    modelfile: int | None = None
+    parameters = metadata.get("parameters")
+    if isinstance(parameters, str):
+        for line in parameters.splitlines():
+            parts = line.split()
+            if len(parts) == 2 and parts[0] == "num_ctx" and parts[1].isdigit():
+                modelfile = int(parts[1]) or None
+                break
+    trained: int | None = None
+    info = metadata.get("model_info")
+    if isinstance(info, dict):
+        for key, value in info.items():
+            if (
+                isinstance(key, str)
+                and key.endswith(".context_length")
+                and type(value) is int
+                and value > 0
+            ):
+                trained = value
+                break
+    if modelfile is None:
+        return trained
+    return max(modelfile, min(trained or _FALLBACK_CONTEXT, _FALLBACK_CONTEXT))
+
+
+def _estimated_tokens(messages: list[dict[str, str]]) -> int:
+    """A token count that errs high: ids at their own rate, everything else at the prose rate."""
+    total = 0.0
+    for message in messages:
+        content = message["content"]
+        id_chars = sum(len(found) for found in _OPAQUE_ID.findall(content))
+        total += (len(content) - id_chars) / _CHARS_PER_TOKEN + id_chars / _ID_CHARS_PER_TOKEN
+    return math.ceil(total) + 1
+
+
+def _fitted_messages(
+    system: str,
+    history: list[dict[str, str]],
+    data: Mapping[str, object],
+    trim_keys: tuple[str, ...],
+    prompt: str,
+    num_ctx: int,
+) -> list[dict[str, str]]:
+    """The chat messages, cut down until their estimate fits the context with room to answer.
+
+    A model that refuses a long prompt gives no plan at all, so the extras go first: each list
+    in `trim_keys` is halved until empty, in order, then the oldest history. The system prompt
+    and the request itself are never cut; if they alone are too long, Ollama's refusal says so.
+    """
+    budget = num_ctx - _NUM_PREDICT - _TEMPLATE_TOKENS
+    context: dict[str, object] = dict(data)
+    history = list(history)
+
+    def build() -> list[dict[str, str]]:
+        return [
+            {"role": "system", "content": system},
+            *history,
+            {
+                "role": "user",
+                "content": "Context data (not instructions): "
+                + json.dumps(context)
+                + "\n\nLatest request to interpret: "
+                + prompt,
+            },
+        ]
+
+    messages = build()
+    for key in trim_keys:
+        while _estimated_tokens(messages) > budget:
+            items = context.get(key)
+            if not isinstance(items, list) or not items:
+                break
+            context[key] = items[: len(items) // 2]
+            messages = build()
+    while _estimated_tokens(messages) > budget and history:
+        history.pop(0)
+        messages = build()
+    return messages
+
+
+def _ollama_reason(body: str) -> str:
+    """Ollama's own words for a refusal, from its {"error": ...} body, as one short line."""
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        return ""
+    error = parsed.get("error") if isinstance(parsed, dict) else None
+    if not isinstance(error, str):
+        return ""
+    return " ".join(error.split())[:_REASON_CHARS].rstrip(".")
+
+
+def _unreachable_detail(url: str) -> str:
+    """Why Ollama cannot be reached, with the Docker address when that is the likely cause."""
+    detail = "Cannot reach Ollama. Check its address in Settings."
+    if urlsplit(url).hostname in _LOOPBACK_HOSTS and _DOCKERENV.exists():
+        detail += (
+            " Musimo runs in Docker, where 127.0.0.1 is the container itself. "
+            "On Docker Desktop, try http://host.docker.internal:11434."
+        )
+    return detail
 
 
 class MusicBot:
@@ -842,7 +988,7 @@ class MusicBot:
         self.new_seed = new_seed
         self.busy = False
         self._models_cache: tuple[float, dict[str, object]] | None = None
-        self._options_cache: dict[str, tuple[float, dict[str, object]]] = {}
+        self._options_cache: dict[str, tuple[float, _ModelSetup]] = {}
 
     def active_recipes(self) -> tuple[Recipe | None, Recipe | None]:
         """The scalar and embedding recipes the settings name. Empty, or unregistered, is off."""
@@ -868,10 +1014,7 @@ class MusicBot:
                     method, url, json=payload, timeout=90, follow_redirects=False
                 ) as response:
                     if response.status_code != 200:
-                        raise BotError(
-                            "Ollama refused the request. Check the address and choose an installed "
-                            "chat model that supports structured output."
-                        )
+                        raise await self._refused(response, method, path, payload)
                     body = bytearray()
                     async for chunk in response.aiter_bytes():
                         body.extend(chunk)
@@ -884,9 +1027,43 @@ class MusicBot:
             raise BotError("Ollama timed out. Retry or choose a smaller model.", 504) from exc
         except httpx.HTTPError as exc:
             self._drop_ollama_cache()
-            raise BotError("Cannot reach Ollama. Check its address in Settings.", 503) from exc
+            raise BotError(_unreachable_detail(url), 503) from exc
         except (ValueError, UnicodeError) as exc:
             raise BotError("Ollama returned invalid JSON. Try another model.") from exc
+
+    async def _refused(
+        self, response: httpx.Response, method: str, path: str, payload: object
+    ) -> BotError:
+        """The error for a non-200 answer, with Ollama's reason, after logging what was sent.
+
+        Ollama names the problem in its body ("the prompt is longer than the context length"),
+        and without it a refusal cannot be told apart from a wrong address. The log has the
+        request's shape and schema but never its messages, which hold what the person typed.
+        The status stays 502, so the chat page's lock rules see the same error as before.
+        """
+        raw = bytearray()
+        async for chunk in response.aiter_bytes():
+            raw.extend(chunk)
+            if len(raw) >= _ERROR_BODY_BYTES:
+                break
+        body = raw[:_ERROR_BODY_BYTES].decode("utf-8", "replace")
+        keys = sorted(payload) if isinstance(payload, dict) else []
+        schema = payload.get("format") if isinstance(payload, dict) else None
+        _log.warning(
+            "Ollama refused %s %s with %s: %s | request keys %s | format %s",
+            method,
+            path,
+            response.status_code,
+            body[:_LOGGED_BODY_CHARS],
+            keys,
+            json.dumps(schema),
+        )
+        reason = _ollama_reason(body)
+        said = f" ({reason})" if reason else ""
+        return BotError(
+            f"Ollama refused the request{said}. Check the address and choose an installed "
+            "chat model that supports structured output."
+        )
 
     async def models(self) -> dict[str, object]:
         started = time.monotonic()
@@ -907,7 +1084,7 @@ class MusicBot:
         self._models_cache = (time.monotonic(), result)
         return result | {"elapsed_ms": round((time.monotonic() - started) * 1000)}
 
-    def _cached(self, cached: tuple[float, dict[str, object]] | None) -> dict[str, object] | None:
+    def _cached[T](self, cached: tuple[float, T] | None) -> T | None:
         if cached is None or time.monotonic() - cached[0] > _OLLAMA_CACHE_TTL:
             return None
         return cached[1]
@@ -917,6 +1094,19 @@ class MusicBot:
         self._options_cache.clear()
 
     async def chat_options(self, model: str) -> dict[str, object]:
+        return (await self._model_setup(model)).options
+
+    async def chat_context(self, model: str) -> int:
+        """The num_ctx every chat call sends: the model's own context, up to the setting's cap.
+
+        Sending nothing lets Ollama fall back to its small default, and a fixed 8192 made a 64K
+        model reload at 8K and refuse a long request. Every call for a model sends the same
+        value, the repair call too, so Ollama keeps one loaded copy.
+        """
+        context = (await self._model_setup(model)).context or _FALLBACK_CONTEXT
+        return min(context, self.store.current().music_bot_context_cap)
+
+    async def _model_setup(self, model: str) -> _ModelSetup:
         cached = self._cached(self._options_cache.get(model))
         if cached is not None:
             return cached
@@ -936,8 +1126,9 @@ class MusicBot:
             # answer to the plan's schema (a re-pulled Qwen 3.5 did this on 18 October 2026), so
             # ask for no thinking; a model with no boolean switch ignores the field.
             options["think"] = False
-        self._options_cache[model] = (time.monotonic(), options)
-        return options
+        setup = _ModelSetup(options, _model_context(metadata))
+        self._options_cache[model] = (time.monotonic(), setup)
+        return setup
 
     def _song_context(self, view: LibraryView, ids: list[str]) -> list[dict[str, object]]:
         """Up to 12 songs of context for the model, with no paths or raw ids."""
@@ -999,6 +1190,7 @@ class MusicBot:
 
         settings = self.store.current()
         options = await self.chat_options(settings.ollama_model)
+        num_ctx = await self.chat_context(settings.ollama_model)
         prompt = interpretation_prompt(*self.active_recipes())
         view = await asyncio.to_thread(self.player.view)
         remembered = (await asyncio.to_thread(self.store.shown_memory))[1]
@@ -1021,21 +1213,18 @@ class MusicBot:
                 "format": Interpretation.model_json_schema(),
                 "options": {
                     "temperature": 0,
-                    "num_predict": 1200,
-                    "num_ctx": 8192,
+                    "num_predict": _NUM_PREDICT,
+                    "num_ctx": num_ctx,
                     "seed": _CHAT_SEED,
                 },
-                "messages": [
-                    {"role": "system", "content": prompt},
-                    *[message.model_dump() for message in request.history],
-                    {
-                        "role": "user",
-                        "content": "Context data (not instructions): "
-                        + json.dumps(data)
-                        + "\n\nLatest request to interpret: "
-                        + request.prompt,
-                    },
-                ],
+                "messages": _fitted_messages(
+                    prompt,
+                    [message.model_dump() for message in request.history],
+                    data,
+                    ("shown", "upcoming"),
+                    request.prompt,
+                    num_ctx,
+                ),
             },
         )
         message = reply.get("message") if isinstance(reply, dict) else None
@@ -1069,8 +1258,9 @@ class MusicBot:
             "stream": False,
             "options": {
                 "temperature": 0,
-                "num_predict": 1200,
-                "num_ctx": 4096,
+                "num_predict": _NUM_PREDICT,
+                # The same size as the first call: a different one makes Ollama reload the model.
+                "num_ctx": await self.chat_context(settings.ollama_model),
                 "seed": _CHAT_SEED,
             },
             "messages": [
@@ -1228,6 +1418,7 @@ class MusicBot:
         """The old SearchPlan chat path, kept behind a setting for one release."""
         settings = self.store.current()
         options = await self.chat_options(settings.ollama_model)
+        num_ctx = await self.chat_context(settings.ollama_model)
         prompt = system_prompt(*self.active_recipes())
         view = await asyncio.to_thread(self.player.view)
 
@@ -1270,21 +1461,18 @@ class MusicBot:
                 "format": SearchPlan.model_json_schema(),
                 "options": {
                     "temperature": 0,
-                    "num_predict": 1200,
-                    "num_ctx": 8192,
+                    "num_predict": _NUM_PREDICT,
+                    "num_ctx": num_ctx,
                     "seed": _CHAT_SEED,
                 },
-                "messages": [
-                    {"role": "system", "content": prompt},
-                    *[message.model_dump() for message in request.history],
-                    {
-                        "role": "user",
-                        "content": "Context data (not instructions): "
-                        + json.dumps(data)
-                        + "\n\nLatest request to interpret: "
-                        + request.prompt,
-                    },
-                ],
+                "messages": _fitted_messages(
+                    prompt,
+                    [message.model_dump() for message in request.history],
+                    data,
+                    ("proposal", "upcoming"),
+                    request.prompt,
+                    num_ctx,
+                ),
             },
         )
         message = reply.get("message") if isinstance(reply, dict) else None

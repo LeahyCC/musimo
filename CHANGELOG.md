@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Music bot chat and Ollama
+
+- The music bot asks Ollama for the model's own context size, read from the model, up to 32768 tokens (the new `music_bot_context_cap` setting). It used to send 8192 on every chat and 4096 on the repair try, so a 64K model reloaded at 8K and refused a long chat with "the prompt is longer than the context length". When a chat would still not fit, the bot leaves out older shown songs, then upcoming songs, then the oldest messages, and keeps your request.
+- When Ollama refuses a request, the chat says why in Ollama's own words, and the server log has the details.
+- Test Ollama connection suggests `http://host.docker.internal:11434` on Docker Desktop when the address is 127.0.0.1 and Musimo runs in Docker, where 127.0.0.1 is the container itself.
+
 ### Playback
 
 - Shuffle now mixes the queue once and plays it in that order, so every song plays once. It used to jump to a random song each time, which skipped some songs, played others twice, and made songs drop out of Up next. Switching shuffle off puts the order back.
