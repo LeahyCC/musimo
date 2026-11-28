@@ -2,12 +2,15 @@
 
 import asyncio
 import json
+import logging
 import math
 import time
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import TYPE_CHECKING, Annotated, Literal, get_args
+from urllib.parse import urlsplit
 from zoneinfo import ZoneInfo
 
 if TYPE_CHECKING:
@@ -823,6 +826,38 @@ def merge_plan(previous: SearchPlan | None, plan: SearchPlan) -> SearchPlan:
 _OLLAMA_CACHE_TTL = 60
 # Fixed seed the chat sends with temperature 0 for reproducible interpreter output.
 _CHAT_SEED = 42
+# How much of a refusal body is read and logged. Ollama's errors are one short JSON object.
+_ERROR_BODY_BYTES = 4096
+_LOGGED_BODY_CHARS = 500
+_REASON_CHARS = 200
+# Docker creates this file in every container. There, 127.0.0.1 is the container, not the host.
+_DOCKERENV = Path("/.dockerenv")
+_LOOPBACK_HOSTS = frozenset({"127.0.0.1", "localhost", "::1"})
+
+_log = logging.getLogger("uvicorn.error")
+
+
+def _ollama_reason(body: str) -> str:
+    """Ollama's own words for a refusal, from its {"error": ...} body, as one short line."""
+    try:
+        parsed = json.loads(body)
+    except ValueError:
+        return ""
+    error = parsed.get("error") if isinstance(parsed, dict) else None
+    if not isinstance(error, str):
+        return ""
+    return " ".join(error.split())[:_REASON_CHARS].rstrip(".")
+
+
+def _unreachable_detail(url: str) -> str:
+    """Why Ollama cannot be reached, with the Docker address when that is the likely cause."""
+    detail = "Cannot reach Ollama. Check its address in Settings."
+    if urlsplit(url).hostname in _LOOPBACK_HOSTS and _DOCKERENV.exists():
+        detail += (
+            " Musimo runs in Docker, where 127.0.0.1 is the container itself. "
+            "Try http://host.docker.internal:11434."
+        )
+    return detail
 
 
 class MusicBot:
@@ -868,10 +903,7 @@ class MusicBot:
                     method, url, json=payload, timeout=90, follow_redirects=False
                 ) as response:
                     if response.status_code != 200:
-                        raise BotError(
-                            "Ollama refused the request. Check the address and choose an installed "
-                            "chat model that supports structured output."
-                        )
+                        raise await self._refused(response, method, path, payload)
                     body = bytearray()
                     async for chunk in response.aiter_bytes():
                         body.extend(chunk)
@@ -884,9 +916,43 @@ class MusicBot:
             raise BotError("Ollama timed out. Retry or choose a smaller model.", 504) from exc
         except httpx.HTTPError as exc:
             self._drop_ollama_cache()
-            raise BotError("Cannot reach Ollama. Check its address in Settings.", 503) from exc
+            raise BotError(_unreachable_detail(url), 503) from exc
         except (ValueError, UnicodeError) as exc:
             raise BotError("Ollama returned invalid JSON. Try another model.") from exc
+
+    async def _refused(
+        self, response: httpx.Response, method: str, path: str, payload: object
+    ) -> BotError:
+        """The error for a non-200 answer, with Ollama's reason, after logging what was sent.
+
+        Ollama names the problem in its body ("the prompt is longer than the context length"),
+        and without it a refusal cannot be told apart from a wrong address. The log has the
+        request's shape and schema but never its messages, which hold what the person typed.
+        The status stays 502, so the chat page's lock rules see the same error as before.
+        """
+        raw = bytearray()
+        async for chunk in response.aiter_bytes():
+            raw.extend(chunk)
+            if len(raw) >= _ERROR_BODY_BYTES:
+                break
+        body = raw[:_ERROR_BODY_BYTES].decode("utf-8", "replace")
+        keys = sorted(payload) if isinstance(payload, dict) else []
+        schema = payload.get("format") if isinstance(payload, dict) else None
+        _log.warning(
+            "Ollama refused %s %s with %s: %s | request keys %s | format %s",
+            method,
+            path,
+            response.status_code,
+            body[:_LOGGED_BODY_CHARS],
+            keys,
+            json.dumps(schema),
+        )
+        reason = _ollama_reason(body)
+        said = f" ({reason})" if reason else ""
+        return BotError(
+            f"Ollama refused the request{said}. Check the address and choose an installed "
+            "chat model that supports structured output."
+        )
 
     async def models(self) -> dict[str, object]:
         started = time.monotonic()
