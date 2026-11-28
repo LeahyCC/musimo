@@ -4,30 +4,38 @@ The fixture is not the real held-out set. It exists so the scoring rules can be 
 model, a network or the sealed file.
 """
 
+import argparse
+import asyncio
 import json
 import os
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 from unittest import mock
 
+import httpx
 from fastapi.testclient import TestClient
 
 from backend.core.listener import CHOOSE, HEADER
 from backend.core.models import Settings
 from backend.library.engine_contract import Filters
 from backend.main import create_app
+from scripts import interpreter_eval
 from scripts.interpreter_eval import (
     NUM_CTX,
     CaseScore,
     ModelError,
     SealError,
+    _as_dict,
     _outcome,
     check_controls,
     load_split,
+    markdown,
     note_engine_ids,
     open_store,
+    reply_text,
     runner_settings,
     score_case,
     summarize,
@@ -356,6 +364,64 @@ class SummaryTests(unittest.TestCase):
         self.assertTrue(score.invented_id)
         self.assertIn("invented_id", score.failures)
 
+    def test_a_failed_case_row_carries_the_reply_summary(self) -> None:
+        case: dict[str, object] = {"id": "d025", "expect": {"action": "search"}}
+        result: dict[str, object] = {
+            "action": "unsupported",
+            "scope": "library",
+            "summary": "I could not read that answer. " + "x" * 400,
+            "intent": {"action": "unsupported", "explanation": "Unreadable model output."},
+        }
+        score = score_case(case, result, IDS)
+        run = {"run": 1, "error": None, "action": "unsupported", **reply_text(result)}
+        self.assertEqual(run["summary"], result["summary"])
+        self.assertEqual(run["reason"], "Unreadable model output.")
+        self.assertIsNone(run["error_code"])
+        report: dict[str, object] = {
+            "model": "test-model",
+            "split": "dev",
+            "git_sha": "abc",
+            "model_digest": "def",
+            "controls": {},
+            "settings": {"temperature": 0, "seed": 0, "num_ctx": NUM_CTX, "runs": 1},
+            "vram": {"available": False},
+            "rows": [{"case": "d025", "stable": True, "runs": [run], "score": score.as_dict()}],
+        }
+        text = markdown(report, summarize(report))
+        line = next(item for item in text.splitlines() if item.startswith("- d025: action"))
+        self.assertIn("reason: Unreadable model output.", line)
+        self.assertIn("summary: I could not read that answer.", line)
+        shown = line.split("summary: ", 1)[1]
+        self.assertEqual(len(shown), 300)
+        self.assertTrue(shown.endswith("..."))
+
+    def test_a_held_out_report_shows_only_the_error_code(self) -> None:
+        # A held-out reply can echo the sealed prompt, so the .md keeps only the typed code.
+        case: dict[str, object] = {"id": "h001", "expect": {"action": "search"}}
+        result: dict[str, object] = {
+            "action": "unsupported",
+            "scope": "library",
+            "summary": "You asked for sealed words.",
+            "intent": {"action": "unsupported", "explanation": "Echoes sealed words."},
+            "error": {"code": "model_unreadable"},
+        }
+        score = score_case(case, result, IDS)
+        run = {"run": 1, "error": "sealed words", "action": "unsupported", **reply_text(result)}
+        report: dict[str, object] = {
+            "model": "test-model",
+            "split": "heldout",
+            "git_sha": "abc",
+            "model_digest": "def",
+            "controls": {},
+            "settings": {"temperature": 0, "seed": 0, "num_ctx": NUM_CTX, "runs": 1},
+            "vram": {"available": False},
+            "rows": [{"case": "h001", "stable": True, "runs": [run], "score": score.as_dict()}],
+        }
+        text = markdown(report, summarize(report))
+        line = next(item for item in text.splitlines() if item.startswith("- h001: action"))
+        self.assertIn("error_code: model_unreadable", line)
+        self.assertNotIn("sealed", text)
+
 
 class SealTests(unittest.TestCase):
     def test_the_fixture_seal_matches(self) -> None:
@@ -381,7 +447,7 @@ class ContextTests(unittest.TestCase):
         # A cap left in the shell must neither leak in nor lock the runner out of its setting.
         with (
             tempfile.TemporaryDirectory() as folder,
-            mock.patch.dict(os.environ, {"MUSIMO_MUSIC_BOT_CONTEXT_CAP": "32768"}),
+            mock.patch.dict(os.environ, {"MUSIMO_MUSIC_BOT_CONTEXT_CAP": "16384"}),
         ):
             store = open_store(Path(folder) / "state.sqlite3")
             try:
@@ -390,7 +456,7 @@ class ContextTests(unittest.TestCase):
                 self.assertEqual(store.current().music_bot_context_cap, 8192)
             finally:
                 store.close()
-            self.assertEqual(os.environ["MUSIMO_MUSIC_BOT_CONTEXT_CAP"], "32768")
+            self.assertEqual(os.environ["MUSIMO_MUSIC_BOT_CONTEXT_CAP"], "16384")
         self.assertEqual(Settings().music_bot_context_cap, 32768)
 
     def test_a_mismatched_num_ctx_still_stops_the_run(self) -> None:
@@ -402,6 +468,53 @@ class ContextTests(unittest.TestCase):
         body["options"] = {"temperature": 0, "seed": 42, "num_ctx": 32768}
         with self.assertRaisesRegex(ModelError, "num_ctx 32768, expected 8192"):
             check_controls(body, thinking=True)
+
+    def test_evaluate_sends_the_pinned_cap_to_a_bigger_model(self) -> None:
+        # The fake model is trained for 65536, so without the runner's cap the app would send
+        # its own 32768 default. evaluate() must apply runner_settings before any chat call.
+        sent: list[object] = []
+
+        def ollama(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/api/tags":
+                return httpx.Response(200, json={"models": [{"name": "fake:1b"}]})
+            if request.url.path == "/api/show":
+                return httpx.Response(200, json={"model_info": {"fake.context_length": 65536}})
+            if request.url.path == "/api/chat":
+                body = json.loads(request.content)
+                sent.append(body.get("options", {}).get("num_ctx"))
+                reply = {"role": "assistant", "content": "{}"}
+                return httpx.Response(200, json={"message": reply, "done": True})
+            return httpx.Response(404)
+
+        args = argparse.Namespace(
+            split="dev", case=["d001"], ollama_url="http://ollama.test", model="fake:1b", runs=1
+        )
+        with (
+            mock.patch(
+                "scripts.interpreter_eval.httpx.AsyncHTTPTransport",
+                lambda: httpx.MockTransport(ollama),
+            ),
+            mock.patch.object(
+                interpreter_eval, "model_info", mock.AsyncMock(return_value={"digest": "d"})
+            ),
+            mock.patch.object(interpreter_eval, "unload", mock.AsyncMock()),
+            mock.patch.object(interpreter_eval, "ps_info", mock.AsyncMock(return_value=None)),
+            mock.patch.object(interpreter_eval, "_query_vram", return_value=None),
+            mock.patch.object(interpreter_eval, "VramSampler"),
+        ):
+            report = asyncio.run(interpreter_eval.evaluate(args))
+        self.assertTrue(sent)
+        self.assertEqual(set(sent), {8192})
+        self.assertEqual(_as_dict(report["controls"])["num_ctx"], 8192)
+        self.assertEqual(_as_dict(report["settings"])["music_bot_context_cap"], 8192)
+        # The reply's own words must reach the saved report, so a failed case can be read back.
+        rows = cast(list[dict[str, object]], report["rows"])
+        first = cast(list[dict[str, object]], rows[0]["runs"])[0]
+        unreadable = "The model's answer could not be read. Please try again."
+        self.assertEqual(first["summary"], unreadable)
+        self.assertEqual(first["reason"], unreadable)
+        self.assertIn("error_code", first)
+        self.assertIsNone(first["error_code"])
 
 
 class ChatHeaderTests(unittest.TestCase):

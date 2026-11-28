@@ -79,7 +79,7 @@ These are fixed now, before any run.
 `scripts/interpreter_eval.py` is the harness. It builds the 25 invented songs in a temporary folder and SQLite database, never the live one, then sends each case through `MusicBot.chat`, the same path the server uses. It scores the intent the engine received, not the reply text, and records the outgoing `/api/chat` controls, timings, VRAM and failing case ids. It prints no prompts.
 
 ```sh
-# Development split, against the PAIR proxy Musimo already calls.
+# Development split, against the local Ollama Musimo already calls.
 uv run python -m scripts.interpreter_eval --model qwen3.5:9b --split dev
 
 # The held-out split, once the prompt is frozen. The seal is checked first.
@@ -89,11 +89,11 @@ uv run python -m scripts.interpreter_eval --model qwen3.5:9b --split heldout
 uv run python -m scripts.interpreter_eval --model qwen3.5:9b --case d001 --case d044
 ```
 
-Options: `--ollama-url` defaults to `http://127.0.0.1:11434` (the PAIR proxy; Ollama itself listens on `127.0.0.1:11435`), `--runs` defaults to 3, and `--case` may be repeated. The model must be installed on that host.
+Options: `--ollama-url` defaults to `http://127.0.0.1:11434`, where Ollama listens, `--runs` defaults to 3, and `--case` may be repeated. The model must be installed on that host.
 
 The run stops before scoring when the model thinks and `/api/show` lists no off switch, or when an interpreter request does not send `think: false`, temperature 0, seed 42 and `num_ctx` 8192. A model that thinks by default with no off switch cannot be evaluated as the gates require. The runner sets `music_bot_context_cap` to 8192 in its temporary settings, so the app's model-sized context (up to 32768) does not change the request, and it ignores any `MUSIMO_*` variables in your shell.
 
-The report is written to `evals/interpreter/reports/<date>-<model>.json` with a short Markdown table beside it. That folder is git ignored. The table has the git SHA, model digest, recorded settings, each measure against its pass mark in [docs/v2-gates.md](../../docs/v2-gates.md), and the failing case ids with the measure that failed.
+The report is written to `evals/interpreter/reports/<date>-<model>.json` with a short Markdown table beside it. That folder is git ignored. The table has the git SHA, model digest, recorded settings, each measure against its pass mark in [docs/v2-gates.md](../../docs/v2-gates.md), and the failing case ids with the measure that failed. Each run in the JSON keeps the reply's summary, the model's reason on a clarify or unsupported reply, and any error code; the table shows them for failing cases, cut to 300 characters. On the held-out split the table shows only the error code, since the reply can echo a sealed prompt. The prompt and messages are never saved.
 
 The runner injects the faults from a transport in front of Ollama, so `interpreter.py` and `music_bot.py` are not changed to fake them. `timeout` and `offline` fail the call, `malformed`, `schema` and `truncated` replace the model's answer (including the one repair), `invented_id` names a song the library does not have, and `truncated_history` removes the previous state from the context the model sees while the stored proposal keeps its filters.
 
