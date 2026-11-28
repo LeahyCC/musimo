@@ -91,7 +91,7 @@ uv run python -m scripts.interpreter_eval --model qwen3.5:9b --case d001 --case 
 
 Options: `--ollama-url` defaults to `http://127.0.0.1:11434` (the PAIR proxy; Ollama itself listens on `127.0.0.1:11435`), `--runs` defaults to 3, and `--case` may be repeated. The model must be installed on that host.
 
-The run stops before scoring when the model thinks and `/api/show` lists no off switch, or when an interpreter request does not send `think: false`, temperature 0, seed 42 and `num_ctx` 8192. A model that thinks by default with no off switch cannot be evaluated as the gates require.
+The run stops before scoring when the model thinks and `/api/show` lists no off switch, or when an interpreter request does not send `think: false`, temperature 0, seed 42 and `num_ctx` 8192. A model that thinks by default with no off switch cannot be evaluated as the gates require. The runner sets `music_bot_context_cap` to 8192 in its temporary settings, so the app's model-sized context (up to 32768) does not change the request, and it ignores any `MUSIMO_*` variables in your shell.
 
 The report is written to `evals/interpreter/reports/<date>-<model>.json` with a short Markdown table beside it. That folder is git ignored. The table has the git SHA, model digest, recorded settings, each measure against its pass mark in [docs/v2-gates.md](../../docs/v2-gates.md), and the failing case ids with the measure that failed.
 

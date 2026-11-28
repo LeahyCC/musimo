@@ -5,22 +5,30 @@ model, a network or the sealed file.
 """
 
 import json
+import os
 import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from fastapi.testclient import TestClient
 
 from backend.core.listener import CHOOSE, HEADER
+from backend.core.models import Settings
 from backend.library.engine_contract import Filters
 from backend.main import create_app
 from scripts.interpreter_eval import (
+    NUM_CTX,
     CaseScore,
+    ModelError,
     SealError,
     _outcome,
+    check_controls,
     load_split,
     note_engine_ids,
+    open_store,
+    runner_settings,
     score_case,
     summarize,
 )
@@ -364,6 +372,36 @@ class SealTests(unittest.TestCase):
             (copied / "heldout.json").write_text(json.dumps(data), encoding="utf-8")
             with self.assertRaises(SealError):
                 load_split("heldout", copied)
+
+
+class ContextTests(unittest.TestCase):
+    def test_the_runner_pins_the_context_cap_to_the_frozen_gate(self) -> None:
+        self.assertEqual(NUM_CTX, 8192)
+        self.assertEqual(Settings().music_bot_context_cap, 32768)
+        # A cap left in the shell must neither leak in nor lock the runner out of its setting.
+        with (
+            tempfile.TemporaryDirectory() as folder,
+            mock.patch.dict(os.environ, {"MUSIMO_MUSIC_BOT_CONTEXT_CAP": "32768"}),
+        ):
+            store = open_store(Path(folder) / "state.sqlite3")
+            try:
+                self.assertEqual(store.current().music_bot_context_cap, 32768)
+                store.update(runner_settings("http://ollama:11434", "model"))
+                self.assertEqual(store.current().music_bot_context_cap, 8192)
+            finally:
+                store.close()
+            self.assertEqual(os.environ["MUSIMO_MUSIC_BOT_CONTEXT_CAP"], "32768")
+        self.assertEqual(Settings().music_bot_context_cap, 32768)
+
+    def test_a_mismatched_num_ctx_still_stops_the_run(self) -> None:
+        body: dict[str, object] = {
+            "think": False,
+            "options": {"temperature": 0, "seed": 42, "num_ctx": 8192},
+        }
+        check_controls(body, thinking=True)
+        body["options"] = {"temperature": 0, "seed": 42, "num_ctx": 32768}
+        with self.assertRaisesRegex(ModelError, "num_ctx 32768, expected 8192"):
+            check_controls(body, thinking=True)
 
 
 class ChatHeaderTests(unittest.TestCase):
