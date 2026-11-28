@@ -338,8 +338,8 @@ class PromptExampleTests(unittest.TestCase):
         self.assertIn("Which version", result.explanation)
 
     def test_clarify_examples_are_in_the_prompt_and_accepted(self) -> None:
-        self.assertIn('"More like this" with current and reference empty', self.prompt)
-        self.assertIn('"Make it longer" or "shorter" with no amount', self.prompt)
+        self.assertIn("similar music with current and reference empty", self.prompt)
+        self.assertIn("lengthen or shorten the playlist with no amount", self.prompt)
         for question in ("Which song should I match?", "How long should it be?"):
             with self.subTest(question=question):
                 self.assertIn(question, self.prompt)
