@@ -11,7 +11,7 @@ import httpx
 from test_music_bot import plan
 from test_player import tag, write_wav
 
-from backend.core.audio_recipes import Recipe, registered
+from backend.core.audio_recipes import SCALAR_RECIPE, Recipe, registered
 from backend.core.store import Store
 from backend.library.engine_contract import CONTRACT_VERSION, Filters, Intent
 from backend.library.index import Library
@@ -158,6 +158,28 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         assert isinstance(proposal, dict)
         return str(proposal["id"])
 
+    def measure(self) -> None:
+        """Turn tempo and energy on and measure every fixture song, so comparisons can run."""
+        # Title and artist, tempo, energy. Paper Lantern is calmer and slower than Night Bus.
+        measured = {
+            "Rock Bottom Ada Vance": (120.0, 0.080),
+            "Night Bus Orchard": (128.0, 0.060),
+            "Night Bus Harbor Static": (174.0, 0.090),
+            "Paper Lantern Marrow": (90.0, 0.020),
+        }
+        self.store.update({"audio_scalar_recipe": SCALAR_RECIPE, "audio_energy": True})
+        stored = self.player.view().stored
+        with self.store.lock:
+            for key, (bpm, energy) in measured.items():
+                song = stored[self.ids[key]]
+                self.store.db.execute(
+                    "INSERT OR REPLACE INTO audio_profile "
+                    "VALUES (?,?,'done',?,?,?,?,0,NULL,'','t')",
+                    (song.song_id, SCALAR_RECIPE, song.size, song.mtime_ns, bpm, energy),
+                )
+            self.store.db.commit()
+        self.bot.profiles.generation += 1
+
     async def test_valid_search_runs_through_the_engine(self) -> None:
         result = await self.chat()
         self.assertEqual(result["status"], "ok")
@@ -217,6 +239,71 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["summary"], MISSING_REFERENCE_QUESTION)
         self.assertEqual(result["ids"], [])
         self.assertEqual(self._proposals(), 0)
+        self.assertEqual(self._playback(), self.playback)
+
+    async def test_calmer_with_nothing_playing_asks_for_a_song(self) -> None:
+        self.measure()
+        self.interpretation(filters={"energy_compared": "calmer"})
+        result = await self.chat()
+        self.assertEqual(result["action"], "clarify")
+        self.assertEqual(result["summary"], MISSING_REFERENCE_QUESTION)
+        self.assertEqual(result["ids"], [])
+        self.assertEqual(self._proposals(), 0)
+        self.assertEqual(self._playback(), self.playback)
+
+    async def test_faster_with_nothing_playing_asks_for_a_song(self) -> None:
+        self.measure()
+        self.interpretation(filters={"tempo_compared": "faster"})
+        result = await self.chat()
+        self.assertEqual(result["action"], "clarify")
+        self.assertEqual(result["summary"], MISSING_REFERENCE_QUESTION)
+        self.assertEqual(result["ids"], [])
+        self.assertEqual(self._proposals(), 0)
+        self.assertEqual(self._playback(), self.playback)
+
+    async def test_calmer_than_a_named_song_uses_it_as_the_reference(self) -> None:
+        # The answer to the question above: naming the song must not ask again.
+        self.measure()
+        self.interpretation(
+            filters={"energy_compared": "calmer"},
+            named_songs=[{"title": "Night Bus", "artist": "Orchard"}],
+        )
+        result = await self.chat()
+        self.assertEqual(result["action"], "search")
+        self.assertEqual(result["reference_id"], self.ids["Night Bus Orchard"])
+        found = self.ids_of(result)
+        self.assertIn(self.ids["Paper Lantern Marrow"], found)
+        self.assertNotIn(self.ids["Night Bus Harbor Static"], found)
+        self.assertEqual(self._playback(), self.playback)
+
+    async def test_faster_than_a_named_song_uses_it_as_the_reference(self) -> None:
+        self.measure()
+        self.interpretation(
+            filters={"tempo_compared": "faster"},
+            named_songs=[{"title": "Paper Lantern"}],
+        )
+        result = await self.chat()
+        self.assertEqual(result["action"], "search")
+        self.assertEqual(result["reference_id"], self.ids["Paper Lantern Marrow"])
+        found = self.ids_of(result)
+        self.assertIn(self.ids["Night Bus Orchard"], found)
+        self.assertNotIn(self.ids["Paper Lantern Marrow"], found)
+        self.assertEqual(self._playback(), self.playback)
+
+    async def test_other_engine_refusals_stay_unsupported(self) -> None:
+        # Only a missing reference becomes a question. A filter the engine cannot enforce is
+        # still refused, even on a comparison.
+        text_recipe = Recipe("embed-engine", "embedding", dim=3, text_aligned=True)
+        playing = self.ids["Night Bus Orchard"]
+        with registered(text_recipe, lambda phrase: [1.0, 0.0, 0.0]):
+            self.store.update({"audio_embedding_recipe": text_recipe.id})
+            self.interpretation(filters={"similar_to_current": True, "sound": "no vocals"})
+            result = await self.chat(BotRequest(prompt="fixture", current_id=playing))
+        self.assertEqual(result["action"], "unsupported")
+        self.assertIn("vocals", str(result["summary"]).casefold())
+        self.assertEqual(result["ids"], [])
+        self.assertEqual(self._proposals(), 0)
+        self.assertEqual(self._playback(), self.playback)
 
     async def test_more_like_this_with_a_song_playing_still_searches(self) -> None:
         self.interpretation(filters={"similar_to_current": True})

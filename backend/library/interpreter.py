@@ -302,11 +302,14 @@ def to_intent(
         return Reply("clarify", question)
 
     # The contract has no title filter. A named song is either the song to compare with
-    # ("songs like Night Bus") or a request for those songs, which becomes a preview of just
-    # them in scope proposal. The engine rejects proposal_ids outside that scope.
+    # ("songs like Night Bus", "calmer than Night Bus") or a request for those songs, which
+    # becomes a preview of just them in scope proposal. The engine rejects proposal_ids
+    # outside that scope. Every comparison takes the named song as its reference, so naming
+    # one after "calmer" with nothing playing answers the question instead of asking again.
     scope = interpretation.scope
     context = Context()
-    if song_ids and filters.similar_to_current:
+    comparison = filters.similar_to_current or filters.energy_compared or filters.tempo_compared
+    if song_ids and comparison:
         if len(song_ids) != 1:
             return Reply("clarify", "Which one song should I compare with?")
         context = Context(reference_id=song_ids[0])
