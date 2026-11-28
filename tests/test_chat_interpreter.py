@@ -15,7 +15,13 @@ from backend.core.audio_recipes import Recipe, registered
 from backend.core.store import Store
 from backend.library.engine_contract import CONTRACT_VERSION, Filters, Intent
 from backend.library.index import Library
-from backend.library.music_bot import BotError, BotRequest, MusicBot, interpretation_prompt
+from backend.library.music_bot import (
+    MISSING_REFERENCE_QUESTION,
+    BotError,
+    BotRequest,
+    MusicBot,
+    interpretation_prompt,
+)
 from backend.library.player import Player
 from backend.library.proposals import Proposals
 
@@ -203,6 +209,26 @@ class ChatInterpreterTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotIn(self.ids["Night Bus Orchard"], found)
         self.assertNotIn(self.ids["Rock Bottom Ada Vance"], found)
         self.assertEqual(self._proposals(), 0)
+
+    async def test_more_like_this_with_nothing_playing_asks_for_a_song(self) -> None:
+        self.interpretation(filters={"similar_to_current": True})
+        result = await self.chat()
+        self.assertEqual(result["action"], "clarify")
+        self.assertEqual(result["summary"], MISSING_REFERENCE_QUESTION)
+        self.assertEqual(result["ids"], [])
+        self.assertEqual(self._proposals(), 0)
+
+    async def test_more_like_this_with_a_song_playing_still_searches(self) -> None:
+        self.interpretation(filters={"similar_to_current": True})
+        playing = self.ids["Night Bus Orchard"]
+        result = await self.chat(BotRequest(prompt="fixture", current_id=playing))
+        self.assertEqual(result["action"], "search")
+        intent = result["intent"]
+        assert isinstance(intent, dict)
+        self.assertEqual(intent["context"]["current_id"], playing)
+        found = self.ids_of(result)
+        self.assertIn(self.ids["Paper Lantern Marrow"], found)
+        self.assertNotIn(playing, found)
 
     async def test_two_night_buses_ask_which_one(self) -> None:
         self.interpretation(named_songs=[{"title": "Night Bus"}])
