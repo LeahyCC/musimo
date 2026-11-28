@@ -12,6 +12,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from typing import cast
 from unittest import mock
 
 import httpx
@@ -378,7 +379,7 @@ class SummaryTests(unittest.TestCase):
         self.assertIsNone(run["error_code"])
         report: dict[str, object] = {
             "model": "test-model",
-            "split": "heldout",
+            "split": "dev",
             "git_sha": "abc",
             "model_digest": "def",
             "controls": {},
@@ -393,6 +394,33 @@ class SummaryTests(unittest.TestCase):
         shown = line.split("summary: ", 1)[1]
         self.assertEqual(len(shown), 300)
         self.assertTrue(shown.endswith("..."))
+
+    def test_a_held_out_report_shows_only_the_error_code(self) -> None:
+        # A held-out reply can echo the sealed prompt, so the .md keeps only the typed code.
+        case: dict[str, object] = {"id": "h001", "expect": {"action": "search"}}
+        result: dict[str, object] = {
+            "action": "unsupported",
+            "scope": "library",
+            "summary": "You asked for sealed words.",
+            "intent": {"action": "unsupported", "explanation": "Echoes sealed words."},
+            "error": {"code": "model_unreadable"},
+        }
+        score = score_case(case, result, IDS)
+        run = {"run": 1, "error": "sealed words", "action": "unsupported", **reply_text(result)}
+        report: dict[str, object] = {
+            "model": "test-model",
+            "split": "heldout",
+            "git_sha": "abc",
+            "model_digest": "def",
+            "controls": {},
+            "settings": {"temperature": 0, "seed": 0, "num_ctx": NUM_CTX, "runs": 1},
+            "vram": {"available": False},
+            "rows": [{"case": "h001", "stable": True, "runs": [run], "score": score.as_dict()}],
+        }
+        text = markdown(report, summarize(report))
+        line = next(item for item in text.splitlines() if item.startswith("- h001: action"))
+        self.assertIn("error_code: model_unreadable", line)
+        self.assertNotIn("sealed", text)
 
 
 class SealTests(unittest.TestCase):
@@ -479,6 +507,14 @@ class ContextTests(unittest.TestCase):
         self.assertEqual(set(sent), {8192})
         self.assertEqual(_as_dict(report["controls"])["num_ctx"], 8192)
         self.assertEqual(_as_dict(report["settings"])["music_bot_context_cap"], 8192)
+        # The reply's own words must reach the saved report, so a failed case can be read back.
+        rows = cast(list[dict[str, object]], report["rows"])
+        first = cast(list[dict[str, object]], rows[0]["runs"])[0]
+        unreadable = "The model's answer could not be read. Please try again."
+        self.assertEqual(first["summary"], unreadable)
+        self.assertEqual(first["reason"], unreadable)
+        self.assertIn("error_code", first)
+        self.assertIsNone(first["error_code"])
 
 
 class ChatHeaderTests(unittest.TestCase):

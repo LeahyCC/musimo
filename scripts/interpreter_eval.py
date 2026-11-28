@@ -1359,6 +1359,9 @@ def markdown(report: dict[str, object], summary: dict[str, object]) -> str:
     return "\n".join(lines)
 
 
+# What a dev report shows for a failing case's first run.
+DEV_REPLY_KEYS = ("error_code", "error", "reason", "summary")
+
 # Long enough for a sentence or two of the reply, short enough to keep the report readable.
 REPLY_CHARS = 300
 
@@ -1372,6 +1375,9 @@ def _short(text: str) -> str:
 def failing_replies(report: dict[str, object], failing: dict[str, list[str]]) -> list[str]:
     """The first run's reply for each failing case, so the report shows why it failed."""
     failed = {case_id for case_ids in failing.values() for case_id in case_ids}
+    # The model's summary, reason and the raw error can echo a held-out prompt, and the .md is
+    # meant to be shared, so the held-out split shows only the typed code. The JSON keeps it all.
+    keys = ("error_code",) if report.get("split") == "heldout" else DEV_REPLY_KEYS
     lines = ["## Failing case replies", ""]
     for row in cast(list[dict[str, object]], report.get("rows") or []):
         case_id = str(row.get("case") or "")
@@ -1380,7 +1386,7 @@ def failing_replies(report: dict[str, object], failing: dict[str, list[str]]) ->
             continue
         run = runs[0]
         parts = [f"action `{run.get('action')}`"]
-        for key in ("error_code", "error", "reason", "summary"):
+        for key in keys:
             value = run.get(key)
             if value:
                 parts.append(f"{key}: {_short(str(value))}")

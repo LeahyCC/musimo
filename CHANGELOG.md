@@ -7,7 +7,7 @@
 - The music bot asks Ollama for the model's own context size, read from the model, up to 32768 tokens (the new `music_bot_context_cap` setting). It used to send 8192 on every chat and 4096 on the repair try, so a 64K model reloaded at 8K and refused a long chat with "the prompt is longer than the context length". When a chat would still not fit, the bot leaves out older shown songs, then upcoming songs, then the oldest messages, and keeps your request.
 - When Ollama refuses a request, the chat says why in Ollama's own words, and the server log has the details.
 - The interpreter eval (`scripts/interpreter_eval.py`) runs again without `MUSIMO_MUSIC_BOT_CONTEXT_CAP=8192`: it pins the context cap to the frozen 8192 gate in its own temporary settings and records the cap in the report. A wrong `num_ctx` still stops the run, and the message now names the size sent and the size expected.
-- The interpreter eval report keeps each reply's summary, refusal reason and error code beside its action, and the Markdown report shows them for failing cases (cut to 300 characters), so a failure can be read instead of guessed.
+- The interpreter eval report keeps each reply's summary, refusal reason and error code beside its action, and the Markdown report shows them for failing cases (cut to 300 characters), so a failure can be read instead of guessed. On the held-out split the Markdown shows only the error code.
 - Test Ollama connection suggests `http://host.docker.internal:11434` on Docker Desktop when the address is 127.0.0.1 and Musimo runs in Docker, where 127.0.0.1 is the container itself.
 
 ### Playback
